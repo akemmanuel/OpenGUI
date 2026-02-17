@@ -114,3 +114,16 @@ This project uses Biome for linting and formatting. Always use the bun scripts:
 - `bun run format` - auto-fix formatting only
 
 Never call `biome` or `bunx biome` directly. Always use the scripts above.
+
+## Versioning & Releases
+
+When creating a new release, ALWAYS update the `version` field in `package.json` BEFORE tagging. The `.deb` and `.dmg` artifacts built by electron-builder use the version from `package.json`, not the git tag. They must stay in sync.
+
+Steps for a release:
+
+1. Update `version` in `package.json` to the new version (e.g. `"0.1.1"`)
+2. Commit: `git commit -am "Bump version to 0.1.1"`
+3. Tag: `git tag v0.1.1`
+4. Push both: `git push && git push --tags`
+
+Never create a version tag without first bumping `package.json`.

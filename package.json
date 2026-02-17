@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "OpenGUI - A graphical interface for OpenCode",
 	"author": {
 		"name": "Emmanuel",
@@ -8,6 +8,7 @@
 	},
 	"homepage": "https://github.com/akemmanuel/OpenGUI",
 	"private": false,
+	"license": "MIT",
 	"type": "module",
 	"main": "main.cjs",
 	"scripts": {

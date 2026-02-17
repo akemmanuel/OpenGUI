@@ -303,6 +303,15 @@ export function MessageList() {
 						className="dark:hidden w-82 select-none pointer-events-none"
 					/>
 
+					{isDraft && draftSessionDirectory && (
+						<div className="mt-2 flex items-center gap-1.5 text-muted-foreground">
+							<FolderOpen className="size-3.5" />
+							<span className="font-mono text-xs">
+								{abbreviatePath(draftSessionDirectory, homeDir)}
+							</span>
+						</div>
+					)}
+
 					{isDraft && (
 						<button
 							type="button"
@@ -718,7 +727,7 @@ function TextPartView({ part, isUser }: { part: TextPart; isUser?: boolean }) {
 
 	if (isUser) {
 		return (
-			<div className="mb-1 text-sm whitespace-pre-wrap break-words">
+			<div className="mb-1 text-sm whitespace-pre-wrap break-words select-text">
 				{part.text}
 			</div>
 		);
