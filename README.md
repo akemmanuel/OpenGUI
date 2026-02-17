@@ -1,6 +1,14 @@
-# OpenGUI
+<p align="center">
+  <img src="opengui-dark.svg" alt="OpenGUI" width="280" />
+</p>
 
-A graphical desktop interface for [OpenCode](https://opencode.ai) - the open-source AI coding assistant.
+<p align="center">
+  A graphical desktop interface for <a href="https://opencode.ai">OpenCode</a> - the open-source AI coding assistant.
+</p>
+
+<p align="center">
+  <img src="screenshot.png" alt="OpenGUI Screenshot" width="800" />
+</p>
 
 OpenGUI wraps the OpenCode server in an Electron shell with a React frontend, giving you a native desktop experience for managing AI-assisted coding sessions across multiple projects.
 
