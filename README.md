@@ -12,7 +12,7 @@
 
 OpenGUI wraps the OpenCode server in an Electron shell with a React frontend, giving you a native desktop experience for managing AI-assisted coding sessions across multiple projects.
 
-> This was a weekend project, vibecoded in 4 days with the $200 Claude Pro plan and the $20 OpenAI Plus plan. Expect some bugs and rough edges. Feel free to open PRs - contributions and bug reports are welcome.
+> This was a weekend project, vibecoded in 4 days with the $200 Claude Max plan and the $20 OpenAI Plus plan. Expect some bugs and rough edges. Feel free to open PRs - contributions and bug reports are welcome.
 
 ## Features
 
