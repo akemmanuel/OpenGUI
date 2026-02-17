@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none';" />
+    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <title>OpenGUI</title>
+    <style>
+      body{margin:0;background:oklch(1 0 0)}
+      .dark body{background:oklch(0.145 0 0)}
+      .splash{display:flex;align-items:center;justify-content:center;height:100dvh}
+      .splash-logo{width:72px;height:90px;animation:splash-pulse 2s ease-in-out infinite}
+      @keyframes splash-pulse{0%,100%{opacity:.25}50%{opacity:1}}
+      .splash-logo .outer{fill:#211E1E}
+      .splash-logo .inner{fill:#CFCECD}
+      .dark .splash-logo .outer{fill:#F1ECEC}
+      .dark .splash-logo .inner{fill:#4B4646}
+    </style>
+  </head>
+  <body>
+    <script>
+      try{const t=localStorage.getItem("theme");document.documentElement.classList.toggle("dark",t?t==="dark":true)}catch(_e){document.documentElement.classList.add("dark")}
+    </script>
+    <div id="root">
+      <div class="splash">
+        <svg class="splash-logo" viewBox="0 0 240 300" xmlns="http://www.w3.org/2000/svg"><path class="inner" d="M180 240H60V120H180V240Z"/><path class="outer" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"/></svg>
+      </div>
+    </div>
+    <script type="module" src="./frontend.tsx" async></script>
+  </body>
+</html>
