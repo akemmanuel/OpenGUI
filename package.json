@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "OpenGUI - A graphical interface for OpenCode",
 	"author": {
 		"name": "Emmanuel",
@@ -46,13 +46,14 @@
 		},
 		"files": [
 			"dist/**/*",
+			"!dist/**/*.map",
 			"main.cjs",
 			"preload.cjs",
 			"opencode-bridge.mjs",
-			"splash.html",
 			"package.json",
 			"!node_modules",
-			"node_modules/@opencode-ai/**"
+			"node_modules/@opencode-ai/sdk/dist/**/*.js",
+			"node_modules/@opencode-ai/sdk/package.json"
 		],
 		"directories": {
 			"output": "release"

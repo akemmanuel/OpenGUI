@@ -26,16 +26,14 @@ function createWindow() {
 		...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
 	});
 
-	// Load splash from disk first (instant), then navigate to the app.
-	// The splash stays visible until the real page renders.
-	mainWindow.loadFile(path.join(__dirname, "splash.html"));
+	if (isDev) {
+		mainWindow.loadURL(DEV_SERVER_URL);
+	} else {
+		mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
+	}
+
 	mainWindow.once("ready-to-show", () => {
 		mainWindow.show();
-		if (isDev) {
-			mainWindow.loadURL(DEV_SERVER_URL);
-		} else {
-			mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
-		}
 	});
 
 	// Intercept all external link navigations and open them in the system browser.

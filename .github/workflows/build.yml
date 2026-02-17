@@ -33,6 +33,9 @@ jobs:
 
   build-mac:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
 
@@ -46,15 +49,15 @@ jobs:
       - name: Build frontend
         run: bun run build
 
-      - name: Package .dmg
-        run: bunx electron-builder --mac dmg --publish never
+      - name: Package .dmg (${{ matrix.arch }})
+        run: bunx electron-builder --mac dmg --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload .dmg artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mac-dmg
+          name: mac-dmg-${{ matrix.arch }}
           path: release/*.dmg
           retention-days: 30
 
@@ -76,4 +79,5 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/linux-deb/*.deb
-            artifacts/mac-dmg/*.dmg
+            artifacts/mac-dmg-x64/*.dmg
+            artifacts/mac-dmg-arm64/*.dmg
