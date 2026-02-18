@@ -1268,4 +1268,178 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			return { success: false, error: err.message ?? String(err) };
 		}
 	});
+
+	// --- Git helpers ---
+
+	ipcMain.handle("git:is-repo", async (_event, directory) => {
+		try {
+			execSync("git rev-parse --git-dir", {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			return { success: true, data: true };
+		} catch {
+			return { success: true, data: false };
+		}
+	});
+
+	ipcMain.handle("git:branch:list", async (_event, directory) => {
+		try {
+			const raw = execSync('git branch -a --format="%(refname:short)"', {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			const branches = raw
+				.split(/\r?\n/)
+				.map((b) => b.trim())
+				.filter(Boolean);
+			return { success: true, data: branches };
+		} catch (err) {
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle("git:current-branch", async (_event, directory) => {
+		try {
+			const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+			return { success: true, data: branch };
+		} catch (err) {
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle("git:worktree:list", async (_event, directory) => {
+		try {
+			const raw = execSync("git worktree list --porcelain", {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			const worktrees = [];
+			let current = {};
+			for (const line of raw.split(/\r?\n/)) {
+				if (line.startsWith("worktree ")) {
+					if (current.path) worktrees.push(current);
+					current = { path: line.slice("worktree ".length) };
+				} else if (line.startsWith("HEAD ")) {
+					current.head = line.slice("HEAD ".length);
+				} else if (line.startsWith("branch ")) {
+					// Convert refs/heads/main -> main
+					current.branch = line
+						.slice("branch ".length)
+						.replace(/^refs\/heads\//, "");
+				} else if (line === "bare") {
+					current.bare = true;
+				} else if (line === "detached") {
+					current.detached = true;
+				} else if (line === "") {
+					if (current.path) worktrees.push(current);
+					current = {};
+				}
+			}
+			if (current.path) worktrees.push(current);
+			return { success: true, data: worktrees };
+		} catch (err) {
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle(
+		"git:worktree:add",
+		async (_event, directory, worktreePath, branch, isNewBranch) => {
+			try {
+				const args = ["worktree", "add"];
+				if (isNewBranch) {
+					args.push("-b", branch, worktreePath);
+				} else {
+					args.push(worktreePath, branch);
+				}
+				execSync(`git ${args.join(" ")}`, {
+					cwd: directory,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				return { success: true, data: { path: worktreePath } };
+			} catch (err) {
+				return { success: false, error: err.message ?? String(err) };
+			}
+		},
+	);
+
+	ipcMain.handle(
+		"git:worktree:remove",
+		async (_event, directory, worktreePath) => {
+			try {
+				execSync(`git worktree remove "${worktreePath}"`, {
+					cwd: directory,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+				return { success: true };
+			} catch (err) {
+				return { success: false, error: err.message ?? String(err) };
+			}
+		},
+	);
+
+	ipcMain.handle("git:merge", async (_event, directory, branch) => {
+		try {
+			execSync(`git merge "${branch}" --no-edit`, {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			return { success: true };
+		} catch (err) {
+			// Check if it's a merge conflict (vs other errors)
+			try {
+				const conflicted = execSync("git diff --name-only --diff-filter=U", {
+					cwd: directory,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "ignore"],
+				})
+					.split(/\r?\n/)
+					.map((f) => f.trim())
+					.filter(Boolean);
+				if (conflicted.length > 0) {
+					return { success: false, conflicts: conflicted };
+				}
+			} catch {
+				// Could not determine conflicts
+			}
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle("git:merge:abort", async (_event, directory) => {
+		try {
+			execSync("git merge --abort", {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			return { success: true };
+		} catch (err) {
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle("git:remote:url", async (_event, directory) => {
+		try {
+			const url = execSync("git remote get-url origin", {
+				cwd: directory,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+			return { success: true, data: url };
+		} catch (err) {
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
 }

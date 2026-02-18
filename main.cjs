@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron/main");
 const path = require("node:path");
+const { execSync, spawn } = require("node:child_process");
 
 const DEV_SERVER_URL =
 	process.env.BUN_DEV_SERVER_URL || "http://localhost:3000";
@@ -102,6 +103,78 @@ ipcMain.handle("shell:openExternal", (_event, url) => {
 		(url.startsWith("https://") || url.startsWith("http://"))
 	) {
 		shell.openExternal(url);
+	}
+});
+
+// Open a directory in the system file browser
+ipcMain.handle("shell:openInFileBrowser", (_event, dirPath) => {
+	if (typeof dirPath === "string" && dirPath.length > 0) {
+		shell.openPath(dirPath);
+	}
+});
+
+// Open a terminal at a directory (cross-platform)
+ipcMain.handle("shell:openInTerminal", (_event, dirPath) => {
+	if (typeof dirPath !== "string" || dirPath.length === 0) return;
+	const platform = process.platform;
+	const spawnOpts = { detached: true, stdio: "ignore", cwd: dirPath };
+	if (platform === "darwin") {
+		spawn("open", ["-a", "Terminal", dirPath], spawnOpts);
+	} else if (platform === "win32") {
+		spawn("cmd.exe", ["/c", "start", "cmd.exe", "/k", `cd /d "${dirPath}"`], {
+			...spawnOpts,
+			shell: true,
+		});
+	} else {
+		// Linux: respect the desktop environment's preferred terminal.
+		// Query gsettings for Cinnamon / GNOME default terminal, then
+		// fall back to $TERMINAL, x-terminal-emulator, and known terminals.
+		const gsettingsKeys = [
+			"org.cinnamon.desktop.default-applications.terminal exec",
+			"org.gnome.desktop.default-applications.terminal exec",
+		];
+		let deTerminal = null;
+		for (const key of gsettingsKeys) {
+			try {
+				const raw = execSync(`gsettings get ${key}`, {
+					encoding: "utf-8",
+					timeout: 2000,
+					stdio: ["ignore", "pipe", "ignore"],
+				}).trim();
+				// gsettings returns values like 'gnome-terminal' (with quotes)
+				const val = raw.replace(/^'|'$/g, "");
+				if (val && val !== "x-terminal-emulator") {
+					deTerminal = val;
+					break;
+				}
+			} catch {
+				// gsettings schema not available, try next
+			}
+		}
+
+		const terminals = [];
+		if (deTerminal) terminals.push([deTerminal]);
+		if (process.env.TERMINAL) terminals.push([process.env.TERMINAL]);
+		terminals.push(
+			["x-terminal-emulator"],
+			["gnome-terminal", "--working-directory", dirPath],
+			["konsole", "--workdir", dirPath],
+			["xfce4-terminal", "--working-directory", dirPath],
+			["alacritty", "--working-directory", dirPath],
+			["kitty", "-d", dirPath],
+			["wezterm", "start", "--cwd", dirPath],
+			["xterm"],
+		);
+		// Try sequentially; spawn emits 'error' when the command is not
+		// found so we move on to the next candidate.
+		const tryTerminal = (index) => {
+			if (index >= terminals.length) return;
+			const [cmd, ...args] = terminals[index];
+			const child = spawn(cmd, args, spawnOpts);
+			child.on("error", () => tryTerminal(index + 1));
+			child.unref();
+		};
+		tryTerminal(0);
 	}
 });
 

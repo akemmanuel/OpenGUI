@@ -147,6 +147,7 @@ const OPEN_PROJECTS_KEY = "opencode:openProjects";
 const UNREAD_SESSIONS_KEY = "opencode:unreadSessionIds";
 const NOTIFICATIONS_ENABLED_KEY = "opencode:notificationsEnabled";
 const SESSION_META_KEY = "opencode:sessionMeta";
+const WORKTREE_PARENTS_KEY = "opencode:worktreeParents";
 const MAX_RECENT_PROJECTS = 10;
 
 // ---------------------------------------------------------------------------
@@ -194,6 +195,35 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 			localStorage.removeItem(SESSION_META_KEY);
 		} else {
 			localStorage.setItem(SESSION_META_KEY, JSON.stringify(pruned));
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Worktree parents (maps worktree directory -> parent project directory)
+// ---------------------------------------------------------------------------
+
+/** Maps worktree directory -> parent project directory */
+export type WorktreeParentMap = Record<string, string>;
+
+function getWorktreeParents(): WorktreeParentMap {
+	try {
+		const raw = localStorage.getItem(WORKTREE_PARENTS_KEY);
+		if (!raw) return {};
+		return JSON.parse(raw) as WorktreeParentMap;
+	} catch {
+		return {};
+	}
+}
+
+function persistWorktreeParents(map: WorktreeParentMap) {
+	try {
+		if (Object.keys(map).length === 0) {
+			localStorage.removeItem(WORKTREE_PARENTS_KEY);
+		} else {
+			localStorage.setItem(WORKTREE_PARENTS_KEY, JSON.stringify(map));
 		}
 	} catch {
 		/* ignore */
@@ -380,6 +410,8 @@ export interface OpenCodeState {
 	unreadSessionIds: Set<string>;
 	/** Local-only session metadata (colors, tags) keyed by session ID */
 	sessionMeta: SessionMetaMap;
+	/** Maps worktree directory -> parent project directory (local-only) */
+	worktreeParents: WorktreeParentMap;
 	/** Messages/parts for child (subagent) sessions, keyed by child sessionID */
 	childSessions: Record<
 		string,
@@ -447,6 +479,7 @@ const initialState: OpenCodeState = {
 	temporarySessions: new Set(),
 	unreadSessionIds: getUnreadSessionIds(),
 	sessionMeta: getSessionMetaMap(),
+	worktreeParents: getWorktreeParents(),
 	childSessions: {},
 	trackedChildSessionIds: new Set(),
 	_pendingSnapshots: [],
@@ -543,6 +576,11 @@ type Action =
 			type: "SET_SESSION_META";
 			payload: { sessionId: string; meta: SessionMeta };
 	  }
+	| {
+			type: "REGISTER_WORKTREE";
+			payload: { worktreeDir: string; parentDir: string };
+	  }
+	| { type: "UNREGISTER_WORKTREE"; payload: string }
 	| {
 			type: "LOAD_CHILD_SESSION";
 			payload: {
@@ -1619,6 +1657,20 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return { ...state, sessionMeta: nextMeta };
 		}
 
+		case "REGISTER_WORKTREE": {
+			const { worktreeDir, parentDir } = action.payload;
+			const next = { ...state.worktreeParents, [worktreeDir]: parentDir };
+			persistWorktreeParents(next);
+			return { ...state, worktreeParents: next };
+		}
+
+		case "UNREGISTER_WORKTREE": {
+			const next = { ...state.worktreeParents };
+			delete next[action.payload];
+			persistWorktreeParents(next);
+			return { ...state, worktreeParents: next };
+		}
+
 		case "LOAD_CHILD_SESSION": {
 			const { childSessionId, messages } = action.payload;
 			const childBuf: Record<
@@ -1740,6 +1792,10 @@ interface OpenCodeContextValue {
 	setSessionColor: (sessionId: string, color: SessionColor) => void;
 	/** Set tags for a session (local-only, stored in localStorage). */
 	setSessionTags: (sessionId: string, tags: string[]) => void;
+	/** Register a worktree directory as belonging to a parent project. */
+	registerWorktree: (worktreeDir: string, parentDir: string) => void;
+	/** Unregister a worktree directory. */
+	unregisterWorktree: (worktreeDir: string) => void;
 }
 
 const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
@@ -3156,6 +3212,20 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		});
 	}, []);
 
+	const registerWorktree = useCallback(
+		(worktreeDir: string, parentDir: string) => {
+			dispatch({
+				type: "REGISTER_WORKTREE",
+				payload: { worktreeDir, parentDir },
+			});
+		},
+		[],
+	);
+
+	const unregisterWorktree = useCallback((worktreeDir: string) => {
+		dispatch({ type: "UNREGISTER_WORKTREE", payload: worktreeDir });
+	}, []);
+
 	const value = useMemo<OpenCodeContextValue>(
 		() => ({
 			state,
@@ -3195,6 +3265,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			forkFromMessage,
 			setSessionColor,
 			setSessionTags,
+			registerWorktree,
+			unregisterWorktree,
 		}),
 		[
 			state,
@@ -3234,6 +3306,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			forkFromMessage,
 			setSessionColor,
 			setSessionTags,
+			registerWorktree,
+			unregisterWorktree,
 		],
 	);
 

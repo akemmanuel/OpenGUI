@@ -5,11 +5,15 @@ import {
 	ChevronUp,
 	CirclePlus,
 	Copy,
+	ExternalLink,
 	FolderOpen,
+	GitBranch,
+	GitMerge,
 	MessageSquare,
 	Settings,
 	ShieldAlert,
 	SquarePen,
+	Terminal,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -32,12 +36,15 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { hasAnyConnection, useOpenCode } from "@/hooks/use-opencode";
 import { abbreviatePath } from "@/lib/utils";
+import type { GitWorktree } from "@/types/electron";
 import logoDark from "../../opencode-logo-dark.svg";
 import logoLight from "../../opencode-logo-light.svg";
 import openguiLogoDark from "../../opengui-dark.svg";
 import openguiLogoLight from "../../opengui-light.svg";
 import { ConnectionPanel } from "./ConnectionPanel";
+import { MergeDialog } from "./MergeDialog";
 import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
+import { WorktreeDialog } from "./WorktreeDialog";
 
 const SESSION_PAGE_SIZE = 12;
 
@@ -45,6 +52,29 @@ const SESSION_PAGE_SIZE = 12;
 function projectName(directory: string): string {
 	const parts = directory.replace(/\/+$/, "").split("/");
 	return parts[parts.length - 1] || directory;
+}
+
+/** Build a "create pull request" URL from a git remote URL and branch. */
+function buildPRUrl(
+	remoteUrl: string,
+	branch: string,
+	baseBranch = "main",
+): string | null {
+	// Normalize git remote URL to an HTTPS base
+	let base: string | null = null;
+	// SSH format: git@host:owner/repo.git
+	const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+	if (sshMatch) {
+		base = `https://${sshMatch[1]}/${sshMatch[2]}`;
+	}
+	// HTTPS format: https://host/owner/repo.git
+	const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
+	if (httpsMatch) {
+		base = `https://${httpsMatch[1]}/${httpsMatch[2]}`;
+	}
+	if (!base) return null;
+	// GitHub, Gitea, GitLab all support /compare/base...head
+	return `${base}/compare/${baseBranch}...${branch}`;
 }
 
 export function AppSidebar() {
@@ -59,6 +89,9 @@ export function AppSidebar() {
 		connectToProject,
 		setSessionColor,
 		setSessionTags,
+		registerWorktree,
+		unregisterWorktree,
+		sendPrompt,
 	} = useOpenCode();
 	const {
 		sessions,
@@ -71,6 +104,7 @@ export function AppSidebar() {
 		temporarySessions,
 		unreadSessionIds,
 		sessionMeta,
+		worktreeParents,
 	} = state;
 
 	const isConnected = hasAnyConnection(connections);
@@ -80,7 +114,13 @@ export function AppSidebar() {
 		window.electronAPI?.getHomeDir?.().then((d) => setHomeDir(d ?? ""));
 	}, []);
 
-	// Group root sessions by directory
+	// Set of directories that are worktrees (should be hidden from project list)
+	const worktreeDirs = useMemo(
+		() => new Set(Object.keys(worktreeParents)),
+		[worktreeParents],
+	);
+
+	// Group root sessions by directory, merging worktree sessions under parent
 	const projectGroups = useMemo(() => {
 		const openDirectories = Object.keys(connections);
 		const rootSessions = sessions.filter(
@@ -90,16 +130,91 @@ export function AppSidebar() {
 				!temporarySessions.has(s.id),
 		);
 		const groups = new Map<string, typeof rootSessions>();
+		// Only show non-worktree directories as top-level projects
 		for (const dir of openDirectories) {
-			groups.set(dir, []);
+			if (!worktreeDirs.has(dir)) {
+				groups.set(dir, []);
+			}
 		}
 		for (const s of rootSessions) {
-			const dir = s.directory;
-			if (!groups.has(dir)) groups.set(dir, []);
-			groups.get(dir)?.push(s);
+			// If session belongs to a worktree, group it under the parent project
+			const parentDir = worktreeParents[s.directory];
+			const groupDir = parentDir ?? s.directory;
+			if (!groups.has(groupDir)) groups.set(groupDir, []);
+			groups.get(groupDir)?.push(s);
 		}
 		return groups;
-	}, [sessions, connections, temporarySessions]);
+	}, [sessions, connections, temporarySessions, worktreeParents, worktreeDirs]);
+
+	// Worktree dialog state
+	const [worktreeDialogDir, setWorktreeDialogDir] = useState<string | null>(
+		null,
+	);
+	// Per-project: is it a git repo? (checked on context menu open)
+	const [isGitRepo, setIsGitRepo] = useState<Record<string, boolean>>({});
+	// Per-project: known worktrees (fetched on context menu open)
+	const [knownWorktrees, setKnownWorktrees] = useState<
+		Record<string, GitWorktree[]>
+	>({});
+	// Worktree picker popover for new session
+	const [worktreePickerDir, setWorktreePickerDir] = useState<string | null>(
+		null,
+	);
+	const worktreePickerRef = useRef<HTMLDivElement | null>(null);
+	// Merge dialog state
+	const [mergeInfo, setMergeInfo] = useState<{
+		mainDir: string;
+		branch: string;
+		worktreePath: string;
+	} | null>(null);
+	// Per-project: remote URL (for PR links)
+	const [remoteUrls, setRemoteUrls] = useState<Record<string, string>>({});
+
+	/** Refresh git info for a project directory (is repo + worktree list + remote). */
+	const refreshGitInfo = useCallback(async (directory: string) => {
+		const git = window.electronAPI?.git;
+		if (!git) return;
+		const repoRes = await git.isRepo(directory);
+		const isRepo = repoRes.success && repoRes.data === true;
+		setIsGitRepo((prev) => ({ ...prev, [directory]: isRepo }));
+		if (isRepo) {
+			const [wtRes, remoteRes] = await Promise.all([
+				git.listWorktrees(directory),
+				git.getRemoteUrl(directory),
+			]);
+			if (wtRes.success && wtRes.data) {
+				setKnownWorktrees((prev) => ({
+					...prev,
+					[directory]: wtRes.data ?? [],
+				}));
+			}
+			if (remoteRes.success && remoteRes.data) {
+				setRemoteUrls((prev) => ({
+					...prev,
+					[directory]: remoteRes.data ?? "",
+				}));
+			}
+		}
+	}, []);
+
+	// Close worktree picker on outside click
+	useEffect(() => {
+		if (!worktreePickerDir) return;
+		const onPointerDown = (event: MouseEvent) => {
+			const target = event.target as Node;
+			if (worktreePickerRef.current?.contains(target)) return;
+			setWorktreePickerDir(null);
+		};
+		const onEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setWorktreePickerDir(null);
+		};
+		window.addEventListener("mousedown", onPointerDown);
+		window.addEventListener("keydown", onEscape);
+		return () => {
+			window.removeEventListener("mousedown", onPointerDown);
+			window.removeEventListener("keydown", onEscape);
+		};
+	}, [worktreePickerDir]);
 
 	// Track collapsed state per project
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -223,7 +338,11 @@ export function AppSidebar() {
 									<div key={directory} className="mb-1">
 										{/* Project header */}
 										<SidebarMenu>
-											<ContextMenu.Root>
+											<ContextMenu.Root
+												onOpenChange={(open) => {
+													if (open) refreshGitInfo(directory);
+												}}
+											>
 												<ContextMenu.Trigger asChild>
 													<SidebarMenuItem>
 														<SidebarMenuButton
@@ -259,26 +378,59 @@ export function AppSidebar() {
 																{projectName(directory)}
 															</span>
 															{/* New session for this project */}
-															{isProjectConnected && (
-																// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
-																<div
-																	role="button"
-																	tabIndex={0}
-																	className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
-																	onClick={(e) => {
-																		e.stopPropagation();
-																		startDraftSession(directory);
-																	}}
-																	onKeyDown={(e) => {
-																		if (e.key === "Enter" || e.key === " ") {
-																			e.stopPropagation();
-																			startDraftSession(directory);
-																		}
-																	}}
-																>
-																	<SquarePen className="size-3" />
-																</div>
-															)}
+															{isProjectConnected &&
+																(() => {
+																	// Check if this project has registered worktrees
+																	const projectWorktrees = Object.entries(
+																		worktreeParents,
+																	)
+																		.filter(
+																			([, parent]) => parent === directory,
+																		)
+																		.map(([wtDir]) => wtDir);
+																	const hasWorktrees =
+																		projectWorktrees.length > 0;
+
+																	return (
+																		// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
+																		<div
+																			role="button"
+																			tabIndex={0}
+																			className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				if (hasWorktrees) {
+																					setWorktreePickerDir((prev) =>
+																						prev === directory
+																							? null
+																							: directory,
+																					);
+																				} else {
+																					startDraftSession(directory);
+																				}
+																			}}
+																			onKeyDown={(e) => {
+																				if (
+																					e.key === "Enter" ||
+																					e.key === " "
+																				) {
+																					e.stopPropagation();
+																					if (hasWorktrees) {
+																						setWorktreePickerDir((prev) =>
+																							prev === directory
+																								? null
+																								: directory,
+																						);
+																					} else {
+																						startDraftSession(directory);
+																					}
+																				}
+																			}}
+																		>
+																			<SquarePen className="size-3" />
+																		</div>
+																	);
+																})()}
 															{/* Remove project */}
 															{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
 															<div
@@ -303,7 +455,7 @@ export function AppSidebar() {
 												</ContextMenu.Trigger>
 												<ContextMenu.Portal>
 													<ContextMenu.Content
-														className="z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+														className="z-50 min-w-[12rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
 														alignOffset={5}
 													>
 														<ContextMenu.Item
@@ -315,10 +467,216 @@ export function AppSidebar() {
 															<Copy className="size-4" />
 															<span>Copy absolute path</span>
 														</ContextMenu.Item>
+														<ContextMenu.Item
+															className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+															onSelect={() => {
+																window.electronAPI?.openInFileBrowser(
+																	directory,
+																);
+															}}
+														>
+															<FolderOpen className="size-4" />
+															<span>Open in file browser</span>
+														</ContextMenu.Item>
+														<ContextMenu.Item
+															className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+															onSelect={() => {
+																window.electronAPI?.openInTerminal(directory);
+															}}
+														>
+															<Terminal className="size-4" />
+															<span>Open in terminal</span>
+														</ContextMenu.Item>
+
+														{/* Git worktree options (only for git repos) */}
+														{isGitRepo[directory] && (
+															<>
+																<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+																<ContextMenu.Item
+																	className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																	onSelect={() =>
+																		setWorktreeDialogDir(directory)
+																	}
+																>
+																	<GitBranch className="size-4" />
+																	<span>New worktree...</span>
+																</ContextMenu.Item>
+																{/* List existing worktrees (excluding the main repo itself) */}
+																{(knownWorktrees[directory] ?? []).filter(
+																	(wt) => wt.path !== directory,
+																).length > 0 && (
+																	<ContextMenu.Sub>
+																		<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
+																			<GitBranch className="size-4" />
+																			<span>Worktrees</span>
+																		</ContextMenu.SubTrigger>
+																		<ContextMenu.Portal>
+																			<ContextMenu.SubContent
+																				className="z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+																				sideOffset={4}
+																			>
+																				{(knownWorktrees[directory] ?? [])
+																					.filter((wt) => wt.path !== directory)
+																					.map((wt) => (
+																						<ContextMenu.Sub key={wt.path}>
+																							<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
+																								<span className="truncate">
+																									{wt.branch ??
+																										projectName(wt.path)}
+																								</span>
+																							</ContextMenu.SubTrigger>
+																							<ContextMenu.Portal>
+																								<ContextMenu.SubContent
+																									className="z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+																									sideOffset={4}
+																								>
+																									{!worktreeDirs.has(
+																										wt.path,
+																									) && (
+																										<ContextMenu.Item
+																											className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																											onSelect={async () => {
+																												registerWorktree(
+																													wt.path,
+																													directory,
+																												);
+																												await connectToProject(
+																													wt.path,
+																												);
+																											}}
+																										>
+																											Open
+																										</ContextMenu.Item>
+																									)}
+																									{wt.branch && (
+																										<ContextMenu.Item
+																											className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																											onSelect={() => {
+																												setMergeInfo({
+																													mainDir: directory,
+																													branch:
+																														wt.branch ?? "",
+																													worktreePath: wt.path,
+																												});
+																											}}
+																										>
+																											<GitMerge className="size-4" />
+																											Merge
+																										</ContextMenu.Item>
+																									)}
+																									{wt.branch &&
+																										remoteUrls[directory] && (
+																											<ContextMenu.Item
+																												className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																												onSelect={() => {
+																													const remote =
+																														remoteUrls[
+																															directory
+																														];
+																													if (!remote) return;
+																													const url =
+																														buildPRUrl(
+																															remote,
+																															wt.branch ?? "",
+																														);
+																													if (url) {
+																														window.electronAPI?.openExternal(
+																															url,
+																														);
+																													}
+																												}}
+																											>
+																												<ExternalLink className="size-4" />
+																												Open pull request
+																											</ContextMenu.Item>
+																										)}
+																									<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+																									<ContextMenu.Item
+																										className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground text-destructive focus:text-destructive"
+																										onSelect={async () => {
+																											// Remove from OpenGUI first
+																											if (
+																												worktreeDirs.has(
+																													wt.path,
+																												)
+																											) {
+																												unregisterWorktree(
+																													wt.path,
+																												);
+																												await removeProject(
+																													wt.path,
+																												);
+																											}
+																											// Then remove the git worktree
+																											await window.electronAPI?.git?.removeWorktree(
+																												directory,
+																												wt.path,
+																											);
+																											refreshGitInfo(directory);
+																										}}
+																									>
+																										Remove
+																									</ContextMenu.Item>
+																								</ContextMenu.SubContent>
+																							</ContextMenu.Portal>
+																						</ContextMenu.Sub>
+																					))}
+																			</ContextMenu.SubContent>
+																		</ContextMenu.Portal>
+																	</ContextMenu.Sub>
+																)}
+															</>
+														)}
 													</ContextMenu.Content>
 												</ContextMenu.Portal>
 											</ContextMenu.Root>
 										</SidebarMenu>
+
+										{/* Worktree picker popover */}
+										{worktreePickerDir === directory && (
+											<div
+												ref={worktreePickerRef}
+												className="mx-1 mb-1 rounded-md border border-sidebar-border bg-sidebar p-1 shadow-sm"
+											>
+												<div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">
+													New session in:
+												</div>
+												<button
+													type="button"
+													onClick={() => {
+														startDraftSession(directory);
+														setWorktreePickerDir(null);
+													}}
+													className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent"
+												>
+													<MessageSquare className="size-3.5 shrink-0" />
+													<span className="truncate">
+														{projectName(directory)}
+													</span>
+													<span className="ml-auto text-[10px] text-muted-foreground">
+														main
+													</span>
+												</button>
+												{Object.entries(worktreeParents)
+													.filter(([, parent]) => parent === directory)
+													.map(([wtDir]) => (
+														<button
+															key={wtDir}
+															type="button"
+															onClick={() => {
+																startDraftSession(wtDir);
+																setWorktreePickerDir(null);
+															}}
+															className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent"
+														>
+															<GitBranch className="size-3.5 shrink-0" />
+															<span className="truncate">
+																{projectName(wtDir)}
+															</span>
+														</button>
+													))}
+											</div>
+										)}
 
 										{/* Sessions under this project */}
 										{!isCollapsed && sidebarState !== "collapsed" && (
@@ -346,6 +704,13 @@ export function AppSidebar() {
 																? `border-l-[3px] -ml-[3px] ${getColorBorderClass(meta.color)}`
 																: "";
 															const tags = meta?.tags ?? [];
+															const isWorktreeSession =
+																session.directory !== directory &&
+																worktreeParents[session.directory] ===
+																	directory;
+															const worktreeBranch = isWorktreeSession
+																? projectName(session.directory)
+																: null;
 															return (
 																<SessionContextMenu
 																	key={session.id}
@@ -369,6 +734,8 @@ export function AppSidebar() {
 																			<span className="relative shrink-0">
 																				{isBusy ? (
 																					<Spinner className="size-4 text-muted-foreground" />
+																				) : isWorktreeSession ? (
+																					<GitBranch className="size-4" />
 																				) : (
 																					<MessageSquare className="size-4" />
 																				)}
@@ -381,6 +748,11 @@ export function AppSidebar() {
 																			>
 																				{session.title || "Untitled"}
 																			</span>
+																			{worktreeBranch && (
+																				<span className="shrink-0 rounded-full bg-purple-500/15 text-purple-500 px-1.5 py-0 text-[9px] font-medium truncate max-w-[4rem]">
+																					{worktreeBranch}
+																				</span>
+																			)}
 																			{tags.length > 0 && (
 																				<span className="shrink-0 flex gap-0.5 overflow-hidden max-w-[4rem]">
 																					{tags.slice(0, 2).map((tag) => (
@@ -601,6 +973,61 @@ export function AppSidebar() {
 			</SidebarFooter>
 
 			<SidebarRail />
+
+			{/* Worktree creation dialog */}
+			<WorktreeDialog
+				open={worktreeDialogDir !== null}
+				onOpenChange={(open) => {
+					if (!open) setWorktreeDialogDir(null);
+				}}
+				directory={worktreeDialogDir ?? ""}
+				onCreated={async (worktreePath, _branch) => {
+					if (!worktreeDialogDir) return;
+					// Register in local state
+					registerWorktree(worktreePath, worktreeDialogDir);
+					// Connect to the worktree directory
+					await connectToProject(worktreePath);
+					// Refresh git info
+					refreshGitInfo(worktreeDialogDir);
+				}}
+			/>
+
+			{/* Merge dialog */}
+			<MergeDialog
+				open={mergeInfo !== null}
+				onOpenChange={(open) => {
+					if (!open) setMergeInfo(null);
+				}}
+				mainDirectory={mergeInfo?.mainDir ?? ""}
+				branch={mergeInfo?.branch ?? ""}
+				onMerged={async (deleteWt) => {
+					if (!mergeInfo) return;
+					if (deleteWt) {
+						// Disconnect + unregister + remove worktree
+						if (worktreeDirs.has(mergeInfo.worktreePath)) {
+							unregisterWorktree(mergeInfo.worktreePath);
+							await removeProject(mergeInfo.worktreePath);
+						}
+						await window.electronAPI?.git?.removeWorktree(
+							mergeInfo.mainDir,
+							mergeInfo.worktreePath,
+						);
+					}
+					refreshGitInfo(mergeInfo.mainDir);
+				}}
+				onFixWithAI={(conflicts) => {
+					if (!mergeInfo) return;
+					// Start a new session in the main directory and send the conflict resolution prompt
+					startDraftSession(mergeInfo.mainDir);
+					// Use a small delay so the draft session is active before sending
+					setTimeout(() => {
+						const fileList = conflicts.map((f) => `- ${f}`).join("\n");
+						sendPrompt(
+							`There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
+						);
+					}, 300);
+				}}
+			/>
 		</Sidebar>
 	);
 }

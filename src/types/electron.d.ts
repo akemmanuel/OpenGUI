@@ -230,6 +230,41 @@ export interface OpenCodeBridge {
 }
 
 // ---------------------------------------------------------------------------
+// Git helpers
+// ---------------------------------------------------------------------------
+
+export interface GitWorktree {
+	path: string;
+	head?: string;
+	branch?: string;
+	bare?: boolean;
+	detached?: boolean;
+}
+
+export interface GitMergeResult {
+	success: boolean;
+	conflicts?: string[];
+	error?: string;
+}
+
+export interface GitBridge {
+	isRepo(directory: string): Promise<IPCResult<boolean>>;
+	listBranches(directory: string): Promise<IPCResult<string[]>>;
+	currentBranch(directory: string): Promise<IPCResult<string>>;
+	listWorktrees(directory: string): Promise<IPCResult<GitWorktree[]>>;
+	addWorktree(
+		directory: string,
+		worktreePath: string,
+		branch: string,
+		isNewBranch: boolean,
+	): Promise<IPCResult<{ path: string }>>;
+	removeWorktree(directory: string, worktreePath: string): Promise<IPCResult>;
+	merge(directory: string, branch: string): Promise<GitMergeResult>;
+	mergeAbort(directory: string): Promise<IPCResult>;
+	getRemoteUrl(directory: string): Promise<IPCResult<string>>;
+}
+
+// ---------------------------------------------------------------------------
 // Window API
 // ---------------------------------------------------------------------------
 
@@ -247,9 +282,16 @@ export interface ElectronAPI {
 	/** Open a URL in the system browser (not in Electron). */
 	openExternal: (url: string) => Promise<void>;
 
+	/** Open a directory in the system file browser (Finder / Explorer / Nautilus). */
+	openInFileBrowser: (dirPath: string) => Promise<void>;
+
+	/** Open a terminal at a directory. */
+	openInTerminal: (dirPath: string) => Promise<void>;
+
 	/** Get the user's home directory path. */
 	getHomeDir: () => Promise<string>;
 
+	git?: GitBridge;
 	opencode: OpenCodeBridge;
 }
 

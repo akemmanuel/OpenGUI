@@ -19,8 +19,42 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	// Open a URL in the system browser
 	openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
 
+	// Open a directory in the system file browser
+	openInFileBrowser: (dirPath) =>
+		ipcRenderer.invoke("shell:openInFileBrowser", dirPath),
+
+	// Open a terminal at a directory
+	openInTerminal: (dirPath) =>
+		ipcRenderer.invoke("shell:openInTerminal", dirPath),
+
 	// Home directory (for path abbreviation)
 	getHomeDir: () => ipcRenderer.invoke("platform:homeDir"),
+
+	// Git helpers
+	git: {
+		isRepo: (directory) => ipcRenderer.invoke("git:is-repo", directory),
+		listBranches: (directory) =>
+			ipcRenderer.invoke("git:branch:list", directory),
+		currentBranch: (directory) =>
+			ipcRenderer.invoke("git:current-branch", directory),
+		listWorktrees: (directory) =>
+			ipcRenderer.invoke("git:worktree:list", directory),
+		addWorktree: (directory, worktreePath, branch, isNewBranch) =>
+			ipcRenderer.invoke(
+				"git:worktree:add",
+				directory,
+				worktreePath,
+				branch,
+				isNewBranch,
+			),
+		removeWorktree: (directory, worktreePath) =>
+			ipcRenderer.invoke("git:worktree:remove", directory, worktreePath),
+		merge: (directory, branch) =>
+			ipcRenderer.invoke("git:merge", directory, branch),
+		mergeAbort: (directory) => ipcRenderer.invoke("git:merge:abort", directory),
+		getRemoteUrl: (directory) =>
+			ipcRenderer.invoke("git:remote:url", directory),
+	},
 
 	// OpenCode bridge
 	opencode: {
