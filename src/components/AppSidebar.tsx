@@ -4,6 +4,7 @@ import {
 	ChevronRight,
 	ChevronUp,
 	CirclePlus,
+	Copy,
 	FolderOpen,
 	MessageSquare,
 	Settings,
@@ -12,6 +13,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
+import { ContextMenu } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Sidebar,
@@ -35,6 +37,7 @@ import logoLight from "../../opencode-logo-light.svg";
 import openguiLogoDark from "../../opengui-dark.svg";
 import openguiLogoLight from "../../opengui-light.svg";
 import { ConnectionPanel } from "./ConnectionPanel";
+import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 
 const SESSION_PAGE_SIZE = 12;
 
@@ -54,6 +57,8 @@ export function AppSidebar() {
 		removeProject,
 		openDirectory,
 		connectToProject,
+		setSessionColor,
+		setSessionTags,
 	} = useOpenCode();
 	const {
 		sessions,
@@ -65,6 +70,7 @@ export function AppSidebar() {
 		pendingPermissions,
 		temporarySessions,
 		unreadSessionIds,
+		sessionMeta,
 	} = state;
 
 	const isConnected = hasAnyConnection(connections);
@@ -217,81 +223,101 @@ export function AppSidebar() {
 									<div key={directory} className="mb-1">
 										{/* Project header */}
 										<SidebarMenu>
-											<SidebarMenuItem>
-												<SidebarMenuButton
-													tooltip={abbreviatePath(directory, homeDir)}
-													onClick={(event) => {
-														if (sidebarState === "collapsed") {
-															event.preventDefault();
-															event.stopPropagation();
-															const rect = (
-																event.currentTarget as HTMLButtonElement
-															).getBoundingClientRect();
-															setProjectPopover((prev) =>
-																prev?.directory === directory
-																	? null
-																	: { directory, top: rect.top },
-															);
-															return;
-														}
-														toggleCollapsed(directory);
-													}}
-													className="group/project font-medium min-w-0"
-												>
-													{isProjectConnecting ? (
-														<Spinner className="shrink-0 size-4 text-muted-foreground" />
-													) : (
-														<ChevronRight
-															className={`shrink-0 size-4 transition-transform ${
-																!isCollapsed ? "rotate-90" : ""
-															}`}
-														/>
-													)}
-													<span className="truncate min-w-0 flex-1">
-														{projectName(directory)}
-													</span>
-													{/* New session for this project */}
-													{isProjectConnected && (
-														// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
-														<div
-															role="button"
-															tabIndex={0}
-															className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
-															onClick={(e) => {
-																e.stopPropagation();
-																startDraftSession(directory);
-															}}
-															onKeyDown={(e) => {
-																if (e.key === "Enter" || e.key === " ") {
-																	e.stopPropagation();
-																	startDraftSession(directory);
+											<ContextMenu.Root>
+												<ContextMenu.Trigger asChild>
+													<SidebarMenuItem>
+														<SidebarMenuButton
+															tooltip={abbreviatePath(directory, homeDir)}
+															onClick={(event) => {
+																if (sidebarState === "collapsed") {
+																	event.preventDefault();
+																	event.stopPropagation();
+																	const rect = (
+																		event.currentTarget as HTMLButtonElement
+																	).getBoundingClientRect();
+																	setProjectPopover((prev) =>
+																		prev?.directory === directory
+																			? null
+																			: { directory, top: rect.top },
+																	);
+																	return;
 																}
+																toggleCollapsed(directory);
+															}}
+															className="group/project font-medium min-w-0"
+														>
+															{isProjectConnecting ? (
+																<Spinner className="shrink-0 size-4 text-muted-foreground" />
+															) : (
+																<ChevronRight
+																	className={`shrink-0 size-4 transition-transform ${
+																		!isCollapsed ? "rotate-90" : ""
+																	}`}
+																/>
+															)}
+															<span className="truncate min-w-0 flex-1">
+																{projectName(directory)}
+															</span>
+															{/* New session for this project */}
+															{isProjectConnected && (
+																// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
+																<div
+																	role="button"
+																	tabIndex={0}
+																	className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		startDraftSession(directory);
+																	}}
+																	onKeyDown={(e) => {
+																		if (e.key === "Enter" || e.key === " ") {
+																			e.stopPropagation();
+																			startDraftSession(directory);
+																		}
+																	}}
+																>
+																	<SquarePen className="size-3" />
+																</div>
+															)}
+															{/* Remove project */}
+															{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
+															<div
+																role="button"
+																tabIndex={0}
+																className="opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+																onClick={(e) => {
+																	e.stopPropagation();
+																	removeProject(directory);
+																}}
+																onKeyDown={(e) => {
+																	if (e.key === "Enter" || e.key === " ") {
+																		e.stopPropagation();
+																		removeProject(directory);
+																	}
+																}}
+															>
+																<X className="size-3" />
+															</div>
+														</SidebarMenuButton>
+													</SidebarMenuItem>
+												</ContextMenu.Trigger>
+												<ContextMenu.Portal>
+													<ContextMenu.Content
+														className="z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+														alignOffset={5}
+													>
+														<ContextMenu.Item
+															className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+															onSelect={() => {
+																navigator.clipboard.writeText(directory);
 															}}
 														>
-															<SquarePen className="size-3" />
-														</div>
-													)}
-													{/* Remove project */}
-													{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
-													<div
-														role="button"
-														tabIndex={0}
-														className="opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
-														onClick={(e) => {
-															e.stopPropagation();
-															removeProject(directory);
-														}}
-														onKeyDown={(e) => {
-															if (e.key === "Enter" || e.key === " ") {
-																e.stopPropagation();
-																removeProject(directory);
-															}
-														}}
-													>
-														<X className="size-3" />
-													</div>
-												</SidebarMenuButton>
-											</SidebarMenuItem>
+															<Copy className="size-4" />
+															<span>Copy absolute path</span>
+														</ContextMenu.Item>
+													</ContextMenu.Content>
+												</ContextMenu.Portal>
+											</ContextMenu.Root>
 										</SidebarMenu>
 
 										{/* Sessions under this project */}
@@ -314,67 +340,103 @@ export function AppSidebar() {
 																!!pendingQuestions[session.id];
 															const hasPermission =
 																!!pendingPermissions[session.id];
+															const meta = sessionMeta[session.id];
+															const hasColor = !!meta?.color;
+															const colorBorderClass = hasColor
+																? `border-l-[3px] -ml-[3px] ${getColorBorderClass(meta.color)}`
+																: "";
+															const tags = meta?.tags ?? [];
 															return (
-																<SidebarMenuItem key={session.id}>
-																	<SidebarMenuButton
-																		tooltip={session.title}
-																		isActive={isActive}
-																		onClick={() => selectSession(session.id)}
-																		className="group/session min-w-0"
-																	>
-																		<span className="relative shrink-0">
-																			{isBusy ? (
-																				<Spinner className="size-4 text-muted-foreground" />
-																			) : (
-																				<MessageSquare className="size-4" />
-																			)}
-																			{isUnread && !isBusy && (
-																				<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
-																			)}
-																		</span>
-																		<span
-																			className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
+																<SessionContextMenu
+																	key={session.id}
+																	currentColor={meta?.color}
+																	currentTags={tags}
+																	onSetColor={(color) =>
+																		setSessionColor(session.id, color)
+																	}
+																	onSetTags={(newTags) =>
+																		setSessionTags(session.id, newTags)
+																	}
+																	onDelete={() => deleteSession(session.id)}
+																>
+																	<SidebarMenuItem>
+																		<SidebarMenuButton
+																			tooltip={session.title}
+																			isActive={isActive}
+																			onClick={() => selectSession(session.id)}
+																			className={`group/session min-w-0 ${colorBorderClass}`}
 																		>
-																			{session.title || "Untitled"}
-																		</span>
-																		{hasPermission && (
-																			<span className="rounded-full bg-orange-500/15 text-orange-500 text-[10px] font-bold">
-																				<ShieldAlert className="size-4" />
+																			<span className="relative shrink-0">
+																				{isBusy ? (
+																					<Spinner className="size-4 text-muted-foreground" />
+																				) : (
+																					<MessageSquare className="size-4" />
+																				)}
+																				{isUnread && !isBusy && (
+																					<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
+																				)}
 																			</span>
-																		)}
-																		{hasQuestion && (
-																			<span className="rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold">
-																				<BadgeQuestionMark className="size-4" />
+																			<span
+																				className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
+																			>
+																				{session.title || "Untitled"}
 																			</span>
-																		)}
-																		{queueCount > 0 && (
-																			<span className="shrink-0 rounded-full bg-primary/15 text-primary text-[10px] font-medium px-1.5 py-0.5 tabular-nums">
-																				{queueCount}
-																			</span>
-																		)}
-																		{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
-																		<div
-																			role="button"
-																			tabIndex={0}
-																			className="ml-auto opacity-0 group-hover/session:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent"
-																			onClick={(e) => {
-																				e.stopPropagation();
-																				deleteSession(session.id);
-																			}}
-																			onKeyDown={(e) => {
-																				if (
-																					e.key === "Enter" ||
-																					e.key === " "
-																				) {
+																			{tags.length > 0 && (
+																				<span className="shrink-0 flex gap-0.5 overflow-hidden max-w-[4rem]">
+																					{tags.slice(0, 2).map((tag) => (
+																						<span
+																							key={tag}
+																							className="rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground truncate max-w-[3rem]"
+																						>
+																							{tag}
+																						</span>
+																					))}
+																					{tags.length > 2 && (
+																						<span className="text-[9px] text-muted-foreground">
+																							+{tags.length - 2}
+																						</span>
+																					)}
+																				</span>
+																			)}
+																			{hasPermission && (
+																				<span className="rounded-full bg-orange-500/15 text-orange-500 text-[10px] font-bold">
+																					<ShieldAlert className="size-4" />
+																				</span>
+																			)}
+																			{hasQuestion && (
+																				<span className="rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold">
+																					<BadgeQuestionMark className="size-4" />
+																				</span>
+																			)}
+																			{queueCount > 0 && (
+																				<span className="shrink-0 rounded-full bg-primary/15 text-primary text-[10px] font-medium px-1.5 py-0.5 tabular-nums">
+																					{queueCount}
+																				</span>
+																			)}
+																			{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
+																			<div
+																				role="button"
+																				tabIndex={0}
+																				className="ml-auto opacity-0 group-hover/session:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent"
+																				onClick={(e) => {
 																					e.stopPropagation();
 																					deleteSession(session.id);
-																				}
-																			}}
-																		>
-																			<Trash2 className="size-3" />
-																		</div>
-																	</SidebarMenuButton>
-																</SidebarMenuItem>
+																				}}
+																				onKeyDown={(e) => {
+																					if (
+																						e.key === "Enter" ||
+																						e.key === " "
+																					) {
+																						e.stopPropagation();
+																						deleteSession(session.id);
+																					}
+																				}}
+																			>
+																				<Trash2 className="size-3" />
+																			</div>
+																		</SidebarMenuButton>
+																	</SidebarMenuItem>
+																</SessionContextMenu>
 															);
 														})}
 														{hasMoreSessions && (

@@ -146,7 +146,59 @@ const RECENT_PROJECTS_KEY = "opencode:recentProjects";
 const OPEN_PROJECTS_KEY = "opencode:openProjects";
 const UNREAD_SESSIONS_KEY = "opencode:unreadSessionIds";
 const NOTIFICATIONS_ENABLED_KEY = "opencode:notificationsEnabled";
+const SESSION_META_KEY = "opencode:sessionMeta";
 const MAX_RECENT_PROJECTS = 10;
+
+// ---------------------------------------------------------------------------
+// Session meta (local-only tags & colors)
+// ---------------------------------------------------------------------------
+
+export type SessionColor =
+	| "red"
+	| "orange"
+	| "yellow"
+	| "green"
+	| "blue"
+	| "purple"
+	| "pink"
+	| "gray"
+	| null;
+
+export interface SessionMeta {
+	color?: SessionColor;
+	tags?: string[];
+}
+
+export type SessionMetaMap = Record<string, SessionMeta>;
+
+function getSessionMetaMap(): SessionMetaMap {
+	try {
+		const raw = localStorage.getItem(SESSION_META_KEY);
+		if (!raw) return {};
+		return JSON.parse(raw) as SessionMetaMap;
+	} catch {
+		return {};
+	}
+}
+
+function persistSessionMetaMap(meta: SessionMetaMap) {
+	try {
+		// Prune empty entries
+		const pruned: SessionMetaMap = {};
+		for (const [id, m] of Object.entries(meta)) {
+			if ((m.color && m.color !== null) || (m.tags && m.tags.length > 0)) {
+				pruned[id] = m;
+			}
+		}
+		if (Object.keys(pruned).length === 0) {
+			localStorage.removeItem(SESSION_META_KEY);
+		} else {
+			localStorage.setItem(SESSION_META_KEY, JSON.stringify(pruned));
+		}
+	} catch {
+		/* ignore */
+	}
+}
 
 /**
  * Returns true when the configured opencode server points to the local machine.
@@ -326,6 +378,8 @@ export interface OpenCodeState {
 	temporarySessions: Set<string>;
 	/** Set of session IDs that have unread content (finished generating while not active) */
 	unreadSessionIds: Set<string>;
+	/** Local-only session metadata (colors, tags) keyed by session ID */
+	sessionMeta: SessionMetaMap;
 	/** Messages/parts for child (subagent) sessions, keyed by child sessionID */
 	childSessions: Record<
 		string,
@@ -392,6 +446,7 @@ const initialState: OpenCodeState = {
 	draftIsTemporary: false,
 	temporarySessions: new Set(),
 	unreadSessionIds: getUnreadSessionIds(),
+	sessionMeta: getSessionMetaMap(),
 	childSessions: {},
 	trackedChildSessionIds: new Set(),
 	_pendingSnapshots: [],
@@ -484,6 +539,10 @@ type Action =
 	| { type: "SET_DRAFT_TEMPORARY"; payload: boolean }
 	| { type: "MARK_SESSION_TEMPORARY"; payload: string }
 	| { type: "UNMARK_SESSION_TEMPORARY"; payload: string }
+	| {
+			type: "SET_SESSION_META";
+			payload: { sessionId: string; meta: SessionMeta };
+	  }
 	| {
 			type: "LOAD_CHILD_SESSION";
 			payload: {
@@ -1551,6 +1610,15 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return { ...state, temporarySessions: next };
 		}
 
+		case "SET_SESSION_META": {
+			const { sessionId, meta } = action.payload;
+			const nextMeta = { ...state.sessionMeta };
+			const existing = nextMeta[sessionId] ?? {};
+			nextMeta[sessionId] = { ...existing, ...meta };
+			persistSessionMetaMap(nextMeta);
+			return { ...state, sessionMeta: nextMeta };
+		}
+
 		case "LOAD_CHILD_SESSION": {
 			const { childSessionId, messages } = action.payload;
 			const childBuf: Record<
@@ -1668,6 +1736,10 @@ interface OpenCodeContextValue {
 	unrevert: () => Promise<void>;
 	/** Fork the active session at a specific message, creating a new session. */
 	forkFromMessage: (messageID: string) => Promise<void>;
+	/** Set the color for a session (local-only, stored in localStorage). */
+	setSessionColor: (sessionId: string, color: SessionColor) => void;
+	/** Set tags for a session (local-only, stored in localStorage). */
+	setSessionTags: (sessionId: string, tags: string[]) => void;
 }
 
 const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
@@ -3067,6 +3139,23 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		[bridge, state.activeSessionId, selectSession],
 	);
 
+	const setSessionColor = useCallback(
+		(sessionId: string, color: SessionColor) => {
+			dispatch({
+				type: "SET_SESSION_META",
+				payload: { sessionId, meta: { color } },
+			});
+		},
+		[],
+	);
+
+	const setSessionTags = useCallback((sessionId: string, tags: string[]) => {
+		dispatch({
+			type: "SET_SESSION_META",
+			payload: { sessionId, meta: { tags } },
+		});
+	}, []);
+
 	const value = useMemo<OpenCodeContextValue>(
 		() => ({
 			state,
@@ -3104,6 +3193,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			revertToMessage,
 			unrevert,
 			forkFromMessage,
+			setSessionColor,
+			setSessionTags,
 		}),
 		[
 			state,
@@ -3141,6 +3232,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			revertToMessage,
 			unrevert,
 			forkFromMessage,
+			setSessionColor,
+			setSessionTags,
 		],
 	);
 
