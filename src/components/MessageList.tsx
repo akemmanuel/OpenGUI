@@ -113,6 +113,7 @@ export function MessageList() {
 		connectToProject,
 		setDraftTemporary,
 		forkFromMessage,
+		revertToMessage,
 		unrevert,
 	} = useOpenCode();
 	const {
@@ -421,14 +422,24 @@ export function MessageList() {
 					const isConsecutive =
 						prev !== null && prev.info.role === entry.info.role;
 					const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
+					// Only allow forking from the 2nd user message onward;
+					// forking on the first would create an empty session.
+					const isFirstUserMsg =
+						entry.info.role === "user" &&
+						visibleMessages.findIndex((m) => m.info.role === "user") === idx;
 					return (
 						<div key={entry.info.id} className={spacing}>
 							<MessageBubble
 								entry={entry}
 								turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
 								onFork={
-									entry.info.role === "user"
+									entry.info.role === "user" && !isFirstUserMsg
 										? () => forkFromMessage(entry.info.id)
+										: undefined
+								}
+								onRevert={
+									entry.info.role === "user"
+										? () => revertToMessage(entry.info.id)
 										: undefined
 								}
 							/>
@@ -672,10 +683,12 @@ const MessageBubble = memo(function MessageBubble({
 	entry,
 	turnDurationLabel,
 	onFork,
+	onRevert,
 }: {
 	entry: MessageEntry;
 	turnDurationLabel?: string;
 	onFork?: () => void;
+	onRevert?: () => void;
 }) {
 	const { info, parts } = entry;
 	const isUser = info.role === "user";
@@ -712,15 +725,29 @@ const MessageBubble = memo(function MessageBubble({
 						: "flex-1",
 				)}
 			>
-				{isUser && onFork && (
-					<button
-						type="button"
-						onClick={onFork}
-						title="Fork from this message"
-						className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
-					>
-						<GitFork className="size-3.5" />
-					</button>
+				{isUser && (onFork || onRevert) && (
+					<div className="absolute -left-9 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+						{onRevert && (
+							<button
+								type="button"
+								onClick={onRevert}
+								title="Revert to this message"
+								className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+							>
+								<Undo2 className="size-3.5" />
+							</button>
+						)}
+						{onFork && (
+							<button
+								type="button"
+								onClick={onFork}
+								title="Fork from this message"
+								className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+							>
+								<GitFork className="size-3.5" />
+							</button>
+						)}
+					</div>
 				)}
 				{parts.length > 0 && (
 					<div className={cn(shouldCollapse && !expanded && "relative")}>

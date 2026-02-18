@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "OpenGUI - A graphical interface for OpenCode",
 	"author": {
 		"name": "Emmanuel",
@@ -28,6 +28,8 @@
 	"build": {
 		"appId": "com.opengui.app",
 		"productName": "OpenGUI",
+		"compression": "maximum",
+		"asar": true,
 		"linux": {
 			"target": "deb",
 			"icon": "assets/icon.png",
