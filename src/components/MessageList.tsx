@@ -25,12 +25,14 @@ import {
 	FileEdit,
 	FilePlus,
 	FolderOpen,
+	GitFork,
 	Layers,
 	MessageCircleQuestion,
 	Search,
 	ShieldAlert,
 	SquareTerminal,
 	Timer,
+	Undo2,
 	Wrench,
 	X,
 	XCircle,
@@ -110,6 +112,8 @@ export function MessageList() {
 		openDirectory,
 		connectToProject,
 		setDraftTemporary,
+		forkFromMessage,
+		unrevert,
 	} = useOpenCode();
 	const {
 		messages,
@@ -119,7 +123,13 @@ export function MessageList() {
 		pendingQuestions,
 		activeSessionId,
 		recentProjects,
+		sessions,
 	} = state;
+	const activeSession = useMemo(
+		() => sessions.find((s) => s.id === activeSessionId),
+		[sessions, activeSessionId],
+	);
+	const revertMessageID = activeSession?.revert?.messageID;
 	const pendingPermission = activeSessionId
 		? (pendingPermissions[activeSessionId] ?? null)
 		: null;
@@ -196,10 +206,20 @@ export function MessageList() {
 
 	// ---- visible messages (filter out step-only / empty entries) ----
 
-	const visibleMessages = useMemo(
-		() => messages.filter(hasVisibleContent),
-		[messages],
-	);
+	const visibleMessages = useMemo(() => {
+		const rendered = messages.filter(hasVisibleContent);
+		if (!revertMessageID) return rendered;
+		// Hide messages at or after the revert point
+		return rendered.filter((m) => m.info.id < revertMessageID);
+	}, [messages, revertMessageID]);
+
+	// Count reverted messages for the banner
+	const revertedCount = useMemo(() => {
+		if (!revertMessageID) return 0;
+		return messages.filter(
+			(m) => hasVisibleContent(m) && m.info.id >= revertMessageID,
+		).length;
+	}, [messages, revertMessageID]);
 
 	const turnDurationByAssistantId = useMemo(() => {
 		const userStartById = new Map<string, number>();
@@ -406,10 +426,37 @@ export function MessageList() {
 							<MessageBubble
 								entry={entry}
 								turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
+								onFork={
+									entry.info.role === "user"
+										? () => forkFromMessage(entry.info.id)
+										: undefined
+								}
 							/>
 						</div>
 					);
 				})}
+
+				{/* Revert marker */}
+				{revertMessageID && revertedCount > 0 && (
+					<div className="flex items-center gap-2 mt-4 select-none">
+						<div className="flex-1 h-px bg-orange-500/30" />
+						<div className="flex items-center gap-2 text-[11px] text-orange-500/80 font-mono">
+							<Undo2 className="size-3" />
+							<span>
+								{revertedCount} message{revertedCount !== 1 ? "s" : ""} reverted
+							</span>
+							<span className="text-orange-500/50">|</span>
+							<button
+								type="button"
+								onClick={() => unrevert()}
+								className="hover:text-orange-500 transition-colors cursor-pointer"
+							>
+								Restore
+							</button>
+						</div>
+						<div className="flex-1 h-px bg-orange-500/30" />
+					</div>
+				)}
 
 				{/* Permission request */}
 				{pendingPermission && (
@@ -624,9 +671,11 @@ const USER_MSG_COLLAPSE_CHARS = 500;
 const MessageBubble = memo(function MessageBubble({
 	entry,
 	turnDurationLabel,
+	onFork,
 }: {
 	entry: MessageEntry;
 	turnDurationLabel?: string;
+	onFork?: () => void;
 }) {
 	const { info, parts } = entry;
 	const isUser = info.role === "user";
@@ -657,12 +706,22 @@ const MessageBubble = memo(function MessageBubble({
 			)}
 			<div
 				className={cn(
-					"min-w-0",
+					"min-w-0 group relative",
 					isUser
 						? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
 						: "flex-1",
 				)}
 			>
+				{isUser && onFork && (
+					<button
+						type="button"
+						onClick={onFork}
+						title="Fork from this message"
+						className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+					>
+						<GitFork className="size-3.5" />
+					</button>
+				)}
 				{parts.length > 0 && (
 					<div className={cn(shouldCollapse && !expanded && "relative")}>
 						<div

@@ -1,5 +1,5 @@
 import { AlertCircle, X } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { QueueList } from "@/components/QueueList";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -28,7 +28,44 @@ function AppContent() {
 		updateQueuedPrompt,
 		sendQueuedNow,
 		cycleVariant,
+		revertToMessage,
+		unrevert,
 	} = useOpenCode();
+
+	// Find the active session object (for revert state)
+	const activeSession = useMemo(
+		() => state.sessions.find((s) => s.id === state.activeSessionId),
+		[state.sessions, state.activeSessionId],
+	);
+
+	// Find the last user message (for undo keybind), respecting revert state
+	const revertToLastMessage = useCallback(() => {
+		const revertMsgId = activeSession?.revert?.messageID;
+		const userMessages = state.messages.filter((m) => m.info.role === "user");
+		// Find the last user message before the current revert point (or the very last)
+		const target = revertMsgId
+			? [...userMessages].reverse().find((m) => m.info.id < revertMsgId)
+			: userMessages[userMessages.length - 1];
+		if (target) revertToMessage(target.info.id);
+	}, [activeSession, state.messages, revertToMessage]);
+
+	// Ctrl+Z: undo last message; Ctrl+Shift+Z: redo
+	useEffect(() => {
+		const handleUndoRedo = (e: KeyboardEvent) => {
+			if (e.key !== "z" || !(e.metaKey || e.ctrlKey)) return;
+			// Don't intercept native undo/redo in text inputs
+			const tag = (e.target as HTMLElement)?.tagName;
+			if (tag === "INPUT" || tag === "TEXTAREA") return;
+			e.preventDefault();
+			if (e.shiftKey) {
+				unrevert();
+			} else {
+				revertToLastMessage();
+			}
+		};
+		window.addEventListener("keydown", handleUndoRedo);
+		return () => window.removeEventListener("keydown", handleUndoRedo);
+	}, [revertToLastMessage, unrevert]);
 
 	// Ctrl+T: cycle model variant (low / medium / high / default)
 	useEffect(() => {

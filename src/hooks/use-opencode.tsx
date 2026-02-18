@@ -564,6 +564,52 @@ function tagPartWithDeltaPositions(
 	} as DeltaTrackedPart;
 }
 
+function mergeSnapshotPartWithExisting(
+	part: Part,
+	previous?: Part,
+): DeltaTrackedPart {
+	const tagged = tagPartWithDeltaPositions(part, previous);
+	if (!previous) return tagged;
+
+	const prevRecord = previous as Record<string, unknown>;
+	const nextRecord = tagged as Record<string, unknown>;
+	const prevPositions =
+		(prevRecord._deltaPositions as Record<string, number> | undefined) ?? {};
+	const mergedPositions = {
+		...((nextRecord._deltaPositions as Record<string, number> | undefined) ??
+			{}),
+	};
+
+	for (const [field, prevPosRaw] of Object.entries(prevPositions)) {
+		if (!Number.isFinite(prevPosRaw)) continue;
+		const prevVal = prevRecord[field];
+		const nextVal = nextRecord[field];
+		if (typeof prevVal !== "string" || typeof nextVal !== "string") continue;
+
+		// PART_UPDATED snapshots can lag behind locally-applied deltas.
+		// Preserve the richer local string if it is a strict prefix extension
+		// of the snapshot to avoid visible text regression while streaming.
+		if (prevVal.length > nextVal.length && prevVal.startsWith(nextVal)) {
+			nextRecord[field] = prevVal;
+			mergedPositions[field] = Math.min(
+				Math.max(prevPosRaw, 0),
+				prevVal.length,
+			);
+			continue;
+		}
+
+		const currentPos = mergedPositions[field];
+		const fallbackPos =
+			typeof currentPos === "number" && Number.isFinite(currentPos)
+				? currentPos
+				: nextVal.length;
+		mergedPositions[field] = Math.min(Math.max(fallbackPos, 0), nextVal.length);
+	}
+
+	nextRecord._deltaPositions = mergedPositions;
+	return nextRecord as DeltaTrackedPart;
+}
+
 function applyStreamingDeltaToPart(
 	existingPart: Part,
 	field: string,
@@ -1156,7 +1202,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 			const existingIdx = entry.parts.findIndex((p) => p.id === part.id);
 			const previous = existingIdx >= 0 ? entry.parts[existingIdx] : undefined;
-			const tagged = tagPartWithDeltaPositions(part, previous);
+			const tagged = mergeSnapshotPartWithExisting(part, previous);
 			const newParts = [...entry.parts];
 			if (existingIdx >= 0) {
 				newParts[existingIdx] = tagged;
@@ -1616,6 +1662,12 @@ interface OpenCodeContextValue {
 	startDraftSession: (directory: string) => void;
 	/** Toggle whether the current draft session should be temporary */
 	setDraftTemporary: (temporary: boolean) => void;
+	/** Revert the active session to a specific message (undo). */
+	revertToMessage: (messageID: string) => Promise<void>;
+	/** Restore all reverted messages in the active session (redo all). */
+	unrevert: () => Promise<void>;
+	/** Fork the active session at a specific message, creating a new session. */
+	forkFromMessage: (messageID: string) => Promise<void>;
 }
 
 const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
@@ -2943,6 +2995,78 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		dispatch({ type: "QUEUE_CLEAR", payload: { sessionID: sessionId } });
 	}, []);
 
+	const revertToMessage = useCallback(
+		async (messageID: string) => {
+			if (!bridge || !state.activeSessionId) return;
+			// Abort if session is busy before reverting
+			if (state.busySessionIds.has(state.activeSessionId)) {
+				await bridge.abort(state.activeSessionId);
+			}
+			try {
+				const res = await bridge.revertSession(
+					state.activeSessionId,
+					messageID,
+				);
+				if (res.success && res.data) {
+					dispatch({ type: "SESSION_UPDATED", payload: res.data });
+				}
+				// Re-fetch messages to reflect the reverted state
+				const msgRes = await bridge.getMessages(state.activeSessionId);
+				if (msgRes.success && msgRes.data) {
+					dispatch({ type: "SET_MESSAGES", payload: msgRes.data });
+				}
+			} catch (err) {
+				dispatch({
+					type: "SET_ERROR",
+					payload:
+						err instanceof Error ? err.message : "Failed to revert session",
+				});
+			}
+		},
+		[bridge, state.activeSessionId, state.busySessionIds],
+	);
+
+	const unrevert = useCallback(async () => {
+		if (!bridge || !state.activeSessionId) return;
+		try {
+			const res = await bridge.unrevertSession(state.activeSessionId);
+			if (res.success && res.data) {
+				dispatch({ type: "SESSION_UPDATED", payload: res.data });
+			}
+			// Re-fetch messages to include the restored messages
+			const msgRes = await bridge.getMessages(state.activeSessionId);
+			if (msgRes.success && msgRes.data) {
+				dispatch({ type: "SET_MESSAGES", payload: msgRes.data });
+			}
+		} catch (err) {
+			dispatch({
+				type: "SET_ERROR",
+				payload:
+					err instanceof Error ? err.message : "Failed to unrevert session",
+			});
+		}
+	}, [bridge, state.activeSessionId]);
+
+	const forkFromMessage = useCallback(
+		async (messageID: string) => {
+			if (!bridge || !state.activeSessionId) return;
+			try {
+				const res = await bridge.forkSession(state.activeSessionId, messageID);
+				if (res.success && res.data) {
+					// Navigate to the newly forked session
+					await selectSession(res.data.id);
+				}
+			} catch (err) {
+				dispatch({
+					type: "SET_ERROR",
+					payload:
+						err instanceof Error ? err.message : "Failed to fork session",
+				});
+			}
+		},
+		[bridge, state.activeSessionId, selectSession],
+	);
+
 	const value = useMemo<OpenCodeContextValue>(
 		() => ({
 			state,
@@ -2977,6 +3101,9 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			connectToProject,
 			startDraftSession,
 			setDraftTemporary,
+			revertToMessage,
+			unrevert,
+			forkFromMessage,
 		}),
 		[
 			state,
@@ -3011,6 +3138,9 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			connectToProject,
 			startDraftSession,
 			setDraftTemporary,
+			revertToMessage,
+			unrevert,
+			forkFromMessage,
 		],
 	);
 

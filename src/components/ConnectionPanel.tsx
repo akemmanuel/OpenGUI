@@ -36,6 +36,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hasAnyConnection, useOpenCode } from "@/hooks/use-opencode";
+import packageJson from "../../package.json";
 
 const LOCAL_SERVER_URL = "http://127.0.0.1:4096";
 
@@ -411,6 +412,12 @@ function GeneralSettings() {
 		<div className="flex flex-col gap-4">
 			<SttEndpointSetting />
 			<NotificationsToggle />
+			<div className="flex items-center justify-between gap-3 pt-3 border-t">
+				<span className="text-xs text-muted-foreground">Version</span>
+				<span className="text-xs text-muted-foreground font-mono">
+					{packageJson.version}
+				</span>
+			</div>
 		</div>
 	);
 }

@@ -125,6 +125,16 @@ export interface OpenCodeBridge {
 	getSessionStatuses(
 		directory?: string,
 	): Promise<IPCResult<Record<string, { type: string }>>>;
+	/** Revert a session to a specific message, undoing changes after that point. */
+	revertSession(
+		id: string,
+		messageID: string,
+		partID?: string,
+	): Promise<IPCResult<Session>>;
+	/** Restore all previously reverted messages in a session. */
+	unrevertSession(id: string): Promise<IPCResult<Session>>;
+	/** Fork a session at a specific message, creating a new session with messages up to that point. */
+	forkSession(id: string, messageID?: string): Promise<IPCResult<Session>>;
 
 	getProviders(): Promise<IPCResult<ProvidersData>>;
 

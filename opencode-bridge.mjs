@@ -117,6 +117,7 @@ class OpenCodeConnection {
 	constructor(emit) {
 		this._emit = emit;
 		this._lifecycle = 0;
+		this._streamGeneration = 0;
 		this._client = null;
 		this._config = null;
 		this._abortController = null;
@@ -209,6 +210,30 @@ class OpenCodeConnection {
 		this._requireClient();
 		const res = await this._client.session.status();
 		return res.data ?? {};
+	}
+
+	// - revert / fork ---------------------------------------------------------
+
+	async revertSession(sessionID, messageID, partID) {
+		this._requireClient();
+		const params = { sessionID, messageID };
+		if (partID) params.partID = partID;
+		const res = await this._client.session.revert(params);
+		return res.data;
+	}
+
+	async unrevertSession(sessionID) {
+		this._requireClient();
+		const res = await this._client.session.unrevert({ sessionID });
+		return res.data;
+	}
+
+	async forkSession(sessionID, messageID) {
+		this._requireClient();
+		const params = { sessionID };
+		if (messageID) params.messageID = messageID;
+		const res = await this._client.session.fork(params);
+		return res.data;
 	}
 
 	// - providers / models ----------------------------------------------------
@@ -476,11 +501,13 @@ class OpenCodeConnection {
 	async _startSSE(lifecycle) {
 		if (!this._isCurrent(lifecycle)) return;
 		this._requireClient();
-		this._abortController = new AbortController();
+		const streamGeneration = ++this._streamGeneration;
+		const abortController = new AbortController();
+		this._abortController = abortController;
 
 		try {
 			const events = await this._client.event.subscribe({
-				signal: this._abortController.signal,
+				signal: abortController.signal,
 				// Disable SDK-level retry - we handle reconnection at the app level
 				// with our own backoff. Without this, the SDK silently retries with
 				// exponential backoff (3s/6s/12s/24s/30s) and the app has no
@@ -493,7 +520,8 @@ class OpenCodeConnection {
 			const stream = events.stream ?? events;
 			for await (const event of stream) {
 				if (
-					this._abortController?.signal.aborted ||
+					abortController.signal.aborted ||
+					this._streamGeneration !== streamGeneration ||
 					!this._isCurrent(lifecycle)
 				) {
 					break;
@@ -509,7 +537,10 @@ class OpenCodeConnection {
 
 			// Stream ended cleanly (server closed the connection).
 			// Reconnect unless we intentionally aborted.
-			if (!this._abortController?.signal.aborted) {
+			if (
+				!abortController.signal.aborted &&
+				this._streamGeneration === streamGeneration
+			) {
 				console.warn(
 					"[OpenCodeConnection] SSE stream ended cleanly, reconnecting...",
 				);
@@ -517,7 +548,8 @@ class OpenCodeConnection {
 			}
 		} catch (err) {
 			if (
-				this._abortController?.signal.aborted ||
+				abortController.signal.aborted ||
+				this._streamGeneration !== streamGeneration ||
 				!this._isCurrent(lifecycle)
 			) {
 				return;
@@ -529,6 +561,10 @@ class OpenCodeConnection {
 
 	_scheduleReconnect(lifecycle) {
 		if (!this._config || !this._isCurrent(lifecycle)) return;
+		if (this._reconnectTimer) {
+			clearTimeout(this._reconnectTimer);
+			this._reconnectTimer = null;
+		}
 		const delay =
 			BACKOFF_STEPS[Math.min(this._reconnectAttempt, BACKOFF_STEPS.length - 1)];
 		this._reconnectAttempt++;
@@ -802,6 +838,51 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			if (!conn) return { success: false, error: "No connection available" };
 			const statuses = await conn.getSessionStatuses();
 			return { success: true, data: statuses };
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
+	});
+
+	ipcMain.handle(
+		"opencode:session:revert",
+		async (_event, id, messageID, partID) => {
+			try {
+				const conn = getConnectionForSession(id);
+				if (!conn)
+					return { success: false, error: "Session connection not found" };
+				const result = await conn.revertSession(id, messageID, partID);
+				return { success: true, data: result };
+			} catch (err) {
+				return { success: false, error: err.message };
+			}
+		},
+	);
+
+	ipcMain.handle("opencode:session:unrevert", async (_event, id) => {
+		try {
+			const conn = getConnectionForSession(id);
+			if (!conn)
+				return { success: false, error: "Session connection not found" };
+			const result = await conn.unrevertSession(id);
+			return { success: true, data: result };
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
+	});
+
+	ipcMain.handle("opencode:session:fork", async (_event, id, messageID) => {
+		try {
+			const conn = getConnectionForSession(id);
+			if (!conn)
+				return { success: false, error: "Session connection not found" };
+			const result = await conn.forkSession(id, messageID);
+			// Register the new forked session in the directory map so future
+			// operations can find the correct connection.
+			if (result?.id) {
+				const dir = [...connections.entries()].find(([, c]) => c === conn)?.[0];
+				if (dir) sessionDirectoryMap.set(result.id, dir);
+			}
+			return { success: true, data: result };
 		} catch (err) {
 			return { success: false, error: err.message };
 		}

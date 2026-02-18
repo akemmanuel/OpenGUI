@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		deleteSession: (id) => ipcRenderer.invoke("opencode:session:delete", id),
 		getSessionStatuses: (directory) =>
 			ipcRenderer.invoke("opencode:session:statuses", directory),
+		revertSession: (id, messageID, partID) =>
+			ipcRenderer.invoke("opencode:session:revert", id, messageID, partID),
+		unrevertSession: (id) =>
+			ipcRenderer.invoke("opencode:session:unrevert", id),
+		forkSession: (id, messageID) =>
+			ipcRenderer.invoke("opencode:session:fork", id, messageID),
 
 		// Providers / models
 		getProviders: () => ipcRenderer.invoke("opencode:providers"),
