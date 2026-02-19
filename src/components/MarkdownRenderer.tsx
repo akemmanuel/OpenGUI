@@ -142,7 +142,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 		);
 
 	return (
-		<div className="markdown-renderer prose dark:prose-invert prose-sm max-w-none overflow-hidden break-words select-text text-[13.5px] leading-relaxed">
+		<div className="markdown-renderer prose dark:prose-invert prose-sm max-w-none overflow-hidden break-words select-text text-sm leading-relaxed">
 			<ReactMarkdown
 				remarkPlugins={remarkPlugins}
 				rehypePlugins={rehypePlugins}

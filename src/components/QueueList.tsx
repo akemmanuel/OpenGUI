@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 export interface QueueItem {
 	id: string;
 	text: string;
+	variant?: string;
+	agent?: string;
 }
 
 interface QueueListProps {
@@ -115,6 +117,20 @@ function QueueItemRow({
 			) : (
 				<span className="flex-1 min-w-0 truncate text-xs text-foreground/80">
 					{item.text}
+				</span>
+			)}
+
+			{/* Show snapshotted variant / agent badges */}
+			{(item.variant || item.agent) && !editing && (
+				<span className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground">
+					{item.variant && (
+						<span className="rounded bg-muted px-1 py-px capitalize">
+							{item.variant}
+						</span>
+					)}
+					{item.agent && (
+						<span className="rounded bg-muted px-1 py-px">{item.agent}</span>
+					)}
 				</span>
 			)}
 

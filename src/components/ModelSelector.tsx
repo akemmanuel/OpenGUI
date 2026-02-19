@@ -221,14 +221,12 @@ export function ModelSelector() {
 		? `${selectedModel.providerID}/${selectedModel.modelID}`
 		: null;
 
-	const effectiveCurrentValue = currentValue;
-
 	const currentModel = useMemo(
 		() =>
-			effectiveCurrentValue
-				? allModels.find((model) => model.value === effectiveCurrentValue)
+			currentValue
+				? allModels.find((model) => model.value === currentValue)
 				: null,
-		[allModels, effectiveCurrentValue],
+		[allModels, currentValue],
 	);
 
 	const normalizedQuery = normalize(query);
@@ -248,11 +246,10 @@ export function ModelSelector() {
 			.filter((model): model is ModelOption => Boolean(model))
 			.filter(
 				(model) =>
-					model.value !== effectiveCurrentValue &&
-					!favoriteValues.has(model.value),
+					model.value !== currentValue && !favoriteValues.has(model.value),
 			)
 			.slice(0, MAX_RECENT_MODELS);
-	}, [allModels, effectiveCurrentValue, recentValues, favoriteValues]);
+	}, [allModels, currentValue, recentValues, favoriteValues]);
 
 	// Models shown in favorites or recents should not appear in provider groups
 	const excludedFromGroups = useMemo(() => {
@@ -383,7 +380,7 @@ export function ModelSelector() {
 								<ModelRow
 									key={`fav-${model.value}`}
 									model={model}
-									isSelected={model.value === effectiveCurrentValue}
+									isSelected={model.value === currentValue}
 									isFavorite={true}
 									onSelect={selectModel}
 									onToggleFavorite={toggleFavorite}
@@ -402,7 +399,7 @@ export function ModelSelector() {
 								<ModelRow
 									key={`recent-${model.value}`}
 									model={model}
-									isSelected={model.value === effectiveCurrentValue}
+									isSelected={model.value === currentValue}
 									isFavorite={favoriteValues.has(model.value)}
 									onSelect={selectModel}
 									onToggleFavorite={toggleFavorite}
@@ -426,7 +423,7 @@ export function ModelSelector() {
 									<ModelRow
 										key={model.value}
 										model={model}
-										isSelected={model.value === effectiveCurrentValue}
+										isSelected={model.value === currentValue}
 										isFavorite={favoriteValues.has(model.value)}
 										onSelect={selectModel}
 										onToggleFavorite={toggleFavorite}

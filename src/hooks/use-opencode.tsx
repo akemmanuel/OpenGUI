@@ -89,21 +89,6 @@ export function resolveVariant(
 	return undefined;
 }
 
-/** Parse a provider/model reference and validate it exists in providers. */
-export function parseModelRef(
-	modelRef: string | null | undefined,
-	providers: Provider[],
-): SelectedModel | null {
-	if (typeof modelRef !== "string") return null;
-	const splitIdx = modelRef.indexOf("/");
-	if (splitIdx <= 0 || splitIdx >= modelRef.length - 1) return null;
-	const providerID = modelRef.slice(0, splitIdx);
-	const modelID = modelRef.slice(splitIdx + 1);
-	const provider = providers.find((p) => p.id === providerID);
-	if (!provider || !(modelID in provider.models)) return null;
-	return { providerID, modelID };
-}
-
 /** Resolve the first valid server default model from provider defaults. */
 export function resolveServerDefaultModel(
 	providers: Provider[],
@@ -1151,7 +1136,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					providerID: msg.providerID,
 					modelID: msg.modelID,
 				};
-				if (findModel(state.providers, candidate)) {
+				if (
+					findModel(state.providers, candidate.providerID, candidate.modelID)
+				) {
 					modelPatch = { selectedModel: candidate };
 				}
 			}
@@ -1757,8 +1744,6 @@ interface OpenCodeContextValue {
 	/** Re-fetch providers from the server (e.g. after connecting/disconnecting a provider). */
 	refreshProviders: () => Promise<void>;
 	refreshSessions: () => Promise<void>;
-	/** Get queue size for a session */
-	getQueueSize: (sessionId: string) => number;
 	/** Get queued prompts for a session */
 	getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
 	/** Remove one queued prompt by ID */
@@ -1773,8 +1758,6 @@ interface OpenCodeContextValue {
 	) => void;
 	/** Send one queued prompt immediately; aborts current run if needed */
 	sendQueuedNow: (sessionId: string, promptId: string) => Promise<void>;
-	/** Clear queued prompts for a session */
-	clearQueue: (sessionId: string) => void;
 	/** Open native directory picker, returns path or null */
 	openDirectory: () => Promise<string | null>;
 	/** Connect to a project directory (convenience wrapper for addProject) */
@@ -1805,15 +1788,7 @@ const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
 // Helpers: find model in providers
 // ---------------------------------------------------------------------------
 
-import { findModel as findModelByIds } from "@/lib/utils";
-
-function findModel(
-	providers: Provider[],
-	selected: SelectedModel | null,
-): Model | undefined {
-	if (!selected) return undefined;
-	return findModelByIds(providers, selected.providerID, selected.modelID);
-}
+import { findModel } from "@/lib/utils";
 
 /**
  * Extract the model used in the last assistant message.
@@ -1837,7 +1812,7 @@ function extractModelFromMessages(
 				modelID: msg.modelID,
 			};
 			// Only return if the model still exists in available providers
-			if (findModel(providers, candidate)) {
+			if (findModel(providers, candidate.providerID, candidate.modelID)) {
 				return candidate;
 			}
 		}
@@ -1904,6 +1879,10 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	agentsRef.current = state.agents;
 	const variantSelectionsRef = useRef(state.variantSelections);
 	variantSelectionsRef.current = state.variantSelections;
+	const selectedModelRef = useRef(state.selectedModel);
+	selectedModelRef.current = state.selectedModel;
+	const selectedAgentRef = useRef(state.selectedAgent);
+	selectedAgentRef.current = state.selectedAgent;
 	const selectSessionRequestRef = useRef(0);
 
 	// --- SSE event handler ---
@@ -2670,22 +2649,26 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				return;
 			}
 
-			// If session is busy, enqueue instead of sending directly
+			// If session is busy, enqueue instead of sending directly.
+			// Read from refs to avoid stale closures when the user switches
+			// model/agent/variant right before pressing Enter.
 			if (state.busySessionIds.has(sessionId)) {
-				const variant = resolveVariant(
-					state.selectedModel,
-					state.variantSelections,
-					state.agents,
-					state.selectedAgent,
+				const snapModel = selectedModelRef.current;
+				const snapAgent = selectedAgentRef.current;
+				const snapVariant = resolveVariant(
+					snapModel,
+					variantSelectionsRef.current,
+					agentsRef.current,
+					snapAgent,
 				);
 				const queued: QueuedPrompt = {
 					id: crypto.randomUUID(),
 					text,
 					images,
 					createdAt: Date.now(),
-					model: state.selectedModel ?? undefined,
-					agent: state.selectedAgent ?? undefined,
-					variant,
+					model: snapModel ?? undefined,
+					agent: snapAgent ?? undefined,
+					variant: snapVariant,
 				};
 				dispatch({
 					type: "QUEUE_ADD",
@@ -2702,10 +2685,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			state.draftSessionDirectory,
 			state.draftIsTemporary,
 			state.busySessionIds,
-			state.selectedModel,
-			state.selectedAgent,
-			state.variantSelections,
-			state.agents,
 			dispatchPromptDirect,
 			createSession,
 		],
@@ -2970,7 +2949,11 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 
 	const doCycleVariant = useCallback(() => {
 		if (!state.selectedModel) return;
-		const model = findModel(state.providers, state.selectedModel);
+		const model = findModel(
+			state.providers,
+			state.selectedModel.providerID,
+			state.selectedModel.modelID,
+		);
 		const key = variantKey(
 			state.selectedModel.providerID,
 			state.selectedModel.modelID,
@@ -3055,11 +3038,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		}
 	}, [state.bootState]);
 
-	const getQueueSize = useCallback(
-		(sessionId: string) => (state.queuedPrompts[sessionId] ?? []).length,
-		[state.queuedPrompts],
-	);
-
 	const getQueuedPrompts = useCallback(
 		(sessionId: string) => state.queuedPrompts[sessionId] ?? [],
 		[state.queuedPrompts],
@@ -3131,10 +3109,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		},
 		[state.queuedPrompts, bridge, dispatchPromptDirect],
 	);
-
-	const clearQueue = useCallback((sessionId: string) => {
-		dispatch({ type: "QUEUE_CLEAR", payload: { sessionID: sessionId } });
-	}, []);
 
 	const revertToMessage = useCallback(
 		async (messageID: string) => {
@@ -3263,13 +3237,11 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			clearError,
 			refreshProviders,
 			refreshSessions,
-			getQueueSize,
 			getQueuedPrompts,
 			removeFromQueue,
 			reorderQueue,
 			updateQueuedPrompt,
 			sendQueuedNow,
-			clearQueue,
 			openDirectory,
 			connectToProject,
 			startDraftSession,
@@ -3305,13 +3277,11 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			clearError,
 			refreshProviders,
 			refreshSessions,
-			getQueueSize,
 			getQueuedPrompts,
 			removeFromQueue,
 			reorderQueue,
 			updateQueuedPrompt,
 			sendQueuedNow,
-			clearQueue,
 			openDirectory,
 			connectToProject,
 			startDraftSession,

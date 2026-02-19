@@ -1,7 +1,63 @@
+import { createHighlighterCore } from "@shikijs/core";
+import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { codeToHtml } from "shiki";
+import { bundledLanguages } from "shiki/langs";
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Singleton shiki highlighter (JS engine -- no WASM needed)
+// ---------------------------------------------------------------------------
+
+type Highlighter = Awaited<ReturnType<typeof createHighlighterCore>>;
+
+let _highlighter: Highlighter | null = null;
+let _highlighterPromise: Promise<Highlighter> | null = null;
+
+function getHighlighter(): Promise<Highlighter> {
+	if (_highlighter) return Promise.resolve(_highlighter);
+	if (_highlighterPromise) return _highlighterPromise;
+
+	_highlighterPromise = createHighlighterCore({
+		themes: [
+			import("@shikijs/themes/github-dark-default"),
+			import("@shikijs/themes/github-light-default"),
+		],
+		langs: [],
+		engine: createJavaScriptRegexEngine(),
+	}).then((h) => {
+		_highlighter = h;
+		return h;
+	});
+
+	return _highlighterPromise;
+}
+
+async function highlight(
+	code: string,
+	language: string,
+	theme: string,
+): Promise<string> {
+	const highlighter = await getHighlighter();
+
+	// Load the language on demand if not already loaded
+	const lang = language || "text";
+	if (
+		lang !== "text" &&
+		!highlighter.getLoadedLanguages().includes(lang) &&
+		bundledLanguages[lang as keyof typeof bundledLanguages]
+	) {
+		await highlighter.loadLanguage(
+			bundledLanguages[lang as keyof typeof bundledLanguages],
+		);
+	}
+
+	const effectiveLang = highlighter.getLoadedLanguages().includes(lang)
+		? lang
+		: "text";
+
+	return highlighter.codeToHtml(code, { lang: effectiveLang, theme });
+}
 
 // ---------------------------------------------------------------------------
 // CodeBlock wrapper
@@ -48,15 +104,12 @@ export function CodeBlockCode({
 			const isDark = document.documentElement.classList.contains("dark");
 			const theme = isDark ? "github-dark-default" : "github-light-default";
 
-			codeToHtml(code, {
-				lang: language || "text",
-				theme,
-			})
-				.then((result) => {
+			highlight(code, language, theme)
+				.then((result: string) => {
 					if (!cancelled) setHtml(result);
 				})
-				.catch(() => {
-					// Fallback: just show raw code
+				.catch((err: unknown) => {
+					console.warn("[shiki] Highlighting failed:", err);
 					if (!cancelled) setHtml(null);
 				});
 		}, 150);
@@ -66,8 +119,8 @@ export function CodeBlockCode({
 			if (cancelled) return;
 			const nowDark = document.documentElement.classList.contains("dark");
 			const newTheme = nowDark ? "github-dark-default" : "github-light-default";
-			codeToHtml(code, { lang: language || "text", theme: newTheme })
-				.then((result) => {
+			highlight(code, language, newTheme)
+				.then((result: string) => {
 					if (!cancelled) setHtml(result);
 				})
 				.catch(() => {});

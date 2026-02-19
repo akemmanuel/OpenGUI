@@ -131,18 +131,6 @@ export function useSTT(endpoint: string | undefined) {
 		});
 	}, [endpoint, cleanup]);
 
-	const cancelRecording = useCallback(() => {
-		const mediaRecorder = mediaRecorderRef.current;
-		if (mediaRecorder && mediaRecorder.state !== "inactive") {
-			mediaRecorder.onstop = null;
-			mediaRecorder.stop();
-		}
-		setIsRecording(false);
-		setIsTranscribing(false);
-		setError(null);
-		cleanup();
-	}, [cleanup]);
-
 	/** Whether STT is available (endpoint is configured). */
 	const isAvailable = !!endpoint;
 
@@ -153,6 +141,5 @@ export function useSTT(endpoint: string | undefined) {
 		error,
 		startRecording,
 		stopRecording,
-		cancelRecording,
 	};
 }

@@ -722,7 +722,7 @@ const MessageBubble = memo(function MessageBubble({
 					"min-w-0 group relative",
 					isUser
 						? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
-						: "flex-1",
+						: "flex-1 flex flex-col gap-1",
 				)}
 			>
 				{isUser && (onFork || onRevert) && (
@@ -753,6 +753,7 @@ const MessageBubble = memo(function MessageBubble({
 					<div className={cn(shouldCollapse && !expanded && "relative")}>
 						<div
 							className={cn(
+								"flex flex-col gap-1",
 								shouldCollapse && !expanded && "max-h-[8lh] overflow-hidden",
 							)}
 						>
@@ -775,7 +776,7 @@ const MessageBubble = memo(function MessageBubble({
 					</div>
 				)}
 				{info.role === "assistant" && info.error && (
-					<div className="text-xs text-destructive flex items-center gap-1 mt-1">
+					<div className="text-xs text-destructive flex items-center gap-1">
 						<AlertTriangle className="size-3" />
 						{"data" in info.error &&
 						info.error.data &&
@@ -786,7 +787,7 @@ const MessageBubble = memo(function MessageBubble({
 					</div>
 				)}
 				{info.role === "assistant" && turnDurationLabel && (
-					<div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
+					<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
 						{turnDurationLabel}
 						{"providerID" in info && info.providerID && (
 							<ProviderIcon
@@ -813,14 +814,14 @@ function TextPartView({ part, isUser }: { part: TextPart; isUser?: boolean }) {
 
 	if (isUser) {
 		return (
-			<div className="mb-1 text-sm whitespace-pre-wrap break-words select-text">
+			<div className="text-sm whitespace-pre-wrap break-words select-text">
 				{part.text}
 			</div>
 		);
 	}
 
 	return (
-		<div className="mb-1">
+		<div>
 			<MarkdownRenderer content={part.text} />
 		</div>
 	);
@@ -832,7 +833,7 @@ function FilePartView({ part }: { part: FilePart }) {
 
 	if (isImage) {
 		return (
-			<div className="mb-1">
+			<div>
 				<img
 					src={src}
 					alt={part.filename ?? "Image"}
@@ -848,7 +849,7 @@ function FilePartView({ part }: { part: FilePart }) {
 	}
 
 	return (
-		<div className="mb-1 text-sm text-muted-foreground italic">
+		<div className="text-sm text-muted-foreground italic">
 			{part.filename ?? "File attachment"}
 		</div>
 	);
@@ -890,7 +891,7 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
 	const durationLabel = durationMs !== null ? formatDuration(durationMs) : null;
 
 	return (
-		<div className="mb-1 text-xs font-mono text-muted-foreground overflow-hidden">
+		<div className="text-xs font-mono text-muted-foreground overflow-hidden">
 			<details
 				open={expanded}
 				onToggle={(e) => setExpanded(e.currentTarget.open)}
@@ -1534,7 +1535,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 		(todos && todos.length > 0) || imageAttachments.length > 0;
 
 	return (
-		<div className="mb-1 text-xs font-mono text-muted-foreground overflow-hidden">
+		<div className="text-xs font-mono text-muted-foreground overflow-hidden">
 			{/* Slim single-line header */}
 			{isExpandable ? (
 				<details

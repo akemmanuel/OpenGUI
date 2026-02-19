@@ -1,7 +1,6 @@
 import { Minimize, Minus, Plus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import type {} from "@/types/electron";
 import { ThemeToggle } from "./ThemeToggle";
 
 type WindowButtonKind = "default" | "mac";

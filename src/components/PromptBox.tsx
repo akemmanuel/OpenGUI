@@ -119,7 +119,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			window.addEventListener("stt-endpoint-changed", onCustom);
 
 			return () => {
-				window.removeEventListener("storage", onCustom);
+				window.removeEventListener("storage", onStorage);
 				window.removeEventListener("stt-endpoint-changed", onCustom);
 			};
 		}, []);
