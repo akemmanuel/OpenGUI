@@ -7,6 +7,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/akemmanuel/OpenGUI/releases/latest"><img src="https://img.shields.io/github/v/release/akemmanuel/OpenGUI?label=release&color=blue" alt="Latest Release" /></a>
+  <a href="https://github.com/akemmanuel/OpenGUI/blob/master/LICENSE"><img src="https://img.shields.io/github/license/akemmanuel/OpenGUI" alt="License" /></a>
+  <a href="https://github.com/akemmanuel/OpenGUI/stargazers"><img src="https://img.shields.io/github/stars/akemmanuel/OpenGUI?style=social" alt="Stars" /></a>
+  <a href="https://github.com/akemmanuel/OpenGUI/releases"><img src="https://img.shields.io/github/downloads/akemmanuel/OpenGUI/total?color=green" alt="Downloads" /></a>
+  <a href="https://github.com/akemmanuel/OpenGUI/actions"><img src="https://img.shields.io/github/actions/workflow/status/akemmanuel/OpenGUI/build.yml?branch=master" alt="Build Status" /></a>
+</p>
+
+<!-- TODO: Replace with a demo GIF showing: opening a project, sending a prompt, streaming response, prompt queue, model switching -->
+<!-- Record with: peek, OBS, or kooha. Then replace the screenshot below with the GIF. -->
+<p align="center">
   <img src="screenshot.png" alt="OpenGUI Screenshot" width="800" />
 </p>
 
@@ -110,6 +120,18 @@ src/
 OpenGUI stores connection and UI preferences via the app settings interface.
 
 Voice input (speech-to-text) requires a Whisper-compatible transcription server. Set the endpoint URL in **Settings > General > Voice transcription endpoint**. The microphone button only appears when an endpoint is configured. The server should accept a multipart `POST` with an `audio` file field and return `{ text, language, duration_seconds }`.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Star History
+
+If you find OpenGUI useful, consider giving it a star -- it helps others discover the project.
+
+<a href="https://github.com/akemmanuel/OpenGUI/stargazers">
+  <img src="https://img.shields.io/github/stars/akemmanuel/OpenGUI?style=social" alt="Star OpenGUI on GitHub" />
+</a>
 
 ## License
 
