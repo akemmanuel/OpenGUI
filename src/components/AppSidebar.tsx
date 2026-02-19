@@ -84,6 +84,7 @@ export function AppSidebar() {
 		selectSession,
 		startDraftSession,
 		deleteSession,
+		renameSession,
 		removeProject,
 		openDirectory,
 		connectToProject,
@@ -108,6 +109,39 @@ export function AppSidebar() {
 	} = state;
 
 	const isConnected = hasAnyConnection(connections);
+
+	// Inline rename state
+	const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+	const [editValue, setEditValue] = useState("");
+	const editInputRef = useRef<HTMLInputElement>(null);
+
+	const startEditing = useCallback(
+		(sessionId: string, currentTitle: string) => {
+			setEditingSessionId(sessionId);
+			setEditValue(currentTitle);
+		},
+		[],
+	);
+
+	const commitRename = useCallback(() => {
+		if (editingSessionId) {
+			const trimmed = editValue.trim();
+			if (trimmed && trimmed !== editingSessionId) {
+				// Find the session to compare with its current title
+				const session = sessions.find((s) => s.id === editingSessionId);
+				if (trimmed !== (session?.title || "")) {
+					renameSession(editingSessionId, trimmed);
+				}
+			}
+		}
+		setEditingSessionId(null);
+		setEditValue("");
+	}, [editingSessionId, editValue, sessions, renameSession]);
+
+	const cancelEditing = useCallback(() => {
+		setEditingSessionId(null);
+		setEditValue("");
+	}, []);
 
 	const [homeDir, setHomeDir] = useState("");
 	useEffect(() => {
@@ -722,13 +756,23 @@ export function AppSidebar() {
 																	onSetTags={(newTags) =>
 																		setSessionTags(session.id, newTags)
 																	}
+																	onRename={() =>
+																		startEditing(
+																			session.id,
+																			session.title || "",
+																		)
+																	}
 																	onDelete={() => deleteSession(session.id)}
 																>
 																	<SidebarMenuItem>
 																		<SidebarMenuButton
 																			tooltip={session.title}
 																			isActive={isActive}
-																			onClick={() => selectSession(session.id)}
+																			onClick={() => {
+																				if (editingSessionId === session.id)
+																					return;
+																				selectSession(session.id);
+																			}}
 																			className={`group/session min-w-0 ${colorBorderClass}`}
 																		>
 																			<span className="relative shrink-0">
@@ -743,11 +787,50 @@ export function AppSidebar() {
 																					<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
 																				)}
 																			</span>
-																			<span
-																				className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
-																			>
-																				{session.title || "Untitled"}
-																			</span>
+																			{editingSessionId === session.id ? (
+																				<input
+																					ref={editInputRef}
+																					type="text"
+																					value={editValue}
+																					onChange={(e) =>
+																						setEditValue(e.target.value)
+																					}
+																					onKeyDown={(e) => {
+																						if (e.key === "Enter") {
+																							e.preventDefault();
+																							commitRename();
+																						} else if (e.key === "Escape") {
+																							e.preventDefault();
+																							cancelEditing();
+																						}
+																						e.stopPropagation();
+																					}}
+																					onBlur={commitRename}
+																					onClick={(e) => e.stopPropagation()}
+																					onDoubleClick={(e) =>
+																						e.stopPropagation()
+																					}
+																					// biome-ignore lint/a11y/noAutofocus: intentional for inline rename
+																					autoFocus
+																					className="min-w-0 flex-1 truncate bg-transparent outline-none text-sm border-b border-primary"
+																				/>
+																			) : (
+																				// biome-ignore lint/a11y/useSemanticElements: double-click rename trigger on session title
+																				<span
+																					role="textbox"
+																					tabIndex={-1}
+																					className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
+																					onDoubleClick={(e) => {
+																						e.stopPropagation();
+																						startEditing(
+																							session.id,
+																							session.title || "",
+																						);
+																					}}
+																				>
+																					{session.title || "Untitled"}
+																				</span>
+																			)}
 																			{worktreeBranch && (
 																				<span className="shrink-0 rounded-full bg-purple-500/15 text-purple-500 px-1.5 py-0 text-[9px] font-medium truncate max-w-[4rem]">
 																					{worktreeBranch}

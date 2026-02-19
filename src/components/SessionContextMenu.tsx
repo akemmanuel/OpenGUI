@@ -1,4 +1,4 @@
-import { Check, Palette, Tag, Trash2, X } from "lucide-react";
+import { Check, Palette, Pencil, Tag, Trash2, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -95,6 +95,7 @@ interface SessionContextMenuProps {
 	currentTags: string[];
 	onSetColor: (color: SessionColor) => void;
 	onSetTags: (tags: string[]) => void;
+	onRename: () => void;
 	onDelete: () => void;
 }
 
@@ -104,6 +105,7 @@ export function SessionContextMenu({
 	currentTags,
 	onSetColor,
 	onSetTags,
+	onRename,
 	onDelete,
 }: SessionContextMenuProps) {
 	const [tagInputOpen, setTagInputOpen] = useState(false);
@@ -141,6 +143,17 @@ export function SessionContextMenu({
 					alignOffset={5}
 					onCloseAutoFocus={(e) => e.preventDefault()}
 				>
+					{/* Rename */}
+					<ContextMenu.Item
+						className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+						onSelect={onRename}
+					>
+						<Pencil className="size-4" />
+						<span>Rename</span>
+					</ContextMenu.Item>
+
+					<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+
 					{/* Color submenu */}
 					<ContextMenu.Sub>
 						<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">

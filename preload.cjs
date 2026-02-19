@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		createSession: (title, directory) =>
 			ipcRenderer.invoke("opencode:session:create", title, directory),
 		deleteSession: (id) => ipcRenderer.invoke("opencode:session:delete", id),
+		updateSession: (id, title) =>
+			ipcRenderer.invoke("opencode:session:update", id, title),
 		getSessionStatuses: (directory) =>
 			ipcRenderer.invoke("opencode:session:statuses", directory),
 		revertSession: (id, messageID, partID) =>
@@ -167,6 +169,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
 		// Local server management
 		startServer: () => ipcRenderer.invoke("opencode:server:start"),
+		stopServer: () => ipcRenderer.invoke("opencode:server:stop"),
 		getServerStatus: () => ipcRenderer.invoke("opencode:server:status"),
 
 		// SSE events from main process

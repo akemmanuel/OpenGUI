@@ -106,6 +106,8 @@ export interface ProvidersData {
 export interface OpenCodeBridge {
 	/** Start the local opencode server on port 4096 (detached, survives app close). */
 	startServer(): Promise<IPCResult<{ alreadyRunning?: boolean }>>;
+	/** Stop the local opencode server. */
+	stopServer(): Promise<IPCResult<{ alreadyStopped?: boolean; pid?: number }>>;
 	/** Check whether the local opencode server is running. */
 	getServerStatus(): Promise<IPCResult<{ running: boolean }>>;
 
@@ -122,6 +124,7 @@ export interface OpenCodeBridge {
 		directory?: string,
 	): Promise<IPCResult<Session>>;
 	deleteSession(id: string): Promise<IPCResult<boolean>>;
+	updateSession(id: string, title: string): Promise<IPCResult<Session>>;
 	getSessionStatuses(
 		directory?: string,
 	): Promise<IPCResult<Record<string, { type: string }>>>;

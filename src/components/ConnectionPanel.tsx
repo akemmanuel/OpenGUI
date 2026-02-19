@@ -12,6 +12,7 @@ import {
 	Play,
 	PlugZap,
 	Settings,
+	Square,
 	Unplug,
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
@@ -97,7 +98,13 @@ export function ConnectionPanel() {
 // Add project form (inside the modal)
 // ---------------------------------------------------------------------------
 
-type ServerState = "checking" | "running" | "stopped" | "starting" | "error";
+type ServerState =
+	| "checking"
+	| "running"
+	| "stopped"
+	| "starting"
+	| "stopping"
+	| "error";
 
 function AddProjectForm({ onDone }: { onDone: () => void }) {
 	const { state, addProject, connectToProject, disconnect, clearError } =
@@ -204,6 +211,30 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 		}
 	};
 
+	const handleStopServer = async () => {
+		setServerState("stopping");
+		setServerError(null);
+		try {
+			const res = await window.electronAPI?.opencode.stopServer();
+			if (!res) {
+				setServerState("error");
+				setServerError("Electron API unavailable");
+				return;
+			}
+			if (res.success) {
+				setServerState("stopped");
+			} else {
+				setServerState("error");
+				setServerError(res.error ?? "Failed to stop server");
+			}
+		} catch (err) {
+			setServerState("error");
+			setServerError(
+				err instanceof Error ? err.message : "Failed to stop server",
+			);
+		}
+	};
+
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
 		setIsSubmitting(true);
@@ -238,10 +269,22 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 							</div>
 						)}
 						{serverState === "running" && (
-							<div className="flex items-center gap-1.5 text-xs text-emerald-500">
-								<CheckCircle2 className="size-3.5" />
-								<span>Server running on port 4096</span>
-							</div>
+							<>
+								<div className="flex items-center gap-1.5 text-xs text-emerald-500 flex-1">
+									<CheckCircle2 className="size-3.5" />
+									<span>Server running on port 4096</span>
+								</div>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={handleStopServer}
+									title="Stop local opencode server"
+								>
+									<Square className="size-3 mr-1.5" />
+									Stop server
+								</Button>
+							</>
 						)}
 						{serverState === "stopped" && (
 							<>
@@ -266,6 +309,12 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 							<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
 								<Spinner className="size-3.5" />
 								<span>Starting server...</span>
+							</div>
+						)}
+						{serverState === "stopping" && (
+							<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+								<Spinner className="size-3.5" />
+								<span>Stopping server...</span>
 							</div>
 						)}
 						{serverState === "error" && (

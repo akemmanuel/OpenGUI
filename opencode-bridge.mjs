@@ -206,6 +206,12 @@ class OpenCodeConnection {
 		return res.data;
 	}
 
+	async updateSession(id, title) {
+		this._requireClient();
+		const res = await this._client.session.update({ sessionID: id, title });
+		return res.data;
+	}
+
 	async getSessionStatuses() {
 		this._requireClient();
 		const res = await this._client.session.status();
@@ -832,6 +838,18 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 		}
 	});
 
+	ipcMain.handle("opencode:session:update", async (_event, id, title) => {
+		try {
+			const conn = getConnectionForSession(id);
+			if (!conn)
+				return { success: false, error: "Session connection not found" };
+			const result = await conn.updateSession(id, title);
+			return { success: true, data: result };
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
+	});
+
 	ipcMain.handle("opencode:session:statuses", async (_event, directory) => {
 		try {
 			const conn = directory ? connections.get(directory) : getAnyConnection();
@@ -1255,6 +1273,84 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			// Wait for the server to become healthy
 			await waitForHealthy();
 			return { success: true, data: { alreadyRunning: false } };
+		} catch (err) {
+			return { success: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle("opencode:server:stop", async () => {
+		try {
+			// Check if server is actually running first
+			if (!(await isLocalServerHealthy())) {
+				return { success: true, data: { alreadyStopped: true } };
+			}
+
+			// Find the PID listening on the server port
+			const isWindows = process.platform === "win32";
+			let pid = null;
+
+			if (isWindows) {
+				try {
+					const out = execSync(
+						`netstat -ano | findstr :${LOCAL_SERVER_PORT} | findstr LISTENING`,
+						{ encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+					);
+					const match = out.trim().split(/\s+/).pop();
+					if (match) pid = Number.parseInt(match, 10);
+				} catch {
+					// no process found
+				}
+			} else {
+				try {
+					const out = execSync(`lsof -ti tcp:${LOCAL_SERVER_PORT}`, {
+						encoding: "utf-8",
+						stdio: ["ignore", "pipe", "ignore"],
+					});
+					const first = out.trim().split(/\s+/)[0];
+					if (first) pid = Number.parseInt(first, 10);
+				} catch {
+					// no process found
+				}
+			}
+
+			if (!pid || Number.isNaN(pid)) {
+				return {
+					success: false,
+					error: `Could not find process on port ${LOCAL_SERVER_PORT}`,
+				};
+			}
+
+			// Kill the process
+			try {
+				process.kill(pid, isWindows ? "SIGKILL" : "SIGTERM");
+			} catch (killErr) {
+				return {
+					success: false,
+					error: `Failed to kill process ${pid}: ${killErr.message}`,
+				};
+			}
+
+			// Wait briefly for the process to die, then verify
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			const stillRunning = await isLocalServerHealthy();
+			if (stillRunning) {
+				// Force kill as fallback
+				try {
+					process.kill(pid, "SIGKILL");
+				} catch {
+					// already dead or permission error
+				}
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				const stillAlive = await isLocalServerHealthy();
+				if (stillAlive) {
+					return {
+						success: false,
+						error: "Server process did not stop after SIGKILL",
+					};
+				}
+			}
+
+			return { success: true, data: { pid } };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
 		}

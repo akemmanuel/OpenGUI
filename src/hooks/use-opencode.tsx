@@ -1738,6 +1738,7 @@ interface OpenCodeContextValue {
 		directory?: string,
 	) => Promise<Session | null>;
 	deleteSession: (id: string) => Promise<void>;
+	renameSession: (id: string, title: string) => Promise<void>;
 	sendPrompt: (text: string, images?: string[]) => Promise<void>;
 	sendCommand: (command: string, args: string) => Promise<void>;
 	abortSession: () => Promise<void>;
@@ -2537,6 +2538,18 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		[bridge, state.activeSessionId, state.sessions, selectSession],
 	);
 
+	const renameSession = useCallback(
+		async (id: string, title: string) => {
+			if (!bridge) return;
+			const trimmed = title.trim();
+			if (!trimmed) return;
+			bridge.updateSession(id, trimmed).catch(() => {
+				/* best-effort rename – SSE will reconcile */
+			});
+		},
+		[bridge],
+	);
+
 	// Track which sessions are currently dispatching a queued prompt
 	const dispatchingRef = useRef<Set<string>>(new Set());
 
@@ -3235,6 +3248,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			selectSession,
 			createSession,
 			deleteSession,
+			renameSession,
 			sendPrompt,
 			sendCommand,
 			abortSession,
@@ -3276,6 +3290,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			selectSession,
 			createSession,
 			deleteSession,
+			renameSession,
 			sendPrompt,
 			sendCommand,
 			abortSession,
