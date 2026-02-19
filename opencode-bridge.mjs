@@ -43,6 +43,101 @@ function resolveOpencodeBinary() {
 	return null;
 }
 
+// ---------------------------------------------------------------------------
+// DB consolidation: merge duplicate project entries for the same worktree.
+//
+// OpenCode's server can create a new project ID for an existing worktree after
+// a restart, orphaning all sessions from the previous project.  Before spawning
+// the server we merge duplicates so every session stays visible.
+//
+// We shell out to `bun` because it ships with bun:sqlite – no extra deps
+// needed.  The script is intentionally a single expression so it works as a
+// `bun -e "…"` one-liner.  It is a best-effort operation: failures are logged
+// but never block startup.
+// ---------------------------------------------------------------------------
+
+const OPENCODE_DB_PATH = join(
+	process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
+	"opencode",
+	"opencode.db",
+);
+
+function resolveBunBinary() {
+	try {
+		const p = execSync(
+			process.platform === "win32" ? "where bun" : "which bun",
+			{ encoding: "utf-8" },
+		)
+			.split(/\r?\n/)[0]
+			.trim();
+		if (p) return p;
+	} catch {
+		/* not on PATH */
+	}
+	const fallback = join(homedir(), ".bun", "bin", "bun");
+	if (existsSync(fallback)) return fallback;
+	return null;
+}
+
+/**
+ * Consolidate duplicate project entries that share the same worktree path.
+ *
+ * For each set of duplicates, the project with the most recent `time_updated`
+ * is kept; all sessions (and permissions) from the other entries are reassigned
+ * to the survivor, and the stale project rows are deleted.
+ *
+ * MUST be called **before** the opencode server starts so it reads the
+ * already-consolidated database.
+ */
+function consolidateDuplicateProjects() {
+	if (!existsSync(OPENCODE_DB_PATH)) return;
+	const bun = resolveBunBinary();
+	if (!bun) {
+		console.warn("[opencode-bridge] bun not found – skipping DB consolidation");
+		return;
+	}
+
+	// The script finds worktrees with more than one project entry, picks the
+	// one with the latest time_updated as the survivor, reassigns related rows,
+	// and deletes the losers.
+	const script = `
+const{Database}=require("bun:sqlite");
+const db=new Database(${JSON.stringify(OPENCODE_DB_PATH)});
+const dupes=db.query(
+  "SELECT worktree FROM project GROUP BY worktree HAVING count(*)>1"
+).all();
+let merged=0;
+for(const{worktree}of dupes){
+  const rows=db.query(
+    "SELECT id,time_updated FROM project WHERE worktree=? ORDER BY time_updated DESC"
+  ).all(worktree);
+  const keep=rows[0].id;
+  const remove=rows.slice(1).map(r=>r.id);
+  for(const rid of remove){
+    db.run("UPDATE session SET project_id=? WHERE project_id=?",   [keep,rid]);
+    db.run("UPDATE permission SET project_id=? WHERE project_id=?",[keep,rid]);
+    db.run("DELETE FROM project WHERE id=?",                       [rid]);
+    merged++;
+  }
+}
+if(merged) console.log("[opencode-bridge] consolidated "+merged+" duplicate project(s)");
+db.close();
+`.trim();
+
+	try {
+		execSync(`${bun} -e ${JSON.stringify(script)}`, {
+			encoding: "utf-8",
+			timeout: 10_000,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+	} catch (err) {
+		console.warn(
+			"[opencode-bridge] DB consolidation failed (non-fatal):",
+			err.stderr || err.message,
+		);
+	}
+}
+
 /** Quick health check against the local server. */
 async function isLocalServerHealthy() {
 	try {
@@ -1239,6 +1334,10 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			if (await isLocalServerHealthy()) {
 				return { success: true, data: { alreadyRunning: true } };
 			}
+
+			// Merge duplicate project entries *before* the server reads the DB,
+			// so sessions from previous project IDs become visible again.
+			consolidateDuplicateProjects();
 
 			const binary = resolveOpencodeBinary();
 			if (!binary) {
