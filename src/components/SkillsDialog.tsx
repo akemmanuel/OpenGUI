@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { SKILLS_REFRESH_DELAY_MS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,7 +83,7 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 			});
 			setPaths(nextPaths);
 			setUrls(nextUrls);
-			await new Promise((r) => setTimeout(r, 500));
+			await new Promise((r) => setTimeout(r, SKILLS_REFRESH_DELAY_MS));
 			const skillsRes = await bridge.getSkills();
 			if (skillsRes.success && skillsRes.data) {
 				setSkills(skillsRes.data);

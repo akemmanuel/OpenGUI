@@ -21,11 +21,13 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useOpenCode } from "@/hooks/use-opencode";
+import {
+	MAX_RECENT_MODELS,
+	SIX_MONTHS_MS,
+	STORAGE_KEYS,
+} from "@/lib/constants";
+import { storageParsed, storageSetJSON } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
-
-const RECENT_MODELS_STORAGE_KEY = "opencode:recentModels";
-const FAVORITE_MODELS_STORAGE_KEY = "opencode:favoriteModels";
-const MAX_RECENT_MODELS = 8;
 
 type ModelOption = {
 	value: string;
@@ -117,61 +119,35 @@ export function ModelSelector() {
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		try {
-			const stored = localStorage.getItem(RECENT_MODELS_STORAGE_KEY);
-			if (stored) {
-				const parsed = JSON.parse(stored);
-				if (Array.isArray(parsed)) {
-					setRecentValues(
-						parsed.filter((v): v is string => typeof v === "string"),
-					);
-				}
-			}
-		} catch {
-			// ignore malformed storage
+		const recentArr = storageParsed<unknown[]>(STORAGE_KEYS.RECENT_MODELS);
+		if (Array.isArray(recentArr)) {
+			setRecentValues(
+				recentArr.filter((v): v is string => typeof v === "string"),
+			);
 		}
-		try {
-			const stored = localStorage.getItem(FAVORITE_MODELS_STORAGE_KEY);
-			if (stored) {
-				const parsed = JSON.parse(stored);
-				if (Array.isArray(parsed)) {
-					setFavoriteValues(
-						new Set(parsed.filter((v): v is string => typeof v === "string")),
-					);
-				}
-			}
-		} catch {
-			// ignore malformed storage
+		const favArr = storageParsed<unknown[]>(STORAGE_KEYS.FAVORITE_MODELS);
+		if (Array.isArray(favArr)) {
+			setFavoriteValues(
+				new Set(favArr.filter((v): v is string => typeof v === "string")),
+			);
 		}
 	}, []);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		try {
-			localStorage.setItem(
-				RECENT_MODELS_STORAGE_KEY,
-				JSON.stringify(recentValues.slice(0, MAX_RECENT_MODELS)),
-			);
-		} catch {
-			// ignore storage errors
-		}
+		storageSetJSON(
+			STORAGE_KEYS.RECENT_MODELS,
+			recentValues.slice(0, MAX_RECENT_MODELS),
+		);
 	}, [recentValues]);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		try {
-			localStorage.setItem(
-				FAVORITE_MODELS_STORAGE_KEY,
-				JSON.stringify([...favoriteValues]),
-			);
-		} catch {
-			// ignore storage errors
-		}
+		storageSetJSON(STORAGE_KEYS.FAVORITE_MODELS, [...favoriteValues]);
 	}, [favoriteValues]);
 
 	const groups = useMemo(() => {
 		const now = Date.now();
-		const sixMonthsMs = 1000 * 60 * 60 * 24 * 30.4375 * 6;
 		const alwaysIncludeValues = new Set<string>();
 		if (selectedModel) {
 			alwaysIncludeValues.add(
@@ -196,7 +172,7 @@ export function ModelSelector() {
 						// Keep models with no valid release date (safe fallback)
 						if (!Number.isFinite(timestamp)) return true;
 						// Keep models released within the last 6 months
-						return Math.abs(now - timestamp) < sixMonthsMs;
+						return Math.abs(now - timestamp) < SIX_MONTHS_MS;
 					})
 					.sort(([, a], [, b]) => a.name.localeCompare(b.name))
 					.map(([key, model]) => ({

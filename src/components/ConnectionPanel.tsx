@@ -41,9 +41,9 @@ import {
 	NOTIFICATIONS_ENABLED_KEY,
 	useOpenCode,
 } from "@/hooks/use-opencode";
+import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
+import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import packageJson from "../../package.json";
-
-const LOCAL_SERVER_URL = "http://127.0.0.1:4096";
 
 // ---------------------------------------------------------------------------
 // Compact footer badge (always visible in sidebar)
@@ -118,10 +118,10 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 	const isElectron = !!window.electronAPI;
 
 	const [url, setUrl] = useState(
-		() => localStorage.getItem("opencode:serverUrl") ?? LOCAL_SERVER_URL,
+		() => storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL,
 	);
 	const [username, setUsername] = useState(
-		() => localStorage.getItem("opencode:username") ?? "",
+		() => storageGet(STORAGE_KEYS.USERNAME) ?? "",
 	);
 	const [directory, setDirectory] = useState("");
 	const [password, setPassword] = useState("");
@@ -162,7 +162,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 				setServerState("running");
 				clearError();
 
-				const normalizedLocal = LOCAL_SERVER_URL.replace(/\/+$/, "");
+				const normalizedLocal = DEFAULT_SERVER_URL.replace(/\/+$/, "");
 				const directoriesToReconnect = Object.entries(connections)
 					.filter(
 						([, conn]) =>
@@ -179,7 +179,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 				setIsSubmitting(true);
 				try {
 					const reconnectTasks = directoriesToReconnect.map((dir) =>
-						connectToProject(dir, LOCAL_SERVER_URL),
+						connectToProject(dir, DEFAULT_SERVER_URL),
 					);
 
 					if (
@@ -480,24 +480,16 @@ function GeneralSettings() {
 // ---------------------------------------------------------------------------
 
 function SttEndpointSetting() {
-	const [endpoint, setEndpoint] = useState(() => {
-		try {
-			return localStorage.getItem("opencode:sttEndpoint") ?? "";
-		} catch {
-			return "";
-		}
-	});
+	const [endpoint, setEndpoint] = useState(
+		() => storageGet(STORAGE_KEYS.STT_ENDPOINT) ?? "",
+	);
 
 	const handleChange = (value: string) => {
 		setEndpoint(value);
-		try {
-			if (value.trim()) {
-				localStorage.setItem("opencode:sttEndpoint", value.trim());
-			} else {
-				localStorage.removeItem("opencode:sttEndpoint");
-			}
-		} catch {
-			/* ignore */
+		if (value.trim()) {
+			storageSet(STORAGE_KEYS.STT_ENDPOINT, value.trim());
+		} else {
+			storageRemove(STORAGE_KEYS.STT_ENDPOINT);
 		}
 		// Notify other components in the same tab
 		window.dispatchEvent(new Event("stt-endpoint-changed"));
@@ -533,12 +525,8 @@ function SttEndpointSetting() {
 
 function NotificationsToggle() {
 	const [enabled, setEnabled] = useState(() => {
-		try {
-			const raw = localStorage.getItem(NOTIFICATIONS_ENABLED_KEY);
-			return raw === null || raw === "true";
-		} catch {
-			return true;
-		}
+		const raw = storageGet(NOTIFICATIONS_ENABLED_KEY);
+		return raw === null || raw === "true";
 	});
 
 	const handleToggle = async (checked: boolean) => {
@@ -551,11 +539,7 @@ function NotificationsToggle() {
 			if (result === "denied") return;
 		}
 		setEnabled(checked);
-		try {
-			localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(checked));
-		} catch {
-			/* ignore */
-		}
+		storageSet(NOTIFICATIONS_ENABLED_KEY, String(checked));
 	};
 
 	const permissionDenied =

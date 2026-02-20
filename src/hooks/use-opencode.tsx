@@ -13,7 +13,6 @@ import type {
 	Session as BaseSession,
 	Command,
 	Message,
-	Model,
 	Event as OpenCodeEvent,
 	Part,
 	PermissionRequest,
@@ -45,91 +44,37 @@ import {
 	useReducer,
 	useRef,
 } from "react";
+import { resolveServerDefaultModel } from "@/hooks/opencode/use-connections";
+import {
+	resolveVariant,
+	useVariant,
+	type VariantSelections,
+	variantKey,
+} from "@/hooks/opencode/use-variant";
+import {
+	DEFAULT_SERVER_URL,
+	MAX_RECENT_PROJECTS,
+	STORAGE_KEYS,
+} from "@/lib/constants";
+import {
+	storageGet,
+	storageParsed,
+	storageRemove,
+	storageSet,
+	storageSetJSON,
+	storageSetOrRemove,
+} from "@/lib/safe-storage";
 import { findModel } from "@/lib/utils";
 import type {
 	BridgeEvent,
 	ConnectionConfig,
 	ConnectionStatus,
+	OpenCodeBridge,
 	ProvidersData,
 	SelectedModel,
 } from "@/types/electron";
 
-// ---------------------------------------------------------------------------
-// Variant helpers (ported from opencode's model-variant.ts)
-// ---------------------------------------------------------------------------
-
-/** Key used to store per-model variant selections */
-function variantKey(providerID: string, modelID: string): string {
-	return `${providerID}/${modelID}`;
-}
-
-/** Map of providerID/modelID -> selected variant name (undefined = default) */
-type VariantSelections = Record<string, string | undefined>;
-
-/**
- * Cycle to the next variant for a given model.
- * Order: undefined (default) -> first variant -> second -> ... -> undefined again
- */
-function cycleVariant(
-	current: string | undefined,
-	model: Model | undefined,
-): string | undefined {
-	if (!model?.variants) return undefined;
-	const keys = Object.keys(model.variants).filter(
-		(k) => !model.variants?.[k]?.disabled,
-	);
-	if (keys.length === 0) return undefined;
-	if (current === undefined) return keys[0];
-	const idx = keys.indexOf(current);
-	if (idx < 0 || idx >= keys.length - 1) return undefined;
-	return keys[idx + 1];
-}
-
-/** Resolve the effective variant: explicit selection > agent default > undefined */
-function resolveVariant(
-	selectedModel: SelectedModel | null,
-	variantSelections: VariantSelections,
-	agents: Agent[],
-	selectedAgent: string | null,
-): string | undefined {
-	if (!selectedModel) return undefined;
-	const key = variantKey(selectedModel.providerID, selectedModel.modelID);
-	const explicit = variantSelections[key];
-	if (explicit !== undefined) return explicit;
-	// Check if the selected agent has a default variant
-	if (selectedAgent) {
-		const agent = agents.find((a) => a.name === selectedAgent);
-		if (agent?.variant) return agent.variant;
-	}
-	return undefined;
-}
-
-/** Resolve the first valid server default model from provider defaults. */
-export function resolveServerDefaultModel(
-	providers: Provider[],
-	providerDefaults: Record<string, string>,
-): SelectedModel | null {
-	// Format A (newer servers): { [providerID]: modelID }
-	for (const provider of providers) {
-		const modelID = providerDefaults[provider.id];
-		if (typeof modelID !== "string") continue;
-		if (!(modelID in provider.models)) continue;
-		return { providerID: provider.id, modelID };
-	}
-
-	// Format B (older servers): { [agentOrScope]: "providerID/modelID" }
-	for (const raw of Object.values(providerDefaults)) {
-		if (typeof raw !== "string") continue;
-		const splitIdx = raw.indexOf("/");
-		if (splitIdx <= 0 || splitIdx >= raw.length - 1) continue;
-		const providerID = raw.slice(0, splitIdx);
-		const modelID = raw.slice(splitIdx + 1);
-		const provider = providers.find((p) => p.id === providerID);
-		if (!provider || !(modelID in provider.models)) continue;
-		return { providerID, modelID };
-	}
-	return null;
-}
+export { resolveServerDefaultModel };
 
 // ---------------------------------------------------------------------------
 // State
@@ -142,13 +87,7 @@ interface RecentProject {
 	lastConnected: number;
 }
 
-const RECENT_PROJECTS_KEY = "opencode:recentProjects";
-const OPEN_PROJECTS_KEY = "opencode:openProjects";
-const UNREAD_SESSIONS_KEY = "opencode:unreadSessionIds";
-export const NOTIFICATIONS_ENABLED_KEY = "opencode:notificationsEnabled";
-const SESSION_META_KEY = "opencode:sessionMeta";
-const WORKTREE_PARENTS_KEY = "opencode:worktreeParents";
-const MAX_RECENT_PROJECTS = 10;
+export const NOTIFICATIONS_ENABLED_KEY = STORAGE_KEYS.NOTIFICATIONS_ENABLED;
 
 // ---------------------------------------------------------------------------
 // Session meta (local-only tags & colors)
@@ -173,31 +112,21 @@ interface SessionMeta {
 type SessionMetaMap = Record<string, SessionMeta>;
 
 function getSessionMetaMap(): SessionMetaMap {
-	try {
-		const raw = localStorage.getItem(SESSION_META_KEY);
-		if (!raw) return {};
-		return JSON.parse(raw) as SessionMetaMap;
-	} catch {
-		return {};
-	}
+	return storageParsed<SessionMetaMap>(STORAGE_KEYS.SESSION_META) ?? {};
 }
 
 function persistSessionMetaMap(meta: SessionMetaMap) {
-	try {
-		// Prune empty entries
-		const pruned: SessionMetaMap = {};
-		for (const [id, m] of Object.entries(meta)) {
-			if ((m.color && m.color !== null) || (m.tags && m.tags.length > 0)) {
-				pruned[id] = m;
-			}
+	// Prune empty entries
+	const pruned: SessionMetaMap = {};
+	for (const [id, m] of Object.entries(meta)) {
+		if ((m.color && m.color !== null) || (m.tags && m.tags.length > 0)) {
+			pruned[id] = m;
 		}
-		if (Object.keys(pruned).length === 0) {
-			localStorage.removeItem(SESSION_META_KEY);
-		} else {
-			localStorage.setItem(SESSION_META_KEY, JSON.stringify(pruned));
-		}
-	} catch {
-		/* ignore */
+	}
+	if (Object.keys(pruned).length === 0) {
+		storageRemove(STORAGE_KEYS.SESSION_META);
+	} else {
+		storageSetJSON(STORAGE_KEYS.SESSION_META, pruned);
 	}
 }
 
@@ -209,24 +138,14 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 type WorktreeParentMap = Record<string, string>;
 
 function getWorktreeParents(): WorktreeParentMap {
-	try {
-		const raw = localStorage.getItem(WORKTREE_PARENTS_KEY);
-		if (!raw) return {};
-		return JSON.parse(raw) as WorktreeParentMap;
-	} catch {
-		return {};
-	}
+	return storageParsed<WorktreeParentMap>(STORAGE_KEYS.WORKTREE_PARENTS) ?? {};
 }
 
 function persistWorktreeParents(map: WorktreeParentMap) {
-	try {
-		if (Object.keys(map).length === 0) {
-			localStorage.removeItem(WORKTREE_PARENTS_KEY);
-		} else {
-			localStorage.setItem(WORKTREE_PARENTS_KEY, JSON.stringify(map));
-		}
-	} catch {
-		/* ignore */
+	if (Object.keys(map).length === 0) {
+		storageRemove(STORAGE_KEYS.WORKTREE_PARENTS);
+	} else {
+		storageSetJSON(STORAGE_KEYS.WORKTREE_PARENTS, map);
 	}
 }
 
@@ -236,8 +155,7 @@ function persistWorktreeParents(map: WorktreeParentMap) {
  * the user should type a remote path instead.
  */
 function isLocalServer(): boolean {
-	const raw =
-		localStorage.getItem("opencode:serverUrl") ?? "http://127.0.0.1:4096";
+	const raw = storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL;
 	try {
 		const hostname = new URL(raw).hostname;
 		return ["localhost", "127.0.0.1", "::1"].includes(hostname);
@@ -247,13 +165,7 @@ function isLocalServer(): boolean {
 }
 
 function getRecentProjects(): RecentProject[] {
-	try {
-		const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
-		if (!raw) return [];
-		return JSON.parse(raw) as RecentProject[];
-	} catch {
-		return [];
-	}
+	return storageParsed<RecentProject[]>(STORAGE_KEYS.RECENT_PROJECTS) ?? [];
 }
 
 function addRecentProject(project: RecentProject): RecentProject[] {
@@ -261,30 +173,16 @@ function addRecentProject(project: RecentProject): RecentProject[] {
 		(p) => p.directory !== project.directory,
 	);
 	const updated = [project, ...existing].slice(0, MAX_RECENT_PROJECTS);
-	try {
-		localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
-	} catch {
-		/* ignore */
-	}
+	storageSetJSON(STORAGE_KEYS.RECENT_PROJECTS, updated);
 	return updated;
 }
 
 function getOpenProjects(): RecentProject[] {
-	try {
-		const raw = localStorage.getItem(OPEN_PROJECTS_KEY);
-		if (!raw) return [];
-		return JSON.parse(raw) as RecentProject[];
-	} catch {
-		return [];
-	}
+	return storageParsed<RecentProject[]>(STORAGE_KEYS.OPEN_PROJECTS) ?? [];
 }
 
 function setOpenProjects(projects: RecentProject[]) {
-	try {
-		localStorage.setItem(OPEN_PROJECTS_KEY, JSON.stringify(projects));
-	} catch {
-		/* ignore */
-	}
+	storageSetJSON(STORAGE_KEYS.OPEN_PROJECTS, projects);
 }
 
 function upsertOpenProject(project: RecentProject): RecentProject[] {
@@ -303,46 +201,29 @@ function removeOpenProject(directory: string): RecentProject[] {
 }
 
 function clearOpenProjects() {
-	try {
-		localStorage.removeItem(OPEN_PROJECTS_KEY);
-	} catch {
-		/* ignore */
-	}
+	storageRemove(STORAGE_KEYS.OPEN_PROJECTS);
 }
 
 function getUnreadSessionIds(): Set<string> {
-	try {
-		const raw = localStorage.getItem(UNREAD_SESSIONS_KEY);
-		if (!raw) return new Set();
-		return new Set(JSON.parse(raw) as string[]);
-	} catch {
-		return new Set();
-	}
+	const arr = storageParsed<string[]>(STORAGE_KEYS.UNREAD_SESSIONS);
+	return arr ? new Set(arr) : new Set();
 }
 
 function persistUnreadSessionIds(ids: Set<string>) {
-	try {
-		if (ids.size === 0) {
-			localStorage.removeItem(UNREAD_SESSIONS_KEY);
-		} else {
-			localStorage.setItem(UNREAD_SESSIONS_KEY, JSON.stringify([...ids]));
-		}
-	} catch {
-		/* ignore */
+	if (ids.size === 0) {
+		storageRemove(STORAGE_KEYS.UNREAD_SESSIONS);
+	} else {
+		storageSetJSON(STORAGE_KEYS.UNREAD_SESSIONS, [...ids]);
 	}
 }
 
 function areNotificationsEnabled(): boolean {
-	try {
-		const raw = localStorage.getItem(NOTIFICATIONS_ENABLED_KEY);
-		// Default to true if no preference stored
-		return raw === null || raw === "true";
-	} catch {
-		return true;
-	}
+	const raw = storageGet(STORAGE_KEYS.NOTIFICATIONS_ENABLED);
+	// Default to true if no preference stored
+	return raw === null || raw === "true";
 }
 
-interface QueuedPrompt {
+export interface QueuedPrompt {
 	id: string;
 	text: string;
 	images?: string[];
@@ -1892,7 +1773,10 @@ function extractVariantFromMessages(
 export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const [state, dispatch] = useReducer(reducer, initialState);
 
-	const bridge = useMemo(() => window.electronAPI?.opencode, []);
+	const bridge = useMemo<OpenCodeBridge | undefined>(
+		() => window.electronAPI?.opencode,
+		[],
+	);
 	const expectedDirectoriesRef = useRef<Set<string>>(new Set());
 
 	// Keep refs so selectSession can read current values without stale closures
@@ -2058,18 +1942,11 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	// the saved value before bootstrap has a chance to restore it.
 	const modelInitialized = useRef(false);
 	useEffect(() => {
-		try {
-			if (state.selectedModel) {
-				modelInitialized.current = true;
-				localStorage.setItem(
-					"opencode:selectedModel",
-					JSON.stringify(state.selectedModel),
-				);
-			} else if (modelInitialized.current) {
-				localStorage.removeItem("opencode:selectedModel");
-			}
-		} catch {
-			/* ignore */
+		if (state.selectedModel) {
+			modelInitialized.current = true;
+			storageSetJSON(STORAGE_KEYS.SELECTED_MODEL, state.selectedModel);
+		} else if (modelInitialized.current) {
+			storageRemove(STORAGE_KEYS.SELECTED_MODEL);
 		}
 	}, [state.selectedModel]);
 
@@ -2084,26 +1961,26 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			typeof Notification !== "undefined" &&
 			Notification.permission === "default"
 		) {
-			Notification.requestPermission();
+			Notification.requestPermission().catch(() => {
+				/* permission denied or unavailable */
+			});
 		}
 	}, []);
 
-	// --- Computed: current variant ---
-	const currentVariant = useMemo(
-		() =>
-			resolveVariant(
-				state.selectedModel,
-				state.variantSelections,
-				state.agents,
-				state.selectedAgent,
-			),
-		[
-			state.selectedModel,
-			state.variantSelections,
-			state.agents,
-			state.selectedAgent,
-		],
-	);
+	const {
+		currentVariant,
+		setModel,
+		setAgent,
+		cycleVariant: doCycleVariant,
+		setVariant,
+	} = useVariant({
+		selectedModel: state.selectedModel,
+		providers: state.providers,
+		agents: state.agents,
+		selectedAgent: state.selectedAgent,
+		variantSelections: state.variantSelections,
+		dispatch,
+	});
 
 	// --- Actions ---
 
@@ -2168,10 +2045,11 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 					dispatch({ type: "SET_PROVIDERS", payload: provRes.data });
 					// Restore model from localStorage, fall back to provider defaults
 					let restoredSelection = false;
-					try {
-						const saved = localStorage.getItem("opencode:selectedModel");
-						if (saved) {
-							const parsed = JSON.parse(saved) as SelectedModel;
+					{
+						const parsed = storageParsed<SelectedModel>(
+							STORAGE_KEYS.SELECTED_MODEL,
+						);
+						if (parsed) {
 							const prov = provRes.data.providers.find(
 								(p: Provider) => p.id === parsed.providerID,
 							);
@@ -2183,8 +2061,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 								restoredSelection = true;
 							}
 						}
-					} catch {
-						/* ignore */
 					}
 					if (!restoredSelection) {
 						const fallback = resolveServerDefaultModel(
@@ -2198,34 +2074,31 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 							});
 						}
 					}
-					try {
-						const saved = localStorage.getItem("opencode:variantSelections");
-						if (saved) {
-							const parsed = JSON.parse(saved) as VariantSelections;
+					{
+						const parsed = storageParsed<VariantSelections>(
+							STORAGE_KEYS.VARIANT_SELECTIONS,
+						);
+						if (parsed) {
 							dispatch({
 								type: "SET_VARIANT_SELECTIONS",
 								payload: parsed,
 							});
 						}
-					} catch {
-						/* ignore */
 					}
 				}
 				if (agentRes.success && agentRes.data) {
 					dispatch({ type: "SET_AGENTS", payload: agentRes.data });
-					try {
-						const saved = localStorage.getItem("opencode:selectedAgent");
-						if (saved) {
-							const exists = agentRes.data.some((a: Agent) => a.name === saved);
-							if (exists) {
-								dispatch({
-									type: "SET_SELECTED_AGENT",
-									payload: saved,
-								});
-							}
+					const savedAgent = storageGet(STORAGE_KEYS.SELECTED_AGENT);
+					if (savedAgent) {
+						const exists = agentRes.data.some(
+							(a: Agent) => a.name === savedAgent,
+						);
+						if (exists) {
+							dispatch({
+								type: "SET_SELECTED_AGENT",
+								payload: savedAgent,
+							});
 						}
-					} catch {
-						/* ignore */
 					}
 				}
 				if (cmdRes.success && cmdRes.data) {
@@ -2233,17 +2106,9 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				}
 			}
 			// Persist connection info
-			try {
-				localStorage.setItem("opencode:serverUrl", config.baseUrl);
-				localStorage.setItem("opencode:directory", config.directory);
-				if (config.username) {
-					localStorage.setItem("opencode:username", config.username);
-				} else {
-					localStorage.removeItem("opencode:username");
-				}
-			} catch {
-				/* ignore */
-			}
+			storageSet(STORAGE_KEYS.SERVER_URL, config.baseUrl);
+			storageSet(STORAGE_KEYS.DIRECTORY, config.directory);
+			storageSetOrRemove(STORAGE_KEYS.USERNAME, config.username);
 			// Update recent projects
 			if (config.directory) {
 				const updated = addRecentProject({
@@ -2395,10 +2260,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const connectToProject = useCallback(
 		async (directory: string, serverUrl?: string) => {
 			const url =
-				serverUrl ??
-				localStorage.getItem("opencode:serverUrl") ??
-				"http://127.0.0.1:4096";
-			const username = localStorage.getItem("opencode:username") ?? undefined;
+				serverUrl ?? storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL;
+			const username = storageGet(STORAGE_KEYS.USERNAME) ?? undefined;
 			await addProject({
 				baseUrl: url,
 				directory,
@@ -2461,18 +2324,23 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				}
 				// Fetch each child session's messages in parallel (fire-and-forget)
 				for (const childSid of childSessionIds) {
-					bridge.getMessages(childSid).then((childRes) => {
-						if (requestId !== selectSessionRequestRef.current) return;
-						if (childRes.success && childRes.data) {
-							dispatch({
-								type: "LOAD_CHILD_SESSION",
-								payload: {
-									childSessionId: childSid,
-									messages: childRes.data,
-								},
-							});
-						}
-					});
+					bridge
+						.getMessages(childSid)
+						.then((childRes) => {
+							if (requestId !== selectSessionRequestRef.current) return;
+							if (childRes.success && childRes.data) {
+								dispatch({
+									type: "LOAD_CHILD_SESSION",
+									payload: {
+										childSessionId: childSid,
+										messages: childRes.data,
+									},
+								});
+							}
+						})
+						.catch(() => {
+							/* best-effort child session fetch */
+						});
 				}
 			}
 
@@ -2970,86 +2838,15 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		});
 	}, [bridge, state.pendingQuestions, state.activeSessionId]);
 
-	const setModel = useCallback((model: SelectedModel | null) => {
-		dispatch({ type: "SET_SELECTED_MODEL", payload: model });
-	}, []);
-
-	const setAgent = useCallback((agent: string | null) => {
-		dispatch({ type: "SET_SELECTED_AGENT", payload: agent });
-		try {
-			if (agent) {
-				localStorage.setItem("opencode:selectedAgent", agent);
-			} else {
-				localStorage.removeItem("opencode:selectedAgent");
-			}
-		} catch {
-			/* ignore */
-		}
-	}, []);
-
-	const doCycleVariant = useCallback(() => {
-		if (!state.selectedModel) return;
-		const model = findModel(
-			state.providers,
-			state.selectedModel.providerID,
-			state.selectedModel.modelID,
-		);
-		const key = variantKey(
-			state.selectedModel.providerID,
-			state.selectedModel.modelID,
-		);
-		const current = state.variantSelections[key];
-		const next = cycleVariant(current, model);
-		const newSelections = { ...state.variantSelections };
-		if (next === undefined) {
-			delete newSelections[key];
-		} else {
-			newSelections[key] = next;
-		}
-		dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-		try {
-			localStorage.setItem(
-				"opencode:variantSelections",
-				JSON.stringify(newSelections),
-			);
-		} catch {
-			/* ignore */
-		}
-	}, [state.selectedModel, state.providers, state.variantSelections]);
-
-	const setVariant = useCallback(
-		(variant: string | undefined) => {
-			if (!state.selectedModel) return;
-			const key = variantKey(
-				state.selectedModel.providerID,
-				state.selectedModel.modelID,
-			);
-			const newSelections = { ...state.variantSelections };
-			if (variant === undefined) {
-				delete newSelections[key];
-			} else {
-				newSelections[key] = variant;
-			}
-			dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-			try {
-				localStorage.setItem(
-					"opencode:variantSelections",
-					JSON.stringify(newSelections),
-				);
-			} catch {
-				/* ignore */
-			}
-		},
-		[state.selectedModel, state.variantSelections],
-	);
-
 	const startDraftSession = useCallback(
 		(directory: string) => {
 			// Auto-delete the previous session if it was temporary
 			const prevId = activeSessionIdRef.current;
 			if (prevId && temporarySessionsRef.current.has(prevId)) {
 				dispatch({ type: "SESSION_DELETED", payload: prevId });
-				bridge?.deleteSession(prevId);
+				bridge?.deleteSession(prevId).catch(() => {
+					/* best-effort cleanup of temporary session */
+				});
 			}
 			dispatch({ type: "START_DRAFT_SESSION", payload: directory });
 			// Reset agent to default for new sessions (keep model as-is)

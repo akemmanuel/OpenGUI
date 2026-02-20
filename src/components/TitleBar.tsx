@@ -65,8 +65,14 @@ export function TitleBar() {
 		const api = window.electronAPI;
 		if (!api) return;
 
-		api.getPlatform().then(setPlatform);
-		api.isMaximized().then(setIsMaximized);
+		api
+			.getPlatform()
+			.then(setPlatform)
+			.catch(() => {});
+		api
+			.isMaximized()
+			.then(setIsMaximized)
+			.catch(() => {});
 		const unsubscribe = api.onMaximizeChange(setIsMaximized);
 		return () => unsubscribe();
 	}, []);

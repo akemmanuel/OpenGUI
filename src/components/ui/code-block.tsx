@@ -3,6 +3,7 @@ import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { bundledLanguages } from "shiki/langs";
+import { COPY_FEEDBACK_MS, HIGHLIGHT_DEBOUNCE_MS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -112,7 +113,7 @@ export function CodeBlockCode({
 					console.warn("[shiki] Highlighting failed:", err);
 					if (!cancelled) setHtml(null);
 				});
-		}, 150);
+		}, HIGHLIGHT_DEBOUNCE_MS);
 
 		// Re-highlight when the theme changes
 		const observer = new MutationObserver(() => {
@@ -142,7 +143,7 @@ export function CodeBlockCode({
 			// Clipboard API may fail silently in some contexts
 		});
 		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+		setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
 	};
 
 	return (

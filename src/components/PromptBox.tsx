@@ -35,7 +35,13 @@ import {
 import { VariantSelector } from "@/components/VariantSelector";
 import { useOpenCode } from "@/hooks/use-opencode";
 import { useSTT } from "@/hooks/useSTT";
+import {
+	MAX_TEXTAREA_HEIGHT_PX,
+	SMALL_WINDOW_BREAKPOINT_PX,
+	STORAGE_KEYS,
+} from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
+import { storageGet } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
 
 interface PromptBoxProps
@@ -88,19 +94,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
 		// STT endpoint from localStorage (set in Settings > General)
 		const [sttEndpoint, setSttEndpoint] = React.useState<string | undefined>(
-			() => {
-				try {
-					return localStorage.getItem("opencode:sttEndpoint") || undefined;
-				} catch {
-					return undefined;
-				}
-			},
+			() => storageGet(STORAGE_KEYS.STT_ENDPOINT) || undefined,
 		);
 
 		// Listen for storage changes (when the user sets the endpoint in settings)
 		React.useEffect(() => {
 			const onStorage = (e: StorageEvent) => {
-				if (e.key === "opencode:sttEndpoint") {
+				if (e.key === STORAGE_KEYS.STT_ENDPOINT) {
 					setSttEndpoint(e.newValue || undefined);
 				}
 			};
@@ -108,13 +108,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
 			// Also handle same-tab updates via a custom event
 			const onCustom = () => {
-				try {
-					setSttEndpoint(
-						localStorage.getItem("opencode:sttEndpoint") || undefined,
-					);
-				} catch {
-					/* ignore */
-				}
+				setSttEndpoint(storageGet(STORAGE_KEYS.STT_ENDPOINT) || undefined);
 			};
 			window.addEventListener("stt-endpoint-changed", onCustom);
 
@@ -214,7 +208,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			const textarea = internalTextareaRef.current;
 			if (textarea) {
 				textarea.style.height = "auto";
-				const newHeight = Math.min(textarea.scrollHeight, 120);
+				const newHeight = Math.min(
+					textarea.scrollHeight,
+					MAX_TEXTAREA_HEIGHT_PX,
+				);
 				textarea.style.height = `${newHeight}px`;
 			}
 		}, [value]);
@@ -231,7 +228,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			const el = containerRef.current;
 			if (!el) return;
 			const check = () => {
-				if (window.innerWidth < 640) {
+				if (window.innerWidth < SMALL_WINDOW_BREAKPOINT_PX) {
 					setIsFullWidth(false);
 					return;
 				}

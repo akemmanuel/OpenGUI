@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -131,7 +132,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 			} else {
 				await bridge.connectMcp(name);
 			}
-			await new Promise((r) => setTimeout(r, 300));
+			await new Promise((r) => setTimeout(r, MCP_TOGGLE_DELAY_MS));
 			await refresh();
 		} finally {
 			setToggling(null);

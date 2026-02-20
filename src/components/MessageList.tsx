@@ -58,17 +58,16 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { useHomeDir } from "@/hooks/use-home-dir";
 import {
 	getChildSessionToolParts,
 	type MessageEntry,
 	useOpenCode,
 } from "@/hooks/use-opencode";
+import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { abbreviatePath, cn } from "@/lib/utils";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
-
-/** Threshold in px – if the user is within this distance of the bottom we consider them "at bottom". */
-const NEAR_BOTTOM_PX = 80;
 
 /** Part types that actually render something visible. */
 const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
@@ -138,10 +137,7 @@ export function MessageList() {
 		? (pendingQuestions[activeSessionId] ?? null)
 		: null;
 
-	const [homeDir, setHomeDir] = useState("");
-	useEffect(() => {
-		window.electronAPI?.getHomeDir?.().then((d) => setHomeDir(d ?? ""));
-	}, []);
+	const homeDir = useHomeDir();
 	const [nowMs, setNowMs] = useState(() => Date.now());
 
 	useEffect(() => {
@@ -675,9 +671,6 @@ function QuestionPanel({
 // ---------------------------------------------------------------------------
 // Message bubble
 // ---------------------------------------------------------------------------
-
-/** Max characters before a user message is collapsed with "Show more". */
-const USER_MSG_COLLAPSE_CHARS = 500;
 
 const MessageBubble = memo(function MessageBubble({
 	entry,

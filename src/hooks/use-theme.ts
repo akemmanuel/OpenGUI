@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { STORAGE_KEYS } from "@/lib/constants";
+import { storageGet, storageSet } from "@/lib/safe-storage";
 
 type Theme = "dark" | "light";
 
 function getStoredTheme(): Theme {
-	try {
-		const stored = localStorage.getItem("theme");
-		if (stored === "dark" || stored === "light") return stored;
-	} catch {}
+	const stored = storageGet(STORAGE_KEYS.THEME);
+	if (stored === "dark" || stored === "light") return stored;
 	return "dark";
 }
 
@@ -22,7 +22,7 @@ export function useTheme() {
 	}, [theme]);
 
 	const setTheme = useCallback((t: Theme) => {
-		localStorage.setItem("theme", t);
+		storageSet(STORAGE_KEYS.THEME, t);
 		setThemeState(t);
 	}, []);
 

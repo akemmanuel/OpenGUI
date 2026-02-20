@@ -34,7 +34,10 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import { useHomeDir } from "@/hooks/use-home-dir";
 import { hasAnyConnection, useOpenCode } from "@/hooks/use-opencode";
+import { useOutsideClick } from "@/hooks/use-outside-click";
+import { POST_MERGE_DELAY_MS, SESSION_PAGE_SIZE } from "@/lib/constants";
 import { abbreviatePath } from "@/lib/utils";
 import type { GitWorktree } from "@/types/electron";
 import logoDark from "../../opencode-logo-dark.svg";
@@ -45,8 +48,6 @@ import { ConnectionPanel } from "./ConnectionPanel";
 import { MergeDialog } from "./MergeDialog";
 import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
-
-const SESSION_PAGE_SIZE = 12;
 
 /** Get just the last segment as a short project name. */
 function projectName(directory: string): string {
@@ -143,10 +144,7 @@ export function AppSidebar() {
 		setEditValue("");
 	}, []);
 
-	const [homeDir, setHomeDir] = useState("");
-	useEffect(() => {
-		window.electronAPI?.getHomeDir?.().then((d) => setHomeDir(d ?? ""));
-	}, []);
+	const homeDir = useHomeDir();
 
 	// Set of directories that are worktrees (should be hidden from project list)
 	const worktreeDirs = useMemo(
@@ -236,23 +234,8 @@ export function AppSidebar() {
 	}, []);
 
 	// Close worktree picker on outside click
-	useEffect(() => {
-		if (!worktreePickerDir) return;
-		const onPointerDown = (event: MouseEvent) => {
-			const target = event.target as Node;
-			if (worktreePickerRef.current?.contains(target)) return;
-			setWorktreePickerDir(null);
-		};
-		const onEscape = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setWorktreePickerDir(null);
-		};
-		window.addEventListener("mousedown", onPointerDown);
-		window.addEventListener("keydown", onEscape);
-		return () => {
-			window.removeEventListener("mousedown", onPointerDown);
-			window.removeEventListener("keydown", onEscape);
-		};
-	}, [worktreePickerDir]);
+	const closeWorktreePicker = useCallback(() => setWorktreePickerDir(null), []);
+	useOutsideClick(worktreePickerRef, closeWorktreePicker, !!worktreePickerDir);
 
 	// Track collapsed state per project
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -274,26 +257,8 @@ export function AppSidebar() {
 		}
 	}, [sidebarState]);
 
-	useEffect(() => {
-		if (!projectPopover) return;
-
-		const onPointerDown = (event: MouseEvent) => {
-			const target = event.target as Node;
-			if (popoverRef.current?.contains(target)) return;
-			setProjectPopover(null);
-		};
-
-		const onEscape = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setProjectPopover(null);
-		};
-
-		window.addEventListener("mousedown", onPointerDown);
-		window.addEventListener("keydown", onEscape);
-		return () => {
-			window.removeEventListener("mousedown", onPointerDown);
-			window.removeEventListener("keydown", onEscape);
-		};
-	}, [projectPopover]);
+	const closeProjectPopover = useCallback(() => setProjectPopover(null), []);
+	useOutsideClick(popoverRef, closeProjectPopover, !!projectPopover);
 
 	const popoverSessions = projectPopover
 		? (projectGroups.get(projectPopover.directory) ?? [])
@@ -1112,7 +1077,7 @@ export function AppSidebar() {
 						sendPrompt(
 							`There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
 						);
-					}, 300);
+					}, POST_MERGE_DELAY_MS);
 				}}
 			/>
 		</Sidebar>

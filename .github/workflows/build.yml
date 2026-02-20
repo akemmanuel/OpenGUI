@@ -18,6 +18,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        run: bun run lint:check
+
+      - name: Typecheck
+        run: bun run typecheck
+
       - name: Build frontend
         run: bun run build
 
@@ -45,6 +51,12 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint:check
+
+      - name: Typecheck
+        run: bun run typecheck
 
       - name: Build frontend
         run: bun run build
