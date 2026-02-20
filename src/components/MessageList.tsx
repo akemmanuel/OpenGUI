@@ -243,8 +243,8 @@ export function MessageList() {
 		for (const [parentId, assistantEntry] of latestAssistantByParent) {
 			const start = userStartById.get(parentId);
 			if (typeof start !== "number") continue;
-			if (assistantEntry.info.role !== "assistant") continue;
-			const completedAt = assistantEntry.info.time.completed;
+			const completedAt = (assistantEntry.info.time as { completed?: number })
+				.completed;
 			const end =
 				typeof completedAt === "number" ? completedAt : isBusy ? nowMs : null;
 			if (typeof end !== "number") continue;
@@ -324,7 +324,7 @@ export function MessageList() {
 						className="dark:hidden w-82 select-none pointer-events-none"
 					/>
 
-					{isDraft && draftSessionDirectory && (
+					{isDraft && (
 						<div className="mt-2 flex items-center gap-1.5 text-muted-foreground">
 							<FolderOpen className="size-3.5" />
 							<span className="font-mono text-xs">
@@ -1231,11 +1231,11 @@ function computeWriteDiff(input: Record<string, unknown>): {
 } | null {
 	const content = input.content;
 	if (typeof content !== "string") return null;
-	const added = content.split("\n").length;
+	const splitLines = content.split("\n");
 	return {
-		added,
+		added: splitLines.length,
 		removed: 0,
-		lines: content.split("\n").map((t) => ({ type: "add" as const, text: t })),
+		lines: splitLines.map((t) => ({ type: "add" as const, text: t })),
 	};
 }
 

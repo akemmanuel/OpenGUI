@@ -154,13 +154,16 @@ export function AppSidebar() {
 		[worktreeParents],
 	);
 
-	// Group root sessions by directory, merging worktree sessions under parent
+	// Group root sessions by project directory, merging worktree sessions under parent.
+	// Uses `_projectDir` (set by the bridge from the connection directory) instead
+	// of `session.directory` so that sessions are grouped correctly even when the
+	// server stores a slightly different path (symlinks, trailing slashes, etc.).
 	const projectGroups = useMemo(() => {
 		const openDirectories = Object.keys(connections);
 		const rootSessions = sessions.filter(
 			(s) =>
 				!s.parentID &&
-				openDirectories.includes(s.directory) &&
+				openDirectories.includes(s._projectDir ?? s.directory) &&
 				!temporarySessions.has(s.id),
 		);
 		const groups = new Map<string, typeof rootSessions>();
@@ -171,9 +174,10 @@ export function AppSidebar() {
 			}
 		}
 		for (const s of rootSessions) {
+			const sessionDir = s._projectDir ?? s.directory;
 			// If session belongs to a worktree, group it under the parent project
-			const parentDir = worktreeParents[s.directory];
-			const groupDir = parentDir ?? s.directory;
+			const parentDir = worktreeParents[sessionDir];
+			const groupDir = parentDir ?? sessionDir;
 			if (!groups.has(groupDir)) groups.set(groupDir, []);
 			groups.get(groupDir)?.push(s);
 		}

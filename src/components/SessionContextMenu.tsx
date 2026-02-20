@@ -78,13 +78,6 @@ export function getColorBorderClass(color: SessionColor | undefined): string {
 	return entry?.borderClass ?? "border-sidebar-border";
 }
 
-/** Look up the bg class for tag pills. */
-export function getColorBgClass(color: SessionColor | undefined): string {
-	if (!color) return "";
-	const entry = SESSION_COLORS.find((c) => c.value === color);
-	return entry?.className ?? "";
-}
-
 // ---------------------------------------------------------------------------
 // SessionContextMenu
 // ---------------------------------------------------------------------------

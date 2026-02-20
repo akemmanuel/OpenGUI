@@ -10,6 +10,7 @@
 
 import type {
 	Agent,
+	Session as BaseSession,
 	Command,
 	Message,
 	Model,
@@ -19,8 +20,21 @@ import type {
 	Provider,
 	QuestionAnswer,
 	QuestionRequest,
-	Session,
 } from "@opencode-ai/sdk/v2/client";
+
+/**
+ * Extended session type that includes the project directory the session was
+ * loaded from.  The opencode server already scopes session listings per
+ * project (via the `x-opencode-directory` header), but the `directory` field
+ * stored *on* each session may differ slightly from the connection directory
+ * (trailing slashes, symlink resolution, git-toplevel normalization, etc.).
+ *
+ * `_projectDir` is set by the bridge/IPC layer to the *connection* directory
+ * that returned the session, so the UI can group sessions reliably without
+ * brittle string equality on `session.directory`.
+ */
+export type Session = BaseSession & { _projectDir?: string };
+
 import {
 	createContext,
 	type ReactNode,
@@ -31,6 +45,7 @@ import {
 	useReducer,
 	useRef,
 } from "react";
+import { findModel } from "@/lib/utils";
 import type {
 	BridgeEvent,
 	ConnectionConfig,
@@ -49,7 +64,7 @@ function variantKey(providerID: string, modelID: string): string {
 }
 
 /** Map of providerID/modelID -> selected variant name (undefined = default) */
-export type VariantSelections = Record<string, string | undefined>;
+type VariantSelections = Record<string, string | undefined>;
 
 /**
  * Cycle to the next variant for a given model.
@@ -71,7 +86,7 @@ function cycleVariant(
 }
 
 /** Resolve the effective variant: explicit selection > agent default > undefined */
-export function resolveVariant(
+function resolveVariant(
 	selectedModel: SelectedModel | null,
 	variantSelections: VariantSelections,
 	agents: Agent[],
@@ -120,7 +135,7 @@ export function resolveServerDefaultModel(
 // State
 // ---------------------------------------------------------------------------
 
-export interface RecentProject {
+interface RecentProject {
 	directory: string;
 	serverUrl: string;
 	username?: string;
@@ -130,7 +145,7 @@ export interface RecentProject {
 const RECENT_PROJECTS_KEY = "opencode:recentProjects";
 const OPEN_PROJECTS_KEY = "opencode:openProjects";
 const UNREAD_SESSIONS_KEY = "opencode:unreadSessionIds";
-const NOTIFICATIONS_ENABLED_KEY = "opencode:notificationsEnabled";
+export const NOTIFICATIONS_ENABLED_KEY = "opencode:notificationsEnabled";
 const SESSION_META_KEY = "opencode:sessionMeta";
 const WORKTREE_PARENTS_KEY = "opencode:worktreeParents";
 const MAX_RECENT_PROJECTS = 10;
@@ -150,12 +165,12 @@ export type SessionColor =
 	| "gray"
 	| null;
 
-export interface SessionMeta {
+interface SessionMeta {
 	color?: SessionColor;
 	tags?: string[];
 }
 
-export type SessionMetaMap = Record<string, SessionMeta>;
+type SessionMetaMap = Record<string, SessionMeta>;
 
 function getSessionMetaMap(): SessionMetaMap {
 	try {
@@ -191,7 +206,7 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 // ---------------------------------------------------------------------------
 
 /** Maps worktree directory -> parent project directory */
-export type WorktreeParentMap = Record<string, string>;
+type WorktreeParentMap = Record<string, string>;
 
 function getWorktreeParents(): WorktreeParentMap {
 	try {
@@ -327,7 +342,7 @@ function areNotificationsEnabled(): boolean {
 	}
 }
 
-export interface QueuedPrompt {
+interface QueuedPrompt {
 	id: string;
 	text: string;
 	images?: string[];
@@ -765,7 +780,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "REMOVE_PROJECT": {
 			const removedSessionIds = new Set(
 				state.sessions
-					.filter((s) => s.directory === action.payload)
+					.filter((s) => (s._projectDir ?? s.directory) === action.payload)
 					.map((s) => s.id),
 			);
 			const { [action.payload]: _, ...rest } = state.connections;
@@ -797,7 +812,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return {
 				...state,
 				connections: rest,
-				sessions: state.sessions.filter((s) => s.directory !== action.payload),
+				sessions: state.sessions.filter(
+					(s) => (s._projectDir ?? s.directory) !== action.payload,
+				),
 				busySessionIds: nextBusy,
 				unreadSessionIds: nextUnread,
 				pendingPermissions: nextPermissions,
@@ -844,11 +861,16 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 		case "MERGE_PROJECT_SESSIONS": {
 			const { directory, sessions } = action.payload;
-			const scoped = sessions.filter((s) => s.directory === directory);
-			const filtered = state.sessions.filter((s) => s.directory !== directory);
+			// Remove any existing sessions for this project directory, then
+			// merge in the fresh list.  Sessions are matched by _projectDir
+			// (set by the bridge) so we don't rely on the potentially-divergent
+			// session.directory field.
+			const filtered = state.sessions.filter(
+				(s) => (s._projectDir ?? s.directory) !== directory,
+			);
 			return {
 				...state,
-				sessions: sortSessionsNewestFirst([...filtered, ...scoped]),
+				sessions: sortSessionsNewestFirst([...filtered, ...sessions]),
 			};
 		}
 
@@ -1042,10 +1064,11 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "SET_VARIANT_SELECTIONS":
 			return { ...state, variantSelections: action.payload };
 
-		case "SESSION_CREATED":
+		case "SESSION_CREATED": {
 			// Ignore subagent / child sessions - only root sessions appear in the sidebar.
 			if (action.payload.parentID) return state;
-			if (!(action.payload.directory in state.connections)) return state;
+			const projectDir = action.payload._projectDir ?? action.payload.directory;
+			if (!(projectDir in state.connections)) return state;
 			return {
 				...state,
 				sessions: sortSessionsNewestFirst([
@@ -1053,12 +1076,14 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					...state.sessions.filter((s) => s.id !== action.payload.id),
 				]),
 			};
+		}
 
 		case "SESSION_UPDATED": {
 			const updated = action.payload;
 			// Ignore subagent / child sessions - only root sessions appear in the sidebar.
 			if (updated.parentID) return state;
-			if (!(updated.directory in state.connections)) return state;
+			const updProjectDir = updated._projectDir ?? updated.directory;
+			if (!(updProjectDir in state.connections)) return state;
 			const exists = state.sessions.some((s) => s.id === updated.id);
 			// Update in-place without re-sorting to prevent the sidebar from
 			// jumping around while sessions receive streaming updates.
@@ -1788,8 +1813,6 @@ const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
 // Helpers: find model in providers
 // ---------------------------------------------------------------------------
 
-import { findModel } from "@/lib/utils";
-
 /**
  * Extract the model used in the last assistant message.
  * Returns null if no assistant message with model info is found.
@@ -1902,12 +1925,22 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			const oc = event.payload as OpenCodeEvent;
 			switch (oc.type) {
 				case "session.created":
-					if (oc.properties.info.directory !== event.directory) return;
-					dispatch({ type: "SESSION_CREATED", payload: oc.properties.info });
+					dispatch({
+						type: "SESSION_CREATED",
+						payload: {
+							...oc.properties.info,
+							_projectDir: event.directory,
+						},
+					});
 					break;
 				case "session.updated":
-					if (oc.properties.info.directory !== event.directory) return;
-					dispatch({ type: "SESSION_UPDATED", payload: oc.properties.info });
+					dispatch({
+						type: "SESSION_UPDATED",
+						payload: {
+							...oc.properties.info,
+							_projectDir: event.directory,
+						},
+					});
 					break;
 				case "session.deleted":
 					dispatch({ type: "SESSION_DELETED", payload: oc.properties.info.id });
@@ -1987,6 +2020,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				case "session.error":
 					if (oc.properties.error) {
 						const errData = oc.properties.error;
+						// Skip abort errors — already shown inline on the message
+						if (errData.name === "MessageAbortedError") break;
 						const errMsg =
 							"data" in errData &&
 							errData.data &&
@@ -2093,15 +2128,18 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				}
 				return;
 			}
-			// Load sessions for this project
+			// Load sessions for this project.  The bridge already tags each
+			// session with `_projectDir` matching the connection directory, so
+			// no additional client-side filtering is needed – the server scopes
+			// sessions to this project via the x-opencode-directory header.
 			const sessRes = await bridge.listSessions(config.directory);
 			if (sessRes.success && sessRes.data) {
-				const scopedSessions = sessRes.data.filter(
-					(s) => s.directory === config.directory,
-				);
 				dispatch({
 					type: "MERGE_PROJECT_SESSIONS",
-					payload: { directory: config.directory, sessions: scopedSessions },
+					payload: {
+						directory: config.directory,
+						sessions: sessRes.data as Session[],
+					},
 				});
 			}
 			// Fetch current session statuses to restore busy spinners
@@ -2237,7 +2275,9 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			const activeSession = state.sessions.find(
 				(s) => s.id === state.activeSessionId,
 			);
-			if (activeSession?.directory === directory) {
+			if (
+				(activeSession?._projectDir ?? activeSession?.directory) === directory
+			) {
 				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
 			}
 		},

@@ -36,7 +36,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { hasAnyConnection, useOpenCode } from "@/hooks/use-opencode";
+import {
+	hasAnyConnection,
+	NOTIFICATIONS_ENABLED_KEY,
+	useOpenCode,
+} from "@/hooks/use-opencode";
 import packageJson from "../../package.json";
 
 const LOCAL_SERVER_URL = "http://127.0.0.1:4096";
@@ -530,7 +534,7 @@ function SttEndpointSetting() {
 function NotificationsToggle() {
 	const [enabled, setEnabled] = useState(() => {
 		try {
-			const raw = localStorage.getItem("opencode:notificationsEnabled");
+			const raw = localStorage.getItem(NOTIFICATIONS_ENABLED_KEY);
 			return raw === null || raw === "true";
 		} catch {
 			return true;
@@ -548,7 +552,7 @@ function NotificationsToggle() {
 		}
 		setEnabled(checked);
 		try {
-			localStorage.setItem("opencode:notificationsEnabled", String(checked));
+			localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(checked));
 		} catch {
 			/* ignore */
 		}

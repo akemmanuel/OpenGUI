@@ -171,7 +171,7 @@ export function ModelSelector() {
 
 	const groups = useMemo(() => {
 		const now = Date.now();
-		const eightMonthsMs = 1000 * 60 * 60 * 24 * 30.4375 * 6;
+		const sixMonthsMs = 1000 * 60 * 60 * 24 * 30.4375 * 6;
 		const alwaysIncludeValues = new Set<string>();
 		if (selectedModel) {
 			alwaysIncludeValues.add(
@@ -195,8 +195,8 @@ export function ModelSelector() {
 						const timestamp = Date.parse(model.release_date);
 						// Keep models with no valid release date (safe fallback)
 						if (!Number.isFinite(timestamp)) return true;
-						// Keep models released within the last 8 months
-						return Math.abs(now - timestamp) < eightMonthsMs;
+						// Keep models released within the last 6 months
+						return Math.abs(now - timestamp) < sixMonthsMs;
 					})
 					.sort(([, a], [, b]) => a.name.localeCompare(b.name))
 					.map(([key, model]) => ({
