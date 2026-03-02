@@ -36,11 +36,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-	hasAnyConnection,
-	NOTIFICATIONS_ENABLED_KEY,
-	useOpenCode,
-} from "@/hooks/use-opencode";
+import { NOTIFICATIONS_ENABLED_KEY, useOpenCode } from "@/hooks/use-opencode";
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import packageJson from "../../package.json";
@@ -111,10 +107,8 @@ type ServerState =
 	| "error";
 
 function AddProjectForm({ onDone }: { onDone: () => void }) {
-	const { state, addProject, connectToProject, disconnect, clearError } =
-		useOpenCode();
+	const { state, addProject, connectToProject, clearError } = useOpenCode();
 	const { connections } = state;
-	const isConnected = hasAnyConnection(connections);
 	const isElectron = !!window.electronAPI;
 
 	const [url, setUrl] = useState(
@@ -418,22 +412,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 			</div>
 
 			{/* Actions */}
-			<div className="flex justify-between gap-2">
-				{isConnected && (
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						className="text-destructive"
-						onClick={() => {
-							disconnect();
-							onDone();
-						}}
-					>
-						<Unplug className="size-4 mr-1.5" />
-						Disconnect all
-					</Button>
-				)}
+			<div className="flex justify-end gap-2">
 				<div className="ml-auto">
 					{isSubmitting ? (
 						<Button type="button" size="sm" variant="secondary" disabled>
