@@ -54,7 +54,6 @@ interface PromptBoxProps
 	contextPercent?: number | null;
 }
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
 const TARGET_IMAGE_SIZE = 4.5 * 1024 * 1024; // Target slightly under 5 MB
 const MAX_DIMENSION = 4096; // Max width/height
 
@@ -84,6 +83,8 @@ async function compressImage(file: File): Promise<string> {
 				reject(new Error("Failed to get canvas context"));
 				return;
 			}
+			ctx.fillStyle = "white";
+			ctx.fillRect(0, 0, width, height);
 			ctx.drawImage(img, 0, 0, width, height);
 
 			let quality = 0.9;
@@ -92,16 +93,24 @@ async function compressImage(file: File): Promise<string> {
 				const base64Length = result.length - "data:image/jpeg;base64,".length;
 				const byteSize = Math.round((base64Length * 3) / 4);
 
-				if (byteSize <= TARGET_IMAGE_SIZE || quality <= 0.1) {
+				if (byteSize <= TARGET_IMAGE_SIZE) {
 					resolve(result);
-				} else {
+				} else if (quality > 0.1) {
 					quality -= 0.1;
 					tryCompress();
+				} else {
+					console.warn(
+						`Image still exceeds target size (${byteSize} bytes) even at minimum quality. Returning low-quality result.`,
+					);
+					resolve(result);
 				}
 			};
 			tryCompress();
+			img.src = "";
 		};
-		img.onerror = reject;
+		img.onerror = () => {
+			reject(new Error("Failed to load image. The file may be corrupt."));
+		};
 		img.src = dataUrl;
 	});
 }
