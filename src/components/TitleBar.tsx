@@ -1,7 +1,6 @@
 import { Minimize, Minus, Plus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { ThemeToggle } from "./ThemeToggle";
 
 type WindowButtonKind = "default" | "mac";
 type MacButtonTone = "close" | "minimize" | "maximize";
@@ -106,7 +105,6 @@ export function TitleBar() {
 				className={`absolute right-0 top-0 h-full flex items-center gap-2 ${isMac ? "px-2" : "pl-2"}`}
 				style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 			>
-				<ThemeToggle className="mr-1 text-muted-foreground hover:text-foreground" />
 				{isMac ? (
 					<div className="flex items-center gap-2">
 						<WindowButton
