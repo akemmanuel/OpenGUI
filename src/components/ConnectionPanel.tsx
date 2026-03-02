@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { SettingsProviders } from "@/components/SettingsProviders";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -463,6 +464,12 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 function GeneralSettings() {
 	return (
 		<div className="flex flex-col gap-4">
+			<div className="flex items-center justify-between gap-3">
+				<div className="flex items-center gap-2">
+					<Label className="text-sm font-normal">Dark mode</Label>
+				</div>
+				<ThemeToggle />
+			</div>
 			<SttEndpointSetting />
 			<NotificationsToggle />
 			<div className="flex items-center justify-between gap-3 pt-3 border-t">
