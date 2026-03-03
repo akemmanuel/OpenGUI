@@ -17,9 +17,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: anomalyco/opencode/github@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.OPENCODE_GITHUB_TOKEN }}
         with:
           model: opencode/minimax-m2.5-free
-          token: ${{ secrets.OPENCODE_GITHUB_TOKEN }}
+          use_github_token: true
           prompt: |
             Review this pull request:
             - Check for code quality issues
