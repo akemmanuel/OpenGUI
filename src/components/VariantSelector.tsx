@@ -12,12 +12,12 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useOpenCode } from "@/hooks/use-opencode";
+import { useActions, useModelState } from "@/hooks/use-opencode";
 import { findModel } from "@/lib/utils";
 
 export function VariantSelector() {
-	const { state, cycleVariant, currentVariant } = useOpenCode();
-	const { providers, selectedModel } = state;
+	const { cycleVariant } = useActions();
+	const { providers, selectedModel, currentVariant } = useModelState();
 
 	// Get the current model's available variants
 	const variantKeys = useMemo(() => {

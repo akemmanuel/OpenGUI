@@ -33,6 +33,8 @@ export const STORAGE_KEYS = {
 	RECENT_MODELS: "opencode:recentModels",
 	FAVORITE_MODELS: "opencode:favoriteModels",
 	THEME: "theme",
+	RIGHT_SIDEBAR_OPEN: "opencode:rightSidebarOpen",
+	DISMISSED_UPDATE_VERSION: "opencode:dismissedUpdateVersion",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -83,3 +85,17 @@ export const NEAR_BOTTOM_PX = 80;
 
 /** Character count threshold before a user message is collapsed. */
 export const USER_MSG_COLLAPSE_CHARS = 500;
+
+// ---------------------------------------------------------------------------
+// Context menu styles (radix-ui ContextMenu)
+// ---------------------------------------------------------------------------
+
+/** Base class for `ContextMenu.Item`. */
+export const CTX_ITEM_CLASS =
+	"flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground";
+
+/** Class for `ContextMenu.SubTrigger` (extends item with open-state highlight). */
+export const CTX_SUBTRIGGER_CLASS = `${CTX_ITEM_CLASS} data-[state=open]:bg-accent`;
+
+/** Class for `ContextMenu.Separator`. */
+export const CTX_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-muted";

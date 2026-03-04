@@ -8,6 +8,14 @@ const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
 
 let mainWindow = null;
 
+/** Check if a URL uses a web protocol (http/https). */
+function isWebUrl(url) {
+	return (
+		typeof url === "string" &&
+		(url.startsWith("https://") || url.startsWith("http://"))
+	);
+}
+
 function createWindow() {
 	const isMac = process.platform === "darwin";
 
@@ -40,9 +48,7 @@ function createWindow() {
 	// Intercept all external link navigations and open them in the system browser.
 	// This catches <a target="_blank"> clicks and window.open() calls.
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-		if (url.startsWith("https://") || url.startsWith("http://")) {
-			shell.openExternal(url);
-		}
+		if (isWebUrl(url)) shell.openExternal(url);
 		return { action: "deny" };
 	});
 
@@ -52,9 +58,7 @@ function createWindow() {
 		const isInternal = appOrigins.some((origin) => url.startsWith(origin));
 		if (!isInternal) {
 			event.preventDefault();
-			if (url.startsWith("https://") || url.startsWith("http://")) {
-				shell.openExternal(url);
-			}
+			if (isWebUrl(url)) shell.openExternal(url);
 		}
 	});
 
@@ -98,12 +102,7 @@ ipcMain.handle("platform:homeDir", () => {
 
 // Open a URL in the system browser (not in Electron)
 ipcMain.handle("shell:openExternal", (_event, url) => {
-	if (
-		typeof url === "string" &&
-		(url.startsWith("https://") || url.startsWith("http://"))
-	) {
-		shell.openExternal(url);
-	}
+	if (isWebUrl(url)) shell.openExternal(url);
 });
 
 // Open a directory in the system file browser

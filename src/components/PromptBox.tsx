@@ -33,7 +33,11 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { VariantSelector } from "@/components/VariantSelector";
-import { useOpenCode } from "@/hooks/use-opencode";
+import {
+	useActions,
+	useModelState,
+	useSessionState,
+} from "@/hooks/use-opencode";
 import { useSTT } from "@/hooks/useSTT";
 import {
 	MAX_TEXTAREA_HEIGHT_PX,
@@ -42,7 +46,7 @@ import {
 } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
 import { storageGet } from "@/lib/safe-storage";
-import { cn } from "@/lib/utils";
+import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps
 	extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "onSubmit"> {
@@ -189,32 +193,24 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		} = useSTT(sttEndpoint);
 		const isDisabled = Boolean(props.disabled);
 
-		const { state, setAgent, sendCommand } = useOpenCode();
+		const { setAgent, sendCommand } = useActions();
+		const { commands, agents, selectedAgent } = useModelState();
+		const { messages, activeSessionId } = useSessionState();
 
 		// Slash command popover state
 		const [showSlash, setShowSlash] = React.useState(false);
 		const [slashFilter, setSlashFilter] = React.useState("");
 		const [slashActiveIndex, setSlashActiveIndex] = React.useState(0);
-		const filteredSlashCommands = useFilteredCommands(
-			state.commands,
-			slashFilter,
+		const filteredSlashCommands = useFilteredCommands(commands, slashFilter);
+		const primaryAgents = React.useMemo(
+			() => getPrimaryAgents(agents).map((a) => a.name),
+			[agents],
 		);
-		const primaryAgents = React.useMemo(() => {
-			// Same filtering/sorting as AgentSelector
-			return state.agents
-				.filter((a) => (a.mode === "primary" || a.mode === "all") && !a.hidden)
-				.sort((a, b) => {
-					const aIsDefault = a.name === "build" ? 1 : 0;
-					const bIsDefault = b.name === "build" ? 1 : 0;
-					return bIsDefault - aIsDefault;
-				})
-				.map((a) => a.name);
-		}, [state.agents]);
 
 		// Derive user message history from current session (newest first)
 		const userHistory = React.useMemo(
 			() =>
-				state.messages
+				messages
 					.filter((m) => m.info.role === "user")
 					.map((m) =>
 						m.parts
@@ -224,7 +220,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 					)
 					.filter((text) => text.length > 0)
 					.reverse(),
-			[state.messages],
+			[messages],
 		);
 
 		// Reset history navigation when switching sessions
@@ -232,7 +228,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		React.useEffect(() => {
 			setHistoryIndex(-1);
 			setSavedDraft("");
-		}, [state.activeSessionId]);
+		}, [activeSessionId]);
 
 		const handleMicClick = React.useCallback(async () => {
 			if (isDisabled) return;
@@ -421,7 +417,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 					spaceIndex > 0 ? trimmed.slice(1, spaceIndex) : trimmed.slice(1);
 				const args = spaceIndex > 0 ? trimmed.slice(spaceIndex + 1) : "";
 
-				const cmd = state.commands.find((c) => c.name === commandName);
+				const cmd = commands.find((c) => c.name === commandName);
 				if (cmd) {
 					sendCommand(commandName, args);
 					setValue("");
@@ -533,7 +529,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			}
 			if (e.key === "Tab" && primaryAgents.length > 1) {
 				e.preventDefault();
-				const effective = state.selectedAgent ?? "build";
+				const effective = selectedAgent ?? "build";
 				const currentIndex = primaryAgents.indexOf(effective);
 				const idx = currentIndex === -1 ? 0 : currentIndex;
 				const next = e.shiftKey
@@ -570,7 +566,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				{showSlash && filteredSlashCommands.length > 0 && (
 					<div className="relative">
 						<SlashCommandPopover
-							commands={state.commands}
+							commands={commands}
 							filter={slashFilter}
 							activeIndex={slashActiveIndex}
 							onSelect={handleSlashSelect}

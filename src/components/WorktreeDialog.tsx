@@ -18,6 +18,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { getErrorMessage, getProjectName } from "@/lib/utils";
 
 interface WorktreeDialogProps {
 	open: boolean;
@@ -44,7 +45,7 @@ export function WorktreeDialog({
 	const [newBranchName, setNewBranchName] = useState("");
 	const [worktreePath, setWorktreePath] = useState("");
 
-	const repoName = directory.replace(/\/+$/, "").split("/").pop() ?? "repo";
+	const repoName = getProjectName(directory);
 	const effectiveBranch =
 		mode === "new" ? newBranchName.trim() : selectedBranch;
 
@@ -101,7 +102,7 @@ export function WorktreeDialog({
 				setError(res?.error ?? "Failed to create worktree");
 			}
 		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
+			setError(getErrorMessage(err, "Failed to create worktree"));
 		} finally {
 			setCreating(false);
 		}

@@ -5,11 +5,13 @@
  * Saves via config.update() + auth.set().
  */
 
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useCallback, useState } from "react";
+import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getErrorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +33,92 @@ const _counter = { value: 1 };
 function nextKey() {
 	return _counter.value++;
 }
+
+// ---------------------------------------------------------------------------
+// Reusable key-value list editor (models / headers share the same layout)
+// ---------------------------------------------------------------------------
+
+interface KVEntry {
+	_key: number;
+	first: string;
+	second: string;
+}
+
+function KeyValueListEditor({
+	label,
+	entries,
+	firstPlaceholder,
+	secondPlaceholder,
+	firstClassName,
+	secondClassName,
+	minEntries = 0,
+	onAdd,
+	onRemove,
+	onUpdate,
+}: {
+	label: React.ReactNode;
+	entries: KVEntry[];
+	firstPlaceholder: string;
+	secondPlaceholder: string;
+	firstClassName?: string;
+	secondClassName?: string;
+	/** Minimum number of entries (hides delete when at this count). */
+	minEntries?: number;
+	onAdd: () => void;
+	onRemove: (idx: number) => void;
+	onUpdate: (idx: number, field: "first" | "second", value: string) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<div className="flex items-center justify-between">
+				<Label className="text-xs">{label}</Label>
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					className="h-6 text-xs"
+					onClick={onAdd}
+				>
+					<Plus className="size-3 mr-1" />
+					Add
+				</Button>
+			</div>
+			{entries.map((entry, idx) => (
+				<div key={entry._key} className="flex gap-2 items-start">
+					<Input
+						type="text"
+						value={entry.first}
+						onChange={(e) => onUpdate(idx, "first", e.target.value)}
+						placeholder={firstPlaceholder}
+						className={`text-xs flex-1 ${firstClassName ?? ""}`}
+					/>
+					<Input
+						type="text"
+						value={entry.second}
+						onChange={(e) => onUpdate(idx, "second", e.target.value)}
+						placeholder={secondPlaceholder}
+						className={`text-xs flex-1 ${secondClassName ?? ""}`}
+					/>
+					{entries.length > minEntries && (
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="h-8 w-8 p-0 shrink-0 text-muted-foreground"
+							onClick={() => onRemove(idx)}
+						>
+							<Trash2 className="size-3" />
+						</Button>
+					)}
+				</div>
+			))}
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface DialogCustomProviderProps {
 	onSaved: () => void;
@@ -168,7 +256,7 @@ export function DialogCustomProvider({
 				await bridge.disposeInstance();
 				onSaved();
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Failed to save");
+				setError(getErrorMessage(err, "Failed to save"));
 			} finally {
 				setSaving(false);
 			}
@@ -179,16 +267,9 @@ export function DialogCustomProvider({
 	return (
 		<form onSubmit={handleSubmit} className="space-y-4">
 			{/* Header */}
-			<div className="flex items-center gap-3">
-				<button
-					type="button"
-					onClick={onBack}
-					className="text-muted-foreground hover:text-foreground transition-colors"
-				>
-					<ArrowLeft className="size-4" />
-				</button>
+			<SubDialogHeader onBack={onBack}>
 				<span className="text-sm font-medium">Custom provider</span>
-			</div>
+			</SubDialogHeader>
 
 			{/* Provider ID */}
 			<div className="space-y-1.5">
@@ -254,97 +335,45 @@ export function DialogCustomProvider({
 			</div>
 
 			{/* Models */}
-			<div className="space-y-2">
-				<div className="flex items-center justify-between">
-					<Label className="text-xs">Models</Label>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						className="h-6 text-xs"
-						onClick={addModel}
-					>
-						<Plus className="size-3 mr-1" />
-						Add
-					</Button>
-				</div>
-				{models.map((model, idx) => (
-					<div key={model._key} className="flex gap-2 items-start">
-						<Input
-							type="text"
-							value={model.id}
-							onChange={(e) => updateModel(idx, "id", e.target.value)}
-							placeholder="model-id"
-							className="font-mono text-xs flex-1"
-						/>
-						<Input
-							type="text"
-							value={model.name}
-							onChange={(e) => updateModel(idx, "name", e.target.value)}
-							placeholder="Display Name"
-							className="text-xs flex-1"
-						/>
-						{models.length > 1 && (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								className="h-8 w-8 p-0 shrink-0 text-muted-foreground"
-								onClick={() => removeModel(idx)}
-							>
-								<Trash2 className="size-3" />
-							</Button>
-						)}
-					</div>
-				))}
-			</div>
+			<KeyValueListEditor
+				label="Models"
+				entries={models.map((m) => ({
+					_key: m._key,
+					first: m.id,
+					second: m.name,
+				}))}
+				firstPlaceholder="model-id"
+				secondPlaceholder="Display Name"
+				firstClassName="font-mono"
+				minEntries={1}
+				onAdd={addModel}
+				onRemove={removeModel}
+				onUpdate={(idx, field, value) =>
+					updateModel(idx, field === "first" ? "id" : "name", value)
+				}
+			/>
 
-			{/* Custom headers (collapsible) */}
-			<div className="space-y-2">
-				<div className="flex items-center justify-between">
-					<Label className="text-xs">
+			{/* Custom headers */}
+			<KeyValueListEditor
+				label={
+					<>
 						Custom headers{" "}
 						<span className="text-muted-foreground">(optional)</span>
-					</Label>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						className="h-6 text-xs"
-						onClick={addHeader}
-					>
-						<Plus className="size-3 mr-1" />
-						Add
-					</Button>
-				</div>
-				{headers.map((header, idx) => (
-					<div key={header._key} className="flex gap-2 items-start">
-						<Input
-							type="text"
-							value={header.key}
-							onChange={(e) => updateHeader(idx, "key", e.target.value)}
-							placeholder="Header-Name"
-							className="text-xs flex-1"
-						/>
-						<Input
-							type="text"
-							value={header.value}
-							onChange={(e) => updateHeader(idx, "value", e.target.value)}
-							placeholder="value"
-							className="text-xs flex-1"
-						/>
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							className="h-8 w-8 p-0 shrink-0 text-muted-foreground"
-							onClick={() => removeHeader(idx)}
-						>
-							<Trash2 className="size-3" />
-						</Button>
-					</div>
-				))}
-			</div>
+					</>
+				}
+				entries={headers.map((h) => ({
+					_key: h._key,
+					first: h.key,
+					second: h.value,
+				}))}
+				firstPlaceholder="Header-Name"
+				secondPlaceholder="value"
+				onAdd={addHeader}
+				onRemove={removeHeader}
+				onUpdate={(idx, field, value) =>
+					updateHeader(idx, field === "first" ? "key" : "value", value)
+				}
+			/>
 
 			{/* Error */}
 			{error && <p className="text-xs text-destructive">{error}</p>}

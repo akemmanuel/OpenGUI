@@ -44,9 +44,9 @@ import {
 	useReducer,
 	useRef,
 } from "react";
-import { resolveServerDefaultModel } from "@/hooks/opencode/use-connections";
 import {
 	resolveVariant,
+	updateVariantSelections,
 	useVariant,
 	type VariantSelections,
 	variantKey,
@@ -57,6 +57,7 @@ import {
 	STORAGE_KEYS,
 } from "@/lib/constants";
 import {
+	persistOrRemoveJSON,
 	storageGet,
 	storageParsed,
 	storageRemove,
@@ -64,7 +65,12 @@ import {
 	storageSetJSON,
 	storageSetOrRemove,
 } from "@/lib/safe-storage";
-import { findModel } from "@/lib/utils";
+import {
+	DEFAULT_AGENT_NAME,
+	findModel,
+	getErrorMessage,
+	isSelectableAgent,
+} from "@/lib/utils";
 import type {
 	BridgeEvent,
 	ConnectionConfig,
@@ -74,7 +80,34 @@ import type {
 	SelectedModel,
 } from "@/types/electron";
 
-export { resolveServerDefaultModel };
+/**
+ * Given the list of providers and a `provider -> modelID` default map from the
+ * server, resolve the first valid `SelectedModel` that exists.
+ */
+export function resolveServerDefaultModel(
+	providers: Provider[],
+	providerDefaults: Record<string, string>,
+): SelectedModel | null {
+	for (const provider of providers) {
+		const modelID = providerDefaults[provider.id];
+		if (typeof modelID !== "string") continue;
+		if (!(modelID in provider.models)) continue;
+		return { providerID: provider.id, modelID };
+	}
+
+	for (const raw of Object.values(providerDefaults)) {
+		if (typeof raw !== "string") continue;
+		const splitIdx = raw.indexOf("/");
+		if (splitIdx <= 0 || splitIdx >= raw.length - 1) continue;
+		const providerID = raw.slice(0, splitIdx);
+		const modelID = raw.slice(splitIdx + 1);
+		const provider = providers.find((p) => p.id === providerID);
+		if (!provider || !(modelID in provider.models)) continue;
+		return { providerID, modelID };
+	}
+
+	return null;
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -123,11 +156,11 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 			pruned[id] = m;
 		}
 	}
-	if (Object.keys(pruned).length === 0) {
-		storageRemove(STORAGE_KEYS.SESSION_META);
-	} else {
-		storageSetJSON(STORAGE_KEYS.SESSION_META, pruned);
-	}
+	persistOrRemoveJSON(
+		STORAGE_KEYS.SESSION_META,
+		pruned,
+		Object.keys(pruned).length === 0,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -142,11 +175,11 @@ function getWorktreeParents(): WorktreeParentMap {
 }
 
 function persistWorktreeParents(map: WorktreeParentMap) {
-	if (Object.keys(map).length === 0) {
-		storageRemove(STORAGE_KEYS.WORKTREE_PARENTS);
-	} else {
-		storageSetJSON(STORAGE_KEYS.WORKTREE_PARENTS, map);
-	}
+	persistOrRemoveJSON(
+		STORAGE_KEYS.WORKTREE_PARENTS,
+		map,
+		Object.keys(map).length === 0,
+	);
 }
 
 /**
@@ -210,11 +243,7 @@ function getUnreadSessionIds(): Set<string> {
 }
 
 function persistUnreadSessionIds(ids: Set<string>) {
-	if (ids.size === 0) {
-		storageRemove(STORAGE_KEYS.UNREAD_SESSIONS);
-	} else {
-		storageSetJSON(STORAGE_KEYS.UNREAD_SESSIONS, [...ids]);
-	}
+	persistOrRemoveJSON(STORAGE_KEYS.UNREAD_SESSIONS, [...ids], ids.size === 0);
 }
 
 function areNotificationsEnabled(): boolean {
@@ -749,9 +778,16 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			const filtered = state.sessions.filter(
 				(s) => (s._projectDir ?? s.directory) !== directory,
 			);
+			// Deduplicate by session ID: if the incoming batch contains a
+			// session that already exists under a *different* project
+			// directory (possible when directories share the same git repo /
+			// project_id on the server), keep the existing one and skip the
+			// duplicate from the new batch.
+			const existingIds = new Set(filtered.map((s) => s.id));
+			const deduped = sessions.filter((s) => !existingIds.has(s.id));
 			return {
 				...state,
-				sessions: sortSessionsNewestFirst([...filtered, ...sessions]),
+				sessions: sortSessionsNewestFirst([...filtered, ...deduped]),
 			};
 		}
 
@@ -1053,14 +1089,11 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			let agentPatch: { selectedAgent: string | null } | undefined;
 			if (msg.role === "assistant" && "agent" in msg && msg.agent) {
 				const valid = state.agents.some(
-					(a) =>
-						a.name === msg.agent &&
-						(a.mode === "primary" || a.mode === "all") &&
-						!a.hidden,
+					(a) => a.name === msg.agent && isSelectableAgent(a),
 				);
 				if (valid) {
 					agentPatch = {
-						selectedAgent: msg.agent === "build" ? null : msg.agent,
+						selectedAgent: msg.agent === DEFAULT_AGENT_NAME ? null : msg.agent,
 					};
 				}
 			}
@@ -1076,13 +1109,13 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					modelPatch.selectedModel.providerID,
 					modelPatch.selectedModel.modelID,
 				);
-				const newSelections = { ...state.variantSelections };
-				if (msg.variant) {
-					newSelections[key] = msg.variant as string;
-				} else {
-					delete newSelections[key];
-				}
-				variantPatch = { variantSelections: newSelections };
+				variantPatch = {
+					variantSelections: updateVariantSelections(
+						state.variantSelections,
+						key,
+						msg.variant ? (msg.variant as string) : undefined,
+					),
+				};
 			}
 
 			if (exists) {
@@ -1691,6 +1724,148 @@ interface OpenCodeContextValue {
 const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
 
 // ---------------------------------------------------------------------------
+// Split contexts  (subscribe to only the slice you need)
+// ---------------------------------------------------------------------------
+
+/** Session-related state – sessions list, active session, messages, busy state, queue. */
+export interface SessionContextValue {
+	sessions: Session[];
+	activeSessionId: string | null;
+	messages: MessageEntry[];
+	isBusy: boolean;
+	isLoadingMessages: boolean;
+	busySessionIds: Set<string>;
+	queuedPrompts: Record<string, QueuedPrompt[]>;
+	pendingPermissions: Record<string, PermissionRequest>;
+	pendingQuestions: Record<string, QuestionRequest>;
+	draftSessionDirectory: string | null;
+	draftIsTemporary: boolean;
+	temporarySessions: Set<string>;
+	unreadSessionIds: Set<string>;
+	sessionMeta: SessionMetaMap;
+	childSessions: OpenCodeState["childSessions"];
+	recentProjects: RecentProject[];
+}
+
+/** Model / agent / variant / command state. */
+export interface ModelContextValue {
+	providers: Provider[];
+	providerDefaults: Record<string, string>;
+	selectedModel: SelectedModel | null;
+	agents: Agent[];
+	selectedAgent: string | null;
+	variantSelections: VariantSelections;
+	commands: Command[];
+	currentVariant: string | undefined;
+}
+
+/** Connection lifecycle state. */
+export interface ConnectionContextValue {
+	connections: Record<string, ConnectionStatus>;
+	bootState: OpenCodeState["bootState"];
+	bootError: string | null;
+	lastError: string | null;
+	worktreeParents: WorktreeParentMap;
+}
+
+/** Stable action functions – these references rarely change. */
+export interface ActionsContextValue {
+	addProject: (
+		config: ConnectionConfig,
+		options?: { suppressError?: boolean },
+	) => Promise<void>;
+	removeProject: (directory: string) => Promise<void>;
+	disconnect: () => Promise<void>;
+	selectSession: (id: string | null) => Promise<void>;
+	createSession: (
+		title?: string,
+		directory?: string,
+	) => Promise<Session | null>;
+	deleteSession: (id: string) => Promise<void>;
+	renameSession: (id: string, title: string) => Promise<void>;
+	sendPrompt: (text: string, images?: string[]) => Promise<void>;
+	sendCommand: (command: string, args: string) => Promise<void>;
+	abortSession: () => Promise<void>;
+	respondPermission: (response: "once" | "always" | "reject") => Promise<void>;
+	replyQuestion: (answers: QuestionAnswer[]) => Promise<void>;
+	rejectQuestion: () => Promise<void>;
+	setModel: (model: SelectedModel | null) => void;
+	setAgent: (agent: string | null) => void;
+	cycleVariant: () => void;
+	setVariant: (variant: string | undefined) => void;
+	clearError: () => void;
+	refreshProviders: () => Promise<void>;
+	refreshSessions: () => Promise<void>;
+	getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
+	removeFromQueue: (sessionId: string, promptId: string) => void;
+	reorderQueue: (sessionId: string, fromIndex: number, toIndex: number) => void;
+	updateQueuedPrompt: (
+		sessionId: string,
+		promptId: string,
+		text: string,
+	) => void;
+	sendQueuedNow: (sessionId: string, promptId: string) => Promise<void>;
+	openDirectory: () => Promise<string | null>;
+	connectToProject: (directory: string, serverUrl?: string) => Promise<void>;
+	startDraftSession: (directory: string) => void;
+	setDraftTemporary: (temporary: boolean) => void;
+	revertToMessage: (messageID: string) => Promise<void>;
+	unrevert: () => Promise<void>;
+	forkFromMessage: (messageID: string) => Promise<void>;
+	setSessionColor: (sessionId: string, color: SessionColor) => void;
+	setSessionTags: (sessionId: string, tags: string[]) => void;
+	registerWorktree: (worktreeDir: string, parentDir: string) => void;
+	unregisterWorktree: (worktreeDir: string) => void;
+}
+
+const SessionContext = createContext<SessionContextValue | null>(null);
+const ModelContext = createContext<ModelContextValue | null>(null);
+const ConnectionContext = createContext<ConnectionContextValue | null>(null);
+const ActionsContext = createContext<ActionsContextValue | null>(null);
+
+// ---------------------------------------------------------------------------
+// Desktop notification helper (deduplicates 3 near-identical effects)
+// ---------------------------------------------------------------------------
+
+function useDesktopNotification(
+	triggerMap: Record<string, unknown>,
+	title: string,
+	activeSessionId: string | null,
+	sessions: Session[],
+	selectSession: (id: string) => void,
+) {
+	const prevKeysRef = useRef<Set<string>>(new Set());
+	useEffect(() => {
+		const prevKeys = prevKeysRef.current;
+		const nowKeys = new Set(Object.keys(triggerMap));
+
+		for (const sessionId of nowKeys) {
+			if (
+				!prevKeys.has(sessionId) &&
+				sessionId !== activeSessionId &&
+				areNotificationsEnabled() &&
+				typeof Notification !== "undefined" &&
+				Notification.permission === "granted"
+			) {
+				const session = sessions.find((s) => s.id === sessionId);
+				if (session) {
+					const sessionTitle = session.title || "Untitled";
+					const notification = new Notification(title, {
+						body: sessionTitle,
+					});
+					notification.onclick = () => {
+						window.focus();
+						selectSession(sessionId);
+					};
+				}
+			}
+		}
+
+		prevKeysRef.current = nowKeys;
+	}, [triggerMap, title, activeSessionId, sessions, selectSession]);
+}
+
+// ---------------------------------------------------------------------------
 // Helpers: find model in providers
 // ---------------------------------------------------------------------------
 
@@ -1737,13 +1912,10 @@ function extractAgentFromMessages(
 		const msg = messages[i]?.info;
 		if (msg?.role === "assistant" && "agent" in msg && msg.agent) {
 			const exists = agents.some(
-				(a) =>
-					a.name === msg.agent &&
-					(a.mode === "primary" || a.mode === "all") &&
-					!a.hidden,
+				(a) => a.name === msg.agent && isSelectableAgent(a),
 			);
 			if (exists) {
-				return msg.agent === "build" ? null : msg.agent;
+				return msg.agent === DEFAULT_AGENT_NAME ? null : msg.agent;
 			}
 		}
 	}
@@ -2287,16 +2459,27 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const busySessionIdsRef = useRef(state.busySessionIds);
 	busySessionIdsRef.current = state.busySessionIds;
 
-	const selectSession = useCallback(
-		async (id: string | null) => {
-			// Auto-delete the previous session if it was temporary
+	/** Best-effort cleanup of a temporary session if it exists. */
+	const cleanupTemporarySession = useCallback(
+		(excludeId?: string | null) => {
 			const prevId = activeSessionIdRef.current;
-			if (prevId && prevId !== id && temporarySessionsRef.current.has(prevId)) {
+			if (
+				prevId &&
+				prevId !== excludeId &&
+				temporarySessionsRef.current.has(prevId)
+			) {
 				dispatch({ type: "SESSION_DELETED", payload: prevId });
 				bridge?.deleteSession(prevId).catch(() => {
 					/* best-effort cleanup of temporary session */
 				});
 			}
+		},
+		[bridge],
+	);
+
+	const selectSession = useCallback(
+		async (id: string | null) => {
+			cleanupTemporarySession(id);
 
 			const requestId = ++selectSessionRequestRef.current;
 			dispatch({ type: "SET_ACTIVE_SESSION", payload: id });
@@ -2367,17 +2550,13 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				if (sessionModel) {
 					const sessionVariant = extractVariantFromMessages(messages);
 					const key = variantKey(sessionModel.providerID, sessionModel.modelID);
-					const newSelections = {
-						...variantSelectionsRef.current,
-					};
-					if (sessionVariant) {
-						newSelections[key] = sessionVariant;
-					} else {
-						delete newSelections[key];
-					}
 					dispatch({
 						type: "SET_VARIANT_SELECTIONS",
-						payload: newSelections,
+						payload: updateVariantSelections(
+							variantSelectionsRef.current,
+							key,
+							sessionVariant,
+						),
 					});
 				}
 			} else {
@@ -2385,7 +2564,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				dispatch({ type: "SET_SELECTED_AGENT", payload: null });
 			}
 		},
-		[bridge],
+		[bridge, cleanupTemporarySession],
 	);
 
 	const createSession = useCallback(
@@ -2442,6 +2621,56 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 
 	// Lock to prevent double session creation from draft
 	const draftCreatingRef = useRef(false);
+
+	/**
+	 * Ensure a session exists, creating one from a draft if needed.
+	 * Returns the session ID or null if no session is available.
+	 */
+	const ensureSessionFromDraft = useCallback(async (): Promise<
+		string | null
+	> => {
+		let sessionId = state.activeSessionId;
+		if (!sessionId && state.draftSessionDirectory) {
+			if (draftCreatingRef.current) return null;
+			draftCreatingRef.current = true;
+			const wasTemporary = state.draftIsTemporary;
+			try {
+				const newSession = await createSession(
+					undefined,
+					state.draftSessionDirectory,
+				);
+				if (!newSession) {
+					draftCreatingRef.current = false;
+					return null;
+				}
+				dispatch({ type: "CLEAR_DRAFT_SESSION" });
+				sessionId = newSession.id;
+				if (wasTemporary) {
+					dispatch({
+						type: "MARK_SESSION_TEMPORARY",
+						payload: newSession.id,
+					});
+				}
+			} catch {
+				draftCreatingRef.current = false;
+				return null;
+			}
+			draftCreatingRef.current = false;
+		}
+		if (!sessionId) {
+			dispatch({
+				type: "SET_ERROR",
+				payload: "Select or create a session first.",
+			});
+			return null;
+		}
+		return sessionId;
+	}, [
+		state.activeSessionId,
+		state.draftSessionDirectory,
+		state.draftIsTemporary,
+		createSession,
+	]);
 
 	/** Internal: send a prompt directly to the server (no queue check).
 	 *  Optional overrides allow queued prompts to use the model/agent/variant
@@ -2518,44 +2747,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const sendPrompt = useCallback(
 		async (text: string, images?: string[]) => {
 			if (!bridge) return;
-			let sessionId = state.activeSessionId;
-
-			// If no active session but a draft is pending, create the session now
-			if (!sessionId && state.draftSessionDirectory) {
-				if (draftCreatingRef.current) return; // prevent double creation
-				draftCreatingRef.current = true;
-				const wasTemporary = state.draftIsTemporary;
-				try {
-					const newSession = await createSession(
-						undefined,
-						state.draftSessionDirectory,
-					);
-					if (!newSession) {
-						draftCreatingRef.current = false;
-						return;
-					}
-					dispatch({ type: "CLEAR_DRAFT_SESSION" });
-					sessionId = newSession.id;
-					if (wasTemporary) {
-						dispatch({
-							type: "MARK_SESSION_TEMPORARY",
-							payload: newSession.id,
-						});
-					}
-				} catch {
-					draftCreatingRef.current = false;
-					return;
-				}
-				draftCreatingRef.current = false;
-			}
-
-			if (!sessionId) {
-				dispatch({
-					type: "SET_ERROR",
-					payload: "Select or create a session first.",
-				});
-				return;
-			}
+			const sessionId = await ensureSessionFromDraft();
+			if (!sessionId) return;
 
 			// If session is busy, enqueue instead of sending directly.
 			// Read from refs to avoid stale closures when the user switches
@@ -2589,55 +2782,17 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		},
 		[
 			bridge,
-			state.activeSessionId,
-			state.draftSessionDirectory,
-			state.draftIsTemporary,
 			state.busySessionIds,
 			dispatchPromptDirect,
-			createSession,
+			ensureSessionFromDraft,
 		],
 	);
 
 	const sendCommand = useCallback(
 		async (command: string, args: string) => {
 			if (!bridge) return;
-			let sessionId = state.activeSessionId;
-
-			if (!sessionId && state.draftSessionDirectory) {
-				if (draftCreatingRef.current) return;
-				draftCreatingRef.current = true;
-				const wasTemporary = state.draftIsTemporary;
-				try {
-					const newSession = await createSession(
-						undefined,
-						state.draftSessionDirectory,
-					);
-					if (!newSession) {
-						draftCreatingRef.current = false;
-						return;
-					}
-					dispatch({ type: "CLEAR_DRAFT_SESSION" });
-					sessionId = newSession.id;
-					if (wasTemporary) {
-						dispatch({
-							type: "MARK_SESSION_TEMPORARY",
-							payload: newSession.id,
-						});
-					}
-				} catch {
-					draftCreatingRef.current = false;
-					return;
-				}
-				draftCreatingRef.current = false;
-			}
-
-			if (!sessionId) {
-				dispatch({
-					type: "SET_ERROR",
-					payload: "Select or create a session first.",
-				});
-				return;
-			}
+			const sessionId = await ensureSessionFromDraft();
+			if (!sessionId) return;
 
 			dispatch({ type: "SET_BUSY", payload: true });
 			try {
@@ -2656,139 +2811,66 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				dispatch({ type: "SET_BUSY", payload: false });
 				dispatch({
 					type: "SET_ERROR",
-					payload: err instanceof Error ? err.message : String(err),
+					payload: getErrorMessage(err),
 				});
 			}
 		},
 		[
 			bridge,
-			state.activeSessionId,
-			state.draftSessionDirectory,
-			state.draftIsTemporary,
 			state.selectedModel,
 			state.selectedAgent,
 			currentVariant,
-			createSession,
+			ensureSessionFromDraft,
 		],
 	);
 
-	// Auto-dispatch queued prompts when a session transitions from busy to idle
+	// Auto-dispatch queued prompts when a session transitions from busy to idle.
+	// Builds a synthetic trigger map (sessionID -> true) for newly-idle sessions
+	// so the generic useDesktopNotification hook can handle the notification.
 	const prevBusyRef = useRef<Set<string>>(new Set());
+	const justIdledMap = useRef<Record<string, true>>({});
 	useEffect(() => {
 		const prevBusy = prevBusyRef.current;
 		const nowBusy = state.busySessionIds;
+		const newlyIdle: Record<string, true> = {};
 
-		// Find sessions that just became idle
 		for (const sessionId of prevBusy) {
 			if (!nowBusy.has(sessionId)) {
-				// Session transitioned busy -> idle
 				dispatchNextQueued(sessionId);
-
-				// Send desktop notification for non-active root sessions
-				// (subagent/task sessions are not in state.sessions)
-				if (
-					sessionId !== state.activeSessionId &&
-					areNotificationsEnabled() &&
-					typeof Notification !== "undefined" &&
-					Notification.permission === "granted"
-				) {
-					const session = state.sessions.find((s) => s.id === sessionId);
-					if (session) {
-						const title = session.title || "Untitled";
-						const notification = new Notification("Session complete", {
-							body: title,
-						});
-						notification.onclick = () => {
-							window.focus();
-							selectSession(sessionId);
-						};
-					}
-				}
+				newlyIdle[sessionId] = true;
 			}
 		}
 
+		justIdledMap.current = newlyIdle;
 		prevBusyRef.current = new Set(nowBusy);
-	}, [
-		state.busySessionIds,
+	}, [state.busySessionIds, dispatchNextQueued]);
+
+	// Desktop notifications for newly-idle sessions
+	useDesktopNotification(
+		justIdledMap.current,
+		"Session complete",
 		state.activeSessionId,
 		state.sessions,
-		dispatchNextQueued,
 		selectSession,
-	]);
+	);
 
-	// Send desktop notification when a question arrives for a non-active session
-	const prevQuestionsRef = useRef<Set<string>>(new Set());
-	useEffect(() => {
-		const prevKeys = prevQuestionsRef.current;
-		const nowKeys = new Set(Object.keys(state.pendingQuestions));
-
-		for (const sessionId of nowKeys) {
-			if (
-				!prevKeys.has(sessionId) &&
-				sessionId !== state.activeSessionId &&
-				areNotificationsEnabled() &&
-				typeof Notification !== "undefined" &&
-				Notification.permission === "granted"
-			) {
-				// Skip subagent/task sessions (they are not in state.sessions)
-				const session = state.sessions.find((s) => s.id === sessionId);
-				if (session) {
-					const title = session.title || "Untitled";
-					const notification = new Notification("Question waiting", {
-						body: title,
-					});
-					notification.onclick = () => {
-						window.focus();
-						selectSession(sessionId);
-					};
-				}
-			}
-		}
-
-		prevQuestionsRef.current = nowKeys;
-	}, [
+	// Desktop notification when a question arrives for a non-active session
+	useDesktopNotification(
 		state.pendingQuestions,
+		"Question waiting",
 		state.activeSessionId,
 		state.sessions,
 		selectSession,
-	]);
+	);
 
-	// Send desktop notification when a permission is requested for a non-active session
-	const prevPermissionsRef = useRef<Set<string>>(new Set());
-	useEffect(() => {
-		const prevKeys = prevPermissionsRef.current;
-		const nowKeys = new Set(Object.keys(state.pendingPermissions));
-
-		for (const sessionId of nowKeys) {
-			if (
-				!prevKeys.has(sessionId) &&
-				sessionId !== state.activeSessionId &&
-				areNotificationsEnabled() &&
-				typeof Notification !== "undefined" &&
-				Notification.permission === "granted"
-			) {
-				// Skip subagent/task sessions (they are not in state.sessions)
-				const session = state.sessions.find((s) => s.id === sessionId);
-				if (session) {
-					const title = session.title || "Untitled";
-					const notification = new Notification("Permission requested", {
-						body: title,
-					});
-					notification.onclick = () => {
-						window.focus();
-						selectSession(sessionId);
-					};
-				}
-			}
-		}
-
-		prevPermissionsRef.current = nowKeys;
-	}, [
+	// Desktop notification when a permission is requested for a non-active session
+	useDesktopNotification(
 		state.pendingPermissions,
+		"Permission requested",
 		state.activeSessionId,
 		state.sessions,
 		selectSession,
-	]);
+	);
 
 	const abortSession = useCallback(async () => {
 		if (!bridge || !state.activeSessionId) return;
@@ -2818,11 +2900,23 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			if (!bridge || !state.activeSessionId) return;
 			const pending = state.pendingQuestions[state.activeSessionId];
 			if (!pending) return;
-			await bridge.replyQuestion(pending.id, answers);
-			dispatch({
-				type: "SET_QUESTION",
-				payload: { sessionID: state.activeSessionId, clear: true },
-			});
+			try {
+				const res = await bridge.replyQuestion(pending.id, answers);
+				if (!res.success) {
+					dispatch({
+						type: "SET_ERROR",
+						payload: res.error ?? "Failed to submit question reply",
+					});
+				}
+			} catch (error) {
+				dispatch({
+					type: "SET_ERROR",
+					payload:
+						error instanceof Error
+							? error.message
+							: "Failed to submit question reply",
+				});
+			}
 		},
 		[bridge, state.pendingQuestions, state.activeSessionId],
 	);
@@ -2831,28 +2925,31 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		if (!bridge || !state.activeSessionId) return;
 		const pending = state.pendingQuestions[state.activeSessionId];
 		if (!pending) return;
-		await bridge.rejectQuestion(pending.id);
-		dispatch({
-			type: "SET_QUESTION",
-			payload: { sessionID: state.activeSessionId, clear: true },
-		});
+		try {
+			const res = await bridge.rejectQuestion(pending.id);
+			if (!res.success) {
+				dispatch({
+					type: "SET_ERROR",
+					payload: res.error ?? "Failed to dismiss question",
+				});
+			}
+		} catch (error) {
+			dispatch({
+				type: "SET_ERROR",
+				payload:
+					error instanceof Error ? error.message : "Failed to dismiss question",
+			});
+		}
 	}, [bridge, state.pendingQuestions, state.activeSessionId]);
 
 	const startDraftSession = useCallback(
 		(directory: string) => {
-			// Auto-delete the previous session if it was temporary
-			const prevId = activeSessionIdRef.current;
-			if (prevId && temporarySessionsRef.current.has(prevId)) {
-				dispatch({ type: "SESSION_DELETED", payload: prevId });
-				bridge?.deleteSession(prevId).catch(() => {
-					/* best-effort cleanup of temporary session */
-				});
-			}
+			cleanupTemporarySession();
 			dispatch({ type: "START_DRAFT_SESSION", payload: directory });
 			// Reset agent to default for new sessions (keep model as-is)
 			dispatch({ type: "SET_SELECTED_AGENT", payload: null });
 		},
-		[bridge],
+		[cleanupTemporarySession],
 	);
 
 	const setDraftTemporary = useCallback((temporary: boolean) => {
@@ -3050,9 +3147,89 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		dispatch({ type: "UNREGISTER_WORKTREE", payload: worktreeDir });
 	}, []);
 
-	const value = useMemo<OpenCodeContextValue>(
+	// ----- Split context values (memoised per domain) -----
+
+	const sessionCtx = useMemo<SessionContextValue>(
 		() => ({
-			state,
+			sessions: state.sessions,
+			activeSessionId: state.activeSessionId,
+			messages: state.messages,
+			isBusy: state.isBusy,
+			isLoadingMessages: state.isLoadingMessages,
+			busySessionIds: state.busySessionIds,
+			queuedPrompts: state.queuedPrompts,
+			pendingPermissions: state.pendingPermissions,
+			pendingQuestions: state.pendingQuestions,
+			draftSessionDirectory: state.draftSessionDirectory,
+			draftIsTemporary: state.draftIsTemporary,
+			temporarySessions: state.temporarySessions,
+			unreadSessionIds: state.unreadSessionIds,
+			sessionMeta: state.sessionMeta,
+			childSessions: state.childSessions,
+			recentProjects: state.recentProjects,
+		}),
+		[
+			state.sessions,
+			state.activeSessionId,
+			state.messages,
+			state.isBusy,
+			state.isLoadingMessages,
+			state.busySessionIds,
+			state.queuedPrompts,
+			state.pendingPermissions,
+			state.pendingQuestions,
+			state.draftSessionDirectory,
+			state.draftIsTemporary,
+			state.temporarySessions,
+			state.unreadSessionIds,
+			state.sessionMeta,
+			state.childSessions,
+			state.recentProjects,
+		],
+	);
+
+	const modelCtx = useMemo<ModelContextValue>(
+		() => ({
+			providers: state.providers,
+			providerDefaults: state.providerDefaults,
+			selectedModel: state.selectedModel,
+			agents: state.agents,
+			selectedAgent: state.selectedAgent,
+			variantSelections: state.variantSelections,
+			commands: state.commands,
+			currentVariant,
+		}),
+		[
+			state.providers,
+			state.providerDefaults,
+			state.selectedModel,
+			state.agents,
+			state.selectedAgent,
+			state.variantSelections,
+			state.commands,
+			currentVariant,
+		],
+	);
+
+	const connectionCtx = useMemo<ConnectionContextValue>(
+		() => ({
+			connections: state.connections,
+			bootState: state.bootState,
+			bootError: state.bootError,
+			lastError: state.lastError,
+			worktreeParents: state.worktreeParents,
+		}),
+		[
+			state.connections,
+			state.bootState,
+			state.bootError,
+			state.lastError,
+			state.worktreeParents,
+		],
+	);
+
+	const actionsCtx = useMemo<ActionsContextValue>(
+		() => ({
 			addProject,
 			removeProject,
 			disconnect,
@@ -3070,7 +3247,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setAgent,
 			cycleVariant: doCycleVariant,
 			setVariant,
-			currentVariant,
 			clearError,
 			refreshProviders,
 			refreshSessions,
@@ -3092,7 +3268,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			unregisterWorktree,
 		}),
 		[
-			state,
 			addProject,
 			removeProject,
 			disconnect,
@@ -3110,7 +3285,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setAgent,
 			doCycleVariant,
 			setVariant,
-			currentVariant,
 			clearError,
 			refreshProviders,
 			refreshSessions,
@@ -3133,6 +3307,16 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		],
 	);
 
+	// Legacy combined value for backwards-compatible useOpenCode()
+	const value = useMemo<OpenCodeContextValue>(
+		() => ({
+			state,
+			...actionsCtx,
+			currentVariant,
+		}),
+		[state, actionsCtx, currentVariant],
+	);
+
 	// Clean up temporary sessions on window unload (app close / refresh)
 	useEffect(() => {
 		const cleanup = () => {
@@ -3147,20 +3331,88 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	}, [bridge]);
 
 	return (
-		<OpenCodeContext.Provider value={value}>
-			{children}
-		</OpenCodeContext.Provider>
+		<ActionsContext.Provider value={actionsCtx}>
+			<ConnectionContext.Provider value={connectionCtx}>
+				<ModelContext.Provider value={modelCtx}>
+					<SessionContext.Provider value={sessionCtx}>
+						<OpenCodeContext.Provider value={value}>
+							{children}
+						</OpenCodeContext.Provider>
+					</SessionContext.Provider>
+				</ModelContext.Provider>
+			</ConnectionContext.Provider>
+		</ActionsContext.Provider>
 	);
 }
 
 // ---------------------------------------------------------------------------
-// Hook
+// Hook (legacy – subscribes to ALL state changes, prefer split hooks below)
 // ---------------------------------------------------------------------------
 
 export function useOpenCode(): OpenCodeContextValue {
 	const ctx = useContext(OpenCodeContext);
 	if (!ctx) {
 		throw new Error("useOpenCode must be used within <OpenCodeProvider>");
+	}
+	return ctx;
+}
+
+// ---------------------------------------------------------------------------
+// Split hooks  (subscribe only to the slice you need)
+// ---------------------------------------------------------------------------
+
+/**
+ * Session-related state: sessions list, active session, messages, busy
+ * state, queue, permissions, questions, draft, unread, meta, child sessions.
+ *
+ * Components that only read session data should prefer this over useOpenCode()
+ * to avoid re-rendering on model / connection state changes.
+ */
+export function useSessionState(): SessionContextValue {
+	const ctx = useContext(SessionContext);
+	if (!ctx) {
+		throw new Error("useSessionState must be used within <OpenCodeProvider>");
+	}
+	return ctx;
+}
+
+/**
+ * Model / agent / variant / command state.
+ *
+ * Components like ModelSelector, AgentSelector, VariantSelector should use
+ * this instead of useOpenCode() to avoid re-rendering on session changes.
+ */
+export function useModelState(): ModelContextValue {
+	const ctx = useContext(ModelContext);
+	if (!ctx) {
+		throw new Error("useModelState must be used within <OpenCodeProvider>");
+	}
+	return ctx;
+}
+
+/**
+ * Connection lifecycle state: per-project connections, boot state, errors,
+ * worktree parents.
+ */
+export function useConnectionState(): ConnectionContextValue {
+	const ctx = useContext(ConnectionContext);
+	if (!ctx) {
+		throw new Error(
+			"useConnectionState must be used within <OpenCodeProvider>",
+		);
+	}
+	return ctx;
+}
+
+/**
+ * Stable action functions.  Because every function is wrapped in useCallback,
+ * this context value changes infrequently.  Components that only need to
+ * *dispatch* actions (not read state) should use this hook.
+ */
+export function useActions(): ActionsContextValue {
+	const ctx = useContext(ActionsContext);
+	if (!ctx) {
+		throw new Error("useActions must be used within <OpenCodeProvider>");
 	}
 	return ctx;
 }

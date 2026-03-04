@@ -20,7 +20,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useOpenCode } from "@/hooks/use-opencode";
+import { useActions, useModelState } from "@/hooks/use-opencode";
 import {
 	MAX_RECENT_MODELS,
 	SIX_MONTHS_MS,
@@ -110,8 +110,8 @@ function ModelRow({
 }
 
 export function ModelSelector() {
-	const { state, setModel } = useOpenCode();
-	const { providers, selectedModel } = state;
+	const { setModel } = useActions();
+	const { providers, selectedModel } = useModelState();
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [recentValues, setRecentValues] = useState<string[]>([]);

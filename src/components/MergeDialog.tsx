@@ -15,6 +15,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { getErrorMessage, getProjectName } from "@/lib/utils";
 
 type MergeState =
 	| { step: "confirm" }
@@ -47,7 +48,7 @@ export function MergeDialog({
 	const [mergeState, setMergeState] = useState<MergeState>({ step: "confirm" });
 	const [deleteWorktree, setDeleteWorktree] = useState(false);
 
-	const repoName = mainDirectory.replace(/\/+$/, "").split("/").pop() ?? "repo";
+	const repoName = getProjectName(mainDirectory);
 
 	const handleClose = useCallback(
 		(nextOpen: boolean) => {
@@ -84,7 +85,7 @@ export function MergeDialog({
 		} catch (err) {
 			setMergeState({
 				step: "error",
-				message: err instanceof Error ? err.message : String(err),
+				message: getErrorMessage(err, "Merge failed"),
 			});
 		}
 	}, [mainDirectory, branch, deleteWorktree, onMerged]);

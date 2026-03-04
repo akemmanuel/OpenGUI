@@ -14,27 +14,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { useOpenCode } from "@/hooks/use-opencode";
-
-const DEFAULT_AGENT_NAME = "build";
+import { useActions, useModelState } from "@/hooks/use-opencode";
+import { DEFAULT_AGENT_NAME, getPrimaryAgents } from "@/lib/utils";
 
 export function AgentSelector() {
-	const { state, setAgent } = useOpenCode();
-	const { agents, selectedAgent } = state;
+	const { setAgent } = useActions();
+	const { agents, selectedAgent } = useModelState();
 
-	// Only show primary agents (mode "primary" or "all")
-	const primaryAgents = useMemo(
-		() =>
-			agents
-				.filter((a) => (a.mode === "primary" || a.mode === "all") && !a.hidden)
-				.sort((a, b) => {
-					// Default agent ("build") goes first, rest keeps original order
-					const aIsDefault = a.name === DEFAULT_AGENT_NAME ? 1 : 0;
-					const bIsDefault = b.name === DEFAULT_AGENT_NAME ? 1 : 0;
-					return bIsDefault - aIsDefault;
-				}),
-		[agents],
-	);
+	const primaryAgents = useMemo(() => getPrimaryAgents(agents), [agents]);
 
 	// Resolve null (meaning "use default") to the actual default agent name
 	const currentValue = selectedAgent ?? DEFAULT_AGENT_NAME;
