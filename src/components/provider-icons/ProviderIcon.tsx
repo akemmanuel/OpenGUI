@@ -9,7 +9,7 @@ import type { SVGAttributes } from "react";
 import sprite from "./sprite.svg";
 import { type ProviderIconName, providerIconNames } from "./types";
 
-export type ProviderIconProps = SVGAttributes<SVGSVGElement> & {
+type ProviderIconProps = SVGAttributes<SVGSVGElement> & {
 	/** Provider ID (must match a key in the sprite sheet). */
 	provider: string;
 };
@@ -17,7 +17,7 @@ export type ProviderIconProps = SVGAttributes<SVGSVGElement> & {
 const iconNameSet = new Set<string>(providerIconNames);
 
 /** Resolve a provider ID to a valid icon name, falling back to "synthetic". */
-export function resolveProviderIcon(id: string): ProviderIconName {
+function resolveProviderIcon(id: string): ProviderIconName {
 	if (iconNameSet.has(id)) return id as ProviderIconName;
 	return "synthetic";
 }

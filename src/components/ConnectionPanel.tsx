@@ -38,7 +38,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-	hasAnyConnection,
 	NOTIFICATIONS_ENABLED_KEY,
 	useActions,
 	useConnectionState,
@@ -114,9 +113,8 @@ type ServerState =
 	| "error";
 
 function AddProjectForm({ onDone }: { onDone: () => void }) {
-	const { addProject, connectToProject, disconnect, clearError } = useActions();
+	const { addProject, connectToProject, clearError } = useActions();
 	const { connections } = useConnectionState();
-	const isConnected = hasAnyConnection(connections);
 	const isElectron = !!window.electronAPI;
 
 	const [url, setUrl] = useState(

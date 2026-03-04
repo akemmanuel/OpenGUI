@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 // Color config
 // ---------------------------------------------------------------------------
 
-export const SESSION_COLORS: {
+const SESSION_COLORS: {
 	value: SessionColor;
 	label: string;
 	className: string;

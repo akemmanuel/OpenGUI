@@ -310,5 +310,3 @@ export function App() {
 		</OpenCodeProvider>
 	);
 }
-
-export default App;
