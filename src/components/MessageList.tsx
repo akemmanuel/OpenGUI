@@ -19,8 +19,6 @@ import {
 	ChevronRight,
 	Circle,
 	CircleCheck,
-	CircleDot,
-	CircleOff,
 	FileCode,
 	FileEdit,
 	FilePlus,
@@ -62,9 +60,11 @@ import { useHomeDir } from "@/hooks/use-home-dir";
 import {
 	getChildSessionToolParts,
 	type MessageEntry,
-	useOpenCode,
+	useActions,
+	useSessionState,
 } from "@/hooks/use-opencode";
 import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
+import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
 import { abbreviatePath, cn } from "@/lib/utils";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
@@ -104,7 +104,6 @@ function hasVisibleContent(entry: MessageEntry): boolean {
 
 export function MessageList() {
 	const {
-		state,
 		respondPermission,
 		replyQuestion,
 		rejectQuestion,
@@ -114,7 +113,7 @@ export function MessageList() {
 		forkFromMessage,
 		revertToMessage,
 		unrevert,
-	} = useOpenCode();
+	} = useActions();
 	const {
 		messages,
 		isBusy,
@@ -124,7 +123,10 @@ export function MessageList() {
 		activeSessionId,
 		recentProjects,
 		sessions,
-	} = state;
+		draftSessionDirectory,
+		draftIsTemporary,
+		temporarySessions,
+	} = useSessionState();
 	const activeSession = useMemo(
 		() => sessions.find((s) => s.id === activeSessionId),
 		[sessions, activeSessionId],
@@ -292,7 +294,6 @@ export function MessageList() {
 		);
 	}
 
-	const { draftSessionDirectory } = state;
 	const isDraft = !activeSessionId && !!draftSessionDirectory;
 
 	if (
@@ -332,10 +333,10 @@ export function MessageList() {
 					{isDraft && (
 						<button
 							type="button"
-							onClick={() => setDraftTemporary(!state.draftIsTemporary)}
+							onClick={() => setDraftTemporary(!draftIsTemporary)}
 							className={cn(
 								"mt-1 flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
-								state.draftIsTemporary
+								draftIsTemporary
 									? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
 									: "bg-muted text-muted-foreground hover:bg-muted/80",
 							)}
@@ -407,7 +408,7 @@ export function MessageList() {
 			className="flex-1 overflow-auto px-4 py-4"
 		>
 			<div className="max-w-[640px] mx-auto">
-				{activeSessionId && state.temporarySessions.has(activeSessionId) && (
+				{activeSessionId && temporarySessions.has(activeSessionId) && (
 					<div className="mb-3 flex items-center justify-center gap-1.5 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
 						<Timer className="size-3" />
 						Temporary chat - will be deleted when you leave
@@ -920,43 +921,8 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
 
 // ---------------------------------------------------------------------------
 // Todo list renderer (for todowrite tool calls)
+// Uses shared types/utils from @/lib/todos
 // ---------------------------------------------------------------------------
-
-interface TodoItem {
-	content: string;
-	status: string;
-	priority: string;
-}
-
-/** Try to extract a todo array from a todowrite tool part. */
-function extractTodos(state: ToolPart["state"]): TodoItem[] | null {
-	try {
-		// Prefer input.todos (always present once the tool is called)
-		if ("input" in state && state.input) {
-			const raw = state.input.todos;
-			if (Array.isArray(raw) && raw.length > 0) {
-				return raw.filter(
-					(t): t is TodoItem =>
-						typeof t === "object" &&
-						t !== null &&
-						typeof t.content === "string" &&
-						typeof t.status === "string",
-				);
-			}
-		}
-	} catch {
-		/* ignore */
-	}
-	return null;
-}
-
-const todoStatusConfig: Record<string, { icon: typeof Circle; color: string }> =
-	{
-		pending: { icon: Circle, color: "text-muted-foreground" },
-		in_progress: { icon: CircleDot, color: "text-blue-400" },
-		completed: { icon: CircleCheck, color: "text-emerald-500" },
-		cancelled: { icon: CircleOff, color: "text-red-400 opacity-60" },
-	};
 
 function TodoListView({ todos }: { todos: TodoItem[] }) {
 	return (
@@ -1386,10 +1352,10 @@ function getToolDisplayInfo(
 
 /** Renders the list of tool parts from a child (subagent) session. */
 function ChildToolPartsList({ childSessionId }: { childSessionId: string }) {
-	const { state } = useOpenCode();
+	const { childSessions } = useSessionState();
 	const childParts = useMemo(
-		() => getChildSessionToolParts(state.childSessions, childSessionId),
-		[state.childSessions, childSessionId],
+		() => getChildSessionToolParts(childSessions, childSessionId),
+		[childSessions, childSessionId],
 	);
 
 	if (childParts.length === 0) return null;

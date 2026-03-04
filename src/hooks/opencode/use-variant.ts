@@ -1,5 +1,7 @@
 import type { Agent, Model, Provider } from "@opencode-ai/sdk/v2/client";
 import { useCallback, useMemo } from "react";
+import { STORAGE_KEYS } from "@/lib/constants";
+import { storageSetJSON, storageSetOrRemove } from "@/lib/safe-storage";
 import { findModel } from "@/lib/utils";
 import type { SelectedModel } from "@/types/electron";
 
@@ -7,6 +9,29 @@ export type VariantSelections = Record<string, string | undefined>;
 
 export function variantKey(providerID: string, modelID: string): string {
 	return `${providerID}/${modelID}`;
+}
+
+/** Persist variant selections to storage. */
+function persistVariantSelections(selections: VariantSelections): void {
+	storageSetJSON(STORAGE_KEYS.VARIANT_SELECTIONS, selections);
+}
+
+/**
+ * Immutably update a variant selections map: set or delete a key.
+ * Returns the new selections object.
+ */
+export function updateVariantSelections(
+	selections: VariantSelections,
+	key: string,
+	value: string | undefined,
+): VariantSelections {
+	const next = { ...selections };
+	if (value === undefined) {
+		delete next[key];
+	} else {
+		next[key] = value;
+	}
+	return next;
 }
 
 export function cycleVariantSelection(
@@ -79,15 +104,7 @@ export function useVariant({
 	const setAgent = useCallback(
 		(agent: string | null) => {
 			dispatch({ type: "SET_SELECTED_AGENT", payload: agent });
-			try {
-				if (agent) {
-					localStorage.setItem("opencode:selectedAgent", agent);
-				} else {
-					localStorage.removeItem("opencode:selectedAgent");
-				}
-			} catch {
-				/* ignore */
-			}
+			storageSetOrRemove(STORAGE_KEYS.SELECTED_AGENT, agent);
 		},
 		[dispatch],
 	);
@@ -102,42 +119,22 @@ export function useVariant({
 		const key = variantKey(selectedModel.providerID, selectedModel.modelID);
 		const current = variantSelections[key];
 		const next = cycleVariantSelection(current, model);
-		const newSelections = { ...variantSelections };
-		if (next === undefined) {
-			delete newSelections[key];
-		} else {
-			newSelections[key] = next;
-		}
+		const newSelections = updateVariantSelections(variantSelections, key, next);
 		dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-		try {
-			localStorage.setItem(
-				"opencode:variantSelections",
-				JSON.stringify(newSelections),
-			);
-		} catch {
-			/* ignore */
-		}
+		persistVariantSelections(newSelections);
 	}, [selectedModel, providers, variantSelections, dispatch]);
 
 	const setVariant = useCallback(
 		(variant: string | undefined) => {
 			if (!selectedModel) return;
 			const key = variantKey(selectedModel.providerID, selectedModel.modelID);
-			const newSelections = { ...variantSelections };
-			if (variant === undefined) {
-				delete newSelections[key];
-			} else {
-				newSelections[key] = variant;
-			}
+			const newSelections = updateVariantSelections(
+				variantSelections,
+				key,
+				variant,
+			);
 			dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-			try {
-				localStorage.setItem(
-					"opencode:variantSelections",
-					JSON.stringify(newSelections),
-				);
-			} catch {
-				/* ignore */
-			}
+			persistVariantSelections(newSelections);
 		},
 		[selectedModel, variantSelections, dispatch],
 	);

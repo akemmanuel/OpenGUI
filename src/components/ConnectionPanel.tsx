@@ -37,9 +37,15 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NOTIFICATIONS_ENABLED_KEY, useOpenCode } from "@/hooks/use-opencode";
+import {
+	hasAnyConnection,
+	NOTIFICATIONS_ENABLED_KEY,
+	useActions,
+	useConnectionState,
+} from "@/hooks/use-opencode";
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
+import { getErrorMessage } from "@/lib/utils";
 import packageJson from "../../package.json";
 
 // ---------------------------------------------------------------------------
@@ -108,8 +114,9 @@ type ServerState =
 	| "error";
 
 function AddProjectForm({ onDone }: { onDone: () => void }) {
-	const { state, addProject, connectToProject, clearError } = useOpenCode();
-	const { connections } = state;
+	const { addProject, connectToProject, disconnect, clearError } = useActions();
+	const { connections } = useConnectionState();
+	const isConnected = hasAnyConnection(connections);
 	const isElectron = !!window.electronAPI;
 
 	const [url, setUrl] = useState(
@@ -204,9 +211,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 			}
 		} catch (err) {
 			setServerState("error");
-			setServerError(
-				err instanceof Error ? err.message : "Failed to start server",
-			);
+			setServerError(getErrorMessage(err, "Failed to start server"));
 		}
 	};
 
@@ -228,9 +233,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 			}
 		} catch (err) {
 			setServerState("error");
-			setServerError(
-				err instanceof Error ? err.message : "Failed to stop server",
-			);
+			setServerError(getErrorMessage(err, "Failed to stop server"));
 		}
 	};
 
@@ -249,7 +252,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 		// exists for the directory). On failure, keep the dialog open so the
 		// user can see the error and retry.
 		const dir = directory.trim();
-		if (dir && state.connections[dir]?.state === "connected") {
+		if (dir && connections[dir]?.state === "connected") {
 			onDone();
 		}
 	};

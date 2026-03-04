@@ -68,3 +68,19 @@ export function storageSetOrRemove(
 		storageRemove(key);
 	}
 }
+
+/**
+ * Persist a JSON value if `isEmpty` is false, otherwise remove the key.
+ * Useful for maps/sets that should be cleaned up when empty.
+ */
+export function persistOrRemoveJSON(
+	key: string,
+	value: unknown,
+	isEmpty: boolean,
+): void {
+	if (isEmpty) {
+		storageRemove(key);
+	} else {
+		storageSetJSON(key, value);
+	}
+}

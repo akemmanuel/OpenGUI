@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { cn } from "@/lib/utils";
+import { cn, openExternalLink } from "@/lib/utils";
 import { CodeBlock, CodeBlockCode } from "./ui/code-block";
 
 // Stable components object - defined at module scope to avoid recreating on
@@ -99,9 +99,9 @@ const markdownComponents = {
 		[key: string]: unknown;
 	}) {
 		const handleClick = (e: React.MouseEvent) => {
-			if (href && window.electronAPI?.openExternal) {
+			if (href) {
 				e.preventDefault();
-				window.electronAPI.openExternal(href);
+				openExternalLink(href);
 			}
 		};
 		return (
