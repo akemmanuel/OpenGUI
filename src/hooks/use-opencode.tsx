@@ -1647,88 +1647,12 @@ export function getChildSessionToolParts(
 // Context
 // ---------------------------------------------------------------------------
 
-interface OpenCodeContextValue {
-	state: OpenCodeState;
-	/** Add a project (connects to server with directory scope). Additive. */
-	addProject: (
-		config: ConnectionConfig,
-		options?: { suppressError?: boolean },
-	) => Promise<void>;
-	/** Remove a project (disconnects its connection). */
-	removeProject: (directory: string) => Promise<void>;
-	/** Disconnect ALL projects. */
-	disconnect: () => Promise<void>;
-	selectSession: (id: string | null) => Promise<void>;
-	createSession: (
-		title?: string,
-		directory?: string,
-	) => Promise<Session | null>;
-	deleteSession: (id: string) => Promise<void>;
-	renameSession: (id: string, title: string) => Promise<void>;
-	sendPrompt: (text: string, images?: string[]) => Promise<void>;
-	sendCommand: (command: string, args: string) => Promise<void>;
-	abortSession: () => Promise<void>;
-	respondPermission: (response: "once" | "always" | "reject") => Promise<void>;
-	replyQuestion: (answers: QuestionAnswer[]) => Promise<void>;
-	rejectQuestion: () => Promise<void>;
-	setModel: (model: SelectedModel | null) => void;
-	setAgent: (agent: string | null) => void;
-	/** Cycle the variant for the currently selected model */
-	cycleVariant: () => void;
-	/** Set variant explicitly for the currently selected model */
-	setVariant: (variant: string | undefined) => void;
-	/** Get the currently effective variant */
-	currentVariant: string | undefined;
-	clearError: () => void;
-	/** Re-fetch providers from the server (e.g. after connecting/disconnecting a provider). */
-	refreshProviders: () => Promise<void>;
-	refreshSessions: () => Promise<void>;
-	/** Get queued prompts for a session */
-	getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
-	/** Remove one queued prompt by ID */
-	removeFromQueue: (sessionId: string, promptId: string) => void;
-	/** Reorder one queued prompt by indexes */
-	reorderQueue: (sessionId: string, fromIndex: number, toIndex: number) => void;
-	/** Update queued prompt text by ID */
-	updateQueuedPrompt: (
-		sessionId: string,
-		promptId: string,
-		text: string,
-	) => void;
-	/** Send one queued prompt immediately; aborts current run if needed */
-	sendQueuedNow: (sessionId: string, promptId: string) => Promise<void>;
-	/** Open native directory picker, returns path or null */
-	openDirectory: () => Promise<string | null>;
-	/** Connect to a project directory (convenience wrapper for addProject) */
-	connectToProject: (directory: string, serverUrl?: string) => Promise<void>;
-	/** Start a draft session for a directory (no API call until first send) */
-	startDraftSession: (directory: string) => void;
-	/** Toggle whether the current draft session should be temporary */
-	setDraftTemporary: (temporary: boolean) => void;
-	/** Revert the active session to a specific message (undo). */
-	revertToMessage: (messageID: string) => Promise<void>;
-	/** Restore all reverted messages in the active session (redo all). */
-	unrevert: () => Promise<void>;
-	/** Fork the active session at a specific message, creating a new session. */
-	forkFromMessage: (messageID: string) => Promise<void>;
-	/** Set the color for a session (local-only, stored in localStorage). */
-	setSessionColor: (sessionId: string, color: SessionColor) => void;
-	/** Set tags for a session (local-only, stored in localStorage). */
-	setSessionTags: (sessionId: string, tags: string[]) => void;
-	/** Register a worktree directory as belonging to a parent project. */
-	registerWorktree: (worktreeDir: string, parentDir: string) => void;
-	/** Unregister a worktree directory. */
-	unregisterWorktree: (worktreeDir: string) => void;
-}
-
-const OpenCodeContext = createContext<OpenCodeContextValue | null>(null);
-
 // ---------------------------------------------------------------------------
 // Split contexts  (subscribe to only the slice you need)
 // ---------------------------------------------------------------------------
 
 /** Session-related state – sessions list, active session, messages, busy state, queue. */
-export interface SessionContextValue {
+interface SessionContextValue {
 	sessions: Session[];
 	activeSessionId: string | null;
 	messages: MessageEntry[];
@@ -1748,7 +1672,7 @@ export interface SessionContextValue {
 }
 
 /** Model / agent / variant / command state. */
-export interface ModelContextValue {
+interface ModelContextValue {
 	providers: Provider[];
 	providerDefaults: Record<string, string>;
 	selectedModel: SelectedModel | null;
@@ -1760,7 +1684,7 @@ export interface ModelContextValue {
 }
 
 /** Connection lifecycle state. */
-export interface ConnectionContextValue {
+interface ConnectionContextValue {
 	connections: Record<string, ConnectionStatus>;
 	bootState: OpenCodeState["bootState"];
 	bootError: string | null;
@@ -1769,7 +1693,7 @@ export interface ConnectionContextValue {
 }
 
 /** Stable action functions – these references rarely change. */
-export interface ActionsContextValue {
+interface ActionsContextValue {
 	addProject: (
 		config: ConnectionConfig,
 		options?: { suppressError?: boolean },
@@ -1792,7 +1716,6 @@ export interface ActionsContextValue {
 	setModel: (model: SelectedModel | null) => void;
 	setAgent: (agent: string | null) => void;
 	cycleVariant: () => void;
-	setVariant: (variant: string | undefined) => void;
 	clearError: () => void;
 	refreshProviders: () => Promise<void>;
 	refreshSessions: () => Promise<void>;
@@ -2144,7 +2067,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		setModel,
 		setAgent,
 		cycleVariant: doCycleVariant,
-		setVariant,
 	} = useVariant({
 		selectedModel: state.selectedModel,
 		providers: state.providers,
@@ -3246,7 +3168,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setModel,
 			setAgent,
 			cycleVariant: doCycleVariant,
-			setVariant,
 			clearError,
 			refreshProviders,
 			refreshSessions,
@@ -3284,7 +3205,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setModel,
 			setAgent,
 			doCycleVariant,
-			setVariant,
 			clearError,
 			refreshProviders,
 			refreshSessions,
@@ -3307,16 +3227,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		],
 	);
 
-	// Legacy combined value for backwards-compatible useOpenCode()
-	const value = useMemo<OpenCodeContextValue>(
-		() => ({
-			state,
-			...actionsCtx,
-			currentVariant,
-		}),
-		[state, actionsCtx, currentVariant],
-	);
-
 	// Clean up temporary sessions on window unload (app close / refresh)
 	useEffect(() => {
 		const cleanup = () => {
@@ -3335,26 +3245,12 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			<ConnectionContext.Provider value={connectionCtx}>
 				<ModelContext.Provider value={modelCtx}>
 					<SessionContext.Provider value={sessionCtx}>
-						<OpenCodeContext.Provider value={value}>
-							{children}
-						</OpenCodeContext.Provider>
+						{children}
 					</SessionContext.Provider>
 				</ModelContext.Provider>
 			</ConnectionContext.Provider>
 		</ActionsContext.Provider>
 	);
-}
-
-// ---------------------------------------------------------------------------
-// Hook (legacy – subscribes to ALL state changes, prefer split hooks below)
-// ---------------------------------------------------------------------------
-
-export function useOpenCode(): OpenCodeContextValue {
-	const ctx = useContext(OpenCodeContext);
-	if (!ctx) {
-		throw new Error("useOpenCode must be used within <OpenCodeProvider>");
-	}
-	return ctx;
 }
 
 // ---------------------------------------------------------------------------

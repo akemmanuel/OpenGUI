@@ -60,9 +60,6 @@ import { MergeDialog } from "./MergeDialog";
 import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
 
-/** @deprecated Use getProjectName from @/lib/utils instead. */
-const projectName = (directory: string) => getProjectName(directory, directory);
-
 /** Build a "create pull request" URL from a git remote URL and branch. */
 function buildPRUrl(
 	remoteUrl: string,
@@ -209,8 +206,18 @@ export function AppSidebar() {
 		branch: string;
 		worktreePath: string;
 	} | null>(null);
+	const fixWithAiTimeoutRef = useRef<number | null>(null);
 	// Per-project: remote URL (for PR links)
 	const [remoteUrls, setRemoteUrls] = useState<Record<string, string>>({});
+
+	useEffect(() => {
+		return () => {
+			if (fixWithAiTimeoutRef.current !== null) {
+				window.clearTimeout(fixWithAiTimeoutRef.current);
+				fixWithAiTimeoutRef.current = null;
+			}
+		};
+	}, []);
 
 	/** Refresh git info for a project directory (is repo + worktree list + remote). */
 	const refreshGitInfo = useCallback(async (directory: string) => {
@@ -384,7 +391,7 @@ export function AppSidebar() {
 																/>
 															)}
 															<span className="truncate min-w-0 flex-1">
-																{projectName(directory)}
+																{getProjectName(directory)}
 															</span>
 															{/* New session for this project */}
 															{isProjectConnected &&
@@ -537,7 +544,7 @@ export function AppSidebar() {
 																							>
 																								<span className="truncate">
 																									{wt.branch ??
-																										projectName(wt.path)}
+																										getProjectName(wt.path)}
 																								</span>
 																							</ContextMenu.SubTrigger>
 																							<ContextMenu.Portal>
@@ -672,7 +679,7 @@ export function AppSidebar() {
 												>
 													<MessageSquare className="size-3.5 shrink-0" />
 													<span className="truncate">
-														{projectName(directory)}
+														{getProjectName(directory)}
 													</span>
 													<span className="ml-auto text-[10px] text-muted-foreground">
 														main
@@ -692,7 +699,7 @@ export function AppSidebar() {
 														>
 															<GitBranch className="size-3.5 shrink-0" />
 															<span className="truncate">
-																{projectName(wtDir)}
+																{getProjectName(wtDir)}
 															</span>
 														</button>
 													))}
@@ -730,7 +737,7 @@ export function AppSidebar() {
 																worktreeParents[session.directory] ===
 																	directory;
 															const worktreeBranch = isWorktreeSession
-																? projectName(session.directory)
+																? getProjectName(session.directory)
 																: null;
 															return (
 																<SessionContextMenu
@@ -940,7 +947,7 @@ export function AppSidebar() {
 					>
 						<div className="mb-1 flex items-center gap-2 px-2 py-1">
 							<div className="truncate text-sm font-medium">
-								{projectName(projectPopover.directory)}
+								{getProjectName(projectPopover.directory)}
 							</div>
 							<div className="ml-auto text-xs text-muted-foreground">
 								{popoverSessions.length}
@@ -1090,11 +1097,15 @@ export function AppSidebar() {
 					// Start a new session in the main directory and send the conflict resolution prompt
 					startDraftSession(mergeInfo.mainDir);
 					// Use a small delay so the draft session is active before sending
-					setTimeout(() => {
+					if (fixWithAiTimeoutRef.current !== null) {
+						window.clearTimeout(fixWithAiTimeoutRef.current);
+					}
+					fixWithAiTimeoutRef.current = window.setTimeout(() => {
 						const fileList = conflicts.map((f) => `- ${f}`).join("\n");
 						sendPrompt(
 							`There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
 						);
+						fixWithAiTimeoutRef.current = null;
 					}, POST_MERGE_DELAY_MS);
 				}}
 			/>

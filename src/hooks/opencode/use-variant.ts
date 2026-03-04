@@ -34,7 +34,7 @@ export function updateVariantSelections(
 	return next;
 }
 
-export function cycleVariantSelection(
+function cycleVariantSelection(
 	current: string | undefined,
 	model: Model | undefined,
 ): string | undefined {
