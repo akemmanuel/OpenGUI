@@ -6,9 +6,10 @@
  */
 
 import type { Provider } from "@opencode-ai/sdk/v2/client";
-import { ArrowLeft, Check, Plus, Search } from "lucide-react";
+import { Check, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
+import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Input } from "@/components/ui/input";
 
 // ---------------------------------------------------------------------------
@@ -83,16 +84,9 @@ export function DialogSelectProvider({
 	return (
 		<div className="space-y-3">
 			{/* Header */}
-			<div className="flex items-center gap-3">
-				<button
-					type="button"
-					onClick={onBack}
-					className="text-muted-foreground hover:text-foreground transition-colors"
-				>
-					<ArrowLeft className="size-4" />
-				</button>
+			<SubDialogHeader onBack={onBack}>
 				<span className="text-sm font-medium">All providers</span>
-			</div>
+			</SubDialogHeader>
 
 			{/* Search */}
 			<div className="relative">

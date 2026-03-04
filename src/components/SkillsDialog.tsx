@@ -4,6 +4,7 @@
  * Lists discovered skills and manages skill paths/URLs in the config.
  */
 
+import type { LucideIcon } from "lucide-react";
 import { BookOpen, FolderOpen, Globe, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,90 @@ interface SkillInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Reusable list editor (paths / URLs share the same structure)
+// ---------------------------------------------------------------------------
+
+function StringListEditor({
+	title,
+	items,
+	icon: Icon,
+	placeholder,
+	saving,
+	onAdd,
+	onRemove,
+}: {
+	title: string;
+	items: string[];
+	icon: LucideIcon;
+	placeholder: string;
+	saving: boolean;
+	onAdd: (value: string) => Promise<void>;
+	onRemove: (value: string) => Promise<void>;
+}) {
+	const [newValue, setNewValue] = useState("");
+
+	const handleAdd = async () => {
+		const trimmed = newValue.trim();
+		if (!trimmed) return;
+		setNewValue("");
+		await onAdd(trimmed);
+	};
+
+	return (
+		<div className="space-y-3">
+			<h3 className="text-sm font-medium">{title}</h3>
+
+			{items.map((item) => (
+				<div
+					key={item}
+					className="flex items-center gap-2 rounded-md border px-3 py-1.5"
+				>
+					<Icon className="size-3.5 text-muted-foreground shrink-0" />
+					<span className="text-xs font-mono flex-1 truncate">{item}</span>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+						onClick={() => onRemove(item)}
+						disabled={saving}
+					>
+						<Trash2 className="size-3" />
+					</Button>
+				</div>
+			))}
+
+			<div className="flex gap-2">
+				<Input
+					value={newValue}
+					onChange={(e) => setNewValue(e.target.value)}
+					placeholder={placeholder}
+					className="font-mono text-xs h-8 flex-1"
+					onKeyDown={(e) => {
+						if (e.key === "Enter") {
+							e.preventDefault();
+							handleAdd();
+						}
+					}}
+				/>
+				<Button
+					size="sm"
+					variant="outline"
+					className="h-8"
+					onClick={handleAdd}
+					disabled={saving || !newValue.trim()}
+				>
+					{saving ? (
+						<Spinner className="size-3.5" />
+					) : (
+						<Plus className="size-3.5" />
+					)}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Dialog
 // ---------------------------------------------------------------------------
 
@@ -47,9 +132,6 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 	const [urls, setUrls] = useState<string[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
-
-	const [newPath, setNewPath] = useState("");
-	const [newUrl, setNewUrl] = useState("");
 
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
@@ -93,11 +175,9 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 		}
 	};
 
-	const addPath = async () => {
-		const trimmed = newPath.trim();
-		if (!trimmed || paths.includes(trimmed)) return;
-		setNewPath("");
-		await saveConfig([...paths, trimmed], urls);
+	const addPath = async (value: string) => {
+		if (paths.includes(value)) return;
+		await saveConfig([...paths, value], urls);
 	};
 
 	const removePath = async (path: string) => {
@@ -107,11 +187,9 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 		);
 	};
 
-	const addUrl = async () => {
-		const trimmed = newUrl.trim();
-		if (!trimmed || urls.includes(trimmed)) return;
-		setNewUrl("");
-		await saveConfig(paths, [...urls, trimmed]);
+	const addUrl = async (value: string) => {
+		if (urls.includes(value)) return;
+		await saveConfig(paths, [...urls, value]);
 	};
 
 	const removeUrl = async (url: string) => {
@@ -190,112 +268,26 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 							</div>
 
 							{/* Skill paths */}
-							<div className="space-y-3">
-								<h3 className="text-sm font-medium">Skill Paths</h3>
-
-								{paths.map((path) => (
-									<div
-										key={path}
-										className="flex items-center gap-2 rounded-md border px-3 py-1.5"
-									>
-										<FolderOpen className="size-3.5 text-muted-foreground shrink-0" />
-										<span className="text-xs font-mono flex-1 truncate">
-											{path}
-										</span>
-										<Button
-											variant="ghost"
-											size="sm"
-											className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-											onClick={() => removePath(path)}
-											disabled={saving}
-										>
-											<Trash2 className="size-3" />
-										</Button>
-									</div>
-								))}
-
-								<div className="flex gap-2">
-									<Input
-										value={newPath}
-										onChange={(e) => setNewPath(e.target.value)}
-										placeholder="/path/to/skills/folder"
-										className="font-mono text-xs h-8 flex-1"
-										onKeyDown={(e) => {
-											if (e.key === "Enter") {
-												e.preventDefault();
-												addPath();
-											}
-										}}
-									/>
-									<Button
-										size="sm"
-										variant="outline"
-										className="h-8"
-										onClick={addPath}
-										disabled={saving || !newPath.trim()}
-									>
-										{saving ? (
-											<Spinner className="size-3.5" />
-										) : (
-											<Plus className="size-3.5" />
-										)}
-									</Button>
-								</div>
-							</div>
+							<StringListEditor
+								title="Skill Paths"
+								items={paths}
+								icon={FolderOpen}
+								placeholder="/path/to/skills/folder"
+								saving={saving}
+								onAdd={addPath}
+								onRemove={removePath}
+							/>
 
 							{/* Skill URLs */}
-							<div className="space-y-3">
-								<h3 className="text-sm font-medium">Skill URLs</h3>
-
-								{urls.map((url) => (
-									<div
-										key={url}
-										className="flex items-center gap-2 rounded-md border px-3 py-1.5"
-									>
-										<Globe className="size-3.5 text-muted-foreground shrink-0" />
-										<span className="text-xs font-mono flex-1 truncate">
-											{url}
-										</span>
-										<Button
-											variant="ghost"
-											size="sm"
-											className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-											onClick={() => removeUrl(url)}
-											disabled={saving}
-										>
-											<Trash2 className="size-3" />
-										</Button>
-									</div>
-								))}
-
-								<div className="flex gap-2">
-									<Input
-										value={newUrl}
-										onChange={(e) => setNewUrl(e.target.value)}
-										placeholder="https://example.com/.well-known/skills/"
-										className="font-mono text-xs h-8 flex-1"
-										onKeyDown={(e) => {
-											if (e.key === "Enter") {
-												e.preventDefault();
-												addUrl();
-											}
-										}}
-									/>
-									<Button
-										size="sm"
-										variant="outline"
-										className="h-8"
-										onClick={addUrl}
-										disabled={saving || !newUrl.trim()}
-									>
-										{saving ? (
-											<Spinner className="size-3.5" />
-										) : (
-											<Plus className="size-3.5" />
-										)}
-									</Button>
-								</div>
-							</div>
+							<StringListEditor
+								title="Skill URLs"
+								items={urls}
+								icon={Globe}
+								placeholder="https://example.com/.well-known/skills/"
+								saving={saving}
+								onAdd={addUrl}
+								onRemove={removeUrl}
+							/>
 						</>
 					)}
 				</div>

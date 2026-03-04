@@ -6,19 +6,14 @@
  * - OAuth: opens a URL, user enters a code or auto-polls
  */
 
-import {
-	ArrowLeft,
-	Check,
-	ExternalLink,
-	Key,
-	Loader2,
-	ShieldCheck,
-} from "lucide-react";
+import { Check, ExternalLink, Key, Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
+import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getErrorMessage, openExternalLink } from "@/lib/utils";
 import type {
 	ProviderAuthMethod,
 	ProviderOAuthAuthorization,
@@ -89,7 +84,7 @@ export function DialogConnectProvider({
 				setError(res.error ?? "Failed to connect");
 			}
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Unexpected error");
+			setError(getErrorMessage(err));
 		} finally {
 			setConnecting(false);
 		}
@@ -148,7 +143,7 @@ export function DialogConnectProvider({
 					setError(res.error ?? "Failed to start OAuth");
 				}
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Unexpected error");
+				setError(getErrorMessage(err));
 			} finally {
 				setConnecting(false);
 			}
@@ -174,7 +169,7 @@ export function DialogConnectProvider({
 				setError(res.error ?? "Invalid code");
 			}
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Unexpected error");
+			setError(getErrorMessage(err));
 		} finally {
 			setConnecting(false);
 		}
@@ -210,17 +205,10 @@ export function DialogConnectProvider({
 	return (
 		<div className="space-y-4">
 			{/* Header */}
-			<div className="flex items-center gap-3">
-				<button
-					type="button"
-					onClick={onBack}
-					className="text-muted-foreground hover:text-foreground transition-colors"
-				>
-					<ArrowLeft className="size-4" />
-				</button>
+			<SubDialogHeader onBack={onBack}>
 				<ProviderIcon provider={providerID} className="size-5" />
 				<span className="text-sm font-medium">{providerName}</span>
-			</div>
+			</SubDialogHeader>
 
 			{/* Method selection (when multiple methods) */}
 			{!selectedMethod && authMethods.length > 1 && (
@@ -321,11 +309,7 @@ export function DialogConnectProvider({
 							} catch {
 								return;
 							}
-							if (window.electronAPI?.openExternal) {
-								window.electronAPI.openExternal(oauthData.url);
-							} else {
-								window.open(oauthData.url, "_blank");
-							}
+							openExternalLink(oauthData.url);
 						}}
 					>
 						<ExternalLink className="size-3.5 mr-1.5" />

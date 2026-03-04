@@ -3,6 +3,11 @@ import { ContextMenu } from "radix-ui";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 import type { SessionColor } from "@/hooks/use-opencode";
+import {
+	CTX_ITEM_CLASS,
+	CTX_SEPARATOR_CLASS,
+	CTX_SUBTRIGGER_CLASS,
+} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -137,19 +142,16 @@ export function SessionContextMenu({
 					onCloseAutoFocus={(e) => e.preventDefault()}
 				>
 					{/* Rename */}
-					<ContextMenu.Item
-						className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-						onSelect={onRename}
-					>
+					<ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onRename}>
 						<Pencil className="size-4" />
 						<span>Rename</span>
 					</ContextMenu.Item>
 
-					<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+					<ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
 
 					{/* Color submenu */}
 					<ContextMenu.Sub>
-						<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
+						<ContextMenu.SubTrigger className={CTX_SUBTRIGGER_CLASS}>
 							<Palette className="size-4" />
 							<span>Set color</span>
 						</ContextMenu.SubTrigger>
@@ -161,7 +163,7 @@ export function SessionContextMenu({
 								{SESSION_COLORS.map((c) => (
 									<ContextMenu.Item
 										key={c.value ?? "none"}
-										className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+										className={CTX_ITEM_CLASS}
 										onSelect={() => onSetColor(c.value)}
 									>
 										<span
@@ -182,7 +184,7 @@ export function SessionContextMenu({
 
 					{/* Tags section */}
 					<ContextMenu.Sub open={tagInputOpen} onOpenChange={setTagInputOpen}>
-						<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
+						<ContextMenu.SubTrigger className={CTX_SUBTRIGGER_CLASS}>
 							<Tag className="size-4" />
 							<span>Tags</span>
 							{currentTags.length > 0 && (
@@ -219,7 +221,7 @@ export function SessionContextMenu({
 												</span>
 											))}
 										</div>
-										<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+										<ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
 									</>
 								)}
 								{/* Add new tag */}
@@ -246,11 +248,11 @@ export function SessionContextMenu({
 						</ContextMenu.Portal>
 					</ContextMenu.Sub>
 
-					<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+					<ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
 
 					{/* Delete */}
 					<ContextMenu.Item
-						className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground text-destructive focus:text-destructive"
+						className={`${CTX_ITEM_CLASS} text-destructive focus:text-destructive`}
 						onSelect={onDelete}
 					>
 						<Trash2 className="size-4" />

@@ -190,9 +190,15 @@ class OpenCodeConnection {
 		this._requireClient();
 		// The server defaults to LIMIT 100. Request a high limit so all
 		// sessions are returned regardless of how many the user has.
+		// Pass the connection directory so sessions are scoped to this
+		// project directory only – without this, the server returns ALL
+		// sessions sharing the same git repo (project_id), which causes
+		// cross-directory duplicates in the sidebar.
+		const dir = this.getDirectory();
 		const res = await this._client.session.list({
 			roots: true,
 			limit: 10000,
+			...(dir ? { directory: dir } : {}),
 		});
 		return res.data ?? [];
 	}
@@ -448,12 +454,17 @@ class OpenCodeConnection {
 		if (!this._client) throw new Error("Not connected to any opencode server");
 	}
 
-	_makeClient(config) {
+	_makeAuthHeaders(config) {
 		const headers = {};
 		if (config.password) {
 			const user = config.username ?? "opencode";
 			headers.Authorization = `Basic ${Buffer.from(`${user}:${config.password}`).toString("base64")}`;
 		}
+		return headers;
+	}
+
+	_makeClient(config) {
+		const headers = this._makeAuthHeaders(config);
 		const directory =
 			typeof config.directory === "string" ? config.directory.trim() : "";
 
@@ -489,11 +500,7 @@ class OpenCodeConnection {
 			// fall back to raw fetch (older servers may not support this endpoint via SDK)
 			if (err?.message?.includes("unhealthy")) throw err;
 			const url = `${this._config.baseUrl.replace(/\/+$/, "")}/global/health`;
-			const headers = {};
-			if (this._config.password) {
-				const user = this._config.username ?? "opencode";
-				headers.Authorization = `Basic ${Buffer.from(`${user}:${this._config.password}`).toString("base64")}`;
-			}
+			const headers = this._makeAuthHeaders(this._config);
 			const rawRes = await fetch(url, { headers });
 			if (!rawRes.ok)
 				throw new Error(
@@ -679,6 +686,9 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 	/** Map sessionId -> directory for routing session-specific operations */
 	const sessionDirectoryMap = new Map();
 
+	/** Map question requestID -> directory for routing question replies */
+	const questionDirectoryMap = new Map();
+
 	function sendEvent(event) {
 		const win = getMainWindow();
 		if (win && !win.isDestroyed()) {
@@ -689,6 +699,20 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 	function createConnection(directory) {
 		const conn = new OpenCodeConnection((event) => {
 			if (connections.get(directory) !== conn) return;
+			if (event?.type === "opencode:event") {
+				const payload = event.payload;
+				if (payload?.type === "question.asked") {
+					const questionId = payload?.properties?.id;
+					if (questionId) questionDirectoryMap.set(questionId, directory);
+				}
+				if (
+					payload?.type === "question.replied" ||
+					payload?.type === "question.rejected"
+				) {
+					const requestID = payload?.properties?.requestID;
+					if (requestID) questionDirectoryMap.delete(requestID);
+				}
+			}
 			// Tag every event with the directory it came from
 			sendEvent({ ...event, directory });
 		});
@@ -714,6 +738,138 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			if (conn.getStatus().state === "connected") return conn;
 		}
 		return null;
+	}
+
+	// --- IPC handler factories (DRY helpers to eliminate boilerplate) ---
+
+	/**
+	 * Register a global-operation IPC handler that uses getAnyConnection().
+	 * @param {string} channel - IPC channel name
+	 * @param {(conn: OpenCodeConnection, ...args: any[]) => Promise<any>} fn
+	 */
+	function handleGlobalOp(channel, fn) {
+		ipcMain.handle(channel, async (_event, ...args) => {
+			try {
+				const conn = getAnyConnection();
+				if (!conn) return { success: false, error: "No connection available" };
+				const data = await fn(conn, ...args);
+				return data === undefined ? { success: true } : { success: true, data };
+			} catch (err) {
+				return { success: false, error: err.message };
+			}
+		});
+	}
+
+	/**
+	 * Register a session-routed IPC handler that uses getConnectionForSession().
+	 * The first arg after _event is always sessionId.
+	 * @param {string} channel - IPC channel name
+	 * @param {(conn: OpenCodeConnection, sessionId: string, ...args: any[]) => Promise<any>} fn
+	 */
+	function handleSessionOp(channel, fn) {
+		ipcMain.handle(channel, async (_event, sessionId, ...args) => {
+			try {
+				const conn = getConnectionForSession(sessionId);
+				if (!conn)
+					return { success: false, error: "Session connection not found" };
+				const data = await fn(conn, sessionId, ...args);
+				return data === undefined ? { success: true } : { success: true, data };
+			} catch (err) {
+				return { success: false, error: err.message };
+			}
+		});
+	}
+
+	/**
+	 * Register an IPC handler that tries all connections (for operations
+	 * like question reply/reject that don't carry session context).
+	 * @param {string} channel - IPC channel name
+	 * @param {(conn: OpenCodeConnection, ...args: any[]) => Promise<void>} fn
+	 */
+	function _handleTryAllConnections(channel, fn) {
+		ipcMain.handle(channel, async (_event, ...args) => {
+			try {
+				let lastErr;
+				for (const conn of connections.values()) {
+					try {
+						await fn(conn, ...args);
+						return { success: true };
+					} catch (err) {
+						lastErr = err;
+					}
+				}
+				return {
+					success: false,
+					error: lastErr?.message ?? "No connection available",
+				};
+			} catch (err) {
+				return { success: false, error: err.message };
+			}
+		});
+	}
+
+	/**
+	 * Register an IPC handler for question operations that prefers
+	 * requestID -> directory routing, then falls back to trying all connections.
+	 * @param {string} channel - IPC channel name
+	 * @param {(conn: OpenCodeConnection, requestID: string, ...args: any[]) => Promise<any>} fn
+	 */
+	function handleQuestionOp(channel, fn) {
+		ipcMain.handle(channel, async (_event, requestID, ...args) => {
+			try {
+				if (typeof requestID !== "string" || !requestID.trim()) {
+					return { success: false, error: "Question requestID is required" };
+				}
+
+				const mappedDirectory = questionDirectoryMap.get(requestID);
+				if (mappedDirectory) {
+					const mappedConn = connections.get(mappedDirectory);
+					if (mappedConn) {
+						const data = await fn(mappedConn, requestID, ...args);
+						questionDirectoryMap.delete(requestID);
+						return data === undefined
+							? { success: true }
+							: { success: true, data };
+					}
+					questionDirectoryMap.delete(requestID);
+				}
+
+				let lastErr;
+				for (const conn of connections.values()) {
+					try {
+						const data = await fn(conn, requestID, ...args);
+						questionDirectoryMap.delete(requestID);
+						return data === undefined
+							? { success: true }
+							: { success: true, data };
+					} catch (err) {
+						lastErr = err;
+					}
+				}
+
+				return {
+					success: false,
+					error: lastErr?.message ?? "No connection available",
+				};
+			} catch (err) {
+				return { success: false, error: err.message };
+			}
+		});
+	}
+
+	/**
+	 * Run a git command and return the result in the standard IPC envelope.
+	 * @param {string} directory - The cwd for git
+	 * @param {string} command - The git command to run (without "git" prefix)
+	 * @param {Array} [stdio] - stdio config (default: ["ignore", "pipe", "ignore"])
+	 * @returns {string} Raw stdout
+	 */
+	function runGit(directory, command, stdio = ["ignore", "pipe", "ignore"]) {
+		return execSync(`git ${command}`, {
+			cwd: directory,
+			encoding: "utf-8",
+			stdio,
+		});
 	}
 
 	// --- Project management ---
@@ -759,6 +915,9 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			for (const [sid, dir] of sessionDirectoryMap) {
 				if (dir === directory) sessionDirectoryMap.delete(sid);
 			}
+			for (const [requestID, dir] of questionDirectoryMap) {
+				if (dir === directory) questionDirectoryMap.delete(requestID);
+			}
 		}
 		return { success: true };
 	});
@@ -769,44 +928,39 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 		}
 		connections.clear();
 		sessionDirectoryMap.clear();
+		questionDirectoryMap.clear();
 		return { success: true };
 	});
 
 	// --- Session operations ---
 
+	/** Tag sessions with their directory and cache the mappings. */
+	async function listAndCacheSessions(conn, dir) {
+		const sessions = (await conn.listSessions()).map((s) => ({
+			...s,
+			_projectDir: dir,
+		}));
+		for (const s of sessions) {
+			sessionDirectoryMap.set(s.id, dir);
+		}
+		return sessions;
+	}
+
 	ipcMain.handle("opencode:session:list", async (_event, directory) => {
 		try {
 			if (directory) {
-				// List sessions for a specific project
 				const conn = connections.get(directory);
 				if (!conn) return { success: false, error: "Project not connected" };
-				// The server already scopes sessions to this project via the
-				// x-opencode-directory header, so we don't need to filter by
-				// directory string (which can differ due to symlinks, trailing
-				// slashes, etc.). Instead we tag each session with _projectDir
-				// so the UI can group them by connection directory.
-				const sessions = (await conn.listSessions()).map((s) => ({
-					...s,
-					_projectDir: directory,
-				}));
-				// Cache session->directory mappings
-				for (const s of sessions) {
-					sessionDirectoryMap.set(s.id, directory);
-				}
-				return { success: true, data: sessions };
+				return {
+					success: true,
+					data: await listAndCacheSessions(conn, directory),
+				};
 			}
 			// List sessions from ALL projects
 			const allSessions = [];
 			for (const [dir, conn] of connections) {
 				try {
-					const sessions = (await conn.listSessions()).map((s) => ({
-						...s,
-						_projectDir: dir,
-					}));
-					for (const s of sessions) {
-						sessionDirectoryMap.set(s.id, dir);
-					}
-					allSessions.push(...sessions);
+					allSessions.push(...(await listAndCacheSessions(conn, dir)));
 				} catch {
 					// Skip failed connections
 				}
@@ -837,30 +991,15 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 		},
 	);
 
-	ipcMain.handle("opencode:session:delete", async (_event, id) => {
-		try {
-			const conn = getConnectionForSession(id);
-			if (!conn)
-				return { success: false, error: "Session connection not found" };
-			const result = await conn.deleteSession(id);
-			sessionDirectoryMap.delete(id);
-			return { success: true, data: result };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
+	handleSessionOp("opencode:session:delete", async (conn, id) => {
+		const result = await conn.deleteSession(id);
+		sessionDirectoryMap.delete(id);
+		return result;
 	});
 
-	ipcMain.handle("opencode:session:update", async (_event, id, title) => {
-		try {
-			const conn = getConnectionForSession(id);
-			if (!conn)
-				return { success: false, error: "Session connection not found" };
-			const result = await conn.updateSession(id, title);
-			return { success: true, data: result };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleSessionOp("opencode:session:update", (conn, id, title) =>
+		conn.updateSession(id, title),
+	);
 
 	ipcMain.handle("opencode:session:statuses", async (_event, directory) => {
 		try {
@@ -873,32 +1012,12 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 		}
 	});
 
-	ipcMain.handle(
-		"opencode:session:revert",
-		async (_event, id, messageID, partID) => {
-			try {
-				const conn = getConnectionForSession(id);
-				if (!conn)
-					return { success: false, error: "Session connection not found" };
-				const result = await conn.revertSession(id, messageID, partID);
-				return { success: true, data: result };
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+	handleSessionOp("opencode:session:revert", (conn, id, messageID, partID) =>
+		conn.revertSession(id, messageID, partID),
 	);
-
-	ipcMain.handle("opencode:session:unrevert", async (_event, id) => {
-		try {
-			const conn = getConnectionForSession(id);
-			if (!conn)
-				return { success: false, error: "Session connection not found" };
-			const result = await conn.unrevertSession(id);
-			return { success: true, data: result };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleSessionOp("opencode:session:unrevert", (conn, id) =>
+		conn.unrevertSession(id),
+	);
 
 	ipcMain.handle("opencode:session:fork", async (_event, id, messageID) => {
 		try {
@@ -920,303 +1039,89 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	// --- Providers / models (global - use any connection) ---
 
-	ipcMain.handle("opencode:providers", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.getProviders() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleGlobalOp("opencode:providers", (conn) => conn.getProviders());
 
 	// --- Provider management (global) ---
 
-	ipcMain.handle("opencode:provider:list", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.listAllProviders() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle("opencode:provider:auth-methods", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.getProviderAuthMethods() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle(
-		"opencode:provider:connect",
-		async (_event, providerID, auth) => {
-			try {
-				const conn = getAnyConnection();
-				if (!conn) return { success: false, error: "No connection available" };
-				await conn.setProviderAuth(providerID, auth);
-				return { success: true };
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+	handleGlobalOp("opencode:provider:list", (conn) => conn.listAllProviders());
+	handleGlobalOp("opencode:provider:auth-methods", (conn) =>
+		conn.getProviderAuthMethods(),
 	);
-
-	ipcMain.handle("opencode:provider:disconnect", async (_event, providerID) => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			await conn.removeProviderAuth(providerID);
-			return { success: true };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle(
+	handleGlobalOp("opencode:provider:connect", (conn, providerID, auth) =>
+		conn.setProviderAuth(providerID, auth),
+	);
+	handleGlobalOp("opencode:provider:disconnect", (conn, providerID) =>
+		conn.removeProviderAuth(providerID),
+	);
+	handleGlobalOp(
 		"opencode:provider:oauth:authorize",
-		async (_event, providerID, method) => {
-			try {
-				const conn = getAnyConnection();
-				if (!conn) return { success: false, error: "No connection available" };
-				return {
-					success: true,
-					data: await conn.oauthAuthorize(providerID, method),
-				};
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+		(conn, providerID, method) => conn.oauthAuthorize(providerID, method),
 	);
-
-	ipcMain.handle(
+	handleGlobalOp(
 		"opencode:provider:oauth:callback",
-		async (_event, providerID, method, code) => {
-			try {
-				const conn = getAnyConnection();
-				if (!conn) return { success: false, error: "No connection available" };
-				return {
-					success: true,
-					data: await conn.oauthCallback(providerID, method, code),
-				};
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+		(conn, providerID, method, code) =>
+			conn.oauthCallback(providerID, method, code),
 	);
-
-	ipcMain.handle("opencode:instance:dispose", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.disposeInstance() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleGlobalOp("opencode:instance:dispose", (conn) => conn.disposeInstance());
 
 	// --- Agents (global) ---
 
-	ipcMain.handle("opencode:agents", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.getAgents() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleGlobalOp("opencode:agents", (conn) => conn.getAgents());
 
 	// --- Message operations (routed to session's connection) ---
 
-	ipcMain.handle("opencode:messages", async (_event, sessionId) => {
-		try {
-			const conn = getConnectionForSession(sessionId);
-			if (!conn)
-				return { success: false, error: "Session connection not found" };
-			return { success: true, data: await conn.getMessages(sessionId) };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle(
-		"opencode:prompt",
-		async (_event, sessionId, text, images, model, agent, variant) => {
-			try {
-				const conn = getConnectionForSession(sessionId);
-				if (!conn)
-					return { success: false, error: "Session connection not found" };
-				await conn.promptAsync(sessionId, text, images, model, agent, variant);
-				return { success: true };
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+	handleSessionOp("opencode:messages", (conn, sessionId) =>
+		conn.getMessages(sessionId),
 	);
-
-	ipcMain.handle("opencode:abort", async (_event, sessionId) => {
-		try {
-			const conn = getConnectionForSession(sessionId);
-			if (!conn)
-				return { success: false, error: "Session connection not found" };
-			await conn.abortSession(sessionId);
-			return { success: true };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleSessionOp(
+		"opencode:prompt",
+		(conn, sessionId, text, images, model, agent, variant) =>
+			conn.promptAsync(sessionId, text, images, model, agent, variant),
+	);
+	handleSessionOp("opencode:abort", (conn, sessionId) =>
+		conn.abortSession(sessionId),
+	);
 
 	// --- Permission response (routed to session's connection) ---
 
-	ipcMain.handle(
+	handleSessionOp(
 		"opencode:permission",
-		async (_event, sessionId, permissionId, response) => {
-			try {
-				const conn = getConnectionForSession(sessionId);
-				if (!conn)
-					return { success: false, error: "Session connection not found" };
-				await conn.respondPermission(sessionId, permissionId, response);
-				return { success: true };
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+		(conn, sessionId, permissionId, response) =>
+			conn.respondPermission(sessionId, permissionId, response),
 	);
 
 	// --- Question response (try all connections) ---
 
-	ipcMain.handle(
-		"opencode:question:reply",
-		async (_event, requestID, answers) => {
-			try {
-				// Questions don't carry sessionId context in the IPC call,
-				// try all connected connections
-				let lastErr;
-				for (const conn of connections.values()) {
-					try {
-						await conn.replyQuestion(requestID, answers);
-						return { success: true };
-					} catch (err) {
-						lastErr = err;
-					}
-				}
-				return {
-					success: false,
-					error: lastErr?.message ?? "No connection available",
-				};
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+	handleQuestionOp("opencode:question:reply", (conn, requestID, answers) =>
+		conn.replyQuestion(requestID, answers),
 	);
 
 	// --- Commands (global) ---
 
-	ipcMain.handle("opencode:commands", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.listCommands() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle(
+	handleGlobalOp("opencode:commands", (conn) => conn.listCommands());
+	handleSessionOp(
 		"opencode:command:send",
-		async (_event, sessionId, command, args, model, agent, variant) => {
-			try {
-				const conn = getConnectionForSession(sessionId);
-				if (!conn)
-					return { success: false, error: "Session connection not found" };
-				await conn.sendCommand(sessionId, command, args, model, agent, variant);
-				return { success: true };
-			} catch (err) {
-				return { success: false, error: err.message };
-			}
-		},
+		(conn, sessionId, command, args, model, agent, variant) =>
+			conn.sendCommand(sessionId, command, args, model, agent, variant),
 	);
-
-	ipcMain.handle("opencode:question:reject", async (_event, requestID) => {
-		try {
-			let lastErr;
-			for (const conn of connections.values()) {
-				try {
-					await conn.rejectQuestion(requestID);
-					return { success: true };
-				} catch (err) {
-					lastErr = err;
-				}
-			}
-			return {
-				success: false,
-				error: lastErr?.message ?? "No connection available",
-			};
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleQuestionOp("opencode:question:reject", (conn, requestID) =>
+		conn.rejectQuestion(requestID),
+	);
 
 	// --- MCP operations (global) ---
 
-	ipcMain.handle("opencode:mcp:status", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.getMcpStatus() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle("opencode:mcp:add", async (_event, name, config) => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.addMcp(name, config) };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle("opencode:mcp:connect", async (_event, name) => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			await conn.connectMcp(name);
-			return { success: true };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
-
-	ipcMain.handle("opencode:mcp:disconnect", async (_event, name) => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			await conn.disconnectMcp(name);
-			return { success: true };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleGlobalOp("opencode:mcp:status", (conn) => conn.getMcpStatus());
+	handleGlobalOp("opencode:mcp:add", (conn, name, config) =>
+		conn.addMcp(name, config),
+	);
+	handleGlobalOp("opencode:mcp:connect", (conn, name) => conn.connectMcp(name));
+	handleGlobalOp("opencode:mcp:disconnect", (conn, name) =>
+		conn.disconnectMcp(name),
+	);
 
 	// --- Config operations (global) ---
 
-	ipcMain.handle("opencode:config:get", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.getConfig() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleGlobalOp("opencode:config:get", (conn) => conn.getConfig());
 
 	ipcMain.handle("opencode:config:update", async (_event, config) => {
 		try {
@@ -1233,15 +1138,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	// --- Skills operations (global) ---
 
-	ipcMain.handle("opencode:skills", async () => {
-		try {
-			const conn = getAnyConnection();
-			if (!conn) return { success: false, error: "No connection available" };
-			return { success: true, data: await conn.getSkills() };
-		} catch (err) {
-			return { success: false, error: err.message };
-		}
-	});
+	handleGlobalOp("opencode:skills", (conn) => conn.getSkills());
 
 	// --- Local server management ---
 
@@ -1381,11 +1278,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:is-repo", async (_event, directory) => {
 		try {
-			execSync("git rev-parse --git-dir", {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "ignore"],
-			});
+			runGit(directory, "rev-parse --git-dir");
 			return { success: true, data: true };
 		} catch {
 			return { success: true, data: false };
@@ -1394,11 +1287,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:branch:list", async (_event, directory) => {
 		try {
-			const raw = execSync('git branch -a --format="%(refname:short)"', {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "ignore"],
-			});
+			const raw = runGit(directory, 'branch -a --format="%(refname:short)"');
 			const branches = raw
 				.split(/\r?\n/)
 				.map((b) => b.trim())
@@ -1411,11 +1300,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:current-branch", async (_event, directory) => {
 		try {
-			const branch = execSync("git rev-parse --abbrev-ref HEAD", {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "ignore"],
-			}).trim();
+			const branch = runGit(directory, "rev-parse --abbrev-ref HEAD").trim();
 			return { success: true, data: branch };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
@@ -1424,11 +1309,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:worktree:list", async (_event, directory) => {
 		try {
-			const raw = execSync("git worktree list --porcelain", {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "ignore"],
-			});
+			const raw = runGit(directory, "worktree list --porcelain");
 			const worktrees = [];
 			let current = {};
 			for (const line of raw.split(/\r?\n/)) {
@@ -1468,11 +1349,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 				} else {
 					args.push(worktreePath, branch);
 				}
-				execSync(`git ${args.join(" ")}`, {
-					cwd: directory,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "pipe"],
-				});
+				runGit(directory, args.join(" "), ["ignore", "pipe", "pipe"]);
 				return { success: true, data: { path: worktreePath } };
 			} catch (err) {
 				return { success: false, error: err.message ?? String(err) };
@@ -1484,11 +1361,11 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 		"git:worktree:remove",
 		async (_event, directory, worktreePath) => {
 			try {
-				execSync(`git worktree remove "${worktreePath}"`, {
-					cwd: directory,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "pipe"],
-				});
+				runGit(directory, `worktree remove "${worktreePath}"`, [
+					"ignore",
+					"pipe",
+					"pipe",
+				]);
 				return { success: true };
 			} catch (err) {
 				return { success: false, error: err.message ?? String(err) };
@@ -1498,20 +1375,16 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:merge", async (_event, directory, branch) => {
 		try {
-			execSync(`git merge "${branch}" --no-edit`, {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "pipe"],
-			});
+			runGit(directory, `merge "${branch}" --no-edit`, [
+				"ignore",
+				"pipe",
+				"pipe",
+			]);
 			return { success: true };
 		} catch (err) {
 			// Check if it's a merge conflict (vs other errors)
 			try {
-				const conflicted = execSync("git diff --name-only --diff-filter=U", {
-					cwd: directory,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "ignore"],
-				})
+				const conflicted = runGit(directory, "diff --name-only --diff-filter=U")
 					.split(/\r?\n/)
 					.map((f) => f.trim())
 					.filter(Boolean);
@@ -1527,11 +1400,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:merge:abort", async (_event, directory) => {
 		try {
-			execSync("git merge --abort", {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "pipe"],
-			});
+			runGit(directory, "merge --abort", ["ignore", "pipe", "pipe"]);
 			return { success: true };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
@@ -1540,11 +1409,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("git:remote:url", async (_event, directory) => {
 		try {
-			const url = execSync("git remote get-url origin", {
-				cwd: directory,
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "ignore"],
-			}).trim();
+			const url = runGit(directory, "remote get-url origin").trim();
 			return { success: true, data: url };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };

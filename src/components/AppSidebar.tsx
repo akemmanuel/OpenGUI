@@ -35,10 +35,21 @@ import {
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { useHomeDir } from "@/hooks/use-home-dir";
-import { hasAnyConnection, useOpenCode } from "@/hooks/use-opencode";
+import {
+	hasAnyConnection,
+	useActions,
+	useConnectionState,
+	useSessionState,
+} from "@/hooks/use-opencode";
 import { useOutsideClick } from "@/hooks/use-outside-click";
-import { POST_MERGE_DELAY_MS, SESSION_PAGE_SIZE } from "@/lib/constants";
-import { abbreviatePath } from "@/lib/utils";
+import {
+	CTX_ITEM_CLASS,
+	CTX_SEPARATOR_CLASS,
+	CTX_SUBTRIGGER_CLASS,
+	POST_MERGE_DELAY_MS,
+	SESSION_PAGE_SIZE,
+} from "@/lib/constants";
+import { abbreviatePath, getProjectName, openExternalLink } from "@/lib/utils";
 import type { GitWorktree } from "@/types/electron";
 import logoDark from "../../opencode-logo-dark.svg";
 import logoLight from "../../opencode-logo-light.svg";
@@ -49,11 +60,8 @@ import { MergeDialog } from "./MergeDialog";
 import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
 
-/** Get just the last segment as a short project name. */
-function projectName(directory: string): string {
-	const parts = directory.replace(/\/+$/, "").split("/");
-	return parts[parts.length - 1] || directory;
-}
+/** @deprecated Use getProjectName from @/lib/utils instead. */
+const projectName = (directory: string) => getProjectName(directory, directory);
 
 /** Build a "create pull request" URL from a git remote URL and branch. */
 function buildPRUrl(
@@ -81,7 +89,6 @@ function buildPRUrl(
 export function AppSidebar() {
 	const { state: sidebarState } = useSidebar();
 	const {
-		state,
 		selectSession,
 		startDraftSession,
 		deleteSession,
@@ -94,11 +101,10 @@ export function AppSidebar() {
 		registerWorktree,
 		unregisterWorktree,
 		sendPrompt,
-	} = useOpenCode();
+	} = useActions();
 	const {
 		sessions,
 		activeSessionId,
-		connections,
 		busySessionIds,
 		queuedPrompts,
 		pendingQuestions,
@@ -106,8 +112,8 @@ export function AppSidebar() {
 		temporarySessions,
 		unreadSessionIds,
 		sessionMeta,
-		worktreeParents,
-	} = state;
+	} = useSessionState();
+	const { connections, worktreeParents } = useConnectionState();
 
 	const isConnected = hasAnyConnection(connections);
 
@@ -462,7 +468,7 @@ export function AppSidebar() {
 														alignOffset={5}
 													>
 														<ContextMenu.Item
-															className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+															className={CTX_ITEM_CLASS}
 															onSelect={() => {
 																navigator.clipboard.writeText(directory);
 															}}
@@ -471,7 +477,7 @@ export function AppSidebar() {
 															<span>Copy absolute path</span>
 														</ContextMenu.Item>
 														<ContextMenu.Item
-															className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+															className={CTX_ITEM_CLASS}
 															onSelect={() => {
 																window.electronAPI?.openInFileBrowser(
 																	directory,
@@ -482,7 +488,7 @@ export function AppSidebar() {
 															<span>Open in file browser</span>
 														</ContextMenu.Item>
 														<ContextMenu.Item
-															className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+															className={CTX_ITEM_CLASS}
 															onSelect={() => {
 																window.electronAPI?.openInTerminal(directory);
 															}}
@@ -494,9 +500,11 @@ export function AppSidebar() {
 														{/* Git worktree options (only for git repos) */}
 														{isGitRepo[directory] && (
 															<>
-																<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+																<ContextMenu.Separator
+																	className={CTX_SEPARATOR_CLASS}
+																/>
 																<ContextMenu.Item
-																	className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																	className={CTX_ITEM_CLASS}
 																	onSelect={() =>
 																		setWorktreeDialogDir(directory)
 																	}
@@ -509,7 +517,9 @@ export function AppSidebar() {
 																	(wt) => wt.path !== directory,
 																).length > 0 && (
 																	<ContextMenu.Sub>
-																		<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
+																		<ContextMenu.SubTrigger
+																			className={CTX_SUBTRIGGER_CLASS}
+																		>
 																			<GitBranch className="size-4" />
 																			<span>Worktrees</span>
 																		</ContextMenu.SubTrigger>
@@ -522,7 +532,9 @@ export function AppSidebar() {
 																					.filter((wt) => wt.path !== directory)
 																					.map((wt) => (
 																						<ContextMenu.Sub key={wt.path}>
-																							<ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
+																							<ContextMenu.SubTrigger
+																								className={CTX_SUBTRIGGER_CLASS}
+																							>
 																								<span className="truncate">
 																									{wt.branch ??
 																										projectName(wt.path)}
@@ -537,7 +549,7 @@ export function AppSidebar() {
 																										wt.path,
 																									) && (
 																										<ContextMenu.Item
-																											className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																											className={CTX_ITEM_CLASS}
 																											onSelect={async () => {
 																												registerWorktree(
 																													wt.path,
@@ -553,7 +565,7 @@ export function AppSidebar() {
 																									)}
 																									{wt.branch && (
 																										<ContextMenu.Item
-																											className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																											className={CTX_ITEM_CLASS}
 																											onSelect={() => {
 																												setMergeInfo({
 																													mainDir: directory,
@@ -570,7 +582,9 @@ export function AppSidebar() {
 																									{wt.branch &&
 																										remoteUrls[directory] && (
 																											<ContextMenu.Item
-																												className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+																												className={
+																													CTX_ITEM_CLASS
+																												}
 																												onSelect={() => {
 																													const remote =
 																														remoteUrls[
@@ -583,7 +597,7 @@ export function AppSidebar() {
 																															wt.branch ?? "",
 																														);
 																													if (url) {
-																														window.electronAPI?.openExternal(
+																														openExternalLink(
 																															url,
 																														);
 																													}
@@ -593,9 +607,13 @@ export function AppSidebar() {
 																												Open pull request
 																											</ContextMenu.Item>
 																										)}
-																									<ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+																									<ContextMenu.Separator
+																										className={
+																											CTX_SEPARATOR_CLASS
+																										}
+																									/>
 																									<ContextMenu.Item
-																										className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground text-destructive focus:text-destructive"
+																										className={`${CTX_ITEM_CLASS} text-destructive focus:text-destructive`}
 																										onSelect={async () => {
 																											// Remove from OpenGUI first
 																											if (

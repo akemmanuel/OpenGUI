@@ -16,7 +16,7 @@ import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useOpenCode } from "@/hooks/use-opencode";
+import { useActions } from "@/hooks/use-opencode";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
 
 // ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ function SourceBadge({ source }: { source: string }) {
 // ---------------------------------------------------------------------------
 
 export function SettingsProviders() {
-	const { refreshProviders } = useOpenCode();
+	const { refreshProviders } = useActions();
 	const bridge = window.electronAPI?.opencode;
 
 	// Data
