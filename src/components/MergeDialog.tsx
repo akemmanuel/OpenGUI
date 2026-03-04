@@ -24,7 +24,7 @@ type MergeState =
 	| { step: "conflicts"; files: string[] }
 	| { step: "error"; message: string };
 
-export interface MergeDialogProps {
+interface MergeDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	/** The main project directory (merge target). */
