@@ -1,14 +1,12 @@
 /**
  * Shared todo-list types and utilities.
  *
- * Both the inline TodoListView (in MessageList) and the right-side TodoSidebar
- * use these definitions so they stay in sync.
+ * Shared todo-list types, status config, and extraction helpers used by the
+ * inline TodoListView in MessageList.
  */
 
-import type { Part, ToolPart } from "@opencode-ai/sdk/v2/client";
+import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { Circle, CircleCheck, CircleDot, CircleOff } from "lucide-react";
-import { useMemo } from "react";
-import type { MessageEntry } from "@/hooks/use-opencode";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,33 +75,4 @@ export function extractTodos(state: ToolPart["state"]): TodoItem[] | null {
 		/* ignore */
 	}
 	return null;
-}
-
-// ---------------------------------------------------------------------------
-// Hook: extract the latest todo snapshot from a message list
-// ---------------------------------------------------------------------------
-
-/**
- * Walks backwards through messages to find the last `todowrite` tool call and
- * returns its todo items.  Each `TodoWrite` invocation contains the full
- * authoritative list, so only the latest one matters.
- */
-export function useSessionTodos(messages: MessageEntry[]): TodoItem[] | null {
-	return useMemo(() => {
-		// Walk messages backwards (most recent first)
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const parts = messages[i]?.parts;
-			if (!parts) continue;
-			// Walk parts backwards within the message
-			for (let j = parts.length - 1; j >= 0; j--) {
-				const part = parts[j] as Part;
-				if (part.type !== "tool") continue;
-				const toolPart = part as ToolPart;
-				if (toolPart.tool.toLowerCase() !== "todowrite") continue;
-				const todos = extractTodos(toolPart.state);
-				if (todos && todos.length > 0) return todos;
-			}
-		}
-		return null;
-	}, [messages]);
 }

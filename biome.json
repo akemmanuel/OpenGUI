@@ -15,7 +15,21 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"a11y": {
+				"useFocusableInteractive": "warn",
+				"useSemanticElements": "warn",
+				"noRedundantRoles": "warn",
+				"useAriaPropsForRole": "warn",
+				"useKeyWithClickEvents": "warn"
+			},
+			"suspicious": {
+				"noArrayIndexKey": "warn",
+				"noDocumentCookie": "warn"
+			},
+			"security": {
+				"noDangerouslySetInnerHtml": "warn"
+			}
 		}
 	},
 	"javascript": {
