@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
       - uses: anomalyco/opencode/github@latest
         env:
-          GITHUB_TOKEN: ${{ secrets.OPENCODE_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           model: opencode/minimax-m2.5-free
           use_github_token: true
