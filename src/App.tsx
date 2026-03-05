@@ -1,13 +1,12 @@
 import { AlertCircle, X } from "lucide-react";
 import { useCallback, useEffect, useMemo } from "react";
 import { QueueList } from "@/components/QueueList";
-import { TodoSidebar } from "@/components/TodoSidebar";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { Button } from "@/components/ui/button";
 import {
-	RightSidebarProvider,
 	SidebarInset,
 	SidebarProvider,
+	useSidebar,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -20,7 +19,6 @@ import {
 	useSessionState,
 } from "@/hooks/use-opencode";
 import { useUpdateCheck } from "@/hooks/use-update-check";
-import { useSessionTodos } from "@/lib/todos";
 import { computeTokenTotal } from "@/lib/utils";
 import { AppSidebar } from "./components/AppSidebar";
 import { MessageList } from "./components/MessageList";
@@ -29,6 +27,7 @@ import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
 function AppContent() {
+	const leftSidebar = useSidebar();
 	const {
 		sendPrompt,
 		abortSession,
@@ -185,128 +184,119 @@ function AppContent() {
 		);
 	}, [activeSessionId, messages, providers, selectedModel, providerDefaults]);
 
-	// Extract the latest todo snapshot from the current session's messages
-	const sessionTodos = useSessionTodos(messages);
-
 	// Check for app updates on startup
 	const updateCheck = useUpdateCheck();
 
 	return (
-		<SidebarProvider>
+		<>
 			<AppSidebar />
-			<SidebarInset>
-				<RightSidebarProvider className="flex-col">
+			<SidebarInset className="overflow-hidden">
+				<div className="flex flex-col h-full">
 					{/* Title bar spans full width */}
-					<TitleBar todos={sessionTodos} />
+					<TitleBar onToggleLeftSidebar={leftSidebar.toggleSidebar} />
 
-					{/* Below title bar: content column + right sidebar in a row */}
-					<div className="flex flex-1 min-h-0 min-w-0">
-						<div className="flex-1 flex flex-col min-w-0 select-none">
-							{/* Startup banner */}
-							{isBooting && (
-								<div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground bg-muted/30">
-									<Spinner className="size-4 shrink-0" />
-									<span>
-										{bootState === "checking-server"
-											? "Checking local OpenCode server..."
-											: "Starting local OpenCode server..."}
-									</span>
-								</div>
-							)}
+					<div className="flex-1 flex flex-col min-w-0 min-h-0 select-none">
+						{/* Startup banner */}
+						{isBooting && (
+							<div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground bg-muted/30">
+								<Spinner className="size-4 shrink-0" />
+								<span>
+									{bootState === "checking-server"
+										? "Checking local OpenCode server..."
+										: "Starting local OpenCode server..."}
+								</span>
+							</div>
+						)}
 
-							{/* Error banner */}
-							{!isBooting && (bootState === "error" || lastError) && (
-								<div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
-									<AlertCircle className="size-4 shrink-0" />
-									<span className="flex-1 truncate">
-										{bootState === "error" ? bootError : lastError}
-									</span>
-									<Button variant="ghost" size="icon-xs" onClick={clearError}>
-										<X className="size-3" />
-									</Button>
-								</div>
-							)}
+						{/* Error banner */}
+						{!isBooting && (bootState === "error" || lastError) && (
+							<div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
+								<AlertCircle className="size-4 shrink-0" />
+								<span className="flex-1 truncate">
+									{bootState === "error" ? bootError : lastError}
+								</span>
+								<Button variant="ghost" size="icon-xs" onClick={clearError}>
+									<X className="size-3" />
+								</Button>
+							</div>
+						)}
 
-							{/* Chat area */}
-							<MessageList />
+						{/* Chat area */}
+						<MessageList />
 
-							{/* Queue list + Prompt input */}
-							<div className="shrink-0">
-								<div className="max-w-2xl mx-auto">
-									{queuedPrompts.length > 0 && (
-										<div className="mb-1.5">
-											<QueueList
-												items={queuedPrompts}
-												onRemove={(id) => {
-													if (!activeSessionId) return;
-													removeFromQueue(activeSessionId, id);
-												}}
-												onMoveUp={(index) => {
-													if (!activeSessionId) return;
-													reorderQueue(activeSessionId, index, index - 1);
-												}}
-												onMoveDown={(index) => {
-													if (!activeSessionId) return;
-													reorderQueue(activeSessionId, index, index + 1);
-												}}
-												onMoveToTop={(index) => {
-													if (!activeSessionId) return;
-													reorderQueue(activeSessionId, index, 0);
-												}}
-												onMoveToBottom={(index) => {
-													if (!activeSessionId) return;
-													reorderQueue(
-														activeSessionId,
-														index,
-														queuedPrompts.length - 1,
-													);
-												}}
-												onEdit={(id, newText) => {
-													if (!activeSessionId) return;
-													updateQueuedPrompt(activeSessionId, id, newText);
-												}}
-												onSendNow={(id) => {
-													if (!activeSessionId) return;
-													void sendQueuedNow(activeSessionId, id);
-												}}
-											/>
-										</div>
-									)}
-									<PromptBox
-										autoFocus
-										disabled={
-											isBooting ||
-											!isConnected ||
-											isLoadingMessages ||
-											(!activeSessionId && !draftSessionDirectory)
-										}
-										isLoading={isBusy}
-										contextPercent={contextPercent}
-										onSubmit={(message, images) => {
-											sendPrompt(message, images);
-										}}
-										onStop={() => abortSession()}
-									/>
-								</div>
+						{/* Queue list + Prompt input */}
+						<div className="shrink-0">
+							<div className="max-w-2xl mx-auto">
+								{queuedPrompts.length > 0 && (
+									<div className="mb-1.5">
+										<QueueList
+											items={queuedPrompts}
+											onRemove={(id) => {
+												if (!activeSessionId) return;
+												removeFromQueue(activeSessionId, id);
+											}}
+											onMoveUp={(index) => {
+												if (!activeSessionId) return;
+												reorderQueue(activeSessionId, index, index - 1);
+											}}
+											onMoveDown={(index) => {
+												if (!activeSessionId) return;
+												reorderQueue(activeSessionId, index, index + 1);
+											}}
+											onMoveToTop={(index) => {
+												if (!activeSessionId) return;
+												reorderQueue(activeSessionId, index, 0);
+											}}
+											onMoveToBottom={(index) => {
+												if (!activeSessionId) return;
+												reorderQueue(
+													activeSessionId,
+													index,
+													queuedPrompts.length - 1,
+												);
+											}}
+											onEdit={(id, newText) => {
+												if (!activeSessionId) return;
+												updateQueuedPrompt(activeSessionId, id, newText);
+											}}
+											onSendNow={(id) => {
+												if (!activeSessionId) return;
+												void sendQueuedNow(activeSessionId, id);
+											}}
+										/>
+									</div>
+								)}
+								<PromptBox
+									autoFocus
+									disabled={
+										isBooting ||
+										!isConnected ||
+										isLoadingMessages ||
+										(!activeSessionId && !draftSessionDirectory)
+									}
+									isLoading={isBusy}
+									contextPercent={contextPercent}
+									onSubmit={(message, images) => {
+										sendPrompt(message, images);
+									}}
+									onStop={() => abortSession()}
+								/>
 							</div>
 						</div>
-
-						{/* Right sidebar: task list */}
-						<TodoSidebar todos={sessionTodos} />
 					</div>
-				</RightSidebarProvider>
+				</div>
 			</SidebarInset>
-
-			{/* Update-available popup */}
 			<UpdateDialog update={updateCheck} />
-		</SidebarProvider>
+		</>
 	);
 }
 
 export function App() {
 	return (
 		<OpenCodeProvider>
-			<AppContent />
+			<SidebarProvider className="!h-dvh">
+				<AppContent />
+			</SidebarProvider>
 		</OpenCodeProvider>
 	);
 }

@@ -1,8 +1,6 @@
-import { ListTodo, Minimize, Minus, Plus, Square, X } from "lucide-react";
+import { Minimize, Minus, PanelLeftIcon, Plus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SidebarTrigger, useRightSidebar } from "@/components/ui/sidebar";
-import type { TodoItem } from "@/lib/todos";
 import { ThemeToggle } from "./ThemeToggle";
 
 type WindowButtonKind = "default" | "mac";
@@ -59,11 +57,13 @@ function WindowButton({
 	);
 }
 
-export function TitleBar({ todos }: { todos: TodoItem[] | null }) {
+export function TitleBar({
+	onToggleLeftSidebar,
+}: {
+	onToggleLeftSidebar: () => void;
+}) {
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [platform, setPlatform] = useState<string | null>(null);
-	const rightSidebar = useRightSidebar();
-	const hasTodos = todos !== null && todos.length > 0;
 
 	useEffect(() => {
 		const api = window.electronAPI;
@@ -103,24 +103,23 @@ export function TitleBar({ todos }: { todos: TodoItem[] | null }) {
 				className="absolute left-0 top-0 h-full flex items-center px-2"
 				style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 			>
-				<SidebarTrigger />
+				<Button
+					data-sidebar="trigger"
+					data-slot="sidebar-trigger"
+					variant="ghost"
+					size="icon"
+					className="size-7"
+					onClick={onToggleLeftSidebar}
+				>
+					<PanelLeftIcon />
+					<span className="sr-only">Toggle Sidebar</span>
+				</Button>
 			</div>
 
 			<div
 				className={`absolute right-0 top-0 h-full flex items-center gap-2 ${isMac ? "px-2" : "pl-2"}`}
 				style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 			>
-				{hasTodos && (
-					<Button
-						variant="ghost"
-						size="icon"
-						className="size-7 text-muted-foreground hover:text-foreground"
-						onClick={rightSidebar.toggleSidebar}
-						title={`${rightSidebar.open ? "Hide" : "Show"} tasks (Ctrl+])`}
-					>
-						<ListTodo className="size-4" />
-					</Button>
-				)}
 				<ThemeToggle className="mr-1 text-muted-foreground hover:text-foreground" />
 				{isMac ? (
 					<div className="flex items-center gap-2">

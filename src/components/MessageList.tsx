@@ -876,7 +876,20 @@ const TIMELINE_BUTTON_RESET =
 	"m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
 
 function ReasoningPartView({ part }: { part: ReasoningPart }) {
-	const [expanded, setExpanded] = useState(false);
+	const isThinking = !part.time.end;
+	const [expanded, setExpanded] = useState(isThinking);
+	const preRef = useRef<HTMLPreElement>(null);
+
+	useEffect(() => {
+		setExpanded(isThinking);
+	}, [isThinking]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
+	useEffect(() => {
+		if (isThinking && expanded && preRef.current) {
+			preRef.current.scrollTop = preRef.current.scrollHeight;
+		}
+	}, [part.text, isThinking, expanded]);
 
 	if (!part.text) return null;
 
@@ -906,12 +919,17 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
 							)}
 						/>
 					</span>
-					<span className="font-medium">Thinking</span>
+					<span className="font-medium">
+						{isThinking ? "Thinking..." : "Thinking"}
+					</span>
 					{durationLabel && <span className="opacity-60">{durationLabel}</span>}
 				</summary>
 			</details>
 			{expanded && (
-				<pre className="pl-5 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-96 overflow-auto">
+				<pre
+					ref={preRef}
+					className="pl-5 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-96 overflow-auto"
+				>
 					{part.text}
 				</pre>
 			)}
@@ -1419,6 +1437,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 	const isTodoWrite = toolLower === "todowrite";
 	const isTask = toolLower === "task";
 	const isGrep = toolLower === "grep" || toolLower === "mcp_grep";
+	const isRead = toolLower === "read" || toolLower === "mcp_read";
 	const diff =
 		isEdit && "input" in state
 			? computeEditDiff(state.input)
@@ -1460,16 +1479,39 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				? state.input.pattern
 				: null
 			: null;
+	const filePath =
+		(isRead || isEdit) && "input" in state
+			? typeof state.input.filePath === "string"
+				? state.input.filePath
+				: null
+			: null;
+	const isRunning = state.status === "running" || state.status === "pending";
+	const hasDynamicLabel = isRead || isEdit || isBash;
+	const toolVerb = isRead
+		? isRunning
+			? "Reading"
+			: "Read"
+		: isEdit
+			? isRunning
+				? "Editing"
+				: "Edited"
+			: isBash
+				? isRunning
+					? "Running"
+					: "Ran"
+				: part.tool;
 	// Inline context label (filename, command, pattern, or title)
-	const contextLabel = bashCommand
-		? `$ ${bashCommand}`
-		: grepPattern
-			? grepPattern
-			: globPattern
-				? globPattern
-				: state.status === "completed" && state.title
-					? state.title
-					: null;
+	const contextLabel = filePath
+		? filePath
+		: bashCommand
+			? bashCommand
+			: grepPattern
+				? grepPattern
+				: globPattern
+					? globPattern
+					: state.status === "completed" && state.title
+						? state.title
+						: null;
 
 	// Output text for completed tools (used for expandable output)
 	const outputText =
@@ -1517,12 +1559,18 @@ function ToolPartView({ part }: { part: ToolPart }) {
 								)}
 							/>
 						</span>
-						<span className="font-medium text-foreground/70">{part.tool}</span>
+						<span className="font-medium text-foreground/70">
+							{toolVerb}
+							{hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
+						</span>
 						{contextLabel && (
 							<>
-								<span className="text-muted-foreground/40">·</span>
+								{!hasDynamicLabel && (
+									<span className="text-muted-foreground/40">·</span>
+								)}
 								<span className="truncate" title={contextLabel}>
 									{contextLabel}
+									{hasDynamicLabel && isRunning ? "..." : ""}
 								</span>
 							</>
 						)}
@@ -1566,12 +1614,18 @@ function ToolPartView({ part }: { part: ToolPart }) {
 					<span className="w-3 shrink-0 flex items-center justify-center">
 						<ToolStatusIcon status={state.status} />
 					</span>
-					<span className="font-medium text-foreground/70">{part.tool}</span>
+					<span className="font-medium text-foreground/70">
+						{toolVerb}
+						{hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
+					</span>
 					{contextLabel && (
 						<>
-							<span className="text-muted-foreground/40">·</span>
+							{!hasDynamicLabel && (
+								<span className="text-muted-foreground/40">·</span>
+							)}
 							<span className="truncate" title={contextLabel}>
 								{contextLabel}
+								{hasDynamicLabel && isRunning ? "..." : ""}
 							</span>
 						</>
 					)}
