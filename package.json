@@ -20,6 +20,8 @@
 		"dist": "bunx electron-builder --linux deb",
 		"dist:mac": "bunx electron-builder --mac dmg",
 		"dist:mac:arm64": "bunx electron-builder --mac dmg --arm64",
+		"dist:win": "bunx electron-builder --win nsis",
+		"dist:win:portable": "bunx electron-builder --win portable",
 		"typecheck": "bunx tsc --noEmit",
 		"lint": "bunx --bun biome check --write",
 		"lint:check": "bunx --bun biome check",
@@ -45,6 +47,17 @@
 		},
 		"dmg": {
 			"icon": "assets/icon.icns"
+		},
+		"win": {
+			"target": "nsis",
+			"icon": "assets/icon.png"
+		},
+		"nsis": {
+			"oneClick": false,
+			"allowToChangeInstallationDirectory": true,
+			"createDesktopShortcut": true,
+			"createStartMenuShortcut": true,
+			"shortcutName": "OpenGUI"
 		},
 		"files": [
 			"dist/**/*",

@@ -36,7 +36,7 @@ OpenGUI wraps the OpenCode server in an Electron shell with a React frontend, gi
 - **Syntax highlighting** - code blocks rendered with shiki, theme-aware
 - **Math rendering** - LaTeX/KaTeX support in assistant responses
 - **Dark/light theme** - system-aware with manual toggle
-- **Cross-platform** - builds for Linux (.deb) and macOS (.dmg)
+- **Cross-platform** - builds for Linux (.deb), macOS (.dmg), and Windows (.exe NSIS installer)
 
 ## Prerequisites
 
@@ -95,6 +95,16 @@ Build a `.dmg` installer (macOS):
 ```bash
 bun run dist:mac
 ```
+
+Build a `.exe` installer (Windows):
+
+```bash
+bun run dist:win
+```
+
+> **Windows prerequisite**: The [OpenCode CLI](https://opencode.ai) must be installed and available on your PATH (or at `%USERPROFILE%\.opencode\bin\opencode.exe`). OpenGUI does not bundle the CLI.
+
+> **Note**: Windows builds are unsigned. Windows SmartScreen will warn on first launch - click "More info" then "Run anyway".
 
 ## Architecture
 
