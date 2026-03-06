@@ -66,9 +66,9 @@ export function getPrimaryAgents(agents: Agent[]): Agent[] {
 	});
 }
 
-/** Extract the trailing directory name from an absolute path. */
+/** Extract the trailing directory name from an absolute path (cross-platform). */
 export function getProjectName(directory: string, fallback = "repo"): string {
-	const parts = directory.replace(/\/+$/, "").split("/");
+	const parts = directory.replace(/[/\\]+$/, "").split(/[/\\]/);
 	return parts[parts.length - 1] || fallback;
 }
 
