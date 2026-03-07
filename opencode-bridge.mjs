@@ -23,7 +23,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 const LOCAL_SERVER_PORT = 4096;
 const LOCAL_SERVER_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}`;
 const STARTUP_POLL_INTERVAL = 500; // ms
-const STARTUP_TIMEOUT = 15_000; // ms
+const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
 
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {
