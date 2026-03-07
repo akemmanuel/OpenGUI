@@ -262,9 +262,10 @@ export function MessageList() {
 	const lastReasoningPartId = useMemo(() => {
 		for (let i = visibleMessages.length - 1; i >= 0; i--) {
 			const entry = visibleMessages[i];
-			if (entry.info.role !== "assistant") continue;
+			if (!entry || entry.info.role !== "assistant") continue;
 			for (let j = entry.parts.length - 1; j >= 0; j--) {
-				if (entry.parts[j].type === "reasoning") return entry.parts[j].id;
+				const part = entry.parts[j];
+				if (part?.type === "reasoning") return part.id;
 			}
 		}
 		return undefined;
