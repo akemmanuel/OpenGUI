@@ -216,6 +216,9 @@ export interface OpenCodeBridge {
 		config: Partial<OpenCodeConfig>,
 	): Promise<IPCResult<OpenCodeConfig>>;
 
+	// File search
+	findFiles(query: string): Promise<IPCResult<string[]>>;
+
 	// Skills
 	getSkills(): Promise<
 		IPCResult<

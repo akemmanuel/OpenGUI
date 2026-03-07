@@ -257,6 +257,19 @@ export function MessageList() {
 		return durationByAssistantId;
 	}, [visibleMessages, isBusy, nowMs]);
 
+	// Find the last reasoning part across all assistant messages so we can
+	// auto-collapse earlier reasoning blocks when a new one starts.
+	const lastReasoningPartId = useMemo(() => {
+		for (let i = visibleMessages.length - 1; i >= 0; i--) {
+			const entry = visibleMessages[i];
+			if (entry.info.role !== "assistant") continue;
+			for (let j = entry.parts.length - 1; j >= 0; j--) {
+				if (entry.parts[j].type === "reasoning") return entry.parts[j].id;
+			}
+		}
+		return undefined;
+	}, [visibleMessages]);
+
 	// ---- session switch: jump to bottom synchronously before paint ----
 
 	useLayoutEffect(() => {
@@ -429,6 +442,7 @@ export function MessageList() {
 							<MessageBubble
 								entry={entry}
 								turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
+								lastReasoningPartId={lastReasoningPartId}
 								onFork={
 									entry.info.role === "user" && !isFirstUserMsg
 										? () => forkFromMessage(entry.info.id)
@@ -676,11 +690,13 @@ function QuestionPanel({
 const MessageBubble = memo(function MessageBubble({
 	entry,
 	turnDurationLabel,
+	lastReasoningPartId,
 	onFork,
 	onRevert,
 }: {
 	entry: MessageEntry;
 	turnDurationLabel?: string;
+	lastReasoningPartId?: string;
 	onFork?: () => void;
 	onRevert?: () => void;
 }) {
@@ -752,7 +768,12 @@ const MessageBubble = memo(function MessageBubble({
 							)}
 						>
 							{parts.map((part) => (
-								<PartView key={part.id} part={part} isUser={isUser} />
+								<PartView
+									key={part.id}
+									part={part}
+									isUser={isUser}
+									lastReasoningPartId={lastReasoningPartId}
+								/>
 							))}
 						</div>
 						{shouldCollapse && !expanded && (
@@ -791,6 +812,9 @@ const MessageBubble = memo(function MessageBubble({
 						)}
 						{"modelID" in info && info.modelID && (
 							<span className="opacity-60">{info.modelID}</span>
+						)}
+						{"mode" in info && info.mode && (
+							<span className="opacity-40">{info.mode}</span>
 						)}
 					</div>
 				)}
@@ -849,14 +873,27 @@ function FilePartView({ part }: { part: FilePart }) {
 	);
 }
 
-function PartView({ part, isUser }: { part: Part; isUser?: boolean }) {
+function PartView({
+	part,
+	isUser,
+	lastReasoningPartId,
+}: {
+	part: Part;
+	isUser?: boolean;
+	lastReasoningPartId?: string;
+}) {
 	switch (part.type) {
 		case "text":
 			return <TextPartView part={part} isUser={isUser} />;
 		case "file":
 			return <FilePartView part={part} />;
 		case "reasoning":
-			return <ReasoningPartView part={part} />;
+			return (
+				<ReasoningPartView
+					part={part}
+					isLastReasoning={part.id === lastReasoningPartId}
+				/>
+			);
 		case "tool":
 			return <ToolPartView part={part} />;
 		case "step-start":
@@ -875,14 +912,25 @@ const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
 const TIMELINE_BUTTON_RESET =
 	"m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
 
-function ReasoningPartView({ part }: { part: ReasoningPart }) {
+function ReasoningPartView({
+	part,
+	isLastReasoning,
+}: {
+	part: ReasoningPart;
+	isLastReasoning?: boolean;
+}) {
 	const isThinking = !part.time.end;
+	const { isBusy } = useSessionState();
 	const [expanded, setExpanded] = useState(isThinking);
 	const preRef = useRef<HTMLPreElement>(null);
 
 	useEffect(() => {
-		setExpanded(isThinking);
-	}, [isThinking]);
+		if (isThinking) {
+			setExpanded(true);
+		} else if (!isLastReasoning || !isBusy) {
+			setExpanded(false);
+		}
+	}, [isThinking, isLastReasoning, isBusy]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
 	useEffect(() => {
@@ -1297,19 +1345,25 @@ function getToolDisplayInfo(
 		"title" in toolState && typeof toolState.title === "string"
 			? toolState.title
 			: null;
+	const running =
+		toolState.status === "running" || toolState.status === "pending";
 
 	const lower = tool.toLowerCase();
 
 	if (lower === "bash" || lower === "shell" || lower === "execute_command") {
 		const cmd = input?.command;
-		const cmdStr = typeof cmd === "string" ? `$ ${cmd}` : (title ?? "");
-		return { icon: SquareTerminal, label: "Bash", subtitle: cmdStr };
+		const cmdStr = typeof cmd === "string" ? cmd : (title ?? "");
+		return {
+			icon: SquareTerminal,
+			label: running ? "Running" : "Ran",
+			subtitle: cmdStr,
+		};
 	}
-	if (lower === "read") {
+	if (lower === "read" || lower === "mcp_read") {
 		const path = input?.filePath ?? input?.path;
 		return {
 			icon: FileCode,
-			label: "Read",
+			label: running ? "Reading" : "Read",
 			subtitle: typeof path === "string" ? path : (title ?? ""),
 		};
 	}
@@ -1317,7 +1371,7 @@ function getToolDisplayInfo(
 		const path = input?.filePath ?? input?.path;
 		return {
 			icon: FileEdit,
-			label: "Edit",
+			label: running ? "Editing" : "Edited",
 			subtitle: typeof path === "string" ? path : (title ?? ""),
 		};
 	}
@@ -1325,7 +1379,7 @@ function getToolDisplayInfo(
 		const path = input?.filePath ?? input?.path;
 		return {
 			icon: FilePlus,
-			label: "Write",
+			label: running ? "Writing" : "Wrote",
 			subtitle: typeof path === "string" ? path : (title ?? ""),
 		};
 	}
@@ -1333,7 +1387,7 @@ function getToolDisplayInfo(
 		const pattern = input?.pattern;
 		return {
 			icon: Search,
-			label: "Grep",
+			label: running ? "Searching" : "Searched",
 			subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
 		};
 	}
@@ -1341,22 +1395,37 @@ function getToolDisplayInfo(
 		const pattern = input?.pattern;
 		return {
 			icon: Search,
-			label: "Glob",
+			label: running ? "Globbing" : "Globbed",
 			subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
 		};
 	}
 	if (lower === "task") {
 		const desc = input?.description;
+		const subagent = input?.subagent_type ?? input?.subagentType;
+		const label =
+			typeof subagent === "string"
+				? subagent.charAt(0).toUpperCase() + subagent.slice(1)
+				: running
+					? "Running"
+					: "Ran";
 		return {
 			icon: Layers,
-			label: "Task",
-			subtitle: typeof desc === "string" ? desc : (title ?? ""),
+			label,
+			subtitle: typeof desc === "string" ? `(${desc})` : (title ?? ""),
 		};
 	}
 	if (lower === "todowrite") {
+		const todoCount = Array.isArray(input?.todos) ? input.todos.length : 0;
 		return {
 			icon: CircleCheck,
-			label: "TodoWrite",
+			label: running ? "Writing todos" : `Wrote ${todoCount} todos`,
+			subtitle: "",
+		};
+	}
+	if (lower === "question" || lower === "mcp_question") {
+		return {
+			icon: MessageCircleQuestion,
+			label: running ? "Asking" : "Asked",
 			subtitle: title ?? "",
 		};
 	}
@@ -1406,13 +1475,17 @@ function ChildToolPartsList({ childSessionId }: { childSessionId: string }) {
 								<Icon className="size-2.5 text-muted-foreground" />
 							)}
 						</span>
-						<span className="text-muted-foreground shrink-0">{info.label}</span>
+						<span className="text-muted-foreground shrink-0">
+							{info.label}
+							{isRunning && !info.subtitle ? "..." : ""}
+						</span>
 						{info.subtitle && (
 							<span
 								className="text-muted-foreground/60 truncate"
 								title={info.subtitle}
 							>
 								{info.subtitle}
+								{isRunning ? "..." : ""}
 							</span>
 						)}
 					</div>
@@ -1438,6 +1511,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 	const isTask = toolLower === "task";
 	const isGrep = toolLower === "grep" || toolLower === "mcp_grep";
 	const isRead = toolLower === "read" || toolLower === "mcp_read";
+	const isQuestion = toolLower === "question" || toolLower === "mcp_question";
 	const diff =
 		isEdit && "input" in state
 			? computeEditDiff(state.input)
@@ -1449,18 +1523,6 @@ function ToolPartView({ part }: { part: ToolPart }) {
 	const taskDurationLabel = isTask ? getTaskDurationLabel(state) : null;
 	const imageAttachments = extractImageAttachments(state);
 
-	// Auto-expand running tasks with a child session ID so steps are visible
-	useEffect(() => {
-		if (
-			isTask &&
-			taskInfo?.childSessionId &&
-			(state.status === "running" || state.status === "pending") &&
-			!autoExpandedRef.current
-		) {
-			setExpanded(true);
-			autoExpandedRef.current = true;
-		}
-	}, [isTask, taskInfo?.childSessionId, state.status]);
 	const bashCommand =
 		isBash && "input" in state
 			? typeof state.input.command === "string"
@@ -1480,13 +1542,44 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				: null
 			: null;
 	const filePath =
-		(isRead || isEdit) && "input" in state
+		(isRead || isEdit || isWrite) && "input" in state
 			? typeof state.input.filePath === "string"
 				? state.input.filePath
 				: null
 			: null;
 	const isRunning = state.status === "running" || state.status === "pending";
-	const hasDynamicLabel = isRead || isEdit || isBash;
+	const taskContentRef = useRef<HTMLDivElement>(null);
+
+	// Auto-expand running tasks with a child session ID so steps are visible,
+	// and auto-collapse when the task finishes
+	useEffect(() => {
+		if (!isTask) return;
+		if (isRunning && taskInfo?.childSessionId && !autoExpandedRef.current) {
+			setExpanded(true);
+			autoExpandedRef.current = true;
+		} else if (!isRunning && autoExpandedRef.current) {
+			setExpanded(false);
+		}
+	}, [isTask, taskInfo?.childSessionId, isRunning]);
+
+	// Auto-scroll task content to bottom as new tool calls stream in
+	// biome-ignore lint/correctness/useExhaustiveDependencies: taskInfo triggers scroll on new streamed content
+	useEffect(() => {
+		if (isTask && isRunning && expanded && taskContentRef.current) {
+			taskContentRef.current.scrollTop = taskContentRef.current.scrollHeight;
+		}
+	}, [taskInfo, isTask, isRunning, expanded]);
+
+	const hasDynamicLabel =
+		isRead ||
+		isEdit ||
+		isBash ||
+		isWrite ||
+		isGrep ||
+		isGlob ||
+		isTask ||
+		isTodoWrite ||
+		isQuestion;
 	const toolVerb = isRead
 		? isRunning
 			? "Reading"
@@ -1499,8 +1592,37 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				? isRunning
 					? "Running"
 					: "Ran"
-				: part.tool;
-	// Inline context label (filename, command, pattern, or title)
+				: isWrite
+					? isRunning
+						? "Writing"
+						: "Wrote"
+					: isGrep
+						? isRunning
+							? "Searching"
+							: "Searched"
+						: isGlob
+							? isRunning
+								? "Globbing"
+								: "Globbed"
+							: isTask
+								? taskInfo?.subagentType
+									? taskInfo.subagentType.charAt(0).toUpperCase() +
+										taskInfo.subagentType.slice(1)
+									: isRunning
+										? "Running"
+										: "Ran"
+								: isTodoWrite
+									? isRunning
+										? "Writing todos"
+										: `Wrote ${todos?.length ?? 0} todos`
+									: isQuestion
+										? isRunning
+											? "Asking"
+											: "Asked"
+										: part.tool;
+	// Inline context label (filename, command, pattern, description, or title)
+	const taskDescription =
+		isTask && taskInfo?.description ? `(${taskInfo.description})` : null;
 	const contextLabel = filePath
 		? filePath
 		: bashCommand
@@ -1509,9 +1631,14 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				? grepPattern
 				: globPattern
 					? globPattern
-					: state.status === "completed" && state.title
-						? state.title
-						: null;
+					: taskDescription
+						? taskDescription
+						: state.status === "completed" &&
+								state.title &&
+								!isTodoWrite &&
+								!isTask
+							? state.title
+							: null;
 
 	// Output text for completed tools (used for expandable output)
 	const outputText =
@@ -1574,19 +1701,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 								</span>
 							</>
 						)}
-						{isTask && taskInfo && (
-							<>
-								<span className="text-muted-foreground/40">·</span>
-								<span className="truncate">
-									{taskInfo.description || "Task"}
-								</span>
-								{taskInfo.subagentType && (
-									<span className="opacity-60 shrink-0">
-										({taskInfo.subagentType})
-									</span>
-								)}
-							</>
-						)}
+
 						{grepMatchCount != null && (
 							<span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
 								{grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
@@ -1652,7 +1767,10 @@ function ToolPartView({ part }: { part: ToolPart }) {
 			{hasDiffView && expanded && <DiffView lines={diff.lines} />}
 			{/* Expanded task content */}
 			{isTask && expanded && taskInfo && (
-				<div className="pl-7 pt-1 pb-1 space-y-2 max-h-96 overflow-auto">
+				<div
+					ref={taskContentRef}
+					className="pl-7 pt-1 pb-1 space-y-2 max-h-96 overflow-auto"
+				>
 					{/* Live child session tool parts (preferred over static metadata) */}
 					{taskInfo.childSessionId ? (
 						<ChildToolPartsList childSessionId={taskInfo.childSessionId} />

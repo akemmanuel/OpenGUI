@@ -57,6 +57,84 @@ async function isLocalServerHealthy() {
 	}
 }
 
+/** Return the version string from the running server, or null. */
+async function getServerVersion() {
+	try {
+		const res = await fetch(`${LOCAL_SERVER_URL}/global/health`, {
+			signal: AbortSignal.timeout(3000),
+		});
+		if (!res.ok) return null;
+		const data = await res.json();
+		return data.version ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/** Return the version string from a local binary, or null. */
+function getBinaryVersion(binaryPath) {
+	try {
+		return execSync(`"${binaryPath}" --version`, {
+			encoding: "utf-8",
+			timeout: 5000,
+		}).trim();
+	} catch {
+		return null;
+	}
+}
+
+/** Kill the opencode server process listening on LOCAL_SERVER_PORT. Returns true if killed. */
+async function killServerProcess() {
+	const isWindows = process.platform === "win32";
+	let pid = null;
+
+	if (isWindows) {
+		try {
+			const out = execSync(
+				`netstat -ano | findstr :${LOCAL_SERVER_PORT} | findstr LISTENING`,
+				{ encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+			);
+			const match = out.trim().split(/\s+/).pop();
+			if (match) pid = Number.parseInt(match, 10);
+		} catch {
+			// no process found
+		}
+	} else {
+		try {
+			const out = execSync(`lsof -ti tcp:${LOCAL_SERVER_PORT}`, {
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			const first = out.trim().split(/\s+/)[0];
+			if (first) pid = Number.parseInt(first, 10);
+		} catch {
+			// no process found
+		}
+	}
+
+	if (!pid || Number.isNaN(pid)) return false;
+
+	try {
+		process.kill(pid, isWindows ? "SIGKILL" : "SIGTERM");
+	} catch {
+		return false;
+	}
+
+	await new Promise((resolve) => setTimeout(resolve, 1000));
+
+	if (await isLocalServerHealthy()) {
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {
+			// already dead
+		}
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		if (await isLocalServerHealthy()) return false;
+	}
+
+	return true;
+}
+
 /** Poll until healthy or timeout. */
 function waitForHealthy(timeoutMs = STARTUP_TIMEOUT) {
 	return new Promise((resolve, reject) => {
@@ -445,6 +523,14 @@ class OpenCodeConnection {
 	async getSkills() {
 		this._requireClient();
 		const res = await this._client.app.skills();
+		return res.data ?? [];
+	}
+
+	// - File search ----------------------------------------------------------
+
+	async findFiles(query) {
+		this._requireClient();
+		const res = await this._client.find.files({ query });
 		return res.data ?? [];
 	}
 
@@ -1140,16 +1226,26 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	handleGlobalOp("opencode:skills", (conn) => conn.getSkills());
 
+	// --- File search (global) ---
+
+	handleGlobalOp("opencode:find:files", (conn, query) => conn.findFiles(query));
+
 	// --- Local server management ---
 
 	ipcMain.handle("opencode:server:start", async () => {
 		try {
-			// If already running, skip spawn
-			if (await isLocalServerHealthy()) {
-				return { success: true, data: { alreadyRunning: true } };
-			}
-
 			const binary = resolveOpencodeBinary();
+
+			// If already running, check version matches the local binary
+			if (await isLocalServerHealthy()) {
+				const serverVer = await getServerVersion();
+				const binaryVer = binary ? getBinaryVersion(binary) : null;
+				if (!serverVer || !binaryVer || serverVer === binaryVer) {
+					return { success: true, data: { alreadyRunning: true } };
+				}
+				// Version mismatch - kill the old server and respawn below
+				await killServerProcess();
+			}
 			console.log(
 				`[opencode-bridge] Resolved binary: ${binary ?? "(not found)"} (platform: ${process.platform})`,
 			);
@@ -1214,77 +1310,17 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	ipcMain.handle("opencode:server:stop", async () => {
 		try {
-			// Check if server is actually running first
 			if (!(await isLocalServerHealthy())) {
 				return { success: true, data: { alreadyStopped: true } };
 			}
-
-			// Find the PID listening on the server port
-			const isWindows = process.platform === "win32";
-			let pid = null;
-
-			if (isWindows) {
-				try {
-					const out = execSync(
-						`netstat -ano | findstr :${LOCAL_SERVER_PORT} | findstr LISTENING`,
-						{ encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
-					);
-					const match = out.trim().split(/\s+/).pop();
-					if (match) pid = Number.parseInt(match, 10);
-				} catch {
-					// no process found
-				}
-			} else {
-				try {
-					const out = execSync(`lsof -ti tcp:${LOCAL_SERVER_PORT}`, {
-						encoding: "utf-8",
-						stdio: ["ignore", "pipe", "ignore"],
-					});
-					const first = out.trim().split(/\s+/)[0];
-					if (first) pid = Number.parseInt(first, 10);
-				} catch {
-					// no process found
-				}
-			}
-
-			if (!pid || Number.isNaN(pid)) {
+			const killed = await killServerProcess();
+			if (!killed) {
 				return {
 					success: false,
-					error: `Could not find process on port ${LOCAL_SERVER_PORT}`,
+					error: "Server process could not be stopped",
 				};
 			}
-
-			// Kill the process
-			try {
-				process.kill(pid, isWindows ? "SIGKILL" : "SIGTERM");
-			} catch (killErr) {
-				return {
-					success: false,
-					error: `Failed to kill process ${pid}: ${killErr.message}`,
-				};
-			}
-
-			// Wait briefly for the process to die, then verify
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-			const stillRunning = await isLocalServerHealthy();
-			if (stillRunning) {
-				// Force kill as fallback
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {
-					// already dead or permission error
-				}
-				await new Promise((resolve) => setTimeout(resolve, 500));
-				const stillAlive = await isLocalServerHealthy();
-				if (stillAlive) {
-					return {
-						success: false,
-						error: "Server process did not stop after SIGKILL",
-					};
-				}
-			}
-
-			return { success: true, data: { pid } };
+			return { success: true, data: {} };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
 		}

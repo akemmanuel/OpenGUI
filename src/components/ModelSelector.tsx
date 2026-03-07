@@ -4,7 +4,13 @@
  */
 
 import { BrainCircuit, Check, Lightbulb, Search, Star } from "lucide-react";
-import { type KeyboardEventHandler, useEffect, useMemo, useState } from "react";
+import {
+	type KeyboardEventHandler,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,6 +120,7 @@ export function ModelSelector() {
 	const { providers, selectedModel } = useModelState();
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
+	const inputRef = useRef<HTMLInputElement>(null);
 	const [recentValues, setRecentValues] = useState<string[]>([]);
 	const [favoriteValues, setFavoriteValues] = useState<Set<string>>(new Set());
 
@@ -145,6 +152,24 @@ export function ModelSelector() {
 		if (typeof window === "undefined") return;
 		storageSetJSON(STORAGE_KEYS.FAVORITE_MODELS, [...favoriteValues]);
 	}, [favoriteValues]);
+
+	// Open via Ctrl+X M chord shortcut dispatched from App.tsx
+	useEffect(() => {
+		const handler = () => setOpen(true);
+		window.addEventListener("open-model-selector", handler);
+		return () => window.removeEventListener("open-model-selector", handler);
+	}, []);
+
+	// Focus and select all text in the search input whenever the dialog opens
+	useEffect(() => {
+		if (!open) return;
+		// Use a microtask delay so the dialog has time to render and mount the input
+		const frame = requestAnimationFrame(() => {
+			inputRef.current?.focus();
+			inputRef.current?.select();
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [open]);
 
 	const groups = useMemo(() => {
 		const now = Date.now();
@@ -336,10 +361,11 @@ export function ModelSelector() {
 					<div className="relative">
 						<Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
 						<Input
-							autoFocus
+							ref={inputRef}
 							value={query}
 							onChange={(event) => setQuery(event.target.value)}
 							onKeyDown={handleInputKeyDown}
+							onFocus={(e) => e.target.select()}
 							placeholder="Search provider, model, or id..."
 							className="h-8 pl-8 text-xs"
 						/>

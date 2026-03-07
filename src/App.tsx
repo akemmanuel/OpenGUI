@@ -99,6 +99,47 @@ function AppContent() {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [cycleVariant]);
 
+	// Ctrl+X then M (within 2s): open model selector
+	useEffect(() => {
+		let chordActive = false;
+		let chordTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
+				// Let native cut work when text is selected
+				const sel = window.getSelection();
+				if (sel && sel.toString().length > 0) return;
+				e.preventDefault();
+				chordActive = true;
+				if (chordTimer) clearTimeout(chordTimer);
+				chordTimer = setTimeout(() => {
+					chordActive = false;
+					chordTimer = null;
+				}, 2000);
+			} else if (chordActive && e.key.toLowerCase() === "m") {
+				e.preventDefault();
+				chordActive = false;
+				if (chordTimer) {
+					clearTimeout(chordTimer);
+					chordTimer = null;
+				}
+				window.dispatchEvent(new CustomEvent("open-model-selector"));
+			} else if (chordActive) {
+				chordActive = false;
+				if (chordTimer) {
+					clearTimeout(chordTimer);
+					chordTimer = null;
+				}
+			}
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => {
+			window.removeEventListener("keydown", handleKeyDown);
+			if (chordTimer) clearTimeout(chordTimer);
+		};
+	}, []);
+
 	const activeSessionId = sessionActiveId;
 	const queuedPrompts = activeSessionId
 		? getQueuedPrompts(activeSessionId)
@@ -115,8 +156,19 @@ function AppContent() {
 	//
 	// Resolves the model from the last assistant message (most accurate),
 	// then falls back to the UI-selected model, then provider defaults.
-	const contextPercent = useMemo<number | null>(() => {
-		if (!activeSessionId) return null;
+	const contextInfo = useMemo<{
+		percent: number | null;
+		tokens: number | null;
+		cost: number | null;
+		contextLimit: number | null;
+	}>(() => {
+		const none = {
+			percent: null,
+			tokens: null,
+			cost: null,
+			contextLimit: null,
+		};
+		if (!activeSessionId) return none;
 
 		// Walk backwards to find the last assistant message with token info.
 		// During streaming, the final message-level tokens may not be set yet,
@@ -125,6 +177,7 @@ function AppContent() {
 			providerID: string;
 			modelID: string;
 			total: number;
+			cost: number | null;
 		};
 		let last: TokenSnapshot | null = null;
 		for (let i = messages.length - 1; i >= 0; i--) {
@@ -137,6 +190,8 @@ function AppContent() {
 				// First try message-level tokens (authoritative, set after completion)
 				const t = "tokens" in msg ? msg.tokens : undefined;
 				let total = t ? computeTokenTotal(t) : 0;
+				const msgCost =
+					"cost" in msg && typeof msg.cost === "number" ? msg.cost : null;
 
 				// If no message-level tokens yet, sum step-finish parts (live during streaming)
 				if (total <= 0) {
@@ -151,7 +206,12 @@ function AppContent() {
 				}
 
 				if (total > 0) {
-					last = { providerID: msg.providerID, modelID: msg.modelID, total };
+					last = {
+						providerID: msg.providerID,
+						modelID: msg.modelID,
+						total,
+						cost: msgCost,
+					};
 					break;
 				}
 			}
@@ -167,22 +227,29 @@ function AppContent() {
 				modID = fallback.modelID;
 			}
 		}
-		if (!provID || !modID) return null;
+		if (!provID || !modID) return none;
 
 		const provider = providers.find((p) => p.id === provID);
-		if (!provider) return null;
+		if (!provider) return none;
 		const model = provider.models[modID];
-		if (!model?.limit?.context) return null;
+		if (!model?.limit?.context) return none;
 		const contextLimit = model.limit.context;
 
 		// No assistant messages yet - show 0
-		if (!last) return 0;
+		if (!last) return { percent: 0, tokens: null, cost: null, contextLimit };
 
-		return Math.min(
-			100,
-			Math.max(0, Math.round((last.total / contextLimit) * 100)),
-		);
+		return {
+			percent: Math.min(
+				100,
+				Math.max(0, Math.round((last.total / contextLimit) * 100)),
+			),
+			tokens: last.total,
+			cost: last.cost,
+			contextLimit,
+		};
 	}, [activeSessionId, messages, providers, selectedModel, providerDefaults]);
+
+	const contextPercent = contextInfo.percent;
 
 	// Check for app updates on startup
 	const updateCheck = useUpdateCheck();
@@ -225,7 +292,7 @@ function AppContent() {
 						<MessageList />
 
 						{/* Queue list + Prompt input */}
-						<div className="shrink-0">
+						<div className="shrink-0 px-4 pb-3">
 							<div className="max-w-2xl mx-auto">
 								{queuedPrompts.length > 0 && (
 									<div className="mb-1.5">
@@ -276,8 +343,11 @@ function AppContent() {
 									}
 									isLoading={isBusy}
 									contextPercent={contextPercent}
-									onSubmit={(message, images) => {
-										sendPrompt(message, images);
+									contextTokens={contextInfo.tokens}
+									contextCost={contextInfo.cost}
+									contextLimit={contextInfo.contextLimit}
+									onSubmit={(message, images, mode) => {
+										sendPrompt(message, images, mode);
 									}}
 									onStop={() => abortSession()}
 								/>
