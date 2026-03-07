@@ -2,6 +2,7 @@ import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
 	ArrowUp,
 	BookOpen,
+	ListEnd,
 	Loader2,
 	Mic,
 	Paperclip,
@@ -9,9 +10,11 @@ import {
 	Square,
 	Wrench,
 	X,
+	Zap,
 } from "lucide-react";
 import * as React from "react";
 import { AgentSelector } from "@/components/AgentSelector";
+import { FileMentionPopover } from "@/components/FileMentionPopover";
 import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
 import { SkillsDialog } from "@/components/SkillsDialog";
@@ -34,28 +37,31 @@ import {
 } from "@/components/ui/tooltip";
 import { VariantSelector } from "@/components/VariantSelector";
 import {
+	type QueueMode,
 	useActions,
 	useModelState,
 	useSessionState,
 } from "@/hooks/use-opencode";
 import { useSTT } from "@/hooks/useSTT";
-import {
-	MAX_TEXTAREA_HEIGHT_PX,
-	SMALL_WINDOW_BREAKPOINT_PX,
-	STORAGE_KEYS,
-} from "@/lib/constants";
+import { MAX_TEXTAREA_HEIGHT_PX, STORAGE_KEYS } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
 import { storageGet } from "@/lib/safe-storage";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps
 	extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "onSubmit"> {
-	onSubmit?: (message: string, images?: string[]) => void;
+	onSubmit?: (message: string, images?: string[], mode?: QueueMode) => void;
 	onStop?: () => void;
 	isLoading?: boolean;
 	autoFocus?: boolean;
 	/** Percentage of context window consumed (0-100), null if unknown */
 	contextPercent?: number | null;
+	/** Total tokens in the context window */
+	contextTokens?: number | null;
+	/** Cost of the last assistant message in USD */
+	contextCost?: number | null;
+	/** Maximum context window size in tokens */
+	contextLimit?: number | null;
 }
 
 const TARGET_IMAGE_SIZE = 4.5 * 1024 * 1024; // Target slightly under 5 MB
@@ -137,6 +143,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			isLoading,
 			autoFocus,
 			contextPercent,
+			contextTokens,
+			contextCost,
+			contextLimit,
 			...props
 		},
 		ref,
@@ -147,9 +156,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [value, setValue] = React.useState("");
 		const [imagePreviews, setImagePreviews] = React.useState<string[]>([]);
 		const [isDragging, setIsDragging] = React.useState(false);
-		const [isFullWidth, setIsFullWidth] = React.useState(true);
 		const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
 		const [skillsDialogOpen, setSkillsDialogOpen] = React.useState(false);
+
+		// Queue mode: how a message is dispatched when the session is busy
+		const [queueMode, setQueueMode] = React.useState<QueueMode>("queue");
 
 		// Message history navigation state
 		// -1 = not browsing, 0 = most recent user message, incrementing = older
@@ -193,7 +204,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		} = useSTT(sttEndpoint);
 		const isDisabled = Boolean(props.disabled);
 
-		const { setAgent, sendCommand } = useActions();
+		const { setAgent, sendCommand, findFiles } = useActions();
 		const { commands, agents, selectedAgent } = useModelState();
 		const { messages, activeSessionId } = useSessionState();
 
@@ -202,6 +213,21 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [slashFilter, setSlashFilter] = React.useState("");
 		const [slashActiveIndex, setSlashActiveIndex] = React.useState(0);
 		const filteredSlashCommands = useFilteredCommands(commands, slashFilter);
+
+		// @file mention popover state
+		const [showFileMention, setShowFileMention] = React.useState(false);
+		const [fileMentionResults, setFileMentionResults] = React.useState<
+			string[]
+		>([]);
+		const [fileMentionActiveIndex, setFileMentionActiveIndex] =
+			React.useState(0);
+		const [fileMentionLoading, setFileMentionLoading] = React.useState(false);
+		// Position of the "@" character that triggered the popover
+		const fileMentionAnchorRef = React.useRef(-1);
+		const fileMentionDebounceRef = React.useRef<ReturnType<
+			typeof setTimeout
+		> | null>(null);
+
 		const primaryAgents = React.useMemo(
 			() => getPrimaryAgents(agents).map((a) => a.name),
 			[agents],
@@ -279,31 +305,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			}
 		}, [autoFocus]);
 
-		// Detect whether the prompt box spans edge-to-edge (no visible side gutter).
-		// On small windows (< 640px) always treat as constrained (rounded + borders).
-		React.useEffect(() => {
-			const el = containerRef.current;
-			if (!el) return;
-			const check = () => {
-				if (window.innerWidth < SMALL_WINDOW_BREAKPOINT_PX) {
-					setIsFullWidth(false);
-					return;
-				}
-				const rect = el.getBoundingClientRect();
-				const hasSideGutter =
-					rect.left > 6 && window.innerWidth - rect.right > 6;
-				setIsFullWidth(!hasSideGutter);
-			};
-			check();
-			const observer = new ResizeObserver(check);
-			observer.observe(el);
-			window.addEventListener("resize", check);
-			return () => {
-				observer.disconnect();
-				window.removeEventListener("resize", check);
-			};
-		}, []);
-
 		const appendImages = React.useCallback(
 			async (files: FileList | File[]) => {
 				if (isDisabled) return;
@@ -338,6 +339,56 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				setShowSlash(true);
 			} else {
 				setShowSlash(false);
+			}
+
+			// Detect @file mention: scan backward from cursor for "@"
+			const cursorPos = e.target.selectionStart;
+			const textBeforeCursor = newValue.slice(0, cursorPos);
+
+			// Find the last "@" that is at start or preceded by whitespace
+			let atIndex = -1;
+			for (let i = textBeforeCursor.length - 1; i >= 0; i--) {
+				const ch = textBeforeCursor[i];
+				// If we hit whitespace before finding @, stop (no active mention)
+				if (ch === " " || ch === "\n" || ch === "\t") break;
+				if (ch === "@") {
+					// Valid if at start or preceded by whitespace
+					if (i === 0 || /\s/.test(textBeforeCursor[i - 1] ?? "")) {
+						atIndex = i;
+					}
+					break;
+				}
+			}
+
+			if (atIndex >= 0) {
+				const query = textBeforeCursor.slice(atIndex + 1);
+				fileMentionAnchorRef.current = atIndex;
+				setFileMentionActiveIndex(0);
+				setShowFileMention(true);
+
+				// Debounce the API call
+				if (fileMentionDebounceRef.current) {
+					clearTimeout(fileMentionDebounceRef.current);
+				}
+				setFileMentionLoading(true);
+				fileMentionDebounceRef.current = setTimeout(async () => {
+					try {
+						const results = await findFiles(query);
+						setFileMentionResults(results.slice(0, 20));
+					} catch {
+						setFileMentionResults([]);
+					} finally {
+						setFileMentionLoading(false);
+					}
+				}, 150);
+			} else {
+				setShowFileMention(false);
+				setFileMentionResults([]);
+				fileMentionAnchorRef.current = -1;
+				if (fileMentionDebounceRef.current) {
+					clearTimeout(fileMentionDebounceRef.current);
+					fileMentionDebounceRef.current = null;
+				}
 			}
 		};
 
@@ -397,6 +448,34 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
 		const hasValue = value.trim().length > 0 || imagePreviews.length > 0;
 
+		const handleFileMentionSelect = React.useCallback(
+			(filePath: string) => {
+				const anchor = fileMentionAnchorRef.current;
+				if (anchor < 0) return;
+				const textarea = internalTextareaRef.current;
+				const cursorPos = textarea?.selectionStart ?? value.length;
+
+				// Replace @query with @filepath + trailing space
+				const before = value.slice(0, anchor);
+				const after = value.slice(cursorPos);
+				const insertion = `@${filePath} `;
+				const newValue = before + insertion + after;
+
+				setValue(newValue);
+				setShowFileMention(false);
+				setFileMentionResults([]);
+				fileMentionAnchorRef.current = -1;
+
+				// Move cursor to after the inserted mention
+				const newCursorPos = before.length + insertion.length;
+				requestAnimationFrame(() => {
+					textarea?.focus();
+					textarea?.setSelectionRange(newCursorPos, newCursorPos);
+				});
+			},
+			[value],
+		);
+
 		const handleSlashSelect = React.useCallback((cmd: Command) => {
 			// Prefill the input with the command name + space for arguments
 			const text = `/${cmd.name} `;
@@ -430,7 +509,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			}
 
 			const images = imagePreviews.length > 0 ? imagePreviews : undefined;
-			onSubmit?.(value, images);
+			onSubmit?.(value, images, isLoading ? queueMode : undefined);
 			setValue("");
 			setImagePreviews([]);
 			setHistoryIndex(-1);
@@ -438,6 +517,39 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		};
 
 		const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+			// @file mention popover keyboard navigation
+			if (showFileMention && fileMentionResults.length > 0) {
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					setFileMentionActiveIndex(
+						(prev) => (prev + 1) % fileMentionResults.length,
+					);
+					return;
+				}
+				if (e.key === "ArrowUp") {
+					e.preventDefault();
+					setFileMentionActiveIndex(
+						(prev) =>
+							(prev - 1 + fileMentionResults.length) %
+							fileMentionResults.length,
+					);
+					return;
+				}
+				if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+					e.preventDefault();
+					const file = fileMentionResults[fileMentionActiveIndex];
+					if (file) handleFileMentionSelect(file);
+					return;
+				}
+				if (e.key === "Escape") {
+					e.preventDefault();
+					setShowFileMention(false);
+					setFileMentionResults([]);
+					fileMentionAnchorRef.current = -1;
+					return;
+				}
+			}
+
 			// Slash popover keyboard navigation
 			if (showSlash && filteredSlashCommands.length > 0) {
 				if (e.key === "ArrowDown") {
@@ -549,10 +661,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
 				className={cn(
-					"flex flex-col bg-background px-1.5 pt-1.5 shadow-xs transition-colors cursor-text",
-					isFullWidth
-						? "border-t rounded-none"
-						: "border-3 rounded-t-xl border-b-0",
+					"flex flex-col bg-background px-2 pt-2 shadow-xs transition-colors cursor-text border rounded-xl",
 					isDragging && "border-ring ring-ring/50 ring-[3px]",
 					className,
 				)}
@@ -563,6 +672,19 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 					}
 				}}
 			>
+				{showFileMention &&
+					(fileMentionResults.length > 0 || fileMentionLoading) && (
+						<div className="relative">
+							<FileMentionPopover
+								files={fileMentionResults}
+								activeIndex={fileMentionActiveIndex}
+								onSelect={handleFileMentionSelect}
+								onHover={setFileMentionActiveIndex}
+								loading={fileMentionLoading}
+							/>
+						</div>
+					)}
+
 				{showSlash && filteredSlashCommands.length > 0 && (
 					<div className="relative">
 						<SlashCommandPopover
@@ -619,7 +741,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 						isDisabled
 							? "Select or create a session..."
 							: isLoading
-								? "Queue a message..."
+								? queueMode === "interrupt"
+									? "Interrupt and send..."
+									: queueMode === "after-part"
+										? "Send after current part..."
+										: "Queue a message..."
 								: "Message..."
 					}
 					className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -687,51 +813,120 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 						<AgentSelector />
 						<VariantSelector />
 
+						{isLoading && (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+										onClick={(e) => {
+											e.stopPropagation();
+											setQueueMode((prev) => {
+												if (prev === "queue") return "after-part";
+												if (prev === "after-part") return "interrupt";
+												return "queue";
+											});
+										}}
+									>
+										{queueMode === "interrupt" ? (
+											<Zap className="size-3.5 shrink-0" />
+										) : queueMode === "after-part" ? (
+											<ListEnd className="size-3.5 shrink-0" />
+										) : (
+											<ListEnd className="size-3.5 shrink-0" />
+										)}
+										<span className="truncate max-w-[100px]">
+											{queueMode === "interrupt"
+												? "Interrupt"
+												: queueMode === "after-part"
+													? "After part"
+													: "Queue"}
+										</span>
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>
+									{queueMode === "interrupt"
+										? "Interrupt: abort immediately, then send"
+										: queueMode === "after-part"
+											? "After part: wait for current part to finish, then send"
+											: "Queue: wait for full response, then send"}
+								</TooltipContent>
+							</Tooltip>
+						)}
+
 						<div className="ml-auto flex items-center gap-1.5">
 							{contextPercent != null && contextPercent >= 0 && (
-								<span
-									className={cn(
-										"flex items-center gap-1 text-[11px] tabular-nums select-none",
-										contextPercent >= 90
-											? "text-destructive"
-											: contextPercent >= 70
-												? "text-amber-500"
-												: "text-muted-foreground/70",
-									)}
-								>
-									<svg
-										width="14"
-										height="14"
-										viewBox="0 0 20 20"
-										className="shrink-0 -rotate-90"
-										aria-hidden="true"
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<span
+											className={cn(
+												"flex items-center gap-1 text-[11px] tabular-nums select-none cursor-default",
+												contextPercent >= 90
+													? "text-destructive"
+													: contextPercent >= 70
+														? "text-amber-500"
+														: "text-muted-foreground/70",
+											)}
+										>
+											<svg
+												width="14"
+												height="14"
+												viewBox="0 0 20 20"
+												className="shrink-0 -rotate-90"
+												aria-hidden="true"
+											>
+												<circle
+													cx="10"
+													cy="10"
+													r="8"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="2.5"
+													opacity="0.2"
+												/>
+												<circle
+													cx="10"
+													cy="10"
+													r="8"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="2.5"
+													strokeLinecap="round"
+													strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
+												/>
+											</svg>
+											{contextPercent === 0
+												? "0%"
+												: contextPercent < 1
+													? "<1%"
+													: `${contextPercent}%`}
+										</span>
+									</TooltipTrigger>
+									<TooltipContent
+										side="top"
+										className="flex flex-col gap-1 text-xs"
 									>
-										<circle
-											cx="10"
-											cy="10"
-											r="8"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2.5"
-											opacity="0.2"
-										/>
-										<circle
-											cx="10"
-											cy="10"
-											r="8"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2.5"
-											strokeLinecap="round"
-											strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
-										/>
-									</svg>
-									{contextPercent === 0
-										? "0%"
-										: contextPercent < 1
-											? "<1%"
-											: `${contextPercent}%`}
-								</span>
+										<div className="font-semibold">Context window</div>
+										{contextTokens != null && contextLimit != null ? (
+											<div>
+												{contextTokens.toLocaleString()} /{" "}
+												{contextLimit.toLocaleString()} tokens
+											</div>
+										) : contextTokens != null ? (
+											<div>{contextTokens.toLocaleString()} tokens</div>
+										) : null}
+										{contextCost != null && contextCost > 0 && (
+											<div>
+												Cost: $
+												{contextCost < 0.01
+													? contextCost.toFixed(6)
+													: contextCost.toFixed(4)}
+											</div>
+										)}
+									</TooltipContent>
+								</Tooltip>
 							)}
 							{isSttAvailable && sttError && !hasValue && (
 								<span className="text-xs text-destructive max-w-[150px] truncate">
@@ -811,12 +1006,24 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 										>
 											<ArrowUp />
 											<span className="sr-only">
-												{isLoading ? "Queue message" : "Send message"}
+												{isLoading
+													? queueMode === "interrupt"
+														? "Interrupt and send"
+														: queueMode === "after-part"
+															? "Send after part"
+															: "Queue message"
+													: "Send message"}
 											</span>
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent>
-										{isLoading ? "Queue" : "Send"}
+										{isLoading
+											? queueMode === "interrupt"
+												? "Interrupt & send"
+												: queueMode === "after-part"
+													? "Send after part"
+													: "Queue"
+											: "Send"}
 									</TooltipContent>
 								</Tooltip>
 							)}

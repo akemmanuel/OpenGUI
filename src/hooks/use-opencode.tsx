@@ -252,6 +252,8 @@ function areNotificationsEnabled(): boolean {
 	return raw === null || raw === "true";
 }
 
+export type QueueMode = "queue" | "interrupt" | "after-part";
+
 export interface QueuedPrompt {
 	id: string;
 	text: string;
@@ -260,6 +262,11 @@ export interface QueuedPrompt {
 	model?: SelectedModel;
 	agent?: string;
 	variant?: string;
+	/** How this prompt should be dispatched:
+	 *  - "queue": wait for the session to fully complete (default)
+	 *  - "interrupt": abort immediately and send (never actually queued)
+	 *  - "after-part": wait for the current tool/text part to finish, then abort and send */
+	mode: QueueMode;
 }
 
 export interface MessageEntry {
@@ -353,6 +360,12 @@ export interface OpenCodeState {
 		string,
 		Record<string, { info: Message; parts: Record<string, Part> }>
 	>;
+	/** Session IDs that have an "after-part" queued prompt waiting for the current part to finish */
+	afterPartPending: Set<string>;
+	/** Session IDs where an after-part trigger just fired (effect picks this up to abort + dispatch) */
+	_afterPartTriggered: Set<string>;
+	/** Session IDs that were optimistically deleted - prevents SSE events from re-adding them */
+	_deletedSessionIds: Set<string>;
 }
 
 /** Check if any project is connected. */
@@ -394,6 +407,9 @@ const initialState: OpenCodeState = {
 	trackedChildSessionIds: new Set(),
 	_pendingSnapshots: [],
 	_sessionBuffers: {},
+	afterPartPending: new Set(),
+	_afterPartTriggered: new Set(),
+	_deletedSessionIds: new Set(),
 };
 
 // ---------------------------------------------------------------------------
@@ -497,6 +513,14 @@ type Action =
 				childSessionId: string;
 				messages: Array<{ info: Message; parts: Part[] }>;
 			};
+	  }
+	| {
+			type: "SET_AFTER_PART_PENDING";
+			payload: { sessionID: string; pending: boolean };
+	  }
+	| {
+			type: "CLEAR_AFTER_PART_TRIGGERED";
+			payload: { sessionID: string };
 	  };
 
 function getSessionSortTime(session: Session): number {
@@ -984,6 +1008,8 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "SESSION_CREATED": {
 			// Ignore subagent / child sessions - only root sessions appear in the sidebar.
 			if (action.payload.parentID) return state;
+			// Ignore SSE echoes for sessions that were optimistically deleted.
+			if (state._deletedSessionIds.has(action.payload.id)) return state;
 			const projectDir = action.payload._projectDir ?? action.payload.directory;
 			if (!(projectDir in state.connections)) return state;
 			return {
@@ -999,6 +1025,10 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			const updated = action.payload;
 			// Ignore subagent / child sessions - only root sessions appear in the sidebar.
 			if (updated.parentID) return state;
+			// Ignore SSE echoes for sessions that were optimistically deleted.
+			// Without this guard the session flickers back into the sidebar
+			// between the optimistic removal and the server's session.deleted event.
+			if (state._deletedSessionIds.has(updated.id)) return state;
 			const updProjectDir = updated._projectDir ?? updated.directory;
 			if (!(updProjectDir in state.connections)) return state;
 			const exists = state.sessions.some((s) => s.id === updated.id);
@@ -1013,22 +1043,43 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		}
 
 		case "SESSION_DELETED": {
-			const { [action.payload]: _deletedQueue, ...remainingQueues } =
+			const deletedId = action.payload;
+			const alreadyGone = !state.sessions.some((s) => s.id === deletedId);
+
+			// SSE echo after optimistic delete - session is already removed.
+			// Clean the ID out of _deletedSessionIds (no longer needed) and
+			// return the same state reference to avoid a re-render.
+			if (alreadyGone) {
+				if (state._deletedSessionIds.has(deletedId)) {
+					const nextDeleted = new Set(state._deletedSessionIds);
+					nextDeleted.delete(deletedId);
+					return { ...state, _deletedSessionIds: nextDeleted };
+				}
+				return state;
+			}
+
+			// Track that this session was deleted so that any straggling
+			// SESSION_UPDATED / SESSION_CREATED SSE events don't re-add it.
+			const nextDeleted = new Set(state._deletedSessionIds);
+			nextDeleted.add(deletedId);
+
+			const { [deletedId]: _deletedQueue, ...remainingQueues } =
 				state.queuedPrompts;
-			const { [action.payload]: _deletedBuffer, ...remainingBuffers } =
+			const { [deletedId]: _deletedBuffer, ...remainingBuffers } =
 				state._sessionBuffers;
 			const nextTemp = new Set(state.temporarySessions);
-			nextTemp.delete(action.payload);
+			nextTemp.delete(deletedId);
 			const nextUnread = new Set(state.unreadSessionIds);
-			nextUnread.delete(action.payload);
+			nextUnread.delete(deletedId);
 			return {
 				...state,
-				sessions: state.sessions.filter((s) => s.id !== action.payload),
+				sessions: state.sessions.filter((s) => s.id !== deletedId),
 				queuedPrompts: remainingQueues,
 				_sessionBuffers: remainingBuffers,
 				temporarySessions: nextTemp,
 				unreadSessionIds: nextUnread,
-				...(state.activeSessionId === action.payload
+				_deletedSessionIds: nextDeleted,
+				...(state.activeSessionId === deletedId
 					? { activeSessionId: null, messages: [], isBusy: false }
 					: {}),
 			};
@@ -1234,7 +1285,55 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			}
 			nextMessages[resolvedMessageIndex] = { ...entry, parts: newParts };
 
-			return { ...state, ...childTrackPatch, messages: nextMessages };
+			// After-part trigger: detect when a part just finished while we're
+			// waiting for the current part to complete before aborting + sending.
+			let afterPartPatch:
+				| {
+						afterPartPending: Set<string>;
+						_afterPartTriggered: Set<string>;
+				  }
+				| undefined;
+			if (state.afterPartPending.has(part.sessionID)) {
+				const prevPart = previous;
+				let justFinished = false;
+
+				if (part.type === "tool") {
+					const doneStatus =
+						part.state.status === "completed" || part.state.status === "error";
+					const wasPending =
+						!prevPart ||
+						(prevPart.type === "tool" &&
+							(prevPart.state.status === "running" ||
+								prevPart.state.status === "pending"));
+					justFinished = doneStatus && wasPending;
+				} else if (part.type === "text") {
+					const hasEnd = part.time?.end !== undefined;
+					const prevHadEnd =
+						prevPart?.type === "text" && prevPart.time?.end !== undefined;
+					justFinished = hasEnd && !prevHadEnd;
+				} else if (part.type === "step-finish") {
+					// StepFinishPart arrival always signals a step boundary
+					justFinished = !prevPart;
+				}
+
+				if (justFinished) {
+					const nextPending = new Set(state.afterPartPending);
+					nextPending.delete(part.sessionID);
+					const nextTriggered = new Set(state._afterPartTriggered);
+					nextTriggered.add(part.sessionID);
+					afterPartPatch = {
+						afterPartPending: nextPending,
+						_afterPartTriggered: nextTriggered,
+					};
+				}
+			}
+
+			return {
+				...state,
+				...childTrackPatch,
+				...afterPartPatch,
+				messages: nextMessages,
+			};
 		}
 
 		case "PART_DELTA": {
@@ -1544,6 +1643,24 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return { ...state, queuedPrompts: rest };
 		}
 
+		case "SET_AFTER_PART_PENDING": {
+			const { sessionID, pending } = action.payload;
+			const next = new Set(state.afterPartPending);
+			if (pending) {
+				next.add(sessionID);
+			} else {
+				next.delete(sessionID);
+			}
+			return { ...state, afterPartPending: next };
+		}
+
+		case "CLEAR_AFTER_PART_TRIGGERED": {
+			const { sessionID } = action.payload;
+			const next = new Set(state._afterPartTriggered);
+			next.delete(sessionID);
+			return { ...state, _afterPartTriggered: next };
+		}
+
 		case "SET_RECENT_PROJECTS":
 			return { ...state, recentProjects: action.payload };
 
@@ -1707,7 +1824,12 @@ interface ActionsContextValue {
 	) => Promise<Session | null>;
 	deleteSession: (id: string) => Promise<void>;
 	renameSession: (id: string, title: string) => Promise<void>;
-	sendPrompt: (text: string, images?: string[]) => Promise<void>;
+	sendPrompt: (
+		text: string,
+		images?: string[],
+		mode?: QueueMode,
+	) => Promise<void>;
+	findFiles: (query: string) => Promise<string[]>;
 	sendCommand: (command: string, args: string) => Promise<void>;
 	abortSession: () => Promise<void>;
 	respondPermission: (response: "once" | "always" | "reject") => Promise<void>;
@@ -2373,13 +2495,15 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		}
 	}, [bridge]);
 
-	// Ref to avoid stale closures in selectSession for temporary session cleanup
+	// Refs to avoid stale closures and prevent unnecessary callback recreation
 	const temporarySessionsRef = useRef(state.temporarySessions);
 	temporarySessionsRef.current = state.temporarySessions;
 	const activeSessionIdRef = useRef(state.activeSessionId);
 	activeSessionIdRef.current = state.activeSessionId;
 	const busySessionIdsRef = useRef(state.busySessionIds);
 	busySessionIdsRef.current = state.busySessionIds;
+	const sessionsRef = useRef(state.sessions);
+	sessionsRef.current = state.sessions;
 
 	/** Best-effort cleanup of a temporary session if it exists. */
 	const cleanupTemporarySession = useCallback(
@@ -2509,21 +2633,38 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const deleteSession = useCallback(
 		async (id: string) => {
 			if (!bridge) return;
-			// Auto-select adjacent session if deleting the active one
-			if (state.activeSessionId === id) {
-				const idx = state.sessions.findIndex((s) => s.id === id);
-				const next = state.sessions[idx + 1] ?? state.sessions[idx - 1] ?? null;
-				if (next) {
-					selectSession(next.id);
-				}
-			}
-			// Optimistic removal - don't wait for SSE round-trip
+			// Read from refs to avoid stale closures and, more importantly,
+			// to keep this callback's identity stable (deps don't include
+			// state.sessions / state.activeSessionId).
+			const currentSessions = sessionsRef.current;
+			const currentActiveId = activeSessionIdRef.current;
+
+			// Determine next session *before* removing the deleted one from state
+			const needsSwitch = currentActiveId === id;
+			const nextId = needsSwitch
+				? (() => {
+						const idx = currentSessions.findIndex((s) => s.id === id);
+						const next =
+							currentSessions[idx + 1] ?? currentSessions[idx - 1] ?? null;
+						return next?.id ?? null;
+					})()
+				: null;
+
+			// Optimistic removal first - avoids the one-frame gap where the
+			// deleted session is still visible but already deselected
 			dispatch({ type: "SESSION_DELETED", payload: id });
+
+			// Then switch to the adjacent session (runs against the already-
+			// pruned list so there is no flicker)
+			if (needsSwitch && nextId) {
+				selectSession(nextId);
+			}
+
 			bridge.deleteSession(id).catch(() => {
 				/* best-effort deletion */
 			});
 		},
-		[bridge, state.activeSessionId, state.sessions, selectSession],
+		[bridge, selectSession],
 	);
 
 	const renameSession = useCallback(
@@ -2667,10 +2808,12 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	);
 
 	const sendPrompt = useCallback(
-		async (text: string, images?: string[]) => {
+		async (text: string, images?: string[], mode?: QueueMode) => {
 			if (!bridge) return;
 			const sessionId = await ensureSessionFromDraft();
 			if (!sessionId) return;
+
+			const effectiveMode = mode ?? "queue";
 
 			// If session is busy, enqueue instead of sending directly.
 			// Read from refs to avoid stale closures when the user switches
@@ -2692,11 +2835,57 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 					model: snapModel ?? undefined,
 					agent: snapAgent ?? undefined,
 					variant: snapVariant,
+					mode: effectiveMode,
 				};
-				dispatch({
-					type: "QUEUE_ADD",
-					payload: { sessionID: sessionId, prompt: queued },
-				});
+
+				if (effectiveMode === "interrupt") {
+					// Interrupt: enqueue at front, then abort immediately.
+					// The abort triggers busy->idle which dispatches the queued prompt.
+					dispatch({
+						type: "QUEUE_ADD",
+						payload: { sessionID: sessionId, prompt: queued },
+					});
+					// Move to front if there were already queued items
+					const existingQueue = state.queuedPrompts[sessionId] ?? [];
+					if (existingQueue.length > 0) {
+						dispatch({
+							type: "QUEUE_REORDER",
+							payload: {
+								sessionID: sessionId,
+								fromIndex: existingQueue.length, // newly appended = last
+								toIndex: 0,
+							},
+						});
+					}
+					await bridge.abort(sessionId);
+				} else if (effectiveMode === "after-part") {
+					// After-part: enqueue at front, then wait for current part to finish.
+					dispatch({
+						type: "QUEUE_ADD",
+						payload: { sessionID: sessionId, prompt: queued },
+					});
+					const existingQueue = state.queuedPrompts[sessionId] ?? [];
+					if (existingQueue.length > 0) {
+						dispatch({
+							type: "QUEUE_REORDER",
+							payload: {
+								sessionID: sessionId,
+								fromIndex: existingQueue.length,
+								toIndex: 0,
+							},
+						});
+					}
+					dispatch({
+						type: "SET_AFTER_PART_PENDING",
+						payload: { sessionID: sessionId, pending: true },
+					});
+				} else {
+					// Queue (default): enqueue at end, wait for session to become idle.
+					dispatch({
+						type: "QUEUE_ADD",
+						payload: { sessionID: sessionId, prompt: queued },
+					});
+				}
 				return;
 			}
 
@@ -2705,9 +2894,20 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		[
 			bridge,
 			state.busySessionIds,
+			state.queuedPrompts,
 			dispatchPromptDirect,
 			ensureSessionFromDraft,
 		],
+	);
+
+	const findFiles = useCallback(
+		async (query: string): Promise<string[]> => {
+			if (!bridge) return [];
+			const res = await bridge.findFiles(query);
+			if (!res.success) return [];
+			return res.data ?? [];
+		},
+		[bridge],
 	);
 
 	const sendCommand = useCallback(
@@ -2766,6 +2966,23 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		justIdledMap.current = newlyIdle;
 		prevBusyRef.current = new Set(nowBusy);
 	}, [state.busySessionIds, dispatchNextQueued]);
+
+	// After-part trigger: when the reducer detects a part just finished while
+	// an "after-part" prompt is pending, it adds the sessionID to
+	// _afterPartTriggered.  This effect picks it up, aborts the session, and
+	// the abort causes busy->idle which dispatches the queued prompt above.
+	useEffect(() => {
+		if (state._afterPartTriggered.size === 0) return;
+		for (const sessionId of state._afterPartTriggered) {
+			dispatch({
+				type: "CLEAR_AFTER_PART_TRIGGERED",
+				payload: { sessionID: sessionId },
+			});
+			if (bridge) {
+				bridge.abort(sessionId);
+			}
+		}
+	}, [state._afterPartTriggered, bridge]);
 
 	// Desktop notifications for newly-idle sessions
 	useDesktopNotification(
@@ -3160,6 +3377,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			deleteSession,
 			renameSession,
 			sendPrompt,
+			findFiles,
 			sendCommand,
 			abortSession,
 			respondPermission,
@@ -3197,6 +3415,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			deleteSession,
 			renameSession,
 			sendPrompt,
+			findFiles,
 			sendCommand,
 			abortSession,
 			respondPermission,

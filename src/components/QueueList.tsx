@@ -18,6 +18,7 @@ interface QueueItem {
 	text: string;
 	variant?: string;
 	agent?: string;
+	mode?: string;
 }
 
 interface QueueListProps {
@@ -120,19 +121,32 @@ function QueueItemRow({
 				</span>
 			)}
 
-			{/* Show snapshotted variant / agent badges */}
-			{(item.variant || item.agent) && !editing && (
-				<span className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground">
-					{item.variant && (
-						<span className="rounded bg-muted px-1 py-px capitalize">
-							{item.variant}
-						</span>
-					)}
-					{item.agent && (
-						<span className="rounded bg-muted px-1 py-px">{item.agent}</span>
-					)}
-				</span>
-			)}
+			{/* Show snapshotted variant / agent / mode badges */}
+			{(item.variant || item.agent || (item.mode && item.mode !== "queue")) &&
+				!editing && (
+					<span className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground">
+						{item.mode && item.mode !== "queue" && (
+							<span
+								className={cn(
+									"rounded px-1 py-px",
+									item.mode === "interrupt"
+										? "bg-destructive/15 text-destructive"
+										: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+								)}
+							>
+								{item.mode === "interrupt" ? "interrupt" : "after part"}
+							</span>
+						)}
+						{item.variant && (
+							<span className="rounded bg-muted px-1 py-px capitalize">
+								{item.variant}
+							</span>
+						)}
+						{item.agent && (
+							<span className="rounded bg-muted px-1 py-px">{item.agent}</span>
+						)}
+					</span>
+				)}
 
 			{!editing && (
 				<div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">

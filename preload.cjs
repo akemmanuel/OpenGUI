@@ -164,6 +164,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		updateConfig: (config) =>
 			ipcRenderer.invoke("opencode:config:update", config),
 
+		// File search
+		findFiles: (query) => ipcRenderer.invoke("opencode:find:files", query),
+
 		// Skills
 		getSkills: () => ipcRenderer.invoke("opencode:skills"),
 

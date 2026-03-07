@@ -63,7 +63,7 @@ export const MCP_TOGGLE_DELAY_MS = 300;
 export const SKILLS_REFRESH_DELAY_MS = 500;
 
 /** Maximum textarea height in px before scrolling. */
-export const MAX_TEXTAREA_HEIGHT_PX = 120;
+export const MAX_TEXTAREA_HEIGHT_PX = 200;
 
 /** Small-window breakpoint for prompt box layout (px). */
 export const SMALL_WINDOW_BREAKPOINT_PX = 640;
