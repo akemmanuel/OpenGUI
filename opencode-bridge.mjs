@@ -1150,6 +1150,9 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			}
 
 			const binary = resolveOpencodeBinary();
+			console.log(
+				`[opencode-bridge] Resolved binary: ${binary ?? "(not found)"} (platform: ${process.platform})`,
+			);
 			if (!binary) {
 				return {
 					success: false,
@@ -1159,15 +1162,33 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			}
 
 			// Spawn detached so the server survives app close
-			const child = spawn(
-				binary,
-				["serve", "--port", String(LOCAL_SERVER_PORT)],
-				{
+			const isWindows = process.platform === "win32";
+			const serverArgs = ["serve", "--port", String(LOCAL_SERVER_PORT)];
+			console.log(
+				`[opencode-bridge] Spawning: ${binary} ${serverArgs.join(" ")} (platform: ${process.platform})`,
+			);
+
+			let child;
+			if (isWindows) {
+				// On Windows, run via powershell to avoid visible console windows
+				const cmd = `& '${binary.replace(/'/g, "''")}' ${serverArgs.join(" ")}`;
+				child = spawn(
+					"powershell.exe",
+					["-WindowStyle", "Hidden", "-Command", cmd],
+					{
+						detached: true,
+						stdio: "ignore",
+						windowsHide: true,
+						env: { ...process.env },
+					},
+				);
+			} else {
+				child = spawn(binary, serverArgs, {
 					detached: true,
 					stdio: "ignore",
 					env: { ...process.env },
-				},
-			);
+				});
+			}
 
 			child.unref();
 
@@ -1180,7 +1201,11 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			});
 
 			// Wait for the server to become healthy
+			console.log(
+				`[opencode-bridge] Waiting for server to become healthy (timeout: ${STARTUP_TIMEOUT / 1000}s)...`,
+			);
 			await waitForHealthy();
+			console.log("[opencode-bridge] Server is healthy.");
 			return { success: true, data: { alreadyRunning: false } };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
