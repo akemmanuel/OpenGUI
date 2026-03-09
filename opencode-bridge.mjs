@@ -1277,7 +1277,6 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 			// Spawn detached so the server survives app close.
 			// Use piped stdio so we can capture logs on startup failure.
-			const isWindows = process.platform === "win32";
 			const serverArgs = ["serve", "--port", String(LOCAL_SERVER_PORT)];
 			console.log(
 				`[opencode-bridge] Spawning: ${binary} ${serverArgs.join(" ")} (platform: ${process.platform})`,
@@ -1295,27 +1294,12 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 				}
 			};
 
-			let child;
-			if (isWindows) {
-				// On Windows, run via powershell to avoid visible console windows
-				const cmd = `& '${binary.replace(/'/g, "''")}' ${serverArgs.join(" ")}`;
-				child = spawn(
-					"powershell.exe",
-					["-WindowStyle", "Hidden", "-Command", cmd],
-					{
-						detached: true,
-						stdio: ["ignore", "pipe", "pipe"],
-						windowsHide: true,
-						env: { ...process.env },
-					},
-				);
-			} else {
-				child = spawn(binary, serverArgs, {
-					detached: true,
-					stdio: ["ignore", "pipe", "pipe"],
-					env: { ...process.env },
-				});
-			}
+			const child = spawn(binary, serverArgs, {
+				detached: true,
+				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: true,
+				env: { ...process.env },
+			});
 
 			if (child.stdout) child.stdout.on("data", appendLog);
 			if (child.stderr) child.stderr.on("data", appendLog);
@@ -1356,7 +1340,11 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 				let errorMsg = healthErr.message ?? String(healthErr);
 				if (spawnError) {
 					errorMsg = `Spawn error: ${spawnError.message}`;
-				} else if (earlyExitCode !== null) {
+				} else if (earlyExitCode !== null && earlyExitCode !== 0) {
+					// Non-zero exit means the server actually crashed.
+					// Exit code 0 is normal when the binary daemonizes (spawns a
+					// background server and the launcher exits cleanly), so we
+					// keep the health-check timeout message instead.
 					errorMsg = `Server process exited with code ${earlyExitCode}`;
 				}
 				return {
