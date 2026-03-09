@@ -28,6 +28,11 @@ const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {
 	const isWindows = process.platform === "win32";
+	const binaryName = isWindows ? "opencode.exe" : "opencode";
+	// Prefer the canonical install location (~/.opencode/bin/)
+	const preferred = join(homedir(), ".opencode", "bin", binaryName);
+	if (existsSync(preferred)) return preferred;
+	// Fall back to PATH
 	const whichCmd = isWindows ? "where opencode" : "which opencode";
 	try {
 		const fromPath = execSync(whichCmd, { encoding: "utf-8" })
@@ -37,9 +42,6 @@ function resolveOpencodeBinary() {
 	} catch {
 		// not on PATH
 	}
-	const binaryName = isWindows ? "opencode.exe" : "opencode";
-	const fallback = join(homedir(), ".opencode", "bin", binaryName);
-	if (existsSync(fallback)) return fallback;
 	return null;
 }
 
@@ -798,6 +800,17 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 					const requestID = payload?.properties?.requestID;
 					if (requestID) questionDirectoryMap.delete(requestID);
 				}
+				// Register session IDs (including child/subagent sessions) so
+				// getConnectionForSession can resolve them for message fetches.
+				if (
+					payload?.type === "session.created" ||
+					payload?.type === "session.updated"
+				) {
+					const info = payload?.properties?.info;
+					if (info?.id) {
+						sessionDirectoryMap.set(info.id, directory);
+					}
+				}
 			}
 			// Tag every event with the directory it came from
 			sendEvent({ ...event, directory });
@@ -813,8 +826,13 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			const conn = connections.get(dir);
 			if (conn) return conn;
 		}
-		// No fallback -- routing to an arbitrary connection is dangerous in
-		// multi-project mode and can send operations to the wrong backend.
+		// Fallback: try any connected connection. Child/subagent sessions are
+		// not returned by listSessions, so they may not be in sessionDirectoryMap
+		// after an app restart. Session IDs are globally unique, so the correct
+		// server will handle it and others will return an error.
+		for (const conn of connections.values()) {
+			if (conn.getStatus().state === "connected") return conn;
+		}
 		return null;
 	}
 
@@ -1257,12 +1275,25 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 				};
 			}
 
-			// Spawn detached so the server survives app close
+			// Spawn detached so the server survives app close.
+			// Use piped stdio so we can capture logs on startup failure.
 			const isWindows = process.platform === "win32";
 			const serverArgs = ["serve", "--port", String(LOCAL_SERVER_PORT)];
 			console.log(
 				`[opencode-bridge] Spawning: ${binary} ${serverArgs.join(" ")} (platform: ${process.platform})`,
 			);
+
+			const MAX_LOG_BYTES = 8192;
+			let logBuffer = "";
+			let earlyExitCode = null;
+
+			const appendLog = (chunk) => {
+				if (logBuffer.length < MAX_LOG_BYTES) {
+					logBuffer += chunk
+						.toString()
+						.slice(0, MAX_LOG_BYTES - logBuffer.length);
+				}
+			};
 
 			let child;
 			if (isWindows) {
@@ -1273,7 +1304,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 					["-WindowStyle", "Hidden", "-Command", cmd],
 					{
 						detached: true,
-						stdio: "ignore",
+						stdio: ["ignore", "pipe", "pipe"],
 						windowsHide: true,
 						env: { ...process.env },
 					},
@@ -1281,15 +1312,24 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			} else {
 				child = spawn(binary, serverArgs, {
 					detached: true,
-					stdio: "ignore",
+					stdio: ["ignore", "pipe", "pipe"],
 					env: { ...process.env },
 				});
 			}
 
+			if (child.stdout) child.stdout.on("data", appendLog);
+			if (child.stderr) child.stderr.on("data", appendLog);
+
+			child.on("close", (code) => {
+				earlyExitCode = code;
+			});
+
 			child.unref();
 
 			// If spawn itself errors (e.g. ENOENT)
+			let spawnError = null;
 			child.on("error", (err) => {
+				spawnError = err;
 				console.error(
 					"[opencode-bridge] Failed to spawn opencode server:",
 					err,
@@ -1300,7 +1340,43 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			console.log(
 				`[opencode-bridge] Waiting for server to become healthy (timeout: ${STARTUP_TIMEOUT / 1000}s)...`,
 			);
-			await waitForHealthy();
+			try {
+				await waitForHealthy();
+			} catch (healthErr) {
+				// Detach the stdio streams before returning the error
+				if (child.stdout) {
+					child.stdout.removeAllListeners("data");
+					child.stdout.destroy();
+				}
+				if (child.stderr) {
+					child.stderr.removeAllListeners("data");
+					child.stderr.destroy();
+				}
+
+				let errorMsg = healthErr.message ?? String(healthErr);
+				if (spawnError) {
+					errorMsg = `Spawn error: ${spawnError.message}`;
+				} else if (earlyExitCode !== null) {
+					errorMsg = `Server process exited with code ${earlyExitCode}`;
+				}
+				return {
+					success: false,
+					error: errorMsg,
+					logs: logBuffer || null,
+				};
+			}
+
+			// Server is healthy - detach the stdio streams so the process
+			// can survive app close without keeping pipes open.
+			if (child.stdout) {
+				child.stdout.removeAllListeners("data");
+				child.stdout.destroy();
+			}
+			if (child.stderr) {
+				child.stderr.removeAllListeners("data");
+				child.stderr.destroy();
+			}
+
 			console.log("[opencode-bridge] Server is healthy.");
 			return { success: true, data: { alreadyRunning: false } };
 		} catch (err) {

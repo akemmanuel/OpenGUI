@@ -297,6 +297,8 @@ export interface OpenCodeState {
 	bootState: "idle" | "checking-server" | "starting-server" | "ready" | "error";
 	/** Startup error shown only when bootstrap fails */
 	bootError: string | null;
+	/** Server process logs captured during a failed startup */
+	bootLogs: string | null;
 	/** Available providers and their models */
 	providers: Provider[];
 	/** Default model mappings from server config */
@@ -387,6 +389,7 @@ const initialState: OpenCodeState = {
 	lastError: null,
 	bootState: "idle",
 	bootError: null,
+	bootLogs: null,
 	providers: [],
 	providerDefaults: {},
 	selectedModel: null,
@@ -437,6 +440,7 @@ type Action =
 			payload: {
 				state: OpenCodeState["bootState"];
 				error?: string | null;
+				logs?: string | null;
 			};
 	  }
 	| {
@@ -790,6 +794,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				...state,
 				bootState: action.payload.state,
 				bootError: action.payload.error ?? null,
+				bootLogs: action.payload.logs ?? null,
 			};
 		}
 
@@ -876,9 +881,6 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				unreadSessionIds: nextUnread,
 				// Selecting a real session clears any pending draft
 				draftSessionDirectory: sid ? null : state.draftSessionDirectory,
-				// Clear child session tracking when switching sessions
-				childSessions: {},
-				trackedChildSessionIds: new Set(),
 				_pendingSnapshots: [],
 				_sessionBuffers: buffered ? remainingBuffers : startingBuffers,
 			};
@@ -1748,16 +1750,34 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 // Child session helpers
 // ---------------------------------------------------------------------------
 
-/** Collect all ToolPart objects from a child (subagent) session's stored data. */
-export function getChildSessionToolParts(
+/** Get the start time of a part for chronological sorting. */
+function getPartTime(p: Part): number {
+	if (p.type === "text" && p.time?.start) return p.time.start;
+	if (p.type === "tool" && "time" in p.state && p.state.time?.start)
+		return p.state.time.start;
+	return Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Collect all renderable parts (text + tool) from a child (subagent) session,
+ * sorted chronologically. Excludes user-role messages.
+ */
+export function getChildSessionParts(
 	childSessions: OpenCodeState["childSessions"],
 	childSessionId: string,
 ): Part[] {
 	const child = childSessions[childSessionId];
 	if (!child) return [];
-	return Object.values(child)
+	const parts = Object.values(child)
+		.filter((m) => m.info.role !== "user")
 		.flatMap((m) => Object.values(m.parts))
-		.filter((p) => p.type === "tool");
+		.filter((p) => {
+			if (p.type === "tool") return true;
+			if (p.type === "text" && "text" in p && p.text) return true;
+			return false;
+		});
+	parts.sort((a, b) => getPartTime(a) - getPartTime(b));
+	return parts;
 }
 
 // ---------------------------------------------------------------------------
@@ -1805,6 +1825,7 @@ interface ConnectionContextValue {
 	connections: Record<string, ConnectionStatus>;
 	bootState: OpenCodeState["bootState"];
 	bootError: string | null;
+	bootLogs: string | null;
 	lastError: string | null;
 	worktreeParents: WorktreeParentMap;
 }
@@ -2412,6 +2433,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 							payload: {
 								state: "error",
 								error: startRes.error ?? "Failed to start local server",
+								logs: startRes.logs,
 							},
 						});
 						return;
@@ -3355,6 +3377,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			connections: state.connections,
 			bootState: state.bootState,
 			bootError: state.bootError,
+			bootLogs: state.bootLogs,
 			lastError: state.lastError,
 			worktreeParents: state.worktreeParents,
 		}),
@@ -3362,6 +3385,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			state.connections,
 			state.bootState,
 			state.bootError,
+			state.bootLogs,
 			state.lastError,
 			state.worktreeParents,
 		],
