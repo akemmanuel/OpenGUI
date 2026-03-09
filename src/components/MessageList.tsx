@@ -58,7 +58,7 @@ import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import {
-	getChildSessionToolParts,
+	getChildSessionParts,
 	type MessageEntry,
 	useActions,
 	useSessionState,
@@ -1424,10 +1424,13 @@ function getToolDisplayInfo(
 		};
 	}
 	if (lower === "question" || lower === "mcp_question") {
+		const qCount = Array.isArray(input?.questions) ? input.questions.length : 0;
 		return {
 			icon: MessageCircleQuestion,
-			label: running ? "Asking" : "Asked",
-			subtitle: title ?? "",
+			label: running
+				? "Asking"
+				: `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`,
+			subtitle: "",
 		};
 	}
 	// Fallback for any other tool
@@ -1438,61 +1441,93 @@ function getToolDisplayInfo(
 	};
 }
 
-/** Renders the list of tool parts from a child (subagent) session. */
-function ChildToolPartsList({ childSessionId }: { childSessionId: string }) {
+/**
+ * Renders all parts (tool + text) from a child (subagent) session in
+ * chronological order, so text streams inline between tool calls.
+ */
+function ChildSessionParts({
+	childSessionId,
+	fallbackOutput,
+	isRunning,
+}: {
+	childSessionId: string;
+	fallbackOutput: string;
+	isRunning: boolean;
+}) {
 	const { childSessions } = useSessionState();
-	const childParts = useMemo(
-		() => getChildSessionToolParts(childSessions, childSessionId),
+	const parts = useMemo(
+		() => getChildSessionParts(childSessions, childSessionId),
 		[childSessions, childSessionId],
 	);
 
-	if (childParts.length === 0) return null;
+	const hasText = parts.some((p) => p.type === "text");
 
 	return (
-		<div className="space-y-0.5">
-			{childParts.map((part) => {
-				if (part.type !== "tool") return null;
-				const toolPart = part as ToolPart;
-				const info = getToolDisplayInfo(toolPart.tool, toolPart.state);
-				const Icon = info.icon;
-				const isRunning =
-					toolPart.state.status === "running" ||
-					toolPart.state.status === "pending";
-				const isError = toolPart.state.status === "error";
-				const isCompleted = toolPart.state.status === "completed";
-				return (
-					<div
-						key={part.id}
-						className="flex items-center gap-1.5 text-xs font-mono min-h-5"
-					>
-						<span className="w-3 shrink-0 flex items-center justify-center">
-							{isRunning ? (
-								<Spinner className="size-2.5" />
-							) : isCompleted ? (
-								<Check className="size-2.5 text-emerald-500" />
-							) : isError ? (
-								<X className="size-2.5 text-destructive" />
-							) : (
-								<Icon className="size-2.5 text-muted-foreground" />
-							)}
-						</span>
-						<span className="text-muted-foreground shrink-0">
-							{info.label}
-							{isRunning && !info.subtitle ? "..." : ""}
-						</span>
-						{info.subtitle && (
-							<span
-								className="text-muted-foreground/60 truncate"
-								title={info.subtitle}
-							>
-								{info.subtitle}
-								{isRunning ? "..." : ""}
+		<>
+			{parts.map((part, idx) => {
+				if (part.type === "tool") {
+					const toolPart = part as ToolPart;
+					const info = getToolDisplayInfo(toolPart.tool, toolPart.state);
+					const Icon = info.icon;
+					const running =
+						toolPart.state.status === "running" ||
+						toolPart.state.status === "pending";
+					const error = toolPart.state.status === "error";
+					const completed = toolPart.state.status === "completed";
+					return (
+						<div
+							key={part.id}
+							className="flex items-center gap-1.5 text-xs font-mono min-h-5"
+						>
+							<span className="w-3 shrink-0 flex items-center justify-center">
+								{running ? (
+									<Spinner className="size-2.5" />
+								) : completed ? (
+									<Check className="size-2.5 text-emerald-500" />
+								) : error ? (
+									<X className="size-2.5 text-destructive" />
+								) : (
+									<Icon className="size-2.5 text-muted-foreground" />
+								)}
 							</span>
-						)}
-					</div>
-				);
+							<span className="text-muted-foreground shrink-0">
+								{info.label}
+								{running && !info.subtitle ? "..." : ""}
+							</span>
+							{info.subtitle && (
+								<span
+									className="text-muted-foreground/60 truncate"
+									title={info.subtitle}
+								>
+									{info.subtitle}
+									{running ? "..." : ""}
+								</span>
+							)}
+						</div>
+					);
+				}
+				if (part.type === "text") {
+					const text = (part as TextPart).text;
+					if (!text) return null;
+					const isLast = idx === parts.length - 1;
+					return (
+						<div key={part.id} className="text-sm">
+							<MarkdownRenderer content={text} />
+							{isRunning && isLast && (
+								<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+							)}
+						</div>
+					);
+				}
+				return null;
 			})}
-		</div>
+			{/* Fallback: show task output when no live text parts are available */}
+			{!hasText && fallbackOutput && (
+				<div className="text-sm">
+					<MarkdownRenderer content={fallbackOutput} />
+				</div>
+			)}
+		</>
 	);
 }
 
@@ -1617,9 +1652,16 @@ function ToolPartView({ part }: { part: ToolPart }) {
 										? "Writing todos"
 										: `Wrote ${todos?.length ?? 0} todos`
 									: isQuestion
-										? isRunning
-											? "Asking"
-											: "Asked"
+										? (() => {
+												const qCount =
+													"input" in state &&
+													Array.isArray(state.input.questions)
+														? state.input.questions.length
+														: 0;
+												return isRunning
+													? "Asking"
+													: `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`;
+											})()
 										: part.tool;
 	// Inline context label (filename, command, pattern, description, or title)
 	const taskDescription =
@@ -1637,7 +1679,8 @@ function ToolPartView({ part }: { part: ToolPart }) {
 						: state.status === "completed" &&
 								state.title &&
 								!isTodoWrite &&
-								!isTask
+								!isTask &&
+								!isQuestion
 							? state.title
 							: null;
 
@@ -1772,39 +1815,45 @@ function ToolPartView({ part }: { part: ToolPart }) {
 					ref={taskContentRef}
 					className="pl-7 pt-1 pb-1 space-y-2 max-h-96 overflow-auto"
 				>
-					{/* Live child session tool parts (preferred over static metadata) */}
+					{/* Live child session parts in chronological order */}
 					{taskInfo.childSessionId ? (
-						<ChildToolPartsList childSessionId={taskInfo.childSessionId} />
+						<ChildSessionParts
+							childSessionId={taskInfo.childSessionId}
+							fallbackOutput={taskInfo.output}
+							isRunning={isRunning}
+						/>
 					) : (
-						taskInfo.toolCalls.length > 0 && (
-							<div className="space-y-0.5">
-								{taskInfo.toolCalls.map((tc, i) => (
-									<div
-										key={`${tc.tool}-${i}`}
-										className="flex items-center gap-1.5 text-xs font-mono"
-									>
-										<Wrench className="size-2.5 text-muted-foreground shrink-0" />
-										<span className="text-muted-foreground">{tc.tool}</span>
-										{tc.title && (
-											<span className="text-muted-foreground/70 truncate">
-												{tc.title}
-											</span>
-										)}
-										{tc.status === "completed" && (
-											<CheckCircle2 className="size-2.5 text-emerald-500 ml-auto shrink-0" />
-										)}
-										{tc.status === "error" && (
-											<XCircle className="size-2.5 text-destructive ml-auto shrink-0" />
-										)}
-									</div>
-								))}
-							</div>
-						)
-					)}
-					{taskInfo.output && (
-						<div className="text-sm">
-							<MarkdownRenderer content={taskInfo.output} />
-						</div>
+						<>
+							{taskInfo.toolCalls.length > 0 && (
+								<div className="space-y-0.5">
+									{taskInfo.toolCalls.map((tc, i) => (
+										<div
+											key={`${tc.tool}-${i}`}
+											className="flex items-center gap-1.5 text-xs font-mono"
+										>
+											<Wrench className="size-2.5 text-muted-foreground shrink-0" />
+											<span className="text-muted-foreground">{tc.tool}</span>
+											{tc.title && (
+												<span className="text-muted-foreground/70 truncate">
+													{tc.title}
+												</span>
+											)}
+											{tc.status === "completed" && (
+												<CheckCircle2 className="size-2.5 text-emerald-500 ml-auto shrink-0" />
+											)}
+											{tc.status === "error" && (
+												<XCircle className="size-2.5 text-destructive ml-auto shrink-0" />
+											)}
+										</div>
+									))}
+								</div>
+							)}
+							{taskInfo.output && (
+								<div className="text-sm">
+									<MarkdownRenderer content={taskInfo.output} />
+								</div>
+							)}
+						</>
 					)}
 				</div>
 			)}

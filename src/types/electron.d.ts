@@ -86,6 +86,8 @@ export interface IPCResult<T = unknown> {
 	success: boolean;
 	data?: T;
 	error?: string;
+	/** Server process logs captured during startup (available on failure). */
+	logs?: string | null;
 	status?: ConnectionStatus;
 }
 

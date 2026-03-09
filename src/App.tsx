@@ -1,5 +1,5 @@
-import { AlertCircle, X } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
+import { AlertCircle, ChevronDown, ChevronUp, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { Button } from "@/components/ui/button";
@@ -50,7 +50,9 @@ function AppContent() {
 		draftSessionDirectory,
 	} = useSessionState();
 	const { providers, selectedModel, providerDefaults } = useModelState();
-	const { connections, bootState, bootError, lastError } = useConnectionState();
+	const { connections, bootState, bootError, bootLogs, lastError } =
+		useConnectionState();
+	const [logsExpanded, setLogsExpanded] = useState(false);
 
 	// Find the active session object (for revert state)
 	const activeSession = useMemo(
@@ -277,14 +279,46 @@ function AppContent() {
 
 						{/* Error banner */}
 						{!isBooting && (bootState === "error" || lastError) && (
-							<div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
-								<AlertCircle className="size-4 shrink-0" />
-								<span className="flex-1 truncate">
-									{bootState === "error" ? bootError : lastError}
-								</span>
-								<Button variant="ghost" size="icon-xs" onClick={clearError}>
-									<X className="size-3" />
-								</Button>
+							<div className="border-b border-destructive/20 bg-destructive/10">
+								<div className="flex items-center gap-2 px-4 py-2 text-sm text-destructive">
+									<AlertCircle className="size-4 shrink-0" />
+									<span className="flex-1 truncate">
+										{bootState === "error" ? bootError : lastError}
+									</span>
+									{bootState === "error" && bootLogs && (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+											onClick={() => setLogsExpanded((v) => !v)}
+										>
+											{logsExpanded ? (
+												<>
+													Hide logs <ChevronUp className="size-3 ml-1" />
+												</>
+											) : (
+												<>
+													Show logs <ChevronDown className="size-3 ml-1" />
+												</>
+											)}
+										</Button>
+									)}
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										onClick={() => {
+											clearError();
+											setLogsExpanded(false);
+										}}
+									>
+										<X className="size-3" />
+									</Button>
+								</div>
+								{logsExpanded && bootLogs && (
+									<pre className="px-4 pb-3 text-xs text-destructive/80 max-h-48 overflow-auto whitespace-pre-wrap font-mono select-text">
+										{bootLogs}
+									</pre>
+								)}
 							</div>
 						)}
 
