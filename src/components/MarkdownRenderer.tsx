@@ -129,8 +129,11 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 }: {
 	content: string;
 }) {
-	// Escape exclamation marks inside math blocks so KaTeX doesn't choke on them
+	// Escape dollar signs used as currency ($ followed by a digit) so
+	// remark-math doesn't treat them as LaTeX math delimiters.
+	// Then escape exclamation marks inside math blocks so KaTeX doesn't choke on them.
 	const cleanedContent = content
+		.replace(/\$(?=\d)/g, "\\$")
 		.replace(/(\$\$[^$]+\$\$|\$(?!\s)([^\n$]+?)(?<!\s)\$)/g, (match) =>
 			match.replace(/!/g, "\\!"),
 		)
