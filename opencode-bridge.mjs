@@ -1295,7 +1295,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 			};
 
 			const child = spawn(binary, serverArgs, {
-				detached: true,
+				detached: process.platform !== "win32",
 				stdio: ["ignore", "pipe", "pipe"],
 				windowsHide: true,
 				env: { ...process.env },
