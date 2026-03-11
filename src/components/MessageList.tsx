@@ -1511,7 +1511,7 @@ function ChildSessionParts({
 					if (!text) return null;
 					const isLast = idx === parts.length - 1;
 					return (
-						<div key={part.id} className="text-sm">
+						<div key={part.id} className="text-xs">
 							<MarkdownRenderer content={text} />
 							{isRunning && isLast && (
 								<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
@@ -1523,7 +1523,7 @@ function ChildSessionParts({
 			})}
 			{/* Fallback: show task output when no live text parts are available */}
 			{!hasText && fallbackOutput && (
-				<div className="text-sm">
+				<div className="text-xs">
 					<MarkdownRenderer content={fallbackOutput} />
 				</div>
 			)}
@@ -1813,7 +1813,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 			{isTask && expanded && taskInfo && (
 				<div
 					ref={taskContentRef}
-					className="pl-7 pt-1 pb-1 space-y-2 max-h-96 overflow-auto"
+					className="pl-7 pt-1 pb-1 space-y-1 max-h-96 overflow-auto"
 				>
 					{/* Live child session parts in chronological order */}
 					{taskInfo.childSessionId ? (
@@ -1849,7 +1849,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 								</div>
 							)}
 							{taskInfo.output && (
-								<div className="text-sm">
+								<div className="text-xs">
 									<MarkdownRenderer content={taskInfo.output} />
 								</div>
 							)}
