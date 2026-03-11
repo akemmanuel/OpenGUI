@@ -33,14 +33,30 @@ function resolveOpencodeBinary() {
 	const preferred = join(homedir(), ".opencode", "bin", binaryName);
 	if (existsSync(preferred)) return preferred;
 	// Fall back to PATH
-	const whichCmd = isWindows ? "where opencode" : "which opencode";
-	try {
-		const fromPath = execSync(whichCmd, { encoding: "utf-8" })
-			.split(/\r?\n/)[0]
-			.trim();
-		if (fromPath) return fromPath;
-	} catch {
-		// not on PATH
+	if (isWindows) {
+		// On Windows, `where opencode` may return extensionless bash shims
+		// that spawn() cannot execute. Search for .exe first, then .cmd.
+		for (const ext of [".exe", ".cmd"]) {
+			try {
+				const result = execSync(`where opencode${ext}`, {
+					encoding: "utf-8",
+				})
+					.split(/\r?\n/)[0]
+					.trim();
+				if (result) return result;
+			} catch {
+				// not found with this extension
+			}
+		}
+	} else {
+		try {
+			const fromPath = execSync("which opencode", { encoding: "utf-8" })
+				.split(/\r?\n/)[0]
+				.trim();
+			if (fromPath) return fromPath;
+		} catch {
+			// not on PATH
+		}
 	}
 	return null;
 }
@@ -1294,10 +1310,14 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 				}
 			};
 
+			// .cmd files on Windows require shell:true for spawn() to execute them
+			const needsShell =
+				process.platform === "win32" && binary.toLowerCase().endsWith(".cmd");
 			const child = spawn(binary, serverArgs, {
 				detached: process.platform !== "win32",
 				stdio: ["ignore", "pipe", "pipe"],
 				windowsHide: true,
+				shell: needsShell,
 				env: { ...process.env },
 			});
 
@@ -1494,6 +1514,55 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 				return { success: true };
 			} catch (err) {
 				return { success: false, error: err.message ?? String(err) };
+			}
+		},
+	);
+
+	// -----------------------------------------------------------------------
+	// Worktree setup detection & execution
+	// -----------------------------------------------------------------------
+
+	ipcMain.handle("worktree:detect-setup", async (_event, worktreePath) => {
+		try {
+			const checks = [
+				{ file: "bun.lockb", cmd: "bun install" },
+				{ file: "bun.lock", cmd: "bun install" },
+				{ file: "pnpm-lock.yaml", cmd: "pnpm install" },
+				{ file: "yarn.lock", cmd: "yarn install" },
+				{ file: "package-lock.json", cmd: "npm install" },
+				{ file: "package.json", cmd: "bun install" },
+				{ file: "Cargo.toml", cmd: "cargo build" },
+				{ file: "go.mod", cmd: "go mod download" },
+				{ file: "pyproject.toml", cmd: "uv sync" },
+				{ file: "requirements.txt", cmd: "pip install -r requirements.txt" },
+			];
+			for (const { file, cmd } of checks) {
+				if (existsSync(join(worktreePath, file))) {
+					return { detected: true, command: cmd, file };
+				}
+			}
+			return { detected: false };
+		} catch (err) {
+			return { detected: false, error: err.message ?? String(err) };
+		}
+	});
+
+	ipcMain.handle(
+		"worktree:run-setup",
+		async (_event, worktreePath, command) => {
+			try {
+				execSync(command, {
+					cwd: worktreePath,
+					encoding: "utf-8",
+					stdio: "pipe",
+					timeout: 120_000,
+				});
+				return { success: true };
+			} catch (err) {
+				return {
+					success: false,
+					error: err.stderr || err.message || String(err),
+				};
 			}
 		},
 	);

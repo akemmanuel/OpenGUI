@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	// Home directory (for path abbreviation)
 	getHomeDir: () => ipcRenderer.invoke("platform:homeDir"),
 
+	// Worktree setup helpers
+	worktree: {
+		detectSetup: (worktreePath) =>
+			ipcRenderer.invoke("worktree:detect-setup", worktreePath),
+		runSetup: (worktreePath, command) =>
+			ipcRenderer.invoke("worktree:run-setup", worktreePath, command),
+	},
+
 	// Git helpers
 	git: {
 		isRepo: (directory) => ipcRenderer.invoke("git:is-repo", directory),
