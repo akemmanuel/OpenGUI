@@ -24,6 +24,8 @@ interface WorktreeDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	directory: string;
+	defaultMode?: "existing" | "new";
+	defaultBranch?: string;
 	onCreated: (worktreePath: string, branch: string) => void;
 }
 
@@ -33,21 +35,21 @@ export function WorktreeDialog({
 	open,
 	onOpenChange,
 	directory,
+	defaultMode = "new",
+	defaultBranch = "",
 	onCreated,
 }: WorktreeDialogProps) {
 	const [branches, setBranches] = useState<string[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [creating, setCreating] = useState(false);
 
-	const [mode, setMode] = useState<BranchMode>("new");
-	const [selectedBranch, setSelectedBranch] = useState("");
-	const [newBranchName, setNewBranchName] = useState("");
+	const [mode, setMode] = useState<BranchMode>(defaultMode);
+	const [existingBranch, setExistingBranch] = useState("");
+	const [newBranch, setNewBranch] = useState("");
 	const [worktreePath, setWorktreePath] = useState("");
 
 	const repoName = getProjectName(directory);
-	const effectiveBranch =
-		mode === "new" ? newBranchName.trim() : selectedBranch;
+	const effectiveBranch = mode === "new" ? newBranch.trim() : existingBranch;
 
 	// Auto-generate path when branch changes
 	useEffect(() => {
@@ -55,19 +57,24 @@ export function WorktreeDialog({
 			const safeName = effectiveBranch
 				.replace(/[^a-zA-Z0-9_.-]/g, "-")
 				.replace(/-+/g, "-");
-			const parent = directory.replace(/\/[^/]+\/?$/, "");
-			setWorktreePath(`${parent}/${repoName}-${safeName}`);
+			setWorktreePath(`${directory}/.worktrees/${safeName}`);
 		}
-	}, [effectiveBranch, directory, repoName]);
+	}, [effectiveBranch, directory]);
 
 	// Load branches when dialog opens
 	useEffect(() => {
 		if (!open) return;
 		setError(null);
 		setLoading(true);
-		setNewBranchName("");
-		setSelectedBranch("");
-		setMode("new");
+		setMode(defaultMode);
+
+		if (defaultMode === "new") {
+			setNewBranch(defaultBranch);
+			setExistingBranch("");
+		} else {
+			setNewBranch("");
+			setExistingBranch(defaultBranch);
+		}
 
 		window.electronAPI?.git
 			?.listBranches(directory)
@@ -82,11 +89,11 @@ export function WorktreeDialog({
 			})
 			.catch((err: Error) => setError(err.message))
 			.finally(() => setLoading(false));
-	}, [open, directory]);
+	}, [open, directory, defaultBranch, defaultMode]);
 
 	const handleCreate = useCallback(async () => {
 		if (!effectiveBranch || !worktreePath.trim()) return;
-		setCreating(true);
+		setLoading(true);
 		setError(null);
 		try {
 			const res = await window.electronAPI?.git?.addWorktree(
@@ -104,7 +111,7 @@ export function WorktreeDialog({
 		} catch (err) {
 			setError(getErrorMessage(err, "Failed to create worktree"));
 		} finally {
-			setCreating(false);
+			setLoading(false);
 		}
 	}, [effectiveBranch, worktreePath, directory, mode, onCreated, onOpenChange]);
 
@@ -153,8 +160,8 @@ export function WorktreeDialog({
 							<Input
 								id="new-branch"
 								placeholder="feature/my-feature"
-								value={newBranchName}
-								onChange={(e) => setNewBranchName(e.target.value)}
+								value={newBranch}
+								onChange={(e) => setNewBranch(e.target.value)}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" && effectiveBranch && worktreePath) {
 										handleCreate();
@@ -171,8 +178,8 @@ export function WorktreeDialog({
 								</div>
 							) : (
 								<Select
-									value={selectedBranch}
-									onValueChange={setSelectedBranch}
+									value={existingBranch}
+									onValueChange={setExistingBranch}
 								>
 									<SelectTrigger>
 										<SelectValue placeholder="Choose a branch..." />
@@ -213,9 +220,9 @@ export function WorktreeDialog({
 					</Button>
 					<Button
 						onClick={handleCreate}
-						disabled={!effectiveBranch || !worktreePath.trim() || creating}
+						disabled={!effectiveBranch || !worktreePath.trim() || loading}
 					>
-						{creating ? "Creating..." : "Create worktree"}
+						{loading ? "Creating..." : "Create worktree"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

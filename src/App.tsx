@@ -9,6 +9,7 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import {
 	hasAnyConnection,
 	OpenCodeProvider,
@@ -391,6 +392,7 @@ function AppContent() {
 				</div>
 			</SidebarInset>
 			<UpdateDialog update={updateCheck} />
+			<WorktreeCleanupDialog />
 		</>
 	);
 }

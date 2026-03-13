@@ -2,6 +2,7 @@ import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
 	ArrowUp,
 	BookOpen,
+	GitBranch,
 	ListEnd,
 	Loader2,
 	Mic,
@@ -30,6 +31,13 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
@@ -39,6 +47,7 @@ import { VariantSelector } from "@/components/VariantSelector";
 import {
 	type QueueMode,
 	useActions,
+	useConnectionState,
 	useModelState,
 	useSessionState,
 } from "@/hooks/use-opencode";
@@ -204,9 +213,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		} = useSTT(sttEndpoint);
 		const isDisabled = Boolean(props.disabled);
 
-		const { setAgent, sendCommand, findFiles } = useActions();
+		const { setAgent, sendCommand, findFiles, setDraftDirectory } =
+			useActions();
 		const { commands, agents, selectedAgent } = useModelState();
-		const { messages, activeSessionId } = useSessionState();
+		const { messages, activeSessionId, draftSessionDirectory } =
+			useSessionState();
+		const { worktreeParents } = useConnectionState();
 
 		// Slash command popover state
 		const [showSlash, setShowSlash] = React.useState(false);
@@ -812,6 +824,71 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 						<ModelSelector />
 						<AgentSelector />
 						<VariantSelector />
+
+						{(() => {
+							// Only show in blank (draft) sessions - never in sessions that have messages
+							if (!draftSessionDirectory || messages.length > 0) return null;
+
+							// Resolve the project root: if draftSessionDirectory is itself a
+							// worktree, look up its parent; otherwise it IS the parent.
+							const worktreeMeta = worktreeParents[draftSessionDirectory];
+							const projectDir = worktreeMeta
+								? worktreeMeta.parentDir
+								: draftSessionDirectory;
+
+							// Collect ALL worktrees that belong to this project
+							const worktrees = Object.entries(worktreeParents)
+								.filter(([, meta]) => meta.parentDir === projectDir)
+								.map(([dir, meta]) => ({
+									dir,
+									branch: meta.branch,
+									isMain: false,
+								}));
+
+							const options: Array<{
+								dir: string;
+								branch: string;
+								isMain: boolean;
+							}> = [
+								{ dir: projectDir, branch: "main", isMain: true },
+								...worktrees,
+							];
+
+							if (options.length <= 1) return null;
+
+							return (
+								<Select
+									value={draftSessionDirectory}
+									onValueChange={(value) => setDraftDirectory(value)}
+								>
+									<SelectTrigger className="!h-7 w-auto max-w-[180px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0 [&>svg]:size-3">
+										<GitBranch className="size-3.5 shrink-0" />
+										<SelectValue placeholder="Branch" />
+									</SelectTrigger>
+									<SelectContent align="start" className="max-h-80">
+										{options.map((opt) => (
+											<SelectItem
+												key={opt.dir}
+												value={opt.dir}
+												className="text-xs"
+											>
+												<span className="flex items-center gap-1.5">
+													{opt.isMain ? (
+														<span className="text-[10px] text-muted-foreground">
+															main
+														</span>
+													) : (
+														<>
+															<span>{opt.branch}</span>
+														</>
+													)}
+												</span>
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							);
+						})()}
 
 						{isLoading && (
 							<Tooltip>
