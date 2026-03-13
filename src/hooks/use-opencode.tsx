@@ -164,14 +164,49 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 }
 
 // ---------------------------------------------------------------------------
-// Worktree parents (maps worktree directory -> parent project directory)
+// Worktree metadata (maps worktree directory -> metadata incl. parent)
 // ---------------------------------------------------------------------------
 
-/** Maps worktree directory -> parent project directory */
-type WorktreeParentMap = Record<string, string>;
+export interface WorktreeMetadata {
+	parentDir: string;
+	branch: string;
+	createdAt: string;
+	lastOpenedAt: string;
+}
+
+type WorktreeParentMap = Record<string, WorktreeMetadata>;
+
+/** Helper to get the parent directory string from a metadata entry. */
+export function getWorktreeParentDir(
+	map: WorktreeParentMap,
+	dir: string,
+): string | undefined {
+	return map[dir]?.parentDir;
+}
 
 function getWorktreeParents(): WorktreeParentMap {
-	return storageParsed<WorktreeParentMap>(STORAGE_KEYS.WORKTREE_PARENTS) ?? {};
+	const raw =
+		storageParsed<Record<string, unknown>>(STORAGE_KEYS.WORKTREE_PARENTS) ?? {};
+	const result: WorktreeParentMap = {};
+	for (const [dir, val] of Object.entries(raw)) {
+		if (typeof val === "string") {
+			// Migrate old format: plain string parentDir -> full metadata
+			result[dir] = {
+				parentDir: val,
+				branch: "unknown",
+				createdAt: new Date().toISOString(),
+				lastOpenedAt: new Date().toISOString(),
+			};
+		} else if (val && typeof val === "object" && "parentDir" in val) {
+			result[dir] = val as WorktreeMetadata;
+		}
+	}
+	// Persist the migrated format back if any old entries were found
+	const hadOldFormat = Object.values(raw).some((v) => typeof v === "string");
+	if (hadOldFormat && Object.keys(result).length > 0) {
+		persistWorktreeParents(result);
+	}
+	return result;
 }
 
 function persistWorktreeParents(map: WorktreeParentMap) {
@@ -329,8 +364,13 @@ export interface OpenCodeState {
 	unreadSessionIds: Set<string>;
 	/** Local-only session metadata (colors, tags) keyed by session ID */
 	sessionMeta: SessionMetaMap;
-	/** Maps worktree directory -> parent project directory (local-only) */
+	/** Maps worktree directory -> metadata incl. parent project directory (local-only) */
 	worktreeParents: WorktreeParentMap;
+	/** Pending worktree cleanup prompt (shown after last session in a worktree is deleted) */
+	pendingWorktreeCleanup: {
+		worktreeDir: string;
+		parentDir: string;
+	} | null;
 	/** Messages/parts for child (subagent) sessions, keyed by child sessionID */
 	childSessions: Record<
 		string,
@@ -406,6 +446,7 @@ const initialState: OpenCodeState = {
 	unreadSessionIds: getUnreadSessionIds(),
 	sessionMeta: getSessionMetaMap(),
 	worktreeParents: getWorktreeParents(),
+	pendingWorktreeCleanup: null,
 	childSessions: {},
 	trackedChildSessionIds: new Set(),
 	_pendingSnapshots: [],
@@ -498,6 +539,7 @@ type Action =
 	| { type: "QUEUE_CLEAR"; payload: { sessionID: string } }
 	| { type: "SET_RECENT_PROJECTS"; payload: RecentProject[] }
 	| { type: "START_DRAFT_SESSION"; payload: string }
+	| { type: "SET_DRAFT_DIRECTORY"; payload: string }
 	| { type: "CLEAR_DRAFT_SESSION" }
 	| { type: "SET_DRAFT_TEMPORARY"; payload: boolean }
 	| { type: "MARK_SESSION_TEMPORARY"; payload: string }
@@ -508,9 +550,14 @@ type Action =
 	  }
 	| {
 			type: "REGISTER_WORKTREE";
-			payload: { worktreeDir: string; parentDir: string };
+			payload: { worktreeDir: string; parentDir: string; branch: string };
 	  }
 	| { type: "UNREGISTER_WORKTREE"; payload: string }
+	| { type: "TOUCH_WORKTREE"; payload: string }
+	| {
+			type: "SET_PENDING_WORKTREE_CLEANUP";
+			payload: { worktreeDir: string; parentDir: string } | null;
+	  }
 	| {
 			type: "LOAD_CHILD_SESSION";
 			payload: {
@@ -1675,6 +1722,12 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				isBusy: false,
 			};
 
+		case "SET_DRAFT_DIRECTORY":
+			return {
+				...state,
+				draftSessionDirectory: action.payload,
+			};
+
 		case "CLEAR_DRAFT_SESSION":
 			return { ...state, draftSessionDirectory: null, draftIsTemporary: false };
 
@@ -1703,8 +1756,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		}
 
 		case "REGISTER_WORKTREE": {
-			const { worktreeDir, parentDir } = action.payload;
-			const next = { ...state.worktreeParents, [worktreeDir]: parentDir };
+			const { worktreeDir, parentDir, branch } = action.payload;
+			const now = new Date().toISOString();
+			const next: WorktreeParentMap = {
+				...state.worktreeParents,
+				[worktreeDir]: {
+					parentDir,
+					branch,
+					createdAt: now,
+					lastOpenedAt: now,
+				},
+			};
 			persistWorktreeParents(next);
 			return { ...state, worktreeParents: next };
 		}
@@ -1714,6 +1776,24 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			delete next[action.payload];
 			persistWorktreeParents(next);
 			return { ...state, worktreeParents: next };
+		}
+
+		case "TOUCH_WORKTREE": {
+			const existing = state.worktreeParents[action.payload];
+			if (!existing) return state;
+			const next: WorktreeParentMap = {
+				...state.worktreeParents,
+				[action.payload]: {
+					...existing,
+					lastOpenedAt: new Date().toISOString(),
+				},
+			};
+			persistWorktreeParents(next);
+			return { ...state, worktreeParents: next };
+		}
+
+		case "SET_PENDING_WORKTREE_CLEANUP": {
+			return { ...state, pendingWorktreeCleanup: action.payload };
 		}
 
 		case "LOAD_CHILD_SESSION": {
@@ -1750,17 +1830,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 // Child session helpers
 // ---------------------------------------------------------------------------
 
-/** Get the start time of a part for chronological sorting. */
-function getPartTime(p: Part): number {
-	if (p.type === "text" && p.time?.start) return p.time.start;
-	if (p.type === "tool" && "time" in p.state && p.state.time?.start)
-		return p.state.time.start;
-	return Number.MAX_SAFE_INTEGER;
-}
-
 /**
  * Collect all renderable parts (text + tool) from a child (subagent) session,
- * sorted chronologically. Excludes user-role messages.
+ * preserving transcript order. Excludes user-role messages.
  */
 export function getChildSessionParts(
 	childSessions: OpenCodeState["childSessions"],
@@ -1768,16 +1840,16 @@ export function getChildSessionParts(
 ): Part[] {
 	const child = childSessions[childSessionId];
 	if (!child) return [];
-	const parts = Object.values(child)
+
+	return Object.values(child)
 		.filter((m) => m.info.role !== "user")
-		.flatMap((m) => Object.values(m.parts))
-		.filter((p) => {
-			if (p.type === "tool") return true;
-			if (p.type === "text" && "text" in p && p.text) return true;
-			return false;
-		});
-	parts.sort((a, b) => getPartTime(a) - getPartTime(b));
-	return parts;
+		.flatMap((m) =>
+			Object.values(m.parts).filter((p) => {
+				if (p.type === "tool") return true;
+				if (p.type === "text" && "text" in p && p.text) return true;
+				return false;
+			}),
+		);
 }
 
 // ---------------------------------------------------------------------------
@@ -1828,6 +1900,7 @@ interface ConnectionContextValue {
 	bootLogs: string | null;
 	lastError: string | null;
 	worktreeParents: WorktreeParentMap;
+	pendingWorktreeCleanup: OpenCodeState["pendingWorktreeCleanup"];
 }
 
 /** Stable action functions – these references rarely change. */
@@ -1874,14 +1947,21 @@ interface ActionsContextValue {
 	openDirectory: () => Promise<string | null>;
 	connectToProject: (directory: string, serverUrl?: string) => Promise<void>;
 	startDraftSession: (directory: string) => void;
+	setDraftDirectory: (directory: string) => void;
 	setDraftTemporary: (temporary: boolean) => void;
 	revertToMessage: (messageID: string) => Promise<void>;
 	unrevert: () => Promise<void>;
 	forkFromMessage: (messageID: string) => Promise<void>;
 	setSessionColor: (sessionId: string, color: SessionColor) => void;
 	setSessionTags: (sessionId: string, tags: string[]) => void;
-	registerWorktree: (worktreeDir: string, parentDir: string) => void;
+	registerWorktree: (
+		worktreeDir: string,
+		parentDir: string,
+		branch: string,
+	) => void;
 	unregisterWorktree: (worktreeDir: string) => void;
+	touchWorktree: (worktreeDir: string) => void;
+	clearWorktreeCleanup: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -2526,6 +2606,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	busySessionIdsRef.current = state.busySessionIds;
 	const sessionsRef = useRef(state.sessions);
 	sessionsRef.current = state.sessions;
+	const worktreeParentsRef = useRef(state.worktreeParents);
+	worktreeParentsRef.current = state.worktreeParents;
 
 	/** Best-effort cleanup of a temporary session if it exists. */
 	const cleanupTemporarySession = useCallback(
@@ -2661,6 +2743,15 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			const currentSessions = sessionsRef.current;
 			const currentActiveId = activeSessionIdRef.current;
 
+			// Before removing, check if this session belongs to a worktree
+			// and whether it's the last session there.
+			const deletedSession = currentSessions.find((s) => s.id === id);
+			const deletedDir =
+				deletedSession?._projectDir ?? deletedSession?.directory;
+			const wtMeta = deletedDir
+				? worktreeParentsRef.current[deletedDir]
+				: undefined;
+
 			// Determine next session *before* removing the deleted one from state
 			const needsSwitch = currentActiveId === id;
 			const nextId = needsSwitch
@@ -2685,6 +2776,22 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			bridge.deleteSession(id).catch(() => {
 				/* best-effort deletion */
 			});
+
+			// If the deleted session was in a worktree, check if it was the last one
+			if (deletedDir && wtMeta) {
+				const remaining = currentSessions.filter(
+					(s) => s.id !== id && (s._projectDir ?? s.directory) === deletedDir,
+				);
+				if (remaining.length === 0) {
+					dispatch({
+						type: "SET_PENDING_WORKTREE_CLEANUP",
+						payload: {
+							worktreeDir: deletedDir,
+							parentDir: wtMeta.parentDir,
+						},
+					});
+				}
+			}
 		},
 		[bridge, selectSession],
 	);
@@ -3107,11 +3214,14 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		(directory: string) => {
 			cleanupTemporarySession();
 			dispatch({ type: "START_DRAFT_SESSION", payload: directory });
-			// Reset agent to default for new sessions (keep model as-is)
 			dispatch({ type: "SET_SELECTED_AGENT", payload: null });
 		},
 		[cleanupTemporarySession],
 	);
+
+	const setDraftDirectory = useCallback((directory: string) => {
+		dispatch({ type: "SET_DRAFT_DIRECTORY", payload: directory });
+	}, []);
 
 	const setDraftTemporary = useCallback((temporary: boolean) => {
 		dispatch({ type: "SET_DRAFT_TEMPORARY", payload: temporary });
@@ -3295,10 +3405,10 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const registerWorktree = useCallback(
-		(worktreeDir: string, parentDir: string) => {
+		(worktreeDir: string, parentDir: string, branch: string) => {
 			dispatch({
 				type: "REGISTER_WORKTREE",
-				payload: { worktreeDir, parentDir },
+				payload: { worktreeDir, parentDir, branch },
 			});
 		},
 		[],
@@ -3306,6 +3416,14 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 
 	const unregisterWorktree = useCallback((worktreeDir: string) => {
 		dispatch({ type: "UNREGISTER_WORKTREE", payload: worktreeDir });
+	}, []);
+
+	const touchWorktree = useCallback((worktreeDir: string) => {
+		dispatch({ type: "TOUCH_WORKTREE", payload: worktreeDir });
+	}, []);
+
+	const clearWorktreeCleanup = useCallback(() => {
+		dispatch({ type: "SET_PENDING_WORKTREE_CLEANUP", payload: null });
 	}, []);
 
 	// ----- Split context values (memoised per domain) -----
@@ -3380,6 +3498,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			bootLogs: state.bootLogs,
 			lastError: state.lastError,
 			worktreeParents: state.worktreeParents,
+			pendingWorktreeCleanup: state.pendingWorktreeCleanup,
 		}),
 		[
 			state.connections,
@@ -3388,6 +3507,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			state.bootLogs,
 			state.lastError,
 			state.worktreeParents,
+			state.pendingWorktreeCleanup,
 		],
 	);
 
@@ -3421,6 +3541,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			openDirectory,
 			connectToProject,
 			startDraftSession,
+			setDraftDirectory,
 			setDraftTemporary,
 			revertToMessage,
 			unrevert,
@@ -3429,6 +3550,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setSessionTags,
 			registerWorktree,
 			unregisterWorktree,
+			touchWorktree,
+			clearWorktreeCleanup,
 		}),
 		[
 			addProject,
@@ -3459,6 +3582,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			openDirectory,
 			connectToProject,
 			startDraftSession,
+			setDraftDirectory,
 			setDraftTemporary,
 			revertToMessage,
 			unrevert,
@@ -3467,6 +3591,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setSessionTags,
 			registerWorktree,
 			unregisterWorktree,
+			touchWorktree,
+			clearWorktreeCleanup,
 		],
 	);
 

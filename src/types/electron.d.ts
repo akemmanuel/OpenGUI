@@ -272,6 +272,18 @@ export interface GitBridge {
 	getRemoteUrl(directory: string): Promise<IPCResult<string>>;
 }
 
+export interface WorktreeSetupDetection {
+	detected: boolean;
+	command?: string;
+	file?: string;
+	error?: string;
+}
+
+export interface WorktreeBridge {
+	detectSetup(worktreePath: string): Promise<WorktreeSetupDetection>;
+	runSetup(worktreePath: string, command: string): Promise<IPCResult>;
+}
+
 // ---------------------------------------------------------------------------
 // Window API
 // ---------------------------------------------------------------------------
@@ -300,6 +312,7 @@ export interface ElectronAPI {
 	getHomeDir: () => Promise<string>;
 
 	git?: GitBridge;
+	worktree?: WorktreeBridge;
 	opencode: OpenCodeBridge;
 }
 

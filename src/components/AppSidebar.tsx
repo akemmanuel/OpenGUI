@@ -49,7 +49,12 @@ import {
 	POST_MERGE_DELAY_MS,
 	SESSION_PAGE_SIZE,
 } from "@/lib/constants";
-import { abbreviatePath, getProjectName, openExternalLink } from "@/lib/utils";
+import {
+	abbreviatePath,
+	formatTimeAgo,
+	getProjectName,
+	openExternalLink,
+} from "@/lib/utils";
 import type { GitWorktree } from "@/types/electron";
 import logoDark from "../../opencode-logo-dark.svg";
 import logoLight from "../../opencode-logo-light.svg";
@@ -59,6 +64,7 @@ import { ConnectionPanel } from "./ConnectionPanel";
 import { MergeDialog } from "./MergeDialog";
 import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
+import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 
 /** Build a "create pull request" URL from a git remote URL and branch. */
 function buildPRUrl(
@@ -177,7 +183,7 @@ export function AppSidebar() {
 		for (const s of rootSessions) {
 			const sessionDir = s._projectDir ?? s.directory;
 			// If session belongs to a worktree, group it under the parent project
-			const parentDir = worktreeParents[sessionDir];
+			const parentDir = worktreeParents[sessionDir]?.parentDir;
 			const groupDir = parentDir ?? sessionDir;
 			if (!groups.has(groupDir)) groups.set(groupDir, []);
 			groups.get(groupDir)?.push(s);
@@ -189,17 +195,16 @@ export function AppSidebar() {
 	const [worktreeDialogDir, setWorktreeDialogDir] = useState<string | null>(
 		null,
 	);
+	// Post-creation setup dialog state
+	const [setupWorktreePath, setSetupWorktreePath] = useState<string | null>(
+		null,
+	);
 	// Per-project: is it a git repo? (checked on context menu open)
 	const [isGitRepo, setIsGitRepo] = useState<Record<string, boolean>>({});
 	// Per-project: known worktrees (fetched on context menu open)
 	const [knownWorktrees, setKnownWorktrees] = useState<
 		Record<string, GitWorktree[]>
 	>({});
-	// Worktree picker popover for new session
-	const [worktreePickerDir, setWorktreePickerDir] = useState<string | null>(
-		null,
-	);
-	const worktreePickerRef = useRef<HTMLDivElement | null>(null);
 	// Merge dialog state
 	const [mergeInfo, setMergeInfo] = useState<{
 		mainDir: string;
@@ -245,10 +250,6 @@ export function AppSidebar() {
 			}
 		}
 	}, []);
-
-	// Close worktree picker on outside click
-	const closeWorktreePicker = useCallback(() => setWorktreePickerDir(null), []);
-	useOutsideClick(worktreePickerRef, closeWorktreePicker, !!worktreePickerDir);
 
 	// Track collapsed state per project
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -394,59 +395,26 @@ export function AppSidebar() {
 																{getProjectName(directory)}
 															</span>
 															{/* New session for this project */}
-															{isProjectConnected &&
-																(() => {
-																	// Check if this project has registered worktrees
-																	const projectWorktrees = Object.entries(
-																		worktreeParents,
-																	)
-																		.filter(
-																			([, parent]) => parent === directory,
-																		)
-																		.map(([wtDir]) => wtDir);
-																	const hasWorktrees =
-																		projectWorktrees.length > 0;
-
-																	return (
-																		// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
-																		<div
-																			role="button"
-																			tabIndex={0}
-																			className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
-																			onClick={(e) => {
-																				e.stopPropagation();
-																				if (hasWorktrees) {
-																					setWorktreePickerDir((prev) =>
-																						prev === directory
-																							? null
-																							: directory,
-																					);
-																				} else {
-																					startDraftSession(directory);
-																				}
-																			}}
-																			onKeyDown={(e) => {
-																				if (
-																					e.key === "Enter" ||
-																					e.key === " "
-																				) {
-																					e.stopPropagation();
-																					if (hasWorktrees) {
-																						setWorktreePickerDir((prev) =>
-																							prev === directory
-																								? null
-																								: directory,
-																						);
-																					} else {
-																						startDraftSession(directory);
-																					}
-																				}
-																			}}
-																		>
-																			<SquarePen className="size-3" />
-																		</div>
-																	);
-																})()}
+															{isProjectConnected && (
+																// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
+																<div
+																	role="button"
+																	tabIndex={0}
+																	className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		startDraftSession(directory);
+																	}}
+																	onKeyDown={(e) => {
+																		if (e.key === "Enter" || e.key === " ") {
+																			e.stopPropagation();
+																			startDraftSession(directory);
+																		}
+																	}}
+																>
+																	<SquarePen className="size-3" />
+																</div>
+															)}
 															{/* Remove project */}
 															{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
 															<div
@@ -542,10 +510,23 @@ export function AppSidebar() {
 																							<ContextMenu.SubTrigger
 																								className={CTX_SUBTRIGGER_CLASS}
 																							>
-																								<span className="truncate">
-																									{wt.branch ??
-																										getProjectName(wt.path)}
-																								</span>
+																								<div className="flex flex-col truncate">
+																									<span className="truncate">
+																										{wt.branch ??
+																											getProjectName(wt.path)}
+																									</span>
+																									{(() => {
+																										const meta =
+																											worktreeParents[wt.path];
+																										return meta ? (
+																											<span className="text-[10px] text-muted-foreground">
+																												{formatTimeAgo(
+																													meta.createdAt,
+																												)}
+																											</span>
+																										) : null;
+																									})()}
+																								</div>
 																							</ContextMenu.SubTrigger>
 																							<ContextMenu.Portal>
 																								<ContextMenu.SubContent
@@ -561,6 +542,8 @@ export function AppSidebar() {
 																												registerWorktree(
 																													wt.path,
 																													directory,
+																													wt.branch ??
+																														"unknown",
 																												);
 																												await connectToProject(
 																													wt.path,
@@ -660,52 +643,6 @@ export function AppSidebar() {
 											</ContextMenu.Root>
 										</SidebarMenu>
 
-										{/* Worktree picker popover */}
-										{worktreePickerDir === directory && (
-											<div
-												ref={worktreePickerRef}
-												className="mx-1 mb-1 rounded-md border border-sidebar-border bg-sidebar p-1 shadow-sm"
-											>
-												<div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">
-													New session in:
-												</div>
-												<button
-													type="button"
-													onClick={() => {
-														startDraftSession(directory);
-														setWorktreePickerDir(null);
-													}}
-													className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent"
-												>
-													<MessageSquare className="size-3.5 shrink-0" />
-													<span className="truncate">
-														{getProjectName(directory)}
-													</span>
-													<span className="ml-auto text-[10px] text-muted-foreground">
-														main
-													</span>
-												</button>
-												{Object.entries(worktreeParents)
-													.filter(([, parent]) => parent === directory)
-													.map(([wtDir]) => (
-														<button
-															key={wtDir}
-															type="button"
-															onClick={() => {
-																startDraftSession(wtDir);
-																setWorktreePickerDir(null);
-															}}
-															className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent"
-														>
-															<GitBranch className="size-3.5 shrink-0" />
-															<span className="truncate">
-																{getProjectName(wtDir)}
-															</span>
-														</button>
-													))}
-											</div>
-										)}
-
 										{/* Sessions under this project */}
 										{!isCollapsed && sidebarState !== "collapsed" && (
 											<SidebarMenu className="ml-3 border-l border-sidebar-border pl-2 w-[calc(100%-0.75rem)] overflow-x-hidden">
@@ -734,8 +671,8 @@ export function AppSidebar() {
 															const tags = meta?.tags ?? [];
 															const isWorktreeSession =
 																session.directory !== directory &&
-																worktreeParents[session.directory] ===
-																	directory;
+																worktreeParents[session.directory]
+																	?.parentDir === directory;
 															const worktreeBranch = isWorktreeSession
 																? getProjectName(session.directory)
 																: null;
@@ -1058,14 +995,16 @@ export function AppSidebar() {
 					if (!open) setWorktreeDialogDir(null);
 				}}
 				directory={worktreeDialogDir ?? ""}
-				onCreated={async (worktreePath, _branch) => {
+				onCreated={async (worktreePath, branch) => {
 					if (!worktreeDialogDir) return;
-					// Register in local state
-					registerWorktree(worktreePath, worktreeDialogDir);
+					// Register in local state with metadata
+					registerWorktree(worktreePath, worktreeDialogDir, branch);
 					// Connect to the worktree directory
 					await connectToProject(worktreePath);
 					// Refresh git info
 					refreshGitInfo(worktreeDialogDir);
+					// Trigger setup detection dialog
+					setSetupWorktreePath(worktreePath);
 				}}
 			/>
 
@@ -1108,6 +1047,14 @@ export function AppSidebar() {
 						fixWithAiTimeoutRef.current = null;
 					}, POST_MERGE_DELAY_MS);
 				}}
+			/>
+			{/* Post-creation worktree setup dialog */}
+			<WorktreeSetupDialog
+				open={setupWorktreePath !== null}
+				onOpenChange={(open) => {
+					if (!open) setSetupWorktreePath(null);
+				}}
+				worktreePath={setupWorktreePath ?? ""}
 			/>
 		</Sidebar>
 	);
