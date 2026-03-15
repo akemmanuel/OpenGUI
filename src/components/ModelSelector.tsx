@@ -28,11 +28,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useActions, useModelState } from "@/hooks/use-opencode";
 import {
+	DEFAULT_MODEL_MAX_AGE_MONTHS,
 	MAX_RECENT_MODELS,
-	SIX_MONTHS_MS,
 	STORAGE_KEYS,
 } from "@/lib/constants";
-import { storageParsed, storageSetJSON } from "@/lib/safe-storage";
+import { storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
 
 type ModelOption = {
@@ -47,6 +47,15 @@ type ModelOption = {
 
 function normalize(text: string) {
 	return text.trim().toLowerCase();
+}
+
+function getStoredModelMaxAgeMonths(): number {
+	const raw = storageGet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS);
+	if (raw === null) return DEFAULT_MODEL_MAX_AGE_MONTHS;
+	const parsed = Number(raw);
+	if (!Number.isFinite(parsed)) return DEFAULT_MODEL_MAX_AGE_MONTHS;
+	if (parsed <= 0) return 0;
+	return parsed;
 }
 
 function ModelRow({
@@ -123,6 +132,9 @@ export function ModelSelector() {
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [recentValues, setRecentValues] = useState<string[]>([]);
 	const [favoriteValues, setFavoriteValues] = useState<Set<string>>(new Set());
+	const [modelMaxAgeMonths, setModelMaxAgeMonths] = useState(() =>
+		getStoredModelMaxAgeMonths(),
+	);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -138,6 +150,22 @@ export function ModelSelector() {
 				new Set(favArr.filter((v): v is string => typeof v === "string")),
 			);
 		}
+	}, []);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const syncModelMaxAge = () => {
+			setModelMaxAgeMonths(getStoredModelMaxAgeMonths());
+		};
+		window.addEventListener("storage", syncModelMaxAge);
+		window.addEventListener("model-max-age-months-changed", syncModelMaxAge);
+		return () => {
+			window.removeEventListener("storage", syncModelMaxAge);
+			window.removeEventListener(
+				"model-max-age-months-changed",
+				syncModelMaxAge,
+			);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -173,6 +201,10 @@ export function ModelSelector() {
 
 	const groups = useMemo(() => {
 		const now = Date.now();
+		const maxAgeMs =
+			modelMaxAgeMonths > 0
+				? 1000 * 60 * 60 * 24 * 30.4375 * modelMaxAgeMonths
+				: null;
 		const alwaysIncludeValues = new Set<string>();
 		if (selectedModel) {
 			alwaysIncludeValues.add(
@@ -193,11 +225,11 @@ export function ModelSelector() {
 						const value = `${provider.id}/${key}`;
 						if (alwaysIncludeValues.has(value)) return true;
 						if (model.status === "deprecated") return false;
+						if (maxAgeMs === null) return true;
 						const timestamp = Date.parse(model.release_date);
 						// Keep models with no valid release date (safe fallback)
 						if (!Number.isFinite(timestamp)) return true;
-						// Keep models released within the last 6 months
-						return Math.abs(now - timestamp) < SIX_MONTHS_MS;
+						return Math.abs(now - timestamp) < maxAgeMs;
 					})
 					.sort(([, a], [, b]) => a.name.localeCompare(b.name))
 					.map(([key, model]) => ({
@@ -211,7 +243,7 @@ export function ModelSelector() {
 					})),
 			}))
 			.filter((group) => group.models.length > 0);
-	}, [providers, selectedModel, favoriteValues]);
+	}, [providers, selectedModel, favoriteValues, modelMaxAgeMonths]);
 
 	const allModels = useMemo(
 		() => groups.flatMap((group) => group.models),

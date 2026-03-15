@@ -20,12 +20,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
 
 	// Open a directory in the system file browser
-	openInFileBrowser: (dirPath) =>
-		ipcRenderer.invoke("shell:openInFileBrowser", dirPath),
+	openInFileBrowser: (dirPath, command = "") =>
+		ipcRenderer.invoke("shell:openInFileBrowser", dirPath, command),
 
 	// Open a terminal at a directory
-	openInTerminal: (dirPath) =>
-		ipcRenderer.invoke("shell:openInTerminal", dirPath),
+	openInTerminal: (dirPath, command = "") =>
+		ipcRenderer.invoke("shell:openInTerminal", dirPath, command),
 
 	// Home directory (for path abbreviation)
 	getHomeDir: () => ipcRenderer.invoke("platform:homeDir"),
@@ -173,7 +173,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.invoke("opencode:config:update", config),
 
 		// File search
-		findFiles: (query) => ipcRenderer.invoke("opencode:find:files", query),
+		findFiles: (directory, query) =>
+			ipcRenderer.invoke("opencode:find:files", directory, query),
 
 		// Skills
 		getSkills: () => ipcRenderer.invoke("opencode:skills"),

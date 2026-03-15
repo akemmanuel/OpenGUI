@@ -8,11 +8,14 @@ import {
 	AlertCircle,
 	Bell,
 	CheckCircle2,
+	Folder,
+	Layers,
 	Mic,
 	Play,
 	PlugZap,
 	Settings,
 	Square,
+	Terminal,
 	Unplug,
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
@@ -42,7 +45,11 @@ import {
 	useActions,
 	useConnectionState,
 } from "@/hooks/use-opencode";
-import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
+import {
+	DEFAULT_MODEL_MAX_AGE_MONTHS,
+	DEFAULT_SERVER_URL,
+	STORAGE_KEYS,
+} from "@/lib/constants";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import { getErrorMessage } from "@/lib/utils";
 import packageJson from "../../package.json";
@@ -451,6 +458,9 @@ function GeneralSettings() {
 				<ThemeToggle />
 			</div>
 			<SttEndpointSetting />
+			<FileManagerSetting />
+			<TerminalSetting />
+			<ModelAgeFilterSetting />
 			<NotificationsToggle />
 			<div className="flex items-center justify-between gap-3 pt-3 border-t">
 				<span className="text-xs text-muted-foreground">Version</span>
@@ -507,6 +517,114 @@ function SttEndpointSetting() {
 }
 
 // ---------------------------------------------------------------------------
+// Model age filter setting
+// ---------------------------------------------------------------------------
+
+function ModelAgeFilterSetting() {
+	const [enabled, setEnabled] = useState(() => {
+		const raw = storageGet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS);
+		if (raw === null) return true;
+		const parsed = Number(raw);
+		return !Number.isFinite(parsed) || parsed > 0;
+	});
+	const [months, setMonths] = useState(() => {
+		const raw = storageGet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS);
+		if (raw === null) return String(DEFAULT_MODEL_MAX_AGE_MONTHS);
+		const parsed = Number(raw);
+		if (!Number.isFinite(parsed) || parsed <= 0) {
+			return String(DEFAULT_MODEL_MAX_AGE_MONTHS);
+		}
+		return String(Math.round(parsed));
+	});
+
+	const broadcastChange = () => {
+		window.dispatchEvent(new Event("model-max-age-months-changed"));
+	};
+
+	const persistMonths = (value: string) => {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed) && parsed > 0) {
+			storageSet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS, String(Math.round(parsed)));
+		} else {
+			storageSet(
+				STORAGE_KEYS.MODEL_MAX_AGE_MONTHS,
+				String(DEFAULT_MODEL_MAX_AGE_MONTHS),
+			);
+		}
+		broadcastChange();
+	};
+
+	const handleToggle = (checked: boolean) => {
+		setEnabled(checked);
+		if (!checked) {
+			storageSet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS, "0");
+			broadcastChange();
+			return;
+		}
+		persistMonths(months);
+	};
+
+	const handleMonthsChange = (value: string) => {
+		const digitsOnly = value.replace(/[^0-9]/g, "");
+		setMonths(digitsOnly);
+		if (!enabled) return;
+		persistMonths(digitsOnly);
+	};
+
+	const handleMonthsBlur = () => {
+		if (months) return;
+		const fallback = String(DEFAULT_MODEL_MAX_AGE_MONTHS);
+		setMonths(fallback);
+		if (enabled) persistMonths(fallback);
+	};
+
+	return (
+		<div className="space-y-2 pt-3 border-t">
+			<div className="flex items-center justify-between gap-3">
+				<div className="flex items-center gap-2">
+					<Layers className="size-4 text-muted-foreground" />
+					<Label
+						htmlFor="model-age-filter-toggle"
+						className="text-sm font-normal"
+					>
+						Hide old models
+					</Label>
+				</div>
+				<Switch
+					id="model-age-filter-toggle"
+					size="sm"
+					checked={enabled}
+					onCheckedChange={handleToggle}
+				/>
+			</div>
+			<div className="flex items-center gap-2">
+				<Input
+					id="model-age-filter-months"
+					type="number"
+					min="1"
+					step="1"
+					value={months}
+					onChange={(e) => handleMonthsChange(e.target.value)}
+					onBlur={handleMonthsBlur}
+					disabled={!enabled}
+					className="font-mono text-sm w-24"
+				/>
+				<Label
+					htmlFor="model-age-filter-months"
+					className="text-sm text-muted-foreground"
+				>
+					months
+				</Label>
+			</div>
+			<p className="text-[11px] text-muted-foreground">
+				Selected and favorite models always stay visible. Models without a valid
+				release date also stay visible.
+			</p>
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Notifications toggle
 // ---------------------------------------------------------------------------
 
@@ -552,6 +670,88 @@ function NotificationsToggle() {
 					onCheckedChange={handleToggle}
 				/>
 			)}
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// File manager setting
+// ---------------------------------------------------------------------------
+
+function FileManagerSetting() {
+	const [fileManager, setFileManager] = useState(
+		() => storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
+	);
+
+	const handleChange = (value: string) => {
+		setFileManager(value);
+		if (value.trim()) {
+			storageSet(STORAGE_KEYS.FILE_MANAGER, value.trim());
+		} else {
+			storageRemove(STORAGE_KEYS.FILE_MANAGER);
+		}
+	};
+
+	return (
+		<div className="space-y-2">
+			<div className="flex items-center gap-2">
+				<Folder className="size-4 text-muted-foreground" />
+				<Label htmlFor="file-manager" className="text-sm font-normal">
+					File manager
+				</Label>
+			</div>
+			<Input
+				id="file-manager"
+				value={fileManager}
+				onChange={(e) => handleChange(e.target.value)}
+				placeholder="Auto-detect"
+				className="font-mono text-sm"
+			/>
+			<p className="text-[11px] text-muted-foreground">
+				Command to open your file manager (e.g. nemo, nautilus). Leave empty to
+				auto-detect.
+			</p>
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Terminal setting
+// ---------------------------------------------------------------------------
+
+function TerminalSetting() {
+	const [terminal, setTerminal] = useState(
+		() => storageGet(STORAGE_KEYS.TERMINAL) ?? "",
+	);
+
+	const handleChange = (value: string) => {
+		setTerminal(value);
+		if (value.trim()) {
+			storageSet(STORAGE_KEYS.TERMINAL, value.trim());
+		} else {
+			storageRemove(STORAGE_KEYS.TERMINAL);
+		}
+	};
+
+	return (
+		<div className="space-y-2">
+			<div className="flex items-center gap-2">
+				<Terminal className="size-4 text-muted-foreground" />
+				<Label htmlFor="terminal" className="text-sm font-normal">
+					Terminal
+				</Label>
+			</div>
+			<Input
+				id="terminal"
+				value={terminal}
+				onChange={(e) => handleChange(e.target.value)}
+				placeholder="Auto-detect"
+				className="font-mono text-sm"
+			/>
+			<p className="text-[11px] text-muted-foreground">
+				Command to open your terminal (e.g. ghostty, kitty). Leave empty to
+				auto-detect.
+			</p>
 		</div>
 	);
 }

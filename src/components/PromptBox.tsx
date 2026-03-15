@@ -2,6 +2,7 @@ import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
 	ArrowUp,
 	BookOpen,
+	Check,
 	GitBranch,
 	ListEnd,
 	Loader2,
@@ -28,15 +29,9 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import {
 	Tooltip,
 	TooltipContent,
@@ -44,6 +39,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { VariantSelector } from "@/components/VariantSelector";
+import { WorktreeDialog } from "@/components/WorktreeDialog";
 import {
 	type QueueMode,
 	useActions,
@@ -55,11 +51,16 @@ import { useSTT } from "@/hooks/useSTT";
 import { MAX_TEXTAREA_HEIGHT_PX, STORAGE_KEYS } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
 import { storageGet } from "@/lib/safe-storage";
+import { getSessionDraftKey } from "@/lib/session-drafts";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps
 	extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "onSubmit"> {
-	onSubmit?: (message: string, images?: string[], mode?: QueueMode) => void;
+	onSubmit?: (
+		message: string,
+		images?: string[],
+		mode?: QueueMode,
+	) => void | Promise<void>;
 	onStop?: () => void;
 	isLoading?: boolean;
 	autoFocus?: boolean;
@@ -167,6 +168,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [isDragging, setIsDragging] = React.useState(false);
 		const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
 		const [skillsDialogOpen, setSkillsDialogOpen] = React.useState(false);
+		const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<
+			string | null
+		>(null);
 
 		// Queue mode: how a message is dispatched when the session is busy
 		const [queueMode, setQueueMode] = React.useState<QueueMode>("queue");
@@ -213,12 +217,27 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		} = useSTT(sttEndpoint);
 		const isDisabled = Boolean(props.disabled);
 
-		const { setAgent, sendCommand, findFiles, setDraftDirectory } =
-			useActions();
+		const {
+			setAgent,
+			sendCommand,
+			findFiles,
+			setDraftDirectory,
+			setSessionDraft,
+			clearSessionDraft,
+			registerWorktree,
+			connectToProject,
+		} = useActions();
 		const { commands, agents, selectedAgent } = useModelState();
-		const { messages, activeSessionId, draftSessionDirectory } =
-			useSessionState();
+		const {
+			sessions,
+			messages,
+			activeSessionId,
+			draftSessionDirectory,
+			sessionDrafts,
+		} = useSessionState();
 		const { worktreeParents } = useConnectionState();
+		const syncingDraftRef = React.useRef(false);
+		const sessionDraftsRef = React.useRef(sessionDrafts);
 
 		// Slash command popover state
 		const [showSlash, setShowSlash] = React.useState(false);
@@ -234,6 +253,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [fileMentionActiveIndex, setFileMentionActiveIndex] =
 			React.useState(0);
 		const [fileMentionLoading, setFileMentionLoading] = React.useState(false);
+		const [fileMentionEmptyMessage, setFileMentionEmptyMessage] =
+			React.useState<string | null>(null);
 		// Position of the "@" character that triggered the popover
 		const fileMentionAnchorRef = React.useRef(-1);
 		const fileMentionDebounceRef = React.useRef<ReturnType<
@@ -244,6 +265,19 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			() => getPrimaryAgents(agents).map((a) => a.name),
 			[agents],
 		);
+
+		const currentDraftKey = React.useMemo(
+			() =>
+				getSessionDraftKey({
+					sessionId: activeSessionId,
+					directory: activeSessionId ? null : draftSessionDirectory,
+				}),
+			[activeSessionId, draftSessionDirectory],
+		);
+
+		React.useEffect(() => {
+			sessionDraftsRef.current = sessionDrafts;
+		}, [sessionDrafts]);
 
 		// Derive user message history from current session (newest first)
 		const userHistory = React.useMemo(
@@ -266,7 +300,44 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		React.useEffect(() => {
 			setHistoryIndex(-1);
 			setSavedDraft("");
-		}, [activeSessionId]);
+		}, [currentDraftKey]);
+
+		React.useEffect(() => {
+			syncingDraftRef.current = true;
+			setValue(
+				currentDraftKey
+					? (sessionDraftsRef.current[currentDraftKey] ?? "")
+					: "",
+			);
+			setImagePreviews([]);
+			setShowSlash(false);
+			setShowFileMention(false);
+			setFileMentionResults([]);
+			setFileMentionEmptyMessage(null);
+			fileMentionAnchorRef.current = -1;
+		}, [currentDraftKey]);
+
+		React.useEffect(() => {
+			if (!currentDraftKey) return;
+			if (syncingDraftRef.current) {
+				syncingDraftRef.current = false;
+				return;
+			}
+			const existingDraft = sessionDrafts[currentDraftKey] ?? "";
+			if (value.trim().length === 0) {
+				if (existingDraft) clearSessionDraft(currentDraftKey);
+				return;
+			}
+			if (existingDraft !== value) {
+				setSessionDraft(currentDraftKey, value);
+			}
+		}, [
+			clearSessionDraft,
+			currentDraftKey,
+			sessionDrafts,
+			setSessionDraft,
+			value,
+		]);
 
 		const handleMicClick = React.useCallback(async () => {
 			if (isDisabled) return;
@@ -330,6 +401,15 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			[isDisabled],
 		);
 
+		// Helper to determine which project directory to search
+		const getActiveDirectory = React.useCallback((): string | null => {
+			if (activeSessionId) {
+				const activeSession = sessions.find((s) => s.id === activeSessionId);
+				return activeSession?._projectDir ?? activeSession?.directory ?? null;
+			}
+			return draftSessionDirectory;
+		}, [activeSessionId, sessions, draftSessionDirectory]);
+
 		const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
 			const newValue = e.target.value;
 			setValue(newValue);
@@ -382,13 +462,25 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				if (fileMentionDebounceRef.current) {
 					clearTimeout(fileMentionDebounceRef.current);
 				}
+				if (query.trim().length === 0) {
+					setFileMentionLoading(false);
+					setFileMentionResults([]);
+					setFileMentionEmptyMessage("Type to search files");
+					return;
+				}
+				setFileMentionEmptyMessage(null);
 				setFileMentionLoading(true);
 				fileMentionDebounceRef.current = setTimeout(async () => {
 					try {
-						const results = await findFiles(query);
+						const activeDir = getActiveDirectory();
+						const results = await findFiles(activeDir, query);
 						setFileMentionResults(results.slice(0, 20));
+						setFileMentionEmptyMessage(
+							results.length === 0 ? "No matching files" : null,
+						);
 					} catch {
 						setFileMentionResults([]);
+						setFileMentionEmptyMessage("File search failed");
 					} finally {
 						setFileMentionLoading(false);
 					}
@@ -396,6 +488,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			} else {
 				setShowFileMention(false);
 				setFileMentionResults([]);
+				setFileMentionEmptyMessage(null);
 				fileMentionAnchorRef.current = -1;
 				if (fileMentionDebounceRef.current) {
 					clearTimeout(fileMentionDebounceRef.current);
@@ -476,6 +569,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				setValue(newValue);
 				setShowFileMention(false);
 				setFileMentionResults([]);
+				setFileMentionEmptyMessage(null);
 				fileMentionAnchorRef.current = -1;
 
 				// Move cursor to after the inserted mention
@@ -496,7 +590,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			internalTextareaRef.current?.focus();
 		}, []);
 
-		const handleSubmit = () => {
+		const handleSubmit = async () => {
 			if (isDisabled) return;
 			if (!hasValue) return;
 
@@ -510,7 +604,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
 				const cmd = commands.find((c) => c.name === commandName);
 				if (cmd) {
-					sendCommand(commandName, args);
+					await sendCommand(commandName, args);
+					if (currentDraftKey) clearSessionDraft(currentDraftKey);
 					setValue("");
 					setImagePreviews([]);
 					setShowSlash(false);
@@ -521,7 +616,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			}
 
 			const images = imagePreviews.length > 0 ? imagePreviews : undefined;
-			onSubmit?.(value, images, isLoading ? queueMode : undefined);
+			await onSubmit?.(value, images, isLoading ? queueMode : undefined);
+			if (currentDraftKey) clearSessionDraft(currentDraftKey);
 			setValue("");
 			setImagePreviews([]);
 			setHistoryIndex(-1);
@@ -649,7 +745,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				if (isDisabled) return;
-				handleSubmit();
+				void handleSubmit();
 			}
 			if (e.key === "Tab" && primaryAgents.length > 1) {
 				e.preventDefault();
@@ -685,7 +781,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				}}
 			>
 				{showFileMention &&
-					(fileMentionResults.length > 0 || fileMentionLoading) && (
+					(fileMentionResults.length > 0 ||
+						fileMentionLoading ||
+						fileMentionEmptyMessage) && (
 						<div className="relative">
 							<FileMentionPopover
 								files={fileMentionResults}
@@ -693,6 +791,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 								onSelect={handleFileMentionSelect}
 								onHover={setFileMentionActiveIndex}
 								loading={fileMentionLoading}
+								emptyMessage={fileMentionEmptyMessage}
 							/>
 						</div>
 					)}
@@ -768,6 +867,20 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				<SkillsDialog
 					open={skillsDialogOpen}
 					onOpenChange={setSkillsDialogOpen}
+				/>
+				<WorktreeDialog
+					open={worktreeDialogDir !== null}
+					onOpenChange={(open) => {
+						if (!open) setWorktreeDialogDir(null);
+					}}
+					directory={worktreeDialogDir ?? ""}
+					onCreated={async (worktreePath, branch) => {
+						if (!worktreeDialogDir) return;
+						registerWorktree(worktreePath, worktreeDialogDir, branch);
+						await connectToProject(worktreePath);
+						setDraftDirectory(worktreePath);
+						setWorktreeDialogDir(null);
+					}}
 				/>
 
 				<div className="flex min-w-0 items-center gap-1 px-1.5 pb-2">
@@ -854,39 +967,53 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 								...worktrees,
 							];
 
-							if (options.length <= 1) return null;
-
 							return (
-								<Select
-									value={draftSessionDirectory}
-									onValueChange={(value) => setDraftDirectory(value)}
-								>
-									<SelectTrigger className="!h-7 w-auto max-w-[180px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0 [&>svg]:size-3">
-										<GitBranch className="size-3.5 shrink-0" />
-										<SelectValue placeholder="Branch" />
-									</SelectTrigger>
-									<SelectContent align="start" className="max-h-80">
+								<DropdownMenu>
+									<DropdownMenuTrigger asChild>
+										<Button
+											variant="ghost"
+											size="sm"
+											className="!h-7 w-auto max-w-[180px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0"
+										>
+											<GitBranch className="size-3.5 shrink-0" />
+											<span className="truncate">
+												{options.find(
+													(opt) => opt.dir === draftSessionDirectory,
+												)?.branch || "Branch"}
+											</span>
+										</Button>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent align="start" className="max-h-80 w-48">
 										{options.map((opt) => (
-											<SelectItem
+											<DropdownMenuItem
 												key={opt.dir}
-												value={opt.dir}
+												onClick={() => setDraftDirectory(opt.dir)}
 												className="text-xs"
 											>
-												<span className="flex items-center gap-1.5">
+												<span className="flex min-w-0 flex-1 items-center gap-1.5">
 													{opt.isMain ? (
 														<span className="text-[10px] text-muted-foreground">
 															main
 														</span>
 													) : (
-														<>
-															<span>{opt.branch}</span>
-														</>
+														<span className="truncate">{opt.branch}</span>
 													)}
 												</span>
-											</SelectItem>
+												{opt.dir === draftSessionDirectory && (
+													<Check className="ml-auto size-3 shrink-0" />
+												)}
+											</DropdownMenuItem>
 										))}
-									</SelectContent>
-								</Select>
+										<DropdownMenuSeparator />
+										<DropdownMenuItem
+											onClick={() => setWorktreeDialogDir(projectDir)}
+											className="text-xs"
+										>
+											<Plus className="size-3.5" />
+											<span>New worktree</span>
+										</DropdownMenuItem>
+									</DropdownMenuContent>
+								</DropdownMenu>
 							);
 						})()}
 
@@ -1078,7 +1205,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 											disabled={isDisabled || !hasValue}
 											onClick={(e) => {
 												e.stopPropagation();
-												handleSubmit();
+												void handleSubmit();
 											}}
 										>
 											<ArrowUp />

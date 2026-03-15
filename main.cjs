@@ -8,6 +8,23 @@ const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
 
 let mainWindow = null;
 
+function parseCommand(command) {
+	if (typeof command !== "string") return [];
+	const matches = command.match(/"[^"]*"|'[^']*'|\S+/g);
+	if (!matches) return [];
+	return matches.map((part) => part.replace(/^['"]|['"]$/g, ""));
+}
+
+function spawnCustomCommand(command, options = {}) {
+	const parts = parseCommand(command);
+	if (parts.length === 0) return false;
+	const [cmd, ...args] = parts;
+	const child = spawn(cmd, args, options);
+	child.on("error", () => {});
+	child.unref();
+	return true;
+}
+
 /** Check if a URL uses a web protocol (http/https). */
 function isWebUrl(url) {
 	return (
@@ -106,17 +123,28 @@ ipcMain.handle("shell:openExternal", (_event, url) => {
 });
 
 // Open a directory in the system file browser
-ipcMain.handle("shell:openInFileBrowser", (_event, dirPath) => {
-	if (typeof dirPath === "string" && dirPath.length > 0) {
-		shell.openPath(dirPath);
+ipcMain.handle("shell:openInFileBrowser", (_event, dirPath, command = "") => {
+	if (typeof dirPath !== "string" || dirPath.length === 0) return;
+	const spawnOpts = { detached: true, stdio: "ignore", cwd: dirPath };
+	const parts = parseCommand(command);
+	if (parts.length > 0) {
+		const [cmd, ...args] = parts;
+		const child = spawn(cmd, args.length > 0 ? args : [dirPath], spawnOpts);
+		child.on("error", () => {
+			shell.openPath(dirPath);
+		});
+		child.unref();
+		return;
 	}
+	shell.openPath(dirPath);
 });
 
 // Open a terminal at a directory (cross-platform)
-ipcMain.handle("shell:openInTerminal", (_event, dirPath) => {
+ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
 	if (typeof dirPath !== "string" || dirPath.length === 0) return;
 	const platform = process.platform;
 	const spawnOpts = { detached: true, stdio: "ignore", cwd: dirPath };
+	if (spawnCustomCommand(command, spawnOpts)) return;
 	if (platform === "darwin") {
 		spawn("open", ["-a", "Terminal", dirPath], spawnOpts);
 	} else if (platform === "win32") {

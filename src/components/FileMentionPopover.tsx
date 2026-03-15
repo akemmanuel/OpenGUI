@@ -13,6 +13,7 @@ interface FileMentionPopoverProps {
 	onSelect: (filePath: string) => void;
 	onHover: (index: number) => void;
 	loading?: boolean;
+	emptyMessage?: string | null;
 }
 
 export function FileMentionPopover({
@@ -21,6 +22,7 @@ export function FileMentionPopover({
 	onSelect,
 	onHover,
 	loading,
+	emptyMessage,
 }: FileMentionPopoverProps) {
 	const listRef = React.useRef<HTMLDivElement>(null);
 
@@ -32,7 +34,7 @@ export function FileMentionPopover({
 		active?.scrollIntoView({ block: "nearest" });
 	}, [activeIndex]);
 
-	if (files.length === 0 && !loading) return null;
+	if (files.length === 0 && !loading && !emptyMessage) return null;
 
 	return (
 		<div
@@ -42,6 +44,11 @@ export function FileMentionPopover({
 			{loading && files.length === 0 && (
 				<div className="px-2.5 py-2 text-xs text-muted-foreground">
 					Searching...
+				</div>
+			)}
+			{!loading && files.length === 0 && emptyMessage && (
+				<div className="px-2.5 py-2 text-xs text-muted-foreground">
+					{emptyMessage}
 				</div>
 			)}
 			{files.map((filePath, i) => {
