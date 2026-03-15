@@ -48,9 +48,12 @@ import {
 	CTX_SUBTRIGGER_CLASS,
 	POST_MERGE_DELAY_MS,
 	SESSION_PAGE_SIZE,
+	STORAGE_KEYS,
 } from "@/lib/constants";
+import { storageGet } from "@/lib/safe-storage";
 import {
 	abbreviatePath,
+	buildPRUrl,
 	formatTimeAgo,
 	getProjectName,
 	openExternalLink,
@@ -65,29 +68,6 @@ import { MergeDialog } from "./MergeDialog";
 import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
-
-/** Build a "create pull request" URL from a git remote URL and branch. */
-function buildPRUrl(
-	remoteUrl: string,
-	branch: string,
-	baseBranch = "main",
-): string | null {
-	// Normalize git remote URL to an HTTPS base
-	let base: string | null = null;
-	// SSH format: git@host:owner/repo.git
-	const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
-	if (sshMatch) {
-		base = `https://${sshMatch[1]}/${sshMatch[2]}`;
-	}
-	// HTTPS format: https://host/owner/repo.git
-	const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
-	if (httpsMatch) {
-		base = `https://${httpsMatch[1]}/${httpsMatch[2]}`;
-	}
-	if (!base) return null;
-	// GitHub, Gitea, GitLab all support /compare/base...head
-	return `${base}/compare/${baseBranch}...${branch}`;
-}
 
 export function AppSidebar() {
 	const { state: sidebarState } = useSidebar();
@@ -114,6 +94,7 @@ export function AppSidebar() {
 		pendingPermissions,
 		temporarySessions,
 		unreadSessionIds,
+		sessionDrafts,
 		sessionMeta,
 	} = useSessionState();
 	const { connections, worktreeParents } = useConnectionState();
@@ -277,6 +258,12 @@ export function AppSidebar() {
 	const popoverSessions = projectPopover
 		? (projectGroups.get(projectPopover.directory) ?? [])
 		: [];
+
+	const hasUnsentDraft = useCallback(
+		(sessionId: string) =>
+			Boolean(sessionDrafts[`session:${sessionId}`]?.trim()),
+		[sessionDrafts],
+	);
 
 	return (
 		<Sidebar collapsible="icon" className="select-none relative">
@@ -456,6 +443,7 @@ export function AppSidebar() {
 															onSelect={() => {
 																window.electronAPI?.openInFileBrowser(
 																	directory,
+																	storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
 																);
 															}}
 														>
@@ -465,7 +453,10 @@ export function AppSidebar() {
 														<ContextMenu.Item
 															className={CTX_ITEM_CLASS}
 															onSelect={() => {
-																window.electronAPI?.openInTerminal(directory);
+																window.electronAPI?.openInTerminal(
+																	directory,
+																	storageGet(STORAGE_KEYS.TERMINAL) ?? "",
+																);
 															}}
 														>
 															<Terminal className="size-4" />
@@ -533,26 +524,6 @@ export function AppSidebar() {
 																									className="z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
 																									sideOffset={4}
 																								>
-																									{!worktreeDirs.has(
-																										wt.path,
-																									) && (
-																										<ContextMenu.Item
-																											className={CTX_ITEM_CLASS}
-																											onSelect={async () => {
-																												registerWorktree(
-																													wt.path,
-																													directory,
-																													wt.branch ??
-																														"unknown",
-																												);
-																												await connectToProject(
-																													wt.path,
-																												);
-																											}}
-																										>
-																											Open
-																										</ContextMenu.Item>
-																									)}
 																									{wt.branch && (
 																										<ContextMenu.Item
 																											className={CTX_ITEM_CLASS}
@@ -656,6 +627,7 @@ export function AppSidebar() {
 															const isActive = session.id === activeSessionId;
 															const isBusy = busySessionIds.has(session.id);
 															const isUnread = unreadSessionIds.has(session.id);
+															const hasUnsent = hasUnsentDraft(session.id);
 															const queueCount = (
 																queuedPrompts[session.id] ?? []
 															).length;
@@ -716,6 +688,9 @@ export function AppSidebar() {
 																				)}
 																				{isUnread && !isBusy && (
 																					<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
+																				)}
+																				{hasUnsent && (
+																					<span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-amber-500 ring-1 ring-sidebar" />
 																				)}
 																			</span>
 																			{editingSessionId === session.id ? (
@@ -913,6 +888,7 @@ export function AppSidebar() {
 									const isActive = session.id === activeSessionId;
 									const isBusy = busySessionIds.has(session.id);
 									const isUnread = unreadSessionIds.has(session.id);
+									const hasUnsent = hasUnsentDraft(session.id);
 									const queueCount = (queuedPrompts[session.id] ?? []).length;
 									const hasQuestion = !!pendingQuestions[session.id];
 									const hasPermission = !!pendingPermissions[session.id];
@@ -939,6 +915,9 @@ export function AppSidebar() {
 													)}
 													{isUnread && !isBusy && (
 														<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
+													)}
+													{hasUnsent && (
+														<span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-amber-500 ring-1 ring-sidebar" />
 													)}
 												</span>
 												<span

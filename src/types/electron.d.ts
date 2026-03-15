@@ -219,7 +219,10 @@ export interface OpenCodeBridge {
 	): Promise<IPCResult<OpenCodeConfig>>;
 
 	// File search
-	findFiles(query: string): Promise<IPCResult<string[]>>;
+	findFiles(
+		directory: string | null,
+		query: string,
+	): Promise<IPCResult<string[]>>;
 
 	// Skills
 	getSkills(): Promise<
@@ -303,10 +306,10 @@ export interface ElectronAPI {
 	openExternal: (url: string) => Promise<void>;
 
 	/** Open a directory in the system file browser (Finder / Explorer / Nautilus). */
-	openInFileBrowser: (dirPath: string) => Promise<void>;
+	openInFileBrowser: (dirPath: string, command?: string) => Promise<void>;
 
 	/** Open a terminal at a directory. */
-	openInTerminal: (dirPath: string) => Promise<void>;
+	openInTerminal: (dirPath: string, command?: string) => Promise<void>;
 
 	/** Get the user's home directory path. */
 	getHomeDir: () => Promise<string>;

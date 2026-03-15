@@ -940,7 +940,7 @@ function ReasoningPartView({
 		}
 	}, [part.text, isThinking, expanded]);
 
-	if (!part.text) return null;
+	if (!part.text?.trim()) return null;
 
 	const durationMs =
 		part.time.end && part.time.start ? part.time.end - part.time.start : null;
@@ -979,7 +979,7 @@ function ReasoningPartView({
 					ref={preRef}
 					className="pl-5 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-96 overflow-auto"
 				>
-					{part.text}
+					{part.text.trim()}
 				</pre>
 			)}
 		</div>
@@ -1174,15 +1174,155 @@ function extractTaskInfo(state: ToolPart["state"]): TaskInfo | null {
 
 type DiffLine = { type: "same" | "add" | "remove"; text: string };
 
-/** Compute a simple line-level diff between two strings using LCS. */
-function computeLineDiff(
-	oldStr: string,
-	newStr: string,
-): {
+type DiffResult = {
 	added: number;
 	removed: number;
-	lines: { type: "same" | "add" | "remove"; text: string }[];
-} {
+	lines: DiffLine[];
+};
+
+type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
+
+interface ApplyPatchFileDiff {
+	id: string;
+	type: ApplyPatchChangeType;
+	path: string;
+	previousPath: string | null;
+	added: number;
+	removed: number;
+	lines: DiffLine[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseUnifiedDiff(diffText: string): DiffResult | null {
+	const lines = diffText.split("\n");
+	const diffLines: DiffLine[] = [];
+	let added = 0;
+	let removed = 0;
+
+	for (const line of lines) {
+		if (!line || line.startsWith("@@") || line.startsWith("diff --git ")) {
+			continue;
+		}
+		if (
+			line.startsWith("+++") ||
+			line.startsWith("---") ||
+			line.startsWith("index ")
+		) {
+			continue;
+		}
+		if (line === "\\ No newline at end of file") continue;
+		const prefix = line[0];
+		const text = line.slice(1);
+		if (prefix === "+") {
+			diffLines.push({ type: "add", text });
+			added++;
+			continue;
+		}
+		if (prefix === "-") {
+			diffLines.push({ type: "remove", text });
+			removed++;
+			continue;
+		}
+		if (prefix === " ") {
+			diffLines.push({ type: "same", text });
+		}
+	}
+
+	if (diffLines.length === 0) return null;
+	return { added, removed, lines: diffLines };
+}
+
+function computeApplyPatchDiff(
+	file: Record<string, unknown>,
+): DiffResult | null {
+	const before = typeof file.before === "string" ? file.before : null;
+	const after = typeof file.after === "string" ? file.after : null;
+	const fileType =
+		typeof file.type === "string" ? file.type.toLowerCase() : "update";
+	if (before != null || after != null) {
+		return computeLineDiff(before ?? "", after ?? "");
+	}
+	if (fileType === "delete") {
+		const deleted =
+			typeof file.diff === "string" ? parseUnifiedDiff(file.diff) : null;
+		if (deleted) return deleted;
+	}
+	return typeof file.diff === "string" ? parseUnifiedDiff(file.diff) : null;
+}
+
+function extractApplyPatchFiles(
+	state: ToolPart["state"],
+): ApplyPatchFileDiff[] {
+	if (!("metadata" in state) || !isRecord(state.metadata)) return [];
+	const rawFiles = state.metadata.files;
+	if (!Array.isArray(rawFiles)) return [];
+
+	return rawFiles
+		.map((entry, index) => {
+			if (!isRecord(entry)) return null;
+			const diff = computeApplyPatchDiff(entry);
+			const typeValue =
+				typeof entry.type === "string" ? entry.type.toLowerCase() : "update";
+			const type: ApplyPatchChangeType =
+				typeValue === "add" || typeValue === "delete" || typeValue === "move"
+					? typeValue
+					: "update";
+			const pathValue =
+				typeof entry.relativePath === "string"
+					? entry.relativePath
+					: typeof entry.movePath === "string"
+						? entry.movePath
+						: typeof entry.filePath === "string"
+							? entry.filePath
+							: `patch-${index + 1}`;
+			const previousPath =
+				typeof entry.filePath === "string" ? entry.filePath : null;
+			const added = toFiniteNumber(entry.additions) ?? diff?.added ?? 0;
+			const removed = toFiniteNumber(entry.deletions) ?? diff?.removed ?? 0;
+
+			return {
+				id: `${pathValue}-${index}`,
+				type,
+				path: pathValue,
+				previousPath,
+				added,
+				removed,
+				lines: diff?.lines ?? [],
+			};
+		})
+		.filter((file): file is ApplyPatchFileDiff => file !== null);
+}
+
+function getApplyPatchActionLabel(file: ApplyPatchFileDiff): string {
+	if (file.type === "add") return "Created";
+	if (file.type === "delete") return "Deleted";
+	if (file.type === "move") return "Moved";
+	return "Patched";
+}
+
+function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string | null {
+	if (files.length === 0) return null;
+	if (files.length === 1) {
+		const file = files[0];
+		if (!file) return null;
+		return file.type === "move" &&
+			file.previousPath &&
+			file.previousPath !== file.path
+			? `${file.previousPath} -> ${file.path}`
+			: file.path;
+	}
+	return `${files.length} files`;
+}
+
+/** Compute a simple line-level diff between two strings using LCS. */
+function computeLineDiff(oldStr: string, newStr: string): DiffResult {
 	const oldLines = oldStr.split("\n");
 	const newLines = newStr.split("\n");
 
@@ -1238,11 +1378,7 @@ function computeLineDiff(
 }
 
 /** Compute added/removed line counts from oldString/newString in an edit tool input. */
-function computeEditDiff(input: Record<string, unknown>): {
-	added: number;
-	removed: number;
-	lines: { type: "same" | "add" | "remove"; text: string }[];
-} | null {
+function computeEditDiff(input: Record<string, unknown>): DiffResult | null {
 	const oldStr = input.oldString;
 	const newStr = input.newString;
 	if (typeof oldStr !== "string" || typeof newStr !== "string") return null;
@@ -1250,11 +1386,7 @@ function computeEditDiff(input: Record<string, unknown>): {
 }
 
 /** Compute diff for write tools (entire file is new content). */
-function computeWriteDiff(input: Record<string, unknown>): {
-	added: number;
-	removed: number;
-	lines: { type: "same" | "add" | "remove"; text: string }[];
-} | null {
+function computeWriteDiff(input: Record<string, unknown>): DiffResult | null {
 	const content = input.content;
 	if (typeof content !== "string") return null;
 	const splitLines = content.split("\n");
@@ -1266,11 +1398,7 @@ function computeWriteDiff(input: Record<string, unknown>): {
 }
 
 /** Inline diff viewer component. */
-function DiffView({
-	lines,
-}: {
-	lines: { type: "same" | "add" | "remove"; text: string }[];
-}) {
+function DiffView({ lines }: { lines: DiffLine[] }) {
 	// Collapse runs of unchanged lines in the middle, keep 2 context lines around changes
 	const CONTEXT = 2;
 	const changeIndices = new Set<number>();
@@ -1331,6 +1459,63 @@ function DiffView({
 	);
 }
 
+function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) {
+	return (
+		<div className="mt-1 ml-5 space-y-1.5">
+			{files.map((file) => {
+				const hasDiff = file.lines.length > 0;
+				const actionLabel = getApplyPatchActionLabel(file);
+				const pathLabel =
+					file.type === "move" &&
+					file.previousPath &&
+					file.previousPath !== file.path
+						? `${file.previousPath} -> ${file.path}`
+						: file.path;
+				return (
+					<details
+						key={file.id}
+						open={files.length === 1}
+						className="rounded border border-border/40 bg-background/40 overflow-hidden"
+					>
+						<summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 hover:bg-accent/30 transition-colors [&::-webkit-details-marker]:hidden">
+							<ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-90" />
+							<span
+								className={cn(
+									"shrink-0 text-[11px] font-medium",
+									file.type === "add"
+										? "text-emerald-500"
+										: file.type === "delete"
+											? "text-red-400"
+											: "text-foreground/70",
+								)}
+							>
+								{actionLabel}
+							</span>
+							<span
+								className="truncate text-[11px] text-muted-foreground"
+								title={pathLabel}
+							>
+								{pathLabel}
+							</span>
+							<span className="ml-auto flex items-center gap-1 whitespace-nowrap text-[11px]">
+								<span className="text-emerald-500">+{file.added}</span>
+								<span className="text-red-400">-{file.removed}</span>
+							</span>
+						</summary>
+						{hasDiff ? (
+							<DiffView lines={file.lines} />
+						) : (
+							<div className="px-2 pb-2 text-[11px] text-muted-foreground">
+								No line diff available.
+							</div>
+						)}
+					</details>
+				);
+			})}
+		</div>
+	);
+}
+
 // ---------------------------------------------------------------------------
 // Child tool part display helpers (for live subagent step tracking)
 // ---------------------------------------------------------------------------
@@ -1374,6 +1559,13 @@ function getToolDisplayInfo(
 			icon: FileEdit,
 			label: running ? "Editing" : "Edited",
 			subtitle: typeof path === "string" ? path : (title ?? ""),
+		};
+	}
+	if (lower === "apply_patch") {
+		return {
+			icon: FileEdit,
+			label: running ? "Patching" : "Patched",
+			subtitle: title ?? "",
 		};
 	}
 	if (lower === "write") {
@@ -1535,6 +1727,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 	const { state } = part;
 	const [expanded, setExpanded] = useState(false);
 	const autoExpandedRef = useRef(false);
+	const bashAutoExpandedRef = useRef(false);
 	const toolLower = part.tool.toLowerCase();
 	const isBash =
 		toolLower === "bash" ||
@@ -1542,6 +1735,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 		toolLower === "execute_command";
 	const isGlob = toolLower === "glob";
 	const isEdit = toolLower === "edit";
+	const isApplyPatch = toolLower === "apply_patch";
 	const isWrite = toolLower === "write";
 	const isTodoWrite = toolLower === "todowrite";
 	const isTask = toolLower === "task";
@@ -1551,9 +1745,23 @@ function ToolPartView({ part }: { part: ToolPart }) {
 	const diff =
 		isEdit && "input" in state
 			? computeEditDiff(state.input)
-			: isWrite && "input" in state
-				? computeWriteDiff(state.input)
-				: null;
+			: isApplyPatch
+				? null
+				: isWrite && "input" in state
+					? computeWriteDiff(state.input)
+					: null;
+	const applyPatchFiles = isApplyPatch ? extractApplyPatchFiles(state) : [];
+	const applyPatchSummary =
+		applyPatchFiles.length > 0
+			? applyPatchFiles.reduce(
+					(acc, file) => ({
+						added: acc.added + file.added,
+						removed: acc.removed + file.removed,
+						lines: acc.lines,
+					}),
+					{ added: 0, removed: 0, lines: [] as DiffLine[] },
+				)
+			: null;
 	const todos = isTodoWrite ? extractTodos(state) : null;
 	const taskInfo = isTask ? extractTaskInfo(state) : null;
 	const taskDurationLabel = isTask ? getTaskDurationLabel(state) : null;
@@ -1585,6 +1793,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 			: null;
 	const isRunning = state.status === "running" || state.status === "pending";
 	const taskContentRef = useRef<HTMLDivElement>(null);
+	const toolOutputRef = useRef<HTMLPreElement>(null);
 
 	// Auto-expand running tasks with a child session ID so steps are visible,
 	// and auto-collapse when the task finishes
@@ -1606,9 +1815,46 @@ function ToolPartView({ part }: { part: ToolPart }) {
 		}
 	}, [taskInfo, isTask, isRunning, expanded]);
 
+	const rawOutputText =
+		"output" in state && typeof state.output === "string" ? state.output : null;
+	const outputText = rawOutputText?.trim() || null;
+	const bashMetadataOutput =
+		isBash &&
+		"metadata" in state &&
+		state.metadata &&
+		typeof state.metadata === "object" &&
+		typeof (state.metadata as Record<string, unknown>).output === "string"
+			? ((state.metadata as Record<string, unknown>).output as string)
+			: null;
+	const bashOutputText = isBash
+		? isRunning
+			? (bashMetadataOutput ?? rawOutputText)
+			: (rawOutputText ?? bashMetadataOutput)
+		: outputText;
+
+	useEffect(() => {
+		if (
+			!isBash ||
+			!isRunning ||
+			!bashOutputText ||
+			bashAutoExpandedRef.current
+		) {
+			return;
+		}
+		setExpanded(true);
+		bashAutoExpandedRef.current = true;
+	}, [isBash, isRunning, bashOutputText]);
+
+	useEffect(() => {
+		if (!isBash || !expanded || !bashOutputText || !toolOutputRef.current)
+			return;
+		toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
+	}, [isBash, expanded, bashOutputText]);
+
 	const hasDynamicLabel =
 		isRead ||
 		isEdit ||
+		isApplyPatch ||
 		isBash ||
 		isWrite ||
 		isGrep ||
@@ -1624,71 +1870,74 @@ function ToolPartView({ part }: { part: ToolPart }) {
 			? isRunning
 				? "Editing"
 				: "Edited"
-			: isBash
+			: isApplyPatch
 				? isRunning
-					? "Running"
-					: "Ran"
-				: isWrite
+					? "Patching"
+					: "Patched"
+				: isBash
 					? isRunning
-						? "Writing"
-						: "Wrote"
-					: isGrep
+						? "Running"
+						: "Ran"
+					: isWrite
 						? isRunning
-							? "Searching"
-							: "Searched"
-						: isGlob
+							? "Writing"
+							: "Wrote"
+						: isGrep
 							? isRunning
-								? "Globbing"
-								: "Globbed"
-							: isTask
-								? taskInfo?.subagentType
-									? taskInfo.subagentType.charAt(0).toUpperCase() +
-										taskInfo.subagentType.slice(1)
-									: isRunning
-										? "Running"
-										: "Ran"
-								: isTodoWrite
-									? isRunning
-										? "Writing todos"
-										: `Wrote ${todos?.length ?? 0} todos`
-									: isQuestion
-										? (() => {
-												const qCount =
-													"input" in state &&
-													Array.isArray(state.input.questions)
-														? state.input.questions.length
-														: 0;
-												return isRunning
-													? "Asking"
-													: `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`;
-											})()
-										: part.tool;
+								? "Searching"
+								: "Searched"
+							: isGlob
+								? isRunning
+									? "Globbing"
+									: "Globbed"
+								: isTask
+									? taskInfo?.subagentType
+										? taskInfo.subagentType.charAt(0).toUpperCase() +
+											taskInfo.subagentType.slice(1)
+										: isRunning
+											? "Running"
+											: "Ran"
+									: isTodoWrite
+										? isRunning
+											? "Writing todos"
+											: `Wrote ${todos?.length ?? 0} todos`
+										: isQuestion
+											? (() => {
+													const qCount =
+														"input" in state &&
+														Array.isArray(state.input.questions)
+															? state.input.questions.length
+															: 0;
+													return isRunning
+														? "Asking"
+														: `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`;
+												})()
+											: part.tool;
 	// Inline context label (filename, command, pattern, description, or title)
 	const taskDescription =
 		isTask && taskInfo?.description ? `(${taskInfo.description})` : null;
+	const applyPatchLabel = isApplyPatch
+		? getApplyPatchContextLabel(applyPatchFiles)
+		: null;
 	const contextLabel = filePath
 		? filePath
-		: bashCommand
-			? bashCommand
-			: grepPattern
-				? grepPattern
-				: globPattern
-					? globPattern
-					: taskDescription
-						? taskDescription
-						: state.status === "completed" &&
-								state.title &&
-								!isTodoWrite &&
-								!isTask &&
-								!isQuestion
-							? state.title
-							: null;
-
-	// Output text for completed tools (used for expandable output)
-	const outputText =
-		state.status === "completed" && "output" in state
-			? state.output?.trim() || null
-			: null;
+		: applyPatchLabel
+			? applyPatchLabel
+			: bashCommand
+				? bashCommand
+				: grepPattern
+					? grepPattern
+					: globPattern
+						? globPattern
+						: taskDescription
+							? taskDescription
+							: state.status === "completed" &&
+									state.title &&
+									!isTodoWrite &&
+									!isTask &&
+									!isQuestion
+								? state.title
+								: null;
 
 	const grepMatchCount =
 		isGrep && outputText
@@ -1698,10 +1947,18 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				})()
 			: null;
 
-	// Tool is expandable if it has output text and is completed, or has a diff
+	const diffSummary = diff ?? applyPatchSummary;
+	const hasApplyPatchView = applyPatchFiles.length > 0;
+	const hasBashOutput = isBash && !!bashOutputText?.trim();
+	const hasTextOutput = hasBashOutput || !!outputText;
+	// Tool is expandable if it has output text or has a diff
 	const hasDiffView = diff && diff.lines.length > 0;
 	const isExpandable =
-		((isBash || isGrep) && outputText) || hasDiffView || (isTask && taskInfo);
+		((isBash || isGrep || (isApplyPatch && !hasApplyPatchView)) &&
+			hasTextOutput) ||
+		hasDiffView ||
+		hasApplyPatchView ||
+		(isTask && taskInfo);
 
 	const hasExpandedContent =
 		(todos && todos.length > 0) || imageAttachments.length > 0;
@@ -1751,10 +2008,10 @@ function ToolPartView({ part }: { part: ToolPart }) {
 								{grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
 							</span>
 						)}
-						{diff && (
+						{diffSummary && (
 							<span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
-								<span className="text-emerald-500">+{diff.added}</span>
-								<span className="text-red-400">-{diff.removed}</span>
+								<span className="text-emerald-500">+{diffSummary.added}</span>
+								<span className="text-red-400">-{diffSummary.removed}</span>
 							</span>
 						)}
 						{isTask && taskDurationLabel && (
@@ -1793,22 +2050,36 @@ function ToolPartView({ part }: { part: ToolPart }) {
 							{grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
 						</span>
 					)}
-					{diff && (
+					{diffSummary && (
 						<span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
-							<span className="text-emerald-500">+{diff.added}</span>
-							<span className="text-red-400">-{diff.removed}</span>
+							<span className="text-emerald-500">+{diffSummary.added}</span>
+							<span className="text-red-400">-{diffSummary.removed}</span>
 						</span>
 					)}
 				</div>
 			)}
 			{/* Expanded bash output */}
-			{isExpandable && expanded && !hasDiffView && !isTask && outputText && (
-				<pre className="pl-7 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-auto">
-					{outputText}
-				</pre>
-			)}
+			{isExpandable &&
+				expanded &&
+				!hasDiffView &&
+				!hasApplyPatchView &&
+				!isTask &&
+				(isBash ? bashOutputText : outputText) && (
+					<pre
+						ref={toolOutputRef}
+						className="pl-7 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-auto"
+					>
+						{isBash ? bashOutputText : outputText}
+						{isBash && isRunning && (
+							<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+						)}
+					</pre>
+				)}
 			{/* Expanded diff view for edit/write tools */}
 			{hasDiffView && expanded && <DiffView lines={diff.lines} />}
+			{hasApplyPatchView && expanded && (
+				<ApplyPatchFilesView files={applyPatchFiles} />
+			)}
 			{/* Expanded task content */}
 			{isTask && expanded && taskInfo && (
 				<div

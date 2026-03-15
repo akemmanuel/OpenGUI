@@ -13,7 +13,7 @@ import { existsSync } from "node:fs";
 import { Agent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, normalize, sep } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 
 // ---------------------------------------------------------------------------
@@ -1260,9 +1260,38 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 	handleGlobalOp("opencode:skills", (conn) => conn.getSkills());
 
-	// --- File search (global) ---
+	// --- File search (directory-specific) ---
 
-	handleGlobalOp("opencode:find:files", (conn, query) => conn.findFiles(query));
+	ipcMain.handle("opencode:find:files", async (_event, directory, query) => {
+		try {
+			let conn = null;
+			if (directory) {
+				const norm = normalize(directory);
+				conn = connections.get(norm);
+				if (!conn) {
+					// Fallback: search for a connection whose directory is a prefix of the requested directory
+					// (handles subfolders and worktrees that might not have their own connection)
+					for (const [dir, c] of connections) {
+						if (
+							norm.startsWith(dir) &&
+							(norm.length === dir.length || norm[dir.length] === sep)
+						) {
+							conn = c;
+							break;
+						}
+					}
+				}
+			}
+
+			if (!conn) conn = getAnyConnection();
+			if (!conn) return { success: false, error: "No connection available" };
+
+			const data = await conn.findFiles(query);
+			return { success: true, data };
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
+	});
 
 	// --- Local server management ---
 

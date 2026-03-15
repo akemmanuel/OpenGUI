@@ -26,15 +26,19 @@ export const STORAGE_KEYS = {
 	RECENT_PROJECTS: "opencode:recentProjects",
 	OPEN_PROJECTS: "opencode:openProjects",
 	UNREAD_SESSIONS: "opencode:unreadSessionIds",
+	SESSION_DRAFTS: "opencode:sessionDrafts",
 	NOTIFICATIONS_ENABLED: "opencode:notificationsEnabled",
 	SESSION_META: "opencode:sessionMeta",
 	WORKTREE_PARENTS: "opencode:worktreeParents",
 	STT_ENDPOINT: "opencode:sttEndpoint",
 	RECENT_MODELS: "opencode:recentModels",
 	FAVORITE_MODELS: "opencode:favoriteModels",
+	MODEL_MAX_AGE_MONTHS: "opencode:modelMaxAgeMonths",
 	THEME: "theme",
 	RIGHT_SIDEBAR_OPEN: "opencode:rightSidebarOpen",
 	DISMISSED_UPDATE_VERSION: "opencode:dismissedUpdateVersion",
+	FILE_MANAGER: "opencode:fileManager",
+	TERMINAL: "opencode:terminal",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -69,7 +73,7 @@ export const MAX_TEXTAREA_HEIGHT_PX = 200;
 export const SMALL_WINDOW_BREAKPOINT_PX = 640;
 
 /** Number of sessions to show per "page" in the sidebar. */
-export const SESSION_PAGE_SIZE = 12;
+export const SESSION_PAGE_SIZE = 5;
 
 /** Maximum number of recent projects to remember. */
 export const MAX_RECENT_PROJECTS = 10;
@@ -77,8 +81,8 @@ export const MAX_RECENT_PROJECTS = 10;
 /** Maximum number of recent models to remember. */
 export const MAX_RECENT_MODELS = 8;
 
-/** Approximately six months in milliseconds (for model staleness). */
-export const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30.4375 * 6;
+/** Default maximum model age in months before it is hidden from the picker. */
+export const DEFAULT_MODEL_MAX_AGE_MONTHS = 6;
 
 /** Threshold in px – if the user is within this distance of the bottom we consider them "at bottom". */
 export const NEAR_BOTTOM_PX = 80;

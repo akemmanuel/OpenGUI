@@ -46,10 +46,8 @@ import {
 } from "react";
 import {
 	resolveVariant,
-	updateVariantSelections,
 	useVariant,
 	type VariantSelections,
-	variantKey,
 } from "@/hooks/opencode/use-variant";
 import {
 	DEFAULT_SERVER_URL,
@@ -66,11 +64,11 @@ import {
 	storageSetOrRemove,
 } from "@/lib/safe-storage";
 import {
-	DEFAULT_AGENT_NAME,
-	findModel,
-	getErrorMessage,
-	isSelectableAgent,
-} from "@/lib/utils";
+	getSessionDrafts,
+	persistSessionDrafts,
+	type SessionDraftMap,
+} from "@/lib/session-drafts";
+import { getErrorMessage } from "@/lib/utils";
 import type {
 	BridgeEvent,
 	ConnectionConfig,
@@ -362,6 +360,8 @@ export interface OpenCodeState {
 	temporarySessions: Set<string>;
 	/** Set of session IDs that have unread content (finished generating while not active) */
 	unreadSessionIds: Set<string>;
+	/** Local-only unsent textarea drafts keyed by session or draft directory. */
+	sessionDrafts: SessionDraftMap;
 	/** Local-only session metadata (colors, tags) keyed by session ID */
 	sessionMeta: SessionMetaMap;
 	/** Maps worktree directory -> metadata incl. parent project directory (local-only) */
@@ -444,6 +444,7 @@ const initialState: OpenCodeState = {
 	draftIsTemporary: false,
 	temporarySessions: new Set(),
 	unreadSessionIds: getUnreadSessionIds(),
+	sessionDrafts: getSessionDrafts(),
 	sessionMeta: getSessionMetaMap(),
 	worktreeParents: getWorktreeParents(),
 	pendingWorktreeCleanup: null,
@@ -473,6 +474,8 @@ type Action =
 			payload: { directory: string; sessions: Session[] };
 	  }
 	| { type: "SET_ACTIVE_SESSION"; payload: string | null }
+	| { type: "SET_SESSION_DRAFT"; payload: { key: string; text: string } }
+	| { type: "CLEAR_SESSION_DRAFT"; payload: string }
 	| { type: "SET_MESSAGES"; payload: MessageEntry[] }
 	| { type: "SET_BUSY"; payload: boolean }
 	| { type: "SET_ERROR"; payload: string | null }
@@ -933,6 +936,27 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			};
 		}
 
+		case "SET_SESSION_DRAFT": {
+			const { key, text } = action.payload;
+			const trimmed = text.trim();
+			if (trimmed.length === 0) {
+				if (!(key in state.sessionDrafts)) return state;
+				const { [key]: _removed, ...rest } = state.sessionDrafts;
+				return { ...state, sessionDrafts: rest };
+			}
+			if (state.sessionDrafts[key] === text) return state;
+			return {
+				...state,
+				sessionDrafts: { ...state.sessionDrafts, [key]: text },
+			};
+		}
+
+		case "CLEAR_SESSION_DRAFT": {
+			if (!(action.payload in state.sessionDrafts)) return state;
+			const { [action.payload]: _removed, ...rest } = state.sessionDrafts;
+			return { ...state, sessionDrafts: rest };
+		}
+
 		case "SET_MESSAGES": {
 			// Build a lookup of existing messages (may have been populated from
 			// the session buffer + live deltas that arrived during the fetch).
@@ -1120,6 +1144,8 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			nextTemp.delete(deletedId);
 			const nextUnread = new Set(state.unreadSessionIds);
 			nextUnread.delete(deletedId);
+			const nextDrafts = { ...state.sessionDrafts };
+			delete nextDrafts[`session:${deletedId}`];
 			return {
 				...state,
 				sessions: state.sessions.filter((s) => s.id !== deletedId),
@@ -1127,6 +1153,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				_sessionBuffers: remainingBuffers,
 				temporarySessions: nextTemp,
 				unreadSessionIds: nextUnread,
+				sessionDrafts: nextDrafts,
 				_deletedSessionIds: nextDeleted,
 				...(state.activeSessionId === deletedId
 					? { activeSessionId: null, messages: [], isBusy: false }
@@ -1165,76 +1192,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			}
 			const exists = state.messages.some((m) => m.info.id === msg.id);
 
-			// Sync selectedModel when a new assistant message arrives with model info
-			let modelPatch: { selectedModel: SelectedModel } | undefined;
-			if (
-				msg.role === "assistant" &&
-				"providerID" in msg &&
-				"modelID" in msg &&
-				msg.providerID &&
-				msg.modelID
-			) {
-				const candidate: SelectedModel = {
-					providerID: msg.providerID,
-					modelID: msg.modelID,
-				};
-				if (
-					findModel(state.providers, candidate.providerID, candidate.modelID)
-				) {
-					modelPatch = { selectedModel: candidate };
-				}
-			}
-
-			// Sync selectedAgent when a new assistant message arrives
-			let agentPatch: { selectedAgent: string | null } | undefined;
-			if (msg.role === "assistant" && "agent" in msg && msg.agent) {
-				const valid = state.agents.some(
-					(a) => a.name === msg.agent && isSelectableAgent(a),
-				);
-				if (valid) {
-					agentPatch = {
-						selectedAgent: msg.agent === DEFAULT_AGENT_NAME ? null : msg.agent,
-					};
-				}
-			}
-
-			// Sync variant when a new assistant message arrives
-			let variantPatch: { variantSelections: VariantSelections } | undefined;
-			if (
-				msg.role === "assistant" &&
-				"variant" in msg &&
-				modelPatch?.selectedModel
-			) {
-				const key = variantKey(
-					modelPatch.selectedModel.providerID,
-					modelPatch.selectedModel.modelID,
-				);
-				variantPatch = {
-					variantSelections: updateVariantSelections(
-						state.variantSelections,
-						key,
-						msg.variant ? (msg.variant as string) : undefined,
-					),
-				};
-			}
-
 			if (exists) {
 				return {
 					...state,
 					messages: state.messages.map((m) =>
 						m.info.id === msg.id ? { ...m, info: msg } : m,
 					),
-					...modelPatch,
-					...agentPatch,
-					...variantPatch,
 				};
 			}
 			return {
 				...state,
 				messages: [...state.messages, { info: msg, parts: [] }],
-				...modelPatch,
-				...agentPatch,
-				...variantPatch,
 			};
 		}
 
@@ -1875,6 +1843,7 @@ interface SessionContextValue {
 	draftIsTemporary: boolean;
 	temporarySessions: Set<string>;
 	unreadSessionIds: Set<string>;
+	sessionDrafts: SessionDraftMap;
 	sessionMeta: SessionMetaMap;
 	childSessions: OpenCodeState["childSessions"];
 	recentProjects: RecentProject[];
@@ -1923,7 +1892,7 @@ interface ActionsContextValue {
 		images?: string[],
 		mode?: QueueMode,
 	) => Promise<void>;
-	findFiles: (query: string) => Promise<string[]>;
+	findFiles: (directory: string | null, query: string) => Promise<string[]>;
 	sendCommand: (command: string, args: string) => Promise<void>;
 	abortSession: () => Promise<void>;
 	respondPermission: (response: "once" | "always" | "reject") => Promise<void>;
@@ -1944,6 +1913,8 @@ interface ActionsContextValue {
 		text: string,
 	) => void;
 	sendQueuedNow: (sessionId: string, promptId: string) => Promise<void>;
+	setSessionDraft: (key: string, text: string) => void;
+	clearSessionDraft: (key: string) => void;
 	openDirectory: () => Promise<string | null>;
 	connectToProject: (directory: string, serverUrl?: string) => Promise<void>;
 	startDraftSession: (directory: string) => void;
@@ -2015,75 +1986,6 @@ function useDesktopNotification(
 // Helpers: find model in providers
 // ---------------------------------------------------------------------------
 
-/**
- * Extract the model used in the last assistant message.
- * Returns null if no assistant message with model info is found.
- */
-function extractModelFromMessages(
-	messages: MessageEntry[],
-	providers: Provider[],
-): SelectedModel | null {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i]?.info;
-		if (
-			msg?.role === "assistant" &&
-			"providerID" in msg &&
-			"modelID" in msg &&
-			msg.providerID &&
-			msg.modelID
-		) {
-			const candidate: SelectedModel = {
-				providerID: msg.providerID,
-				modelID: msg.modelID,
-			};
-			// Only return if the model still exists in available providers
-			if (findModel(providers, candidate.providerID, candidate.modelID)) {
-				return candidate;
-			}
-		}
-	}
-	return null;
-}
-
-/**
- * Walk messages backward and return the agent name from the last assistant
- * message whose agent still exists and is selectable.
- * Returns `null` when the agent is the default ("build") or not found.
- */
-function extractAgentFromMessages(
-	messages: MessageEntry[],
-	agents: Agent[],
-): string | null {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i]?.info;
-		if (msg?.role === "assistant" && "agent" in msg && msg.agent) {
-			const exists = agents.some(
-				(a) => a.name === msg.agent && isSelectableAgent(a),
-			);
-			if (exists) {
-				return msg.agent === DEFAULT_AGENT_NAME ? null : msg.agent;
-			}
-		}
-	}
-	return null;
-}
-
-/**
- * Walk messages backward and return the variant string from the last
- * assistant message that carried one. Returns `undefined` when not found.
- */
-function extractVariantFromMessages(
-	messages: MessageEntry[],
-): string | undefined {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i]?.info;
-		if (msg?.role === "assistant" && "variant" in msg && msg.variant) {
-			return msg.variant as string;
-		}
-	}
-	return undefined;
-}
-
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -2098,8 +2000,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const expectedDirectoriesRef = useRef<Set<string>>(new Set());
 
 	// Keep refs so selectSession can read current values without stale closures
-	const providersRef = useRef(state.providers);
-	providersRef.current = state.providers;
 	const agentsRef = useRef(state.agents);
 	agentsRef.current = state.agents;
 	const variantSelectionsRef = useRef(state.variantSelections);
@@ -2272,6 +2172,10 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		persistUnreadSessionIds(state.unreadSessionIds);
 	}, [state.unreadSessionIds]);
+
+	useEffect(() => {
+		persistSessionDrafts(state.sessionDrafts);
+	}, [state.sessionDrafts]);
 
 	// Request notification permission on startup
 	useEffect(() => {
@@ -2540,6 +2444,30 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 						),
 					),
 				);
+
+				// Auto-open all registered worktrees so they appear in the sidebar
+				// without requiring the user to manually click "Open".
+				const worktreeParentMap = getWorktreeParents();
+				const projectByDir = new Map(projects.map((p) => [p.directory, p]));
+				const worktreeEntries = Object.entries(worktreeParentMap);
+				if (worktreeEntries.length > 0) {
+					await Promise.allSettled(
+						worktreeEntries.map(([worktreeDir, meta]) => {
+							const parent = projectByDir.get(meta.parentDir);
+							return addProject(
+								{
+									baseUrl:
+										parent?.serverUrl ??
+										storageGet(STORAGE_KEYS.SERVER_URL) ??
+										DEFAULT_SERVER_URL,
+									directory: worktreeDir,
+									username: parent?.username,
+								},
+								{ suppressError: true },
+							);
+						}),
+					);
+				}
 			} catch {
 				/* ignore localStorage errors */
 			}
@@ -2675,43 +2603,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 							/* best-effort child session fetch */
 						});
 				}
-			}
-
-			// For sessions with history, sync model/agent/variant from server data.
-			// For empty (new) sessions, reset agent to default but keep the model.
-			if (messages.length > 0) {
-				// Sync model
-				const sessionModel = extractModelFromMessages(
-					messages,
-					providersRef.current,
-				);
-				if (sessionModel) {
-					dispatch({ type: "SET_SELECTED_MODEL", payload: sessionModel });
-				}
-
-				// Sync agent
-				const sessionAgent = extractAgentFromMessages(
-					messages,
-					agentsRef.current,
-				);
-				dispatch({ type: "SET_SELECTED_AGENT", payload: sessionAgent });
-
-				// Sync variant
-				if (sessionModel) {
-					const sessionVariant = extractVariantFromMessages(messages);
-					const key = variantKey(sessionModel.providerID, sessionModel.modelID);
-					dispatch({
-						type: "SET_VARIANT_SELECTIONS",
-						payload: updateVariantSelections(
-							variantSelectionsRef.current,
-							key,
-							sessionVariant,
-						),
-					});
-				}
-			} else {
-				// New/empty session: reset agent to default, keep model
-				dispatch({ type: "SET_SELECTED_AGENT", payload: null });
 			}
 		},
 		[bridge, cleanupTemporarySession],
@@ -3030,10 +2921,17 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	);
 
 	const findFiles = useCallback(
-		async (query: string): Promise<string[]> => {
+		async (directory: string | null, query: string): Promise<string[]> => {
 			if (!bridge) return [];
-			const res = await bridge.findFiles(query);
-			if (!res.success) return [];
+			const res = await bridge.findFiles(directory, query);
+			if (!res.success) {
+				console.error("[findFiles] bridge request failed", {
+					directory,
+					query,
+					error: res.error,
+				});
+				return [];
+			}
 			return res.data ?? [];
 		},
 		[bridge],
@@ -3214,7 +3112,6 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		(directory: string) => {
 			cleanupTemporarySession();
 			dispatch({ type: "START_DRAFT_SESSION", payload: directory });
-			dispatch({ type: "SET_SELECTED_AGENT", payload: null });
 		},
 		[cleanupTemporarySession],
 	);
@@ -3314,6 +3211,14 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		},
 		[state.queuedPrompts, bridge, dispatchPromptDirect],
 	);
+
+	const setSessionDraft = useCallback((key: string, text: string) => {
+		dispatch({ type: "SET_SESSION_DRAFT", payload: { key, text } });
+	}, []);
+
+	const clearSessionDraft = useCallback((key: string) => {
+		dispatch({ type: "CLEAR_SESSION_DRAFT", payload: key });
+	}, []);
 
 	const revertToMessage = useCallback(
 		async (messageID: string) => {
@@ -3443,6 +3348,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			draftIsTemporary: state.draftIsTemporary,
 			temporarySessions: state.temporarySessions,
 			unreadSessionIds: state.unreadSessionIds,
+			sessionDrafts: state.sessionDrafts,
 			sessionMeta: state.sessionMeta,
 			childSessions: state.childSessions,
 			recentProjects: state.recentProjects,
@@ -3461,6 +3367,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			state.draftIsTemporary,
 			state.temporarySessions,
 			state.unreadSessionIds,
+			state.sessionDrafts,
 			state.sessionMeta,
 			state.childSessions,
 			state.recentProjects,
@@ -3538,6 +3445,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			reorderQueue,
 			updateQueuedPrompt,
 			sendQueuedNow,
+			setSessionDraft,
+			clearSessionDraft,
 			openDirectory,
 			connectToProject,
 			startDraftSession,
@@ -3579,6 +3488,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			reorderQueue,
 			updateQueuedPrompt,
 			sendQueuedNow,
+			setSessionDraft,
+			clearSessionDraft,
 			openDirectory,
 			connectToProject,
 			startDraftSession,

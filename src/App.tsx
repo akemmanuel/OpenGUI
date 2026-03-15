@@ -1,5 +1,13 @@
-import { AlertCircle, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+	AlertCircle,
+	ChevronDown,
+	ChevronUp,
+	ExternalLink,
+	GitMerge,
+	X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { Button } from "@/components/ui/button";
@@ -20,7 +28,8 @@ import {
 	useSessionState,
 } from "@/hooks/use-opencode";
 import { useUpdateCheck } from "@/hooks/use-update-check";
-import { computeTokenTotal } from "@/lib/utils";
+import { POST_MERGE_DELAY_MS } from "@/lib/constants";
+import { buildPRUrl, computeTokenTotal, openExternalLink } from "@/lib/utils";
 import { AppSidebar } from "./components/AppSidebar";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
@@ -39,6 +48,9 @@ function AppContent() {
 		updateQueuedPrompt,
 		sendQueuedNow,
 		cycleVariant,
+		startDraftSession,
+		removeProject,
+		unregisterWorktree,
 		revertToMessage,
 		unrevert,
 	} = useActions();
@@ -51,15 +63,43 @@ function AppContent() {
 		draftSessionDirectory,
 	} = useSessionState();
 	const { providers, selectedModel, providerDefaults } = useModelState();
-	const { connections, bootState, bootError, bootLogs, lastError } =
-		useConnectionState();
+	const {
+		connections,
+		bootState,
+		bootError,
+		bootLogs,
+		lastError,
+		worktreeParents,
+	} = useConnectionState();
 	const [logsExpanded, setLogsExpanded] = useState(false);
+	const [mergeInfo, setMergeInfo] = useState<{
+		mainDir: string;
+		branch: string;
+		worktreePath: string;
+	} | null>(null);
+	const [activeWorktreeRemoteUrl, setActiveWorktreeRemoteUrl] = useState<
+		string | null
+	>(null);
+	const fixWithAiTimeoutRef = useRef<number | null>(null);
 
 	// Find the active session object (for revert state)
 	const activeSession = useMemo(
 		() => sessions.find((s) => s.id === sessionActiveId),
 		[sessions, sessionActiveId],
 	);
+
+	const activeSessionDirectory =
+		activeSession?.directory ?? draftSessionDirectory ?? null;
+	const activeWorktreeInfo = useMemo(() => {
+		if (!activeSessionDirectory) return null;
+		const meta = worktreeParents[activeSessionDirectory];
+		if (!meta) return null;
+		return {
+			mainDir: meta.parentDir,
+			branch: meta.branch,
+			worktreePath: activeSessionDirectory,
+		};
+	}, [activeSessionDirectory, worktreeParents]);
 
 	// Find the last user message (for undo keybind), respecting revert state
 	const revertToLastMessage = useCallback(() => {
@@ -89,6 +129,15 @@ function AppContent() {
 		window.addEventListener("keydown", handleUndoRedo);
 		return () => window.removeEventListener("keydown", handleUndoRedo);
 	}, [revertToLastMessage, unrevert]);
+
+	useEffect(() => {
+		return () => {
+			if (fixWithAiTimeoutRef.current !== null) {
+				window.clearTimeout(fixWithAiTimeoutRef.current);
+				fixWithAiTimeoutRef.current = null;
+			}
+		};
+	}, []);
 
 	// Ctrl+T: cycle model variant (low / medium / high / default)
 	useEffect(() => {
@@ -151,6 +200,25 @@ function AppContent() {
 	const isConnected = hasAnyConnection(connections);
 	const isBooting =
 		bootState === "checking-server" || bootState === "starting-server";
+
+	useEffect(() => {
+		let cancelled = false;
+		const git = window.electronAPI?.git;
+		const mainDir = activeWorktreeInfo?.mainDir;
+		if (!git || !mainDir) {
+			setActiveWorktreeRemoteUrl(null);
+			return;
+		}
+		void git.getRemoteUrl(mainDir).then((res) => {
+			if (cancelled) return;
+			setActiveWorktreeRemoteUrl(
+				res.success && res.data ? (res.data ?? "") : null,
+			);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [activeWorktreeInfo?.mainDir]);
 
 	// Compute context usage percentage from the last assistant message's total
 	// token count and the model's context window limit.  "Total" includes
@@ -324,6 +392,36 @@ function AppContent() {
 						)}
 
 						{/* Chat area */}
+						{activeWorktreeInfo && (
+							<div className="border-b border-border bg-muted/20">
+								<div className="mx-auto flex max-w-2xl items-center justify-end gap-2 px-4 py-2">
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={() => setMergeInfo(activeWorktreeInfo)}
+									>
+										<GitMerge className="size-4" />
+										Merge
+									</Button>
+									<Button
+										variant="outline"
+										size="sm"
+										disabled={!activeWorktreeRemoteUrl}
+										onClick={() => {
+											if (!activeWorktreeRemoteUrl) return;
+											const url = buildPRUrl(
+												activeWorktreeRemoteUrl,
+												activeWorktreeInfo.branch,
+											);
+											if (url) openExternalLink(url);
+										}}
+									>
+										<ExternalLink className="size-4" />
+										Create PR
+									</Button>
+								</div>
+							</div>
+						)}
 						<MessageList />
 
 						{/* Queue list + Prompt input */}
@@ -382,7 +480,7 @@ function AppContent() {
 									contextCost={contextInfo.cost}
 									contextLimit={contextInfo.contextLimit}
 									onSubmit={(message, images, mode) => {
-										sendPrompt(message, images, mode);
+										return sendPrompt(message, images, mode);
 									}}
 									onStop={() => abortSession()}
 								/>
@@ -391,6 +489,49 @@ function AppContent() {
 					</div>
 				</div>
 			</SidebarInset>
+			<MergeDialog
+				open={mergeInfo !== null}
+				onOpenChange={(open) => {
+					if (!open) setMergeInfo(null);
+				}}
+				mainDirectory={mergeInfo?.mainDir ?? ""}
+				branch={mergeInfo?.branch ?? ""}
+				onMerged={async (deleteWt) => {
+					if (!mergeInfo) return;
+					if (deleteWt) {
+						unregisterWorktree(mergeInfo.worktreePath);
+						await removeProject(mergeInfo.worktreePath);
+						await window.electronAPI?.git?.removeWorktree(
+							mergeInfo.mainDir,
+							mergeInfo.worktreePath,
+						);
+					}
+					if (activeWorktreeInfo?.mainDir === mergeInfo.mainDir) {
+						const remoteRes = await window.electronAPI?.git?.getRemoteUrl(
+							mergeInfo.mainDir,
+						);
+						setActiveWorktreeRemoteUrl(
+							remoteRes?.success && remoteRes.data
+								? (remoteRes.data ?? "")
+								: null,
+						);
+					}
+				}}
+				onFixWithAI={(conflicts) => {
+					if (!mergeInfo) return;
+					startDraftSession(mergeInfo.mainDir);
+					if (fixWithAiTimeoutRef.current !== null) {
+						window.clearTimeout(fixWithAiTimeoutRef.current);
+					}
+					fixWithAiTimeoutRef.current = window.setTimeout(() => {
+						const fileList = conflicts.map((f) => `- ${f}`).join("\n");
+						sendPrompt(
+							`There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
+						);
+						fixWithAiTimeoutRef.current = null;
+					}, POST_MERGE_DELAY_MS);
+				}}
+			/>
 			<UpdateDialog update={updateCheck} />
 			<WorktreeCleanupDialog />
 		</>
