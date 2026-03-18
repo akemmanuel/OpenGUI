@@ -79,7 +79,9 @@ describe("session draft persistence", () => {
 
 		expect(
 			JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSION_DRAFTS) ?? ""),
-		).toEqual({ "session:a": "kept" });
+		).toEqual({
+			"session:a": "kept",
+		});
 	});
 
 	test("removes storage when all drafts are blank", () => {
