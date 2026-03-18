@@ -152,7 +152,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 
 	// Check server status on mount
 	useEffect(() => {
-		checkServerStatus();
+		void checkServerStatus();
 	}, [checkServerStatus]);
 
 	const handleStartServer = async () => {

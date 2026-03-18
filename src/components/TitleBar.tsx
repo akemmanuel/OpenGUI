@@ -88,7 +88,7 @@ export function TitleBar({
 
 	const handleDoubleClick = () => {
 		// The IPC "window:maximize" handler toggles between maximize/unmaximize
-		window.electronAPI?.maximize();
+		void window.electronAPI?.maximize();
 	};
 
 	return (

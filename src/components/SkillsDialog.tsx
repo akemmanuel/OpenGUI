@@ -93,7 +93,7 @@ function StringListEditor({
 					onKeyDown={(e) => {
 						if (e.key === "Enter") {
 							e.preventDefault();
-							handleAdd();
+							void handleAdd();
 						}
 					}}
 				/>
@@ -152,7 +152,7 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 	useEffect(() => {
 		if (open) {
 			setLoading(true);
-			refresh();
+			void refresh();
 		}
 	}, [open, refresh]);
 

@@ -85,7 +85,7 @@ export function getErrorMessage(
 /** Open a URL in the system browser via the Electron bridge, with fallback. */
 export function openExternalLink(url: string): void {
 	if (window.electronAPI?.openExternal) {
-		window.electronAPI.openExternal(url);
+		void window.electronAPI.openExternal(url);
 	} else {
 		window.open(url, "_blank", "noopener,noreferrer");
 	}
