@@ -1,14 +1,14 @@
 {
 	"name": "opengui",
 	"version": "0.2.6",
+	"private": false,
 	"description": "OpenGUI - A graphical interface for OpenCode",
+	"homepage": "https://github.com/akemmanuel/OpenGUI",
+	"license": "MIT",
 	"author": {
 		"name": "Emmanuel",
 		"email": "emmanuel@akemsoft.com"
 	},
-	"homepage": "https://github.com/akemmanuel/OpenGUI",
-	"private": false,
-	"license": "MIT",
 	"type": "module",
 	"main": "main.cjs",
 	"scripts": {
@@ -26,6 +26,32 @@
 		"lint": "bunx --bun biome check --write",
 		"lint:check": "bunx --bun biome check",
 		"format": "bunx --bun biome format --write"
+	},
+	"dependencies": {
+		"@opencode-ai/sdk": "^1.2.26",
+		"class-variance-authority": "^0.7.1",
+		"clsx": "^2.1.1",
+		"katex": "^0.16.38",
+		"lucide-react": "^0.577.0",
+		"radix-ui": "^1.4.3",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4",
+		"react-markdown": "^10.1.0",
+		"rehype-katex": "^7.0.1",
+		"remark-gfm": "^4.0.1",
+		"remark-math": "^6.0.0",
+		"shiki": "^3.23.0",
+		"tailwind-merge": "^3.5.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.15",
+		"@types/bun": "^1.3.10",
+		"@types/react": "^19.2.14",
+		"@types/react-dom": "^19.2.3",
+		"bun-plugin-tailwind": "^0.1.2",
+		"electron": "^40.8.2",
+		"tailwindcss": "^4.2.1",
+		"tw-animate-css": "^1.4.0"
 	},
 	"build": {
 		"appId": "com.opengui.app",
@@ -75,31 +101,5 @@
 		},
 		"nodeGypRebuild": false,
 		"npmRebuild": false
-	},
-	"dependencies": {
-		"@opencode-ai/sdk": "^1.2.26",
-		"class-variance-authority": "^0.7.1",
-		"clsx": "^2.1.1",
-		"katex": "^0.16.38",
-		"lucide-react": "^0.577.0",
-		"radix-ui": "^1.4.3",
-		"react": "^19.2.4",
-		"react-dom": "^19.2.4",
-		"react-markdown": "^10.1.0",
-		"rehype-katex": "^7.0.1",
-		"remark-gfm": "^4.0.1",
-		"remark-math": "^6.0.0",
-		"shiki": "^3.23.0",
-		"tailwind-merge": "^3.5.0"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "2.3.15",
-		"@types/bun": "^1.3.10",
-		"bun-plugin-tailwind": "^0.1.2",
-		"@types/react": "^19.2.14",
-		"@types/react-dom": "^19.2.3",
-		"electron": "^40.8.2",
-		"tailwindcss": "^4.2.1",
-		"tw-animate-css": "^1.4.0"
 	}
 }

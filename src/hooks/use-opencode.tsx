@@ -661,8 +661,7 @@ function mergeSnapshotPartWithExisting(
 	const prevPositions =
 		(prevRecord._deltaPositions as Record<string, number> | undefined) ?? {};
 	const mergedPositions = {
-		...((nextRecord._deltaPositions as Record<string, number> | undefined) ??
-			{}),
+		...(nextRecord._deltaPositions as Record<string, number> | undefined),
 	};
 
 	for (const [field, prevPosRaw] of Object.entries(prevPositions)) {
@@ -1167,7 +1166,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				// Store child session messages for live subagent step display
 				if (state.trackedChildSessionIds.has(msg.sessionID)) {
 					const childBuf = { ...state.childSessions };
-					const sessBuf = { ...(childBuf[msg.sessionID] ?? {}) };
+					const sessBuf = { ...childBuf[msg.sessionID] };
 					const entry = sessBuf[msg.id] ?? { info: msg, parts: {} };
 					sessBuf[msg.id] = { ...entry, info: msg };
 					childBuf[msg.sessionID] = sessBuf;
@@ -1177,7 +1176,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				// Do not gate on busySessionIds because event ordering is not guaranteed
 				// (message updates can arrive before session.status=busy is observed).
 				const buf = { ...state._sessionBuffers };
-				const sessBuf = { ...(buf[msg.sessionID] ?? {}) };
+				const sessBuf = { ...buf[msg.sessionID] };
 				const entry = sessBuf[msg.id] ?? { info: msg, parts: {} };
 				sessBuf[msg.id] = { ...entry, info: msg };
 				buf[msg.sessionID] = sessBuf;
@@ -1212,7 +1211,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				// Store child session parts for live subagent step display
 				if (state.trackedChildSessionIds.has(part.sessionID)) {
 					const childBuf = { ...state.childSessions };
-					const sessBuf = { ...(childBuf[part.sessionID] ?? {}) };
+					const sessBuf = { ...childBuf[part.sessionID] };
 					const entry = sessBuf[part.messageID] ?? {
 						info: {
 							id: part.messageID,
@@ -1228,7 +1227,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				// Buffer snapshot for non-active sessions.
 				// Do not gate on busySessionIds because event ordering is not guaranteed.
 				const buf = { ...state._sessionBuffers };
-				const sessBuf = { ...(buf[part.sessionID] ?? {}) };
+				const sessBuf = { ...buf[part.sessionID] };
 				const entry = sessBuf[part.messageID] ?? {
 					info: { id: part.messageID, sessionID: part.sessionID } as Message,
 					parts: {},

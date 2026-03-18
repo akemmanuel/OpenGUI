@@ -110,7 +110,10 @@ async function killServerProcess() {
 		try {
 			const out = execSync(
 				`netstat -ano | findstr :${LOCAL_SERVER_PORT} | findstr LISTENING`,
-				{ encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+				{
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "ignore"],
+				},
 			);
 			const match = out.trim().split(/\s+/).pop();
 			if (match) pid = Number.parseInt(match, 10);
