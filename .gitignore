@@ -40,3 +40,5 @@ config.json
 # Provider icon individual SVGs (intermediate build artifacts)
 # The sprite.svg and types.ts are the actual outputs
 src/components/provider-icons/svgs/
+
+.worktrees/
