@@ -119,7 +119,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 	useEffect(() => {
 		if (open) {
 			setLoading(true);
-			refresh();
+			void refresh();
 		}
 	}, [open, refresh]);
 

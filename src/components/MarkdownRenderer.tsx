@@ -22,7 +22,10 @@ const markdownComponents = {
 	}) {
 		const match = /language-(\w+)/.exec(className || "");
 		const language = match ? match[1] : "";
-		const code = String(children).replace(/\n$/, "");
+		const code = (typeof children === "string" ? children : "").replace(
+			/\n$/,
+			"",
+		);
 		const isBlock = !!language;
 
 		if (isBlock) {

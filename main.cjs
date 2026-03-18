@@ -53,9 +53,9 @@ function createWindow() {
 	});
 
 	if (isDev) {
-		mainWindow.loadURL(DEV_SERVER_URL);
+		void mainWindow.loadURL(DEV_SERVER_URL);
 	} else {
-		mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
+		void mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
 	}
 
 	mainWindow.once("ready-to-show", () => {
@@ -215,7 +215,7 @@ ipcMain.handle("dialog:openDirectory", async () => {
 	return result.filePaths[0] ?? null;
 });
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
 	createWindow();
 
 	// Load ESM opencode bridge (SDK is ESM-only)

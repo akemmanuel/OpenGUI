@@ -164,7 +164,7 @@ export function WorktreeDialog({
 								onChange={(e) => setNewBranch(e.target.value)}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" && effectiveBranch && worktreePath) {
-										handleCreate();
+										void handleCreate();
 									}
 								}}
 							/>

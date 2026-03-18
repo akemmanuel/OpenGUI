@@ -119,7 +119,7 @@ export function DialogConnectProvider({
 				}
 				setTimeout(poll, 2000);
 			};
-			poll();
+			void poll();
 		},
 		[bridge, providerID, onConnected],
 	);
@@ -137,7 +137,7 @@ export function DialogConnectProvider({
 						// Start polling
 						setOauthPolling(true);
 						pollingRef.current = true;
-						pollOAuth(methodIndex);
+						void pollOAuth(methodIndex);
 					}
 				} else {
 					setError(res.error ?? "Failed to start OAuth");
@@ -186,7 +186,7 @@ export function DialogConnectProvider({
 	useEffect(() => {
 		if (selectedMethod === "oauth" && !oauthData && authMethods.length === 1) {
 			const idx = authMethods.findIndex((m) => m.type === "oauth");
-			startOAuth(idx >= 0 ? idx : undefined);
+			void startOAuth(idx >= 0 ? idx : undefined);
 		}
 	}, [selectedMethod, oauthData, authMethods, startOAuth]);
 
@@ -224,7 +224,7 @@ export function DialogConnectProvider({
 							onClick={() => {
 								setSelectedMethod(method.type);
 								if (method.type === "oauth") {
-									startOAuth(idx);
+									void startOAuth(idx);
 								}
 							}}
 						>
@@ -254,7 +254,7 @@ export function DialogConnectProvider({
 							className="font-mono text-sm"
 							autoFocus
 							onKeyDown={(e) => {
-								if (e.key === "Enter") handleApiKeyConnect();
+								if (e.key === "Enter") void handleApiKeyConnect();
 							}}
 						/>
 					</div>
@@ -328,7 +328,7 @@ export function DialogConnectProvider({
 								disabled={connecting}
 								className="font-mono text-sm"
 								onKeyDown={(e) => {
-									if (e.key === "Enter") handleOAuthCode();
+									if (e.key === "Enter") void handleOAuthCode();
 								}}
 							/>
 							<Button

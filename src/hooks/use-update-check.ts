@@ -35,7 +35,7 @@ export function useUpdateCheck(): UpdateCheckResult {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-		(async () => {
+		void (async () => {
 			try {
 				const res = await fetch(GITHUB_RELEASES_URL, {
 					signal: controller.signal,

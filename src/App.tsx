@@ -109,7 +109,7 @@ function AppContent() {
 		const target = revertMsgId
 			? [...userMessages].reverse().find((m) => m.info.id < revertMsgId)
 			: userMessages[userMessages.length - 1];
-		if (target) revertToMessage(target.info.id);
+		if (target) void revertToMessage(target.info.id);
 	}, [activeSession, messages, revertToMessage]);
 
 	// Ctrl+Z: undo last message; Ctrl+Shift+Z: redo
@@ -121,7 +121,7 @@ function AppContent() {
 			if (tag === "INPUT" || tag === "TEXTAREA") return;
 			e.preventDefault();
 			if (e.shiftKey) {
-				unrevert();
+				void unrevert();
 			} else {
 				revertToLastMessage();
 			}
@@ -525,7 +525,7 @@ function AppContent() {
 					}
 					fixWithAiTimeoutRef.current = window.setTimeout(() => {
 						const fileList = conflicts.map((f) => `- ${f}`).join("\n");
-						sendPrompt(
+						void sendPrompt(
 							`There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
 						);
 						fixWithAiTimeoutRef.current = null;

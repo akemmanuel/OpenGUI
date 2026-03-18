@@ -121,7 +121,7 @@ export function AppSidebar() {
 				// Find the session to compare with its current title
 				const session = sessions.find((s) => s.id === editingSessionId);
 				if (trimmed !== (session?.title || "")) {
-					renameSession(editingSessionId, trimmed);
+					void renameSession(editingSessionId, trimmed);
 				}
 			}
 		}
@@ -308,7 +308,7 @@ export function AppSidebar() {
 								tooltip="Open project"
 								onClick={async () => {
 									const dir = await openDirectory();
-									if (dir) connectToProject(dir);
+									if (dir) void connectToProject(dir);
 								}}
 							>
 								<FolderOpen />
@@ -344,7 +344,7 @@ export function AppSidebar() {
 										<SidebarMenu>
 											<ContextMenu.Root
 												onOpenChange={(open) => {
-													if (open) refreshGitInfo(directory);
+													if (open) void refreshGitInfo(directory);
 												}}
 											>
 												<ContextMenu.Trigger asChild>
@@ -410,12 +410,12 @@ export function AppSidebar() {
 																className="opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
 																onClick={(e) => {
 																	e.stopPropagation();
-																	removeProject(directory);
+																	void removeProject(directory);
 																}}
 																onKeyDown={(e) => {
 																	if (e.key === "Enter" || e.key === " ") {
 																		e.stopPropagation();
-																		removeProject(directory);
+																		void removeProject(directory);
 																	}
 																}}
 															>
@@ -432,7 +432,7 @@ export function AppSidebar() {
 														<ContextMenu.Item
 															className={CTX_ITEM_CLASS}
 															onSelect={() => {
-																navigator.clipboard.writeText(directory);
+																void navigator.clipboard.writeText(directory);
 															}}
 														>
 															<Copy className="size-4" />
@@ -441,7 +441,7 @@ export function AppSidebar() {
 														<ContextMenu.Item
 															className={CTX_ITEM_CLASS}
 															onSelect={() => {
-																window.electronAPI?.openInFileBrowser(
+																void window.electronAPI?.openInFileBrowser(
 																	directory,
 																	storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
 																);
@@ -453,7 +453,7 @@ export function AppSidebar() {
 														<ContextMenu.Item
 															className={CTX_ITEM_CLASS}
 															onSelect={() => {
-																window.electronAPI?.openInTerminal(
+																void window.electronAPI?.openInTerminal(
 																	directory,
 																	storageGet(STORAGE_KEYS.TERMINAL) ?? "",
 																);
@@ -594,7 +594,9 @@ export function AppSidebar() {
 																												directory,
 																												wt.path,
 																											);
-																											refreshGitInfo(directory);
+																											void refreshGitInfo(
+																												directory,
+																											);
 																										}}
 																									>
 																										Remove
@@ -674,7 +676,7 @@ export function AppSidebar() {
 																			onClick={() => {
 																				if (editingSessionId === session.id)
 																					return;
-																				selectSession(session.id);
+																				void selectSession(session.id);
 																			}}
 																			className={`group/session min-w-0 ${colorBorderClass}`}
 																		>
@@ -781,7 +783,7 @@ export function AppSidebar() {
 																				className="ml-auto opacity-0 group-hover/session:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent"
 																				onClick={(e) => {
 																					e.stopPropagation();
-																					deleteSession(session.id);
+																					void deleteSession(session.id);
 																				}}
 																				onKeyDown={(e) => {
 																					if (
@@ -789,7 +791,7 @@ export function AppSidebar() {
 																						e.key === " "
 																					) {
 																						e.stopPropagation();
-																						deleteSession(session.id);
+																						void deleteSession(session.id);
 																					}
 																				}}
 																			>
@@ -898,7 +900,7 @@ export function AppSidebar() {
 											<button
 												type="button"
 												onClick={() => {
-													selectSession(session.id);
+													void selectSession(session.id);
 													setProjectPopover(null);
 												}}
 												className={`text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm min-w-0 ${
@@ -981,7 +983,7 @@ export function AppSidebar() {
 					// Connect to the worktree directory
 					await connectToProject(worktreePath);
 					// Refresh git info
-					refreshGitInfo(worktreeDialogDir);
+					void refreshGitInfo(worktreeDialogDir);
 					// Trigger setup detection dialog
 					setSetupWorktreePath(worktreePath);
 				}}
@@ -1008,7 +1010,7 @@ export function AppSidebar() {
 							mergeInfo.worktreePath,
 						);
 					}
-					refreshGitInfo(mergeInfo.mainDir);
+					void refreshGitInfo(mergeInfo.mainDir);
 				}}
 				onFixWithAI={(conflicts) => {
 					if (!mergeInfo) return;
@@ -1020,7 +1022,7 @@ export function AppSidebar() {
 					}
 					fixWithAiTimeoutRef.current = window.setTimeout(() => {
 						const fileList = conflicts.map((f) => `- ${f}`).join("\n");
-						sendPrompt(
+						void sendPrompt(
 							`There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
 						);
 						fixWithAiTimeoutRef.current = null;

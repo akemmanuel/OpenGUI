@@ -171,7 +171,7 @@ function waitForHealthy(timeoutMs = STARTUP_TIMEOUT) {
 			}
 			setTimeout(check, STARTUP_POLL_INTERVAL);
 		};
-		check();
+		void check();
 	});
 }
 
@@ -254,7 +254,7 @@ class OpenCodeConnection {
 			await this._healthCheck();
 			if (!this._isCurrent(lifecycle)) return;
 			this._setStatus({ state: "connected" });
-			this._startSSE(lifecycle);
+			void this._startSSE(lifecycle);
 			this._startHealthTimer(lifecycle);
 		} catch (err) {
 			if (!this._isCurrent(lifecycle)) return;
@@ -704,7 +704,7 @@ class OpenCodeConnection {
 				await this._healthCheck();
 				if (!this._isCurrent(lifecycle)) return;
 				this._setStatus({ state: "connected", error: null });
-				this._startSSE(lifecycle);
+				void this._startSSE(lifecycle);
 			} catch {
 				this._scheduleReconnect(lifecycle);
 			}
@@ -738,7 +738,7 @@ class OpenCodeConnection {
 					// before starting a fresh one to avoid overlapping streams.
 					this._abortController?.abort();
 					await new Promise((r) => setTimeout(r, 100));
-					this._startSSE(lifecycle);
+					void this._startSSE(lifecycle);
 				}
 			} catch {
 				// Server unreachable - actively trigger reconnect instead of
@@ -1332,6 +1332,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 
 			const MAX_LOG_BYTES = 8192;
 			let logBuffer = "";
+			/** @type {number | null} */
 			let earlyExitCode = null;
 
 			const appendLog = (chunk) => {
@@ -1397,7 +1398,7 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 					// Exit code 0 is normal when the binary daemonizes (spawns a
 					// background server and the launcher exits cleanly), so we
 					// keep the health-check timeout message instead.
-					errorMsg = `Server process exited with code ${earlyExitCode}`;
+					errorMsg = `Server process exited with code ${Number(earlyExitCode)}`;
 				}
 				return {
 					success: false,

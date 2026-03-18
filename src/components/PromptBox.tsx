@@ -500,7 +500,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
 			if (isDisabled) return;
 			if (event.target.files) {
-				appendImages(event.target.files);
+				void appendImages(event.target.files);
 			}
 			event.target.value = "";
 		};
@@ -532,7 +532,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			if (isDisabled) return;
 			setIsDragging(false);
 			if (e.dataTransfer.files.length > 0) {
-				appendImages(e.dataTransfer.files);
+				void appendImages(e.dataTransfer.files);
 			}
 		};
 
@@ -547,7 +547,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				}
 			}
 			if (imageFiles.length > 0) {
-				appendImages(imageFiles);
+				void appendImages(imageFiles);
 			}
 		};
 
@@ -1148,7 +1148,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 											disabled={isDisabled}
 											onClick={(e) => {
 												e.stopPropagation();
-												handleMicClick();
+												void handleMicClick();
 											}}
 											className={cn(
 												isRecording && "animate-pulse",

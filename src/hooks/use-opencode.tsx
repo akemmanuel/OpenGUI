@@ -2475,7 +2475,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
 		};
 
-		bootstrap();
+		void bootstrap();
 
 		return () => {
 			cancelled = true;
@@ -2662,7 +2662,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			// Then switch to the adjacent session (runs against the already-
 			// pruned list so there is no flicker)
 			if (needsSwitch && nextId) {
-				selectSession(nextId);
+				void selectSession(nextId);
 			}
 
 			bridge.deleteSession(id).catch(() => {
@@ -2986,7 +2986,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 
 		for (const sessionId of prevBusy) {
 			if (!nowBusy.has(sessionId)) {
-				dispatchNextQueued(sessionId);
+				void dispatchNextQueued(sessionId);
 				newlyIdle[sessionId] = true;
 			}
 		}
@@ -3007,7 +3007,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 				payload: { sessionID: sessionId },
 			});
 			if (bridge) {
-				bridge.abort(sessionId);
+				void bridge.abort(sessionId);
 			}
 		}
 	}, [state._afterPartTriggered, bridge]);

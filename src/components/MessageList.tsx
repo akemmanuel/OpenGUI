@@ -378,7 +378,7 @@ export function MessageList() {
 										size="sm"
 										onClick={async () => {
 											const dir = await openDirectory();
-											if (dir) connectToProject(dir);
+											if (dir) void connectToProject(dir);
 										}}
 									>
 										<FolderOpen className="size-4" />

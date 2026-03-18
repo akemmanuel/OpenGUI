@@ -109,7 +109,7 @@ export function SettingsProviders() {
 	}, [bridge]);
 
 	useEffect(() => {
-		refresh();
+		void refresh();
 	}, [refresh]);
 
 	const handleDisconnect = async (providerID: string) => {
