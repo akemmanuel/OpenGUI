@@ -19,6 +19,7 @@ import {
 	ChevronRight,
 	Circle,
 	CircleCheck,
+	Copy,
 	FileCode,
 	FileEdit,
 	FilePlus,
@@ -63,7 +64,11 @@ import {
 	useActions,
 	useSessionState,
 } from "@/hooks/use-opencode";
-import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
+import {
+	COPY_FEEDBACK_MS,
+	NEAR_BOTTOM_PX,
+	USER_MSG_COLLAPSE_CHARS,
+} from "@/lib/constants";
 import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
 import { abbreviatePath, cn } from "@/lib/utils";
 import logoDark from "../../opengui-dark.svg";
@@ -391,7 +396,11 @@ export function MessageList() {
 										<div key={project.directory}>
 											<Button
 												variant="ghost"
-												className="h-auto w-full justify-between px-6 py-2"
+												className={cn(
+													"h-auto w-full justify-between px-6 py-2 rounded-none",
+													index === 0 && "rounded-t-lg",
+													index === recentProjects.length - 1 && "rounded-b-lg",
+												)}
 												onClick={() =>
 													connectToProject(project.directory, project.serverUrl)
 												}
@@ -923,7 +932,7 @@ function ReasoningPartView({
 	const isThinking = !part.time.end;
 	const { isBusy } = useSessionState();
 	const [expanded, setExpanded] = useState(isThinking);
-	const preRef = useRef<HTMLPreElement>(null);
+	const contentRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		if (isThinking) {
@@ -935,8 +944,8 @@ function ReasoningPartView({
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
 	useEffect(() => {
-		if (isThinking && expanded && preRef.current) {
-			preRef.current.scrollTop = preRef.current.scrollHeight;
+		if (isThinking && expanded && contentRef.current) {
+			contentRef.current.scrollTop = contentRef.current.scrollHeight;
 		}
 	}, [part.text, isThinking, expanded]);
 
@@ -975,12 +984,14 @@ function ReasoningPartView({
 				</summary>
 			</details>
 			{expanded && (
-				<pre
-					ref={preRef}
-					className="pl-5 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-96 overflow-auto"
+				<div
+					ref={contentRef}
+					className="pl-5 pt-1 text-xs text-muted-foreground leading-relaxed max-h-96 overflow-auto"
 				>
-					{part.text.trim()}
-				</pre>
+					<div className="[&_.markdown-renderer]:text-xs [&_.markdown-renderer]:text-muted-foreground [&_.markdown-renderer_code]:text-[0.85em]">
+						<MarkdownRenderer content={part.text.trim()} />
+					</div>
+				</div>
 			)}
 		</div>
 	);
@@ -1726,6 +1737,7 @@ function ChildSessionParts({
 function ToolPartView({ part }: { part: ToolPart }) {
 	const { state } = part;
 	const [expanded, setExpanded] = useState(false);
+	const [copiedOutput, setCopiedOutput] = useState(false);
 	const autoExpandedRef = useRef(false);
 	const bashAutoExpandedRef = useRef(false);
 	const toolLower = part.tool.toLowerCase();
@@ -1850,6 +1862,15 @@ function ToolPartView({ part }: { part: ToolPart }) {
 			return;
 		toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
 	}, [isBash, expanded, bashOutputText]);
+
+	const handleCopyBashOutput = useCallback(() => {
+		if (!bashOutputText) return;
+		navigator.clipboard.writeText(bashOutputText).catch(() => {
+			// Clipboard API may fail silently in some contexts
+		});
+		setCopiedOutput(true);
+		setTimeout(() => setCopiedOutput(false), COPY_FEEDBACK_MS);
+	}, [bashOutputText]);
 
 	const hasDynamicLabel =
 		isRead ||
@@ -2065,15 +2086,38 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				!hasApplyPatchView &&
 				!isTask &&
 				(isBash ? bashOutputText : outputText) && (
-					<pre
-						ref={toolOutputRef}
-						className="pl-7 pt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-auto"
-					>
-						{isBash ? bashOutputText : outputText}
-						{isBash && isRunning && (
-							<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+					<div className="pl-7 pt-1">
+						{isBash && (
+							<div className="mb-1 flex justify-end">
+								<button
+									type="button"
+									onClick={handleCopyBashOutput}
+									className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+								>
+									{copiedOutput ? (
+										<>
+											<Check className="size-3" />
+											Copied
+										</>
+									) : (
+										<>
+											<Copy className="size-3" />
+											Copy output
+										</>
+									)}
+								</button>
+							</div>
 						)}
-					</pre>
+						<pre
+							ref={toolOutputRef}
+							className="text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-auto"
+						>
+							{isBash ? bashOutputText : outputText}
+							{isBash && isRunning && (
+								<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+							)}
+						</pre>
+					</div>
 				)}
 			{/* Expanded diff view for edit/write tools */}
 			{hasDiffView && expanded && <DiffView lines={diff.lines} />}
