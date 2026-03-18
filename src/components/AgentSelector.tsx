@@ -38,7 +38,14 @@ export function AgentSelector() {
 				<Bot className="size-3.5 shrink-0" />
 				<SelectValue placeholder="Agent" />
 			</SelectTrigger>
-			<SelectContent align="start" className="max-h-80">
+			<SelectContent
+				position="popper"
+				side="top"
+				align="start"
+				sideOffset={8}
+				collisionPadding={12}
+				className="max-h-80"
+			>
 				{primaryAgents.map((agent) => (
 					<SelectItem key={agent.name} value={agent.name} className="text-xs">
 						<span className="flex items-center gap-1.5">

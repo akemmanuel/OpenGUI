@@ -2557,6 +2557,8 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 
 	const selectSession = useCallback(
 		async (id: string | null) => {
+			if (id === activeSessionIdRef.current) return;
+
 			cleanupTemporarySession(id);
 
 			const requestId = ++selectSessionRequestRef.current;
