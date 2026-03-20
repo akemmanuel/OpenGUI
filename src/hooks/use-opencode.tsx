@@ -2529,8 +2529,14 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	temporarySessionsRef.current = state.temporarySessions;
 	const activeSessionIdRef = useRef(state.activeSessionId);
 	activeSessionIdRef.current = state.activeSessionId;
+	const draftSessionDirectoryRef = useRef(state.draftSessionDirectory);
+	draftSessionDirectoryRef.current = state.draftSessionDirectory;
+	const draftIsTemporaryRef = useRef(state.draftIsTemporary);
+	draftIsTemporaryRef.current = state.draftIsTemporary;
 	const busySessionIdsRef = useRef(state.busySessionIds);
 	busySessionIdsRef.current = state.busySessionIds;
+	const queuedPromptsRef = useRef(state.queuedPrompts);
+	queuedPromptsRef.current = state.queuedPrompts;
 	const sessionsRef = useRef(state.sessions);
 	sessionsRef.current = state.sessions;
 	const worktreeParentsRef = useRef(state.worktreeParents);
@@ -2713,16 +2719,14 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const ensureSessionFromDraft = useCallback(async (): Promise<
 		string | null
 	> => {
-		let sessionId = state.activeSessionId;
-		if (!sessionId && state.draftSessionDirectory) {
+		let sessionId = activeSessionIdRef.current;
+		const draftDirectory = draftSessionDirectoryRef.current;
+		if (!sessionId && draftDirectory) {
 			if (draftCreatingRef.current) return null;
 			draftCreatingRef.current = true;
-			const wasTemporary = state.draftIsTemporary;
+			const wasTemporary = draftIsTemporaryRef.current;
 			try {
-				const newSession = await createSession(
-					undefined,
-					state.draftSessionDirectory,
-				);
+				const newSession = await createSession(undefined, draftDirectory);
 				if (!newSession) {
 					draftCreatingRef.current = false;
 					return null;
@@ -2749,12 +2753,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			return null;
 		}
 		return sessionId;
-	}, [
-		state.activeSessionId,
-		state.draftSessionDirectory,
-		state.draftIsTemporary,
-		createSession,
-	]);
+	}, [createSession]);
 
 	/** Internal: send a prompt directly to the server (no queue check).
 	 *  Optional overrides allow queued prompts to use the model/agent/variant
@@ -2808,24 +2807,27 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const dispatchNextQueued = useCallback(
 		async (sessionId: string) => {
 			if (dispatchingRef.current.has(sessionId)) return;
-			const queue = state.queuedPrompts[sessionId];
+			const queue = queuedPromptsRef.current[sessionId];
 			if (!queue || queue.length === 0) return;
 
 			dispatchingRef.current.add(sessionId);
-			const next = queue[0];
-			if (!next) return;
-			dispatch({ type: "QUEUE_SHIFT", payload: { sessionID: sessionId } });
-			await dispatchPromptDirect(
-				sessionId,
-				next.text,
-				next.images,
-				next.model,
-				next.agent,
-				next.variant,
-			);
-			dispatchingRef.current.delete(sessionId);
+			try {
+				const next = queue[0];
+				if (!next) return;
+				dispatch({ type: "QUEUE_SHIFT", payload: { sessionID: sessionId } });
+				await dispatchPromptDirect(
+					sessionId,
+					next.text,
+					next.images,
+					next.model,
+					next.agent,
+					next.variant,
+				);
+			} finally {
+				dispatchingRef.current.delete(sessionId);
+			}
 		},
-		[state.queuedPrompts, dispatchPromptDirect],
+		[dispatchPromptDirect],
 	);
 
 	const sendPrompt = useCallback(
@@ -2839,7 +2841,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			// If session is busy, enqueue instead of sending directly.
 			// Read from refs to avoid stale closures when the user switches
 			// model/agent/variant right before pressing Enter.
-			if (state.busySessionIds.has(sessionId)) {
+			if (busySessionIdsRef.current.has(sessionId)) {
 				const snapModel = selectedModelRef.current;
 				const snapAgent = selectedAgentRef.current;
 				const snapVariant = resolveVariant(
@@ -2867,7 +2869,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 						payload: { sessionID: sessionId, prompt: queued },
 					});
 					// Move to front if there were already queued items
-					const existingQueue = state.queuedPrompts[sessionId] ?? [];
+					const existingQueue = queuedPromptsRef.current[sessionId] ?? [];
 					if (existingQueue.length > 0) {
 						dispatch({
 							type: "QUEUE_REORDER",
@@ -2885,7 +2887,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 						type: "QUEUE_ADD",
 						payload: { sessionID: sessionId, prompt: queued },
 					});
-					const existingQueue = state.queuedPrompts[sessionId] ?? [];
+					const existingQueue = queuedPromptsRef.current[sessionId] ?? [];
 					if (existingQueue.length > 0) {
 						dispatch({
 							type: "QUEUE_REORDER",
@@ -2912,13 +2914,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 
 			await dispatchPromptDirect(sessionId, text, images);
 		},
-		[
-			bridge,
-			state.busySessionIds,
-			state.queuedPrompts,
-			dispatchPromptDirect,
-			ensureSessionFromDraft,
-		],
+		[bridge, dispatchPromptDirect, ensureSessionFromDraft],
 	);
 
 	const findFiles = useCallback(

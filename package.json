@@ -27,7 +27,7 @@
 		"lint:fix": "oxlint --type-aware --fix"
 	},
 	"dependencies": {
-		"@opencode-ai/sdk": "^1.2.26",
+		"@opencode-ai/sdk": "^1.2.27",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"katex": "^0.16.38",
@@ -47,7 +47,7 @@
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"bun-plugin-tailwind": "^0.1.2",
-		"electron": "^40.8.2",
+		"electron": "^40.8.3",
 		"oxlint": "^1.56.0",
 		"oxlint-tsgolint": "^0.17.0",
 		"tailwindcss": "^4.2.1",

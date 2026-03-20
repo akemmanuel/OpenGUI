@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@font-face {
+	font-family: "OpenGUITerminal";
+	src: url("../src/assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -132,12 +140,12 @@
 	}
 
 	*::-webkit-scrollbar-thumb {
-		background: color-mix(in oklab, var(--foreground) 20%, transparent);
+		background: color-mix(in oklab, var(--foreground) 12%, transparent);
 		border-radius: 999px;
 	}
 
 	*::-webkit-scrollbar-thumb:hover {
-		background: color-mix(in oklab, var(--foreground) 35%, transparent);
+		background: color-mix(in oklab, var(--foreground) 25%, transparent);
 	}
 
 	*::-webkit-scrollbar-corner {
@@ -253,4 +261,27 @@
 	& > *:last-child {
 		@apply mb-0;
 	}
+}
+
+.terminal-output {
+	font-family:
+		"OpenGUITerminal", "JetBrains Mono", "Cascadia Mono", "Noto Sans Mono",
+		"DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace;
+	font-size: 13px;
+	line-height: 1.35;
+	font-variant-ligatures: none;
+	font-feature-settings:
+		"liga" 0,
+		"calt" 0;
+	letter-spacing: 0;
+	text-rendering: geometricPrecision;
+	-webkit-font-smoothing: auto;
+	-moz-osx-font-smoothing: auto;
+	font-kerning: none;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	max-width: 100%;
+	tab-size: 4;
+	font-weight: 400;
 }

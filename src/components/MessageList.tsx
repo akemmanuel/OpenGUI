@@ -19,7 +19,6 @@ import {
 	ChevronRight,
 	Circle,
 	CircleCheck,
-	Copy,
 	FileCode,
 	FileEdit,
 	FilePlus,
@@ -64,13 +63,14 @@ import {
 	useActions,
 	useSessionState,
 } from "@/hooks/use-opencode";
-import {
-	COPY_FEEDBACK_MS,
-	NEAR_BOTTOM_PX,
-	USER_MSG_COLLAPSE_CHARS,
-} from "@/lib/constants";
+import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
-import { abbreviatePath, cn } from "@/lib/utils";
+import {
+	abbreviatePath,
+	cn,
+	looksLikeTerminalOutput,
+	normalizeTerminalOutput,
+} from "@/lib/utils";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
 
@@ -105,6 +105,38 @@ function hasVisibleContent(entry: MessageEntry): boolean {
 	// Messages with no parts yet (still loading) should stay visible
 	if (entry.parts.length === 0) return true;
 	return false;
+}
+
+function TerminalOutput({
+	content,
+	className,
+	preRef,
+	trailingCursor = false,
+}: {
+	content: string;
+	className?: string;
+	preRef?: React.RefObject<HTMLPreElement | null>;
+	trailingCursor?: boolean;
+}) {
+	const normalizedContent = useMemo(
+		() => normalizeTerminalOutput(content),
+		[content],
+	);
+
+	return (
+		<pre
+			ref={preRef}
+			className={cn(
+				"terminal-output select-text w-full min-w-0 max-w-full text-muted-foreground overflow-y-auto overflow-x-hidden",
+				className,
+			)}
+		>
+			{normalizedContent}
+			{trailingCursor && (
+				<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+			)}
+		</pre>
+	);
 }
 
 export function MessageList() {
@@ -1713,11 +1745,21 @@ function ChildSessionParts({
 					const text = (part as TextPart).text;
 					if (!text) return null;
 					const isLast = idx === parts.length - 1;
+					const terminalLike = looksLikeTerminalOutput(text);
 					return (
 						<div key={part.id} className="text-xs">
-							<MarkdownRenderer content={text} />
-							{isRunning && isLast && (
-								<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+							{terminalLike ? (
+								<TerminalOutput
+									content={text}
+									trailingCursor={isRunning && isLast}
+								/>
+							) : (
+								<>
+									<MarkdownRenderer content={text} />
+									{isRunning && isLast && (
+										<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
+									)}
+								</>
 							)}
 						</div>
 					);
@@ -1727,7 +1769,11 @@ function ChildSessionParts({
 			{/* Fallback: show task output when no live text parts are available */}
 			{!hasText && fallbackOutput && (
 				<div className="text-xs">
-					<MarkdownRenderer content={fallbackOutput} />
+					{looksLikeTerminalOutput(fallbackOutput) ? (
+						<TerminalOutput content={fallbackOutput} />
+					) : (
+						<MarkdownRenderer content={fallbackOutput} />
+					)}
 				</div>
 			)}
 		</>
@@ -1737,7 +1783,6 @@ function ChildSessionParts({
 function ToolPartView({ part }: { part: ToolPart }) {
 	const { state } = part;
 	const [expanded, setExpanded] = useState(false);
-	const [copiedOutput, setCopiedOutput] = useState(false);
 	const autoExpandedRef = useRef(false);
 	const bashAutoExpandedRef = useRef(false);
 	const toolLower = part.tool.toLowerCase();
@@ -1862,15 +1907,6 @@ function ToolPartView({ part }: { part: ToolPart }) {
 			return;
 		toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
 	}, [isBash, expanded, bashOutputText]);
-
-	const handleCopyBashOutput = useCallback(() => {
-		if (!bashOutputText) return;
-		navigator.clipboard.writeText(bashOutputText).catch(() => {
-			// Clipboard API may fail silently in some contexts
-		});
-		setCopiedOutput(true);
-		setTimeout(() => setCopiedOutput(false), COPY_FEEDBACK_MS);
-	}, [bashOutputText]);
 
 	const hasDynamicLabel =
 		isRead ||
@@ -2087,36 +2123,12 @@ function ToolPartView({ part }: { part: ToolPart }) {
 				!isTask &&
 				(isBash ? bashOutputText : outputText) && (
 					<div className="pl-7 pt-1">
-						{isBash && (
-							<div className="mb-1 flex justify-end">
-								<button
-									type="button"
-									onClick={handleCopyBashOutput}
-									className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-								>
-									{copiedOutput ? (
-										<>
-											<Check className="size-3" />
-											Copied
-										</>
-									) : (
-										<>
-											<Copy className="size-3" />
-											Copy output
-										</>
-									)}
-								</button>
-							</div>
-						)}
-						<pre
-							ref={toolOutputRef}
-							className="text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-auto"
-						>
-							{isBash ? bashOutputText : outputText}
-							{isBash && isRunning && (
-								<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
-							)}
-						</pre>
+						<TerminalOutput
+							content={(isBash ? bashOutputText : outputText) ?? ""}
+							preRef={toolOutputRef}
+							trailingCursor={isBash && isRunning}
+							className="max-h-64"
+						/>
 					</div>
 				)}
 			{/* Expanded diff view for edit/write tools */}
@@ -2165,7 +2177,11 @@ function ToolPartView({ part }: { part: ToolPart }) {
 							)}
 							{taskInfo.output && (
 								<div className="text-xs">
-									<MarkdownRenderer content={taskInfo.output} />
+									{looksLikeTerminalOutput(taskInfo.output) ? (
+										<TerminalOutput content={taskInfo.output} />
+									) : (
+										<MarkdownRenderer content={taskInfo.output} />
+									)}
 								</div>
 							)}
 						</>

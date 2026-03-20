@@ -10,6 +10,7 @@ import {
 	GitBranch,
 	GitMerge,
 	MessageSquare,
+	Plus,
 	Settings,
 	ShieldAlert,
 	SquarePen,
@@ -34,6 +35,11 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import {
 	hasAnyConnection,
@@ -267,7 +273,7 @@ export function AppSidebar() {
 
 	return (
 		<Sidebar collapsible="icon" className="select-none relative">
-			<SidebarHeader className="border-b border-sidebar-border p-0 gap-0 group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:gap-2">
+			<SidebarHeader className="border-b border-sidebar-border p-0 gap-0 group-data-[collapsible=icon]:p-2">
 				<div
 					className="flex items-center justify-center gap-2 h-9 shrink-0 border-b border-sidebar-border group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:border-b-0"
 					style={
@@ -299,31 +305,27 @@ export function AppSidebar() {
 						className="h-5 block dark:hidden group-data-[collapsible=icon]:!hidden"
 					/>
 				</div>
-				<div className="hidden border-b border-sidebar-border -mx-2 group-data-[collapsible=icon]:block" />
-				{/* Add project button */}
-				{isConnected && (
-					<SidebarMenu className="p-2 group-data-[collapsible=icon]:p-0">
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								tooltip="Open project"
-								onClick={async () => {
-									const dir = await openDirectory();
-									if (dir) void connectToProject(dir);
-								}}
-							>
-								<FolderOpen />
-								<span>Open project</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
-				)}
 			</SidebarHeader>
 
 			<SidebarContent className="overflow-x-hidden">
 				{/* Project groups */}
 				{projectGroups.size > 0 && (
 					<SidebarGroup>
-						<SidebarGroupLabel>Your projects</SidebarGroupLabel>
+						<SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
+							Your projects
+							{isConnected && (
+								<button
+									type="button"
+									onClick={async () => {
+										const dir = await openDirectory();
+										if (dir) void connectToProject(dir);
+									}}
+									className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
+								>
+									<Plus className="h-4 w-4" />
+								</button>
+							)}
+						</SidebarGroupLabel>
 						<SidebarGroupContent>
 							{Array.from(projectGroups).map(([directory, dirSessions]) => {
 								const isCollapsed = collapsed[directory] ?? false;
@@ -371,6 +373,8 @@ export function AppSidebar() {
 														>
 															{isProjectConnecting ? (
 																<Spinner className="shrink-0 size-4 text-muted-foreground" />
+															) : sidebarState === "collapsed" ? (
+																<FolderOpen className="shrink-0 size-4" />
 															) : (
 																<ChevronRight
 																	className={`shrink-0 size-4 transition-transform ${
@@ -670,134 +674,147 @@ export function AppSidebar() {
 																	onDelete={() => deleteSession(session.id)}
 																>
 																	<SidebarMenuItem>
-																		<SidebarMenuButton
-																			tooltip={session.title}
-																			isActive={isActive}
-																			onClick={() => {
-																				if (editingSessionId === session.id)
-																					return;
-																				void selectSession(session.id);
-																			}}
-																			className={`group/session min-w-0 ${colorBorderClass}`}
-																		>
-																			<span className="relative shrink-0">
-																				{isBusy ? (
-																					<Spinner className="size-4 text-muted-foreground" />
-																				) : isWorktreeSession ? (
-																					<GitBranch className="size-4" />
-																				) : (
-																					<MessageSquare className="size-4" />
-																				)}
-																				{isUnread && !isBusy && (
-																					<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
-																				)}
-																				{hasUnsent && (
-																					<span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-amber-500 ring-1 ring-sidebar" />
-																				)}
-																			</span>
-																			{editingSessionId === session.id ? (
-																				<input
-																					ref={editInputRef}
-																					type="text"
-																					value={editValue}
-																					onChange={(e) =>
-																						setEditValue(e.target.value)
-																					}
-																					onKeyDown={(e) => {
-																						if (e.key === "Enter") {
-																							e.preventDefault();
-																							commitRename();
-																						} else if (e.key === "Escape") {
-																							e.preventDefault();
-																							cancelEditing();
-																						}
-																						e.stopPropagation();
+																		<Tooltip>
+																			<TooltipTrigger asChild>
+																				<SidebarMenuButton
+																					tooltip={session.title}
+																					isActive={isActive}
+																					onClick={() => {
+																						if (editingSessionId === session.id)
+																							return;
+																						void selectSession(session.id);
 																					}}
-																					onBlur={commitRename}
-																					onClick={(e) => e.stopPropagation()}
-																					onDoubleClick={(e) =>
-																						e.stopPropagation()
-																					}
-																					// biome-ignore lint/a11y/noAutofocus: intentional for inline rename
-																					autoFocus
-																					className="min-w-0 flex-1 truncate bg-transparent outline-none text-sm border-b border-primary"
-																				/>
-																			) : (
-																				// biome-ignore lint/a11y/useSemanticElements: double-click rename trigger on session title
-																				<span
-																					role="textbox"
-																					tabIndex={-1}
-																					className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
-																					onDoubleClick={(e) => {
-																						e.stopPropagation();
-																						startEditing(
-																							session.id,
-																							session.title || "",
-																						);
-																					}}
+																					className={`group/session min-w-0 ${colorBorderClass}`}
 																				>
-																					{session.title || "Untitled"}
-																				</span>
-																			)}
-																			{worktreeBranch && (
-																				<span className="shrink-0 rounded-full bg-purple-500/15 text-purple-500 px-1.5 py-0 text-[9px] font-medium truncate max-w-[4rem]">
-																					{worktreeBranch}
-																				</span>
-																			)}
-																			{tags.length > 0 && (
-																				<span className="shrink-0 flex gap-0.5 overflow-hidden max-w-[4rem]">
-																					{tags.slice(0, 2).map((tag) => (
+																					<span className="relative shrink-0">
+																						{isBusy ? (
+																							<Spinner className="size-4 text-muted-foreground" />
+																						) : isWorktreeSession ? (
+																							<GitBranch className="size-4" />
+																						) : (
+																							<MessageSquare className="size-4" />
+																						)}
+																						{isUnread && !isBusy && (
+																							<span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary" />
+																						)}
+																						{hasUnsent && (
+																							<span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-amber-500 ring-1 ring-sidebar" />
+																						)}
+																					</span>
+																					{editingSessionId === session.id ? (
+																						<input
+																							ref={editInputRef}
+																							type="text"
+																							value={editValue}
+																							onChange={(e) =>
+																								setEditValue(e.target.value)
+																							}
+																							onKeyDown={(e) => {
+																								if (e.key === "Enter") {
+																									e.preventDefault();
+																									commitRename();
+																								} else if (e.key === "Escape") {
+																									e.preventDefault();
+																									cancelEditing();
+																								}
+																								e.stopPropagation();
+																							}}
+																							onBlur={commitRename}
+																							onClick={(e) =>
+																								e.stopPropagation()
+																							}
+																							onDoubleClick={(e) =>
+																								e.stopPropagation()
+																							}
+																							// biome-ignore lint/a11y/noAutofocus: intentional for inline rename
+																							autoFocus
+																							className="min-w-0 flex-1 truncate bg-transparent outline-none text-sm border-b border-primary"
+																						/>
+																					) : (
+																						// biome-ignore lint/a11y/useSemanticElements: double-click rename trigger on session title
 																						<span
-																							key={tag}
-																							className="rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground truncate max-w-[3rem]"
+																							role="textbox"
+																							tabIndex={-1}
+																							className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
+																							onDoubleClick={(e) => {
+																								e.stopPropagation();
+																								startEditing(
+																									session.id,
+																									session.title || "",
+																								);
+																							}}
 																						>
-																							{tag}
-																						</span>
-																					))}
-																					{tags.length > 2 && (
-																						<span className="text-[9px] text-muted-foreground">
-																							+{tags.length - 2}
+																							{session.title || "Untitled"}
 																						</span>
 																					)}
-																				</span>
-																			)}
-																			{hasPermission && (
-																				<span className="rounded-full bg-orange-500/15 text-orange-500 text-[10px] font-bold">
-																					<ShieldAlert className="size-4" />
-																				</span>
-																			)}
-																			{hasQuestion && (
-																				<span className="rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold">
-																					<BadgeQuestionMark className="size-4" />
-																				</span>
-																			)}
-																			{queueCount > 0 && (
-																				<span className="shrink-0 rounded-full bg-primary/15 text-primary text-[10px] font-medium px-1.5 py-0.5 tabular-nums">
-																					{queueCount}
-																				</span>
-																			)}
-																			{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
-																			<div
-																				role="button"
-																				tabIndex={0}
-																				className="ml-auto opacity-0 group-hover/session:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent"
-																				onClick={(e) => {
-																					e.stopPropagation();
-																					void deleteSession(session.id);
-																				}}
-																				onKeyDown={(e) => {
-																					if (
-																						e.key === "Enter" ||
-																						e.key === " "
-																					) {
-																						e.stopPropagation();
-																						void deleteSession(session.id);
-																					}
-																				}}
+																					{worktreeBranch && (
+																						<span className="shrink-0 rounded-full bg-purple-500/15 text-purple-500 px-1.5 py-0 text-[9px] font-medium truncate max-w-[4rem]">
+																							{worktreeBranch}
+																						</span>
+																					)}
+																					{tags.length > 0 && (
+																						<span className="shrink-0 flex gap-0.5 overflow-hidden max-w-[4rem]">
+																							{tags.slice(0, 2).map((tag) => (
+																								<span
+																									key={tag}
+																									className="rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground truncate max-w-[3rem]"
+																								>
+																									{tag}
+																								</span>
+																							))}
+																							{tags.length > 2 && (
+																								<span className="text-[9px] text-muted-foreground">
+																									+{tags.length - 2}
+																								</span>
+																							)}
+																						</span>
+																					)}
+																					{hasPermission && (
+																						<span className="rounded-full bg-orange-500/15 text-orange-500 text-[10px] font-bold">
+																							<ShieldAlert className="size-4" />
+																						</span>
+																					)}
+																					{hasQuestion && (
+																						<span className="rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-bold">
+																							<BadgeQuestionMark className="size-4" />
+																						</span>
+																					)}
+																					{queueCount > 0 && (
+																						<span className="shrink-0 rounded-full bg-primary/15 text-primary text-[10px] font-medium px-1.5 py-0.5 tabular-nums">
+																							{queueCount}
+																						</span>
+																					)}
+																					{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
+																					<div
+																						role="button"
+																						tabIndex={0}
+																						className="ml-auto opacity-0 group-hover/session:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent"
+																						onClick={(e) => {
+																							e.stopPropagation();
+																							void deleteSession(session.id);
+																						}}
+																						onKeyDown={(e) => {
+																							if (
+																								e.key === "Enter" ||
+																								e.key === " "
+																							) {
+																								e.stopPropagation();
+																								void deleteSession(session.id);
+																							}
+																						}}
+																					>
+																						<Trash2 className="size-3" />
+																					</div>
+																				</SidebarMenuButton>
+																			</TooltipTrigger>
+																			<TooltipContent
+																				side="right"
+																				align="center"
+																				hidden={editingSessionId === session.id}
 																			>
-																				<Trash2 className="size-3" />
-																			</div>
-																		</SidebarMenuButton>
+																				{session.title || "Untitled"}
+																			</TooltipContent>
+																		</Tooltip>
 																	</SidebarMenuItem>
 																</SessionContextMenu>
 															);
