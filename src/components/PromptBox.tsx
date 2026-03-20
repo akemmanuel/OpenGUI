@@ -171,6 +171,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<
 			string | null
 		>(null);
+		const [currentProjectBranch, setCurrentProjectBranch] = React.useState("Branch");
 
 		// Queue mode: how a message is dispatched when the session is busy
 		const [queueMode, setQueueMode] = React.useState<QueueMode>("queue");
@@ -238,6 +239,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const { worktreeParents } = useConnectionState();
 		const syncingDraftRef = React.useRef(false);
 		const sessionDraftsRef = React.useRef(sessionDrafts);
+		const projectDir = React.useMemo(() => {
+			if (!draftSessionDirectory) return null;
+			const worktreeMeta = worktreeParents[draftSessionDirectory];
+			return worktreeMeta ? worktreeMeta.parentDir : draftSessionDirectory;
+		}, [draftSessionDirectory, worktreeParents]);
 
 		// Slash command popover state
 		const [showSlash, setShowSlash] = React.useState(false);
@@ -278,6 +284,32 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		React.useEffect(() => {
 			sessionDraftsRef.current = sessionDrafts;
 		}, [sessionDrafts]);
+
+		React.useEffect(() => {
+			if (!projectDir) {
+				setCurrentProjectBranch("Branch");
+				return;
+			}
+
+			let cancelled = false;
+			const git = window.electronAPI?.git;
+
+			if (!git) {
+				setCurrentProjectBranch("Branch");
+				return;
+			}
+
+			void git.currentBranch(projectDir).then((result) => {
+				if (cancelled) return;
+				setCurrentProjectBranch(
+					result.success && result.data ? result.data : "Branch",
+				);
+			});
+
+			return () => {
+				cancelled = true;
+			};
+		}, [projectDir]);
 
 		// Derive user message history from current session (newest first)
 		const userHistory = React.useMemo(
@@ -942,12 +974,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 							// Only show in blank (draft) sessions - never in sessions that have messages
 							if (!draftSessionDirectory || messages.length > 0) return null;
 
-							// Resolve the project root: if draftSessionDirectory is itself a
-							// worktree, look up its parent; otherwise it IS the parent.
-							const worktreeMeta = worktreeParents[draftSessionDirectory];
-							const projectDir = worktreeMeta
-								? worktreeMeta.parentDir
-								: draftSessionDirectory;
+							if (!projectDir) return null;
 
 							// Collect ALL worktrees that belong to this project
 							const worktrees = Object.entries(worktreeParents)
@@ -963,7 +990,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 								branch: string;
 								isMain: boolean;
 							}> = [
-								{ dir: projectDir, branch: "main", isMain: true },
+								{ dir: projectDir, branch: currentProjectBranch, isMain: true },
 								...worktrees,
 							];
 
@@ -990,15 +1017,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 												onClick={() => setDraftDirectory(opt.dir)}
 												className="text-xs"
 											>
-												<span className="flex min-w-0 flex-1 items-center gap-1.5">
-													{opt.isMain ? (
-														<span className="text-[10px] text-muted-foreground">
-															main
-														</span>
-													) : (
-														<span className="truncate">{opt.branch}</span>
-													)}
-												</span>
+											<span className="flex min-w-0 flex-1 items-center gap-1.5">
+												<span className="truncate">{opt.branch}</span>
+											</span>
 												{opt.dir === draftSessionDirectory && (
 													<Check className="ml-auto size-3 shrink-0" />
 												)}

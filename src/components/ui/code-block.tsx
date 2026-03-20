@@ -2,7 +2,6 @@ import { createHighlighterCore } from "@shikijs/core";
 import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { bundledLanguages } from "shiki/langs";
 import { COPY_FEEDBACK_MS, HIGHLIGHT_DEBOUNCE_MS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -11,9 +10,86 @@ import { cn } from "@/lib/utils";
 // ---------------------------------------------------------------------------
 
 type Highlighter = Awaited<ReturnType<typeof createHighlighterCore>>;
+type LanguageModule = { default: Parameters<Highlighter["loadLanguage"]>[0] };
+type LanguageLoader = () => Promise<LanguageModule>;
 
 let _highlighter: Highlighter | null = null;
 let _highlighterPromise: Promise<Highlighter> | null = null;
+
+const SUPPORTED_LANGUAGE_LOADERS: Record<
+	string,
+	{ canonical: string; load: LanguageLoader }
+> = {
+	ts: {
+		canonical: "typescript",
+		load: () => import("@shikijs/langs/typescript"),
+	},
+	typescript: {
+		canonical: "typescript",
+		load: () => import("@shikijs/langs/typescript"),
+	},
+	tsx: {
+		canonical: "tsx",
+		load: () => import("@shikijs/langs/tsx"),
+	},
+	js: {
+		canonical: "javascript",
+		load: () => import("@shikijs/langs/javascript"),
+	},
+	javascript: {
+		canonical: "javascript",
+		load: () => import("@shikijs/langs/javascript"),
+	},
+	json: {
+		canonical: "json",
+		load: () => import("@shikijs/langs/json"),
+	},
+	bash: {
+		canonical: "bash",
+		load: () => import("@shikijs/langs/bash"),
+	},
+	sh: {
+		canonical: "bash",
+		load: () => import("@shikijs/langs/bash"),
+	},
+	shell: {
+		canonical: "bash",
+		load: () => import("@shikijs/langs/bash"),
+	},
+	zsh: {
+		canonical: "bash",
+		load: () => import("@shikijs/langs/bash"),
+	},
+	md: {
+		canonical: "markdown",
+		load: () => import("@shikijs/langs/markdown"),
+	},
+	markdown: {
+		canonical: "markdown",
+		load: () => import("@shikijs/langs/markdown"),
+	},
+	py: {
+		canonical: "python",
+		load: () => import("@shikijs/langs/python"),
+	},
+	python: {
+		canonical: "python",
+		load: () => import("@shikijs/langs/python"),
+	},
+	go: {
+		canonical: "go",
+		load: () => import("@shikijs/langs/go"),
+	},
+};
+
+const loadedLanguages = new Set<string>();
+
+function normalizeLanguage(language: string): {
+	canonical: string;
+	load: LanguageLoader;
+} | null {
+	return SUPPORTED_LANGUAGE_LOADERS[language.trim().toLowerCase()] ?? null;
+}
 
 function getHighlighter(): Promise<Highlighter> {
 	if (_highlighter) return Promise.resolve(_highlighter);
@@ -41,16 +117,12 @@ async function highlight(
 ): Promise<string> {
 	const highlighter = await getHighlighter();
 
-	// Load the language on demand if not already loaded
-	const lang = language || "text";
-	if (
-		lang !== "text" &&
-		!highlighter.getLoadedLanguages().includes(lang) &&
-		bundledLanguages[lang as keyof typeof bundledLanguages]
-	) {
-		await highlighter.loadLanguage(
-			bundledLanguages[lang as keyof typeof bundledLanguages],
-		);
+	const normalized = normalizeLanguage(language || "text");
+	const lang = normalized?.canonical ?? "text";
+	if (normalized && !loadedLanguages.has(lang)) {
+		const languageModule = await normalized.load();
+		await highlighter.loadLanguage(languageModule.default);
+		loadedLanguages.add(lang);
 	}
 
 	const effectiveLang = highlighter.getLoadedLanguages().includes(lang)

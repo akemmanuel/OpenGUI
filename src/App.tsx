@@ -29,7 +29,12 @@ import {
 } from "@/hooks/use-opencode";
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { POST_MERGE_DELAY_MS } from "@/lib/constants";
-import { buildPRUrl, computeTokenTotal, openExternalLink } from "@/lib/utils";
+import {
+	buildPRUrl,
+	computeTokenTotal,
+	normalizeTerminalOutput,
+	openExternalLink,
+} from "@/lib/utils";
 import { AppSidebar } from "./components/AppSidebar";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
@@ -80,6 +85,10 @@ function AppContent() {
 	const [activeWorktreeRemoteUrl, setActiveWorktreeRemoteUrl] = useState<
 		string | null
 	>(null);
+	const normalizedBootLogs = useMemo(
+		() => (bootLogs ? normalizeTerminalOutput(bootLogs) : null),
+		[bootLogs],
+	);
 	const fixWithAiTimeoutRef = useRef<number | null>(null);
 
 	// Find the active session object (for revert state)
@@ -383,9 +392,9 @@ function AppContent() {
 										<X className="size-3" />
 									</Button>
 								</div>
-								{logsExpanded && bootLogs && (
-									<pre className="px-4 pb-3 text-xs text-destructive/80 max-h-48 overflow-auto whitespace-pre-wrap font-mono select-text">
-										{bootLogs}
+								{logsExpanded && normalizedBootLogs && (
+									<pre className="terminal-output w-full min-w-0 max-w-full px-4 pb-3 text-destructive/80 max-h-48 overflow-y-auto overflow-x-hidden select-text">
+										{normalizedBootLogs}
 									</pre>
 								)}
 							</div>
