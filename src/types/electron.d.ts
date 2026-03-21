@@ -314,6 +314,20 @@ export interface ElectronAPI {
 	/** Get the user's home directory path. */
 	getHomeDir: () => Promise<string>;
 
+	/** Open a project in a detached window. */
+	detachProject: (projectDir: string) => Promise<void>;
+
+	/** Returns the detached project directory or null if this window is not detached. */
+	getDetachedProject: () => string | null;
+
+	/** Returns the set of projects currently shown in detached windows. */
+	getDetachedProjects: () => Promise<string[]>;
+
+	/** Subscribe to detached project visibility changes. */
+	onDetachedProjectsChange: (
+		callback: (detachedProjects: string[]) => void,
+	) => () => void;
+
 	git?: GitBridge;
 	worktree?: WorktreeBridge;
 	opencode: OpenCodeBridge;

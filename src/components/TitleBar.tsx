@@ -59,7 +59,7 @@ function WindowButton({
 export function TitleBar({
 	onToggleLeftSidebar,
 }: {
-	onToggleLeftSidebar: () => void;
+	onToggleLeftSidebar?: () => void;
 }) {
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [platform, setPlatform] = useState<string | null>(null);
@@ -102,17 +102,19 @@ export function TitleBar({
 				className="absolute left-0 top-0 h-full flex items-center px-2"
 				style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 			>
-				<Button
-					data-sidebar="trigger"
-					data-slot="sidebar-trigger"
-					variant="ghost"
-					size="icon"
-					className="size-7"
-					onClick={onToggleLeftSidebar}
-				>
-					<PanelLeftIcon />
-					<span className="sr-only">Toggle Sidebar</span>
-				</Button>
+				{onToggleLeftSidebar && (
+					<Button
+						data-sidebar="trigger"
+						data-slot="sidebar-trigger"
+						variant="ghost"
+						size="icon"
+						className="size-7"
+						onClick={onToggleLeftSidebar}
+					>
+						<PanelLeftIcon />
+						<span className="sr-only">Toggle Sidebar</span>
+					</Button>
+				)}
 			</div>
 
 			<div

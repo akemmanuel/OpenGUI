@@ -786,7 +786,7 @@ class OpenCodeConnection {
 // Setup: called from main.cjs with (ipcMain, mainWindow)
 // ---------------------------------------------------------------------------
 
-export function setupOpenCodeBridge(ipcMain, getMainWindow) {
+export function setupOpenCodeBridge(ipcMain, getWindows) {
 	/** @type {Map<string, OpenCodeConnection>} directory -> connection */
 	const connections = new Map();
 
@@ -797,9 +797,10 @@ export function setupOpenCodeBridge(ipcMain, getMainWindow) {
 	const questionDirectoryMap = new Map();
 
 	function sendEvent(event) {
-		const win = getMainWindow();
-		if (win && !win.isDestroyed()) {
-			win.webContents.send("opencode:bridge-event", event);
+		for (const win of getWindows()) {
+			if (win && !win.isDestroyed()) {
+				win.webContents.send("opencode:bridge-event", event);
+			}
 		}
 	}
 

@@ -41,9 +41,10 @@ import { PromptBox } from "./components/PromptBox";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
-function AppContent() {
+function AppContent({ detachedProject }: { detachedProject?: string }) {
 	const leftSidebar = useSidebar();
 	const {
+		selectSession,
 		sendPrompt,
 		abortSession,
 		clearError,
@@ -82,6 +83,9 @@ function AppContent() {
 		branch: string;
 		worktreePath: string;
 	} | null>(null);
+	const [hiddenDetachedProjects, setHiddenDetachedProjects] = useState<
+		string[]
+	>([]);
 	const [activeWorktreeRemoteUrl, setActiveWorktreeRemoteUrl] = useState<
 		string | null
 	>(null);
@@ -98,7 +102,14 @@ function AppContent() {
 	);
 
 	const activeSessionDirectory =
-		activeSession?.directory ?? draftSessionDirectory ?? null;
+		activeSession?._projectDir ??
+		activeSession?.directory ??
+		draftSessionDirectory ??
+		null;
+	const hiddenDetachedProjectSet = useMemo(
+		() => new Set(hiddenDetachedProjects),
+		[hiddenDetachedProjects],
+	);
 	const activeWorktreeInfo = useMemo(() => {
 		if (!activeSessionDirectory) return null;
 		const meta = worktreeParents[activeSessionDirectory];
@@ -109,6 +120,40 @@ function AppContent() {
 			worktreePath: activeSessionDirectory,
 		};
 	}, [activeSessionDirectory, worktreeParents]);
+
+	useEffect(() => {
+		if (detachedProject) return;
+		let cancelled = false;
+		void window.electronAPI
+			?.getDetachedProjects()
+			.then((projects) => {
+				if (!cancelled && Array.isArray(projects)) {
+					setHiddenDetachedProjects(projects);
+				}
+			})
+			.catch(() => {});
+		const unsubscribe =
+			window.electronAPI?.onDetachedProjectsChange((projects) => {
+				setHiddenDetachedProjects(Array.isArray(projects) ? projects : []);
+			}) ?? (() => {});
+		return () => {
+			cancelled = true;
+			unsubscribe();
+		};
+	}, [detachedProject]);
+
+	useEffect(() => {
+		if (detachedProject) return;
+		if (!sessionActiveId || !activeSessionDirectory) return;
+		if (!hiddenDetachedProjectSet.has(activeSessionDirectory)) return;
+		void selectSession(null);
+	}, [
+		activeSessionDirectory,
+		sessionActiveId,
+		detachedProject,
+		hiddenDetachedProjectSet,
+		selectSession,
+	]);
 
 	// Find the last user message (for undo keybind), respecting revert state
 	const revertToLastMessage = useCallback(() => {
@@ -336,11 +381,18 @@ function AppContent() {
 
 	return (
 		<>
-			<AppSidebar />
+			<AppSidebar
+				detachedProject={detachedProject}
+				hiddenProjects={detachedProject ? undefined : hiddenDetachedProjects}
+			/>
 			<SidebarInset className="overflow-hidden">
 				<div className="flex flex-col h-full">
 					{/* Title bar spans full width */}
-					<TitleBar onToggleLeftSidebar={leftSidebar.toggleSidebar} />
+					<TitleBar
+						onToggleLeftSidebar={
+							detachedProject ? undefined : leftSidebar.toggleSidebar
+						}
+					/>
 
 					<div className="flex-1 flex flex-col min-w-0 min-h-0 select-none">
 						{/* Startup banner */}
@@ -431,7 +483,7 @@ function AppContent() {
 								</div>
 							</div>
 						)}
-						<MessageList />
+						<MessageList detachedProject={detachedProject} />
 
 						{/* Queue list + Prompt input */}
 						<div className="shrink-0 px-4 pb-3">
@@ -548,10 +600,12 @@ function AppContent() {
 }
 
 export function App() {
+	const detachedProject = window.electronAPI?.getDetachedProject() ?? undefined;
+
 	return (
-		<OpenCodeProvider>
+		<OpenCodeProvider detachedProject={detachedProject}>
 			<SidebarProvider className="!h-dvh">
-				<AppContent />
+				<AppContent detachedProject={detachedProject} />
 			</SidebarProvider>
 		</OpenCodeProvider>
 	);

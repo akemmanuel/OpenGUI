@@ -10,6 +10,7 @@ import {
 	GitBranch,
 	GitMerge,
 	MessageSquare,
+	Monitor,
 	Plus,
 	Settings,
 	ShieldAlert,
@@ -75,7 +76,13 @@ import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 
-export function AppSidebar() {
+export function AppSidebar({
+	detachedProject,
+	hiddenProjects,
+}: {
+	detachedProject?: string;
+	hiddenProjects?: string[];
+}) {
 	const { state: sidebarState } = useSidebar();
 	const {
 		selectSession,
@@ -152,8 +159,15 @@ export function AppSidebar() {
 	// Uses `_projectDir` (set by the bridge from the connection directory) instead
 	// of `session.directory` so that sessions are grouped correctly even when the
 	// server stores a slightly different path (symlinks, trailing slashes, etc.).
+	const hiddenProjectSet = useMemo(
+		() => new Set(hiddenProjects ?? []),
+		[hiddenProjects],
+	);
+
 	const projectGroups = useMemo(() => {
-		const openDirectories = Object.keys(connections);
+		const openDirectories = Object.keys(connections).filter((dir) =>
+			detachedProject ? dir === detachedProject : !hiddenProjectSet.has(dir),
+		);
 		const rootSessions = sessions.filter(
 			(s) =>
 				!s.parentID &&
@@ -176,7 +190,15 @@ export function AppSidebar() {
 			groups.get(groupDir)?.push(s);
 		}
 		return groups;
-	}, [sessions, connections, temporarySessions, worktreeParents, worktreeDirs]);
+	}, [
+		sessions,
+		connections,
+		temporarySessions,
+		worktreeParents,
+		worktreeDirs,
+		detachedProject,
+		hiddenProjectSet,
+	]);
 
 	// Worktree dialog state
 	const [worktreeDialogDir, setWorktreeDialogDir] = useState<string | null>(
@@ -264,6 +286,9 @@ export function AppSidebar() {
 	const popoverSessions = projectPopover
 		? (projectGroups.get(projectPopover.directory) ?? [])
 		: [];
+	const projectLabel = detachedProject
+		? getProjectName(detachedProject)
+		: "Your projects";
 
 	const hasUnsentDraft = useCallback(
 		(sessionId: string) =>
@@ -312,8 +337,8 @@ export function AppSidebar() {
 				{projectGroups.size > 0 && (
 					<SidebarGroup>
 						<SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
-							Your projects
-							{isConnected && (
+							{projectLabel}
+							{!detachedProject && isConnected && (
 								<button
 									type="button"
 									onClick={async () => {
@@ -406,25 +431,29 @@ export function AppSidebar() {
 																	<SquarePen className="size-3" />
 																</div>
 															)}
-															{/* Remove project */}
-															{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
-															<div
-																role="button"
-																tabIndex={0}
-																className="opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	void removeProject(directory);
-																}}
-																onKeyDown={(e) => {
-																	if (e.key === "Enter" || e.key === " ") {
-																		e.stopPropagation();
-																		void removeProject(directory);
-																	}
-																}}
-															>
-																<X className="size-3" />
-															</div>
+															{!detachedProject && (
+																<>
+																	{/* Remove project */}
+																	{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
+																	<div
+																		role="button"
+																		tabIndex={0}
+																		className="opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+																		onClick={(e) => {
+																			e.stopPropagation();
+																			void removeProject(directory);
+																		}}
+																		onKeyDown={(e) => {
+																			if (e.key === "Enter" || e.key === " ") {
+																				e.stopPropagation();
+																				void removeProject(directory);
+																			}
+																		}}
+																	>
+																		<X className="size-3" />
+																	</div>
+																</>
+															)}
 														</SidebarMenuButton>
 													</SidebarMenuItem>
 												</ContextMenu.Trigger>
@@ -466,6 +495,25 @@ export function AppSidebar() {
 															<Terminal className="size-4" />
 															<span>Open in terminal</span>
 														</ContextMenu.Item>
+
+														{!detachedProject && (
+															<>
+																<ContextMenu.Separator
+																	className={CTX_SEPARATOR_CLASS}
+																/>
+																<ContextMenu.Item
+																	className={CTX_ITEM_CLASS}
+																	onSelect={() => {
+																		void window.electronAPI?.detachProject(
+																			directory,
+																		);
+																	}}
+																>
+																	<Monitor className="size-4" />
+																	<span>Detach project</span>
+																</ContextMenu.Item>
+															</>
+														)}
 
 														{/* Git worktree options (only for git repos) */}
 														{isGitRepo[directory] && (
@@ -971,18 +1019,32 @@ export function AppSidebar() {
 				{/* Empty state when no projects at all */}
 				{projectGroups.size === 0 && (
 					<div className="px-4 py-8 text-center text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-						<p>No projects connected</p>
-						<p className="mt-1">
-							Click the <Settings className="inline size-3 align-text-bottom" />{" "}
-							icon below to start the server and add a project.
-						</p>
+						{detachedProject ? (
+							<>
+								<p>Project not connected</p>
+								<p className="mt-1 truncate">
+									{abbreviatePath(detachedProject, homeDir)}
+								</p>
+							</>
+						) : (
+							<>
+								<p>No projects connected</p>
+								<p className="mt-1">
+									Click the{" "}
+									<Settings className="inline size-3 align-text-bottom" /> icon
+									below to start the server and add a project.
+								</p>
+							</>
+						)}
 					</div>
 				)}
 			</SidebarContent>
 
-			<SidebarFooter className="border-t border-sidebar-border">
-				<ConnectionPanel />
-			</SidebarFooter>
+			{!detachedProject && (
+				<SidebarFooter className="border-t border-sidebar-border">
+					<ConnectionPanel />
+				</SidebarFooter>
+			)}
 
 			<SidebarRail />
 

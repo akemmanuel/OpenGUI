@@ -1989,7 +1989,13 @@ function useDesktopNotification(
 // Provider
 // ---------------------------------------------------------------------------
 
-export function OpenCodeProvider({ children }: { children: ReactNode }) {
+export function OpenCodeProvider({
+	children,
+	detachedProject,
+}: {
+	children: ReactNode;
+	detachedProject?: string;
+}) {
 	const [state, dispatch] = useReducer(reducer, initialState);
 
 	const bridge = useMemo<OpenCodeBridge | undefined>(
@@ -2427,45 +2433,57 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			if (cancelled) return;
 			dispatch({ type: "SET_ERROR", payload: null });
 			try {
-				const projects = getOpenProjects();
-				expectedDirectoriesRef.current = new Set(
-					projects.map((project) => project.directory),
-				);
-				await Promise.allSettled(
-					projects.map((project) =>
-						addProject(
-							{
-								baseUrl: project.serverUrl,
-								directory: project.directory,
-								username: project.username,
-							},
-							{ suppressError: true },
-						),
-					),
-				);
-
-				// Auto-open all registered worktrees so they appear in the sidebar
-				// without requiring the user to manually click "Open".
-				const worktreeParentMap = getWorktreeParents();
-				const projectByDir = new Map(projects.map((p) => [p.directory, p]));
-				const worktreeEntries = Object.entries(worktreeParentMap);
-				if (worktreeEntries.length > 0) {
+				if (detachedProject) {
+					// Detached window: only connect to the single project
+					const serverUrl =
+						storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL;
+					const username = storageGet(STORAGE_KEYS.USERNAME) ?? undefined;
+					expectedDirectoriesRef.current = new Set([detachedProject]);
+					await addProject(
+						{ baseUrl: serverUrl, directory: detachedProject, username },
+						{ suppressError: true },
+					);
+				} else {
+					const projects = getOpenProjects();
+					expectedDirectoriesRef.current = new Set(
+						projects.map((project) => project.directory),
+					);
 					await Promise.allSettled(
-						worktreeEntries.map(([worktreeDir, meta]) => {
-							const parent = projectByDir.get(meta.parentDir);
-							return addProject(
+						projects.map((project) =>
+							addProject(
 								{
-									baseUrl:
-										parent?.serverUrl ??
-										storageGet(STORAGE_KEYS.SERVER_URL) ??
-										DEFAULT_SERVER_URL,
-									directory: worktreeDir,
-									username: parent?.username,
+									baseUrl: project.serverUrl,
+									directory: project.directory,
+									username: project.username,
 								},
 								{ suppressError: true },
-							);
-						}),
+							),
+						),
 					);
+
+					// Auto-open all registered worktrees so they appear in the sidebar
+					// without requiring the user to manually click "Open".
+					const worktreeParentMap = getWorktreeParents();
+					const projectByDir = new Map(projects.map((p) => [p.directory, p]));
+					const worktreeEntries = Object.entries(worktreeParentMap);
+					if (worktreeEntries.length > 0) {
+						await Promise.allSettled(
+							worktreeEntries.map(([worktreeDir, meta]) => {
+								const parent = projectByDir.get(meta.parentDir);
+								return addProject(
+									{
+										baseUrl:
+											parent?.serverUrl ??
+											storageGet(STORAGE_KEYS.SERVER_URL) ??
+											DEFAULT_SERVER_URL,
+										directory: worktreeDir,
+										username: parent?.username,
+									},
+									{ suppressError: true },
+								);
+							}),
+						);
+					}
 				}
 			} catch {
 				/* ignore localStorage errors */
@@ -2480,7 +2498,7 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 		return () => {
 			cancelled = true;
 		};
-	}, [bridge, addProject]);
+	}, [bridge, addProject, detachedProject]);
 
 	const disconnect = useCallback(async () => {
 		if (!bridge) return;

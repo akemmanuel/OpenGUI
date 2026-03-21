@@ -88,25 +88,127 @@ function createWindow() {
 	});
 }
 
+/** Track detached project windows so we can detect duplicates and clean up. */
+const detachedWindows = new Map(); // projectDir -> BrowserWindow
+
+function getDetachedProjectDirectories() {
+	return Array.from(detachedWindows.entries())
+		.filter(([, win]) => win && !win.isDestroyed())
+		.map(([projectDir]) => projectDir);
+}
+
+function broadcastDetachedProjects() {
+	const detachedProjects = getDetachedProjectDirectories();
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (!win.isDestroyed()) {
+			win.webContents.send("window:detachedProjectsChanged", detachedProjects);
+		}
+	}
+}
+
+function createProjectWindow(projectDir) {
+	const isMac = process.platform === "darwin";
+
+	// Reuse existing detached window if one already exists for this project
+	const existing = detachedWindows.get(projectDir);
+	if (existing && !existing.isDestroyed()) {
+		existing.focus();
+		broadcastDetachedProjects();
+		return;
+	}
+
+	const win = new BrowserWindow({
+		width: 900,
+		height: 700,
+		minWidth: 450,
+		minHeight: 500,
+		show: false,
+		frame: false,
+		...(isMac ? { transparent: true } : {}),
+		webPreferences: {
+			nodeIntegration: false,
+			contextIsolation: true,
+			preload: path.join(__dirname, "preload.cjs"),
+		},
+		...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
+	});
+
+	detachedWindows.set(projectDir, win);
+
+	const projectLabel = projectDir.split(/[\\/]/).pop() || projectDir;
+	win.setTitle(`OpenGUI - ${projectLabel}`);
+
+	const loadUrl = isDev
+		? `${DEV_SERVER_URL}?detach=${encodeURIComponent(projectDir)}`
+		: `file://${path.join(__dirname, "dist", "index.html")}?detach=${encodeURIComponent(projectDir)}`;
+
+	void win.loadURL(loadUrl);
+
+	win.once("ready-to-show", () => {
+		win.show();
+		broadcastDetachedProjects();
+	});
+
+	win.webContents.setWindowOpenHandler(({ url }) => {
+		if (isWebUrl(url)) shell.openExternal(url);
+		return { action: "deny" };
+	});
+
+	win.webContents.on("will-navigate", (event, url) => {
+		const appOrigins = [DEV_SERVER_URL, "file://"];
+		const isInternal = appOrigins.some((origin) => url.startsWith(origin));
+		if (!isInternal) {
+			event.preventDefault();
+			if (isWebUrl(url)) shell.openExternal(url);
+		}
+	});
+
+	win.on("maximize", () => {
+		win.webContents.send("window:maximizeChanged", true);
+	});
+
+	win.on("unmaximize", () => {
+		win.webContents.send("window:maximizeChanged", false);
+	});
+
+	win.on("closed", () => {
+		detachedWindows.delete(projectDir);
+		broadcastDetachedProjects();
+	});
+
+	return win;
+}
+
 // IPC handlers
-ipcMain.handle("window:minimize", () => {
-	mainWindow?.minimize();
+ipcMain.handle("window:minimize", (event) => {
+	BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 
-ipcMain.handle("window:maximize", () => {
-	if (mainWindow?.isMaximized()) {
-		mainWindow.unmaximize();
+ipcMain.handle("window:maximize", (event) => {
+	const win = BrowserWindow.fromWebContents(event.sender);
+	if (win?.isMaximized()) {
+		win.unmaximize();
 	} else {
-		mainWindow?.maximize();
+		win?.maximize();
 	}
 });
 
-ipcMain.handle("window:close", () => {
-	mainWindow?.close();
+ipcMain.handle("window:close", (event) => {
+	BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
-ipcMain.handle("window:isMaximized", () => {
-	return mainWindow?.isMaximized() ?? false;
+ipcMain.handle("window:isMaximized", (event) => {
+	const win = BrowserWindow.fromWebContents(event.sender);
+	return win?.isMaximized() ?? false;
+});
+
+ipcMain.handle("window:detachProject", (_event, projectDir) => {
+	if (typeof projectDir !== "string" || projectDir.length === 0) return;
+	createProjectWindow(projectDir);
+});
+
+ipcMain.handle("window:getDetachedProjects", () => {
+	return getDetachedProjectDirectories();
 });
 
 ipcMain.handle("platform:get", () => {
@@ -221,7 +323,7 @@ void app.whenReady().then(async () => {
 	// Load ESM opencode bridge (SDK is ESM-only)
 	try {
 		const { setupOpenCodeBridge } = await import("./opencode-bridge.mjs");
-		setupOpenCodeBridge(ipcMain, () => mainWindow);
+		setupOpenCodeBridge(ipcMain, () => BrowserWindow.getAllWindows());
 	} catch (err) {
 		console.error("Failed to load opencode bridge:", err);
 	}

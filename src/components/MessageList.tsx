@@ -12,6 +12,7 @@ import type {
 	TextPart,
 	ToolPart,
 } from "@opencode-ai/sdk/v2/client";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
 	AlertTriangle,
 	Check,
@@ -139,7 +140,7 @@ function TerminalOutput({
 	);
 }
 
-export function MessageList() {
+export function MessageList({ detachedProject }: { detachedProject?: string }) {
 	const {
 		respondPermission,
 		replyQuestion,
@@ -308,6 +309,18 @@ export function MessageList() {
 		return undefined;
 	}, [visibleMessages]);
 
+	const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+		count: visibleMessages.length,
+		getScrollElement: () => listRef.current,
+		getItemKey: (index) => visibleMessages[index]?.info.id ?? index,
+		estimateSize: (index) =>
+			visibleMessages[index]?.info.role === "user" ? 96 : 220,
+		overscan: 5,
+		useAnimationFrameWithResizeObserver: true,
+	});
+	const virtualItems = messageVirtualizer.getVirtualItems();
+	const virtualHeight = messageVirtualizer.getTotalSize();
+
 	// ---- session switch: jump to bottom synchronously before paint ----
 
 	useLayoutEffect(() => {
@@ -322,6 +335,14 @@ export function MessageList() {
 			isProgrammaticScrollRef.current = false;
 		});
 	}, [visibleMessages]);
+
+	useLayoutEffect(() => {
+		if (virtualHeight <= 0) return;
+		if (!visibleMessages.length) return;
+		if (!isNearBottomRef.current) return;
+		if (!sessionJustSwitchedRef.current && !isBusy) return;
+		scrollToBottom(true);
+	}, [isBusy, scrollToBottom, virtualHeight, visibleMessages.length]);
 
 	// ---- streaming / new content: scroll only if sticky ----
 
@@ -353,8 +374,9 @@ export function MessageList() {
 		(visibleMessages.length === 0 && !isBusy)
 	) {
 		// Draft mode: show just the logo (empty chat, ready for first message).
-		// No-session mode: show logo + recent projects card.
-		const showRecentProjects = !isDraft;
+		// No-session mode: show logo + recent projects card, except in detached mode
+		// where the window is already scoped to a single project.
+		const showRecentProjects = !isDraft && !detachedProject;
 
 		return (
 			<div className="flex-1 flex items-center justify-center">
@@ -469,36 +491,62 @@ export function MessageList() {
 						Temporary chat - will be deleted when you leave
 					</div>
 				)}
-				{visibleMessages.map((entry, idx) => {
-					const prev = idx > 0 ? (visibleMessages[idx - 1] ?? null) : null;
-					const isConsecutive =
-						prev !== null && prev.info.role === entry.info.role;
-					const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
-					// Only allow forking from the 2nd user message onward;
-					// forking on the first would create an empty session.
-					const isFirstUserMsg =
-						entry.info.role === "user" &&
-						visibleMessages.findIndex((m) => m.info.role === "user") === idx;
-					return (
-						<div key={entry.info.id} className={spacing}>
-							<MessageBubble
-								entry={entry}
-								turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
-								lastReasoningPartId={lastReasoningPartId}
-								onFork={
-									entry.info.role === "user" && !isFirstUserMsg
-										? () => forkFromMessage(entry.info.id)
-										: undefined
-								}
-								onRevert={
-									entry.info.role === "user"
-										? () => revertToMessage(entry.info.id)
-										: undefined
-								}
-							/>
-						</div>
-					);
-				})}
+				{visibleMessages.length > 0 && (
+					<div className="relative w-full" style={{ height: virtualHeight }}>
+						{virtualItems.map((virtualItem) => {
+							const entry = visibleMessages[virtualItem.index];
+							if (!entry) return null;
+							const prev =
+								virtualItem.index > 0
+									? (visibleMessages[virtualItem.index - 1] ?? null)
+									: null;
+							const isConsecutive =
+								prev !== null && prev.info.role === entry.info.role;
+							const spacing =
+								virtualItem.index === 0
+									? ""
+									: isConsecutive
+										? "mt-1.5"
+										: "mt-4";
+							// Only allow forking from the 2nd user message onward;
+							// forking on the first would create an empty session.
+							const isFirstUserMsg =
+								entry.info.role === "user" &&
+								visibleMessages.findIndex((m) => m.info.role === "user") ===
+									virtualItem.index;
+
+							return (
+								<div
+									key={virtualItem.key}
+									data-index={virtualItem.index}
+									ref={messageVirtualizer.measureElement}
+									className="absolute left-0 top-0 w-full"
+									style={{ transform: `translateY(${virtualItem.start}px)` }}
+								>
+									<div className={spacing}>
+										<MessageBubble
+											entry={entry}
+											turnDurationLabel={turnDurationByAssistantId.get(
+												entry.info.id,
+											)}
+											lastReasoningPartId={lastReasoningPartId}
+											onFork={
+												entry.info.role === "user" && !isFirstUserMsg
+													? () => forkFromMessage(entry.info.id)
+													: undefined
+											}
+											onRevert={
+												entry.info.role === "user"
+													? () => revertToMessage(entry.info.id)
+													: undefined
+											}
+										/>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				)}
 
 				{/* Revert marker */}
 				{revertMessageID && revertedCount > 0 && (

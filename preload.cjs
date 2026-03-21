@@ -16,6 +16,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	// Directory picker
 	openDirectory: () => ipcRenderer.invoke("dialog:openDirectory"),
 
+	// Detach a project into its own window
+	detachProject: (projectDir) =>
+		ipcRenderer.invoke("window:detachProject", projectDir),
+
+	// Get the detached project directory from the URL query param (empty if not detached)
+	getDetachedProject: () => {
+		const params = new URLSearchParams(window.location.search);
+		return params.get("detach") || null;
+	},
+	getDetachedProjects: () => ipcRenderer.invoke("window:getDetachedProjects"),
+	onDetachedProjectsChange: (callback) => {
+		const handler = (_event, detachedProjects) => callback(detachedProjects);
+		ipcRenderer.on("window:detachedProjectsChanged", handler);
+		return () =>
+			ipcRenderer.removeListener("window:detachedProjectsChanged", handler);
+	},
+
 	// Open a URL in the system browser
 	openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
 
