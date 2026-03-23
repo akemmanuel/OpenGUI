@@ -11,23 +11,13 @@ import { useMemo, useState } from "react";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Input } from "@/components/ui/input";
+import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const POPULAR_IDS = new Set([
-	"anthropic",
-	"openai",
-	"google",
-	"github-copilot",
-	"openrouter",
-	"xai",
-	"deepseek",
-	"groq",
-	"mistral",
-	"azure",
-]);
+const POPULAR_IDS = new Set<string>(POPULAR_PROVIDER_IDS);
 
 // ---------------------------------------------------------------------------
 // Props

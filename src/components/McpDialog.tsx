@@ -24,56 +24,45 @@ import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
 // Status badge
 // ---------------------------------------------------------------------------
 
+const STATUS_CONFIG = {
+	connected: {
+		variant: "default" as const,
+		label: "Connected",
+		icon: CheckCircle2,
+		className: "bg-emerald-600 hover:bg-emerald-600",
+	},
+	disabled: { variant: "secondary" as const, label: "Disabled" },
+	failed: {
+		variant: "destructive" as const,
+		label: "Failed",
+		icon: AlertCircle,
+	},
+	needs_auth: {
+		variant: "outline" as const,
+		label: "Needs auth",
+		className: "text-amber-500 border-amber-500",
+	},
+	needs_client_registration: {
+		variant: "outline" as const,
+		label: "Needs registration",
+		className: "text-amber-500 border-amber-500",
+	},
+} as const;
+
 function StatusBadge({ status }: { status: McpStatus }) {
-	switch (status.status) {
-		case "connected":
-			return (
-				<Badge
-					variant="default"
-					className="bg-emerald-600 hover:bg-emerald-600 text-xs gap-1"
-				>
-					<CheckCircle2 className="size-3" />
-					Connected
-				</Badge>
-			);
-		case "disabled":
-			return (
-				<Badge variant="secondary" className="text-xs">
-					Disabled
-				</Badge>
-			);
-		case "failed":
-			return (
-				<Badge variant="destructive" className="text-xs gap-1">
-					<AlertCircle className="size-3" />
-					Failed
-				</Badge>
-			);
-		case "needs_auth":
-			return (
-				<Badge
-					variant="outline"
-					className="text-xs text-amber-500 border-amber-500"
-				>
-					Needs auth
-				</Badge>
-			);
-		case "needs_client_registration":
-			return (
-				<Badge
-					variant="outline"
-					className="text-xs text-amber-500 border-amber-500"
-				>
-					Needs registration
-				</Badge>
-			);
-		default:
-			return (
-				<Badge variant="secondary" className="text-xs">
-					Unknown
-				</Badge>
-			);
-	}
+	const config =
+		STATUS_CONFIG[status.status as keyof typeof STATUS_CONFIG] ??
+		({ variant: "secondary" as const, label: "Unknown" } as const);
+	const Icon = "icon" in config ? config.icon : undefined;
+	return (
+		<Badge
+			variant={config.variant}
+			className={`text-xs${Icon ? " gap-1" : ""}${"className" in config ? ` ${config.className}` : ""}`}
+		>
+			{Icon && <Icon className="size-3" />}
+			{config.label}
+		</Badge>
+	);
 }
 
 // ---------------------------------------------------------------------------

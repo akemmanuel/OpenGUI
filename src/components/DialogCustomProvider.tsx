@@ -121,6 +121,7 @@ function KeyValueListEditor({
 // ---------------------------------------------------------------------------
 
 interface DialogCustomProviderProps {
+	directory?: string;
 	onSaved: () => void;
 	onBack: () => void;
 }
@@ -160,6 +161,7 @@ function validate(
 // ---------------------------------------------------------------------------
 
 export function DialogCustomProvider({
+	directory,
 	onSaved,
 	onBack,
 }: DialogCustomProviderProps) {
@@ -239,7 +241,7 @@ export function DialogCustomProvider({
 				}
 
 				// Update config to add the custom provider
-				await bridge.updateConfig({
+				await bridge.updateConfig(directory, {
 					provider: {
 						[providerId.trim()]: providerConfig,
 					},
@@ -247,13 +249,13 @@ export function DialogCustomProvider({
 
 				// Set the API key if provided (and not an env reference)
 				if (apiKey.trim() && !envMatch) {
-					await bridge.connectProvider(providerId.trim(), {
+					await bridge.connectProvider(directory, providerId.trim(), {
 						type: "api",
 						key: apiKey.trim(),
 					});
 				}
 
-				await bridge.disposeInstance();
+				await bridge.disposeInstance(directory);
 				onSaved();
 			} catch (err) {
 				setError(getErrorMessage(err, "Failed to save"));
@@ -261,7 +263,17 @@ export function DialogCustomProvider({
 				setSaving(false);
 			}
 		},
-		[bridge, providerId, name, baseUrl, apiKey, models, headers, onSaved],
+		[
+			bridge,
+			directory,
+			providerId,
+			name,
+			baseUrl,
+			apiKey,
+			models,
+			headers,
+			onSaved,
+		],
 	);
 
 	return (

@@ -1,5 +1,5 @@
 import { Loader2, Play, SkipForward, Terminal } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -29,10 +29,22 @@ export function WorktreeSetupDialog({
 	const [command, setCommand] = useState("");
 	const [detectedFile, setDetectedFile] = useState("");
 	const [error, setError] = useState<string | null>(null);
+	const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	// Clear auto-close timeout on unmount
+	useEffect(() => {
+		return () => {
+			if (autoCloseTimerRef.current !== null) {
+				clearTimeout(autoCloseTimerRef.current);
+				autoCloseTimerRef.current = null;
+			}
+		};
+	}, []);
 
 	// Detect setup command when dialog opens
 	useEffect(() => {
 		if (!open || !worktreePath) return;
+		let cancelled = false;
 		setStep("detecting");
 		setError(null);
 		setCommand("");
@@ -41,6 +53,7 @@ export function WorktreeSetupDialog({
 		window.electronAPI?.worktree
 			?.detectSetup(worktreePath)
 			.then((result) => {
+				if (cancelled) return;
 				if (result.detected && result.command) {
 					setCommand(result.command);
 					setDetectedFile(result.file ?? "");
@@ -51,8 +64,12 @@ export function WorktreeSetupDialog({
 				}
 			})
 			.catch(() => {
+				if (cancelled) return;
 				onOpenChange(false);
 			});
+		return () => {
+			cancelled = true;
+		};
 	}, [open, worktreePath, onOpenChange]);
 
 	const handleRun = useCallback(async () => {
@@ -67,7 +84,7 @@ export function WorktreeSetupDialog({
 			if (result?.success) {
 				setStep("done");
 				// Auto-close after a brief pause
-				setTimeout(() => onOpenChange(false), 1200);
+				autoCloseTimerRef.current = setTimeout(() => onOpenChange(false), 1200);
 			} else {
 				setError(result?.error ?? "Setup command failed");
 				setStep("error");

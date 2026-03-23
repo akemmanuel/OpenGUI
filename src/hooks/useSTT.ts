@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { getErrorMessage } from "@/lib/utils";
 
 interface TranscriptionResult {
 	text: string;
@@ -62,8 +63,7 @@ export function useSTT(endpoint: string | undefined) {
 			mediaRecorder.start(100);
 			setIsRecording(true);
 		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : "Microphone access denied";
+			const message = getErrorMessage(err, "Microphone access denied");
 			setError(message);
 			cleanup();
 			throw err;
@@ -119,8 +119,7 @@ export function useSTT(endpoint: string | undefined) {
 					setIsTranscribing(false);
 					resolve(result);
 				} catch (err) {
-					const message =
-						err instanceof Error ? err.message : "Transcription failed";
+					const message = getErrorMessage(err, "Transcription failed");
 					setError(message);
 					setIsTranscribing(false);
 					resolve(null);

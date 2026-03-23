@@ -16,56 +16,30 @@ import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useActions } from "@/hooks/use-opencode";
+import { useActions, useConnectionState } from "@/hooks/use-opencode";
+import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const POPULAR_PROVIDER_IDS = [
-	"anthropic",
-	"openai",
-	"google",
-	"github-copilot",
-	"openrouter",
-	"xai",
-	"deepseek",
-];
 
 // ---------------------------------------------------------------------------
 // Source badge
 // ---------------------------------------------------------------------------
 
 function SourceBadge({ source }: { source: string }) {
-	switch (source) {
-		case "env":
-			return (
-				<Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-					env
-				</Badge>
-			);
-		case "api":
-			return (
-				<Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-					api key
-				</Badge>
-			);
-		case "config":
-			return (
-				<Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-					config
-				</Badge>
-			);
-		case "custom":
-			return (
-				<Badge variant="outline" className="text-[10px] px-1.5 py-0">
-					custom
-				</Badge>
-			);
-		default:
-			return null;
+	if (source === "custom") {
+		return (
+			<Badge variant="outline" className="text-[10px] px-1.5 py-0">
+				custom
+			</Badge>
+		);
 	}
+	if (source === "env" || source === "api" || source === "config") {
+		return (
+			<Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+				{source === "api" ? "api key" : source}
+			</Badge>
+		);
+	}
+	return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +48,9 @@ function SourceBadge({ source }: { source: string }) {
 
 export function SettingsProviders() {
 	const { refreshProviders } = useActions();
+	const { activeDirectory } = useConnectionState();
 	const bridge = window.electronAPI?.opencode;
+	const scopedDirectory = activeDirectory ?? undefined;
 
 	// Data
 	const [allProviders, setAllProviders] = useState<AllProvidersData | null>(
@@ -96,8 +72,8 @@ export function SettingsProviders() {
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
 		const [provRes, authRes] = await Promise.all([
-			bridge.listAllProviders(),
-			bridge.getProviderAuthMethods(),
+			bridge.listAllProviders(scopedDirectory),
+			bridge.getProviderAuthMethods(scopedDirectory),
 		]);
 		if (provRes.success && provRes.data) {
 			setAllProviders(provRes.data);
@@ -106,7 +82,7 @@ export function SettingsProviders() {
 			setAuthMethods(authRes.data);
 		}
 		setLoading(false);
-	}, [bridge]);
+	}, [bridge, scopedDirectory]);
 
 	useEffect(() => {
 		void refresh();
@@ -116,8 +92,8 @@ export function SettingsProviders() {
 		if (!bridge) return;
 		setDisconnecting(providerID);
 		try {
-			await bridge.disconnectProvider(providerID);
-			await bridge.disposeInstance();
+			await bridge.disconnectProvider(scopedDirectory, providerID);
+			await bridge.disposeInstance(scopedDirectory);
 			await refresh();
 			await refreshProviders();
 		} finally {
@@ -166,6 +142,7 @@ export function SettingsProviders() {
 		const provider = allById.get(connectProviderID);
 		return (
 			<DialogConnectProvider
+				directory={scopedDirectory}
 				providerID={connectProviderID}
 				providerName={provider?.name ?? connectProviderID}
 				authMethods={authMethods[connectProviderID] ?? []}
@@ -178,6 +155,7 @@ export function SettingsProviders() {
 	if (showCustom) {
 		return (
 			<DialogCustomProvider
+				directory={scopedDirectory}
 				onSaved={handleConnected}
 				onBack={() => setShowCustom(false)}
 			/>

@@ -107,35 +107,45 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.invoke("opencode:session:fork", id, messageID),
 
 		// Providers / models
-		getProviders: () => ipcRenderer.invoke("opencode:providers"),
+		getProviders: (directory) =>
+			ipcRenderer.invoke("opencode:providers", directory),
 		// Provider management
-		listAllProviders: () => ipcRenderer.invoke("opencode:provider:list"),
-		getProviderAuthMethods: () =>
-			ipcRenderer.invoke("opencode:provider:auth-methods"),
-		connectProvider: (providerID, auth) =>
-			ipcRenderer.invoke("opencode:provider:connect", providerID, auth),
-		disconnectProvider: (providerID) =>
-			ipcRenderer.invoke("opencode:provider:disconnect", providerID),
-		oauthAuthorize: (providerID, method) =>
+		listAllProviders: (directory) =>
+			ipcRenderer.invoke("opencode:provider:list", directory),
+		getProviderAuthMethods: (directory) =>
+			ipcRenderer.invoke("opencode:provider:auth-methods", directory),
+		connectProvider: (directory, providerID, auth) =>
+			ipcRenderer.invoke(
+				"opencode:provider:connect",
+				directory,
+				providerID,
+				auth,
+			),
+		disconnectProvider: (directory, providerID) =>
+			ipcRenderer.invoke("opencode:provider:disconnect", directory, providerID),
+		oauthAuthorize: (directory, providerID, method) =>
 			ipcRenderer.invoke(
 				"opencode:provider:oauth:authorize",
+				directory,
 				providerID,
 				method,
 			),
-		oauthCallback: (providerID, method, code) =>
+		oauthCallback: (directory, providerID, method, code) =>
 			ipcRenderer.invoke(
 				"opencode:provider:oauth:callback",
+				directory,
 				providerID,
 				method,
 				code,
 			),
-		disposeInstance: () => ipcRenderer.invoke("opencode:instance:dispose"),
+		disposeInstance: (directory) =>
+			ipcRenderer.invoke("opencode:instance:dispose", directory),
 		// Agents
-		getAgents: () => ipcRenderer.invoke("opencode:agents"),
+		getAgents: (directory) => ipcRenderer.invoke("opencode:agents", directory),
 
 		// Messages
-		getMessages: (sessionId) =>
-			ipcRenderer.invoke("opencode:messages", sessionId),
+		getMessages: (sessionId, options) =>
+			ipcRenderer.invoke("opencode:messages", sessionId, options),
 		prompt: (sessionId, text, images, model, agent, variant) =>
 			ipcRenderer.invoke(
 				"opencode:prompt",
@@ -158,7 +168,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			),
 
 		// Commands
-		getCommands: () => ipcRenderer.invoke("opencode:commands"),
+		getCommands: (directory) =>
+			ipcRenderer.invoke("opencode:commands", directory),
 		sendCommand: (sessionId, command, args, model, agent, variant) =>
 			ipcRenderer.invoke(
 				"opencode:command:send",
@@ -185,16 +196,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.invoke("opencode:mcp:disconnect", name),
 
 		// Config
-		getConfig: () => ipcRenderer.invoke("opencode:config:get"),
-		updateConfig: (config) =>
-			ipcRenderer.invoke("opencode:config:update", config),
+		getConfig: (directory) =>
+			ipcRenderer.invoke("opencode:config:get", directory),
+		updateConfig: (directory, config) =>
+			ipcRenderer.invoke("opencode:config:update", directory, config),
 
 		// File search
 		findFiles: (directory, query) =>
 			ipcRenderer.invoke("opencode:find:files", directory, query),
 
 		// Skills
-		getSkills: () => ipcRenderer.invoke("opencode:skills"),
+		getSkills: (directory) => ipcRenderer.invoke("opencode:skills", directory),
 
 		// Local server management
 		startServer: () => ipcRenderer.invoke("opencode:server:start"),

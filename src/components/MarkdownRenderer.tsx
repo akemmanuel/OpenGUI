@@ -1,9 +1,10 @@
 import katexStylesheetHref from "katex/dist/katex.min.css" with {
 	type: "file",
 };
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { HIGHLIGHT_DEBOUNCE_MS } from "@/lib/constants";
 import { cn, openExternalLink } from "@/lib/utils";
 import { CodeBlock, CodeBlockCode } from "./ui/code-block";
 
@@ -175,12 +176,74 @@ const markdownComponents = {
 	},
 };
 
+/** Throttle interval for markdown re-parsing during streaming (ms).
+ *  Reuses the same constant as Shiki highlight debounce. */
+const MD_THROTTLE_MS = HIGHLIGHT_DEBOUNCE_MS;
+
+function cleanContent(raw: string): string {
+	return raw
+		.replace(/\$(?=\d)/g, "\\$")
+		.replace(/(\$\$[^$]+\$\$|\$(?!\s)([^\n$]+?)(?<!\s)\$)/g, (match) =>
+			match.replace(/!/g, "\\!"),
+		)
+		.replace(
+			/(```[\s\S]*?```|`[^`\n]+`)|( - )/g,
+			(match, codeBlock: string | undefined) => (codeBlock ? match : " - "),
+		);
+}
+
+/**
+ * Hook that throttles rapid content updates during streaming.
+ * Returns the content string to actually render - either the latest
+ * prop value (when idle) or a throttled snapshot (during rapid updates).
+ */
+function useThrottledContent(content: string): string {
+	const [rendered, setRendered] = useState(content);
+	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const latestRef = useRef(content);
+	latestRef.current = content;
+
+	useEffect(() => {
+		// If content hasn't changed (or shrunk, e.g. session switch), update immediately
+		if (content.length <= rendered.length || content === rendered) {
+			setRendered(content);
+			if (timerRef.current !== null) {
+				clearTimeout(timerRef.current);
+				timerRef.current = null;
+			}
+			return;
+		}
+
+		// Content grew (streaming) - throttle the update
+		if (timerRef.current === null) {
+			timerRef.current = setTimeout(() => {
+				timerRef.current = null;
+				setRendered(latestRef.current);
+			}, MD_THROTTLE_MS);
+		}
+	}, [content, rendered]);
+
+	// Cleanup on unmount
+	useEffect(() => {
+		return () => {
+			if (timerRef.current !== null) {
+				clearTimeout(timerRef.current);
+			}
+		};
+	}, []);
+
+	// Always return latest content if it's shorter or equal (session switch, etc.)
+	if (content.length <= rendered.length) return content;
+	return rendered;
+}
+
 export const MarkdownRenderer = memo(function MarkdownRenderer({
 	content,
 }: {
 	content: string;
 }) {
-	const needsMath = hasMathContent(content);
+	const throttled = useThrottledContent(content);
+	const needsMath = hasMathContent(throttled);
 	const [mathPlugins, setMathPlugins] = useState<{
 		remarkMath: MarkdownPlugin;
 		rehypeKatex: HtmlPlugin;
@@ -204,20 +267,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 		};
 	}, [needsMath]);
 
-	// Escape dollar signs used as currency ($ followed by a digit) so
-	// remark-math doesn't treat them as LaTeX math delimiters.
-	// Then escape exclamation marks inside math blocks so KaTeX doesn't choke on them.
-	const cleanedContent = content
-		.replace(/\$(?=\d)/g, "\\$")
-		.replace(/(\$\$[^$]+\$\$|\$(?!\s)([^\n$]+?)(?<!\s)\$)/g, (match) =>
-			match.replace(/!/g, "\\!"),
-		)
-		// Normalize " - " (em-dash pattern) to " - " in prose,
-		// but skip fenced code blocks and inline code spans.
-		.replace(
-			/(```[\s\S]*?```|`[^`\n]+`)|( - )/g,
-			(match, codeBlock: string | undefined) => (codeBlock ? match : " - "),
-		);
+	const cleanedContent = cleanContent(throttled);
 
 	const remarkPlugins = mathPlugins
 		? [remarkGfm, mathPlugins.remarkMath]

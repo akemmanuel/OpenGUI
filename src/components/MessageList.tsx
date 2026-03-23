@@ -62,6 +62,7 @@ import {
 	getChildSessionParts,
 	type MessageEntry,
 	useActions,
+	useMessages,
 	useSessionState,
 } from "@/hooks/use-opencode";
 import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
@@ -151,9 +152,10 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		forkFromMessage,
 		revertToMessage,
 		unrevert,
+		loadOlderMessages,
+		loadNewerMessages,
 	} = useActions();
 	const {
-		messages,
 		isBusy,
 		isLoadingMessages,
 		pendingPermissions,
@@ -165,6 +167,13 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		draftIsTemporary,
 		temporarySessions,
 	} = useSessionState();
+	const {
+		messages,
+		messageHistoryHasMore,
+		messageWindowHasNewer,
+		isLoadingOlderMessages,
+		isLoadingNewerMessages,
+	} = useMessages();
 	const activeSession = useMemo(
 		() => sessions.find((s) => s.id === activeSessionId),
 		[sessions, activeSessionId],
@@ -197,6 +206,8 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 	const rafRef = useRef<number | null>(null);
 	const prevSessionRef = useRef<string | null>(null);
 	const sessionJustSwitchedRef = useRef(false);
+	const loadingOlderRef = useRef(false);
+	const topLoadThresholdPx = 160;
 
 	// ---- helpers ----
 
@@ -228,8 +239,37 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 
 	const handleScroll = useCallback(() => {
 		if (isProgrammaticScrollRef.current) return;
+		const el = listRef.current;
+		if (
+			el &&
+			el.scrollTop <= topLoadThresholdPx &&
+			messageHistoryHasMore &&
+			!isLoadingMessages &&
+			!isLoadingOlderMessages &&
+			!loadingOlderRef.current
+		) {
+			loadingOlderRef.current = true;
+			const beforeTop = el.scrollTop;
+			const beforeHeight = el.scrollHeight;
+			void loadOlderMessages().then((loaded) => {
+				requestAnimationFrame(() => {
+					const currentEl = listRef.current;
+					if (loaded && currentEl) {
+						currentEl.scrollTop =
+							beforeTop + (currentEl.scrollHeight - beforeHeight);
+					}
+					loadingOlderRef.current = false;
+				});
+			});
+		}
 		isNearBottomRef.current = checkNearBottom();
-	}, [checkNearBottom]);
+	}, [
+		checkNearBottom,
+		isLoadingMessages,
+		isLoadingOlderMessages,
+		loadOlderMessages,
+		messageHistoryHasMore,
+	]);
 
 	// ---- session switch: mark flag so the layout effect can scroll before paint ----
 
@@ -308,18 +348,56 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		}
 		return undefined;
 	}, [visibleMessages]);
-
 	const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
 		count: visibleMessages.length,
+		enabled: true,
 		getScrollElement: () => listRef.current,
 		getItemKey: (index) => visibleMessages[index]?.info.id ?? index,
 		estimateSize: (index) =>
 			visibleMessages[index]?.info.role === "user" ? 96 : 220,
-		overscan: 5,
+		overscan: isBusy ? 3 : 5,
 		useAnimationFrameWithResizeObserver: true,
 	});
 	const virtualItems = messageVirtualizer.getVirtualItems();
 	const virtualHeight = messageVirtualizer.getTotalSize();
+
+	const renderMessageBubble = useCallback(
+		(entry: MessageEntry, idx: number) => {
+			const prev = idx > 0 ? (visibleMessages[idx - 1] ?? null) : null;
+			const isConsecutive = prev !== null && prev.info.role === entry.info.role;
+			const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
+			const isFirstUserMsg =
+				entry.info.role === "user" &&
+				visibleMessages.findIndex((m) => m.info.role === "user") === idx;
+
+			return (
+				<div key={entry.info.id} className={spacing}>
+					<MessageBubble
+						entry={entry}
+						turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
+						lastReasoningPartId={lastReasoningPartId}
+						onFork={
+							entry.info.role === "user" && !isFirstUserMsg
+								? () => forkFromMessage(entry.info.id)
+								: undefined
+						}
+						onRevert={
+							entry.info.role === "user"
+								? () => revertToMessage(entry.info.id)
+								: undefined
+						}
+					/>
+				</div>
+			);
+		},
+		[
+			visibleMessages,
+			turnDurationByAssistantId,
+			lastReasoningPartId,
+			forkFromMessage,
+			revertToMessage,
+		],
+	);
 
 	// ---- session switch: jump to bottom synchronously before paint ----
 
@@ -334,6 +412,7 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		requestAnimationFrame(() => {
 			isProgrammaticScrollRef.current = false;
 		});
+		loadingOlderRef.current = false;
 	}, [visibleMessages]);
 
 	useLayoutEffect(() => {
@@ -350,13 +429,19 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		// visibleMessages is intentionally in the dep array so this effect
 		// re-fires on every streaming delta, keeping the view pinned to the
 		// bottom while new tokens arrive.
-		void visibleMessages;
+		if (!visibleMessages.length) return;
 		if (!isNearBottomRef.current) return;
 		// Skip if we already handled this render in the layout effect above.
 		if (sessionJustSwitchedRef.current) return;
-		// During streaming use instant scroll to avoid competing smooth animations.
-		scrollToBottom(isBusy);
-	}, [isBusy, visibleMessages, scrollToBottom]);
+		// Use virtualizer's scrollToIndex for reliable bottom-pinning during streaming.
+		if (isBusy) {
+			messageVirtualizer.scrollToIndex(visibleMessages.length - 1, {
+				align: "end",
+			});
+		} else {
+			scrollToBottom(false);
+		}
+	}, [isBusy, visibleMessages, scrollToBottom, messageVirtualizer]);
 
 	if (isLoadingMessages) {
 		return (
@@ -485,6 +570,11 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 			className="flex-1 overflow-auto px-4 py-4"
 		>
 			<div className="max-w-[640px] mx-auto">
+				{isLoadingOlderMessages && (
+					<div className="mb-3 flex items-center justify-center">
+						<Spinner className="size-4 text-muted-foreground" />
+					</div>
+				)}
 				{activeSessionId && temporarySessions.has(activeSessionId) && (
 					<div className="mb-3 flex items-center justify-center gap-1.5 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
 						<Timer className="size-3" />
@@ -496,24 +586,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 						{virtualItems.map((virtualItem) => {
 							const entry = visibleMessages[virtualItem.index];
 							if (!entry) return null;
-							const prev =
-								virtualItem.index > 0
-									? (visibleMessages[virtualItem.index - 1] ?? null)
-									: null;
-							const isConsecutive =
-								prev !== null && prev.info.role === entry.info.role;
-							const spacing =
-								virtualItem.index === 0
-									? ""
-									: isConsecutive
-										? "mt-1.5"
-										: "mt-4";
-							// Only allow forking from the 2nd user message onward;
-							// forking on the first would create an empty session.
-							const isFirstUserMsg =
-								entry.info.role === "user" &&
-								visibleMessages.findIndex((m) => m.info.role === "user") ===
-									virtualItem.index;
 
 							return (
 								<div
@@ -523,28 +595,26 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 									className="absolute left-0 top-0 w-full"
 									style={{ transform: `translateY(${virtualItem.start}px)` }}
 								>
-									<div className={spacing}>
-										<MessageBubble
-											entry={entry}
-											turnDurationLabel={turnDurationByAssistantId.get(
-												entry.info.id,
-											)}
-											lastReasoningPartId={lastReasoningPartId}
-											onFork={
-												entry.info.role === "user" && !isFirstUserMsg
-													? () => forkFromMessage(entry.info.id)
-													: undefined
-											}
-											onRevert={
-												entry.info.role === "user"
-													? () => revertToMessage(entry.info.id)
-													: undefined
-											}
-										/>
-									</div>
+									{renderMessageBubble(entry, virtualItem.index)}
 								</div>
 							);
 						})}
+					</div>
+				)}
+
+				{messageWindowHasNewer && (
+					<div className="mt-4 flex items-center justify-center">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								void loadNewerMessages();
+							}}
+							disabled={isLoadingNewerMessages}
+						>
+							{isLoadingNewerMessages ? <Spinner className="size-4" /> : null}
+							{isLoadingNewerMessages ? "Loading newer" : "Load newer messages"}
+						</Button>
 					</div>
 				)}
 
@@ -963,7 +1033,7 @@ function FilePartView({ part }: { part: FilePart }) {
 	);
 }
 
-function PartView({
+const PartView = memo(function PartView({
 	part,
 	isUser,
 	lastReasoningPartId,
@@ -996,7 +1066,7 @@ function PartView({
 		default:
 			return null;
 	}
-}
+});
 
 const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
 const TIMELINE_BUTTON_RESET =
@@ -1338,7 +1408,7 @@ function computeApplyPatchDiff(
 	const fileType =
 		typeof file.type === "string" ? file.type.toLowerCase() : "update";
 	if (before != null || after != null) {
-		return computeLineDiff(before ?? "", after ?? "");
+		return getCachedLineDiff(before ?? "", after ?? "");
 	}
 	if (fileType === "delete") {
 		const deleted =
@@ -1412,6 +1482,24 @@ function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string | null {
 	return `${files.length} files`;
 }
 
+/** LRU cache for expensive LCS diff results (keyed by old+new string hash).
+ *  Prevents recomputation when ToolPartView re-renders due to sibling updates. */
+const _diffCache = new Map<string, DiffResult>();
+const DIFF_CACHE_MAX = 64;
+
+function getCachedLineDiff(oldStr: string, newStr: string): DiffResult {
+	const key = `${oldStr.length}:${newStr.length}:${oldStr.slice(0, 64)}:${newStr.slice(0, 64)}`;
+	const cached = _diffCache.get(key);
+	if (cached) return cached;
+	const result = computeLineDiff(oldStr, newStr);
+	if (_diffCache.size >= DIFF_CACHE_MAX) {
+		const firstKey = _diffCache.keys().next().value;
+		if (firstKey !== undefined) _diffCache.delete(firstKey);
+	}
+	_diffCache.set(key, result);
+	return result;
+}
+
 /** Compute a simple line-level diff between two strings using LCS. */
 function computeLineDiff(oldStr: string, newStr: string): DiffResult {
 	const oldLines = oldStr.split("\n");
@@ -1473,7 +1561,7 @@ function computeEditDiff(input: Record<string, unknown>): DiffResult | null {
 	const oldStr = input.oldString;
 	const newStr = input.newString;
 	if (typeof oldStr !== "string" || typeof newStr !== "string") return null;
-	return computeLineDiff(oldStr, newStr);
+	return getCachedLineDiff(oldStr, newStr);
 }
 
 /** Compute diff for write tools (entire file is new content). */
@@ -1737,7 +1825,7 @@ function ChildSessionParts({
 	fallbackOutput: string;
 	isRunning: boolean;
 }) {
-	const { childSessions } = useSessionState();
+	const { childSessions } = useMessages();
 	const parts = useMemo(
 		() => getChildSessionParts(childSessions, childSessionId),
 		[childSessions, childSessionId],
@@ -1967,57 +2055,8 @@ function ToolPartView({ part }: { part: ToolPart }) {
 		isTask ||
 		isTodoWrite ||
 		isQuestion;
-	const toolVerb = isRead
-		? isRunning
-			? "Reading"
-			: "Read"
-		: isEdit
-			? isRunning
-				? "Editing"
-				: "Edited"
-			: isApplyPatch
-				? isRunning
-					? "Patching"
-					: "Patched"
-				: isBash
-					? isRunning
-						? "Running"
-						: "Ran"
-					: isWrite
-						? isRunning
-							? "Writing"
-							: "Wrote"
-						: isGrep
-							? isRunning
-								? "Searching"
-								: "Searched"
-							: isGlob
-								? isRunning
-									? "Globbing"
-									: "Globbed"
-								: isTask
-									? taskInfo?.subagentType
-										? taskInfo.subagentType.charAt(0).toUpperCase() +
-											taskInfo.subagentType.slice(1)
-										: isRunning
-											? "Running"
-											: "Ran"
-									: isTodoWrite
-										? isRunning
-											? "Writing todos"
-											: `Wrote ${todos?.length ?? 0} todos`
-										: isQuestion
-											? (() => {
-													const qCount =
-														"input" in state &&
-														Array.isArray(state.input.questions)
-															? state.input.questions.length
-															: 0;
-													return isRunning
-														? "Asking"
-														: `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`;
-												})()
-											: part.tool;
+	const displayInfo = getToolDisplayInfo(part.tool, part.state);
+	const toolVerb = displayInfo.label;
 	// Inline context label (filename, command, pattern, description, or title)
 	const taskDescription =
 		isTask && taskInfo?.description ? `(${taskInfo.description})` : null;

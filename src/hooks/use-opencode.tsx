@@ -76,7 +76,11 @@ import type {
 	OpenCodeBridge,
 	ProvidersData,
 	SelectedModel,
+	Workspace,
 } from "@/types/electron";
+
+/** Max entries to retain in _deletedSessionIds to prevent unbounded growth */
+const MAX_DELETED_SESSION_IDS = 200;
 
 /**
  * Given the list of providers and a `provider -> modelID` default map from the
@@ -107,6 +111,17 @@ export function resolveServerDefaultModel(
 	return null;
 }
 
+function isModelAvailable(providers: Provider[], model: SelectedModel | null) {
+	if (!model) return false;
+	const provider = providers.find((p) => p.id === model.providerID);
+	return !!provider && model.modelID in provider.models;
+}
+
+function getSessionDirectory(session: Session | undefined | null) {
+	if (!session) return null;
+	return session._projectDir ?? session.directory ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -119,6 +134,7 @@ interface RecentProject {
 }
 
 export const NOTIFICATIONS_ENABLED_KEY = STORAGE_KEYS.NOTIFICATIONS_ENABLED;
+export const LOCAL_WORKSPACE_ID = "local";
 
 // ---------------------------------------------------------------------------
 // Session meta (local-only tags & colors)
@@ -220,14 +236,127 @@ function persistWorktreeParents(map: WorktreeParentMap) {
  * Used to decide whether native Electron dialogs make sense (local) or whether
  * the user should type a remote path instead.
  */
-function isLocalServer(): boolean {
-	const raw = storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL;
+function isLocalServer(
+	raw = storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL,
+): boolean {
 	try {
 		const hostname = new URL(raw).hostname;
 		return ["localhost", "127.0.0.1", "::1"].includes(hostname);
 	} catch {
 		return false;
 	}
+}
+
+function getWorkspaceRootDirectory(
+	directory: string,
+	worktreeParents: WorktreeParentMap,
+): string {
+	return worktreeParents[directory]?.parentDir ?? directory;
+}
+
+function getWorkspaceStoredConfig() {
+	const directory = storageGet(STORAGE_KEYS.DIRECTORY)?.trim() ?? "";
+	if (!directory) return null;
+	return {
+		directory,
+		serverUrl: storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL,
+		username: storageGet(STORAGE_KEYS.USERNAME) ?? undefined,
+	};
+}
+
+function createLocalWorkspace(): Workspace {
+	return {
+		id: LOCAL_WORKSPACE_ID,
+		name: "Local",
+		serverUrl: DEFAULT_SERVER_URL,
+		isLocal: true,
+		projects: [],
+		selectedModel: null,
+		selectedAgent: null,
+	};
+}
+
+function normalizeWorkspace(workspace: Workspace): Workspace {
+	return {
+		...workspace,
+		name: workspace.name.trim() || (workspace.isLocal ? "Local" : "Workspace"),
+		serverUrl: workspace.serverUrl.trim() || DEFAULT_SERVER_URL,
+		projects: Array.from(
+			new Set(
+				(workspace.projects ?? [])
+					.map((project) => project.trim())
+					.filter(Boolean),
+			),
+		),
+		selectedModel: workspace.selectedModel ?? null,
+		selectedAgent: workspace.selectedAgent ?? null,
+	};
+}
+
+function getStoredWorkspaces(): Workspace[] {
+	const parsed = storageParsed<Workspace[]>(STORAGE_KEYS.WORKSPACES) ?? [];
+	const workspaces = parsed
+		.filter((workspace): workspace is Workspace => !!workspace?.id)
+		.map((workspace) =>
+			normalizeWorkspace({
+				...workspace,
+				isLocal: workspace.id === LOCAL_WORKSPACE_ID || workspace.isLocal,
+			}),
+		);
+	const localWorkspace = workspaces.find(
+		(workspace) => workspace.id === LOCAL_WORKSPACE_ID,
+	);
+	if (!localWorkspace) {
+		workspaces.unshift(createLocalWorkspace());
+	}
+	return workspaces.map((workspace) =>
+		workspace.id === LOCAL_WORKSPACE_ID
+			? normalizeWorkspace({
+					...workspace,
+					name: workspace.name || "Local",
+					serverUrl: DEFAULT_SERVER_URL,
+					isLocal: true,
+				})
+			: workspace,
+	);
+}
+
+function persistWorkspaces(workspaces: Workspace[]) {
+	storageSetJSON(
+		STORAGE_KEYS.WORKSPACES,
+		workspaces.map((workspace) => normalizeWorkspace(workspace)),
+	);
+}
+
+function getActiveWorkspaceId(workspaces: Workspace[]) {
+	const stored = storageGet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID);
+	if (stored && workspaces.some((workspace) => workspace.id === stored)) {
+		return stored;
+	}
+	return workspaces[0]?.id ?? LOCAL_WORKSPACE_ID;
+}
+
+function migrateLegacyWorkspaceStorage(): Workspace[] {
+	const existing = getStoredWorkspaces();
+	const legacyConfig = getWorkspaceStoredConfig();
+	if (!legacyConfig) return existing;
+	const next = [...existing];
+	const localIndex = next.findIndex(
+		(workspace) => workspace.id === LOCAL_WORKSPACE_ID,
+	);
+	const localWorkspace = next[localIndex] ?? createLocalWorkspace();
+	const nextProjects = new Set(localWorkspace.projects);
+	nextProjects.add(legacyConfig.directory);
+	const migrated = normalizeWorkspace({
+		...localWorkspace,
+		username: legacyConfig.username,
+		projects: [...nextProjects],
+	});
+	if (localIndex >= 0) next[localIndex] = migrated;
+	else next.unshift(migrated);
+	persistWorkspaces(next);
+	storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, LOCAL_WORKSPACE_ID);
+	return next;
 }
 
 function getRecentProjects(): RecentProject[] {
@@ -241,33 +370,6 @@ function addRecentProject(project: RecentProject): RecentProject[] {
 	const updated = [project, ...existing].slice(0, MAX_RECENT_PROJECTS);
 	storageSetJSON(STORAGE_KEYS.RECENT_PROJECTS, updated);
 	return updated;
-}
-
-function getOpenProjects(): RecentProject[] {
-	return storageParsed<RecentProject[]>(STORAGE_KEYS.OPEN_PROJECTS) ?? [];
-}
-
-function setOpenProjects(projects: RecentProject[]) {
-	storageSetJSON(STORAGE_KEYS.OPEN_PROJECTS, projects);
-}
-
-function upsertOpenProject(project: RecentProject): RecentProject[] {
-	const existing = getOpenProjects().filter(
-		(p) => p.directory !== project.directory,
-	);
-	const updated = [project, ...existing];
-	setOpenProjects(updated);
-	return updated;
-}
-
-function removeOpenProject(directory: string): RecentProject[] {
-	const updated = getOpenProjects().filter((p) => p.directory !== directory);
-	setOpenProjects(updated);
-	return updated;
-}
-
-function clearOpenProjects() {
-	storageRemove(STORAGE_KEYS.OPEN_PROJECTS);
 }
 
 function getUnreadSessionIds(): Set<string> {
@@ -308,6 +410,12 @@ export interface MessageEntry {
 }
 
 export interface OpenCodeState {
+	/** Configured workspaces. Local is always pinned. */
+	workspaces: Workspace[];
+	/** Currently selected workspace tab. */
+	activeWorkspaceId: string;
+	/** Maps connected project directories to their workspace. */
+	projectWorkspaceMap: Record<string, string>;
 	/** Per-project connection statuses keyed by directory */
 	connections: Record<string, ConnectionStatus>;
 	/** All sessions from all connected projects */
@@ -316,8 +424,18 @@ export interface OpenCodeState {
 	activeSessionId: string | null;
 	/** Messages for the active session */
 	messages: MessageEntry[];
+	/** Newer active-session messages trimmed out of the current window */
+	messageForwardBuffer: MessageEntry[];
+	/** Whether older messages exist before the loaded active-session window */
+	messageHistoryHasMore: boolean;
+	/** Whether newer messages exist after the loaded active-session window */
+	messageWindowHasNewer: boolean;
 	/** Whether messages are being fetched for a newly selected session */
 	isLoadingMessages: boolean;
+	/** Whether older messages are currently being prepended to the active window */
+	isLoadingOlderMessages: boolean;
+	/** Whether newer messages are currently being restored into the active window */
+	isLoadingNewerMessages: boolean;
 	/** Whether a prompt response is in-flight */
 	isBusy: boolean;
 	/** Pending permission requests keyed by sessionID */
@@ -396,6 +514,10 @@ export interface OpenCodeState {
 				type: "PART_REMOVED";
 				payload: { sessionID: string; messageID: string; partID: string };
 		  }
+		| {
+				type: "MESSAGE_REMOVED";
+				payload: { sessionID: string; messageID: string };
+		  }
 	>;
 	/** Buffered message snapshots for non-active busy sessions (keyed by sessionID) */
 	_sessionBuffers: Record<
@@ -417,12 +539,22 @@ export function hasAnyConnection(
 	return Object.values(connections).some((c) => c.state === "connected");
 }
 
+const initialWorkspaces = migrateLegacyWorkspaceStorage();
+
 const initialState: OpenCodeState = {
+	workspaces: initialWorkspaces,
+	activeWorkspaceId: getActiveWorkspaceId(initialWorkspaces),
+	projectWorkspaceMap: {},
 	connections: {},
 	sessions: [],
 	activeSessionId: null,
 	messages: [],
+	messageForwardBuffer: [],
+	messageHistoryHasMore: false,
+	messageWindowHasNewer: false,
 	isLoadingMessages: false,
+	isLoadingOlderMessages: false,
+	isLoadingNewerMessages: false,
 	isBusy: false,
 	pendingPermissions: {},
 	pendingQuestions: {},
@@ -462,6 +594,12 @@ const initialState: OpenCodeState = {
 // ---------------------------------------------------------------------------
 
 type Action =
+	| { type: "SET_WORKSPACES"; payload: Workspace[] }
+	| { type: "SET_ACTIVE_WORKSPACE"; payload: string }
+	| {
+			type: "ASSIGN_PROJECT_WORKSPACE";
+			payload: { directory: string; workspaceId: string };
+	  }
 	| {
 			type: "SET_PROJECT_CONNECTION";
 			payload: { directory: string; status: ConnectionStatus };
@@ -476,7 +614,16 @@ type Action =
 	| { type: "SET_ACTIVE_SESSION"; payload: string | null }
 	| { type: "SET_SESSION_DRAFT"; payload: { key: string; text: string } }
 	| { type: "CLEAR_SESSION_DRAFT"; payload: string }
-	| { type: "SET_MESSAGES"; payload: MessageEntry[] }
+	| {
+			type: "SET_MESSAGES";
+			payload: {
+				messages: MessageEntry[];
+				hasMore: boolean;
+				mode?: "replace" | "prepend" | "append";
+			};
+	  }
+	| { type: "SET_LOADING_OLDER_MESSAGES"; payload: boolean }
+	| { type: "SET_LOADING_NEWER_MESSAGES"; payload: boolean }
 	| { type: "SET_BUSY"; payload: boolean }
 	| { type: "SET_ERROR"; payload: string | null }
 	| {
@@ -519,6 +666,10 @@ type Action =
 	| {
 			type: "PART_REMOVED";
 			payload: { sessionID: string; messageID: string; partID: string };
+	  }
+	| {
+			type: "MESSAGE_REMOVED";
+			payload: { sessionID: string; messageID: string };
 	  }
 	| {
 			type: "SESSION_STATUS";
@@ -588,6 +739,10 @@ function sortSessionsNewestFirst(sessions: Session[]): Session[] {
 		return b.id.localeCompare(a.id);
 	});
 }
+
+const MESSAGE_PAGE_SIZE = 100;
+const MAX_MESSAGE_WINDOW = 200;
+const MAX_FORWARD_BUFFER = 300;
 
 type DeltaTrackedPart = Part & { _deltaPositions?: Record<string, number> };
 
@@ -754,8 +909,143 @@ function applyStreamingDeltaToPart(
 	};
 }
 
+/** Extract child session ID from a task tool part's metadata, if present. */
+function getChildSessionId(part: Part): string | undefined {
+	if (
+		part.type === "tool" &&
+		part.tool.toLowerCase() === "task" &&
+		"metadata" in part.state &&
+		part.state.metadata
+	) {
+		const meta = part.state.metadata as Record<string, unknown>;
+		if (typeof meta.sessionId === "string") return meta.sessionId;
+	}
+	return undefined;
+}
+
+/**
+ * Buffer an event for a non-active session. Checks tracked child sessions
+ * first, then falls back to generic session buffers.
+ */
+function bufferNonActiveEvent(
+	state: OpenCodeState,
+	sessionID: string,
+	messageID: string,
+	updater: (entry: { info: Message; parts: Record<string, Part> }) => {
+		info: Message;
+		parts: Record<string, Part>;
+	},
+): OpenCodeState {
+	if (state.trackedChildSessionIds.has(sessionID)) {
+		const buf = { ...state.childSessions };
+		const sessBuf = { ...buf[sessionID] };
+		const entry = sessBuf[messageID] ?? {
+			info: { id: messageID, sessionID } as Message,
+			parts: {},
+		};
+		sessBuf[messageID] = updater(entry);
+		buf[sessionID] = sessBuf;
+		return { ...state, childSessions: buf };
+	}
+	const buf = { ...state._sessionBuffers };
+	const sessBuf = { ...buf[sessionID] };
+	const entry = sessBuf[messageID] ?? {
+		info: { id: messageID, sessionID } as Message,
+		parts: {},
+	};
+	sessBuf[messageID] = updater(entry);
+	buf[sessionID] = sessBuf;
+	return { ...state, _sessionBuffers: buf };
+}
+
+function normalizeMessageEntries(
+	incoming: MessageEntry[],
+	existingMessages: MessageEntry[],
+): MessageEntry[] {
+	const existingByMsgId = new Map<string, MessageEntry>();
+	for (const message of existingMessages) {
+		existingByMsgId.set(message.info.id, message);
+	}
+
+	return incoming.map((message) => {
+		const existing = existingByMsgId.get(message.info.id);
+		const existingPartsById = new Map<string, Part>();
+		if (existing) {
+			for (const part of existing.parts) {
+				existingPartsById.set(part.id, part);
+			}
+		}
+
+		return {
+			...message,
+			parts: message.parts.map((part) => {
+				const prev = existingPartsById.get(part.id);
+				if (prev) {
+					const prevText =
+						((prev as Record<string, unknown>).text as string) ?? "";
+					const nextText =
+						((part as Record<string, unknown>).text as string) ?? "";
+					if (prevText.length >= nextText.length) return prev;
+				}
+				if ((part as Record<string, unknown>)._deltaPositions) return part;
+				return tagPartWithDeltaPositions(part);
+			}),
+		};
+	});
+}
+
+function trimForwardBuffer(messages: MessageEntry[]): MessageEntry[] {
+	if (messages.length <= MAX_FORWARD_BUFFER) return messages;
+	return messages.slice(messages.length - MAX_FORWARD_BUFFER);
+}
+
+function updateMessageArray(
+	messages: MessageEntry[],
+	messageID: string,
+	updater: (entry: MessageEntry | undefined) => MessageEntry | null,
+): { messages: MessageEntry[]; found: boolean } {
+	const index = messages.findIndex((message) => message.info.id === messageID);
+	if (index < 0) {
+		const created = updater(undefined);
+		if (!created) return { messages, found: false };
+		return { messages: [...messages, created], found: false };
+	}
+
+	const updated = updater(messages[index]);
+	if (!updated) {
+		return {
+			messages: messages.filter((message) => message.info.id !== messageID),
+			found: true,
+		};
+	}
+
+	const nextMessages = [...messages];
+	nextMessages[index] = updated;
+	return { messages: nextMessages, found: true };
+}
+
 function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 	switch (action.type) {
+		case "SET_WORKSPACES":
+			return {
+				...state,
+				workspaces: action.payload.map((workspace) =>
+					normalizeWorkspace(workspace),
+				),
+			};
+
+		case "SET_ACTIVE_WORKSPACE":
+			return { ...state, activeWorkspaceId: action.payload };
+
+		case "ASSIGN_PROJECT_WORKSPACE":
+			return {
+				...state,
+				projectWorkspaceMap: {
+					...state.projectWorkspaceMap,
+					[action.payload.directory]: action.payload.workspaceId,
+				},
+			};
+
 		case "SET_PROJECT_CONNECTION": {
 			const { directory, status } = action.payload;
 			return {
@@ -771,6 +1061,10 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					.map((s) => s.id),
 			);
 			const { [action.payload]: _, ...rest } = state.connections;
+			const {
+				[action.payload]: _removedWorkspace,
+				...restProjectWorkspaceMap
+			} = state.projectWorkspaceMap;
 			const nextBusy = new Set(
 				[...state.busySessionIds].filter((id) => !removedSessionIds.has(id)),
 			);
@@ -796,9 +1090,46 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			const nextUnread = new Set(
 				[...state.unreadSessionIds].filter((id) => !removedSessionIds.has(id)),
 			);
+
+			// Clean up child session data for removed sessions.
+			// Find child session IDs referenced by the removed sessions' messages.
+			const childIdsToRemove = new Set<string>();
+			// If the active session is being removed, scan its messages
+			if (
+				state.activeSessionId &&
+				removedSessionIds.has(state.activeSessionId)
+			) {
+				for (const msg of state.messages) {
+					for (const part of msg.parts) {
+						const childSid = getChildSessionId(part);
+						if (childSid) {
+							childIdsToRemove.add(childSid);
+						}
+					}
+				}
+			}
+			// Also remove any removed session IDs that were tracked as children
+			for (const sid of removedSessionIds) {
+				childIdsToRemove.add(sid);
+			}
+
+			let nextChildSessions = state.childSessions;
+			let nextTracked = state.trackedChildSessionIds;
+			if (childIdsToRemove.size > 0) {
+				nextChildSessions = { ...state.childSessions };
+				for (const cid of childIdsToRemove) {
+					delete nextChildSessions[cid];
+				}
+				nextTracked = new Set(state.trackedChildSessionIds);
+				for (const cid of childIdsToRemove) {
+					nextTracked.delete(cid);
+				}
+			}
+
 			return {
 				...state,
 				connections: rest,
+				projectWorkspaceMap: restProjectWorkspaceMap,
 				sessions: state.sessions.filter(
 					(s) => (s._projectDir ?? s.directory) !== action.payload,
 				),
@@ -808,9 +1139,20 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				pendingQuestions: nextQuestions,
 				queuedPrompts: nextQueues,
 				_sessionBuffers: nextBuffers,
+				childSessions: nextChildSessions,
+				trackedChildSessionIds: nextTracked,
 				...(state.activeSessionId &&
 				removedSessionIds.has(state.activeSessionId)
-					? { activeSessionId: null, messages: [], isBusy: false }
+					? {
+							activeSessionId: null,
+							messages: [],
+							messageForwardBuffer: [],
+							messageHistoryHasMore: false,
+							messageWindowHasNewer: false,
+							isLoadingOlderMessages: false,
+							isLoadingNewerMessages: false,
+							isBusy: false,
+						}
 					: {}),
 				// Clear draft if it belongs to the removed project
 				draftSessionDirectory:
@@ -824,9 +1166,16 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return {
 				...state,
 				connections: {},
+				projectWorkspaceMap: {},
 				sessions: [],
 				activeSessionId: null,
 				messages: [],
+				messageForwardBuffer: [],
+				messageHistoryHasMore: false,
+				messageWindowHasNewer: false,
+				isLoadingMessages: false,
+				isLoadingOlderMessages: false,
+				isLoadingNewerMessages: false,
 				isBusy: false,
 				childSessions: {},
 				trackedChildSessionIds: new Set(),
@@ -898,19 +1247,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			if (buffered) {
 				initialMessages = Object.values(buffered).map((entry) => ({
 					info: entry.info,
-					parts: Object.values(entry.parts).map((p) => {
-						const positions: Record<string, number> = {};
-						for (const [key, value] of Object.entries(
-							p as Record<string, unknown>,
-						)) {
-							if (typeof value === "string" && value.length > 0) {
-								positions[key] = value.length;
-							}
-						}
-						return { ...p, _deltaPositions: positions } as Part & {
-							_deltaPositions: Record<string, number>;
-						};
-					}),
+					parts: Object.values(entry.parts).map((p) =>
+						tagPartWithDeltaPositions(p),
+					),
 				}));
 			}
 			// Remove consumed buffer
@@ -925,7 +1264,12 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				...state,
 				activeSessionId: sid,
 				messages: initialMessages,
+				messageForwardBuffer: [],
+				messageHistoryHasMore: false,
+				messageWindowHasNewer: false,
 				isLoadingMessages: sid !== null,
+				isLoadingOlderMessages: false,
+				isLoadingNewerMessages: false,
 				isBusy: sid ? state.busySessionIds.has(sid) : false,
 				unreadSessionIds: nextUnread,
 				// Selecting a real session clears any pending draft
@@ -957,66 +1301,102 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		}
 
 		case "SET_MESSAGES": {
-			// Build a lookup of existing messages (may have been populated from
-			// the session buffer + live deltas that arrived during the fetch).
-			const existingByMsgId = new Map<string, MessageEntry>();
-			for (const m of state.messages) {
-				existingByMsgId.set(m.info.id, m);
+			const mode = action.payload.mode ?? "replace";
+			const normalizedMessages = normalizeMessageEntries(
+				action.payload.messages,
+				[...state.messages, ...state.messageForwardBuffer],
+			);
+
+			if (mode === "prepend") {
+				const currentIds = new Set(
+					state.messages.map((message) => message.info.id),
+				);
+				const prependedMessages = normalizedMessages.filter(
+					(message) => !currentIds.has(message.info.id),
+				);
+				const combinedMessages = [...prependedMessages, ...state.messages];
+				const overflow = Math.max(
+					0,
+					combinedMessages.length - MAX_MESSAGE_WINDOW,
+				);
+				const droppedTail = overflow
+					? combinedMessages.slice(combinedMessages.length - overflow)
+					: [];
+				return {
+					...state,
+					messages: overflow
+						? combinedMessages.slice(0, combinedMessages.length - overflow)
+						: combinedMessages,
+					messageForwardBuffer: trimForwardBuffer([
+						...droppedTail,
+						...state.messageForwardBuffer,
+					]),
+					messageHistoryHasMore: action.payload.hasMore,
+					messageWindowHasNewer:
+						state.messageWindowHasNewer ||
+						state.messageForwardBuffer.length > 0 ||
+						droppedTail.length > 0,
+					isLoadingOlderMessages: false,
+				};
 			}
 
-			// Initialise _deltaPositions on every part so that subsequent
-			// PART_DELTA events append correctly instead of replaying from 0.
-			// Merge with existing (buffer-populated) data: keep whichever part
-			// has more text content (buffer/live may be ahead of the server).
-			const taggedMessages = action.payload.map((m) => {
-				const existing = existingByMsgId.get(m.info.id);
-				const existingPartsById = new Map<string, Part>();
-				if (existing) {
-					for (const p of existing.parts) {
-						existingPartsById.set(p.id, p);
-					}
-				}
+			if (mode === "append") {
+				const appendIds = new Set(
+					normalizedMessages.map((message) => message.info.id),
+				);
+				const retainedForward = state.messageForwardBuffer.filter(
+					(message) => !appendIds.has(message.info.id),
+				);
+				const combinedMessages = [...state.messages, ...normalizedMessages];
+				const overflow = Math.max(
+					0,
+					combinedMessages.length - MAX_MESSAGE_WINDOW,
+				);
 				return {
-					...m,
-					parts: m.parts.map((p) => {
-						const prev = existingPartsById.get(p.id);
-						// If we already have this part with more content, keep it
-						if (prev) {
-							const prevText =
-								((prev as Record<string, unknown>).text as string) ?? "";
-							const newText =
-								((p as Record<string, unknown>).text as string) ?? "";
-							if (prevText.length >= newText.length) return prev;
-						}
-						if ((p as Record<string, unknown>)._deltaPositions) return p;
-						const positions: Record<string, number> = {};
-						for (const [key, value] of Object.entries(
-							p as Record<string, unknown>,
-						)) {
-							if (typeof value === "string" && value.length > 0) {
-								positions[key] = value.length;
+					...state,
+					messages: overflow
+						? combinedMessages.slice(overflow)
+						: combinedMessages,
+					messageForwardBuffer: retainedForward,
+					messageHistoryHasMore:
+						action.payload.hasMore ||
+						state.messageHistoryHasMore ||
+						overflow > 0,
+					messageWindowHasNewer: retainedForward.length > 0,
+					isLoadingNewerMessages: false,
+				};
+			}
+
+			const existingByMsgId = new Map<string, MessageEntry>();
+			for (const message of state.messages) {
+				existingByMsgId.set(message.info.id, message);
+			}
+
+			if (normalizedMessages.length > 0) {
+				const serverLast = normalizedMessages[normalizedMessages.length - 1];
+				const serverLastId = serverLast ? serverLast.info.id : null;
+				if (serverLastId) {
+					for (const [id, entry] of existingByMsgId) {
+						if (
+							!action.payload.messages.some((message) => message.info.id === id)
+						) {
+							if (id > serverLastId) {
+								normalizedMessages.push(entry);
 							}
 						}
-						return { ...p, _deltaPositions: positions } as Part & {
-							_deltaPositions: Record<string, number>;
-						};
-					}),
-				};
-			});
-
-			// Include any messages present in state but not in server response
-			// (e.g. a brand-new message that arrived via SSE during the fetch).
-			for (const [id, entry] of existingByMsgId) {
-				if (!action.payload.some((m) => m.info.id === id)) {
-					taggedMessages.push(entry);
+					}
 				}
 			}
 
-			// Replay any snapshot events that arrived while messages were loading.
 			let replayedState: OpenCodeState = {
 				...state,
-				messages: taggedMessages,
+				messages: normalizedMessages,
+				messageForwardBuffer: [],
+				messageHistoryHasMore: action.payload.hasMore,
+				messageWindowHasNewer: false,
 				isLoadingMessages: false,
+				isLoadingOlderMessages: false,
+				isLoadingNewerMessages: false,
 				_pendingSnapshots: [],
 			};
 			for (const event of state._pendingSnapshots) {
@@ -1024,6 +1404,12 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			}
 			return replayedState;
 		}
+
+		case "SET_LOADING_OLDER_MESSAGES":
+			return { ...state, isLoadingOlderMessages: action.payload };
+
+		case "SET_LOADING_NEWER_MESSAGES":
+			return { ...state, isLoadingNewerMessages: action.payload };
 
 		case "SET_BUSY":
 			return { ...state, isBusy: action.payload };
@@ -1134,6 +1520,15 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			// SESSION_UPDATED / SESSION_CREATED SSE events don't re-add it.
 			const nextDeleted = new Set(state._deletedSessionIds);
 			nextDeleted.add(deletedId);
+			// Cap to prevent unbounded growth
+			while (nextDeleted.size > MAX_DELETED_SESSION_IDS) {
+				const first = nextDeleted.values().next().value;
+				if (first !== undefined) {
+					nextDeleted.delete(first);
+				} else {
+					break;
+				}
+			}
 
 			const { [deletedId]: _deletedQueue, ...remainingQueues } =
 				state.queuedPrompts;
@@ -1145,6 +1540,43 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			nextUnread.delete(deletedId);
 			const nextDrafts = { ...state.sessionDrafts };
 			delete nextDrafts[`session:${deletedId}`];
+
+			// Clean up child session data for the deleted session.
+			// Find child session IDs referenced by the deleted session's parts.
+			const deletedSession = state.sessions.find((s) => s.id === deletedId);
+			let nextChildSessions = state.childSessions;
+			let nextTracked = state.trackedChildSessionIds;
+			if (deletedSession) {
+				const childIdsToRemove = new Set<string>();
+				// Parts are not directly on session, but child sessions tracked in
+				// trackedChildSessionIds are keyed by their own IDs. We need to
+				// find which children are referenced by this session. Scan the
+				// messages that were loaded for this session.
+				const sessionMessages =
+					state.activeSessionId === deletedId ? state.messages : [];
+				for (const msg of sessionMessages) {
+					for (const part of msg.parts) {
+						const childSid = getChildSessionId(part);
+						if (childSid) {
+							childIdsToRemove.add(childSid);
+						}
+					}
+				}
+				// Also remove the deleted session itself if tracked as a child
+				childIdsToRemove.add(deletedId);
+
+				if (childIdsToRemove.size > 0) {
+					nextChildSessions = { ...state.childSessions };
+					for (const cid of childIdsToRemove) {
+						delete nextChildSessions[cid];
+					}
+					nextTracked = new Set(state.trackedChildSessionIds);
+					for (const cid of childIdsToRemove) {
+						nextTracked.delete(cid);
+					}
+				}
+			}
+
 			return {
 				...state,
 				sessions: state.sessions.filter((s) => s.id !== deletedId),
@@ -1154,8 +1586,19 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				unreadSessionIds: nextUnread,
 				sessionDrafts: nextDrafts,
 				_deletedSessionIds: nextDeleted,
+				childSessions: nextChildSessions,
+				trackedChildSessionIds: nextTracked,
 				...(state.activeSessionId === deletedId
-					? { activeSessionId: null, messages: [], isBusy: false }
+					? {
+							activeSessionId: null,
+							messages: [],
+							messageForwardBuffer: [],
+							messageHistoryHasMore: false,
+							messageWindowHasNewer: false,
+							isLoadingOlderMessages: false,
+							isLoadingNewerMessages: false,
+							isBusy: false,
+						}
 					: {}),
 			};
 		}
@@ -1163,24 +1606,10 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "MESSAGE_UPDATED": {
 			const msg = action.payload;
 			if (msg.sessionID !== state.activeSessionId) {
-				// Store child session messages for live subagent step display
-				if (state.trackedChildSessionIds.has(msg.sessionID)) {
-					const childBuf = { ...state.childSessions };
-					const sessBuf = { ...childBuf[msg.sessionID] };
-					const entry = sessBuf[msg.id] ?? { info: msg, parts: {} };
-					sessBuf[msg.id] = { ...entry, info: msg };
-					childBuf[msg.sessionID] = sessBuf;
-					return { ...state, childSessions: childBuf };
-				}
-				// Buffer snapshot for non-active sessions.
-				// Do not gate on busySessionIds because event ordering is not guaranteed
-				// (message updates can arrive before session.status=busy is observed).
-				const buf = { ...state._sessionBuffers };
-				const sessBuf = { ...buf[msg.sessionID] };
-				const entry = sessBuf[msg.id] ?? { info: msg, parts: {} };
-				sessBuf[msg.id] = { ...entry, info: msg };
-				buf[msg.sessionID] = sessBuf;
-				return { ...state, _sessionBuffers: buf };
+				return bufferNonActiveEvent(state, msg.sessionID, msg.id, (entry) => ({
+					...entry,
+					info: msg,
+				}));
 			}
 			// Queue snapshot if messages are still loading from the server
 			if (state.isLoadingMessages) {
@@ -1189,14 +1618,39 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					_pendingSnapshots: [...state._pendingSnapshots, action],
 				};
 			}
-			const exists = state.messages.some((m) => m.info.id === msg.id);
-
-			if (exists) {
+			const existsInWindow = state.messages.some((m) => m.info.id === msg.id);
+			if (existsInWindow) {
 				return {
 					...state,
 					messages: state.messages.map((m) =>
 						m.info.id === msg.id ? { ...m, info: msg } : m,
 					),
+				};
+			}
+
+			const existsInForward = state.messageForwardBuffer.some(
+				(m) => m.info.id === msg.id,
+			);
+			if (existsInForward) {
+				return {
+					...state,
+					messageForwardBuffer: state.messageForwardBuffer.map((m) =>
+						m.info.id === msg.id ? { ...m, info: msg } : m,
+					),
+				};
+			}
+
+			if (
+				state.messageWindowHasNewer ||
+				state.messageForwardBuffer.length > 0
+			) {
+				return {
+					...state,
+					messageForwardBuffer: trimForwardBuffer([
+						...state.messageForwardBuffer,
+						{ info: msg, parts: [] },
+					]),
+					messageWindowHasNewer: true,
 				};
 			}
 			return {
@@ -1208,36 +1662,19 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "PART_UPDATED": {
 			const { part } = action.payload;
 			if (part.sessionID !== state.activeSessionId) {
-				// Store child session parts for live subagent step display
-				if (state.trackedChildSessionIds.has(part.sessionID)) {
-					const childBuf = { ...state.childSessions };
-					const sessBuf = { ...childBuf[part.sessionID] };
-					const entry = sessBuf[part.messageID] ?? {
-						info: {
-							id: part.messageID,
-							sessionID: part.sessionID,
-						} as Message,
-						parts: {},
-					};
-					const newParts = { ...entry.parts, [part.id]: part };
-					sessBuf[part.messageID] = { ...entry, parts: newParts };
-					childBuf[part.sessionID] = sessBuf;
-					return { ...state, childSessions: childBuf };
-				}
-				// Buffer snapshot for non-active sessions.
-				// Do not gate on busySessionIds because event ordering is not guaranteed.
-				const buf = { ...state._sessionBuffers };
-				const sessBuf = { ...buf[part.sessionID] };
-				const entry = sessBuf[part.messageID] ?? {
-					info: { id: part.messageID, sessionID: part.sessionID } as Message,
-					parts: {},
-				};
-				const previous = entry.parts[part.id];
-				const tagged = tagPartWithDeltaPositions(part, previous);
-				const newParts = { ...entry.parts, [part.id]: tagged };
-				sessBuf[part.messageID] = { ...entry, parts: newParts };
-				buf[part.sessionID] = sessBuf;
-				return { ...state, _sessionBuffers: buf };
+				return bufferNonActiveEvent(
+					state,
+					part.sessionID,
+					part.messageID,
+					(entry) => {
+						const previous = entry.parts[part.id];
+						const tagged = tagPartWithDeltaPositions(part, previous);
+						return {
+							...entry,
+							parts: { ...entry.parts, [part.id]: tagged },
+						};
+					},
+				);
 			}
 			// Track child session IDs from Task tool parts with metadata.sessionId
 			let childTrackPatch:
@@ -1246,26 +1683,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 						childSessions: typeof state.childSessions;
 				  }
 				| undefined;
-			if (
-				part.type === "tool" &&
-				part.tool.toLowerCase() === "task" &&
-				"metadata" in part.state &&
-				part.state.metadata
-			) {
-				const meta = part.state.metadata as Record<string, unknown>;
-				const childSid =
-					typeof meta.sessionId === "string" ? meta.sessionId : undefined;
-				if (childSid && !state.trackedChildSessionIds.has(childSid)) {
-					const nextTracked = new Set(state.trackedChildSessionIds);
-					nextTracked.add(childSid);
-					childTrackPatch = {
-						trackedChildSessionIds: nextTracked,
-						childSessions: {
-							...state.childSessions,
-							[childSid]: state.childSessions[childSid] ?? {},
-						},
-					};
-				}
+			const childSid = getChildSessionId(part);
+			if (childSid && !state.trackedChildSessionIds.has(childSid)) {
+				const nextTracked = new Set(state.trackedChildSessionIds);
+				nextTracked.add(childSid);
+				childTrackPatch = {
+					trackedChildSessionIds: nextTracked,
+					childSessions: {
+						...state.childSessions,
+						[childSid]: state.childSessions[childSid] ?? {},
+					},
+				};
 			}
 			// Queue snapshot if messages are still loading from the server
 			if (state.isLoadingMessages) {
@@ -1276,30 +1704,45 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				};
 			}
 
-			const messageIndex = state.messages.findIndex(
+			const updateEntry = (entry?: MessageEntry): MessageEntry => {
+				const currentEntry =
+					entry ??
+					createPlaceholderMessageEntry(part.sessionID, part.messageID);
+				const existingIdx = currentEntry.parts.findIndex(
+					(p) => p.id === part.id,
+				);
+				const previous =
+					existingIdx >= 0 ? currentEntry.parts[existingIdx] : undefined;
+				const tagged = mergeSnapshotPartWithExisting(part, previous);
+				const newParts = [...currentEntry.parts];
+				if (existingIdx >= 0) newParts[existingIdx] = tagged;
+				else newParts.push(tagged);
+				return { ...currentEntry, parts: newParts };
+			};
+
+			const inWindow = state.messages.some((m) => m.info.id === part.messageID);
+			const inForward = state.messageForwardBuffer.some(
 				(m) => m.info.id === part.messageID,
 			);
-			const nextMessages = [...state.messages];
-			if (messageIndex < 0) {
-				nextMessages.push(
-					createPlaceholderMessageEntry(part.sessionID, part.messageID),
-				);
-			}
-			const resolvedMessageIndex =
-				messageIndex >= 0 ? messageIndex : nextMessages.length - 1;
-			const entry = nextMessages[resolvedMessageIndex];
-			if (!entry) return state;
-
-			const existingIdx = entry.parts.findIndex((p) => p.id === part.id);
-			const previous = existingIdx >= 0 ? entry.parts[existingIdx] : undefined;
-			const tagged = mergeSnapshotPartWithExisting(part, previous);
-			const newParts = [...entry.parts];
-			if (existingIdx >= 0) {
-				newParts[existingIdx] = tagged;
-			} else {
-				newParts.push(tagged);
-			}
-			nextMessages[resolvedMessageIndex] = { ...entry, parts: newParts };
+			const useForward =
+				!inWindow &&
+				(inForward ||
+					state.messageWindowHasNewer ||
+					state.messageForwardBuffer.length > 0);
+			const sourceEntry = useForward
+				? state.messageForwardBuffer.find((m) => m.info.id === part.messageID)
+				: state.messages.find((m) => m.info.id === part.messageID);
+			const prevPart = sourceEntry?.parts.find((p) => p.id === part.id);
+			const updatedWindow = useForward
+				? { messages: state.messages }
+				: updateMessageArray(state.messages, part.messageID, updateEntry);
+			const updatedForward = useForward
+				? updateMessageArray(
+						state.messageForwardBuffer,
+						part.messageID,
+						updateEntry,
+					)
+				: { messages: state.messageForwardBuffer };
 
 			// After-part trigger: detect when a part just finished while we're
 			// waiting for the current part to complete before aborting + sending.
@@ -1310,7 +1753,6 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				  }
 				| undefined;
 			if (state.afterPartPending.has(part.sessionID)) {
-				const prevPart = previous;
 				let justFinished = false;
 
 				if (part.type === "tool") {
@@ -1348,61 +1790,24 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				...state,
 				...childTrackPatch,
 				...afterPartPatch,
-				messages: nextMessages,
+				messages: updatedWindow.messages,
+				messageForwardBuffer: trimForwardBuffer(updatedForward.messages),
 			};
 		}
 
 		case "PART_DELTA": {
 			const { sessionID, messageID, partID, field, delta } = action.payload;
 			if (sessionID !== state.activeSessionId) {
-				// Apply deltas to tracked child sessions for live subagent display
-				if (state.trackedChildSessionIds.has(sessionID)) {
-					const childBuf = state.childSessions[sessionID] ?? {};
-					const entry = childBuf[messageID] ?? {
-						info: { id: messageID, sessionID } as Message,
-						parts: {},
-					};
+				return bufferNonActiveEvent(state, sessionID, messageID, (entry) => {
 					const existing =
 						entry.parts[partID] ??
 						createPlaceholderPart(sessionID, messageID, partID, field);
 					const nextPart = applyStreamingDeltaToPart(existing, field, delta);
 					return {
-						...state,
-						childSessions: {
-							...state.childSessions,
-							[sessionID]: {
-								...childBuf,
-								[messageID]: {
-									...entry,
-									parts: { ...entry.parts, [partID]: nextPart },
-								},
-							},
-						},
+						...entry,
+						parts: { ...entry.parts, [partID]: nextPart },
 					};
-				}
-				// Keep applying deltas for non-active sessions so switching back
-				// can show the full in-progress stream.
-				const sessionBuffer = state._sessionBuffers[sessionID] ?? {};
-				const entry = sessionBuffer[messageID] ?? {
-					info: { id: messageID, sessionID } as Message,
-					parts: {},
-				};
-				const existing =
-					entry.parts[partID] ??
-					createPlaceholderPart(sessionID, messageID, partID, field);
-				const nextPart = applyStreamingDeltaToPart(existing, field, delta);
-
-				const newBuffers = {
-					...state._sessionBuffers,
-					[sessionID]: {
-						...sessionBuffer,
-						[messageID]: {
-							...entry,
-							parts: { ...entry.parts, [partID]: nextPart },
-						},
-					},
-				};
-				return { ...state, _sessionBuffers: newBuffers };
+				});
 			}
 
 			if (state.isLoadingMessages) {
@@ -1412,35 +1817,45 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				};
 			}
 
-			const messageIndex = state.messages.findIndex(
+			const updateEntry = (entry?: MessageEntry): MessageEntry => {
+				const current =
+					entry ?? createPlaceholderMessageEntry(sessionID, messageID);
+				const partIndex = current.parts.findIndex((p) => p.id === partID);
+				const existingPart =
+					partIndex >= 0 ? current.parts[partIndex] : undefined;
+				const existing =
+					existingPart ??
+					createPlaceholderPart(sessionID, messageID, partID, field);
+				const nextPart = applyStreamingDeltaToPart(existing, field, delta);
+				const nextParts = [...current.parts];
+				if (partIndex >= 0) nextParts[partIndex] = nextPart;
+				else nextParts.push(nextPart);
+				return { ...current, parts: nextParts };
+			};
+			const inWindow = state.messages.some((m) => m.info.id === messageID);
+			const inForward = state.messageForwardBuffer.some(
 				(m) => m.info.id === messageID,
 			);
-			const nextMessages = [...state.messages];
-			if (messageIndex < 0) {
-				nextMessages.push(createPlaceholderMessageEntry(sessionID, messageID));
-			}
-			const resolvedMessageIndex =
-				messageIndex >= 0 ? messageIndex : nextMessages.length - 1;
-			const message = nextMessages[resolvedMessageIndex];
-			if (!message) return state;
-
-			const partIndex = message.parts.findIndex((p) => p.id === partID);
-			const existing =
-				partIndex >= 0
-					? message.parts[partIndex]
-					: createPlaceholderPart(sessionID, messageID, partID, field);
-			if (!existing) return state;
-
-			const nextPart = applyStreamingDeltaToPart(existing, field, delta);
-			const nextParts = [...message.parts];
-			if (partIndex >= 0) {
-				nextParts[partIndex] = nextPart;
-			} else {
-				nextParts.push(nextPart);
-			}
-
-			nextMessages[resolvedMessageIndex] = { ...message, parts: nextParts };
-			return { ...state, messages: nextMessages };
+			const useForward =
+				!inWindow &&
+				(inForward ||
+					state.messageWindowHasNewer ||
+					state.messageForwardBuffer.length > 0);
+			return {
+				...state,
+				messages: useForward
+					? state.messages
+					: updateMessageArray(state.messages, messageID, updateEntry).messages,
+				messageForwardBuffer: trimForwardBuffer(
+					useForward
+						? updateMessageArray(
+								state.messageForwardBuffer,
+								messageID,
+								updateEntry,
+							).messages
+						: state.messageForwardBuffer,
+				),
+			};
 		}
 
 		case "PART_REMOVED": {
@@ -1495,6 +1910,53 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 						parts: m.parts.filter((p) => p.id !== partID),
 					};
 				}),
+				messageForwardBuffer: state.messageForwardBuffer.map((m) => {
+					if (m.info.id !== messageID) return m;
+					return {
+						...m,
+						parts: m.parts.filter((p) => p.id !== partID),
+					};
+				}),
+			};
+		}
+
+		case "MESSAGE_REMOVED": {
+			const { sessionID, messageID } = action.payload;
+			if (sessionID === state.activeSessionId && state.isLoadingMessages) {
+				return {
+					...state,
+					_pendingSnapshots: [...state._pendingSnapshots, action],
+				};
+			}
+			if (sessionID !== state.activeSessionId) {
+				// Handle removal for tracked child sessions
+				if (state.trackedChildSessionIds.has(sessionID)) {
+					const childBuf = state.childSessions[sessionID];
+					if (!childBuf) return state;
+					if (!(messageID in childBuf)) return state;
+					const { [messageID]: _removedMsg, ...remainingChildMsgs } = childBuf;
+					return {
+						...state,
+						childSessions: {
+							...state.childSessions,
+							[sessionID]: remainingChildMsgs,
+						},
+					};
+				}
+				const sessionBuffer = state._sessionBuffers[sessionID];
+				if (!sessionBuffer) return state;
+				if (!(messageID in sessionBuffer)) return state;
+				const { [messageID]: _removed, ...remainingMsgs } = sessionBuffer;
+				const newBuffers = { ...state._sessionBuffers };
+				newBuffers[sessionID] = remainingMsgs;
+				return { ...state, _sessionBuffers: newBuffers };
+			}
+			return {
+				...state,
+				messages: state.messages.filter((m) => m.info.id !== messageID),
+				messageForwardBuffer: state.messageForwardBuffer.filter(
+					(m) => m.info.id !== messageID,
+				),
 			};
 		}
 
@@ -1686,6 +2148,12 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				draftSessionDirectory: action.payload,
 				activeSessionId: null,
 				messages: [],
+				messageForwardBuffer: [],
+				messageHistoryHasMore: false,
+				messageWindowHasNewer: false,
+				isLoadingMessages: false,
+				isLoadingOlderMessages: false,
+				isLoadingNewerMessages: false,
 				isBusy: false,
 			};
 
@@ -1759,9 +2227,8 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return { ...state, worktreeParents: next };
 		}
 
-		case "SET_PENDING_WORKTREE_CLEANUP": {
+		case "SET_PENDING_WORKTREE_CLEANUP":
 			return { ...state, pendingWorktreeCleanup: action.payload };
-		}
 
 		case "LOAD_CHILD_SESSION": {
 			const { childSessionId, messages } = action.payload;
@@ -1827,11 +2294,13 @@ export function getChildSessionParts(
 // Split contexts  (subscribe to only the slice you need)
 // ---------------------------------------------------------------------------
 
-/** Session-related state – sessions list, active session, messages, busy state, queue. */
+/** Session-related state - sessions list, active session, busy state, queue.
+ *  NOTE: `messages` and `childSessions` live in the separate MessagesContext
+ *  so that streaming deltas don't trigger re-renders for the sidebar, prompt
+ *  box, and other components that only care about session metadata. */
 interface SessionContextValue {
 	sessions: Session[];
 	activeSessionId: string | null;
-	messages: MessageEntry[];
 	isBusy: boolean;
 	isLoadingMessages: boolean;
 	busySessionIds: Set<string>;
@@ -1844,8 +2313,30 @@ interface SessionContextValue {
 	unreadSessionIds: Set<string>;
 	sessionDrafts: SessionDraftMap;
 	sessionMeta: SessionMetaMap;
-	childSessions: OpenCodeState["childSessions"];
 	recentProjects: RecentProject[];
+}
+
+/** Messages + child sessions - isolated so streaming deltas only
+ *  re-render the message list, not sidebar/prompt/etc. */
+interface MessagesContextValue {
+	messages: MessageEntry[];
+	childSessions: OpenCodeState["childSessions"];
+	messageHistoryHasMore: boolean;
+	messageWindowHasNewer: boolean;
+	isLoadingOlderMessages: boolean;
+	isLoadingNewerMessages: boolean;
+}
+
+/** Messages + child sessions - isolated from SessionContext so that
+ *  per-token streaming deltas only re-render the message list, not
+ *  every component that reads session metadata. */
+interface MessagesContextValue {
+	messages: MessageEntry[];
+	childSessions: OpenCodeState["childSessions"];
+	messageHistoryHasMore: boolean;
+	messageWindowHasNewer: boolean;
+	isLoadingOlderMessages: boolean;
+	isLoadingNewerMessages: boolean;
 }
 
 /** Model / agent / variant / command state. */
@@ -1862,7 +2353,24 @@ interface ModelContextValue {
 
 /** Connection lifecycle state. */
 interface ConnectionContextValue {
+	workspaces: Workspace[];
+	activeWorkspace: Workspace | null;
+	activeWorkspaceId: string;
+	workspaceStatuses: Record<
+		string,
+		{
+			busy: boolean;
+			needsAttention: boolean;
+			error: boolean;
+			connected: boolean;
+		}
+	>;
 	connections: Record<string, ConnectionStatus>;
+	workspaceDirectory: string | null;
+	workspaceServerUrl: string | null;
+	workspaceUsername: string | null;
+	isLocalWorkspace: boolean;
+	activeDirectory: string | null;
 	bootState: OpenCodeState["bootState"];
 	bootError: string | null;
 	bootLogs: string | null;
@@ -1880,6 +2388,8 @@ interface ActionsContextValue {
 	removeProject: (directory: string) => Promise<void>;
 	disconnect: () => Promise<void>;
 	selectSession: (id: string | null) => Promise<void>;
+	loadOlderMessages: () => Promise<boolean>;
+	loadNewerMessages: () => Promise<boolean>;
 	createSession: (
 		title?: string,
 		directory?: string,
@@ -1915,7 +2425,12 @@ interface ActionsContextValue {
 	setSessionDraft: (key: string, text: string) => void;
 	clearSessionDraft: (key: string) => void;
 	openDirectory: () => Promise<string | null>;
-	connectToProject: (directory: string, serverUrl?: string) => Promise<void>;
+	connectToProject: (
+		directory: string,
+		serverUrl?: string,
+		username?: string,
+		password?: string,
+	) => Promise<void>;
 	startDraftSession: (directory: string) => void;
 	setDraftDirectory: (directory: string) => void;
 	setDraftTemporary: (temporary: boolean) => void;
@@ -1932,9 +2447,21 @@ interface ActionsContextValue {
 	unregisterWorktree: (worktreeDir: string) => void;
 	touchWorktree: (worktreeDir: string) => void;
 	clearWorktreeCleanup: () => void;
+	createWorkspace: (input: {
+		name: string;
+		serverUrl: string;
+		username?: string;
+	}) => void;
+	updateWorkspace: (
+		workspaceId: string,
+		input: Partial<Pick<Workspace, "name" | "serverUrl" | "username">>,
+	) => void;
+	removeWorkspace: (workspaceId: string) => Promise<void>;
+	switchWorkspace: (workspaceId: string) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
+const MessagesContext = createContext<MessagesContextValue | null>(null);
 const ModelContext = createContext<ModelContextValue | null>(null);
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);
 const ActionsContext = createContext<ActionsContextValue | null>(null);
@@ -1951,9 +2478,11 @@ function useDesktopNotification(
 	selectSession: (id: string) => void,
 ) {
 	const prevKeysRef = useRef<Set<string>>(new Set());
+	const notificationsRef = useRef<Notification[]>([]);
 	useEffect(() => {
 		const prevKeys = prevKeysRef.current;
 		const nowKeys = new Set(Object.keys(triggerMap));
+		const newNotifications: Notification[] = [];
 
 		for (const sessionId of nowKeys) {
 			if (
@@ -1973,11 +2502,19 @@ function useDesktopNotification(
 						window.focus();
 						selectSession(sessionId);
 					};
+					newNotifications.push(notification);
 				}
 			}
 		}
 
 		prevKeysRef.current = nowKeys;
+		notificationsRef.current = newNotifications;
+
+		return () => {
+			for (const n of notificationsRef.current) {
+				n.close();
+			}
+		};
 	}, [triggerMap, title, activeSessionId, sessions, selectSession]);
 }
 
@@ -2014,6 +2551,8 @@ export function OpenCodeProvider({
 	const selectedAgentRef = useRef(state.selectedAgent);
 	selectedAgentRef.current = state.selectedAgent;
 	const selectSessionRequestRef = useRef(0);
+	const loadedResourceDirectoryRef = useRef<string | null>(null);
+	const resourceLoadRequestRef = useRef(0);
 
 	// --- SSE event handler ---
 	const handleBridgeEvent = useCallback((event: BridgeEvent) => {
@@ -2080,6 +2619,15 @@ export function OpenCodeProvider({
 							sessionID: oc.properties.sessionID,
 							messageID: oc.properties.messageID,
 							partID: oc.properties.partID,
+						},
+					});
+					break;
+				case "message.removed":
+					dispatch({
+						type: "MESSAGE_REMOVED",
+						payload: {
+							sessionID: oc.properties.sessionID,
+							messageID: oc.properties.messageID,
 						},
 					});
 					break;
@@ -2173,6 +2721,45 @@ export function OpenCodeProvider({
 		}
 	}, [state.selectedModel]);
 
+	useEffect(() => {
+		persistWorkspaces(state.workspaces);
+	}, [state.workspaces]);
+
+	useEffect(() => {
+		const activeId = state.activeWorkspaceId;
+		if (!activeId) return;
+		const active = state.workspaces.find((w) => w.id === activeId);
+		if (!active) return;
+		// Only dispatch when the values actually differ to avoid an infinite
+		// loop: .map() + spread always creates new object references, so a
+		// naive reference-equality check would always be true, causing
+		// dispatch -> new state.workspaces ref -> effect re-fires -> repeat.
+		const modelSame =
+			active.selectedModel?.providerID === state.selectedModel?.providerID &&
+			active.selectedModel?.modelID === state.selectedModel?.modelID;
+		const agentSame = active.selectedAgent === state.selectedAgent;
+		if (modelSame && agentSame) return;
+		const next = state.workspaces.map((workspace) =>
+			workspace.id === activeId
+				? {
+						...workspace,
+						selectedModel: state.selectedModel,
+						selectedAgent: state.selectedAgent,
+					}
+				: workspace,
+		);
+		dispatch({ type: "SET_WORKSPACES", payload: next });
+	}, [
+		state.activeWorkspaceId,
+		state.selectedAgent,
+		state.selectedModel,
+		state.workspaces,
+	]);
+
+	useEffect(() => {
+		storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, state.activeWorkspaceId);
+	}, [state.activeWorkspaceId]);
+
 	// Persist unreadSessionIds to localStorage whenever it changes
 	useEffect(() => {
 		persistUnreadSessionIds(state.unreadSessionIds);
@@ -2210,12 +2797,87 @@ export function OpenCodeProvider({
 
 	// --- Actions ---
 
-	/** Whether providers/agents have been loaded from the server yet. */
-	const globalDataLoaded = useRef(false);
+	const loadServerResources = useCallback(
+		async (directory?: string | null) => {
+			if (!bridge) return;
+			const requestId = ++resourceLoadRequestRef.current;
+			const targetDirectory = directory?.trim() || undefined;
+			const [provRes, agentRes, cmdRes] = await Promise.all([
+				bridge.getProviders(targetDirectory),
+				bridge.getAgents(targetDirectory),
+				bridge.getCommands(targetDirectory),
+			]);
+
+			if (requestId !== resourceLoadRequestRef.current) return;
+
+			if (provRes.success && provRes.data) {
+				loadedResourceDirectoryRef.current = targetDirectory ?? null;
+				dispatch({ type: "SET_PROVIDERS", payload: provRes.data });
+
+				const currentSelection = selectedModelRef.current;
+				const storedSelection =
+					stateRef.current.workspaces.find(
+						(workspace) => workspace.id === stateRef.current.activeWorkspaceId,
+					)?.selectedModel ??
+					storageParsed<SelectedModel>(STORAGE_KEYS.SELECTED_MODEL);
+				const nextSelection = isModelAvailable(
+					provRes.data.providers,
+					currentSelection,
+				)
+					? currentSelection
+					: isModelAvailable(provRes.data.providers, storedSelection)
+						? storedSelection
+						: resolveServerDefaultModel(
+								provRes.data.providers,
+								provRes.data.default,
+							);
+				dispatch({
+					type: "SET_SELECTED_MODEL",
+					payload: nextSelection ?? null,
+				});
+
+				const parsedVariants = storageParsed<VariantSelections>(
+					STORAGE_KEYS.VARIANT_SELECTIONS,
+				);
+				if (parsedVariants) {
+					dispatch({
+						type: "SET_VARIANT_SELECTIONS",
+						payload: parsedVariants,
+					});
+				}
+			}
+
+			if (agentRes.success && agentRes.data) {
+				dispatch({ type: "SET_AGENTS", payload: agentRes.data });
+				const savedAgent =
+					stateRef.current.workspaces.find(
+						(workspace) => workspace.id === stateRef.current.activeWorkspaceId,
+					)?.selectedAgent ?? storageGet(STORAGE_KEYS.SELECTED_AGENT);
+				const nextAgent =
+					savedAgent && agentRes.data.some((a: Agent) => a.name === savedAgent)
+						? savedAgent
+						: null;
+				dispatch({ type: "SET_SELECTED_AGENT", payload: nextAgent });
+			}
+
+			if (cmdRes.success && cmdRes.data) {
+				dispatch({ type: "SET_COMMANDS", payload: cmdRes.data });
+			}
+		},
+		[bridge],
+	);
 
 	const addProject = useCallback(
 		async (config: ConnectionConfig, options?: { suppressError?: boolean }) => {
 			if (!bridge || !config.directory) return;
+			const workspaceId =
+				config.workspaceId ??
+				stateRef.current.activeWorkspaceId ??
+				LOCAL_WORKSPACE_ID;
+			dispatch({
+				type: "ASSIGN_PROJECT_WORKSPACE",
+				payload: { directory: config.directory, workspaceId },
+			});
 			expectedDirectoriesRef.current.add(config.directory);
 			if (!options?.suppressError) {
 				dispatch({ type: "SET_ERROR", payload: null });
@@ -2257,93 +2919,42 @@ export function OpenCodeProvider({
 			} catch {
 				/* ignore – spinner will appear on next SSE event */
 			}
-			// Load providers + agents once (they're global / same across projects)
-			if (!globalDataLoaded.current) {
-				const [provRes, agentRes, cmdRes] = await Promise.all([
-					bridge.getProviders(),
-					bridge.getAgents(),
-					bridge.getCommands(),
-				]);
-				// Only mark as loaded if at least providers resolved, so a
-				// transient failure does not permanently skip future load attempts.
-				globalDataLoaded.current = !!(provRes.success && provRes.data);
-				if (provRes.success && provRes.data) {
-					dispatch({ type: "SET_PROVIDERS", payload: provRes.data });
-					// Restore model from localStorage, fall back to provider defaults
-					let restoredSelection = false;
-					{
-						const parsed = storageParsed<SelectedModel>(
-							STORAGE_KEYS.SELECTED_MODEL,
-						);
-						if (parsed) {
-							const prov = provRes.data.providers.find(
-								(p: Provider) => p.id === parsed.providerID,
-							);
-							if (prov && parsed.modelID in prov.models) {
-								dispatch({
-									type: "SET_SELECTED_MODEL",
-									payload: parsed,
-								});
-								restoredSelection = true;
-							}
-						}
-					}
-					if (!restoredSelection) {
-						const fallback = resolveServerDefaultModel(
-							provRes.data.providers,
-							provRes.data.default,
-						);
-						if (fallback) {
-							dispatch({
-								type: "SET_SELECTED_MODEL",
-								payload: fallback,
-							});
-						}
-					}
-					{
-						const parsed = storageParsed<VariantSelections>(
-							STORAGE_KEYS.VARIANT_SELECTIONS,
-						);
-						if (parsed) {
-							dispatch({
-								type: "SET_VARIANT_SELECTIONS",
-								payload: parsed,
-							});
-						}
-					}
-				}
-				if (agentRes.success && agentRes.data) {
-					dispatch({ type: "SET_AGENTS", payload: agentRes.data });
-					const savedAgent = storageGet(STORAGE_KEYS.SELECTED_AGENT);
-					if (savedAgent) {
-						const exists = agentRes.data.some(
-							(a: Agent) => a.name === savedAgent,
-						);
-						if (exists) {
-							dispatch({
-								type: "SET_SELECTED_AGENT",
-								payload: savedAgent,
-							});
-						}
-					}
-				}
-				if (cmdRes.success && cmdRes.data) {
-					dispatch({ type: "SET_COMMANDS", payload: cmdRes.data });
+			if (loadedResourceDirectoryRef.current === null) {
+				await loadServerResources(config.directory);
+			}
+			const worktreeParentMap = getWorktreeParents();
+			const isWorktree = Boolean(worktreeParentMap[config.directory]);
+			const workspaceDirectory = isWorktree
+				? worktreeParentMap[config.directory]?.parentDir
+				: config.directory;
+			const currentWorkspace = stateRef.current.workspaces.find(
+				(workspace) => workspace.id === workspaceId,
+			);
+			if (currentWorkspace && workspaceDirectory) {
+				const nextProjects = new Set(currentWorkspace.projects);
+				nextProjects.add(workspaceDirectory);
+				const nextWorkspaces = stateRef.current.workspaces.map((workspace) =>
+					workspace.id === workspaceId
+						? normalizeWorkspace({
+								...workspace,
+								serverUrl: config.baseUrl,
+								username: config.username ?? workspace.username,
+								projects: [...nextProjects],
+							})
+						: workspace,
+				);
+				dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
+			}
+			if (workspaceDirectory) {
+				if (workspaceId === LOCAL_WORKSPACE_ID) {
+					storageSet(STORAGE_KEYS.SERVER_URL, config.baseUrl);
+					storageSet(STORAGE_KEYS.DIRECTORY, workspaceDirectory);
+					storageSetOrRemove(STORAGE_KEYS.USERNAME, config.username);
 				}
 			}
-			// Persist connection info
-			storageSet(STORAGE_KEYS.SERVER_URL, config.baseUrl);
-			storageSet(STORAGE_KEYS.DIRECTORY, config.directory);
-			storageSetOrRemove(STORAGE_KEYS.USERNAME, config.username);
-			// Update recent projects
-			if (config.directory) {
+			// Update recent projects only for the workspace root, not worktrees.
+			if (config.directory && !isWorktree) {
 				const updated = addRecentProject({
-					directory: config.directory,
-					serverUrl: config.baseUrl,
-					username: config.username,
-					lastConnected: Date.now(),
-				});
-				upsertOpenProject({
 					directory: config.directory,
 					serverUrl: config.baseUrl,
 					username: config.username,
@@ -2352,16 +2963,47 @@ export function OpenCodeProvider({
 				dispatch({ type: "SET_RECENT_PROJECTS", payload: updated });
 			}
 		},
-		[bridge],
+		[bridge, loadServerResources],
 	);
 
 	const removeProject = useCallback(
 		async (directory: string) => {
 			if (!bridge) return;
-			expectedDirectoriesRef.current.delete(directory);
-			await bridge.removeProject(directory);
-			removeOpenProject(directory);
-			dispatch({ type: "REMOVE_PROJECT", payload: directory });
+			const worktreeParentMap = getWorktreeParents();
+			const workspaceDirectory = getWorkspaceRootDirectory(
+				directory,
+				worktreeParentMap,
+			);
+			const directoriesToRemove =
+				workspaceDirectory === directory
+					? [
+							workspaceDirectory,
+							...Object.entries(worktreeParentMap)
+								.filter(([, meta]) => meta.parentDir === workspaceDirectory)
+								.map(([worktreeDir]) => worktreeDir),
+						]
+					: [directory];
+
+			for (const dir of directoriesToRemove) {
+				expectedDirectoriesRef.current.delete(dir);
+				await bridge.removeProject(dir);
+				dispatch({ type: "REMOVE_PROJECT", payload: dir });
+			}
+
+			if (workspaceDirectory === directory) {
+				const remainingRootDirectories = Object.keys(state.connections).filter(
+					(dir) =>
+						dir !== directory &&
+						!directoriesToRemove.includes(dir) &&
+						!worktreeParentMap[dir],
+				);
+				const nextRoot = remainingRootDirectories[0] ?? null;
+				if (nextRoot) {
+					storageSet(STORAGE_KEYS.DIRECTORY, nextRoot);
+				} else {
+					storageRemove(STORAGE_KEYS.DIRECTORY);
+				}
+			}
 			// If the active session belongs to this project, clear it
 			const activeSession = state.sessions.find(
 				(s) => s.id === state.activeSessionId,
@@ -2372,7 +3014,7 @@ export function OpenCodeProvider({
 				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
 			}
 		},
-		[bridge, state.sessions, state.activeSessionId],
+		[bridge, state.connections, state.sessions, state.activeSessionId],
 	);
 
 	// --- Startup bootstrap: ensure local server, then auto-connect open projects ---
@@ -2433,55 +3075,48 @@ export function OpenCodeProvider({
 			if (cancelled) return;
 			dispatch({ type: "SET_ERROR", payload: null });
 			try {
-				if (detachedProject) {
-					// Detached window: only connect to the single project
-					const serverUrl =
-						storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL;
-					const username = storageGet(STORAGE_KEYS.USERNAME) ?? undefined;
-					expectedDirectoriesRef.current = new Set([detachedProject]);
-					await addProject(
-						{ baseUrl: serverUrl, directory: detachedProject, username },
-						{ suppressError: true },
-					);
-				} else {
-					const projects = getOpenProjects();
-					expectedDirectoriesRef.current = new Set(
-						projects.map((project) => project.directory),
-					);
-					await Promise.allSettled(
-						projects.map((project) =>
-							addProject(
-								{
-									baseUrl: project.serverUrl,
-									directory: project.directory,
-									username: project.username,
-								},
-								{ suppressError: true },
-							),
-						),
-					);
+				const worktreeParentMap = getWorktreeParents();
+				const bootWorkspaces = stateRef.current.workspaces.map((workspace) =>
+					workspace.id === LOCAL_WORKSPACE_ID && detachedProject
+						? { ...workspace, projects: [detachedProject] }
+						: workspace,
+				);
 
-					// Auto-open all registered worktrees so they appear in the sidebar
-					// without requiring the user to manually click "Open".
-					const worktreeParentMap = getWorktreeParents();
-					const projectByDir = new Map(projects.map((p) => [p.directory, p]));
-					const worktreeEntries = Object.entries(worktreeParentMap);
-					if (worktreeEntries.length > 0) {
+				for (const workspace of bootWorkspaces) {
+					for (const project of workspace.projects) {
+						const rootDirectory = getWorkspaceRootDirectory(
+							project,
+							worktreeParentMap,
+						);
+						const relatedWorktrees = Object.entries(worktreeParentMap)
+							.filter(([, meta]) => meta.parentDir === rootDirectory)
+							.map(([worktreeDir]) => worktreeDir);
+						expectedDirectoriesRef.current = new Set([
+							...expectedDirectoriesRef.current,
+							rootDirectory,
+							...relatedWorktrees,
+						]);
+						await addProject(
+							{
+								workspaceId: workspace.id,
+								baseUrl: workspace.serverUrl,
+								directory: rootDirectory,
+								username: workspace.username,
+							},
+							{ suppressError: true },
+						);
 						await Promise.allSettled(
-							worktreeEntries.map(([worktreeDir, meta]) => {
-								const parent = projectByDir.get(meta.parentDir);
-								return addProject(
+							relatedWorktrees.map((worktreeDir) =>
+								addProject(
 									{
-										baseUrl:
-											parent?.serverUrl ??
-											storageGet(STORAGE_KEYS.SERVER_URL) ??
-											DEFAULT_SERVER_URL,
+										workspaceId: workspace.id,
+										baseUrl: workspace.serverUrl,
 										directory: worktreeDir,
-										username: parent?.username,
+										username: workspace.username,
 									},
 									{ suppressError: true },
-								);
-							}),
+								),
+							),
 						);
 					}
 				}
@@ -2500,38 +3135,220 @@ export function OpenCodeProvider({
 		};
 	}, [bridge, addProject, detachedProject]);
 
+	const activeWorkspace = useMemo(
+		() =>
+			state.workspaces.find(
+				(workspace) => workspace.id === state.activeWorkspaceId,
+			) ??
+			state.workspaces[0] ??
+			null,
+		[state.workspaces, state.activeWorkspaceId],
+	);
+
+	const activeWorkspaceProjectSet = useMemo(() => {
+		const directories = new Set<string>();
+		if (!activeWorkspace) return directories;
+		for (const project of activeWorkspace.projects) {
+			directories.add(project);
+		}
+		for (const [directory, workspaceId] of Object.entries(
+			state.projectWorkspaceMap,
+		)) {
+			if (workspaceId === activeWorkspace.id) {
+				directories.add(directory);
+			}
+		}
+		return directories;
+	}, [activeWorkspace, state.projectWorkspaceMap]);
+
+	const activeWorkspaceConnections = useMemo(
+		() =>
+			Object.fromEntries(
+				Object.entries(state.connections).filter(([directory]) =>
+					activeWorkspaceProjectSet.has(directory),
+				),
+			),
+		[state.connections, activeWorkspaceProjectSet],
+	);
+
+	const activeWorkspaceSessions = useMemo(
+		() =>
+			state.sessions.filter((session) => {
+				const directory = session._projectDir ?? session.directory;
+				return activeWorkspaceProjectSet.has(directory);
+			}),
+		[state.sessions, activeWorkspaceProjectSet],
+	);
+
+	const workspaceDirectory = useMemo(() => {
+		const connectedDirectories = Object.entries(activeWorkspaceConnections)
+			.filter(([, status]) => status.state === "connected")
+			.map(([directory]) => directory);
+		const rootDirectories = connectedDirectories.filter(
+			(directory) => !state.worktreeParents[directory],
+		);
+		if (rootDirectories.length > 0) return rootDirectories[0] ?? null;
+		if (connectedDirectories.length > 0) {
+			return getWorkspaceRootDirectory(
+				connectedDirectories[0]!,
+				state.worktreeParents,
+			);
+		}
+		return state.draftSessionDirectory &&
+			activeWorkspaceProjectSet.has(state.draftSessionDirectory)
+			? getWorkspaceRootDirectory(
+					state.draftSessionDirectory,
+					state.worktreeParents,
+				)
+			: null;
+	}, [
+		activeWorkspaceConnections,
+		activeWorkspaceProjectSet,
+		state.worktreeParents,
+		state.draftSessionDirectory,
+	]);
+
+	const workspaceConnection = useMemo(() => {
+		if (workspaceDirectory) {
+			return activeWorkspaceConnections[workspaceDirectory] ?? null;
+		}
+		if (!activeWorkspace) return null;
+		return {
+			state: "idle",
+			serverUrl: activeWorkspace.serverUrl,
+			serverVersion: null,
+			error: null,
+			lastEventAt: null,
+		} satisfies ConnectionStatus;
+	}, [activeWorkspaceConnections, workspaceDirectory, activeWorkspace]);
+
+	const connectedDirectorySet = useMemo(
+		() => new Set(Object.keys(state.connections)),
+		[state.connections],
+	);
+
+	const activeResourceDirectory = useMemo(() => {
+		const activeSession = state.sessions.find(
+			(session) => session.id === state.activeSessionId,
+		);
+		const sessionDirectory = getSessionDirectory(activeSession);
+		if (sessionDirectory) return sessionDirectory;
+		if (state.draftSessionDirectory) return state.draftSessionDirectory;
+
+		return workspaceDirectory;
+	}, [
+		state.sessions,
+		state.activeSessionId,
+		state.draftSessionDirectory,
+		workspaceDirectory,
+	]);
+
+	useEffect(() => {
+		if (!bridge || !activeResourceDirectory) return;
+		if (loadedResourceDirectoryRef.current === activeResourceDirectory) return;
+		void loadServerResources(activeResourceDirectory);
+	}, [bridge, activeResourceDirectory, loadServerResources]);
+
 	const disconnect = useCallback(async () => {
 		if (!bridge) return;
 		await bridge.disconnect();
 		expectedDirectoriesRef.current.clear();
-		clearOpenProjects();
-		globalDataLoaded.current = false;
+		storageRemove(STORAGE_KEYS.DIRECTORY);
+		loadedResourceDirectoryRef.current = null;
 		dispatch({ type: "CLEAR_ALL_PROJECTS" });
 	}, [bridge]);
 
 	const openDirectory = useCallback(async (): Promise<string | null> => {
-		// Use native Electron dialog only when available AND server is local.
-		// Otherwise fall back to a simple text prompt (works in browsers and
-		// when the opencode server is on a remote machine).
-		if (window.electronAPI?.openDirectory && isLocalServer()) {
-			return window.electronAPI.openDirectory();
-		}
-		const dir = window.prompt("Enter the project directory path:");
-		return dir?.trim() || null;
-	}, []);
+		if (!activeWorkspace?.isLocal) return null;
+		return window.electronAPI?.openDirectory?.() ?? null;
+	}, [activeWorkspace?.isLocal]);
 
 	const connectToProject = useCallback(
-		async (directory: string, serverUrl?: string) => {
-			const url =
-				serverUrl ?? storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL;
-			const username = storageGet(STORAGE_KEYS.USERNAME) ?? undefined;
+		async (
+			directory: string,
+			serverUrl?: string,
+			usernameOverride?: string,
+			passwordOverride?: string,
+		) => {
+			const trimmedDirectory = directory.trim();
+			if (!trimmedDirectory) return;
+			const workspace =
+				stateRef.current.workspaces.find(
+					(item) => item.id === stateRef.current.activeWorkspaceId,
+				) ?? createLocalWorkspace();
+			const url = serverUrl ?? workspace.serverUrl ?? DEFAULT_SERVER_URL;
+			const username = usernameOverride ?? workspace.username ?? undefined;
+			const password = passwordOverride;
+			const workspaceId = workspace.id;
+			const worktreeParentMap = getWorktreeParents();
+			const targetWorkspace = getWorkspaceRootDirectory(
+				trimmedDirectory,
+				worktreeParentMap,
+			);
+			const relatedWorktrees = Object.entries(worktreeParentMap)
+				.filter(([, meta]) => meta.parentDir === targetWorkspace)
+				.map(([worktreeDir]) => worktreeDir);
+			const desiredDirectories = [targetWorkspace, ...relatedWorktrees];
+			const activeWorkspaceProjects = new Set(workspace.projects);
+
+			if (activeWorkspaceProjects.has(targetWorkspace)) {
+				expectedDirectoriesRef.current = new Set([
+					...expectedDirectoriesRef.current,
+					...desiredDirectories,
+				]);
+				const missingDirectories = desiredDirectories.filter(
+					(dir) => !connectedDirectorySet.has(dir),
+				);
+				await Promise.allSettled(
+					missingDirectories.map((dir) =>
+						addProject({
+							workspaceId,
+							baseUrl: url,
+							directory: dir,
+							username: username || undefined,
+							password: password || undefined,
+						}),
+					),
+				);
+				return;
+			}
+
+			expectedDirectoriesRef.current = new Set([
+				...expectedDirectoriesRef.current,
+				...desiredDirectories,
+			]);
 			await addProject({
+				workspaceId,
 				baseUrl: url,
-				directory,
+				directory: targetWorkspace,
 				username: username || undefined,
+				password: password || undefined,
 			});
+
+			await Promise.allSettled(
+				relatedWorktrees
+					.filter((worktreeDir) => worktreeDir !== targetWorkspace)
+					.map((worktreeDir) =>
+						addProject({
+							workspaceId,
+							baseUrl: url,
+							directory: worktreeDir,
+							username: username || undefined,
+							password: password || undefined,
+						}),
+					),
+			);
+			if (workspaceId === LOCAL_WORKSPACE_ID) {
+				storageSet(STORAGE_KEYS.DIRECTORY, targetWorkspace);
+				if (username) {
+					storageSet(STORAGE_KEYS.USERNAME, username);
+				} else {
+					storageRemove(STORAGE_KEYS.USERNAME);
+				}
+				storageSet(STORAGE_KEYS.SERVER_URL, url);
+			}
 		},
-		[addProject],
+		[addProject, connectedDirectorySet],
 	);
 
 	const refreshSessions = useCallback(async () => {
@@ -2542,32 +3359,18 @@ export function OpenCodeProvider({
 		}
 	}, [bridge]);
 
-	// Refs to avoid stale closures and prevent unnecessary callback recreation
-	const temporarySessionsRef = useRef(state.temporarySessions);
-	temporarySessionsRef.current = state.temporarySessions;
-	const activeSessionIdRef = useRef(state.activeSessionId);
-	activeSessionIdRef.current = state.activeSessionId;
-	const draftSessionDirectoryRef = useRef(state.draftSessionDirectory);
-	draftSessionDirectoryRef.current = state.draftSessionDirectory;
-	const draftIsTemporaryRef = useRef(state.draftIsTemporary);
-	draftIsTemporaryRef.current = state.draftIsTemporary;
-	const busySessionIdsRef = useRef(state.busySessionIds);
-	busySessionIdsRef.current = state.busySessionIds;
-	const queuedPromptsRef = useRef(state.queuedPrompts);
-	queuedPromptsRef.current = state.queuedPrompts;
-	const sessionsRef = useRef(state.sessions);
-	sessionsRef.current = state.sessions;
-	const worktreeParentsRef = useRef(state.worktreeParents);
-	worktreeParentsRef.current = state.worktreeParents;
+	// Single ref to avoid stale closures and prevent unnecessary callback recreation
+	const stateRef = useRef(state);
+	stateRef.current = state;
 
 	/** Best-effort cleanup of a temporary session if it exists. */
 	const cleanupTemporarySession = useCallback(
 		(excludeId?: string | null) => {
-			const prevId = activeSessionIdRef.current;
+			const prevId = stateRef.current.activeSessionId;
 			if (
 				prevId &&
 				prevId !== excludeId &&
-				temporarySessionsRef.current.has(prevId)
+				stateRef.current.temporarySessions.has(prevId)
 			) {
 				dispatch({ type: "SESSION_DELETED", payload: prevId });
 				bridge?.deleteSession(prevId).catch(() => {
@@ -2578,60 +3381,190 @@ export function OpenCodeProvider({
 		[bridge],
 	);
 
+	const fetchMessagePage = useCallback(
+		async (
+			sessionId: string,
+			options?: { before?: string; limit?: number },
+		) => {
+			if (!bridge) return { messages: [], hasMore: false };
+			const pageSize = options?.limit ?? MESSAGE_PAGE_SIZE;
+			const res = await bridge.getMessages(sessionId, {
+				limit: pageSize,
+				before: options?.before,
+			});
+			const messages = res.success && res.data ? res.data : [];
+			return {
+				messages,
+				hasMore: messages.length >= pageSize,
+			};
+		},
+		[bridge],
+	);
+
+	const hydrateChildSessionsForMessages = useCallback(
+		(
+			messages: MessageEntry[],
+			options?: { requestId?: number; sessionId?: string },
+		) => {
+			if (!bridge || messages.length === 0) return;
+
+			const childSessionIds = new Set<string>();
+			for (const msg of messages) {
+				for (const part of msg.parts) {
+					const childSid = getChildSessionId(part);
+					if (childSid) childSessionIds.add(childSid);
+				}
+			}
+
+			for (const childSid of childSessionIds) {
+				bridge
+					.getMessages(childSid, { limit: 10000 })
+					.then((childRes) => {
+						if (
+							options?.requestId !== undefined &&
+							options.requestId !== selectSessionRequestRef.current
+						) {
+							return;
+						}
+						if (
+							options?.sessionId &&
+							options.sessionId !== stateRef.current.activeSessionId
+						) {
+							return;
+						}
+						if (childRes.success && childRes.data) {
+							dispatch({
+								type: "LOAD_CHILD_SESSION",
+								payload: {
+									childSessionId: childSid,
+									messages: childRes.data,
+								},
+							});
+						}
+					})
+					.catch(() => {
+						/* best-effort child session fetch */
+					});
+			}
+		},
+		[bridge],
+	);
+
 	const selectSession = useCallback(
 		async (id: string | null) => {
-			if (id === activeSessionIdRef.current) return;
+			if (id === stateRef.current.activeSessionId) return;
 
 			cleanupTemporarySession(id);
 
 			const requestId = ++selectSessionRequestRef.current;
 			dispatch({ type: "SET_ACTIVE_SESSION", payload: id });
 			if (!id || !bridge) return;
-			const res = await bridge.getMessages(id);
+			const { messages, hasMore } = await fetchMessagePage(id);
 			if (requestId !== selectSessionRequestRef.current) return;
-			const messages = res.success && res.data ? res.data : [];
-			dispatch({ type: "SET_MESSAGES", payload: messages });
-
-			// Fetch child session data for any task tool parts with metadata.sessionId
-			if (messages.length > 0) {
-				const childSessionIds = new Set<string>();
-				for (const msg of messages) {
-					for (const part of msg.parts) {
-						if (part.type !== "tool") continue;
-						if (part.tool.toLowerCase() !== "task") continue;
-						const meta =
-							"metadata" in part.state && part.state.metadata
-								? (part.state.metadata as Record<string, unknown>)
-								: null;
-						if (meta && typeof meta.sessionId === "string") {
-							childSessionIds.add(meta.sessionId);
-						}
-					}
-				}
-				// Fetch each child session's messages in parallel (fire-and-forget)
-				for (const childSid of childSessionIds) {
-					bridge
-						.getMessages(childSid)
-						.then((childRes) => {
-							if (requestId !== selectSessionRequestRef.current) return;
-							if (childRes.success && childRes.data) {
-								dispatch({
-									type: "LOAD_CHILD_SESSION",
-									payload: {
-										childSessionId: childSid,
-										messages: childRes.data,
-									},
-								});
-							}
-						})
-						.catch(() => {
-							/* best-effort child session fetch */
-						});
-				}
-			}
+			dispatch({
+				type: "SET_MESSAGES",
+				payload: { messages, hasMore },
+			});
+			hydrateChildSessionsForMessages(messages, { requestId, sessionId: id });
 		},
-		[bridge, cleanupTemporarySession],
+		[
+			bridge,
+			cleanupTemporarySession,
+			fetchMessagePage,
+			hydrateChildSessionsForMessages,
+		],
 	);
+
+	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
+		const activeSessionId = stateRef.current.activeSessionId;
+		if (!bridge || !activeSessionId) return false;
+		if (
+			stateRef.current.isLoadingMessages ||
+			stateRef.current.isLoadingOlderMessages ||
+			!stateRef.current.messageHistoryHasMore
+		) {
+			return false;
+		}
+
+		const oldestMessageId = stateRef.current.messages[0]?.info.id;
+		if (!oldestMessageId) return false;
+
+		dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: true });
+		try {
+			const { messages, hasMore } = await fetchMessagePage(activeSessionId, {
+				before: oldestMessageId,
+			});
+			if (activeSessionId !== stateRef.current.activeSessionId) {
+				dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: false });
+				return false;
+			}
+			dispatch({
+				type: "SET_MESSAGES",
+				payload: { messages, hasMore, mode: "prepend" },
+			});
+			hydrateChildSessionsForMessages(messages, { sessionId: activeSessionId });
+			return messages.length > 0;
+		} catch {
+			dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: false });
+			return false;
+		}
+	}, [bridge, fetchMessagePage, hydrateChildSessionsForMessages]);
+
+	const loadNewerMessages = useCallback(async (): Promise<boolean> => {
+		if (
+			stateRef.current.isLoadingMessages ||
+			stateRef.current.isLoadingNewerMessages ||
+			!stateRef.current.messageWindowHasNewer
+		) {
+			return false;
+		}
+
+		const activeSessionId = stateRef.current.activeSessionId;
+		if (!bridge || !activeSessionId) return false;
+
+		dispatch({ type: "SET_LOADING_NEWER_MESSAGES", payload: true });
+		try {
+			const forwardChunk = stateRef.current.messageForwardBuffer.slice(
+				0,
+				MESSAGE_PAGE_SIZE,
+			);
+			if (forwardChunk.length > 0) {
+				dispatch({
+					type: "SET_MESSAGES",
+					payload: {
+						messages: forwardChunk,
+						hasMore: stateRef.current.messageHistoryHasMore,
+						mode: "append",
+					},
+				});
+				hydrateChildSessionsForMessages(forwardChunk, {
+					sessionId: activeSessionId,
+				});
+				return true;
+			}
+
+			const refreshed = await fetchMessagePage(activeSessionId);
+			if (activeSessionId !== stateRef.current.activeSessionId) {
+				dispatch({ type: "SET_LOADING_NEWER_MESSAGES", payload: false });
+				return false;
+			}
+			dispatch({
+				type: "SET_MESSAGES",
+				payload: {
+					messages: refreshed.messages,
+					hasMore: refreshed.hasMore,
+					mode: "replace",
+				},
+			});
+			hydrateChildSessionsForMessages(refreshed.messages, {
+				sessionId: activeSessionId,
+			});
+			return refreshed.messages.length > 0;
+		} catch {
+			dispatch({ type: "SET_LOADING_NEWER_MESSAGES", payload: false });
+			return false;
+		}
+	}, [bridge, fetchMessagePage, hydrateChildSessionsForMessages]);
 
 	const createSession = useCallback(
 		async (title?: string, directory?: string): Promise<Session | null> => {
@@ -2653,11 +3586,11 @@ export function OpenCodeProvider({
 	const deleteSession = useCallback(
 		async (id: string) => {
 			if (!bridge) return;
-			// Read from refs to avoid stale closures and, more importantly,
+			// Read from ref to avoid stale closures and, more importantly,
 			// to keep this callback's identity stable (deps don't include
 			// state.sessions / state.activeSessionId).
-			const currentSessions = sessionsRef.current;
-			const currentActiveId = activeSessionIdRef.current;
+			const currentSessions = stateRef.current.sessions;
+			const currentActiveId = stateRef.current.activeSessionId;
 
 			// Before removing, check if this session belongs to a worktree
 			// and whether it's the last session there.
@@ -2665,7 +3598,7 @@ export function OpenCodeProvider({
 			const deletedDir =
 				deletedSession?._projectDir ?? deletedSession?.directory;
 			const wtMeta = deletedDir
-				? worktreeParentsRef.current[deletedDir]
+				? stateRef.current.worktreeParents[deletedDir]
 				: undefined;
 
 			// Determine next session *before* removing the deleted one from state
@@ -2737,12 +3670,12 @@ export function OpenCodeProvider({
 	const ensureSessionFromDraft = useCallback(async (): Promise<
 		string | null
 	> => {
-		let sessionId = activeSessionIdRef.current;
-		const draftDirectory = draftSessionDirectoryRef.current;
+		let sessionId = stateRef.current.activeSessionId;
+		const draftDirectory = stateRef.current.draftSessionDirectory;
 		if (!sessionId && draftDirectory) {
 			if (draftCreatingRef.current) return null;
 			draftCreatingRef.current = true;
-			const wasTemporary = draftIsTemporaryRef.current;
+			const wasTemporary = stateRef.current.draftIsTemporary;
 			try {
 				const newSession = await createSession(undefined, draftDirectory);
 				if (!newSession) {
@@ -2825,7 +3758,7 @@ export function OpenCodeProvider({
 	const dispatchNextQueued = useCallback(
 		async (sessionId: string) => {
 			if (dispatchingRef.current.has(sessionId)) return;
-			const queue = queuedPromptsRef.current[sessionId];
+			const queue = stateRef.current.queuedPrompts[sessionId];
 			if (!queue || queue.length === 0) return;
 
 			dispatchingRef.current.add(sessionId);
@@ -2857,9 +3790,9 @@ export function OpenCodeProvider({
 			const effectiveMode = mode ?? "queue";
 
 			// If session is busy, enqueue instead of sending directly.
-			// Read from refs to avoid stale closures when the user switches
+			// Read from ref to avoid stale closures when the user switches
 			// model/agent/variant right before pressing Enter.
-			if (busySessionIdsRef.current.has(sessionId)) {
+			if (stateRef.current.busySessionIds.has(sessionId)) {
 				const snapModel = selectedModelRef.current;
 				const snapAgent = selectedAgentRef.current;
 				const snapVariant = resolveVariant(
@@ -2879,33 +3812,13 @@ export function OpenCodeProvider({
 					mode: effectiveMode,
 				};
 
-				if (effectiveMode === "interrupt") {
-					// Interrupt: enqueue at front, then abort immediately.
-					// The abort triggers busy->idle which dispatches the queued prompt.
+				if (effectiveMode === "interrupt" || effectiveMode === "after-part") {
+					// Enqueue at front for both interrupt and after-part modes
 					dispatch({
 						type: "QUEUE_ADD",
 						payload: { sessionID: sessionId, prompt: queued },
 					});
-					// Move to front if there were already queued items
-					const existingQueue = queuedPromptsRef.current[sessionId] ?? [];
-					if (existingQueue.length > 0) {
-						dispatch({
-							type: "QUEUE_REORDER",
-							payload: {
-								sessionID: sessionId,
-								fromIndex: existingQueue.length, // newly appended = last
-								toIndex: 0,
-							},
-						});
-					}
-					await bridge.abort(sessionId);
-				} else if (effectiveMode === "after-part") {
-					// After-part: enqueue at front, then wait for current part to finish.
-					dispatch({
-						type: "QUEUE_ADD",
-						payload: { sessionID: sessionId, prompt: queued },
-					});
-					const existingQueue = queuedPromptsRef.current[sessionId] ?? [];
+					const existingQueue = stateRef.current.queuedPrompts[sessionId] ?? [];
 					if (existingQueue.length > 0) {
 						dispatch({
 							type: "QUEUE_REORDER",
@@ -2916,10 +3829,14 @@ export function OpenCodeProvider({
 							},
 						});
 					}
-					dispatch({
-						type: "SET_AFTER_PART_PENDING",
-						payload: { sessionID: sessionId, pending: true },
-					});
+					if (effectiveMode === "interrupt") {
+						await bridge.abort(sessionId);
+					} else {
+						dispatch({
+							type: "SET_AFTER_PART_PENDING",
+							payload: { sessionID: sessionId, pending: true },
+						});
+					}
 				} else {
 					// Queue (default): enqueue at end, wait for session to become idle.
 					dispatch({
@@ -3141,12 +4058,10 @@ export function OpenCodeProvider({
 
 	/** Re-fetch providers from the server and update global state. */
 	const refreshProviders = useCallback(async () => {
-		if (!bridge) return;
-		const res = await bridge.getProviders();
-		if (res.success && res.data) {
-			dispatch({ type: "SET_PROVIDERS", payload: res.data });
-		}
-	}, [bridge]);
+		await loadServerResources(
+			activeResourceDirectory ?? loadedResourceDirectoryRef.current,
+		);
+	}, [activeResourceDirectory, loadServerResources]);
 
 	const clearError = useCallback(() => {
 		dispatch({ type: "SET_ERROR", payload: null });
@@ -3197,7 +4112,7 @@ export function OpenCodeProvider({
 			const target = queue[index];
 			if (!target) return;
 
-			if (busySessionIdsRef.current.has(sessionId)) {
+			if (stateRef.current.busySessionIds.has(sessionId)) {
 				if (index > 0) {
 					dispatch({
 						type: "QUEUE_REORDER",
@@ -3251,10 +4166,14 @@ export function OpenCodeProvider({
 					dispatch({ type: "SESSION_UPDATED", payload: res.data });
 				}
 				// Re-fetch messages to reflect the reverted state
-				const msgRes = await bridge.getMessages(state.activeSessionId);
-				if (msgRes.success && msgRes.data) {
-					dispatch({ type: "SET_MESSAGES", payload: msgRes.data });
-				}
+				const refreshed = await fetchMessagePage(state.activeSessionId);
+				dispatch({
+					type: "SET_MESSAGES",
+					payload: {
+						messages: refreshed.messages,
+						hasMore: refreshed.hasMore,
+					},
+				});
 			} catch (err) {
 				dispatch({
 					type: "SET_ERROR",
@@ -3263,7 +4182,7 @@ export function OpenCodeProvider({
 				});
 			}
 		},
-		[bridge, state.activeSessionId, state.busySessionIds],
+		[bridge, fetchMessagePage, state.activeSessionId, state.busySessionIds],
 	);
 
 	const unrevert = useCallback(async () => {
@@ -3274,10 +4193,14 @@ export function OpenCodeProvider({
 				dispatch({ type: "SESSION_UPDATED", payload: res.data });
 			}
 			// Re-fetch messages to include the restored messages
-			const msgRes = await bridge.getMessages(state.activeSessionId);
-			if (msgRes.success && msgRes.data) {
-				dispatch({ type: "SET_MESSAGES", payload: msgRes.data });
-			}
+			const refreshed = await fetchMessagePage(state.activeSessionId);
+			dispatch({
+				type: "SET_MESSAGES",
+				payload: {
+					messages: refreshed.messages,
+					hasMore: refreshed.hasMore,
+				},
+			});
 		} catch (err) {
 			dispatch({
 				type: "SET_ERROR",
@@ -3285,7 +4208,7 @@ export function OpenCodeProvider({
 					err instanceof Error ? err.message : "Failed to unrevert session",
 			});
 		}
-	}, [bridge, state.activeSessionId]);
+	}, [bridge, fetchMessagePage, state.activeSessionId]);
 
 	const forkFromMessage = useCallback(
 		async (messageID: string) => {
@@ -3346,12 +4269,94 @@ export function OpenCodeProvider({
 		dispatch({ type: "SET_PENDING_WORKTREE_CLEANUP", payload: null });
 	}, []);
 
+	const createWorkspace = useCallback(
+		(input: { name: string; serverUrl: string; username?: string }) => {
+			const id = `ws_${Date.now().toString(36)}`;
+			const workspace = normalizeWorkspace({
+				id,
+				name: input.name,
+				serverUrl: input.serverUrl,
+				username: input.username,
+				isLocal: false,
+				projects: [],
+				selectedModel: null,
+				selectedAgent: null,
+			});
+			dispatch({
+				type: "SET_WORKSPACES",
+				payload: [...stateRef.current.workspaces, workspace],
+			});
+			dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: workspace.id });
+			dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+		},
+		[],
+	);
+
+	const updateWorkspace = useCallback(
+		(
+			workspaceId: string,
+			input: Partial<Pick<Workspace, "name" | "serverUrl" | "username">>,
+		) => {
+			const next = stateRef.current.workspaces.map((workspace) => {
+				if (workspace.id !== workspaceId) return workspace;
+				const nextServerUrl = workspace.isLocal
+					? DEFAULT_SERVER_URL
+					: (input.serverUrl ?? workspace.serverUrl);
+				return normalizeWorkspace({
+					...workspace,
+					name: input.name ?? workspace.name,
+					serverUrl: nextServerUrl,
+					username: input.username ?? workspace.username,
+				});
+			});
+			dispatch({ type: "SET_WORKSPACES", payload: next });
+		},
+		[],
+	);
+
+	const switchWorkspace = useCallback((workspaceId: string) => {
+		dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: workspaceId });
+		dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+	}, []);
+
+	const removeWorkspace = useCallback(
+		async (workspaceId: string) => {
+			if (workspaceId === LOCAL_WORKSPACE_ID || !bridge) return;
+			const workspace = stateRef.current.workspaces.find(
+				(item) => item.id === workspaceId,
+			);
+			if (!workspace) return;
+			for (const directory of workspace.projects) {
+				await bridge.removeProject(directory);
+				dispatch({ type: "REMOVE_PROJECT", payload: directory });
+			}
+			const nextWorkspaces = stateRef.current.workspaces.filter(
+				(item) => item.id !== workspaceId,
+			);
+			dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
+			if (stateRef.current.activeWorkspaceId === workspaceId) {
+				dispatch({
+					type: "SET_ACTIVE_WORKSPACE",
+					payload: nextWorkspaces[0]?.id ?? LOCAL_WORKSPACE_ID,
+				});
+				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+			}
+		},
+		[bridge],
+	);
+
 	// ----- Split context values (memoised per domain) -----
 
 	const sessionCtx = useMemo<SessionContextValue>(
 		() => ({
-			sessions: state.sessions,
-			activeSessionId: state.activeSessionId,
+			sessions: activeWorkspaceSessions,
+			activeSessionId:
+				state.activeSessionId &&
+				activeWorkspaceSessions.some(
+					(session) => session.id === state.activeSessionId,
+				)
+					? state.activeSessionId
+					: null,
 			messages: state.messages,
 			isBusy: state.isBusy,
 			isLoadingMessages: state.isLoadingMessages,
@@ -3369,7 +4374,7 @@ export function OpenCodeProvider({
 			recentProjects: state.recentProjects,
 		}),
 		[
-			state.sessions,
+			activeWorkspaceSessions,
 			state.activeSessionId,
 			state.messages,
 			state.isBusy,
@@ -3386,6 +4391,25 @@ export function OpenCodeProvider({
 			state.sessionMeta,
 			state.childSessions,
 			state.recentProjects,
+		],
+	);
+
+	const messagesCtx = useMemo<MessagesContextValue>(
+		() => ({
+			messages: state.messages,
+			childSessions: state.childSessions,
+			messageHistoryHasMore: state.messageHistoryHasMore,
+			messageWindowHasNewer: state.messageWindowHasNewer,
+			isLoadingOlderMessages: state.isLoadingOlderMessages,
+			isLoadingNewerMessages: state.isLoadingNewerMessages,
+		}),
+		[
+			state.messages,
+			state.childSessions,
+			state.messageHistoryHasMore,
+			state.messageWindowHasNewer,
+			state.isLoadingOlderMessages,
+			state.isLoadingNewerMessages,
 		],
 	);
 
@@ -3414,7 +4438,54 @@ export function OpenCodeProvider({
 
 	const connectionCtx = useMemo<ConnectionContextValue>(
 		() => ({
-			connections: state.connections,
+			workspaces: state.workspaces,
+			activeWorkspace,
+			activeWorkspaceId: state.activeWorkspaceId,
+			workspaceStatuses: Object.fromEntries(
+				state.workspaces.map((workspace) => {
+					const workspaceSessions = state.sessions.filter((session) => {
+						const directory = session._projectDir ?? session.directory;
+						return (
+							workspace.projects.includes(directory) ||
+							state.projectWorkspaceMap[directory] === workspace.id
+						);
+					});
+					const sessionIds = new Set(
+						workspaceSessions.map((session) => session.id),
+					);
+					const workspaceConnections = Object.entries(state.connections).filter(
+						([directory]) =>
+							workspace.projects.includes(directory) ||
+							state.projectWorkspaceMap[directory] === workspace.id,
+					);
+					return [
+						workspace.id,
+						{
+							busy: [...state.busySessionIds].some((id) => sessionIds.has(id)),
+							needsAttention:
+								Object.keys(state.pendingPermissions).some((id) =>
+									sessionIds.has(id),
+								) ||
+								Object.keys(state.pendingQuestions).some((id) =>
+									sessionIds.has(id),
+								),
+							error: workspaceConnections.some(
+								([, status]) => status.state === "error",
+							),
+							connected: workspaceConnections.some(
+								([, status]) => status.state === "connected",
+							),
+						},
+					] as const;
+				}),
+			),
+			connections: activeWorkspaceConnections,
+			workspaceDirectory,
+			workspaceServerUrl:
+				activeWorkspace?.serverUrl ?? workspaceConnection?.serverUrl ?? null,
+			workspaceUsername: activeWorkspace?.username ?? null,
+			isLocalWorkspace: activeWorkspace?.isLocal ?? isLocalServer(),
+			activeDirectory: activeResourceDirectory,
 			bootState: state.bootState,
 			bootError: state.bootError,
 			bootLogs: state.bootLogs,
@@ -3423,7 +4494,19 @@ export function OpenCodeProvider({
 			pendingWorktreeCleanup: state.pendingWorktreeCleanup,
 		}),
 		[
+			state.workspaces,
+			activeWorkspace,
+			state.activeWorkspaceId,
+			state.sessions,
 			state.connections,
+			state.projectWorkspaceMap,
+			state.busySessionIds,
+			state.pendingPermissions,
+			state.pendingQuestions,
+			activeWorkspaceConnections,
+			workspaceDirectory,
+			workspaceConnection,
+			activeResourceDirectory,
 			state.bootState,
 			state.bootError,
 			state.bootLogs,
@@ -3439,6 +4522,8 @@ export function OpenCodeProvider({
 			removeProject,
 			disconnect,
 			selectSession,
+			loadOlderMessages,
+			loadNewerMessages,
 			createSession,
 			deleteSession,
 			renameSession,
@@ -3476,12 +4561,18 @@ export function OpenCodeProvider({
 			unregisterWorktree,
 			touchWorktree,
 			clearWorktreeCleanup,
+			createWorkspace,
+			updateWorkspace,
+			removeWorkspace,
+			switchWorkspace,
 		}),
 		[
 			addProject,
 			removeProject,
 			disconnect,
 			selectSession,
+			loadOlderMessages,
+			loadNewerMessages,
 			createSession,
 			deleteSession,
 			renameSession,
@@ -3519,13 +4610,17 @@ export function OpenCodeProvider({
 			unregisterWorktree,
 			touchWorktree,
 			clearWorktreeCleanup,
+			createWorkspace,
+			updateWorkspace,
+			removeWorkspace,
+			switchWorkspace,
 		],
 	);
 
 	// Clean up temporary sessions on window unload (app close / refresh)
 	useEffect(() => {
 		const cleanup = () => {
-			for (const id of temporarySessionsRef.current) {
+			for (const id of stateRef.current.temporarySessions) {
 				bridge?.deleteSession(id).catch(() => {
 					/* best-effort cleanup on unload */
 				});
@@ -3540,7 +4635,9 @@ export function OpenCodeProvider({
 			<ConnectionContext.Provider value={connectionCtx}>
 				<ModelContext.Provider value={modelCtx}>
 					<SessionContext.Provider value={sessionCtx}>
-						{children}
+						<MessagesContext.Provider value={messagesCtx}>
+							{children}
+						</MessagesContext.Provider>
 					</SessionContext.Provider>
 				</ModelContext.Provider>
 			</ConnectionContext.Provider>
@@ -3553,16 +4650,31 @@ export function OpenCodeProvider({
 // ---------------------------------------------------------------------------
 
 /**
- * Session-related state: sessions list, active session, messages, busy
- * state, queue, permissions, questions, draft, unread, meta, child sessions.
+ * Session-related state: sessions list, active session, busy state, queue,
+ * permissions, questions, draft, unread, meta.
  *
- * Components that only read session data should prefer this over useOpenCode()
- * to avoid re-rendering on model / connection state changes.
+ * Does NOT include messages or childSessions - use useMessages() for those.
+ * This split prevents streaming deltas from re-rendering the sidebar,
+ * prompt box, and other components that only care about session metadata.
  */
 export function useSessionState(): SessionContextValue {
 	const ctx = useContext(SessionContext);
 	if (!ctx) {
 		throw new Error("useSessionState must be used within <OpenCodeProvider>");
+	}
+	return ctx;
+}
+
+/**
+ * Messages and child sessions for the active session.
+ *
+ * Only components that render message content should use this hook.
+ * Changes on every streaming delta - that's the whole point of isolating it.
+ */
+export function useMessages(): MessagesContextValue {
+	const ctx = useContext(MessagesContext);
+	if (!ctx) {
+		throw new Error("useMessages must be used within <OpenCodeProvider>");
 	}
 	return ctx;
 }

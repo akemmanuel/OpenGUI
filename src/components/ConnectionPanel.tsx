@@ -1,7 +1,7 @@
 /**
  * Server connection settings.
  * A small status indicator in the sidebar footer that opens a modal
- * for configuring the server URL, auth, and adding a new project.
+ * for configuring the server URL, auth, and switching the current project.
  */
 
 import {
@@ -75,7 +75,7 @@ export function ConnectionPanel() {
 						<DialogHeader>
 							<DialogTitle>Settings</DialogTitle>
 							<DialogDescription>
-								Manage server connections, providers, and preferences.
+								Manage app preferences and providers for the active workspace.
 							</DialogDescription>
 						</DialogHeader>
 						<Tabs defaultValue="general">
@@ -83,18 +83,12 @@ export function ConnectionPanel() {
 								<TabsTrigger value="general" className="flex-1">
 									General
 								</TabsTrigger>
-								<TabsTrigger value="connection" className="flex-1">
-									Connection
-								</TabsTrigger>
 								<TabsTrigger value="providers" className="flex-1">
 									Providers
 								</TabsTrigger>
 							</TabsList>
 							<TabsContent value="general">
 								<GeneralSettings />
-							</TabsContent>
-							<TabsContent value="connection">
-								<AddProjectForm onDone={() => setOpen(false)} />
 							</TabsContent>
 							<TabsContent value="providers">
 								<SettingsProviders />
@@ -108,7 +102,7 @@ export function ConnectionPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Add project form (inside the modal)
+// Workspace form (inside the modal)
 // ---------------------------------------------------------------------------
 
 type ServerState =
@@ -119,9 +113,10 @@ type ServerState =
 	| "stopping"
 	| "error";
 
-function AddProjectForm({ onDone }: { onDone: () => void }) {
-	const { addProject, connectToProject, clearError } = useActions();
-	const { connections } = useConnectionState();
+function _AddProjectForm({ onDone }: { onDone: () => void }) {
+	const { connectToProject, clearError } = useActions();
+	const { connections, workspaceServerUrl, workspaceUsername } =
+		useConnectionState();
 	const isElectron = !!window.electronAPI;
 
 	const [url, setUrl] = useState(
@@ -134,6 +129,10 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 	const [password, setPassword] = useState("");
 	const [showAuth, setShowAuth] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const connectedProjectCount = Object.values(connections).filter(
+		(conn) => conn.state === "connected",
+	).length;
+	const hasConnectedProjects = connectedProjectCount > 0;
 
 	// Local server status (only relevant in Electron)
 	const [serverState, setServerState] = useState<ServerState>("checking");
@@ -154,6 +153,11 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 	useEffect(() => {
 		void checkServerStatus();
 	}, [checkServerStatus]);
+
+	useEffect(() => {
+		if (workspaceServerUrl) setUrl(workspaceServerUrl);
+		setUsername(workspaceUsername ?? "");
+	}, [workspaceServerUrl, workspaceUsername]);
 
 	const handleStartServer = async () => {
 		setServerState("starting");
@@ -186,7 +190,12 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 				setIsSubmitting(true);
 				try {
 					const reconnectTasks = directoriesToReconnect.map((dir) =>
-						connectToProject(dir, DEFAULT_SERVER_URL),
+						connectToProject(
+							dir,
+							DEFAULT_SERVER_URL,
+							username || undefined,
+							password || undefined,
+						),
 					);
 
 					if (
@@ -194,12 +203,12 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 						!directoriesToReconnect.includes(typedDirectory)
 					) {
 						reconnectTasks.push(
-							addProject({
-								baseUrl: url,
-								username: username || undefined,
-								password: password || undefined,
-								directory: typedDirectory,
-							}),
+							connectToProject(
+								typedDirectory,
+								url,
+								username || undefined,
+								password || undefined,
+							),
 						);
 					}
 
@@ -246,20 +255,22 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 		e.preventDefault();
 		setIsSubmitting(true);
 		clearError();
-		await addProject({
-			baseUrl: url,
-			username: username || undefined,
-			password: password || undefined,
-			directory: directory.trim() || undefined,
-		});
-		setIsSubmitting(false);
-		// Only close the dialog if the project was actually added (connection
-		// exists for the directory). On failure, keep the dialog open so the
-		// user can see the error and retry.
-		const dir = directory.trim();
-		if (dir && connections[dir]?.state === "connected") {
-			onDone();
+		const trimmedUrl = url.trim();
+		const trimmedUsername = username.trim();
+		storageSet(STORAGE_KEYS.SERVER_URL, trimmedUrl);
+		if (trimmedUsername) {
+			storageSet(STORAGE_KEYS.USERNAME, trimmedUsername);
+		} else {
+			storageRemove(STORAGE_KEYS.USERNAME);
 		}
+		await connectToProject(
+			directory.trim(),
+			trimmedUrl,
+			trimmedUsername || undefined,
+			password || undefined,
+		);
+		setIsSubmitting(false);
+		onDone();
 	};
 
 	return (
@@ -355,9 +366,15 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 					value={url}
 					onChange={(e) => setUrl(e.target.value)}
 					placeholder="http://127.0.0.1:4096"
-					disabled={isSubmitting}
+					disabled={isSubmitting || hasConnectedProjects}
 					className="font-mono text-sm"
 				/>
+				{hasConnectedProjects && (
+					<p className="text-[11px] text-muted-foreground">
+						This window is locked to one server while projects are open. Open a
+						new window to use another server.
+					</p>
+				)}
 			</div>
 
 			{/* Directory */}
@@ -373,8 +390,8 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 					className="font-mono text-sm"
 				/>
 				<p className="text-[11px] text-muted-foreground">
-					OpenCode sessions are scoped by directory. Keep this path stable to
-					reuse the same chats.
+					This window can open multiple projects, but they all share the same
+					server connection. Use stable paths to reuse the same chats.
 				</p>
 			</div>
 
@@ -400,6 +417,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 								value={username}
 								onChange={(e) => setUsername(e.target.value)}
 								placeholder="opencode"
+								disabled={hasConnectedProjects}
 								className="text-sm"
 							/>
 						</div>
@@ -413,6 +431,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								placeholder="Password"
+								disabled={hasConnectedProjects}
 								className="text-sm"
 							/>
 						</div>
@@ -426,7 +445,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 					{isSubmitting ? (
 						<Button type="button" size="sm" variant="secondary" disabled>
 							<Spinner className="size-4 mr-1.5" />
-							Connecting
+							Opening
 						</Button>
 					) : (
 						<Button
@@ -435,7 +454,7 @@ function AddProjectForm({ onDone }: { onDone: () => void }) {
 							disabled={!url.trim() || !directory.trim()}
 						>
 							<PlugZap className="size-4 mr-1.5" />
-							Add project
+							Open project
 						</Button>
 					)}
 				</div>
@@ -473,46 +492,81 @@ function GeneralSettings() {
 }
 
 // ---------------------------------------------------------------------------
-// STT endpoint setting
+// Shared storage-input setting
 // ---------------------------------------------------------------------------
 
-function SttEndpointSetting() {
-	const [endpoint, setEndpoint] = useState(
-		() => storageGet(STORAGE_KEYS.STT_ENDPOINT) ?? "",
-	);
+import type { LucideIcon } from "lucide-react";
 
-	const handleChange = (value: string) => {
-		setEndpoint(value);
-		if (value.trim()) {
-			storageSet(STORAGE_KEYS.STT_ENDPOINT, value.trim());
+function StorageInputSetting({
+	storageKey,
+	id,
+	icon: Icon,
+	label,
+	placeholder,
+	helpText,
+	inputType,
+	onChangeExtra,
+}: {
+	storageKey: string;
+	id: string;
+	icon: LucideIcon;
+	label: string;
+	placeholder: string;
+	helpText: string;
+	inputType?: string;
+	onChangeExtra?: () => void;
+}) {
+	const [value, setValue] = useState(() => storageGet(storageKey) ?? "");
+
+	const handleChange = (newValue: string) => {
+		setValue(newValue);
+		if (newValue.trim()) {
+			storageSet(storageKey, newValue.trim());
 		} else {
-			storageRemove(STORAGE_KEYS.STT_ENDPOINT);
+			storageRemove(storageKey);
 		}
-		// Notify other components in the same tab
-		window.dispatchEvent(new Event("stt-endpoint-changed"));
+		onChangeExtra?.();
 	};
 
 	return (
 		<div className="space-y-2">
 			<div className="flex items-center gap-2">
-				<Mic className="size-4 text-muted-foreground" />
-				<Label htmlFor="stt-endpoint" className="text-sm font-normal">
-					Voice transcription endpoint
+				<Icon className="size-4 text-muted-foreground" />
+				<Label htmlFor={id} className="text-sm font-normal">
+					{label}
 				</Label>
 			</div>
 			<Input
-				id="stt-endpoint"
-				type="url"
-				value={endpoint}
+				id={id}
+				type={inputType}
+				value={value}
 				onChange={(e) => handleChange(e.target.value)}
-				placeholder="https://your-whisper-server.com/transcribe"
+				placeholder={placeholder}
 				className="font-mono text-sm"
 			/>
-			<p className="text-[11px] text-muted-foreground">
-				URL of a Whisper-compatible STT server. The mic button will only appear
-				when this is set.
-			</p>
+			<p className="text-[11px] text-muted-foreground">{helpText}</p>
 		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// STT endpoint setting
+// ---------------------------------------------------------------------------
+
+function SttEndpointSetting() {
+	return (
+		<StorageInputSetting
+			storageKey={STORAGE_KEYS.STT_ENDPOINT}
+			id="stt-endpoint"
+			icon={Mic}
+			label="Voice transcription endpoint"
+			placeholder="https://your-whisper-server.com/transcribe"
+			helpText="URL of a Whisper-compatible STT server. The mic button will only appear when this is set."
+			inputType="url"
+			onChangeExtra={() =>
+				window.dispatchEvent(new Event("stt-endpoint-changed"))
+			}
+		/>
 	);
 }
 
@@ -679,39 +733,15 @@ function NotificationsToggle() {
 // ---------------------------------------------------------------------------
 
 function FileManagerSetting() {
-	const [fileManager, setFileManager] = useState(
-		() => storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
-	);
-
-	const handleChange = (value: string) => {
-		setFileManager(value);
-		if (value.trim()) {
-			storageSet(STORAGE_KEYS.FILE_MANAGER, value.trim());
-		} else {
-			storageRemove(STORAGE_KEYS.FILE_MANAGER);
-		}
-	};
-
 	return (
-		<div className="space-y-2">
-			<div className="flex items-center gap-2">
-				<Folder className="size-4 text-muted-foreground" />
-				<Label htmlFor="file-manager" className="text-sm font-normal">
-					File manager
-				</Label>
-			</div>
-			<Input
-				id="file-manager"
-				value={fileManager}
-				onChange={(e) => handleChange(e.target.value)}
-				placeholder="Auto-detect"
-				className="font-mono text-sm"
-			/>
-			<p className="text-[11px] text-muted-foreground">
-				Command to open your file manager (e.g. nemo, nautilus). Leave empty to
-				auto-detect.
-			</p>
-		</div>
+		<StorageInputSetting
+			storageKey={STORAGE_KEYS.FILE_MANAGER}
+			id="file-manager"
+			icon={Folder}
+			label="File manager"
+			placeholder="Auto-detect"
+			helpText="Command to open your file manager (e.g. nemo, nautilus). Leave empty to auto-detect."
+		/>
 	);
 }
 
@@ -720,38 +750,14 @@ function FileManagerSetting() {
 // ---------------------------------------------------------------------------
 
 function TerminalSetting() {
-	const [terminal, setTerminal] = useState(
-		() => storageGet(STORAGE_KEYS.TERMINAL) ?? "",
-	);
-
-	const handleChange = (value: string) => {
-		setTerminal(value);
-		if (value.trim()) {
-			storageSet(STORAGE_KEYS.TERMINAL, value.trim());
-		} else {
-			storageRemove(STORAGE_KEYS.TERMINAL);
-		}
-	};
-
 	return (
-		<div className="space-y-2">
-			<div className="flex items-center gap-2">
-				<Terminal className="size-4 text-muted-foreground" />
-				<Label htmlFor="terminal" className="text-sm font-normal">
-					Terminal
-				</Label>
-			</div>
-			<Input
-				id="terminal"
-				value={terminal}
-				onChange={(e) => handleChange(e.target.value)}
-				placeholder="Auto-detect"
-				className="font-mono text-sm"
-			/>
-			<p className="text-[11px] text-muted-foreground">
-				Command to open your terminal (e.g. ghostty, kitty). Leave empty to
-				auto-detect.
-			</p>
-		</div>
+		<StorageInputSetting
+			storageKey={STORAGE_KEYS.TERMINAL}
+			id="terminal"
+			icon={Terminal}
+			label="Terminal"
+			placeholder="Auto-detect"
+			helpText="Command to open your terminal (e.g. ghostty, kitty). Leave empty to auto-detect."
+		/>
 	);
 }

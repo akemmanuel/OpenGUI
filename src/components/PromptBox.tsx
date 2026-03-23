@@ -12,7 +12,6 @@ import {
 	Square,
 	Wrench,
 	X,
-	Zap,
 } from "lucide-react";
 import * as React from "react";
 import { AgentSelector } from "@/components/AgentSelector";
@@ -44,6 +43,7 @@ import {
 	type QueueMode,
 	useActions,
 	useConnectionState,
+	useMessages,
 	useModelState,
 	useSessionState,
 } from "@/hooks/use-opencode";
@@ -72,6 +72,10 @@ interface PromptBoxProps
 	contextCost?: number | null;
 	/** Maximum context window size in tokens */
 	contextLimit?: number | null;
+	/** Current queue mode (controlled from parent) */
+	queueMode: QueueMode;
+	/** Callback to update queue mode */
+	onQueueModeChange: (mode: QueueMode) => void;
 }
 
 const TARGET_IMAGE_SIZE = 4.5 * 1024 * 1024; // Target slightly under 5 MB
@@ -156,6 +160,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			contextTokens,
 			contextCost,
 			contextLimit,
+			queueMode,
+			onQueueModeChange,
 			...props
 		},
 		ref,
@@ -171,10 +177,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<
 			string | null
 		>(null);
-		const [currentProjectBranch, setCurrentProjectBranch] = React.useState("Branch");
-
-		// Queue mode: how a message is dispatched when the session is busy
-		const [queueMode, setQueueMode] = React.useState<QueueMode>("queue");
+		const [currentProjectBranch, setCurrentProjectBranch] =
+			React.useState("Branch");
 
 		// Message history navigation state
 		// -1 = not browsing, 0 = most recent user message, incrementing = older
@@ -229,14 +233,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			connectToProject,
 		} = useActions();
 		const { commands, agents, selectedAgent } = useModelState();
-		const {
-			sessions,
-			messages,
-			activeSessionId,
-			draftSessionDirectory,
-			sessionDrafts,
-		} = useSessionState();
-		const { worktreeParents } = useConnectionState();
+		const { sessions, activeSessionId, draftSessionDirectory, sessionDrafts } =
+			useSessionState();
+		const { messages } = useMessages();
+		const { worktreeParents, isLocalWorkspace } = useConnectionState();
 		const syncingDraftRef = React.useRef(false);
 		const sessionDraftsRef = React.useRef(sessionDrafts);
 		const projectDir = React.useMemo(() => {
@@ -267,6 +267,16 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			typeof setTimeout
 		> | null>(null);
 
+		// Clear pending debounce timeout on unmount
+		React.useEffect(() => {
+			return () => {
+				if (fileMentionDebounceRef.current !== null) {
+					clearTimeout(fileMentionDebounceRef.current);
+					fileMentionDebounceRef.current = null;
+				}
+			};
+		}, []);
+
 		const primaryAgents = React.useMemo(
 			() => getPrimaryAgents(agents).map((a) => a.name),
 			[agents],
@@ -286,7 +296,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		}, [sessionDrafts]);
 
 		React.useEffect(() => {
-			if (!projectDir) {
+			if (!projectDir || !isLocalWorkspace) {
 				setCurrentProjectBranch("Branch");
 				return;
 			}
@@ -309,7 +319,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			return () => {
 				cancelled = true;
 			};
-		}, [projectDir]);
+		}, [projectDir, isLocalWorkspace]);
 
 		// Derive user message history from current session (newest first)
 		const userHistory = React.useMemo(
@@ -972,7 +982,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
 						{(() => {
 							// Only show in blank (draft) sessions - never in sessions that have messages
-							if (!draftSessionDirectory || messages.length > 0) return null;
+							if (
+								!draftSessionDirectory ||
+								messages.length > 0 ||
+								!isLocalWorkspace
+							)
+								return null;
 
 							if (!projectDir) return null;
 
@@ -1017,9 +1032,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 												onClick={() => setDraftDirectory(opt.dir)}
 												className="text-xs"
 											>
-											<span className="flex min-w-0 flex-1 items-center gap-1.5">
-												<span className="truncate">{opt.branch}</span>
-											</span>
+												<span className="flex min-w-0 flex-1 items-center gap-1.5">
+													<span className="truncate">{opt.branch}</span>
+												</span>
 												{opt.dir === draftSessionDirectory && (
 													<Check className="ml-auto size-3 shrink-0" />
 												)}
@@ -1048,35 +1063,25 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 										className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
 										onClick={(e) => {
 											e.stopPropagation();
-											setQueueMode((prev) => {
-												if (prev === "queue") return "after-part";
-												if (prev === "after-part") return "interrupt";
-												return "queue";
-											});
+											onQueueModeChange(
+												queueMode === "queue" ? "after-part" : "queue",
+											);
 										}}
 									>
-										{queueMode === "interrupt" ? (
-											<Zap className="size-3.5 shrink-0" />
-										) : queueMode === "after-part" ? (
+										{queueMode === "after-part" ? (
 											<ListEnd className="size-3.5 shrink-0" />
 										) : (
 											<ListEnd className="size-3.5 shrink-0" />
 										)}
 										<span className="truncate max-w-[100px]">
-											{queueMode === "interrupt"
-												? "Interrupt"
-												: queueMode === "after-part"
-													? "After part"
-													: "Queue"}
+											{queueMode === "after-part" ? "After part" : "Queue"}
 										</span>
 									</Button>
 								</TooltipTrigger>
 								<TooltipContent>
-									{queueMode === "interrupt"
-										? "Interrupt: abort immediately, then send"
-										: queueMode === "after-part"
-											? "After part: wait for current part to finish, then send"
-											: "Queue: wait for full response, then send"}
+									{queueMode === "after-part"
+										? "After part: wait for current part to finish, then send"
+										: "Queue: wait for full response, then send"}
 								</TooltipContent>
 							</Tooltip>
 						)}
@@ -1232,22 +1237,18 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 											<ArrowUp />
 											<span className="sr-only">
 												{isLoading
-													? queueMode === "interrupt"
-														? "Interrupt and send"
-														: queueMode === "after-part"
-															? "Send after part"
-															: "Queue message"
+													? queueMode === "after-part"
+														? "Send after part"
+														: "Queue message"
 													: "Send message"}
 											</span>
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent>
 										{isLoading
-											? queueMode === "interrupt"
-												? "Interrupt & send"
-												: queueMode === "after-part"
-													? "Send after part"
-													: "Queue"
+											? queueMode === "after-part"
+												? "Send after part"
+												: "Queue"
 											: "Send"}
 									</TooltipContent>
 								</Tooltip>

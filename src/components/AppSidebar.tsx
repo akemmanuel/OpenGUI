@@ -10,9 +10,7 @@ import {
 	GitBranch,
 	GitMerge,
 	MessageSquare,
-	Monitor,
 	Plus,
-	Settings,
 	ShieldAlert,
 	SquarePen,
 	Terminal,
@@ -21,6 +19,7 @@ import {
 } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Input } from "@/components/ui/input";
 import {
 	Sidebar,
 	SidebarContent,
@@ -43,7 +42,6 @@ import {
 } from "@/components/ui/tooltip";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import {
-	hasAnyConnection,
 	useActions,
 	useConnectionState,
 	useSessionState,
@@ -64,6 +62,7 @@ import {
 	formatTimeAgo,
 	getProjectName,
 	openExternalLink,
+	pruneRecord,
 } from "@/lib/utils";
 import type { GitWorktree } from "@/types/electron";
 import logoDark from "../../opencode-logo-dark.svg";
@@ -76,13 +75,7 @@ import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 
-export function AppSidebar({
-	detachedProject,
-	hiddenProjects,
-}: {
-	detachedProject?: string;
-	hiddenProjects?: string[];
-}) {
+export function AppSidebar({ detachedProject }: { detachedProject?: string }) {
 	const { state: sidebarState } = useSidebar();
 	const {
 		selectSession,
@@ -110,13 +103,14 @@ export function AppSidebar({
 		sessionDrafts,
 		sessionMeta,
 	} = useSessionState();
-	const { connections, worktreeParents } = useConnectionState();
-
-	const isConnected = hasAnyConnection(connections);
+	const { connections, worktreeParents, isLocalWorkspace, activeWorkspace } =
+		useConnectionState();
 
 	// Inline rename state
 	const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
 	const [editValue, setEditValue] = useState("");
+	const [showRemoteProjectInput, setShowRemoteProjectInput] = useState(false);
+	const [remoteProjectPath, setRemoteProjectPath] = useState("");
 	const editInputRef = useRef<HTMLInputElement>(null);
 
 	const startEditing = useCallback(
@@ -159,14 +153,9 @@ export function AppSidebar({
 	// Uses `_projectDir` (set by the bridge from the connection directory) instead
 	// of `session.directory` so that sessions are grouped correctly even when the
 	// server stores a slightly different path (symlinks, trailing slashes, etc.).
-	const hiddenProjectSet = useMemo(
-		() => new Set(hiddenProjects ?? []),
-		[hiddenProjects],
-	);
-
 	const projectGroups = useMemo(() => {
 		const openDirectories = Object.keys(connections).filter((dir) =>
-			detachedProject ? dir === detachedProject : !hiddenProjectSet.has(dir),
+			detachedProject ? dir === detachedProject : true,
 		);
 		const rootSessions = sessions.filter(
 			(s) =>
@@ -197,7 +186,6 @@ export function AppSidebar({
 		worktreeParents,
 		worktreeDirs,
 		detachedProject,
-		hiddenProjectSet,
 	]);
 
 	// Worktree dialog state
@@ -234,31 +222,56 @@ export function AppSidebar({
 	}, []);
 
 	/** Refresh git info for a project directory (is repo + worktree list + remote). */
-	const refreshGitInfo = useCallback(async (directory: string) => {
-		const git = window.electronAPI?.git;
-		if (!git) return;
-		const repoRes = await git.isRepo(directory);
-		const isRepo = repoRes.success && repoRes.data === true;
-		setIsGitRepo((prev) => ({ ...prev, [directory]: isRepo }));
-		if (isRepo) {
-			const [wtRes, remoteRes] = await Promise.all([
-				git.listWorktrees(directory),
-				git.getRemoteUrl(directory),
-			]);
-			if (wtRes.success && wtRes.data) {
-				setKnownWorktrees((prev) => ({
-					...prev,
-					[directory]: wtRes.data ?? [],
-				}));
+	const refreshGitInfo = useCallback(
+		async (directory: string) => {
+			const git = window.electronAPI?.git;
+			if (!git) return;
+			const repoRes = await git.isRepo(directory);
+			const isRepo = repoRes.success && repoRes.data === true;
+			setIsGitRepo((prev) => ({ ...prev, [directory]: isRepo }));
+			if (isRepo) {
+				const [wtRes, remoteRes] = await Promise.all([
+					git.listWorktrees(directory),
+					git.getRemoteUrl(directory),
+				]);
+				if (wtRes.success && wtRes.data) {
+					const actualWorktrees = wtRes.data ?? [];
+					setKnownWorktrees((prev) => ({
+						...prev,
+						[directory]: actualWorktrees,
+					}));
+					// Clean up orphaned worktreeParents entries for this directory.
+					// If a worktree was deleted externally, remove its stale entry.
+					const actualPaths = new Set(actualWorktrees.map((wt) => wt.path));
+					for (const [wtDir, info] of Object.entries(worktreeParents)) {
+						if (info.parentDir === directory && !actualPaths.has(wtDir)) {
+							unregisterWorktree(wtDir);
+						}
+					}
+				}
+				if (remoteRes.success && remoteRes.data) {
+					setRemoteUrls((prev) => ({
+						...prev,
+						[directory]: remoteRes.data ?? "",
+					}));
+				}
 			}
-			if (remoteRes.success && remoteRes.data) {
-				setRemoteUrls((prev) => ({
-					...prev,
-					[directory]: remoteRes.data ?? "",
-				}));
-			}
-		}
-	}, []);
+		},
+		[worktreeParents, unregisterWorktree],
+	);
+
+	// Prune stale git info entries when projects are removed
+	const openDirectories = useMemo(
+		() => Object.keys(connections),
+		[connections],
+	);
+	useEffect(() => {
+		const validDirs = new Set(openDirectories);
+		setIsGitRepo((prev) => pruneRecord(prev, validDirs));
+		setKnownWorktrees((prev) => pruneRecord(prev, validDirs));
+		setRemoteUrls((prev) => pruneRecord(prev, validDirs));
+		setCollapsed((prev) => pruneRecord(prev, validDirs));
+	}, [openDirectories]);
 
 	// Track collapsed state per project
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -289,6 +302,15 @@ export function AppSidebar({
 	const projectLabel = detachedProject
 		? getProjectName(detachedProject)
 		: "Your projects";
+
+	const handleAddProject = useCallback(async () => {
+		if (isLocalWorkspace) {
+			const dir = await openDirectory();
+			if (dir) void connectToProject(dir);
+			return;
+		}
+		setShowRemoteProjectInput(true);
+	}, [connectToProject, isLocalWorkspace, openDirectory]);
 
 	const hasUnsentDraft = useCallback(
 		(sessionId: string) =>
@@ -338,12 +360,11 @@ export function AppSidebar({
 					<SidebarGroup>
 						<SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
 							{projectLabel}
-							{!detachedProject && isConnected && (
+							{!detachedProject && (
 								<button
 									type="button"
-									onClick={async () => {
-										const dir = await openDirectory();
-										if (dir) void connectToProject(dir);
+									onClick={() => {
+										void handleAddProject();
 									}}
 									className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
 								>
@@ -471,52 +492,38 @@ export function AppSidebar({
 															<Copy className="size-4" />
 															<span>Copy absolute path</span>
 														</ContextMenu.Item>
-														<ContextMenu.Item
-															className={CTX_ITEM_CLASS}
-															onSelect={() => {
-																void window.electronAPI?.openInFileBrowser(
-																	directory,
-																	storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
-																);
-															}}
-														>
-															<FolderOpen className="size-4" />
-															<span>Open in file browser</span>
-														</ContextMenu.Item>
-														<ContextMenu.Item
-															className={CTX_ITEM_CLASS}
-															onSelect={() => {
-																void window.electronAPI?.openInTerminal(
-																	directory,
-																	storageGet(STORAGE_KEYS.TERMINAL) ?? "",
-																);
-															}}
-														>
-															<Terminal className="size-4" />
-															<span>Open in terminal</span>
-														</ContextMenu.Item>
-
-														{!detachedProject && (
+														{isLocalWorkspace && (
 															<>
-																<ContextMenu.Separator
-																	className={CTX_SEPARATOR_CLASS}
-																/>
 																<ContextMenu.Item
 																	className={CTX_ITEM_CLASS}
 																	onSelect={() => {
-																		void window.electronAPI?.detachProject(
+																		void window.electronAPI?.openInFileBrowser(
 																			directory,
+																			storageGet(STORAGE_KEYS.FILE_MANAGER) ??
+																				"",
 																		);
 																	}}
 																>
-																	<Monitor className="size-4" />
-																	<span>Detach project</span>
+																	<FolderOpen className="size-4" />
+																	<span>Open in file browser</span>
+																</ContextMenu.Item>
+																<ContextMenu.Item
+																	className={CTX_ITEM_CLASS}
+																	onSelect={() => {
+																		void window.electronAPI?.openInTerminal(
+																			directory,
+																			storageGet(STORAGE_KEYS.TERMINAL) ?? "",
+																		);
+																	}}
+																>
+																	<Terminal className="size-4" />
+																	<span>Open in terminal</span>
 																</ContextMenu.Item>
 															</>
 														)}
 
 														{/* Git worktree options (only for git repos) */}
-														{isGitRepo[directory] && (
+														{isLocalWorkspace && isGitRepo[directory] && (
 															<>
 																<ContextMenu.Separator
 																	className={CTX_SEPARATOR_CLASS}
@@ -1016,6 +1023,58 @@ export function AppSidebar({
 					</div>
 				)}
 
+				{/* Remote path input (shown for remote workspaces, independent of project list) */}
+				{showRemoteProjectInput && !isLocalWorkspace && !detachedProject && (
+					<div className="mx-3 mt-3 space-y-2 rounded-lg border bg-sidebar-accent/30 p-2 group-data-[collapsible=icon]:hidden">
+						<div className="text-[11px] text-muted-foreground">
+							Remote path on {activeWorkspace?.name}
+						</div>
+						<div className="flex gap-2">
+							<Input
+								autoFocus
+								value={remoteProjectPath}
+								onChange={(event) => setRemoteProjectPath(event.target.value)}
+								placeholder="/remote/path/to/project"
+								className="h-8 font-mono text-xs"
+								onKeyDown={(event) => {
+									if (event.key === "Escape") {
+										setRemoteProjectPath("");
+										setShowRemoteProjectInput(false);
+									}
+									if (event.key === "Enter" && remoteProjectPath.trim()) {
+										event.preventDefault();
+										void connectToProject(remoteProjectPath.trim());
+										setRemoteProjectPath("");
+										setShowRemoteProjectInput(false);
+									}
+								}}
+							/>
+							<button
+								type="button"
+								onClick={() => {
+									if (!remoteProjectPath.trim()) return;
+									void connectToProject(remoteProjectPath.trim());
+									setRemoteProjectPath("");
+									setShowRemoteProjectInput(false);
+								}}
+								className="flex h-8 items-center rounded-md bg-primary px-3 text-xs text-primary-foreground"
+							>
+								Open
+							</button>
+							<button
+								type="button"
+								onClick={() => {
+									setRemoteProjectPath("");
+									setShowRemoteProjectInput(false);
+								}}
+								className="flex h-8 items-center rounded-md border px-3 text-xs"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				)}
+
 				{/* Empty state when no projects at all */}
 				{projectGroups.size === 0 && (
 					<div className="px-4 py-8 text-center text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
@@ -1030,10 +1089,20 @@ export function AppSidebar({
 							<>
 								<p>No projects connected</p>
 								<p className="mt-1">
-									Click the{" "}
-									<Settings className="inline size-3 align-text-bottom" /> icon
-									below to start the server and add a project.
+									Add a project to {activeWorkspace?.name ?? "this workspace"}.
 								</p>
+								<button
+									type="button"
+									onClick={() => {
+										void handleAddProject();
+									}}
+									className="mt-3 inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs text-foreground"
+								>
+									<CirclePlus className="size-4 shrink-0" />
+									<span>
+										{isLocalWorkspace ? "Open folder" : "Open remote path"}
+									</span>
+								</button>
 							</>
 						)}
 					</div>

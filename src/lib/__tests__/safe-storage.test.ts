@@ -7,23 +7,11 @@ import {
 	storageSetJSON,
 	storageSetOrRemove,
 } from "../safe-storage";
+import { polyfillLocalStorage } from "./setup";
 
 // Polyfill localStorage for Bun's test runner (which runs in a non-browser env)
 beforeAll(() => {
-	if (typeof globalThis.localStorage === "undefined") {
-		const store = new Map<string, string>();
-		// biome-ignore lint/suspicious/noExplicitAny: lightweight test polyfill
-		(globalThis as any).localStorage = {
-			getItem: (key: string) => store.get(key) ?? null,
-			setItem: (key: string, value: string) => store.set(key, String(value)),
-			removeItem: (key: string) => store.delete(key),
-			clear: () => store.clear(),
-			get length() {
-				return store.size;
-			},
-			key: (index: number) => [...store.keys()][index] ?? null,
-		};
-	}
+	polyfillLocalStorage();
 });
 
 // Clean up after each test

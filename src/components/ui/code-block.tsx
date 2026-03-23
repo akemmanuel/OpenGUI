@@ -1,7 +1,7 @@
 import { createHighlighterCore } from "@shikijs/core";
 import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import { Check, Copy } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { COPY_FEEDBACK_MS, HIGHLIGHT_DEBOUNCE_MS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -168,6 +168,7 @@ export function CodeBlockCode({
 }) {
 	const [html, setHtml] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
+	const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -207,6 +208,10 @@ export function CodeBlockCode({
 			cancelled = true;
 			clearTimeout(timer);
 			observer.disconnect();
+			if (copyTimerRef.current !== null) {
+				clearTimeout(copyTimerRef.current);
+				copyTimerRef.current = null;
+			}
 		};
 	}, [code, language]);
 
@@ -215,7 +220,10 @@ export function CodeBlockCode({
 			// Clipboard API may fail silently in some contexts
 		});
 		setCopied(true);
-		setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
+		if (copyTimerRef.current !== null) {
+			clearTimeout(copyTimerRef.current);
+		}
+		copyTimerRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
 	};
 
 	return (

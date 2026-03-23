@@ -21,9 +21,11 @@ import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import {
 	hasAnyConnection,
 	OpenCodeProvider,
+	type QueueMode,
 	resolveServerDefaultModel,
 	useActions,
 	useConnectionState,
+	useMessages,
 	useModelState,
 	useSessionState,
 } from "@/hooks/use-opencode";
@@ -42,9 +44,10 @@ import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
 function AppContent({ detachedProject }: { detachedProject?: string }) {
+	const lastEscapeAtRef = useRef(0);
+	const [queueMode, setQueueMode] = useState<QueueMode>("queue");
 	const leftSidebar = useSidebar();
 	const {
-		selectSession,
 		sendPrompt,
 		abortSession,
 		clearError,
@@ -63,11 +66,11 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 	const {
 		sessions,
 		activeSessionId: sessionActiveId,
-		messages,
 		isBusy,
 		isLoadingMessages,
 		draftSessionDirectory,
 	} = useSessionState();
+	const { messages } = useMessages();
 	const { providers, selectedModel, providerDefaults } = useModelState();
 	const {
 		connections,
@@ -83,9 +86,6 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		branch: string;
 		worktreePath: string;
 	} | null>(null);
-	const [hiddenDetachedProjects, setHiddenDetachedProjects] = useState<
-		string[]
-	>([]);
 	const [activeWorktreeRemoteUrl, setActiveWorktreeRemoteUrl] = useState<
 		string | null
 	>(null);
@@ -106,10 +106,6 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		activeSession?.directory ??
 		draftSessionDirectory ??
 		null;
-	const hiddenDetachedProjectSet = useMemo(
-		() => new Set(hiddenDetachedProjects),
-		[hiddenDetachedProjects],
-	);
 	const activeWorktreeInfo = useMemo(() => {
 		if (!activeSessionDirectory) return null;
 		const meta = worktreeParents[activeSessionDirectory];
@@ -120,40 +116,6 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 			worktreePath: activeSessionDirectory,
 		};
 	}, [activeSessionDirectory, worktreeParents]);
-
-	useEffect(() => {
-		if (detachedProject) return;
-		let cancelled = false;
-		void window.electronAPI
-			?.getDetachedProjects()
-			.then((projects) => {
-				if (!cancelled && Array.isArray(projects)) {
-					setHiddenDetachedProjects(projects);
-				}
-			})
-			.catch(() => {});
-		const unsubscribe =
-			window.electronAPI?.onDetachedProjectsChange((projects) => {
-				setHiddenDetachedProjects(Array.isArray(projects) ? projects : []);
-			}) ?? (() => {});
-		return () => {
-			cancelled = true;
-			unsubscribe();
-		};
-	}, [detachedProject]);
-
-	useEffect(() => {
-		if (detachedProject) return;
-		if (!sessionActiveId || !activeSessionDirectory) return;
-		if (!hiddenDetachedProjectSet.has(activeSessionDirectory)) return;
-		void selectSession(null);
-	}, [
-		activeSessionDirectory,
-		sessionActiveId,
-		detachedProject,
-		hiddenDetachedProjectSet,
-		selectSession,
-	]);
 
 	// Find the last user message (for undo keybind), respecting revert state
 	const revertToLastMessage = useCallback(() => {
@@ -204,6 +166,45 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [cycleVariant]);
+
+	useEffect(() => {
+		const handleDoubleEscape = (e: KeyboardEvent) => {
+			if (e.key !== "Escape" || e.repeat) return;
+			if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+
+			const target = e.target instanceof HTMLElement ? e.target : null;
+			if (target?.closest('[role="dialog"]')) return;
+
+			const now = Date.now();
+			const isDoubleEscape = now - lastEscapeAtRef.current <= 450;
+			lastEscapeAtRef.current = now;
+
+			if (!isDoubleEscape || !isBusy) return;
+
+			e.preventDefault();
+			void abortSession();
+		};
+
+		window.addEventListener("keydown", handleDoubleEscape);
+		return () => window.removeEventListener("keydown", handleDoubleEscape);
+	}, [abortSession, isBusy]);
+
+	// Ctrl+D: cycle queue mode (queue / after-part) while session is busy
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key !== "d" || !(e.ctrlKey || e.metaKey)) return;
+			if (!isBusy) return;
+
+			const target = e.target instanceof HTMLElement ? e.target : null;
+			if (target?.closest('[role="dialog"]')) return;
+
+			e.preventDefault();
+			setQueueMode((prev) => (prev === "queue" ? "after-part" : "queue"));
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [isBusy]);
 
 	// Ctrl+X then M (within 2s): open model selector
 	useEffect(() => {
@@ -381,10 +382,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
 	return (
 		<>
-			<AppSidebar
-				detachedProject={detachedProject}
-				hiddenProjects={detachedProject ? undefined : hiddenDetachedProjects}
-			/>
+			<AppSidebar detachedProject={detachedProject} />
 			<SidebarInset className="overflow-hidden">
 				<div className="flex flex-col h-full">
 					{/* Title bar spans full width */}
@@ -540,6 +538,8 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 									contextTokens={contextInfo.tokens}
 									contextCost={contextInfo.cost}
 									contextLimit={contextInfo.contextLimit}
+									queueMode={queueMode}
+									onQueueModeChange={setQueueMode}
 									onSubmit={(message, images, mode) => {
 										return sendPrompt(message, images, mode);
 									}}

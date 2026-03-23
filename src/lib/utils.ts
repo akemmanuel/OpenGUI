@@ -288,3 +288,35 @@ export function computeTokenTotal(tokens: {
 		(tokens.cache?.write ?? 0)
 	);
 }
+
+/** Prune keys not in `validKeys` from a Record. Returns prev if unchanged. */
+export function pruneRecord<T>(
+	prev: Record<string, T>,
+	validKeys: Set<string>,
+): Record<string, T> {
+	let changed = false;
+	const next: Record<string, T> = {};
+	for (const key of Object.keys(prev)) {
+		if (validKeys.has(key)) {
+			const val = prev[key];
+			if (val !== undefined) next[key] = val;
+		} else {
+			changed = true;
+		}
+	}
+	return changed ? next : prev;
+}
+
+/** Return a new Set with the given items added. */
+export function setWith<T>(s: Set<T>, ...items: T[]): Set<T> {
+	const next = new Set(s);
+	for (const item of items) next.add(item);
+	return next;
+}
+
+/** Return a new Set with the given items removed. */
+export function setWithout<T>(s: Set<T>, ...items: T[]): Set<T> {
+	const next = new Set(s);
+	for (const item of items) next.delete(item);
+	return next;
+}

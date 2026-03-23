@@ -66,10 +66,22 @@ export interface ConnectionStatus {
 }
 
 export interface ConnectionConfig {
+	workspaceId?: string;
 	baseUrl: string;
 	username?: string;
 	password?: string;
 	directory?: string;
+}
+
+export interface Workspace {
+	id: string;
+	name: string;
+	serverUrl: string;
+	username?: string;
+	isLocal: boolean;
+	projects: string[];
+	selectedModel?: SelectedModel | null;
+	selectedAgent?: string | null;
 }
 
 /** Bridge events are tagged with the directory they originate from. */
@@ -103,6 +115,11 @@ export interface SelectedModel {
 export interface ProvidersData {
 	providers: Provider[];
 	default: { [key: string]: string };
+}
+
+export interface MessagePageOptions {
+	limit?: number;
+	before?: string;
 }
 
 export interface OpenCodeBridge {
@@ -141,34 +158,43 @@ export interface OpenCodeBridge {
 	/** Fork a session at a specific message, creating a new session with messages up to that point. */
 	forkSession(id: string, messageID?: string): Promise<IPCResult<Session>>;
 
-	getProviders(): Promise<IPCResult<ProvidersData>>;
+	getProviders(directory?: string): Promise<IPCResult<ProvidersData>>;
 
 	/** List ALL providers (connected + disconnected) with connection status. */
-	listAllProviders(): Promise<IPCResult<AllProvidersData>>;
+	listAllProviders(directory?: string): Promise<IPCResult<AllProvidersData>>;
 	/** Get available auth methods per provider. */
-	getProviderAuthMethods(): Promise<
-		IPCResult<Record<string, ProviderAuthMethod[]>>
-	>;
+	getProviderAuthMethods(
+		directory?: string,
+	): Promise<IPCResult<Record<string, ProviderAuthMethod[]>>>;
 	/** Set auth credentials (API key or OAuth tokens) for a provider. */
-	connectProvider(providerID: string, auth: ProviderAuth): Promise<IPCResult>;
+	connectProvider(
+		directory: string | undefined,
+		providerID: string,
+		auth: ProviderAuth,
+	): Promise<IPCResult>;
 	/** Remove auth credentials for a provider (disconnect it). */
-	disconnectProvider(providerID: string): Promise<IPCResult>;
+	disconnectProvider(
+		directory: string | undefined,
+		providerID: string,
+	): Promise<IPCResult>;
 	/** Start an OAuth authorization flow for a provider. */
 	oauthAuthorize(
+		directory: string | undefined,
 		providerID: string,
 		method?: number,
 	): Promise<IPCResult<ProviderOAuthAuthorization>>;
 	/** Complete an OAuth flow with an authorization code. */
 	oauthCallback(
+		directory: string | undefined,
 		providerID: string,
 		method?: number,
 		code?: string,
 	): Promise<IPCResult<boolean>>;
 	/** Dispose the current instance to force a refresh. */
-	disposeInstance(): Promise<IPCResult<boolean>>;
+	disposeInstance(directory?: string): Promise<IPCResult<boolean>>;
 
-	getAgents(): Promise<IPCResult<Agent[]>>;
-	getCommands(): Promise<IPCResult<Command[]>>;
+	getAgents(directory?: string): Promise<IPCResult<Agent[]>>;
+	getCommands(directory?: string): Promise<IPCResult<Command[]>>;
 	sendCommand(
 		sessionId: string,
 		command: string,
@@ -180,6 +206,7 @@ export interface OpenCodeBridge {
 
 	getMessages(
 		sessionId: string,
+		options?: MessagePageOptions,
 	): Promise<IPCResult<Array<{ info: Message; parts: Part[] }>>>;
 	prompt(
 		sessionId: string,
@@ -213,8 +240,9 @@ export interface OpenCodeBridge {
 	disconnectMcp(name: string): Promise<IPCResult>;
 
 	// Config
-	getConfig(): Promise<IPCResult<OpenCodeConfig>>;
+	getConfig(directory?: string): Promise<IPCResult<OpenCodeConfig>>;
 	updateConfig(
+		directory: string | undefined,
 		config: Partial<OpenCodeConfig>,
 	): Promise<IPCResult<OpenCodeConfig>>;
 
@@ -225,7 +253,7 @@ export interface OpenCodeBridge {
 	): Promise<IPCResult<string[]>>;
 
 	// Skills
-	getSkills(): Promise<
+	getSkills(directory?: string): Promise<
 		IPCResult<
 			Array<{
 				name: string;

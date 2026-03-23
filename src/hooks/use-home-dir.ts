@@ -11,12 +11,18 @@ export function useHomeDir(): string {
 	const [homeDir, setHomeDir] = useState("");
 
 	useEffect(() => {
+		let cancelled = false;
 		window.electronAPI
 			?.getHomeDir?.()
-			.then((d) => setHomeDir(d ?? ""))
+			.then((d) => {
+				if (!cancelled) setHomeDir(d ?? "");
+			})
 			.catch(() => {
 				/* Electron API unavailable */
 			});
+		return () => {
+			cancelled = true;
+		};
 	}, []);
 
 	return homeDir;

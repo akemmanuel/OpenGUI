@@ -24,6 +24,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 interface DialogConnectProviderProps {
+	directory?: string;
 	providerID: string;
 	providerName: string;
 	authMethods: ProviderAuthMethod[];
@@ -36,6 +37,7 @@ interface DialogConnectProviderProps {
 // ---------------------------------------------------------------------------
 
 export function DialogConnectProvider({
+	directory,
 	providerID,
 	providerName,
 	authMethods,
@@ -66,18 +68,29 @@ export function DialogConnectProvider({
 	const [oauthCode, setOauthCode] = useState("");
 	const [oauthPolling, setOauthPolling] = useState(false);
 	const pollingRef = useRef(false);
+	const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	// Clear polling timeout on unmount
+	useEffect(() => {
+		return () => {
+			if (pollingTimerRef.current !== null) {
+				clearTimeout(pollingTimerRef.current);
+				pollingTimerRef.current = null;
+			}
+		};
+	}, []);
 
 	const handleApiKeyConnect = useCallback(async () => {
 		if (!bridge || !apiKey.trim()) return;
 		setConnecting(true);
 		setError(null);
 		try {
-			const res = await bridge.connectProvider(providerID, {
+			const res = await bridge.connectProvider(directory, providerID, {
 				type: "api",
 				key: apiKey.trim(),
 			});
 			if (res.success) {
-				await bridge.disposeInstance();
+				await bridge.disposeInstance(directory);
 				setSuccess(true);
 				setTimeout(onConnected, 600);
 			} else {
@@ -88,7 +101,7 @@ export function DialogConnectProvider({
 		} finally {
 			setConnecting(false);
 		}
-	}, [bridge, providerID, apiKey, onConnected]);
+	}, [bridge, directory, providerID, apiKey, onConnected]);
 
 	const pollOAuth = useCallback(
 		async (methodIndex?: number) => {
@@ -105,11 +118,15 @@ export function DialogConnectProvider({
 				}
 				attempts++;
 				try {
-					const res = await bridge.oauthCallback(providerID, methodIndex);
+					const res = await bridge.oauthCallback(
+						directory,
+						providerID,
+						methodIndex,
+					);
 					if (res.success && res.data) {
 						pollingRef.current = false;
 						setOauthPolling(false);
-						await bridge.disposeInstance();
+						await bridge.disposeInstance(directory);
 						setSuccess(true);
 						setTimeout(onConnected, 600);
 						return;
@@ -117,11 +134,11 @@ export function DialogConnectProvider({
 				} catch {
 					// Not ready yet, keep polling
 				}
-				setTimeout(poll, 2000);
+				pollingTimerRef.current = setTimeout(poll, 2000);
 			};
 			void poll();
 		},
-		[bridge, providerID, onConnected],
+		[bridge, directory, providerID, onConnected],
 	);
 
 	const startOAuth = useCallback(
@@ -130,7 +147,11 @@ export function DialogConnectProvider({
 			setConnecting(true);
 			setError(null);
 			try {
-				const res = await bridge.oauthAuthorize(providerID, methodIndex);
+				const res = await bridge.oauthAuthorize(
+					directory,
+					providerID,
+					methodIndex,
+				);
 				if (res.success && res.data) {
 					setOauthData(res.data);
 					if (res.data.method === "auto") {
@@ -148,7 +169,7 @@ export function DialogConnectProvider({
 				setConnecting(false);
 			}
 		},
-		[bridge, providerID, pollOAuth],
+		[bridge, directory, providerID, pollOAuth],
 	);
 
 	const handleOAuthCode = useCallback(async () => {
@@ -157,12 +178,13 @@ export function DialogConnectProvider({
 		setError(null);
 		try {
 			const res = await bridge.oauthCallback(
+				directory,
 				providerID,
 				undefined,
 				oauthCode.trim(),
 			);
 			if (res.success && res.data) {
-				await bridge.disposeInstance();
+				await bridge.disposeInstance(directory);
 				setSuccess(true);
 				setTimeout(onConnected, 600);
 			} else {
@@ -173,7 +195,7 @@ export function DialogConnectProvider({
 		} finally {
 			setConnecting(false);
 		}
-	}, [bridge, providerID, oauthCode, onConnected]);
+	}, [bridge, directory, providerID, oauthCode, onConnected]);
 
 	// Clean up polling on unmount
 	useEffect(() => {

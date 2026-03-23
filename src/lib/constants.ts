@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
 	SERVER_URL: "opencode:serverUrl",
 	DIRECTORY: "opencode:directory",
 	USERNAME: "opencode:username",
+	WORKSPACES: "opencode:workspaces",
+	ACTIVE_WORKSPACE_ID: "opencode:activeWorkspaceId",
 	SELECTED_MODEL: "opencode:selectedModel",
 	SELECTED_AGENT: "opencode:selectedAgent",
 	VARIANT_SELECTIONS: "opencode:variantSelections",
@@ -103,3 +105,25 @@ export const CTX_SUBTRIGGER_CLASS = `${CTX_ITEM_CLASS} data-[state=open]:bg-acce
 
 /** Class for `ContextMenu.Separator`. */
 export const CTX_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-muted";
+
+/** Class for `ContextMenu.Content`. */
+export const CTX_CONTENT_CLASS =
+	"z-50 min-w-[12rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95";
+
+// ---------------------------------------------------------------------------
+// Popular providers
+// ---------------------------------------------------------------------------
+
+/** Provider IDs shown in the "Popular" section of provider pickers. */
+export const POPULAR_PROVIDER_IDS = [
+	"anthropic",
+	"openai",
+	"google",
+	"github-copilot",
+	"openrouter",
+	"xai",
+	"deepseek",
+	"groq",
+	"mistral",
+	"azure",
+] as const;

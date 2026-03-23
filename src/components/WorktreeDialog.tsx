@@ -64,6 +64,7 @@ export function WorktreeDialog({
 	// Load branches when dialog opens
 	useEffect(() => {
 		if (!open) return;
+		let cancelled = false;
 		setError(null);
 		setLoading(true);
 		setMode(defaultMode);
@@ -79,6 +80,7 @@ export function WorktreeDialog({
 		window.electronAPI?.git
 			?.listBranches(directory)
 			.then((res) => {
+				if (cancelled) return;
 				if (res.success && res.data) {
 					// Filter out remote tracking refs like "origin/HEAD"
 					const local = res.data.filter((b) => !b.startsWith("origin/HEAD"));
@@ -87,8 +89,15 @@ export function WorktreeDialog({
 					setError(res.error ?? "Failed to list branches");
 				}
 			})
-			.catch((err: Error) => setError(err.message))
-			.finally(() => setLoading(false));
+			.catch((err: Error) => {
+				if (!cancelled) setError(err.message);
+			})
+			.finally(() => {
+				if (!cancelled) setLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
 	}, [open, directory, defaultBranch, defaultMode]);
 
 	const handleCreate = useCallback(async () => {

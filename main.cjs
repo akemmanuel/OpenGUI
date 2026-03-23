@@ -33,14 +33,19 @@ function isWebUrl(url) {
 	);
 }
 
-function createWindow() {
+function createBrowserWindow({
+	width,
+	height,
+	minWidth = 450,
+	minHeight = 500,
+}) {
 	const isMac = process.platform === "darwin";
 
-	mainWindow = new BrowserWindow({
-		width: 1200,
-		height: 800,
-		minWidth: 450,
-		minHeight: 500,
+	const win = new BrowserWindow({
+		width,
+		height,
+		minWidth,
+		minHeight,
 		show: false,
 		frame: false,
 		...(isMac ? { transparent: true } : {}),
@@ -52,25 +57,13 @@ function createWindow() {
 		...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
 	});
 
-	if (isDev) {
-		void mainWindow.loadURL(DEV_SERVER_URL);
-	} else {
-		void mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
-	}
-
-	mainWindow.once("ready-to-show", () => {
-		mainWindow.show();
-	});
-
 	// Intercept all external link navigations and open them in the system browser.
-	// This catches <a target="_blank"> clicks and window.open() calls.
-	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+	win.webContents.setWindowOpenHandler(({ url }) => {
 		if (isWebUrl(url)) shell.openExternal(url);
 		return { action: "deny" };
 	});
 
-	// Also intercept in-page navigations to external URLs (e.g. clicking an <a> without target)
-	mainWindow.webContents.on("will-navigate", (event, url) => {
+	win.webContents.on("will-navigate", (event, url) => {
 		const appOrigins = [DEV_SERVER_URL, "file://"];
 		const isInternal = appOrigins.some((origin) => url.startsWith(origin));
 		if (!isInternal) {
@@ -79,12 +72,28 @@ function createWindow() {
 		}
 	});
 
-	mainWindow.on("maximize", () => {
-		mainWindow.webContents.send("window:maximizeChanged", true);
+	win.on("maximize", () => {
+		win.webContents.send("window:maximizeChanged", true);
 	});
 
-	mainWindow.on("unmaximize", () => {
-		mainWindow.webContents.send("window:maximizeChanged", false);
+	win.on("unmaximize", () => {
+		win.webContents.send("window:maximizeChanged", false);
+	});
+
+	return win;
+}
+
+function createWindow() {
+	mainWindow = createBrowserWindow({ width: 1200, height: 800 });
+
+	if (isDev) {
+		void mainWindow.loadURL(DEV_SERVER_URL);
+	} else {
+		void mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
+	}
+
+	mainWindow.once("ready-to-show", () => {
+		mainWindow.show();
 	});
 }
 
@@ -107,8 +116,6 @@ function broadcastDetachedProjects() {
 }
 
 function createProjectWindow(projectDir) {
-	const isMac = process.platform === "darwin";
-
 	// Reuse existing detached window if one already exists for this project
 	const existing = detachedWindows.get(projectDir);
 	if (existing && !existing.isDestroyed()) {
@@ -117,21 +124,7 @@ function createProjectWindow(projectDir) {
 		return;
 	}
 
-	const win = new BrowserWindow({
-		width: 900,
-		height: 700,
-		minWidth: 450,
-		minHeight: 500,
-		show: false,
-		frame: false,
-		...(isMac ? { transparent: true } : {}),
-		webPreferences: {
-			nodeIntegration: false,
-			contextIsolation: true,
-			preload: path.join(__dirname, "preload.cjs"),
-		},
-		...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
-	});
+	const win = createBrowserWindow({ width: 900, height: 700 });
 
 	detachedWindows.set(projectDir, win);
 
@@ -147,28 +140,6 @@ function createProjectWindow(projectDir) {
 	win.once("ready-to-show", () => {
 		win.show();
 		broadcastDetachedProjects();
-	});
-
-	win.webContents.setWindowOpenHandler(({ url }) => {
-		if (isWebUrl(url)) shell.openExternal(url);
-		return { action: "deny" };
-	});
-
-	win.webContents.on("will-navigate", (event, url) => {
-		const appOrigins = [DEV_SERVER_URL, "file://"];
-		const isInternal = appOrigins.some((origin) => url.startsWith(origin));
-		if (!isInternal) {
-			event.preventDefault();
-			if (isWebUrl(url)) shell.openExternal(url);
-		}
-	});
-
-	win.on("maximize", () => {
-		win.webContents.send("window:maximizeChanged", true);
-	});
-
-	win.on("unmaximize", () => {
-		win.webContents.send("window:maximizeChanged", false);
 	});
 
 	win.on("closed", () => {
@@ -307,8 +278,9 @@ ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
 	}
 });
 
-ipcMain.handle("dialog:openDirectory", async () => {
-	const result = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle("dialog:openDirectory", async (event) => {
+	const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+	const result = await dialog.showOpenDialog(ownerWindow, {
 		properties: ["openDirectory"],
 	});
 	if (result.canceled || result.filePaths.length === 0) {
