@@ -82,6 +82,7 @@ export interface Workspace {
 	projects: string[];
 	selectedModel?: SelectedModel | null;
 	selectedAgent?: string | null;
+	lastActiveSessionId?: string | null;
 }
 
 /** Bridge events are tagged with the directory they originate from. */

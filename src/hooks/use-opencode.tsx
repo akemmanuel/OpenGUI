@@ -273,6 +273,7 @@ function createLocalWorkspace(): Workspace {
 		projects: [],
 		selectedModel: null,
 		selectedAgent: null,
+		lastActiveSessionId: null,
 	};
 }
 
@@ -290,6 +291,7 @@ function normalizeWorkspace(workspace: Workspace): Workspace {
 		),
 		selectedModel: workspace.selectedModel ?? null,
 		selectedAgent: workspace.selectedAgent ?? null,
+		lastActiveSessionId: workspace.lastActiveSessionId ?? null,
 	};
 }
 
@@ -1260,8 +1262,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				nextUnread = new Set(state.unreadSessionIds);
 				nextUnread.delete(sid);
 			}
+			const nextWorkspaces = state.workspaces.map((workspace) =>
+				workspace.id === state.activeWorkspaceId
+					? {
+							...workspace,
+							lastActiveSessionId: sid ?? workspace.lastActiveSessionId,
+						}
+					: workspace,
+			);
 			return {
 				...state,
+				workspaces: nextWorkspaces,
 				activeSessionId: sid,
 				messages: initialMessages,
 				messageForwardBuffer: [],
@@ -1579,6 +1590,11 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 			return {
 				...state,
+				workspaces: state.workspaces.map((workspace) =>
+					workspace.lastActiveSessionId === deletedId
+						? { ...workspace, lastActiveSessionId: null }
+						: workspace,
+				),
 				sessions: state.sessions.filter((s) => s.id !== deletedId),
 				queuedPrompts: remainingQueues,
 				_sessionBuffers: remainingBuffers,
@@ -4281,6 +4297,7 @@ export function OpenCodeProvider({
 				projects: [],
 				selectedModel: null,
 				selectedAgent: null,
+				lastActiveSessionId: null,
 			});
 			dispatch({
 				type: "SET_WORKSPACES",
@@ -4315,8 +4332,14 @@ export function OpenCodeProvider({
 	);
 
 	const switchWorkspace = useCallback((workspaceId: string) => {
+		const workspace = stateRef.current.workspaces.find(
+			(item) => item.id === workspaceId,
+		);
 		dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: workspaceId });
-		dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+		dispatch({
+			type: "SET_ACTIVE_SESSION",
+			payload: workspace?.lastActiveSessionId ?? null,
+		});
 	}, []);
 
 	const removeWorkspace = useCallback(
@@ -4335,11 +4358,15 @@ export function OpenCodeProvider({
 			);
 			dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
 			if (stateRef.current.activeWorkspaceId === workspaceId) {
+				const nextWorkspace = nextWorkspaces[0] ?? null;
 				dispatch({
 					type: "SET_ACTIVE_WORKSPACE",
-					payload: nextWorkspaces[0]?.id ?? LOCAL_WORKSPACE_ID,
+					payload: nextWorkspace?.id ?? LOCAL_WORKSPACE_ID,
 				});
-				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+				dispatch({
+					type: "SET_ACTIVE_SESSION",
+					payload: nextWorkspace?.lastActiveSessionId ?? null,
+				});
 			}
 		},
 		[bridge],
