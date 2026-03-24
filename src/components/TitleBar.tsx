@@ -10,7 +10,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -242,6 +242,16 @@ export function TitleBar({
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [platform, setPlatform] = useState<string | null>(null);
 	const [dialogMode, setDialogMode] = useState<"add" | "edit" | null>(null);
+	const tabsRef = useRef<HTMLDivElement>(null);
+
+	const handleTabsWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+		const container = tabsRef.current;
+		if (!container) return;
+		if (e.shiftKey && e.deltaY !== 0) {
+			e.preventDefault();
+			container.scrollLeft += e.deltaY;
+		}
+	}, []);
 
 	useEffect(() => {
 		const api = window.electronAPI;
@@ -322,7 +332,11 @@ export function TitleBar({
 					className={`absolute inset-y-0 ${isMac ? "left-20 right-20" : "left-12 right-36"} flex items-center gap-1 px-2`}
 					style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 				>
-					<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+					<div
+						ref={tabsRef}
+						onWheel={handleTabsWheel}
+						className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none"
+					>
 						{workspaces.map((workspace) => {
 							const status = workspaceStatuses[workspace.id];
 							const active = workspace.id === activeWorkspaceId;

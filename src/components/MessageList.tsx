@@ -78,6 +78,9 @@ import logoLight from "../../opengui-light.svg";
 
 /** Part types that actually render something visible. */
 const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
+const VIRTUALIZATION_MESSAGE_THRESHOLD = 120;
+const VIRTUALIZATION_OVERSCAN_IDLE = 12;
+const VIRTUALIZATION_OVERSCAN_BUSY = 16;
 
 /** Format a timestamp into a relative time string like "23 seconds ago", "1 day ago" */
 function timeAgo(timestamp: number): string {
@@ -148,7 +151,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		revertToMessage,
 		unrevert,
 		loadOlderMessages,
-		loadNewerMessages,
 	} = useActions();
 	const {
 		isBusy,
@@ -162,13 +164,8 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		draftIsTemporary,
 		temporarySessions,
 	} = useSessionState();
-	const {
-		messages,
-		messageHistoryHasMore,
-		messageWindowHasNewer,
-		isLoadingOlderMessages,
-		isLoadingNewerMessages,
-	} = useMessages();
+	const { messages, messageHistoryHasMore, isLoadingOlderMessages } =
+		useMessages();
 	const activeSession = useMemo(
 		() => sessions.find((s) => s.id === activeSessionId),
 		[sessions, activeSessionId],
@@ -192,7 +189,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 	}, [isBusy]);
 
 	const listRef = useRef<HTMLDivElement>(null);
-	const bottomRef = useRef<HTMLDivElement>(null);
 	/** Whether the user is currently near the bottom of the scroll container. */
 	const isNearBottomRef = useRef(true);
 	/** Set to true while we are programmatically scrolling to avoid the onScroll handler unsetting sticky. */
@@ -201,8 +197,61 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 	const rafRef = useRef<number | null>(null);
 	const prevSessionRef = useRef<string | null>(null);
 	const sessionJustSwitchedRef = useRef(false);
-	const loadingOlderRef = useRef(false);
-	const topLoadThresholdPx = 160;
+	/** Sentinel element at the top of the list for triggering older message loads. */
+	const topSentinelRef = useRef<HTMLDivElement>(null);
+	/** Track message count before a prepend so we can preserve scroll position. */
+	const prevMessageCountRef = useRef(0);
+
+	// ---- auto-load older messages when scrolled near the top ----
+
+	useEffect(() => {
+		const sentinel = topSentinelRef.current;
+		const scrollContainer = listRef.current;
+		if (!sentinel || !scrollContainer) return;
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				const entry = entries[0];
+				if (
+					entry?.isIntersecting &&
+					messageHistoryHasMore &&
+					!isLoadingOlderMessages
+				) {
+					// Snapshot scroll metrics before prepend
+					prevMessageCountRef.current = scrollContainer.scrollHeight;
+					void loadOlderMessages();
+				}
+			},
+			{ root: scrollContainer, rootMargin: "200px 0px 0px 0px", threshold: 0 },
+		);
+		observer.observe(sentinel);
+		return () => observer.disconnect();
+	}, [messageHistoryHasMore, isLoadingOlderMessages, loadOlderMessages]);
+
+	// ---- preserve scroll position after older messages are prepended ----
+	// We use a MutationObserver on the scroll container's childList to detect
+	// when older messages are inserted. This avoids lint issues with effect
+	// dependencies while still firing synchronously before paint.
+
+	useLayoutEffect(() => {
+		const el = listRef.current;
+		if (!el) return;
+		const observer = new MutationObserver(() => {
+			if (prevMessageCountRef.current === 0) return;
+			const prevScrollHeight = prevMessageCountRef.current;
+			const newScrollHeight = el.scrollHeight;
+			if (newScrollHeight > prevScrollHeight) {
+				isProgrammaticScrollRef.current = true;
+				el.scrollTop += newScrollHeight - prevScrollHeight;
+				requestAnimationFrame(() => {
+					isProgrammaticScrollRef.current = false;
+				});
+			}
+			prevMessageCountRef.current = 0;
+		});
+		observer.observe(el, { childList: true, subtree: true });
+		return () => observer.disconnect();
+	}, []);
 
 	// ---- helpers ----
 
@@ -212,17 +261,14 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
 	}, []);
 
-	const scrollToBottom = useCallback((instant: boolean) => {
+	const scrollToBottom = useCallback(() => {
 		if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
 		rafRef.current = requestAnimationFrame(() => {
 			rafRef.current = null;
 			const el = listRef.current;
 			if (!el) return;
 			isProgrammaticScrollRef.current = true;
-			el.scrollTo({
-				top: el.scrollHeight,
-				behavior: instant ? "auto" : "smooth",
-			});
+			el.scrollTop = el.scrollHeight;
 			// Reset programmatic flag after the browser has had time to fire the scroll event.
 			requestAnimationFrame(() => {
 				isProgrammaticScrollRef.current = false;
@@ -234,37 +280,8 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 
 	const handleScroll = useCallback(() => {
 		if (isProgrammaticScrollRef.current) return;
-		const el = listRef.current;
-		if (
-			el &&
-			el.scrollTop <= topLoadThresholdPx &&
-			messageHistoryHasMore &&
-			!isLoadingMessages &&
-			!isLoadingOlderMessages &&
-			!loadingOlderRef.current
-		) {
-			loadingOlderRef.current = true;
-			const beforeTop = el.scrollTop;
-			const beforeHeight = el.scrollHeight;
-			void loadOlderMessages().then((loaded) => {
-				requestAnimationFrame(() => {
-					const currentEl = listRef.current;
-					if (loaded && currentEl) {
-						currentEl.scrollTop =
-							beforeTop + (currentEl.scrollHeight - beforeHeight);
-					}
-					loadingOlderRef.current = false;
-				});
-			});
-		}
 		isNearBottomRef.current = checkNearBottom();
-	}, [
-		checkNearBottom,
-		isLoadingMessages,
-		isLoadingOlderMessages,
-		loadOlderMessages,
-		messageHistoryHasMore,
-	]);
+	}, [checkNearBottom]);
 
 	// ---- session switch: mark flag so the layout effect can scroll before paint ----
 
@@ -343,18 +360,30 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		}
 		return undefined;
 	}, [visibleMessages]);
+	const firstUserMessageIndex = useMemo(
+		() => visibleMessages.findIndex((message) => message.info.role === "user"),
+		[visibleMessages],
+	);
+	const shouldVirtualizeMessages =
+		visibleMessages.length >= VIRTUALIZATION_MESSAGE_THRESHOLD;
 	const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
 		count: visibleMessages.length,
-		enabled: true,
+		enabled: shouldVirtualizeMessages,
 		getScrollElement: () => listRef.current,
 		getItemKey: (index) => visibleMessages[index]?.info.id ?? index,
 		estimateSize: (index) =>
 			visibleMessages[index]?.info.role === "user" ? 96 : 220,
-		overscan: isBusy ? 3 : 5,
+		overscan: isBusy
+			? VIRTUALIZATION_OVERSCAN_BUSY
+			: VIRTUALIZATION_OVERSCAN_IDLE,
 		useAnimationFrameWithResizeObserver: true,
 	});
-	const virtualItems = messageVirtualizer.getVirtualItems();
-	const virtualHeight = messageVirtualizer.getTotalSize();
+	const virtualItems = shouldVirtualizeMessages
+		? messageVirtualizer.getVirtualItems()
+		: [];
+	const virtualHeight = shouldVirtualizeMessages
+		? messageVirtualizer.getTotalSize()
+		: 0;
 
 	const renderMessageBubble = useCallback(
 		(entry: MessageEntry, idx: number) => {
@@ -362,8 +391,7 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 			const isConsecutive = prev !== null && prev.info.role === entry.info.role;
 			const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
 			const isFirstUserMsg =
-				entry.info.role === "user" &&
-				visibleMessages.findIndex((m) => m.info.role === "user") === idx;
+				entry.info.role === "user" && firstUserMessageIndex === idx;
 
 			return (
 				<div key={entry.info.id} className={spacing}>
@@ -386,6 +414,7 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 			);
 		},
 		[
+			firstUserMessageIndex,
 			visibleMessages,
 			turnDurationByAssistantId,
 			lastReasoningPartId,
@@ -400,23 +429,9 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		if (!sessionJustSwitchedRef.current) return;
 		const el = listRef.current;
 		if (!el || visibleMessages.length === 0) return;
-		// Scroll synchronously so the browser never paints the top position.
-		isProgrammaticScrollRef.current = true;
-		el.scrollTop = el.scrollHeight;
+		scrollToBottom();
 		sessionJustSwitchedRef.current = false;
-		requestAnimationFrame(() => {
-			isProgrammaticScrollRef.current = false;
-		});
-		loadingOlderRef.current = false;
-	}, [visibleMessages]);
-
-	useLayoutEffect(() => {
-		if (virtualHeight <= 0) return;
-		if (!visibleMessages.length) return;
-		if (!isNearBottomRef.current) return;
-		if (!sessionJustSwitchedRef.current && !isBusy) return;
-		scrollToBottom(true);
-	}, [isBusy, scrollToBottom, virtualHeight, visibleMessages.length]);
+	}, [scrollToBottom, visibleMessages]);
 
 	// ---- streaming / new content: scroll only if sticky ----
 
@@ -428,15 +443,8 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		if (!isNearBottomRef.current) return;
 		// Skip if we already handled this render in the layout effect above.
 		if (sessionJustSwitchedRef.current) return;
-		// Use virtualizer's scrollToIndex for reliable bottom-pinning during streaming.
-		if (isBusy) {
-			messageVirtualizer.scrollToIndex(visibleMessages.length - 1, {
-				align: "end",
-			});
-		} else {
-			scrollToBottom(false);
-		}
-	}, [isBusy, visibleMessages, scrollToBottom, messageVirtualizer]);
+		scrollToBottom();
+	}, [scrollToBottom, visibleMessages]);
 
 	if (isLoadingMessages) {
 		return (
@@ -565,18 +573,22 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 			className="flex-1 overflow-auto px-4 py-4"
 		>
 			<div className="max-w-[640px] mx-auto">
-				{isLoadingOlderMessages && (
-					<div className="mb-3 flex items-center justify-center">
-						<Spinner className="size-4 text-muted-foreground" />
-					</div>
-				)}
 				{activeSessionId && temporarySessions.has(activeSessionId) && (
 					<div className="mb-3 flex items-center justify-center gap-1.5 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
 						<Timer className="size-3" />
 						Temporary chat - will be deleted when you leave
 					</div>
 				)}
-				{visibleMessages.length > 0 && (
+				{/* Sentinel for auto-loading older messages */}
+				{messageHistoryHasMore && (
+					<div ref={topSentinelRef} className="h-px w-full" />
+				)}
+				{isLoadingOlderMessages && (
+					<div className="flex items-center justify-center py-3">
+						<Spinner className="size-4 text-muted-foreground" />
+					</div>
+				)}
+				{visibleMessages.length > 0 && shouldVirtualizeMessages && (
 					<div className="relative w-full" style={{ height: virtualHeight }}>
 						{virtualItems.map((virtualItem) => {
 							const entry = visibleMessages[virtualItem.index];
@@ -596,20 +608,11 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 						})}
 					</div>
 				)}
-
-				{messageWindowHasNewer && (
-					<div className="mt-4 flex items-center justify-center">
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								void loadNewerMessages();
-							}}
-							disabled={isLoadingNewerMessages}
-						>
-							{isLoadingNewerMessages ? <Spinner className="size-4" /> : null}
-							{isLoadingNewerMessages ? "Loading newer" : "Load newer messages"}
-						</Button>
+				{visibleMessages.length > 0 && !shouldVirtualizeMessages && (
+					<div>
+						{visibleMessages.map((entry, index) =>
+							renderMessageBubble(entry, index),
+						)}
 					</div>
 				)}
 
@@ -685,8 +688,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 						onDismiss={() => rejectQuestion()}
 					/>
 				)}
-
-				<div ref={bottomRef} />
 			</div>
 		</div>
 	);
@@ -1398,19 +1399,16 @@ function parseUnifiedDiff(diffText: string): DiffResult | null {
 function computeApplyPatchDiff(
 	file: Record<string, unknown>,
 ): DiffResult | null {
+	const unifiedDiff = typeof file.diff === "string" ? file.diff : null;
 	const before = typeof file.before === "string" ? file.before : null;
 	const after = typeof file.after === "string" ? file.after : null;
-	const fileType =
-		typeof file.type === "string" ? file.type.toLowerCase() : "update";
+	if (unifiedDiff) {
+		return parseUnifiedDiff(unifiedDiff);
+	}
 	if (before != null || after != null) {
 		return getCachedLineDiff(before ?? "", after ?? "");
 	}
-	if (fileType === "delete") {
-		const deleted =
-			typeof file.diff === "string" ? parseUnifiedDiff(file.diff) : null;
-		if (deleted) return deleted;
-	}
-	return typeof file.diff === "string" ? parseUnifiedDiff(file.diff) : null;
+	return null;
 }
 
 function extractApplyPatchFiles(

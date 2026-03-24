@@ -178,6 +178,34 @@ const SSE_STALE_THRESHOLD = 45_000; // ms – restart SSE if no event for this l
 const httpAgent = new Agent({ keepAlive: true, keepAliveMsecs: 15_000 });
 const httpsAgent = new HttpsAgent({ keepAlive: true, keepAliveMsecs: 15_000 });
 
+function stripMessagePayloadBloat(messages) {
+	for (const message of messages) {
+		const summary = message?.info?.summary;
+		if (summary && typeof summary === "object" && "diffs" in summary) {
+			delete summary.diffs;
+		}
+
+		if (!Array.isArray(message?.parts)) continue;
+		for (const part of message.parts) {
+			if (part?.type !== "tool") continue;
+			const files = part?.state?.metadata?.files;
+			if (!Array.isArray(files)) continue;
+			for (const file of files) {
+				if (
+					file &&
+					typeof file === "object" &&
+					typeof file.diff === "string" &&
+					file.diff.trim()
+				) {
+					delete file.before;
+					delete file.after;
+				}
+			}
+		}
+	}
+	return messages;
+}
+
 class OpenCodeConnection {
 	constructor(emit) {
 		this._emit = emit;
@@ -388,7 +416,10 @@ class OpenCodeConnection {
 			params.before = options.before;
 		}
 		const res = await this._client.session.messages(params);
-		return res.data ?? [];
+		const messages = stripMessagePayloadBloat(res.data ?? []);
+		// Extract the opaque pagination cursor from the response header.
+		const nextCursor = res.response?.headers?.get("X-Next-Cursor") ?? null;
+		return { messages, nextCursor };
 	}
 
 	async promptAsync(sessionId, text, images, model, agent, variant) {

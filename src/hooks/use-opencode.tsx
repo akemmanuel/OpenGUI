@@ -430,6 +430,8 @@ export interface OpenCodeState {
 	messageForwardBuffer: MessageEntry[];
 	/** Whether older messages exist before the loaded active-session window */
 	messageHistoryHasMore: boolean;
+	/** Opaque cursor for fetching the next page of older messages */
+	messageHistoryCursor: string | null;
 	/** Whether newer messages exist after the loaded active-session window */
 	messageWindowHasNewer: boolean;
 	/** Whether messages are being fetched for a newly selected session */
@@ -553,6 +555,7 @@ const initialState: OpenCodeState = {
 	messages: [],
 	messageForwardBuffer: [],
 	messageHistoryHasMore: false,
+	messageHistoryCursor: null,
 	messageWindowHasNewer: false,
 	isLoadingMessages: false,
 	isLoadingOlderMessages: false,
@@ -621,6 +624,7 @@ type Action =
 			payload: {
 				messages: MessageEntry[];
 				hasMore: boolean;
+				nextCursor?: string | null;
 				mode?: "replace" | "prepend" | "append";
 			};
 	  }
@@ -742,9 +746,19 @@ function sortSessionsNewestFirst(sessions: Session[]): Session[] {
 	});
 }
 
-const MESSAGE_PAGE_SIZE = 100;
-const MAX_MESSAGE_WINDOW = 200;
-const MAX_FORWARD_BUFFER = 300;
+function getMessageCreatedAt(message: { info: Message }): number {
+	return message.info.time.created ?? 0;
+}
+
+function getPartOrderValue(part: Part): number {
+	const timedPart = part as Part & { time?: { start?: number; end?: number } };
+	return timedPart.time?.start ?? timedPart.time?.end ?? 0;
+}
+
+const MESSAGE_PAGE_SIZE = 30;
+const MAX_MESSAGE_WINDOW = 100;
+/** Maximum number of idle session message snapshots to keep in the LRU cache */
+const MAX_SESSION_BUFFER_CACHE = 8;
 
 type DeltaTrackedPart = Part & { _deltaPositions?: Record<string, number> };
 
@@ -996,9 +1010,9 @@ function normalizeMessageEntries(
 	});
 }
 
-function trimForwardBuffer(messages: MessageEntry[]): MessageEntry[] {
-	if (messages.length <= MAX_FORWARD_BUFFER) return messages;
-	return messages.slice(messages.length - MAX_FORWARD_BUFFER);
+function limitMessageWindow(messages: MessageEntry[]): MessageEntry[] {
+	if (messages.length <= MAX_MESSAGE_WINDOW) return messages;
+	return messages.slice(messages.length - MAX_MESSAGE_WINDOW);
 }
 
 function updateMessageArray(
@@ -1150,6 +1164,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 							messages: [],
 							messageForwardBuffer: [],
 							messageHistoryHasMore: false,
+							messageHistoryCursor: null,
 							messageWindowHasNewer: false,
 							isLoadingOlderMessages: false,
 							isLoadingNewerMessages: false,
@@ -1174,6 +1189,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				messages: [],
 				messageForwardBuffer: [],
 				messageHistoryHasMore: false,
+				messageHistoryCursor: null,
 				messageWindowHasNewer: false,
 				isLoadingMessages: false,
 				isLoadingOlderMessages: false,
@@ -1224,12 +1240,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			const sid = action.payload;
 			let startingBuffers = state._sessionBuffers;
 			const previousSid = state.activeSessionId;
-			if (
-				previousSid &&
-				previousSid !== sid &&
-				state.messages.length > 0 &&
-				state.busySessionIds.has(previousSid)
-			) {
+			// Always cache outgoing session messages (not just busy ones) for
+			// instant display when switching back.
+			if (previousSid && previousSid !== sid && state.messages.length > 0) {
 				const snapshot: Record<
 					string,
 					{ info: Message; parts: Record<string, Part> }
@@ -1242,6 +1255,18 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					snapshot[msg.info.id] = { info: msg.info, parts: partsById };
 				}
 				startingBuffers = { ...startingBuffers, [previousSid]: snapshot };
+				// LRU eviction: keep at most MAX_SESSION_BUFFER_CACHE entries.
+				// Evict the oldest entries (first keys) when over the limit.
+				const bufferKeys = Object.keys(startingBuffers);
+				if (bufferKeys.length > MAX_SESSION_BUFFER_CACHE) {
+					const evictCount = bufferKeys.length - MAX_SESSION_BUFFER_CACHE;
+					const pruned = { ...startingBuffers };
+					for (let i = 0; i < evictCount; i++) {
+						const key = bufferKeys[i];
+						if (key) delete pruned[key];
+					}
+					startingBuffers = pruned;
+				}
 			}
 			// If we have a buffer for this session, use it for instant display
 			const buffered = sid ? startingBuffers[sid] : undefined;
@@ -1277,8 +1302,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				messages: initialMessages,
 				messageForwardBuffer: [],
 				messageHistoryHasMore: false,
+				messageHistoryCursor: null,
 				messageWindowHasNewer: false,
-				isLoadingMessages: sid !== null,
+				isLoadingMessages: sid !== null && !buffered,
 				isLoadingOlderMessages: false,
 				isLoadingNewerMessages: false,
 				isBusy: sid ? state.busySessionIds.has(sid) : false,
@@ -1315,38 +1341,21 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			const mode = action.payload.mode ?? "replace";
 			const normalizedMessages = normalizeMessageEntries(
 				action.payload.messages,
-				[...state.messages, ...state.messageForwardBuffer],
+				state.messages,
 			);
 
 			if (mode === "prepend") {
-				const currentIds = new Set(
-					state.messages.map((message) => message.info.id),
+				// Deduplicate: remove any incoming messages already in state
+				const existingIds = new Set(state.messages.map((m) => m.info.id));
+				const newOlder = normalizedMessages.filter(
+					(m) => !existingIds.has(m.info.id),
 				);
-				const prependedMessages = normalizedMessages.filter(
-					(message) => !currentIds.has(message.info.id),
-				);
-				const combinedMessages = [...prependedMessages, ...state.messages];
-				const overflow = Math.max(
-					0,
-					combinedMessages.length - MAX_MESSAGE_WINDOW,
-				);
-				const droppedTail = overflow
-					? combinedMessages.slice(combinedMessages.length - overflow)
-					: [];
+				const combined = [...newOlder, ...state.messages];
 				return {
 					...state,
-					messages: overflow
-						? combinedMessages.slice(0, combinedMessages.length - overflow)
-						: combinedMessages,
-					messageForwardBuffer: trimForwardBuffer([
-						...droppedTail,
-						...state.messageForwardBuffer,
-					]),
+					messages: combined,
 					messageHistoryHasMore: action.payload.hasMore,
-					messageWindowHasNewer:
-						state.messageWindowHasNewer ||
-						state.messageForwardBuffer.length > 0 ||
-						droppedTail.length > 0,
+					messageHistoryCursor: action.payload.nextCursor ?? null,
 					isLoadingOlderMessages: false,
 				};
 			}
@@ -1355,25 +1364,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				const appendIds = new Set(
 					normalizedMessages.map((message) => message.info.id),
 				);
-				const retainedForward = state.messageForwardBuffer.filter(
+				const retainedMessages = state.messages.filter(
 					(message) => !appendIds.has(message.info.id),
 				);
-				const combinedMessages = [...state.messages, ...normalizedMessages];
-				const overflow = Math.max(
-					0,
-					combinedMessages.length - MAX_MESSAGE_WINDOW,
-				);
+				const combinedMessages = [...retainedMessages, ...normalizedMessages];
 				return {
 					...state,
-					messages: overflow
-						? combinedMessages.slice(overflow)
-						: combinedMessages,
-					messageForwardBuffer: retainedForward,
-					messageHistoryHasMore:
-						action.payload.hasMore ||
-						state.messageHistoryHasMore ||
-						overflow > 0,
-					messageWindowHasNewer: retainedForward.length > 0,
+					messages: limitMessageWindow(combinedMessages),
+					messageForwardBuffer: [],
+					messageHistoryHasMore: false,
+					messageHistoryCursor: null,
+					messageWindowHasNewer: false,
 					isLoadingNewerMessages: false,
 				};
 			}
@@ -1401,9 +1402,10 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 			let replayedState: OpenCodeState = {
 				...state,
-				messages: normalizedMessages,
+				messages: limitMessageWindow(normalizedMessages),
 				messageForwardBuffer: [],
 				messageHistoryHasMore: action.payload.hasMore,
+				messageHistoryCursor: action.payload.nextCursor ?? null,
 				messageWindowHasNewer: false,
 				isLoadingMessages: false,
 				isLoadingOlderMessages: false,
@@ -1610,6 +1612,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 							messages: [],
 							messageForwardBuffer: [],
 							messageHistoryHasMore: false,
+							messageHistoryCursor: null,
 							messageWindowHasNewer: false,
 							isLoadingOlderMessages: false,
 							isLoadingNewerMessages: false,
@@ -1644,34 +1647,16 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				};
 			}
 
-			const existsInForward = state.messageForwardBuffer.some(
-				(m) => m.info.id === msg.id,
-			);
-			if (existsInForward) {
-				return {
-					...state,
-					messageForwardBuffer: state.messageForwardBuffer.map((m) =>
-						m.info.id === msg.id ? { ...m, info: msg } : m,
-					),
-				};
-			}
-
-			if (
-				state.messageWindowHasNewer ||
-				state.messageForwardBuffer.length > 0
-			) {
-				return {
-					...state,
-					messageForwardBuffer: trimForwardBuffer([
-						...state.messageForwardBuffer,
-						{ info: msg, parts: [] },
-					]),
-					messageWindowHasNewer: true,
-				};
-			}
 			return {
 				...state,
-				messages: [...state.messages, { info: msg, parts: [] }],
+				messages: limitMessageWindow([
+					...state.messages,
+					{ info: msg, parts: [] },
+				]),
+				messageForwardBuffer: [],
+				messageHistoryHasMore: false,
+				messageHistoryCursor: null,
+				messageWindowHasNewer: false,
 			};
 		}
 
@@ -1736,29 +1721,15 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				return { ...currentEntry, parts: newParts };
 			};
 
-			const inWindow = state.messages.some((m) => m.info.id === part.messageID);
-			const inForward = state.messageForwardBuffer.some(
+			const sourceEntry = state.messages.find(
 				(m) => m.info.id === part.messageID,
 			);
-			const useForward =
-				!inWindow &&
-				(inForward ||
-					state.messageWindowHasNewer ||
-					state.messageForwardBuffer.length > 0);
-			const sourceEntry = useForward
-				? state.messageForwardBuffer.find((m) => m.info.id === part.messageID)
-				: state.messages.find((m) => m.info.id === part.messageID);
 			const prevPart = sourceEntry?.parts.find((p) => p.id === part.id);
-			const updatedWindow = useForward
-				? { messages: state.messages }
-				: updateMessageArray(state.messages, part.messageID, updateEntry);
-			const updatedForward = useForward
-				? updateMessageArray(
-						state.messageForwardBuffer,
-						part.messageID,
-						updateEntry,
-					)
-				: { messages: state.messageForwardBuffer };
+			const updatedWindow = updateMessageArray(
+				state.messages,
+				part.messageID,
+				updateEntry,
+			);
 
 			// After-part trigger: detect when a part just finished while we're
 			// waiting for the current part to complete before aborting + sending.
@@ -1806,8 +1777,11 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				...state,
 				...childTrackPatch,
 				...afterPartPatch,
-				messages: updatedWindow.messages,
-				messageForwardBuffer: trimForwardBuffer(updatedForward.messages),
+				messages: limitMessageWindow(updatedWindow.messages),
+				messageForwardBuffer: [],
+				messageHistoryHasMore: false,
+				messageHistoryCursor: null,
+				messageWindowHasNewer: false,
 			};
 		}
 
@@ -1848,29 +1822,15 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				else nextParts.push(nextPart);
 				return { ...current, parts: nextParts };
 			};
-			const inWindow = state.messages.some((m) => m.info.id === messageID);
-			const inForward = state.messageForwardBuffer.some(
-				(m) => m.info.id === messageID,
-			);
-			const useForward =
-				!inWindow &&
-				(inForward ||
-					state.messageWindowHasNewer ||
-					state.messageForwardBuffer.length > 0);
 			return {
 				...state,
-				messages: useForward
-					? state.messages
-					: updateMessageArray(state.messages, messageID, updateEntry).messages,
-				messageForwardBuffer: trimForwardBuffer(
-					useForward
-						? updateMessageArray(
-								state.messageForwardBuffer,
-								messageID,
-								updateEntry,
-							).messages
-						: state.messageForwardBuffer,
+				messages: limitMessageWindow(
+					updateMessageArray(state.messages, messageID, updateEntry).messages,
 				),
+				messageForwardBuffer: [],
+				messageHistoryHasMore: false,
+				messageHistoryCursor: null,
+				messageWindowHasNewer: false,
 			};
 		}
 
@@ -1926,13 +1886,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 						parts: m.parts.filter((p) => p.id !== partID),
 					};
 				}),
-				messageForwardBuffer: state.messageForwardBuffer.map((m) => {
-					if (m.info.id !== messageID) return m;
-					return {
-						...m,
-						parts: m.parts.filter((p) => p.id !== partID),
-					};
-				}),
+				messageForwardBuffer: [],
 			};
 		}
 
@@ -1970,9 +1924,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			return {
 				...state,
 				messages: state.messages.filter((m) => m.info.id !== messageID),
-				messageForwardBuffer: state.messageForwardBuffer.filter(
-					(m) => m.info.id !== messageID,
-				),
+				messageForwardBuffer: [],
 			};
 		}
 
@@ -1985,12 +1937,9 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			} else {
 				newBusy.delete(sessionID);
 			}
-			// Clean up session buffer when session goes idle
-			let nextBuffers = state._sessionBuffers;
-			if (!isBusy && sessionID in state._sessionBuffers) {
-				const { [sessionID]: _, ...rest } = state._sessionBuffers;
-				nextBuffers = rest;
-			}
+			// Keep session buffer cached even when session goes idle so
+			// switching back to it is instant (LRU eviction handles cleanup).
+			const nextBuffers = state._sessionBuffers;
 			// Mark session as unread when it finishes generating (busy -> idle)
 			// and the user is not currently viewing it
 			let nextUnread = state.unreadSessionIds;
@@ -2014,18 +1963,14 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "INIT_BUSY_SESSIONS": {
 			const statuses = action.payload as Record<string, { type: string }>;
 			const newBusy = new Set(state.busySessionIds);
-			let nextBuffers = state._sessionBuffers;
 			for (const [sessionID, status] of Object.entries(statuses)) {
 				if (status.type === "busy") {
 					newBusy.add(sessionID);
 				} else {
 					newBusy.delete(sessionID);
-					if (sessionID in nextBuffers) {
-						const { [sessionID]: _removed, ...rest } = nextBuffers;
-						nextBuffers = rest;
-					}
 				}
 			}
+			const nextBuffers = state._sessionBuffers;
 			return {
 				...state,
 				busySessionIds: newBusy,
@@ -2166,6 +2111,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				messages: [],
 				messageForwardBuffer: [],
 				messageHistoryHasMore: false,
+				messageHistoryCursor: null,
 				messageWindowHasNewer: false,
 				isLoadingMessages: false,
 				isLoadingOlderMessages: false,
@@ -2248,16 +2194,23 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 		case "LOAD_CHILD_SESSION": {
 			const { childSessionId, messages } = action.payload;
+			const existingChildBuf = state.childSessions[childSessionId] ?? {};
 			const childBuf: Record<
 				string,
 				{ info: Message; parts: Record<string, Part> }
-			> = {};
+			> = { ...existingChildBuf };
 			for (const msg of messages) {
-				const partsById: Record<string, Part> = {};
+				const previousEntry = existingChildBuf[msg.info.id];
+				const partsById: Record<string, Part> = previousEntry
+					? { ...previousEntry.parts }
+					: {};
 				for (const p of msg.parts) {
 					partsById[p.id] = p;
 				}
-				childBuf[msg.info.id] = { info: msg.info, parts: partsById };
+				childBuf[msg.info.id] = {
+					info: msg.info,
+					parts: partsById,
+				};
 			}
 			const nextTracked = new Set(state.trackedChildSessionIds);
 			nextTracked.add(childSessionId);
@@ -2292,13 +2245,16 @@ export function getChildSessionParts(
 	if (!child) return [];
 
 	return Object.values(child)
+		.toSorted((a, b) => getMessageCreatedAt(a) - getMessageCreatedAt(b))
 		.filter((m) => m.info.role !== "user")
 		.flatMap((m) =>
-			Object.values(m.parts).filter((p) => {
-				if (p.type === "tool") return true;
-				if (p.type === "text" && "text" in p && p.text) return true;
-				return false;
-			}),
+			Object.values(m.parts)
+				.toSorted((a, b) => getPartOrderValue(a) - getPartOrderValue(b))
+				.filter((p) => {
+					if (p.type === "tool") return true;
+					if (p.type === "text" && "text" in p && p.text) return true;
+					return false;
+				}),
 		);
 }
 
@@ -2567,6 +2523,7 @@ export function OpenCodeProvider({
 	const selectedAgentRef = useRef(state.selectedAgent);
 	selectedAgentRef.current = state.selectedAgent;
 	const selectSessionRequestRef = useRef(0);
+	const childHydrationVersionRef = useRef<Record<string, number>>({});
 	const loadedResourceDirectoryRef = useRef<string | null>(null);
 	const resourceLoadRequestRef = useRef(0);
 
@@ -3098,6 +3055,14 @@ export function OpenCodeProvider({
 						: workspace,
 				);
 
+				// Collect all project configs upfront so we can connect in parallel
+				const allProjectConfigs: Array<{
+					workspaceId: string;
+					baseUrl: string;
+					directory: string;
+					username?: string;
+				}> = [];
+
 				for (const workspace of bootWorkspaces) {
 					for (const project of workspace.projects) {
 						const rootDirectory = getWorkspaceRootDirectory(
@@ -3112,30 +3077,30 @@ export function OpenCodeProvider({
 							rootDirectory,
 							...relatedWorktrees,
 						]);
-						await addProject(
-							{
-								workspaceId: workspace.id,
-								baseUrl: workspace.serverUrl,
-								directory: rootDirectory,
-								username: workspace.username,
-							},
-							{ suppressError: true },
-						);
-						await Promise.allSettled(
-							relatedWorktrees.map((worktreeDir) =>
-								addProject(
-									{
-										workspaceId: workspace.id,
-										baseUrl: workspace.serverUrl,
-										directory: worktreeDir,
-										username: workspace.username,
-									},
-									{ suppressError: true },
-								),
-							),
-						);
+						const baseConfig = {
+							workspaceId: workspace.id,
+							baseUrl: workspace.serverUrl,
+							username: workspace.username,
+						};
+						allProjectConfigs.push({
+							...baseConfig,
+							directory: rootDirectory,
+						});
+						for (const worktreeDir of relatedWorktrees) {
+							allProjectConfigs.push({
+								...baseConfig,
+								directory: worktreeDir,
+							});
+						}
 					}
 				}
+
+				// Connect all projects in parallel instead of sequentially
+				await Promise.allSettled(
+					allProjectConfigs.map((config) =>
+						addProject(config, { suppressError: true }),
+					),
+				);
 			} catch {
 				/* ignore localStorage errors */
 			}
@@ -3402,16 +3367,19 @@ export function OpenCodeProvider({
 			sessionId: string,
 			options?: { before?: string; limit?: number },
 		) => {
-			if (!bridge) return { messages: [], hasMore: false };
+			if (!bridge) return { messages: [], hasMore: false, nextCursor: null };
 			const pageSize = options?.limit ?? MESSAGE_PAGE_SIZE;
 			const res = await bridge.getMessages(sessionId, {
 				limit: pageSize,
 				before: options?.before,
 			});
-			const messages = res.success && res.data ? res.data : [];
+			const data = res.success && res.data ? res.data : null;
+			const messages = data?.messages ?? [];
+			const nextCursor = data?.nextCursor ?? null;
 			return {
 				messages,
-				hasMore: messages.length >= pageSize,
+				hasMore: nextCursor !== null || messages.length >= pageSize,
+				nextCursor,
 			};
 		},
 		[bridge],
@@ -3433,9 +3401,15 @@ export function OpenCodeProvider({
 			}
 
 			for (const childSid of childSessionIds) {
+				const nextVersion =
+					(childHydrationVersionRef.current[childSid] ?? 0) + 1;
+				childHydrationVersionRef.current[childSid] = nextVersion;
 				bridge
 					.getMessages(childSid, { limit: 10000 })
 					.then((childRes) => {
+						if (childHydrationVersionRef.current[childSid] !== nextVersion) {
+							return;
+						}
 						if (
 							options?.requestId !== undefined &&
 							options.requestId !== selectSessionRequestRef.current
@@ -3448,12 +3422,15 @@ export function OpenCodeProvider({
 						) {
 							return;
 						}
-						if (childRes.success && childRes.data) {
+						const childMessages = childRes.success
+							? childRes.data?.messages
+							: undefined;
+						if (childMessages) {
 							dispatch({
 								type: "LOAD_CHILD_SESSION",
 								payload: {
 									childSessionId: childSid,
-									messages: childRes.data,
+									messages: childMessages,
 								},
 							});
 						}
@@ -3472,14 +3449,44 @@ export function OpenCodeProvider({
 
 			cleanupTemporarySession(id);
 
+			// Check if we have a cached buffer BEFORE dispatching (dispatch consumes it).
+			// Extract messages from the buffer now because stateRef won't reflect the
+			// new reducer state until the next render, and we need the correct
+			// messages for child-session hydration.
+			const bufferSnapshot = id
+				? stateRef.current._sessionBuffers[id]
+				: undefined;
+			const hadCachedBuffer = !!bufferSnapshot;
+			let bufferMessages: MessageEntry[] | undefined;
+			if (bufferSnapshot) {
+				bufferMessages = Object.values(bufferSnapshot).map((entry) => ({
+					info: entry.info,
+					parts: Object.values(entry.parts).map((p) =>
+						tagPartWithDeltaPositions(p),
+					),
+				}));
+			}
+
 			const requestId = ++selectSessionRequestRef.current;
 			dispatch({ type: "SET_ACTIVE_SESSION", payload: id });
 			if (!id || !bridge) return;
-			const { messages, hasMore } = await fetchMessagePage(id);
+
+			if (hadCachedBuffer && bufferMessages) {
+				// Buffer was consumed and displayed instantly by SET_ACTIVE_SESSION
+				// (which also set isLoadingMessages to false). Just hydrate child
+				// sessions from the pre-extracted buffer messages.
+				hydrateChildSessionsForMessages(bufferMessages, {
+					requestId,
+					sessionId: id,
+				});
+				return;
+			}
+
+			const { messages, hasMore, nextCursor } = await fetchMessagePage(id);
 			if (requestId !== selectSessionRequestRef.current) return;
 			dispatch({
 				type: "SET_MESSAGES",
-				payload: { messages, hasMore },
+				payload: { messages, hasMore, nextCursor },
 			});
 			hydrateChildSessionsForMessages(messages, { requestId, sessionId: id });
 		},
@@ -3492,95 +3499,55 @@ export function OpenCodeProvider({
 	);
 
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
-		const activeSessionId = stateRef.current.activeSessionId;
-		if (!bridge || !activeSessionId) return false;
+		const {
+			activeSessionId,
+			messages,
+			isLoadingOlderMessages,
+			messageHistoryHasMore,
+			messageHistoryCursor,
+		} = stateRef.current;
 		if (
-			stateRef.current.isLoadingMessages ||
-			stateRef.current.isLoadingOlderMessages ||
-			!stateRef.current.messageHistoryHasMore
+			!bridge ||
+			!activeSessionId ||
+			isLoadingOlderMessages ||
+			!messageHistoryHasMore ||
+			!messageHistoryCursor ||
+			messages.length === 0
 		) {
 			return false;
 		}
 
-		const oldestMessageId = stateRef.current.messages[0]?.info.id;
-		if (!oldestMessageId) return false;
-
 		dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: true });
+
 		try {
-			const { messages, hasMore } = await fetchMessagePage(activeSessionId, {
-				before: oldestMessageId,
+			const {
+				messages: olderMessages,
+				hasMore,
+				nextCursor,
+			} = await fetchMessagePage(activeSessionId, {
+				before: messageHistoryCursor,
 			});
-			if (activeSessionId !== stateRef.current.activeSessionId) {
-				dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: false });
-				return false;
-			}
+			// Ensure we are still on the same session
+			if (stateRef.current.activeSessionId !== activeSessionId) return false;
 			dispatch({
 				type: "SET_MESSAGES",
-				payload: { messages, hasMore, mode: "prepend" },
+				payload: {
+					messages: olderMessages,
+					hasMore,
+					nextCursor,
+					mode: "prepend",
+				},
 			});
-			hydrateChildSessionsForMessages(messages, { sessionId: activeSessionId });
-			return messages.length > 0;
+			return hasMore;
 		} catch {
 			dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: false });
 			return false;
 		}
-	}, [bridge, fetchMessagePage, hydrateChildSessionsForMessages]);
+	}, [bridge, fetchMessagePage]);
 
 	const loadNewerMessages = useCallback(async (): Promise<boolean> => {
-		if (
-			stateRef.current.isLoadingMessages ||
-			stateRef.current.isLoadingNewerMessages ||
-			!stateRef.current.messageWindowHasNewer
-		) {
-			return false;
-		}
-
-		const activeSessionId = stateRef.current.activeSessionId;
-		if (!bridge || !activeSessionId) return false;
-
-		dispatch({ type: "SET_LOADING_NEWER_MESSAGES", payload: true });
-		try {
-			const forwardChunk = stateRef.current.messageForwardBuffer.slice(
-				0,
-				MESSAGE_PAGE_SIZE,
-			);
-			if (forwardChunk.length > 0) {
-				dispatch({
-					type: "SET_MESSAGES",
-					payload: {
-						messages: forwardChunk,
-						hasMore: stateRef.current.messageHistoryHasMore,
-						mode: "append",
-					},
-				});
-				hydrateChildSessionsForMessages(forwardChunk, {
-					sessionId: activeSessionId,
-				});
-				return true;
-			}
-
-			const refreshed = await fetchMessagePage(activeSessionId);
-			if (activeSessionId !== stateRef.current.activeSessionId) {
-				dispatch({ type: "SET_LOADING_NEWER_MESSAGES", payload: false });
-				return false;
-			}
-			dispatch({
-				type: "SET_MESSAGES",
-				payload: {
-					messages: refreshed.messages,
-					hasMore: refreshed.hasMore,
-					mode: "replace",
-				},
-			});
-			hydrateChildSessionsForMessages(refreshed.messages, {
-				sessionId: activeSessionId,
-			});
-			return refreshed.messages.length > 0;
-		} catch {
-			dispatch({ type: "SET_LOADING_NEWER_MESSAGES", payload: false });
-			return false;
-		}
-	}, [bridge, fetchMessagePage, hydrateChildSessionsForMessages]);
+		return false;
+	}, []);
 
 	const createSession = useCallback(
 		async (title?: string, directory?: string): Promise<Session | null> => {
@@ -4188,6 +4155,7 @@ export function OpenCodeProvider({
 					payload: {
 						messages: refreshed.messages,
 						hasMore: refreshed.hasMore,
+						nextCursor: refreshed.nextCursor,
 					},
 				});
 			} catch (err) {
@@ -4215,6 +4183,7 @@ export function OpenCodeProvider({
 				payload: {
 					messages: refreshed.messages,
 					hasMore: refreshed.hasMore,
+					nextCursor: refreshed.nextCursor,
 				},
 			});
 		} catch (err) {
@@ -4331,16 +4300,16 @@ export function OpenCodeProvider({
 		[],
 	);
 
-	const switchWorkspace = useCallback((workspaceId: string) => {
-		const workspace = stateRef.current.workspaces.find(
-			(item) => item.id === workspaceId,
-		);
-		dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: workspaceId });
-		dispatch({
-			type: "SET_ACTIVE_SESSION",
-			payload: workspace?.lastActiveSessionId ?? null,
-		});
-	}, []);
+	const switchWorkspace = useCallback(
+		(workspaceId: string) => {
+			const workspace = stateRef.current.workspaces.find(
+				(item) => item.id === workspaceId,
+			);
+			dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: workspaceId });
+			void selectSession(workspace?.lastActiveSessionId ?? null);
+		},
+		[selectSession],
+	);
 
 	const removeWorkspace = useCallback(
 		async (workspaceId: string) => {
@@ -4363,13 +4332,10 @@ export function OpenCodeProvider({
 					type: "SET_ACTIVE_WORKSPACE",
 					payload: nextWorkspace?.id ?? LOCAL_WORKSPACE_ID,
 				});
-				dispatch({
-					type: "SET_ACTIVE_SESSION",
-					payload: nextWorkspace?.lastActiveSessionId ?? null,
-				});
+				void selectSession(nextWorkspace?.lastActiveSessionId ?? null);
 			}
 		},
-		[bridge],
+		[bridge, selectSession],
 	);
 
 	// ----- Split context values (memoised per domain) -----

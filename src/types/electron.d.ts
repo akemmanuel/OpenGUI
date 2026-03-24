@@ -208,7 +208,12 @@ export interface OpenCodeBridge {
 	getMessages(
 		sessionId: string,
 		options?: MessagePageOptions,
-	): Promise<IPCResult<Array<{ info: Message; parts: Part[] }>>>;
+	): Promise<
+		IPCResult<{
+			messages: Array<{ info: Message; parts: Part[] }>;
+			nextCursor: string | null;
+		}>
+	>;
 	prompt(
 		sessionId: string,
 		text: string,
