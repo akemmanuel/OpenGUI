@@ -113,12 +113,10 @@ function TerminalOutput({
 	content,
 	className,
 	preRef,
-	trailingCursor = false,
 }: {
 	content: string;
 	className?: string;
 	preRef?: React.RefObject<HTMLPreElement | null>;
-	trailingCursor?: boolean;
 }) {
 	const normalizedContent = useMemo(
 		() => normalizeTerminalOutput(content),
@@ -134,9 +132,6 @@ function TerminalOutput({
 			)}
 		>
 			{normalizedContent}
-			{trailingCursor && (
-				<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
-			)}
 		</pre>
 	);
 }
@@ -1885,16 +1880,10 @@ function ChildSessionParts({
 					return (
 						<div key={part.id} className="text-xs">
 							{terminalLike ? (
-								<TerminalOutput
-									content={text}
-									trailingCursor={isRunning && isLast}
-								/>
+								<TerminalOutput content={text} />
 							) : (
 								<>
 									<MarkdownRenderer content={text} />
-									{isRunning && isLast && (
-										<span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-text-bottom rounded-sm" />
-									)}
 								</>
 							)}
 						</div>
@@ -2213,7 +2202,6 @@ function ToolPartView({ part }: { part: ToolPart }) {
 						<TerminalOutput
 							content={(isBash ? bashOutputText : outputText) ?? ""}
 							preRef={toolOutputRef}
-							trailingCursor={isBash && isRunning}
 							className="max-h-64"
 						/>
 					</div>
