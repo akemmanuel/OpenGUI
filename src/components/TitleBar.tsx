@@ -4,7 +4,6 @@ import {
 	Minimize,
 	Minus,
 	PanelLeftIcon,
-	Pencil,
 	Plus,
 	Square,
 	Trash2,
@@ -237,7 +236,7 @@ export function TitleBar({
 }) {
 	const { createWorkspace, removeWorkspace, switchWorkspace, updateWorkspace } =
 		useActions();
-	const { activeWorkspace, activeWorkspaceId, workspaceStatuses, workspaces } =
+	const { activeWorkspaceId, workspaceStatuses, workspaces } =
 		useConnectionState();
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [platform, setPlatform] = useState<string | null>(null);
@@ -330,7 +329,6 @@ export function TitleBar({
 
 				<div
 					className={`absolute inset-y-0 ${isMac ? "left-20 right-20" : "left-12 right-36"} flex items-center gap-1 px-2`}
-					style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 				>
 					<div
 						ref={tabsRef}
@@ -355,6 +353,7 @@ export function TitleBar({
 											? "border-border bg-background text-foreground"
 											: "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
 									}`}
+									style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 								>
 									<span className="truncate max-w-[120px]">
 										{workspace.name}
@@ -376,21 +375,11 @@ export function TitleBar({
 							size="icon"
 							className="size-7 shrink-0"
 							onClick={() => setDialogMode("add")}
+							style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
 						>
 							<Plus className="size-4" />
 							<span className="sr-only">Add workspace</span>
 						</Button>
-						{activeWorkspace && (
-							<Button
-								variant="ghost"
-								size="icon"
-								className="size-7 shrink-0"
-								onClick={() => setDialogMode("edit")}
-							>
-								<Pencil className="size-3.5" />
-								<span className="sr-only">Edit workspace</span>
-							</Button>
-						)}
 					</div>
 				</div>
 

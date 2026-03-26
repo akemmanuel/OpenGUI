@@ -523,10 +523,14 @@ export interface OpenCodeState {
 				payload: { sessionID: string; messageID: string };
 		  }
 	>;
-	/** Buffered message snapshots for non-active busy sessions (keyed by sessionID) */
+	/** Buffered message snapshots for non-active sessions (keyed by sessionID) */
 	_sessionBuffers: Record<
 		string,
-		Record<string, { info: Message; parts: Record<string, Part> }>
+		{
+			messages: Record<string, { info: Message; parts: Record<string, Part> }>;
+			hasMore: boolean;
+			cursor: string | null;
+		}
 	>;
 	/** Session IDs that have an "after-part" queued prompt waiting for the current part to finish */
 	afterPartPending: Set<string>;
@@ -964,13 +968,18 @@ function bufferNonActiveEvent(
 		return { ...state, childSessions: buf };
 	}
 	const buf = { ...state._sessionBuffers };
-	const sessBuf = { ...buf[sessionID] };
-	const entry = sessBuf[messageID] ?? {
+	const existing = buf[sessionID] ?? {
+		messages: {},
+		hasMore: false,
+		cursor: null,
+	};
+	const msgMap = { ...existing.messages };
+	const entry = msgMap[messageID] ?? {
 		info: { id: messageID, sessionID } as Message,
 		parts: {},
 	};
-	sessBuf[messageID] = updater(entry);
-	buf[sessionID] = sessBuf;
+	msgMap[messageID] = updater(entry);
+	buf[sessionID] = { ...existing, messages: msgMap };
 	return { ...state, _sessionBuffers: buf };
 }
 
@@ -1096,10 +1105,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			for (const [sid, value] of Object.entries(state.queuedPrompts)) {
 				if (!removedSessionIds.has(sid)) nextQueues[sid] = value;
 			}
-			const nextBuffers: Record<
-				string,
-				Record<string, { info: Message; parts: Record<string, Part> }>
-			> = {};
+			const nextBuffers: typeof state._sessionBuffers = {};
 			for (const [sid, value] of Object.entries(state._sessionBuffers)) {
 				if (!removedSessionIds.has(sid)) nextBuffers[sid] = value;
 			}
@@ -1243,7 +1249,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			// Always cache outgoing session messages (not just busy ones) for
 			// instant display when switching back.
 			if (previousSid && previousSid !== sid && state.messages.length > 0) {
-				const snapshot: Record<
+				const msgSnapshot: Record<
 					string,
 					{ info: Message; parts: Record<string, Part> }
 				> = {};
@@ -1252,9 +1258,16 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					for (const p of msg.parts) {
 						partsById[p.id] = p;
 					}
-					snapshot[msg.info.id] = { info: msg.info, parts: partsById };
+					msgSnapshot[msg.info.id] = { info: msg.info, parts: partsById };
 				}
-				startingBuffers = { ...startingBuffers, [previousSid]: snapshot };
+				startingBuffers = {
+					...startingBuffers,
+					[previousSid]: {
+						messages: msgSnapshot,
+						hasMore: state.messageHistoryHasMore,
+						cursor: state.messageHistoryCursor,
+					},
+				};
 				// LRU eviction: keep at most MAX_SESSION_BUFFER_CACHE entries.
 				// Evict the oldest entries (first keys) when over the limit.
 				const bufferKeys = Object.keys(startingBuffers);
@@ -1271,13 +1284,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			// If we have a buffer for this session, use it for instant display
 			const buffered = sid ? startingBuffers[sid] : undefined;
 			let initialMessages: MessageEntry[] = [];
+			let restoredHasMore = false;
+			let restoredCursor: string | null = null;
 			if (buffered) {
-				initialMessages = Object.values(buffered).map((entry) => ({
+				initialMessages = Object.values(buffered.messages).map((entry) => ({
 					info: entry.info,
 					parts: Object.values(entry.parts).map((p) =>
 						tagPartWithDeltaPositions(p),
 					),
 				}));
+				restoredHasMore = buffered.hasMore;
+				restoredCursor = buffered.cursor;
 			}
 			// Remove consumed buffer
 			const { [sid ?? ""]: _consumed, ...remainingBuffers } = startingBuffers;
@@ -1301,8 +1318,8 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				activeSessionId: sid,
 				messages: initialMessages,
 				messageForwardBuffer: [],
-				messageHistoryHasMore: false,
-				messageHistoryCursor: null,
+				messageHistoryHasMore: restoredHasMore,
+				messageHistoryCursor: restoredCursor,
 				messageWindowHasNewer: false,
 				isLoadingMessages: sid !== null && !buffered,
 				isLoadingOlderMessages: false,
@@ -1647,16 +1664,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				};
 			}
 
+			const appendedMessages = limitMessageWindow([
+				...state.messages,
+				{ info: msg, parts: [] },
+			]);
+			const didTrim = appendedMessages.length < state.messages.length + 1;
 			return {
 				...state,
-				messages: limitMessageWindow([
-					...state.messages,
-					{ info: msg, parts: [] },
-				]),
+				messages: appendedMessages,
 				messageForwardBuffer: [],
-				messageHistoryHasMore: false,
-				messageHistoryCursor: null,
-				messageWindowHasNewer: false,
+				// If limitMessageWindow trimmed messages, older history exists
+				...(didTrim ? { messageHistoryHasMore: true } : {}),
 			};
 		}
 
@@ -1773,15 +1791,17 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				}
 			}
 
+			const partUpdatedMessages = limitMessageWindow(updatedWindow.messages);
+			const partDidTrim =
+				partUpdatedMessages.length < updatedWindow.messages.length;
 			return {
 				...state,
 				...childTrackPatch,
 				...afterPartPatch,
-				messages: limitMessageWindow(updatedWindow.messages),
+				messages: partUpdatedMessages,
 				messageForwardBuffer: [],
-				messageHistoryHasMore: false,
-				messageHistoryCursor: null,
-				messageWindowHasNewer: false,
+				// If limitMessageWindow trimmed messages, older history exists
+				...(partDidTrim ? { messageHistoryHasMore: true } : {}),
 			};
 		}
 
@@ -1822,15 +1842,19 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				else nextParts.push(nextPart);
 				return { ...current, parts: nextParts };
 			};
+			const deltaUpdated = updateMessageArray(
+				state.messages,
+				messageID,
+				updateEntry,
+			).messages;
+			const deltaMessages = limitMessageWindow(deltaUpdated);
+			const deltaDidTrim = deltaMessages.length < deltaUpdated.length;
 			return {
 				...state,
-				messages: limitMessageWindow(
-					updateMessageArray(state.messages, messageID, updateEntry).messages,
-				),
+				messages: deltaMessages,
 				messageForwardBuffer: [],
-				messageHistoryHasMore: false,
-				messageHistoryCursor: null,
-				messageWindowHasNewer: false,
+				// If limitMessageWindow trimmed messages, older history exists
+				...(deltaDidTrim ? { messageHistoryHasMore: true } : {}),
 			};
 		}
 
@@ -1867,13 +1891,16 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				}
 				const sessionBuffer = state._sessionBuffers[sessionID];
 				if (!sessionBuffer) return state;
-				const entry = sessionBuffer[messageID];
+				const entry = sessionBuffer.messages[messageID];
 				if (!entry || !(partID in entry.parts)) return state;
 				const { [partID]: _removed, ...remainingParts } = entry.parts;
 				const newBuffers = { ...state._sessionBuffers };
 				newBuffers[sessionID] = {
 					...sessionBuffer,
-					[messageID]: { ...entry, parts: remainingParts },
+					messages: {
+						...sessionBuffer.messages,
+						[messageID]: { ...entry, parts: remainingParts },
+					},
 				};
 				return { ...state, _sessionBuffers: newBuffers };
 			}
@@ -1915,10 +1942,14 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				}
 				const sessionBuffer = state._sessionBuffers[sessionID];
 				if (!sessionBuffer) return state;
-				if (!(messageID in sessionBuffer)) return state;
-				const { [messageID]: _removed, ...remainingMsgs } = sessionBuffer;
+				if (!(messageID in sessionBuffer.messages)) return state;
+				const { [messageID]: _removed, ...remainingMsgs } =
+					sessionBuffer.messages;
 				const newBuffers = { ...state._sessionBuffers };
-				newBuffers[sessionID] = remainingMsgs;
+				newBuffers[sessionID] = {
+					...sessionBuffer,
+					messages: remainingMsgs,
+				};
 				return { ...state, _sessionBuffers: newBuffers };
 			}
 			return {
@@ -3459,12 +3490,14 @@ export function OpenCodeProvider({
 			const hadCachedBuffer = !!bufferSnapshot;
 			let bufferMessages: MessageEntry[] | undefined;
 			if (bufferSnapshot) {
-				bufferMessages = Object.values(bufferSnapshot).map((entry) => ({
-					info: entry.info,
-					parts: Object.values(entry.parts).map((p) =>
-						tagPartWithDeltaPositions(p),
-					),
-				}));
+				bufferMessages = Object.values(bufferSnapshot.messages).map(
+					(entry) => ({
+						info: entry.info,
+						parts: Object.values(entry.parts).map((p) =>
+							tagPartWithDeltaPositions(p),
+						),
+					}),
+				);
 			}
 
 			const requestId = ++selectSessionRequestRef.current;
