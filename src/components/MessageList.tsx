@@ -1812,7 +1812,7 @@ function getToolDisplayInfo(
 function ChildSessionParts({
 	childSessionId,
 	fallbackOutput,
-	isRunning,
+	isRunning: _isRunning,
 }: {
 	childSessionId: string;
 	fallbackOutput: string;
@@ -1828,7 +1828,7 @@ function ChildSessionParts({
 
 	return (
 		<>
-			{parts.map((part, idx) => {
+			{parts.map((part) => {
 				if (part.type === "tool") {
 					const toolPart = part as ToolPart;
 					const info = getToolDisplayInfo(toolPart.tool, toolPart.state);
@@ -1873,7 +1873,6 @@ function ChildSessionParts({
 				if (part.type === "text") {
 					const text = (part as TextPart).text;
 					if (!text) return null;
-					const isLast = idx === parts.length - 1;
 					const terminalLike = looksLikeTerminalOutput(text);
 					return (
 						<div key={part.id} className="text-xs">
