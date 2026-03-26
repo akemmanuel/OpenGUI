@@ -96,18 +96,21 @@ function WorkspaceDialog({
 		name: string;
 		serverUrl: string;
 		username: string;
+		password: string;
 		isLocal: boolean;
 	};
 	onSubmit: (data: {
 		name: string;
 		serverUrl: string;
 		username?: string;
+		password?: string;
 	}) => void;
 	onRemove?: () => void;
 }) {
 	const [name, setName] = useState(initial.name);
 	const [serverUrl, setServerUrl] = useState(initial.serverUrl);
 	const [username, setUsername] = useState(initial.username);
+	const [password, setPassword] = useState(initial.password);
 
 	// Reset form when dialog opens with new initial values
 	useEffect(() => {
@@ -115,8 +118,15 @@ function WorkspaceDialog({
 			setName(initial.name);
 			setServerUrl(initial.serverUrl);
 			setUsername(initial.username);
+			setPassword(initial.password);
 		}
-	}, [open, initial.name, initial.serverUrl, initial.username]);
+	}, [
+		open,
+		initial.name,
+		initial.serverUrl,
+		initial.username,
+		initial.password,
+	]);
 
 	const canSubmit =
 		name.trim().length > 0 && (initial.isLocal || serverUrl.trim().length > 0);
@@ -127,6 +137,7 @@ function WorkspaceDialog({
 			name: name.trim(),
 			serverUrl: serverUrl.trim(),
 			username: username.trim() || undefined,
+			password: password.trim() || undefined,
 		});
 		onOpenChange(false);
 	};
@@ -188,6 +199,25 @@ function WorkspaceDialog({
 							value={username}
 							onChange={(e) => setUsername(e.target.value)}
 							placeholder="opencode"
+							onKeyDown={(e) => {
+								if (e.key === "Enter") handleSubmit();
+							}}
+						/>
+					</div>
+
+					<div className="space-y-2">
+						<Label htmlFor="ws-password">
+							Password{" "}
+							<span className="text-muted-foreground font-normal">
+								(optional)
+							</span>
+						</Label>
+						<Input
+							id="ws-password"
+							type="password"
+							value={password}
+							onChange={(e) => setPassword(e.target.value)}
+							placeholder="********"
 							onKeyDown={(e) => {
 								if (e.key === "Enter") handleSubmit();
 							}}
@@ -287,12 +317,14 @@ export function TitleBar({
 					name: editingWorkspace.name,
 					serverUrl: editingWorkspace.serverUrl,
 					username: editingWorkspace.username ?? "",
+					password: editingWorkspace.password ?? "",
 					isLocal: editingWorkspace.isLocal,
 				}
 			: {
 					name: "",
 					serverUrl: "https://",
 					username: "",
+					password: "",
 					isLocal: false,
 				};
 
@@ -328,7 +360,7 @@ export function TitleBar({
 				</div>
 
 				<div
-					className={`absolute inset-y-0 ${isMac ? "left-20 right-20" : "left-12 right-36"} flex items-center gap-1 px-2`}
+					className={`absolute inset-y-0 ${isMac ? "left-20 right-20" : "left-9 right-36"} flex items-center gap-1 px-2`}
 				>
 					<div
 						ref={tabsRef}

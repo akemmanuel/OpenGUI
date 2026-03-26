@@ -78,6 +78,7 @@ export interface Workspace {
 	name: string;
 	serverUrl: string;
 	username?: string;
+	password?: string;
 	isLocal: boolean;
 	projects: string[];
 	selectedModel?: SelectedModel | null;

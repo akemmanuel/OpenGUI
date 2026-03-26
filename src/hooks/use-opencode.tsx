@@ -530,6 +530,10 @@ export interface OpenCodeState {
 			messages: Record<string, { info: Message; parts: Record<string, Part> }>;
 			hasMore: boolean;
 			cursor: string | null;
+			/** Whether this buffer was created from a full session snapshot (true)
+			 *  or built incrementally from SSE events only (false/undefined).
+			 *  Incomplete buffers must trigger a fetchMessagePage when restored. */
+			complete?: boolean;
 		}
 	>;
 	/** Session IDs that have an "after-part" queued prompt waiting for the current part to finish */
@@ -1266,6 +1270,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 						messages: msgSnapshot,
 						hasMore: state.messageHistoryHasMore,
 						cursor: state.messageHistoryCursor,
+						complete: true,
 					},
 				};
 				// LRU eviction: keep at most MAX_SESSION_BUFFER_CACHE entries.
@@ -1283,10 +1288,11 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			}
 			// If we have a buffer for this session, use it for instant display
 			const buffered = sid ? startingBuffers[sid] : undefined;
+			const isCompleteBuffer = !!buffered?.complete;
 			let initialMessages: MessageEntry[] = [];
 			let restoredHasMore = false;
 			let restoredCursor: string | null = null;
-			if (buffered) {
+			if (buffered && isCompleteBuffer) {
 				initialMessages = Object.values(buffered.messages).map((entry) => ({
 					info: entry.info,
 					parts: Object.values(entry.parts).map((p) =>
@@ -1321,7 +1327,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				messageHistoryHasMore: restoredHasMore,
 				messageHistoryCursor: restoredCursor,
 				messageWindowHasNewer: false,
-				isLoadingMessages: sid !== null && !buffered,
+				isLoadingMessages: sid !== null && !isCompleteBuffer,
 				isLoadingOlderMessages: false,
 				isLoadingNewerMessages: false,
 				isBusy: sid ? state.busySessionIds.has(sid) : false,
@@ -1329,7 +1335,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				// Selecting a real session clears any pending draft
 				draftSessionDirectory: sid ? null : state.draftSessionDirectory,
 				_pendingSnapshots: [],
-				_sessionBuffers: buffered ? remainingBuffers : startingBuffers,
+				_sessionBuffers: isCompleteBuffer ? remainingBuffers : startingBuffers,
 			};
 		}
 
@@ -2454,10 +2460,13 @@ interface ActionsContextValue {
 		name: string;
 		serverUrl: string;
 		username?: string;
+		password?: string;
 	}) => void;
 	updateWorkspace: (
 		workspaceId: string,
-		input: Partial<Pick<Workspace, "name" | "serverUrl" | "username">>,
+		input: Partial<
+			Pick<Workspace, "name" | "serverUrl" | "username" | "password">
+		>,
 	) => void;
 	removeWorkspace: (workspaceId: string) => Promise<void>;
 	switchWorkspace: (workspaceId: string) => void;
@@ -3092,6 +3101,7 @@ export function OpenCodeProvider({
 					baseUrl: string;
 					directory: string;
 					username?: string;
+					password?: string;
 				}> = [];
 
 				for (const workspace of bootWorkspaces) {
@@ -3112,6 +3122,7 @@ export function OpenCodeProvider({
 							workspaceId: workspace.id,
 							baseUrl: workspace.serverUrl,
 							username: workspace.username,
+							password: workspace.password,
 						};
 						allProjectConfigs.push({
 							...baseConfig,
@@ -3290,7 +3301,7 @@ export function OpenCodeProvider({
 				) ?? createLocalWorkspace();
 			const url = serverUrl ?? workspace.serverUrl ?? DEFAULT_SERVER_URL;
 			const username = usernameOverride ?? workspace.username ?? undefined;
-			const password = passwordOverride;
+			const password = passwordOverride ?? workspace.password ?? undefined;
 			const workspaceId = workspace.id;
 			const worktreeParentMap = getWorktreeParents();
 			const targetWorkspace = getWorkspaceRootDirectory(
@@ -3487,7 +3498,7 @@ export function OpenCodeProvider({
 			const bufferSnapshot = id
 				? stateRef.current._sessionBuffers[id]
 				: undefined;
-			const hadCachedBuffer = !!bufferSnapshot;
+			const hadCompleteBuffer = !!bufferSnapshot?.complete;
 			let bufferMessages: MessageEntry[] | undefined;
 			if (bufferSnapshot) {
 				bufferMessages = Object.values(bufferSnapshot.messages).map(
@@ -3504,7 +3515,7 @@ export function OpenCodeProvider({
 			dispatch({ type: "SET_ACTIVE_SESSION", payload: id });
 			if (!id || !bridge) return;
 
-			if (hadCachedBuffer && bufferMessages) {
+			if (hadCompleteBuffer && bufferMessages) {
 				// Buffer was consumed and displayed instantly by SET_ACTIVE_SESSION
 				// (which also set isLoadingMessages to false). Just hydrate child
 				// sessions from the pre-extracted buffer messages.
@@ -4288,13 +4299,19 @@ export function OpenCodeProvider({
 	}, []);
 
 	const createWorkspace = useCallback(
-		(input: { name: string; serverUrl: string; username?: string }) => {
+		(input: {
+			name: string;
+			serverUrl: string;
+			username?: string;
+			password?: string;
+		}) => {
 			const id = `ws_${Date.now().toString(36)}`;
 			const workspace = normalizeWorkspace({
 				id,
 				name: input.name,
 				serverUrl: input.serverUrl,
 				username: input.username,
+				password: input.password,
 				isLocal: false,
 				projects: [],
 				selectedModel: null,
@@ -4314,7 +4331,9 @@ export function OpenCodeProvider({
 	const updateWorkspace = useCallback(
 		(
 			workspaceId: string,
-			input: Partial<Pick<Workspace, "name" | "serverUrl" | "username">>,
+			input: Partial<
+				Pick<Workspace, "name" | "serverUrl" | "username" | "password">
+			>,
 		) => {
 			const next = stateRef.current.workspaces.map((workspace) => {
 				if (workspace.id !== workspaceId) return workspace;
@@ -4326,6 +4345,7 @@ export function OpenCodeProvider({
 					name: input.name ?? workspace.name,
 					serverUrl: nextServerUrl,
 					username: input.username ?? workspace.username,
+					password: input.password ?? workspace.password,
 				});
 			});
 			dispatch({ type: "SET_WORKSPACES", payload: next });
