@@ -246,7 +246,7 @@ export function buildPRUrl(
 		base = `https://${httpsMatch[1]}/${httpsMatch[2]}`;
 	}
 	if (!base) return null;
-	return `${base}/compare/${baseBranch}...${branch}`;
+	return `${base}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`;
 }
 
 /**

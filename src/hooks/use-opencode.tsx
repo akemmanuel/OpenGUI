@@ -608,6 +608,16 @@ const initialState: OpenCodeState = {
 
 type Action =
 	| { type: "SET_WORKSPACES"; payload: Workspace[] }
+	| {
+			type: "ADD_WORKSPACE_PROJECT";
+			payload: {
+				workspaceId: string;
+				directory: string;
+				serverUrl: string;
+				username?: string;
+				password?: string;
+			};
+		}
 	| { type: "SET_ACTIVE_WORKSPACE"; payload: string }
 	| {
 			type: "ASSIGN_PROJECT_WORKSPACE";
@@ -1062,6 +1072,26 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					normalizeWorkspace(workspace),
 				),
 			};
+
+		case "ADD_WORKSPACE_PROJECT": {
+			const { workspaceId, directory, serverUrl, username, password } =
+				action.payload;
+			let changed = false;
+			const nextWorkspaces = state.workspaces.map((workspace) => {
+				if (workspace.id !== workspaceId) return workspace;
+				changed = true;
+				return normalizeWorkspace({
+					...workspace,
+					serverUrl,
+					username: username ?? workspace.username,
+					password: password ?? workspace.password,
+					projects: Array.from(
+						new Set([...(workspace.projects ?? []), directory]),
+					),
+				});
+			});
+			return changed ? { ...state, workspaces: nextWorkspaces } : state;
+		}
 
 		case "SET_ACTIVE_WORKSPACE":
 			return { ...state, activeWorkspaceId: action.payload };
@@ -2940,23 +2970,17 @@ export function OpenCodeProvider({
 			const workspaceDirectory = isWorktree
 				? worktreeParentMap[config.directory]?.parentDir
 				: config.directory;
-			const currentWorkspace = stateRef.current.workspaces.find(
-				(workspace) => workspace.id === workspaceId,
-			);
-			if (currentWorkspace && workspaceDirectory) {
-				const nextProjects = new Set(currentWorkspace.projects);
-				nextProjects.add(workspaceDirectory);
-				const nextWorkspaces = stateRef.current.workspaces.map((workspace) =>
-					workspace.id === workspaceId
-						? normalizeWorkspace({
-								...workspace,
-								serverUrl: config.baseUrl,
-								username: config.username ?? workspace.username,
-								projects: [...nextProjects],
-							})
-						: workspace,
-				);
-				dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
+			if (workspaceDirectory) {
+				dispatch({
+					type: "ADD_WORKSPACE_PROJECT",
+					payload: {
+						workspaceId,
+						directory: workspaceDirectory,
+						serverUrl: config.baseUrl,
+						username: config.username,
+						password: config.password,
+					},
+				});
 			}
 			if (workspaceDirectory) {
 				if (workspaceId === LOCAL_WORKSPACE_ID) {
