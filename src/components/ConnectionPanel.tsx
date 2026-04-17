@@ -1,11 +1,11 @@
 /**
  * Server connection settings.
- * A small status indicator in the sidebar footer that opens a modal
- * for configuring the server URL, auth, and switching the current project.
+ * Sidebar entry opens settings view in main content area.
  */
 
 import {
 	AlertCircle,
+	ArrowLeft,
 	Bell,
 	CheckCircle2,
 	Folder,
@@ -22,14 +22,6 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { SettingsProviders } from "@/components/SettingsProviders";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -58,46 +50,69 @@ import packageJson from "../../package.json";
 // Compact footer badge (always visible in sidebar)
 // ---------------------------------------------------------------------------
 
-export function ConnectionPanel() {
-	const [open, setOpen] = useState(false);
-
+export function ConnectionPanel({
+	onOpenSettings,
+	isActive = false,
+}: {
+	onOpenSettings: () => void;
+	isActive?: boolean;
+}) {
 	return (
 		<SidebarMenu className="group-data-[collapsible=icon]:p-0">
 			<SidebarMenuItem>
-				<Dialog open={open} onOpenChange={setOpen}>
-					<DialogTrigger asChild>
-						<SidebarMenuButton tooltip="Settings">
-							<Settings />
-							<span>Settings</span>
-						</SidebarMenuButton>
-					</DialogTrigger>
-					<DialogContent className="sm:max-w-lg">
-						<DialogHeader>
-							<DialogTitle>Settings</DialogTitle>
-							<DialogDescription>
-								Manage app preferences and providers for the active workspace.
-							</DialogDescription>
-						</DialogHeader>
-						<Tabs defaultValue="general">
-							<TabsList className="w-full">
-								<TabsTrigger value="general" className="flex-1">
-									General
-								</TabsTrigger>
-								<TabsTrigger value="providers" className="flex-1">
-									Providers
-								</TabsTrigger>
-							</TabsList>
-							<TabsContent value="general">
-								<GeneralSettings />
-							</TabsContent>
-							<TabsContent value="providers">
-								<SettingsProviders />
-							</TabsContent>
-						</Tabs>
-					</DialogContent>
-				</Dialog>
+				<SidebarMenuButton
+					tooltip="Settings"
+					isActive={isActive}
+					onClick={onOpenSettings}
+				>
+					<Settings />
+					<span>Settings</span>
+				</SidebarMenuButton>
 			</SidebarMenuItem>
 		</SidebarMenu>
+	);
+}
+
+export function SettingsView({ onBack }: { onBack: () => void }) {
+	return (
+		<div className="h-full overflow-y-auto">
+			<div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
+				<div className="space-y-3">
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						className="w-fit"
+						onClick={onBack}
+					>
+						<ArrowLeft className="size-4" />
+						Back
+					</Button>
+					<div className="space-y-1">
+						<h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+						<p className="text-sm text-muted-foreground">
+							Manage app preferences and providers for active workspace.
+						</p>
+					</div>
+				</div>
+				<Tabs defaultValue="general" className="gap-4">
+					<TabsList className="w-full">
+						<TabsTrigger value="general" className="flex-1">
+							General
+						</TabsTrigger>
+						<TabsTrigger value="providers" className="flex-1">
+							Providers
+						</TabsTrigger>
+					</TabsList>
+					<TabsContent value="general" className="mt-0 rounded-lg border p-4">
+						<GeneralSettings />
+					</TabsContent>
+					<TabsContent value="providers" className="mt-0 rounded-lg border p-4">
+						<SettingsProviders />
+					</TabsContent>
+				</Tabs>
+			</div>
+		</div>
 	);
 }
 
@@ -561,7 +576,7 @@ function SttEndpointSetting() {
 			icon={Mic}
 			label="Voice transcription endpoint"
 			placeholder="https://your-whisper-server.com/transcribe"
-			helpText="URL of a Whisper-compatible STT server. The mic button will only appear when this is set."
+			helpText="URL of Whisper-compatible STT server. Mic button only appears when this is set."
 			inputType="url"
 			onChangeExtra={() =>
 				window.dispatchEvent(new Event("stt-endpoint-changed"))

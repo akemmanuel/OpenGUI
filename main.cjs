@@ -1,12 +1,25 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron/main");
 const path = require("node:path");
 const { execSync, spawn } = require("node:child_process");
+const { createSettingsStore } = require("./settings-store.cjs");
+
+app.setName("OpenGUI");
+app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));
 
 const DEV_SERVER_URL =
 	process.env.BUN_DEV_SERVER_URL || "http://localhost:3000";
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
+const settingsStore = createSettingsStore(app.getPath("userData"));
 
 let mainWindow = null;
+
+function broadcastSettingsChange(key, value) {
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (!win.isDestroyed()) {
+			win.webContents.send("settings:changed", { key, value });
+		}
+	}
+}
 
 function parseCommand(command) {
 	if (typeof command !== "string") return [];
@@ -151,6 +164,53 @@ function createProjectWindow(projectDir) {
 }
 
 // IPC handlers
+ipcMain.on("settings:get-all-sync", (event) => {
+	event.returnValue = settingsStore.getAll();
+});
+
+ipcMain.on("settings:get-sync", (event, key) => {
+	event.returnValue = settingsStore.get(key);
+});
+
+ipcMain.on("settings:set-sync", (event, key, value) => {
+	const success = settingsStore.set(key, value);
+	if (success) broadcastSettingsChange(key, value);
+	event.returnValue = success;
+});
+
+ipcMain.on("settings:remove-sync", (event, key) => {
+	const success = settingsStore.remove(key);
+	if (success) broadcastSettingsChange(key, null);
+	event.returnValue = success;
+});
+
+ipcMain.on("settings:merge-sync", (event, entries) => {
+	let success = false;
+	if (entries && typeof entries === "object" && !Array.isArray(entries)) {
+		success = settingsStore.merge(entries);
+		if (success) {
+			for (const [key, value] of Object.entries(entries)) {
+				if (typeof key === "string" && typeof value === "string") {
+					broadcastSettingsChange(key, value);
+				}
+			}
+		}
+	}
+	event.returnValue = success;
+});
+
+ipcMain.handle("settings:set", (_event, key, value) => {
+	const success = settingsStore.set(key, value);
+	if (success) broadcastSettingsChange(key, value);
+	return success;
+});
+
+ipcMain.handle("settings:remove", (_event, key) => {
+	const success = settingsStore.remove(key);
+	if (success) broadcastSettingsChange(key, null);
+	return success;
+});
+
 ipcMain.handle("window:minimize", (event) => {
 	BrowserWindow.fromWebContents(event.sender)?.minimize();
 });

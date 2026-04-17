@@ -54,7 +54,15 @@
   <body>
     <script>
       try {
-        const t = localStorage.getItem("theme");
+        const settings = window.electronAPI?.settings;
+        let t = settings?.getSync("theme") ?? null;
+        if (!t) {
+          const legacy = localStorage.getItem("theme");
+          if (legacy === "dark" || legacy === "light") {
+            t = legacy;
+            settings?.setSync("theme", legacy);
+          }
+        }
         document.documentElement.classList.toggle("dark", t ? t === "dark" : true);
       } catch (_e) {
         document.documentElement.classList.add("dark");

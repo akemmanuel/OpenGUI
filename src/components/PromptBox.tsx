@@ -47,10 +47,8 @@ import {
 	useModelState,
 	useSessionState,
 } from "@/hooks/use-opencode";
-import { useSTT } from "@/hooks/useSTT";
-import { MAX_TEXTAREA_HEIGHT_PX, STORAGE_KEYS } from "@/lib/constants";
+import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
-import { storageGet } from "@/lib/safe-storage";
 import { getSessionDraftKey } from "@/lib/session-drafts";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
@@ -186,40 +184,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [savedDraft, setSavedDraft] = React.useState("");
 		const isApplyingHistoryRef = React.useRef(false);
 
-		// STT endpoint from localStorage (set in Settings > General)
-		const [sttEndpoint, setSttEndpoint] = React.useState<string | undefined>(
-			() => storageGet(STORAGE_KEYS.STT_ENDPOINT) || undefined,
-		);
-
-		// Listen for storage changes (when the user sets the endpoint in settings)
-		React.useEffect(() => {
-			const onStorage = (e: StorageEvent) => {
-				if (e.key === STORAGE_KEYS.STT_ENDPOINT) {
-					setSttEndpoint(e.newValue || undefined);
-				}
-			};
-			window.addEventListener("storage", onStorage);
-
-			// Also handle same-tab updates via a custom event
-			const onCustom = () => {
-				setSttEndpoint(storageGet(STORAGE_KEYS.STT_ENDPOINT) || undefined);
-			};
-			window.addEventListener("stt-endpoint-changed", onCustom);
-
-			return () => {
-				window.removeEventListener("storage", onStorage);
-				window.removeEventListener("stt-endpoint-changed", onCustom);
-			};
-		}, []);
-
-		const {
-			isAvailable: isSttAvailable,
-			isRecording,
-			isTranscribing,
-			error: sttError,
-			startRecording,
-			stopRecording,
-		} = useSTT(sttEndpoint);
+		const isSttAvailable = false;
+		const isRecording = false;
+		const isTranscribing = false;
+		const sttError = undefined;
+		const handleMicClick = async () => {};
 		const isDisabled = Boolean(props.disabled);
 
 		const {
@@ -381,29 +350,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 			value,
 		]);
 
-		const handleMicClick = React.useCallback(async () => {
-			if (isDisabled) return;
-			if (isTranscribing) return;
-			if (isRecording) {
-				const result = await stopRecording();
-				if (result?.text) {
-					setValue((prev) => (prev ? `${prev} ${result.text}` : result.text));
-					internalTextareaRef.current?.focus();
-				}
-			} else {
-				try {
-					await startRecording();
-				} catch {
-					// error is in hook state
-				}
-			}
-		}, [
-			isDisabled,
-			isRecording,
-			isTranscribing,
-			startRecording,
-			stopRecording,
-		]);
+
 
 		React.useImperativeHandle(
 			ref,

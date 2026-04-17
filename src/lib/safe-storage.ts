@@ -1,12 +1,21 @@
-/**
- * Type-safe localStorage helpers that never throw.
- *
- * Every read/write is wrapped in a try-catch so callers don't need to
- * repeat the same `try { localStorage.… } catch { /* ignore * / }` pattern.
- */
+import type {
+	SettingsBridge,
+	SettingsBridgeChange,
+} from "@/types/electron";
+import { STORAGE_KEYS } from "@/lib/constants";
 
-/** Read a raw string from localStorage. Returns `null` if missing or on error. */
-export function storageGet(key: string): string | null {
+const SETTINGS_CHANGED_EVENT = "opengui:settings-changed";
+const LEGACY_MIGRATION_FLAG = "__opengui:legacyLocalStorageMigrated";
+
+type SettingsCache = Record<string, string>;
+type SettingsChangeDetail = { key: string; value: string | null };
+
+function getElectronSettingsBridge(): SettingsBridge | null {
+	if (typeof window === "undefined") return null;
+	return window.electronAPI?.settings ?? null;
+}
+
+function safeLocalStorageGet(key: string): string | null {
 	try {
 		return localStorage.getItem(key);
 	} catch {
@@ -14,8 +23,7 @@ export function storageGet(key: string): string | null {
 	}
 }
 
-/** Write a raw string to localStorage. Silently ignores errors. */
-export function storageSet(key: string, value: string): void {
+function safeLocalStorageSet(key: string, value: string): void {
 	try {
 		localStorage.setItem(key, value);
 	} catch {
@@ -23,8 +31,7 @@ export function storageSet(key: string, value: string): void {
 	}
 }
 
-/** Remove a key from localStorage. Silently ignores errors. */
-export function storageRemove(key: string): void {
+function safeLocalStorageRemove(key: string): void {
 	try {
 		localStorage.removeItem(key);
 	} catch {
@@ -32,9 +39,145 @@ export function storageRemove(key: string): void {
 	}
 }
 
+let electronSettingsCache: SettingsCache | null = null;
+let electronSettingsSubscribed = false;
+
+function dispatchSettingsChangeEvent(
+	key: string,
+	newValue: string | null,
+	oldValue: string | null,
+): void {
+	if (typeof window === "undefined") return;
+	try {
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key,
+				newValue,
+				oldValue,
+				storageArea:
+					typeof localStorage === "undefined" ? null : localStorage,
+			}),
+		);
+	} catch {
+		// Ignore environments that cannot construct StorageEvent.
+	}
+	window.dispatchEvent(
+		new CustomEvent<SettingsChangeDetail>(SETTINGS_CHANGED_EVENT, {
+			detail: { key, value: newValue },
+		}),
+	);
+}
+
+function initElectronSettingsCache(): SettingsCache | null {
+	const bridge = getElectronSettingsBridge();
+	if (!bridge) return null;
+	if (electronSettingsCache === null) {
+		electronSettingsCache = bridge.getAllSync();
+	}
+	if (!electronSettingsSubscribed) {
+		electronSettingsSubscribed = true;
+		bridge.onDidChange(({ key, value }: SettingsBridgeChange) => {
+			const oldValue = electronSettingsCache?.[key] ?? null;
+			if (value === null) {
+				if (electronSettingsCache) delete electronSettingsCache[key];
+			} else {
+				electronSettingsCache ??= {};
+				electronSettingsCache[key] = value;
+			}
+			dispatchSettingsChangeEvent(key, value, oldValue);
+		});
+	}
+	return electronSettingsCache;
+}
+
 /**
- * Parse a JSON value from localStorage.
- * Returns `null` if the key is missing, the JSON is malformed, or on error.
+ * Copy all legacy renderer localStorage values into Electron-backed settings.
+ * Runs once per machine profile. Safe no-op outside Electron.
+ */
+export function migrateLegacyLocalStorage(): void {
+	const bridge = getElectronSettingsBridge();
+	const cache = initElectronSettingsCache();
+	if (!bridge || !cache) return;
+	if (cache[LEGACY_MIGRATION_FLAG] === "true") return;
+
+	const entries: Record<string, string> = {};
+	for (const key of Object.values(STORAGE_KEYS)) {
+		const value = safeLocalStorageGet(key);
+		if (value === null) continue;
+		if (cache[key] == null) entries[key] = value;
+	}
+
+	if (Object.keys(entries).length > 0) {
+		bridge.mergeSync(entries);
+		electronSettingsCache = {
+			...electronSettingsCache,
+			...entries,
+		};
+	}
+
+	bridge.setSync(LEGACY_MIGRATION_FLAG, "true");
+	electronSettingsCache = {
+		...electronSettingsCache,
+		[LEGACY_MIGRATION_FLAG]: "true",
+	};
+
+	for (const key of Object.values(STORAGE_KEYS)) {
+		safeLocalStorageRemove(key);
+	}
+}
+
+export function onSettingsChange(
+	callback: (change: SettingsChangeDetail) => void,
+): () => void {
+	if (typeof window === "undefined") return () => {};
+	const handler = (event: Event) => {
+		const detail = (event as CustomEvent<SettingsChangeDetail>).detail;
+		if (detail?.key) callback(detail);
+	};
+	window.addEventListener(SETTINGS_CHANGED_EVENT, handler);
+	return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, handler);
+}
+
+/** Read raw string from persistent app settings. Returns `null` if missing or on error. */
+export function storageGet(key: string): string | null {
+	const cache = initElectronSettingsCache();
+	if (cache) {
+		return cache[key] ?? null;
+	}
+	return safeLocalStorageGet(key);
+}
+
+/** Write raw string to persistent app settings. Silently ignores errors. */
+export function storageSet(key: string, value: string): void {
+	const bridge = getElectronSettingsBridge();
+	const cache = initElectronSettingsCache();
+	if (bridge && cache) {
+		cache[key] = value;
+		void bridge.set(key, value);
+		return;
+	}
+	const oldValue = safeLocalStorageGet(key);
+	safeLocalStorageSet(key, value);
+	dispatchSettingsChangeEvent(key, value, oldValue);
+}
+
+/** Remove key from persistent app settings. Silently ignores errors. */
+export function storageRemove(key: string): void {
+	const bridge = getElectronSettingsBridge();
+	const cache = initElectronSettingsCache();
+	if (bridge && cache) {
+		delete cache[key];
+		void bridge.remove(key);
+		return;
+	}
+	const oldValue = safeLocalStorageGet(key);
+	safeLocalStorageRemove(key);
+	dispatchSettingsChangeEvent(key, null, oldValue);
+}
+
+/**
+ * Parse JSON value from persistent app settings.
+ * Returns `null` if key is missing, JSON is malformed, or on error.
  */
 export function storageParsed<T>(key: string): T | null {
 	const raw = storageGet(key);
@@ -46,18 +189,12 @@ export function storageParsed<T>(key: string): T | null {
 	}
 }
 
-/**
- * Write a JSON-serialisable value to localStorage.
- * Silently ignores errors.
- */
+/** Write JSON-serialisable value to persistent app settings. */
 export function storageSetJSON(key: string, value: unknown): void {
 	storageSet(key, JSON.stringify(value));
 }
 
-/**
- * Conditionally set or remove a key.
- * If `value` is truthy, write it; otherwise remove the key.
- */
+/** Conditionally set or remove key. */
 export function storageSetOrRemove(
 	key: string,
 	value: string | null | undefined,
@@ -69,10 +206,7 @@ export function storageSetOrRemove(
 	}
 }
 
-/**
- * Persist a JSON value if `isEmpty` is false, otherwise remove the key.
- * Useful for maps/sets that should be cleaned up when empty.
- */
+/** Persist JSON value if non-empty, otherwise remove key. */
 export function persistOrRemoveJSON(
 	key: string,
 	value: unknown,

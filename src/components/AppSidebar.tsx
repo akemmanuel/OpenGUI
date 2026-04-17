@@ -75,7 +75,17 @@ import { getColorBorderClass, SessionContextMenu } from "./SessionContextMenu";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 
-export function AppSidebar({ detachedProject }: { detachedProject?: string }) {
+export function AppSidebar({
+	detachedProject,
+	onOpenSettings,
+	onOpenChat,
+	settingsActive = false,
+}: {
+	detachedProject?: string;
+	onOpenSettings: () => void;
+	onOpenChat: () => void;
+	settingsActive?: boolean;
+}) {
 	const { state: sidebarState } = useSidebar();
 	const {
 		selectSession,
@@ -354,7 +364,7 @@ export function AppSidebar({ detachedProject }: { detachedProject?: string }) {
 				</div>
 			</SidebarHeader>
 
-			<SidebarContent className="overflow-x-hidden">
+			<SidebarContent className="overflow-x-hidden" onClickCapture={onOpenChat}>
 				{/* Project groups */}
 				{projectGroups.size > 0 && (
 					<SidebarGroup>
@@ -1111,7 +1121,10 @@ export function AppSidebar({ detachedProject }: { detachedProject?: string }) {
 
 			{!detachedProject && (
 				<SidebarFooter className="border-t border-sidebar-border">
-					<ConnectionPanel />
+					<ConnectionPanel
+						onOpenSettings={onOpenSettings}
+						isActive={settingsActive}
+					/>
 				</SidebarFooter>
 			)}
 

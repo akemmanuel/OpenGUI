@@ -40,12 +40,14 @@ import {
 import { AppSidebar } from "./components/AppSidebar";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
+import { SettingsView } from "./components/ConnectionPanel";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
 function AppContent({ detachedProject }: { detachedProject?: string }) {
 	const lastEscapeAtRef = useRef(0);
 	const [queueMode, setQueueMode] = useState<QueueMode>("queue");
+	const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
 	const leftSidebar = useSidebar();
 	const {
 		sendPrompt,
@@ -382,7 +384,12 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
 	return (
 		<>
-			<AppSidebar detachedProject={detachedProject} />
+			<AppSidebar
+				detachedProject={detachedProject}
+				onOpenSettings={() => setActiveView("settings")}
+				onOpenChat={() => setActiveView("chat")}
+				settingsActive={activeView === "settings"}
+			/>
 			<SidebarInset className="overflow-hidden">
 				<div className="flex flex-col h-full">
 					{/* Title bar spans full width */}
@@ -450,103 +457,109 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 							</div>
 						)}
 
-						{/* Chat area */}
-						{activeWorktreeInfo && (
-							<div className="border-b border-border bg-muted/20">
-								<div className="mx-auto flex max-w-2xl items-center justify-end gap-2 px-4 py-2">
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() => setMergeInfo(activeWorktreeInfo)}
-									>
-										<GitMerge className="size-4" />
-										Merge
-									</Button>
-									<Button
-										variant="outline"
-										size="sm"
-										disabled={!activeWorktreeRemoteUrl}
-										onClick={() => {
-											if (!activeWorktreeRemoteUrl) return;
-											const url = buildPRUrl(
-												activeWorktreeRemoteUrl,
-												activeWorktreeInfo.branch,
-											);
-											if (url) openExternalLink(url);
-										}}
-									>
-										<ExternalLink className="size-4" />
-										Create PR
-									</Button>
-								</div>
-							</div>
-						)}
-						<MessageList detachedProject={detachedProject} />
-
-						{/* Queue list + Prompt input */}
-						<div className="shrink-0 px-4 pb-3">
-							<div className="max-w-2xl mx-auto">
-								{queuedPrompts.length > 0 && (
-									<div className="mb-1.5">
-										<QueueList
-											items={queuedPrompts}
-											onRemove={(id) => {
-												if (!activeSessionId) return;
-												removeFromQueue(activeSessionId, id);
-											}}
-											onMoveUp={(index) => {
-												if (!activeSessionId) return;
-												reorderQueue(activeSessionId, index, index - 1);
-											}}
-											onMoveDown={(index) => {
-												if (!activeSessionId) return;
-												reorderQueue(activeSessionId, index, index + 1);
-											}}
-											onMoveToTop={(index) => {
-												if (!activeSessionId) return;
-												reorderQueue(activeSessionId, index, 0);
-											}}
-											onMoveToBottom={(index) => {
-												if (!activeSessionId) return;
-												reorderQueue(
-													activeSessionId,
-													index,
-													queuedPrompts.length - 1,
-												);
-											}}
-											onEdit={(id, newText) => {
-												if (!activeSessionId) return;
-												updateQueuedPrompt(activeSessionId, id, newText);
-											}}
-											onSendNow={(id) => {
-												if (!activeSessionId) return;
-												void sendQueuedNow(activeSessionId, id);
-											}}
-										/>
+						{activeView === "settings" ? (
+							<SettingsView onBack={() => setActiveView("chat")} />
+						) : (
+							<>
+								{/* Chat area */}
+								{activeWorktreeInfo && (
+									<div className="border-b border-border bg-muted/20">
+										<div className="mx-auto flex max-w-2xl items-center justify-end gap-2 px-4 py-2">
+											<Button
+												variant="outline"
+												size="sm"
+												onClick={() => setMergeInfo(activeWorktreeInfo)}
+											>
+												<GitMerge className="size-4" />
+												Merge
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={!activeWorktreeRemoteUrl}
+												onClick={() => {
+													if (!activeWorktreeRemoteUrl) return;
+													const url = buildPRUrl(
+														activeWorktreeRemoteUrl,
+														activeWorktreeInfo.branch,
+													);
+													if (url) openExternalLink(url);
+												}}
+											>
+												<ExternalLink className="size-4" />
+												Create PR
+											</Button>
+										</div>
 									</div>
 								)}
-								<PromptBox
-									autoFocus
-									disabled={
-										isBooting ||
-										!isConnected ||
-										isLoadingMessages ||
-										(!activeSessionId && !draftSessionDirectory)
-									}
-									isLoading={isBusy}
-									contextPercent={contextPercent}
-									contextTokens={contextInfo.tokens}
-									contextCost={contextInfo.cost}
-									contextLimit={contextInfo.contextLimit}
-									queueMode={queueMode}
-									onQueueModeChange={setQueueMode}
-									onSubmit={(message, images, mode) => {
-										return sendPrompt(message, images, mode);
-									}}
-									onStop={() => abortSession()}
-								/>
-							</div>
-						</div>
+								<MessageList detachedProject={detachedProject} />
+
+								{/* Queue list + Prompt input */}
+								<div className="shrink-0 px-4 pb-3">
+									<div className="max-w-2xl mx-auto">
+										{queuedPrompts.length > 0 && (
+											<div className="mb-1.5">
+												<QueueList
+													items={queuedPrompts}
+													onRemove={(id) => {
+														if (!activeSessionId) return;
+														removeFromQueue(activeSessionId, id);
+													}}
+													onMoveUp={(index) => {
+														if (!activeSessionId) return;
+														reorderQueue(activeSessionId, index, index - 1);
+													}}
+													onMoveDown={(index) => {
+														if (!activeSessionId) return;
+														reorderQueue(activeSessionId, index, index + 1);
+													}}
+													onMoveToTop={(index) => {
+														if (!activeSessionId) return;
+														reorderQueue(activeSessionId, index, 0);
+													}}
+													onMoveToBottom={(index) => {
+														if (!activeSessionId) return;
+														reorderQueue(
+															activeSessionId,
+															index,
+															queuedPrompts.length - 1,
+														);
+													}}
+													onEdit={(id, newText) => {
+														if (!activeSessionId) return;
+														updateQueuedPrompt(activeSessionId, id, newText);
+													}}
+													onSendNow={(id) => {
+														if (!activeSessionId) return;
+														void sendQueuedNow(activeSessionId, id);
+													}}
+												/>
+											</div>
+										)}
+										<PromptBox
+											autoFocus
+											disabled={
+												isBooting ||
+												!isConnected ||
+												isLoadingMessages ||
+												(!activeSessionId && !draftSessionDirectory)
+											}
+											isLoading={isBusy}
+											contextPercent={contextPercent}
+											contextTokens={contextInfo.tokens}
+											contextCost={contextInfo.cost}
+											contextLimit={contextInfo.contextLimit}
+											queueMode={queueMode}
+											onQueueModeChange={setQueueMode}
+											onSubmit={(message, images, mode) => {
+												return sendPrompt(message, images, mode);
+											}}
+											onStop={() => abortSession()}
+										/>
+									</div>
+								</div>
+							</>
+						)}
 					</div>
 				</div>
 			</SidebarInset>

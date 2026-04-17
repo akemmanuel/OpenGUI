@@ -1,6 +1,21 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
+	settings: {
+		getAllSync: () => ipcRenderer.sendSync("settings:get-all-sync"),
+		getSync: (key) => ipcRenderer.sendSync("settings:get-sync", key),
+		setSync: (key, value) => ipcRenderer.sendSync("settings:set-sync", key, value),
+		removeSync: (key) => ipcRenderer.sendSync("settings:remove-sync", key),
+		mergeSync: (entries) => ipcRenderer.sendSync("settings:merge-sync", entries),
+		set: (key, value) => ipcRenderer.invoke("settings:set", key, value),
+		remove: (key) => ipcRenderer.invoke("settings:remove", key),
+		onDidChange: (callback) => {
+			const handler = (_event, change) => callback(change);
+			ipcRenderer.on("settings:changed", handler);
+			return () => ipcRenderer.removeListener("settings:changed", handler);
+		},
+	},
+
 	// Window controls
 	minimize: () => ipcRenderer.invoke("window:minimize"),
 	maximize: () => ipcRenderer.invoke("window:maximize"),

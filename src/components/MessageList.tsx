@@ -23,14 +23,12 @@ import {
 	FileCode,
 	FileEdit,
 	FilePlus,
-	FolderOpen,
 	GitFork,
 	Layers,
 	MessageCircleQuestion,
 	Search,
 	ShieldAlert,
 	SquareTerminal,
-	Timer,
 	Undo2,
 	Wrench,
 	X,
@@ -48,16 +46,7 @@ import {
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { useHomeDir } from "@/hooks/use-home-dir";
 import {
 	getChildSessionParts,
 	type MessageEntry,
@@ -68,7 +57,6 @@ import {
 import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
 import {
-	abbreviatePath,
 	cn,
 	looksLikeTerminalOutput,
 	normalizeTerminalOutput,
@@ -81,18 +69,6 @@ const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
 const VIRTUALIZATION_MESSAGE_THRESHOLD = 120;
 const VIRTUALIZATION_OVERSCAN_IDLE = 12;
 const VIRTUALIZATION_OVERSCAN_BUSY = 16;
-
-/** Format a timestamp into a relative time string like "23 seconds ago", "1 day ago" */
-function timeAgo(timestamp: number): string {
-	const seconds = Math.floor((Date.now() - timestamp) / 1000);
-	if (seconds < 60) return `${seconds} seconds ago`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
-	const days = Math.floor(hours / 24);
-	return `${days} day${days !== 1 ? "s" : ""} ago`;
-}
 
 /** Check if a part will produce visible output. */
 function isRenderablePart(part: Part): boolean {
@@ -139,14 +115,15 @@ function TerminalOutput({
 	);
 }
 
-export function MessageList({ detachedProject }: { detachedProject?: string }) {
+export function MessageList({
+	detachedProject: _detachedProject,
+}: {
+	detachedProject?: string;
+}) {
 	const {
 		respondPermission,
 		replyQuestion,
 		rejectQuestion,
-		openDirectory,
-		connectToProject,
-		setDraftTemporary,
 		forkFromMessage,
 		revertToMessage,
 		unrevert,
@@ -158,11 +135,8 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		pendingPermissions,
 		pendingQuestions,
 		activeSessionId,
-		recentProjects,
 		sessions,
 		draftSessionDirectory,
-		draftIsTemporary,
-		temporarySessions,
 	} = useSessionState();
 	const { messages, messageHistoryHasMore, isLoadingOlderMessages } =
 		useMessages();
@@ -178,7 +152,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		? (pendingQuestions[activeSessionId] ?? null)
 		: null;
 
-	const homeDir = useHomeDir();
 	const [nowMs, setNowMs] = useState(() => Date.now());
 
 	useEffect(() => {
@@ -461,11 +434,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 		!activeSessionId ||
 		(visibleMessages.length === 0 && !isBusy)
 	) {
-		// Draft mode: show just the logo (empty chat, ready for first message).
-		// No-session mode: show logo + recent projects card, except in detached mode
-		// where the window is already scoped to a single project.
-		const showRecentProjects = !isDraft && !detachedProject;
-
 		return (
 			<div className="flex-1 flex items-center justify-center">
 				<div className="w-full max-w-3xl flex flex-col items-center">
@@ -481,86 +449,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 						draggable={false}
 						className="dark:hidden w-82 select-none pointer-events-none"
 					/>
-
-					{isDraft && (
-						<div className="mt-2 flex items-center gap-1.5 text-muted-foreground">
-							<FolderOpen className="size-3.5" />
-							<span className="font-mono text-xs">
-								{abbreviatePath(draftSessionDirectory, homeDir)}
-							</span>
-						</div>
-					)}
-
-					{isDraft && (
-						<button
-							type="button"
-							onClick={() => setDraftTemporary(!draftIsTemporary)}
-							className={cn(
-								"mt-1 flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
-								draftIsTemporary
-									? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-									: "bg-muted text-muted-foreground hover:bg-muted/80",
-							)}
-							title="Temporary chats are deleted when you navigate away"
-						>
-							<Timer className="size-3" />
-							Temporary
-						</button>
-					)}
-
-					{showRecentProjects && (
-						<Card className="w-full max-w-2xl gap-0 border-none shadow-none !bg-transparent">
-							<CardHeader className="pb-2">
-								<CardTitle className="text-base font-semibold">
-									Recent projects
-								</CardTitle>
-								<CardAction>
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={async () => {
-											const dir = await openDirectory();
-											if (dir) void connectToProject(dir);
-										}}
-									>
-										<FolderOpen className="size-4" />
-										Open project
-									</Button>
-								</CardAction>
-							</CardHeader>
-							<CardContent className="px-0">
-								{recentProjects.length === 0 ? (
-									<p className="px-6 py-4 text-sm text-muted-foreground">
-										No recent projects yet. Connect to a project to get started.
-									</p>
-								) : (
-									recentProjects.map((project, index) => (
-										<div key={project.directory}>
-											<Button
-												variant="ghost"
-												className={cn(
-													"h-auto w-full justify-between px-6 py-2 rounded-none",
-													index === 0 && "rounded-t-lg",
-													index === recentProjects.length - 1 && "rounded-b-lg",
-												)}
-												onClick={() =>
-													connectToProject(project.directory, project.serverUrl)
-												}
-											>
-												<span className="truncate pr-4 text-left font-mono text-sm text-foreground">
-													{abbreviatePath(project.directory, homeDir)}
-												</span>
-												<span className="shrink-0 text-sm text-muted-foreground">
-													{timeAgo(project.lastConnected)}
-												</span>
-											</Button>
-											{index < recentProjects.length - 1 ? <Separator /> : null}
-										</div>
-									))
-								)}
-							</CardContent>
-						</Card>
-					)}
 				</div>
 			</div>
 		);
@@ -573,12 +461,6 @@ export function MessageList({ detachedProject }: { detachedProject?: string }) {
 			className="flex-1 overflow-auto px-4 py-4"
 		>
 			<div className="max-w-[640px] mx-auto">
-				{activeSessionId && temporarySessions.has(activeSessionId) && (
-					<div className="mb-3 flex items-center justify-center gap-1.5 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-						<Timer className="size-3" />
-						Temporary chat - will be deleted when you leave
-					</div>
-				)}
 				{/* Sentinel for auto-loading older messages */}
 				{messageHistoryHasMore && (
 					<div ref={topSentinelRef} className="h-px w-full" />
