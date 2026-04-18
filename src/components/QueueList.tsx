@@ -76,25 +76,37 @@ function QueueItemRow({
 				!buttonRef.current.contains(e.target as Node)
 			) {
 				setMenuOpen(false);
-				setShowAbove(false);
+				setMenuCoords(null);
 			}
 		};
 		document.addEventListener("mousedown", handler);
 		return () => document.removeEventListener("mousedown", handler);
 	}, [menuOpen]);
 
-	// Position detection for above/below
-	const [showAbove, setShowAbove] = React.useState(false);
+	// Position menu - use fixed to escape overflow container
+	const [menuCoords, setMenuCoords] = React.useState<{ top: number; left: number } | null>(null);
 	React.useEffect(() => {
 		if (!menuOpen || !buttonRef.current) return;
 		const button = buttonRef.current.getBoundingClientRect();
 		const menuHeight = 130;
+		const menuWidth = 160;
+		const padding = 8;
 		const spaceBelow = window.innerHeight - button.bottom;
-		if (spaceBelow < menuHeight) {
-			setShowAbove(true);
+		const spaceAbove = button.top;
+		let top: number;
+		if (spaceBelow >= menuHeight + padding) {
+			top = button.bottom + padding;
+		} else if (spaceAbove >= menuHeight + padding) {
+			top = button.top - menuHeight - padding;
 		} else {
-			setShowAbove(false);
+			top = button.bottom + padding;
 		}
+		let left = button.right - menuWidth;
+		if (left < padding) left = padding;
+		if (left + menuWidth > window.innerWidth - padding) {
+			left = window.innerWidth - menuWidth - padding;
+		}
+		setMenuCoords({ top, left });
 	}, [menuOpen]);
 
 	const handleEditSave = () => {
@@ -225,20 +237,18 @@ function QueueItemRow({
 							<Ellipsis className="size-3" />
 						</Button>
 
-						{menuOpen && (
+						{menuOpen && menuCoords && (
 							<div
 								ref={menuRef}
-								className={cn(
-									"absolute right-0 z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md",
-									showAbove ? "bottom-full mb-1" : "top-full mt-1",
-								)}
+								className="fixed z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md"
+								style={{ top: menuCoords.top, left: menuCoords.left }}
 							>
 								<button
 									type="button"
 									className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 									onClick={() => {
 										setMenuOpen(false);
-										setShowAbove(false);
+										setMenuCoords(null);
 										setEditValue(item.text);
 										setEditing(true);
 									}}
@@ -252,7 +262,7 @@ function QueueItemRow({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
-											setShowAbove(false);
+											setMenuCoords(null);
 											onMoveToTop?.(index);
 										}}
 									>
@@ -266,7 +276,7 @@ function QueueItemRow({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
-											setShowAbove(false);
+											setMenuCoords(null);
 											onMoveToBottom?.(index);
 										}}
 									>
@@ -328,7 +338,7 @@ export function QueueList({
 
 	return (
 		<div className="rounded-xl border bg-background shadow-xs">
-			<div className="flex flex-col gap-0.5 p-1 max-h-[216px] overflow-y-auto">
+			<div className="flex flex-col gap-0.5 p-2 max-h-[216px] overflow-y-auto">
 				{items.map((item, idx) => (
 					<div
 						key={item.id}
