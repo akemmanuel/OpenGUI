@@ -1152,7 +1152,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 											}}
 										>
 											<Minimize2 className="size-3" />
-											Compact context
+											Compact
 										</Button>
 									</PopoverContent>
 								</Popover>
