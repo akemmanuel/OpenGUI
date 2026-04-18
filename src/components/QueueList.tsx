@@ -75,7 +75,6 @@ function QueueItemRow({
 				!buttonRef.current.contains(e.target as Node)
 			) {
 				setMenuOpen(false);
-				setMenuCoords(null);
 			}
 		};
 		document.addEventListener("mousedown", handler);
@@ -85,7 +84,10 @@ function QueueItemRow({
 	// Position menu - use fixed to escape overflow container
 	const [menuCoords, setMenuCoords] = React.useState<{ top: number; left: number } | null>(null);
 	React.useEffect(() => {
-		if (!menuOpen || !buttonRef.current) return;
+		if (!menuOpen || !buttonRef.current) {
+			setMenuCoords(null);
+			return;
+		}
 		const button = buttonRef.current.getBoundingClientRect();
 		const menuHeight = 130;
 		const menuWidth = 160;
@@ -93,7 +95,7 @@ function QueueItemRow({
 		const spaceBelow = window.innerHeight - button.bottom;
 		const spaceAbove = button.top;
 		let top: number;
-		if (spaceBelow >= menuHeight + padding) {
+		if (spaceBelow >= menuHeight + padding || spaceBelow >= spaceAbove) {
 			top = button.bottom + padding;
 		} else if (spaceAbove >= menuHeight + padding) {
 			top = button.top - menuHeight - padding;
