@@ -490,12 +490,13 @@ class OpenCodeConnection {
 
 	async summarizeSession(sessionId, model) {
 		this._requireClient();
-		const providerID = model?.providerID ?? "openai";
-		const modelID = model?.modelID ?? "gpt-4o-mini";
-		await this._client.session.summarize({ 
+		if (!model?.providerID || !model?.modelID) {
+			throw new Error("No model selected");
+		}
+		await this._client.session.summarize({
 			sessionID: sessionId,
-			providerID,
-			modelID,
+			providerID: model.providerID,
+			modelID: model.modelID,
 		});
 	}
 
