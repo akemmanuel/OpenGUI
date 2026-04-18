@@ -76,27 +76,25 @@ function QueueItemRow({
 				!buttonRef.current.contains(e.target as Node)
 			) {
 				setMenuOpen(false);
-				setMenuCoords(null);
+				setShowAbove(false);
 			}
 		};
 		document.addEventListener("mousedown", handler);
 		return () => document.removeEventListener("mousedown", handler);
 	}, [menuOpen]);
 
-	// Position menu directly below button using fixed
-	const [menuCoords, setMenuCoords] = React.useState<{
-		top: number;
-		left: number;
-	} | null>(null);
+	// Position detection for above/below
+	const [showAbove, setShowAbove] = React.useState(false);
 	React.useEffect(() => {
 		if (!menuOpen || !buttonRef.current) return;
 		const button = buttonRef.current.getBoundingClientRect();
-		const menuWidth = 160;
-		const padding = 8;
-		setMenuCoords({
-			top: button.bottom + padding,
-			left: Math.max(padding, button.right - menuWidth),
-		});
+		const menuHeight = 130;
+		const spaceBelow = window.innerHeight - button.bottom;
+		if (spaceBelow < menuHeight) {
+			setShowAbove(true);
+		} else {
+			setShowAbove(false);
+		}
 	}, [menuOpen]);
 
 	const handleEditSave = () => {
@@ -227,14 +225,13 @@ function QueueItemRow({
 							<Ellipsis className="size-3" />
 						</Button>
 
-						{menuOpen && menuCoords && (
+						{menuOpen && (
 							<div
 								ref={menuRef}
-								className="fixed z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md"
-								style={{
-									top: menuCoords.top,
-									left: menuCoords.left,
-								}}
+								className={cn(
+									"absolute right-0 z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md",
+									showAbove ? "bottom-full mb-1" : "top-full mt-1",
+								)}
 							>
 								<button
 									type="button"
