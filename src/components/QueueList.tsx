@@ -60,7 +60,6 @@ function QueueItemRow({
 	const menuRef = React.useRef<HTMLDivElement>(null);
 	const buttonRef = React.useRef<HTMLButtonElement>(null);
 	const rowRef = React.useRef<HTMLDivElement>(null);
-	const [isDragging, setIsDragging] = React.useState(false);
 
 	const isFirst = index === 0;
 	const isLast = index === total - 1;
@@ -126,19 +125,7 @@ function QueueItemRow({
 			)}
 		>
 			<div
-				draggable
-				onDragStart={(e) => {
-					e.dataTransfer.setData("text/plain", String(index));
-					e.dataTransfer.effectAllowed = "move";
-					setIsDragging(true);
-				}}
-				onDragEnd={() => {
-					setIsDragging(false);
-				}}
-				className={cn(
-					"size-3.5 text-muted-foreground/50 shrink-0 cursor-grab",
-					isDragging && "opacity-50",
-				)}
+				className="size-3.5 text-muted-foreground/50 shrink-0"
 			>
 				<GripVertical className="size-3.5" />
 			</div>
@@ -320,34 +307,51 @@ export function QueueList({
 		if (!isNaN(fromIndex) && fromIndex !== toIndex) {
 			onReorder?.(fromIndex, toIndex);
 		}
-		setDragOverIndex(null);
 	};
 
 	const handleDragEnd = () => {
 		setDragOverIndex(null);
 	};
 
-	const handleDropOnLast = (e: React.DragEvent) => {
-		e.preventDefault();
-		const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
-		if (!isNaN(fromIndex) && fromIndex !== items.length - 1) {
-			onReorder?.(fromIndex, items.length - 1);
-		}
-		setDragOverIndex(null);
-	};
-
 	return (
 		<div className="rounded-xl border bg-background shadow-xs">
-			<div className="flex flex-col p-2 max-h-[216px] overflow-y-auto">
+			<div className="flex flex-col max-h-[216px] overflow-y-auto">
+				<div
+					onDragEnter={() => setDragOverIndex(0)}
+					onDragOver={(e) => {
+						e.preventDefault();
+						e.dataTransfer.dropEffect = "move";
+						setDragOverIndex(0);
+					}}
+					onDrop={(e) => {
+						e.preventDefault();
+						const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+						if (!isNaN(fromIndex) && fromIndex !== 0) {
+							onReorder?.(fromIndex, 0);
+						}
+						setDragOverIndex(null);
+					}}
+					onDragLeave={() => setDragOverIndex(null)}
+					onDragEnd={handleDragEnd}
+					className={cn(
+						"h-1 -mb-1",
+						dragOverIndex === 0 && "border-t-2 border-primary",
+					)}
+				/>
 				{items.map((item, idx) => (
 					<div
 						key={item.id}
+						draggable
+						onDragStart={(e) => {
+							e.dataTransfer.setData("text/plain", String(idx));
+							e.dataTransfer.effectAllowed = "move";
+						}}
 						onDragOver={(e) => handleDragOver(e, idx)}
 						onDrop={(e) => handleDrop(e, idx)}
 						onDragEnd={handleDragEnd}
 						className={cn(
 							"cursor-move",
-							dragOverIndex === idx && "border-t-2 border-primary",
+							dragOverIndex === idx + 1 && "border-b-2 border-primary",
 						)}
 					>
 						<QueueItemRow
@@ -365,16 +369,26 @@ export function QueueList({
 					</div>
 				))}
 				<div
+					draggable
+					onDragEnter={() => setDragOverIndex(items.length)}
 					onDragOver={(e) => {
 						e.preventDefault();
 						e.dataTransfer.dropEffect = "move";
 						setDragOverIndex(items.length);
 					}}
-					onDrop={handleDropOnLast}
+					onDrop={(e) => {
+						e.preventDefault();
+						const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+						if (!isNaN(fromIndex)) {
+							onReorder?.(fromIndex, items.length - 1);
+						}
+						setDragOverIndex(null);
+					}}
+					onDragLeave={() => setDragOverIndex(null)}
 					onDragEnd={handleDragEnd}
 					className={cn(
-						"h-1 cursor-move",
-						dragOverIndex === items.length && "h-4 border-b-2 border-primary",
+						"h-1 -mt-1",
+						dragOverIndex === items.length && "border-b-2 border-primary",
 					)}
 				/>
 			</div>
