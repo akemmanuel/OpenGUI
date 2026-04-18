@@ -69,6 +69,11 @@ export function SettingsProviders() {
 	const [showCustom, setShowCustom] = useState(false);
 	const [showSelectAll, setShowSelectAll] = useState(false);
 
+	// Wait for auth methods to be loaded for this provider
+	const isAuthLoading =
+		loading ||
+		(!connectProviderID ? false : authMethods[connectProviderID] === undefined);
+
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
 		const [provRes, authRes] = await Promise.all([
@@ -146,6 +151,7 @@ export function SettingsProviders() {
 				providerID={connectProviderID}
 				providerName={provider?.name ?? connectProviderID}
 				authMethods={authMethods[connectProviderID] ?? []}
+				loading={isAuthLoading}
 				onConnected={handleConnected}
 				onBack={() => setConnectProviderID(null)}
 			/>
