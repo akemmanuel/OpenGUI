@@ -1,6 +1,6 @@
 import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
-	ArrowUp,
+ArrowUp,
 	BookOpen,
 	Check,
 	GitBranch,
@@ -11,6 +11,7 @@ import {
 	Square,
 	Wrench,
 	X,
+	Minimize2,
 } from "lucide-react";
 import * as React from "react";
 import { AgentSelector } from "@/components/AgentSelector";
@@ -31,6 +32,11 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
@@ -45,6 +51,7 @@ import {
 	useMessages,
 	useModelState,
 	useSessionState,
+	type MessageEntry,
 } from "@/hooks/use-opencode";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
@@ -179,8 +186,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
 		// Message history navigation state
 		// -1 = not browsing, 0 = most recent user message, incrementing = older
-		const [historyIndex, setHistoryIndex] = React.useState(-1);
-		const [savedDraft, setSavedDraft] = React.useState("");
+const [historyIndex, setHistoryIndex] = React.useState(-1);
+	const [savedDraft, setSavedDraft] = React.useState("");
+	const [isCompacting, setIsCompacting] = React.useState(false);
+	const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
 		const isApplyingHistoryRef = React.useRef(false);
 
 		const isDisabled = Boolean(props.disabled);
@@ -188,6 +197,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const {
 			setAgent,
 			sendCommand,
+			summarizeSession,
 			findFiles,
 			setDraftDirectory,
 			setSessionDraft,
@@ -199,6 +209,21 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const { sessions, activeSessionId, draftSessionDirectory, sessionDrafts } =
 			useSessionState();
 		const { messages } = useMessages();
+
+		// Detect if compaction is in-progress: session is busy AND message immediately
+		// before current running message is summary marker.
+		const isCompactingInProgress = React.useMemo(() => {
+			if (!isLoading || messages.length < 2) return false;
+			const lastMsg = messages[messages.length - 1];
+			const prevMsg = messages[messages.length - 2];
+			return (
+				lastMsg.info.role === "user" &&
+				prevMsg.info.role === "assistant" &&
+				"summary" in prevMsg.info &&
+				prevMsg.info.summary === true
+			);
+		}, [isLoading, messages]);
+
 		const { activeWorkspaceId, worktreeParents, isLocalWorkspace } =
 			useConnectionState();
 		const syncingDraftRef = React.useRef(false);
@@ -1029,79 +1054,110 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 							</Tooltip>
 						)}
 
-						<div className="ml-auto flex items-center gap-1.5">
-							{contextPercent != null && contextPercent >= 0 && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span
-											className={cn(
-												"flex items-center gap-1 text-[11px] tabular-nums select-none cursor-default",
-												contextPercent >= 90
-													? "text-destructive"
-													: contextPercent >= 70
-														? "text-amber-500"
-														: "text-muted-foreground/70",
-											)}
-										>
-											<svg
-												width="14"
-												height="14"
-												viewBox="0 0 20 20"
-												className="shrink-0 -rotate-90"
-												aria-hidden="true"
+<div className="ml-auto flex items-center gap-1.5">
+{contextPercent != null && contextPercent >= 0 && (
+								<Popover>
+									<PopoverTrigger asChild>
+										<div className="flex">
+											<button
+												type="button"
+												className={cn(
+													"flex items-center gap-1 text-[11px] tabular-nums select-none cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors",
+													(isCompacting || isCompactingInProgress) && "animate-pulse",
+													contextPercent >= 90
+														? "text-destructive hover:text-destructive"
+														: contextPercent >= 70
+													? "text-amber-500 hover:text-amber-600"
+														: "text-muted-foreground/70 hover:text-foreground",
+												)}
 											>
-												<circle
-													cx="10"
-													cy="10"
-													r="8"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="2.5"
-													opacity="0.2"
-												/>
-												<circle
-													cx="10"
-													cy="10"
-													r="8"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="2.5"
-													strokeLinecap="round"
-													strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
-												/>
-											</svg>
-											{contextPercent === 0
-												? "0%"
-												: contextPercent < 1
-													? "<1%"
-													: `${contextPercent}%`}
-										</span>
-									</TooltipTrigger>
-									<TooltipContent
+												{(isCompacting || isCompactingInProgress) ? (
+													<Loader2 className="size-3.5 animate-spin" />
+												) : (
+													<svg
+														width="14"
+														height="14"
+														viewBox="0 0 20 20"
+														className="shrink-0 -rotate-90"
+														aria-hidden="true"
+													>
+														<circle
+															cx="10"
+															cy="10"
+															r="8"
+															fill="none"
+															stroke="currentColor"
+															strokeWidth="2.5"
+															opacity="0.2"
+														/>
+														<circle
+															cx="10"
+															cy="10"
+															r="8"
+															fill="none"
+															stroke="currentColor"
+															strokeWidth="2.5"
+															strokeLinecap="round"
+															strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
+														/>
+													</svg>
+												)}
+												{isCompacting || isCompactingInProgress
+													? "Compacting"
+													: contextPercent === 0
+														? "0%"
+														: contextPercent < 1
+															? "<1%"
+															: `${contextPercent}%`}
+											</button>
+										</div>
+									</PopoverTrigger>
+									<PopoverContent
 										side="top"
-										className="flex flex-col gap-1 text-xs"
+										align="center"
+										className="w-48 p-3 text-xs z-50"
 									>
-										<div className="font-semibold">Context window</div>
+										<div className="font-semibold mb-2">Context window</div>
 										{contextTokens != null && contextLimit != null ? (
-											<div>
+											<div className="text-muted-foreground mb-1">
 												{contextTokens.toLocaleString()} /{" "}
 												{contextLimit.toLocaleString()} tokens
 											</div>
 										) : contextTokens != null ? (
-											<div>{contextTokens.toLocaleString()} tokens</div>
+											<div className="text-muted-foreground mb-1">
+												{contextTokens.toLocaleString()} tokens
+											</div>
 										) : null}
 										{contextCost != null && contextCost > 0 && (
-											<div>
+											<div className="text-muted-foreground mb-2">
 												Cost: $
 												{contextCost < 0.01
 													? contextCost.toFixed(6)
 													: contextCost.toFixed(4)}
 											</div>
 										)}
-									</TooltipContent>
-								</Tooltip>
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											className="w-full mt-2 gap-2"
+											disabled={isLoading || isDisabled || isCompactingInProgress}
+											onClick={async () => {
+												setIsCompacting(true);
+												try {
+													await summarizeSession();
+												} finally {
+													setIsCompacting(false);
+												}
+											}}
+										>
+											<Minimize2 className="size-3" />
+											Compact context
+										</Button>
+									</PopoverContent>
+								</Popover>
 							)}
-							{isLoading && !hasValue ? (
+							{(isLoading && !hasValue) || isCompactingInProgress ? (
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Button
