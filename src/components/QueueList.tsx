@@ -317,10 +317,6 @@ export function QueueList({
 		setDragOverIndex(null);
 	};
 
-	const handleDragEnter = () => {
-		setDragOverIndex(items.length);
-	};
-
 	const handleDropOnLast = (e: React.DragEvent) => {
 		e.preventDefault();
 		const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
@@ -359,7 +355,6 @@ export function QueueList({
 					</div>
 				))}
 				<div
-					onDragEnter={handleDragEnter}
 					onDragOver={(e) => {
 						e.preventDefault();
 						e.dataTransfer.dropEffect = "move";
@@ -368,8 +363,8 @@ export function QueueList({
 					onDrop={handleDropOnLast}
 					onDragEnd={handleDragEnd}
 					className={cn(
-						"h-1 cursor-move",
-						dragOverIndex === items.length && "border-b-2 border-primary",
+						"min-h-[20px] border-2 border-dashed border-transparent rounded transition-colors cursor-move",
+						dragOverIndex === items.length && "border-primary bg-primary/5",
 					)}
 				/>
 			</div>
