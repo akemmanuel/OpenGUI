@@ -109,7 +109,7 @@ function QueueItemRow({
 		<div
 			ref={rowRef}
 			className={cn(
-				"group flex items-center gap-1 px-2 py-0.5 rounded-md",
+				"group flex items-center gap-1 px-2 py-1 rounded-md",
 				"hover:bg-accent/50 transition-colors",
 			)}
 		>
@@ -238,7 +238,7 @@ function QueueItemRow({
 									className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 									onClick={() => {
 										setMenuOpen(false);
-										setMenuCoords(null);
+										setShowAbove(false);
 										setEditValue(item.text);
 										setEditing(true);
 									}}
@@ -252,7 +252,7 @@ function QueueItemRow({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
-											setMenuCoords(null);
+											setShowAbove(false);
 											onMoveToTop?.(index);
 										}}
 									>
@@ -266,7 +266,7 @@ function QueueItemRow({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
-											setMenuCoords(null);
+											setShowAbove(false);
 											onMoveToBottom?.(index);
 										}}
 									>
@@ -332,7 +332,7 @@ export function QueueList({
 
 	return (
 		<div className="rounded-xl border bg-background shadow-xs">
-			<div className="flex flex-col gap-0.5 p-0.5 max-h-[216px] overflow-y-auto">
+			<div className="flex flex-col gap-0.5 p-1 max-h-[216px] overflow-y-auto">
 				{items.map((item, idx) => (
 					<div
 						key={item.id}
