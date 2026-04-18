@@ -81,33 +81,38 @@ function QueueItemRow({
 		return () => document.removeEventListener("mousedown", handler);
 	}, [menuOpen]);
 
-	// Position menu - use fixed to escape overflow container
-	const [menuCoords, setMenuCoords] = React.useState<{ top: number; left: number } | null>(null);
+	// Position menu - render below first, then adjust if needed
+	const [menuCoords, setMenuCoords] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
 	React.useEffect(() => {
-		if (!menuOpen || !buttonRef.current) {
-			setMenuCoords(null);
-			return;
-		}
+		if (!menuOpen || !buttonRef.current) return;
 		const button = buttonRef.current.getBoundingClientRect();
-		const menuHeight = 130;
-		const menuWidth = 160;
-		const padding = 8;
-		const spaceBelow = window.innerHeight - button.bottom;
-		const spaceAbove = button.top;
-		let top: number;
-		if (spaceBelow >= menuHeight + padding || spaceBelow >= spaceAbove) {
-			top = button.bottom + padding;
-		} else if (spaceAbove >= menuHeight + padding) {
-			top = button.top - menuHeight - padding;
-		} else {
-			top = button.bottom + padding;
-		}
-		let left = button.right - menuWidth;
-		if (left < padding) left = padding;
-		if (left + menuWidth > window.innerWidth - padding) {
-			left = window.innerWidth - menuWidth - padding;
-		}
+		const top = button.bottom + 8;
+		const left = button.right - 160;
 		setMenuCoords({ top, left });
+		requestAnimationFrame(() => {
+			if (!menuRef.current || !buttonRef.current) return;
+			const button = buttonRef.current.getBoundingClientRect();
+			const menu = menuRef.current.getBoundingClientRect();
+			const padding = 8;
+			const menuHeight = menu.height;
+			const menuWidth = menu.width;
+			const spaceBelow = window.innerHeight - button.bottom;
+			const spaceAbove = button.top;
+			let newTop: number;
+			if (spaceBelow >= menuHeight + padding || spaceBelow >= spaceAbove) {
+				newTop = button.bottom + padding;
+			} else if (spaceAbove >= menuHeight + padding) {
+				newTop = button.top - menuHeight - padding;
+			} else {
+				newTop = button.bottom + padding;
+			}
+			let newLeft = button.right - menuWidth;
+			if (newLeft < padding) newLeft = padding;
+			if (newLeft + menuWidth > window.innerWidth - padding) {
+				newLeft = window.innerWidth - menuWidth - padding;
+			}
+			setMenuCoords({ top: newTop, left: newLeft });
+		});
 	}, [menuOpen]);
 
 	const handleEditSave = () => {
@@ -226,7 +231,7 @@ function QueueItemRow({
 							<Ellipsis className="size-3" />
 						</Button>
 
-						{menuOpen && menuCoords && (
+						{menuOpen && (
 							<div
 								ref={menuRef}
 								className="fixed z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md"
@@ -237,7 +242,7 @@ function QueueItemRow({
 									className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 									onClick={() => {
 										setMenuOpen(false);
-										setMenuCoords(null);
+										setMenuCoords({ top: 0, left: 0 });
 										setEditValue(item.text);
 										setEditing(true);
 									}}
@@ -251,7 +256,7 @@ function QueueItemRow({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
-											setMenuCoords(null);
+											setMenuCoords({ top: 0, left: 0 });
 											onMoveToTop?.(index);
 										}}
 									>
@@ -265,7 +270,7 @@ function QueueItemRow({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
-											setMenuCoords(null);
+											setMenuCoords({ top: 0, left: 0 });
 											onMoveToBottom?.(index);
 										}}
 									>
