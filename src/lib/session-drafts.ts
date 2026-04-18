@@ -1,7 +1,20 @@
+import type { SelectedModel } from "@/types/electron";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { persistOrRemoveJSON, storageParsed } from "@/lib/safe-storage";
 
 export type SessionDraftMap = Record<string, string>;
+export type QueueMode = "queue" | "interrupt" | "after-part";
+export type QueuedPrompt = {
+	id: string;
+	text: string;
+	images?: string[];
+	createdAt: number;
+	model?: SelectedModel;
+	agent?: string;
+	variant?: string;
+	mode: QueueMode;
+};
+export type QueuedPromptsMap = Record<string, QueuedPrompt[]>;
 
 export function getSessionDraftKey(input: {
 	sessionId?: string | null;
@@ -39,4 +52,13 @@ export function persistSessionDrafts(drafts: SessionDraftMap): void {
 		pruned,
 		Object.keys(pruned).length === 0,
 	);
+}
+
+export function getQueuedPrompts(): QueuedPromptsMap {
+	return storageParsed<QueuedPromptsMap>(STORAGE_KEYS.QUEUED_PROMPTS) ?? {};
+}
+
+export function persistQueuedPrompts(queue: QueuedPromptsMap): void {
+	const hasItems = Object.values(queue).some((arr) => arr.length > 0);
+	persistOrRemoveJSON(STORAGE_KEYS.QUEUED_PROMPTS, queue, !hasItems);
 }

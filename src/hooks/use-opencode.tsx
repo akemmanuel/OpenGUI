@@ -69,8 +69,11 @@ import {
 	storageSetOrRemove,
 } from "@/lib/safe-storage";
 import {
+	getQueuedPrompts,
 	getSessionDrafts,
+	persistQueuedPrompts,
 	persistSessionDrafts,
+	type QueuedPromptsMap,
 	type SessionDraftMap,
 } from "@/lib/session-drafts";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
@@ -657,7 +660,7 @@ const initialState: OpenCodeState = {
 	selectedAgent: null,
 	variantSelections: {},
 	commands: [],
-	queuedPrompts: {},
+	queuedPrompts: getQueuedPrompts(),
 	recentProjects: getRecentProjects(),
 	draftSessionDirectory: null,
 	draftIsTemporary: false,
@@ -2915,6 +2918,10 @@ export function OpenCodeProvider({
 	useEffect(() => {
 		persistSessionDrafts(state.sessionDrafts);
 	}, [state.sessionDrafts]);
+
+	useEffect(() => {
+		persistQueuedPrompts(state.queuedPrompts);
+	}, [state.queuedPrompts]);
 
 	// Request notification permission on startup
 	useEffect(() => {
