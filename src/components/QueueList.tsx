@@ -338,7 +338,7 @@ export function QueueList({
 
 	return (
 		<div className="rounded-xl border bg-background shadow-xs">
-			<div className="flex flex-col gap-0.5 p-2 max-h-[216px] overflow-y-auto">
+			<div className="flex flex-col p-2 max-h-[216px] overflow-y-auto">
 				{items.map((item, idx) => (
 					<div
 						key={item.id}
@@ -373,8 +373,8 @@ export function QueueList({
 					onDrop={handleDropOnLast}
 					onDragEnd={handleDragEnd}
 					className={cn(
-						"min-h-[20px] border-2 border-dashed border-transparent rounded transition-colors cursor-move",
-						dragOverIndex === items.length && "border-primary bg-primary/5",
+						"h-1 cursor-move",
+						dragOverIndex === items.length && "h-4 border-b-2 border-primary",
 					)}
 				/>
 			</div>
