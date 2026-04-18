@@ -4144,7 +4144,7 @@ export function OpenCodeProvider({
 
 		const model = state.selectedModel;
 		if (!model) {
-			dispatch({ type: "SET_ERROR", payload: "No model selected" });
+			dispatch({ type: "SET_ERROR", payload: "Compaction requires a model to be selected" });
 			return;
 		}
 

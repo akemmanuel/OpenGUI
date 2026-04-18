@@ -491,7 +491,7 @@ class OpenCodeConnection {
 	async summarizeSession(sessionId, model) {
 		this._requireClient();
 		if (!model?.providerID || !model?.modelID) {
-			throw new Error("No model selected");
+			throw new Error("Compaction requires a model to be selected");
 		}
 		await this._client.session.summarize({
 			sessionID: sessionId,
