@@ -4171,7 +4171,13 @@ export function OpenCodeProvider({
 			// Brief delay to let the SDK server finish message updates
 			await new Promise((resolve) => setTimeout(resolve, 500));
 			// Re-fetch messages to get updated token counts
-			const { messages } = await bridge.getMessages(sessionId, { limit: 100 });
+			const res = await bridge.getMessages(sessionId, { limit: 100 });
+			if (!res.success) {
+				throw new Error(
+					res.error ?? "Failed to refresh messages after compaction",
+				);
+			}
+			const messages = res.data?.messages ?? [];
 			dispatch({
 				type: "SET_MESSAGES",
 				payload: { messages, hasMore: false, nextCursor: null },
