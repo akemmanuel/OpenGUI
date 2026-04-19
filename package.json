@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.4.1",
+	"version": "0.4.2",
 	"private": false,
 	"description": "OpenGUI - A graphical interface for OpenCode",
 	"homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -71,7 +71,10 @@
 			"category": "Development"
 		},
 		"mac": {
-			"target": ["dmg", "zip"],
+			"target": [
+				"dmg",
+				"zip"
+			],
 			"icon": "assets/icon.icns",
 			"category": "public.app-category.developer-tools",
 			"hardenedRuntime": true,
