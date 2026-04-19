@@ -1,7 +1,5 @@
 import {
-	ArrowDown,
 	ArrowDownToLine,
-	ArrowUp,
 	ArrowUpToLine,
 	Ellipsis,
 	GripVertical,
@@ -30,6 +28,7 @@ interface QueueListProps {
 	onMoveToBottom?: (index: number) => void;
 	onEdit?: (id: string, newText: string) => void;
 	onSendNow?: (id: string) => void;
+	onReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
 function QueueItemRow({
@@ -37,8 +36,8 @@ function QueueItemRow({
 	index,
 	total,
 	onRemove,
-	onMoveUp,
-	onMoveDown,
+	onMoveUp: _onMoveUp,
+	onMoveDown: _onMoveDown,
 	onMoveToTop,
 	onMoveToBottom,
 	onEdit,
@@ -60,6 +59,7 @@ function QueueItemRow({
 	const [editValue, setEditValue] = React.useState(item.text);
 	const menuRef = React.useRef<HTMLDivElement>(null);
 	const buttonRef = React.useRef<HTMLButtonElement>(null);
+	const rowRef = React.useRef<HTMLDivElement>(null);
 
 	const isFirst = index === 0;
 	const isLast = index === total - 1;
@@ -81,6 +81,40 @@ function QueueItemRow({
 		return () => document.removeEventListener("mousedown", handler);
 	}, [menuOpen]);
 
+	// Position menu - render below first, then adjust if needed
+	const [menuCoords, setMenuCoords] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
+	React.useEffect(() => {
+		if (!menuOpen || !buttonRef.current) return;
+		const button = buttonRef.current.getBoundingClientRect();
+		const top = button.bottom + 8;
+		const left = button.right - 160;
+		setMenuCoords({ top, left });
+		requestAnimationFrame(() => {
+			if (!menuRef.current || !buttonRef.current) return;
+			const button = buttonRef.current.getBoundingClientRect();
+			const menu = menuRef.current.getBoundingClientRect();
+			const padding = 8;
+			const menuHeight = menu.height;
+			const menuWidth = menu.width;
+			const spaceBelow = window.innerHeight - button.bottom;
+			const spaceAbove = button.top;
+			let newTop: number;
+			if (spaceBelow >= menuHeight + padding || spaceBelow >= spaceAbove) {
+				newTop = button.bottom + padding;
+			} else if (spaceAbove >= menuHeight + padding) {
+				newTop = button.top - menuHeight - padding;
+			} else {
+				newTop = button.bottom + padding;
+			}
+			let newLeft = button.right - menuWidth;
+			if (newLeft < padding) newLeft = padding;
+			if (newLeft + menuWidth > window.innerWidth - padding) {
+				newLeft = window.innerWidth - menuWidth - padding;
+			}
+			setMenuCoords({ top: newTop, left: newLeft });
+		});
+	}, [menuOpen]);
+
 	const handleEditSave = () => {
 		const trimmed = editValue.trim();
 		if (trimmed && trimmed !== item.text) {
@@ -91,12 +125,17 @@ function QueueItemRow({
 
 	return (
 		<div
+			ref={rowRef}
 			className={cn(
-				"group flex items-center gap-1.5 px-2 py-1.5 rounded-md",
+				"group flex items-center gap-1 px-2 py-1 rounded-md",
 				"hover:bg-accent/50 transition-colors",
 			)}
 		>
-			<GripVertical className="size-3.5 text-muted-foreground/50 shrink-0 cursor-grab" />
+			<div
+				className="size-3.5 text-muted-foreground/50 shrink-0"
+			>
+				<GripVertical className="size-3.5" />
+			</div>
 
 			{editing ? (
 				<input
@@ -168,34 +207,6 @@ function QueueItemRow({
 						type="button"
 						variant="ghost"
 						size="icon-xs"
-						disabled={isFirst}
-						onClick={(e) => {
-							e.stopPropagation();
-							onMoveUp?.(index);
-						}}
-						className="text-muted-foreground hover:text-foreground"
-					>
-						<ArrowUp className="size-3" />
-					</Button>
-
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
-						disabled={isLast}
-						onClick={(e) => {
-							e.stopPropagation();
-							onMoveDown?.(index);
-						}}
-						className="text-muted-foreground hover:text-foreground"
-					>
-						<ArrowDown className="size-3" />
-					</Button>
-
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-xs"
 						onClick={(e) => {
 							e.stopPropagation();
 							onRemove?.(item.id);
@@ -223,13 +234,15 @@ function QueueItemRow({
 						{menuOpen && (
 							<div
 								ref={menuRef}
-								className="absolute right-0 bottom-full mb-1 z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md"
+								className="fixed z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md"
+								style={{ top: menuCoords.top, left: menuCoords.left }}
 							>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent transition-colors text-left"
+									className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 									onClick={() => {
 										setMenuOpen(false);
+										setMenuCoords({ top: 0, left: 0 });
 										setEditValue(item.text);
 										setEditing(true);
 									}}
@@ -240,9 +253,10 @@ function QueueItemRow({
 								{!isFirst && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent transition-colors text-left"
+										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
+											setMenuCoords({ top: 0, left: 0 });
 											onMoveToTop?.(index);
 										}}
 									>
@@ -253,9 +267,10 @@ function QueueItemRow({
 								{!isLast && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent transition-colors text-left"
+										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
 										onClick={() => {
 											setMenuOpen(false);
+											setMenuCoords({ top: 0, left: 0 });
 											onMoveToBottom?.(index);
 										}}
 									>
@@ -281,27 +296,108 @@ export function QueueList({
 	onMoveToBottom,
 	onEdit,
 	onSendNow,
+	onReorder,
 }: QueueListProps) {
+	const [dragOverIndex, setDragOverIndex] = React.useState<number | null>(null);
+
 	if (items.length === 0) return null;
+
+	const handleDragOver = (e: React.DragEvent, index: number) => {
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		setDragOverIndex(index);
+	};
+
+	const handleDrop = (e: React.DragEvent, toIndex: number) => {
+		e.preventDefault();
+		const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+		if (!isNaN(fromIndex) && fromIndex !== toIndex) {
+			onReorder?.(fromIndex, toIndex);
+		}
+	};
+
+	const handleDragEnd = () => {
+		setDragOverIndex(null);
+	};
 
 	return (
 		<div className="rounded-xl border bg-background shadow-xs">
-			<div className="flex flex-col gap-0.5 p-1 max-h-[108px] overflow-y-auto">
+			<div className="flex flex-col max-h-[216px] overflow-y-auto">
+				<div
+					onDragEnter={() => setDragOverIndex(0)}
+					onDragOver={(e) => {
+						e.preventDefault();
+						e.dataTransfer.dropEffect = "move";
+						setDragOverIndex(0);
+					}}
+					onDrop={(e) => {
+						e.preventDefault();
+						const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+						if (!isNaN(fromIndex) && fromIndex !== 0) {
+							onReorder?.(fromIndex, 0);
+						}
+						setDragOverIndex(null);
+					}}
+					onDragLeave={() => setDragOverIndex(null)}
+					onDragEnd={handleDragEnd}
+					className={cn(
+						"h-1 -mb-1",
+						dragOverIndex === 0 && "border-t-2 border-primary",
+					)}
+				/>
 				{items.map((item, idx) => (
-					<QueueItemRow
+					<div
 						key={item.id}
-						item={item}
-						index={idx}
-						total={items.length}
-						onRemove={onRemove}
-						onMoveUp={onMoveUp}
-						onMoveDown={onMoveDown}
-						onMoveToTop={onMoveToTop}
-						onMoveToBottom={onMoveToBottom}
-						onEdit={onEdit}
-						onSendNow={onSendNow}
-					/>
+						draggable
+						onDragStart={(e) => {
+							e.dataTransfer.setData("text/plain", String(idx));
+							e.dataTransfer.effectAllowed = "move";
+						}}
+						onDragOver={(e) => handleDragOver(e, idx)}
+						onDrop={(e) => handleDrop(e, idx)}
+						onDragEnd={handleDragEnd}
+						className={cn(
+							"cursor-move",
+							dragOverIndex === idx + 1 && "border-b-2 border-primary",
+						)}
+					>
+						<QueueItemRow
+							item={item}
+							index={idx}
+							total={items.length}
+							onRemove={onRemove}
+							onMoveUp={onMoveUp}
+							onMoveDown={onMoveDown}
+							onMoveToTop={onMoveToTop}
+							onMoveToBottom={onMoveToBottom}
+							onEdit={onEdit}
+							onSendNow={onSendNow}
+						/>
+					</div>
 				))}
+				<div
+					draggable
+					onDragEnter={() => setDragOverIndex(items.length)}
+					onDragOver={(e) => {
+						e.preventDefault();
+						e.dataTransfer.dropEffect = "move";
+						setDragOverIndex(items.length);
+					}}
+					onDrop={(e) => {
+						e.preventDefault();
+						const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+						if (!isNaN(fromIndex)) {
+							onReorder?.(fromIndex, items.length - 1);
+						}
+						setDragOverIndex(null);
+					}}
+					onDragLeave={() => setDragOverIndex(null)}
+					onDragEnd={handleDragEnd}
+					className={cn(
+						"h-1 -mt-1",
+						dragOverIndex === items.length && "border-b-2 border-primary",
+					)}
+				/>
 			</div>
 		</div>
 	);

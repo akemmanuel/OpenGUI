@@ -29,6 +29,7 @@ export const STORAGE_KEYS = {
 	OPEN_PROJECTS: "opencode:openProjects",
 	UNREAD_SESSIONS: "opencode:unreadSessionIds",
 	SESSION_DRAFTS: "opencode:sessionDrafts",
+	QUEUED_PROMPTS: "opencode:queuedPrompts",
 	NOTIFICATIONS_ENABLED: "opencode:notificationsEnabled",
 	SESSION_META: "opencode:sessionMeta",
 	WORKTREE_PARENTS: "opencode:worktreeParents",
