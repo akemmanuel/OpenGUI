@@ -212,8 +212,9 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 		// before current running message is summary marker.
 		const isCompactingInProgress = React.useMemo(() => {
 			if (!isLoading || messages.length < 2) return false;
-			const lastMsg = messages[messages.length - 1];
-			const prevMsg = messages[messages.length - 2];
+			const lastMsg = messages.at(-1);
+			const prevMsg = messages.at(-2);
+			if (!lastMsg || !prevMsg) return false;
 			return (
 				lastMsg.info.role === "user" &&
 				prevMsg.info.role === "assistant" &&
