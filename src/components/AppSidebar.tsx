@@ -61,6 +61,7 @@ import {
 	buildPRUrl,
 	formatTimeAgo,
 	getProjectName,
+	normalizeProjectPath,
 	openExternalLink,
 	pruneRecord,
 } from "@/lib/utils";
@@ -152,6 +153,7 @@ export function AppSidebar({
 	}, []);
 
 	const homeDir = useHomeDir();
+	const normalizedRemoteProjectPath = normalizeProjectPath(remoteProjectPath);
 
 	// Set of directories that are worktrees (should be hidden from project list)
 	const worktreeDirs = useMemo(
@@ -1051,9 +1053,9 @@ export function AppSidebar({
 										setRemoteProjectPath("");
 										setShowRemoteProjectInput(false);
 									}
-									if (event.key === "Enter" && remoteProjectPath.trim()) {
+									if (event.key === "Enter" && normalizedRemoteProjectPath) {
 										event.preventDefault();
-										void connectToProject(remoteProjectPath.trim());
+										void connectToProject(normalizedRemoteProjectPath);
 										setRemoteProjectPath("");
 										setShowRemoteProjectInput(false);
 									}
@@ -1062,8 +1064,8 @@ export function AppSidebar({
 							<button
 								type="button"
 								onClick={() => {
-									if (!remoteProjectPath.trim()) return;
-									void connectToProject(remoteProjectPath.trim());
+									if (!normalizedRemoteProjectPath) return;
+									void connectToProject(normalizedRemoteProjectPath);
 									setRemoteProjectPath("");
 									setShowRemoteProjectInput(false);
 								}}

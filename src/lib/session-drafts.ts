@@ -6,9 +6,12 @@ export type SessionDraftMap = Record<string, string>;
 export function getSessionDraftKey(input: {
 	sessionId?: string | null;
 	directory?: string | null;
+	workspaceId?: string | null;
 }): string | null {
 	if (input.sessionId) return `session:${input.sessionId}`;
-	if (input.directory) return `draft:${input.directory}`;
+	if (input.directory) {
+		return `draft:${input.workspaceId ?? ""}:${input.directory}`;
+	}
 	return null;
 }
 

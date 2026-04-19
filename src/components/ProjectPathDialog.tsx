@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConnectionState } from "@/hooks/use-opencode";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
+import { normalizeProjectPath } from "@/lib/utils";
 
 interface OpenProjectPathDialogDetail {
 	resolve: (value: string | null) => void;
@@ -57,7 +58,8 @@ export function ProjectPathDialog() {
 	}, [workspaceDirectory]);
 
 	const closeWith = (nextValue: string | null) => {
-		resolverRef.current?.(nextValue);
+		const normalizedValue = nextValue ? normalizeProjectPath(nextValue) : null;
+		resolverRef.current?.(normalizedValue);
 		resolverRef.current = null;
 		setOpen(false);
 	};
@@ -104,7 +106,7 @@ export function ProjectPathDialog() {
 								onKeyDown={(event) => {
 									if (event.key === "Enter" && value.trim()) {
 										event.preventDefault();
-										closeWith(value.trim());
+										closeWith(value);
 									}
 								}}
 							/>
@@ -132,7 +134,7 @@ export function ProjectPathDialog() {
 					<Button
 						type="button"
 						disabled={!value.trim()}
-						onClick={() => closeWith(value.trim())}
+						onClick={() => closeWith(value)}
 					>
 						Open project
 					</Button>

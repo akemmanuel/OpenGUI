@@ -6,7 +6,6 @@ import {
 	GitBranch,
 	ListEnd,
 	Loader2,
-	Mic,
 	Paperclip,
 	Plus,
 	Square,
@@ -184,11 +183,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [savedDraft, setSavedDraft] = React.useState("");
 		const isApplyingHistoryRef = React.useRef(false);
 
-		const isSttAvailable = false;
-		const isRecording = false;
-		const isTranscribing = false;
-		const sttError = undefined;
-		const handleMicClick = async () => {};
 		const isDisabled = Boolean(props.disabled);
 
 		const {
@@ -205,7 +199,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const { sessions, activeSessionId, draftSessionDirectory, sessionDrafts } =
 			useSessionState();
 		const { messages } = useMessages();
-		const { worktreeParents, isLocalWorkspace } = useConnectionState();
+		const { activeWorkspaceId, worktreeParents, isLocalWorkspace } =
+			useConnectionState();
 		const syncingDraftRef = React.useRef(false);
 		const sessionDraftsRef = React.useRef(sessionDrafts);
 		const projectDir = React.useMemo(() => {
@@ -256,8 +251,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 				getSessionDraftKey({
 					sessionId: activeSessionId,
 					directory: activeSessionId ? null : draftSessionDirectory,
+					workspaceId: activeWorkspaceId,
 				}),
-			[activeSessionId, draftSessionDirectory],
+			[activeSessionId, draftSessionDirectory, activeWorkspaceId],
 		);
 
 		React.useEffect(() => {
@@ -1105,51 +1101,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 									</TooltipContent>
 								</Tooltip>
 							)}
-							{isSttAvailable && sttError && !hasValue && (
-								<span className="text-xs text-destructive max-w-[150px] truncate">
-									{sttError}
-								</span>
-							)}
-
-							{isSttAvailable && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											type="button"
-											variant={isRecording ? "destructive" : "ghost"}
-											size="icon-sm"
-											disabled={isDisabled}
-											onClick={(e) => {
-												e.stopPropagation();
-												void handleMicClick();
-											}}
-											className={cn(
-												isRecording && "animate-pulse",
-												isTranscribing && "opacity-50 cursor-not-allowed",
-											)}
-										>
-											{isTranscribing ? (
-												<Loader2 className="animate-spin size-4" />
-											) : isRecording ? (
-												<Square className="size-3.5 fill-current" />
-											) : (
-												<Mic />
-											)}
-											<span className="sr-only">
-												{isRecording ? "Stop recording" : "Voice input"}
-											</span>
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>
-										{isTranscribing
-											? "Transcribing..."
-											: isRecording
-												? "Stop recording"
-												: "Voice input"}
-									</TooltipContent>
-								</Tooltip>
-							)}
-
 							{isLoading && !hasValue ? (
 								<Tooltip>
 									<TooltipTrigger asChild>

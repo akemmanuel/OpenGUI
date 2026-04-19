@@ -25,7 +25,7 @@ describe("getSessionDraftKey", () => {
 
 	test("builds keys for draft directories", () => {
 		expect(getSessionDraftKey({ directory: "/tmp/project" })).toBe(
-			"draft:/tmp/project",
+			"draft::/tmp/project",
 		);
 	});
 

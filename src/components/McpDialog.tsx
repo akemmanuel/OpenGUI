@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { useConnectionState } from "@/hooks/use-opencode";
 import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,7 @@ interface McpDialogProps {
 
 export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 	const bridge = window.electronAPI?.opencode;
+	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 
 	const [mcpStatus, setMcpStatus] = useState<Record<string, McpStatus>>({});
 	const [mcpTypes, setMcpTypes] = useState<Record<string, "local" | "remote">>(
@@ -87,8 +89,8 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
 		const [statusRes, configRes] = await Promise.all([
-			bridge.getMcpStatus(),
-			bridge.getConfig(),
+			bridge.getMcpStatus(activeDirectory ?? undefined, activeWorkspaceId),
+			bridge.getConfig(activeDirectory ?? undefined, activeWorkspaceId),
 		]);
 		if (statusRes.success && statusRes.data) {
 			setMcpStatus(statusRes.data);
@@ -103,7 +105,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 			setMcpTypes(types);
 		}
 		setLoading(false);
-	}, [bridge]);
+	}, [bridge, activeDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		if (open) {
@@ -117,9 +119,17 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 		setToggling(name);
 		try {
 			if (currentStatus.status === "connected") {
-				await bridge.disconnectMcp(name);
+				await bridge.disconnectMcp(
+					activeDirectory ?? undefined,
+					activeWorkspaceId,
+					name,
+				);
 			} else {
-				await bridge.connectMcp(name);
+				await bridge.connectMcp(
+					activeDirectory ?? undefined,
+					activeWorkspaceId,
+					name,
+				);
 			}
 			await new Promise((r) => setTimeout(r, MCP_TOGGLE_DELAY_MS));
 			await refresh();

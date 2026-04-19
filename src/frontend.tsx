@@ -6,10 +6,7 @@
  */
 
 import { createRoot } from "react-dom/client";
-import { migrateLegacyLocalStorage } from "@/lib/safe-storage";
 import { App } from "./App";
-
-migrateLegacyLocalStorage();
 
 const elem = document.getElementById("root");
 if (!elem) throw new Error("Root element not found");

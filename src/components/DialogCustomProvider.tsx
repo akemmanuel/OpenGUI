@@ -11,6 +11,7 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConnectionState } from "@/hooks/use-opencode";
 import { getErrorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -166,6 +167,7 @@ export function DialogCustomProvider({
 	onBack,
 }: DialogCustomProviderProps) {
 	const bridge = window.electronAPI?.opencode;
+	const { activeWorkspaceId } = useConnectionState();
 
 	const [providerId, setProviderId] = useState("");
 	const [name, setName] = useState("");
@@ -241,7 +243,7 @@ export function DialogCustomProvider({
 				}
 
 				// Update config to add the custom provider
-				await bridge.updateConfig(directory, {
+				await bridge.updateConfig(directory, activeWorkspaceId, {
 					provider: {
 						[providerId.trim()]: providerConfig,
 					},
@@ -249,13 +251,15 @@ export function DialogCustomProvider({
 
 				// Set the API key if provided (and not an env reference)
 				if (apiKey.trim() && !envMatch) {
-					await bridge.connectProvider(directory, providerId.trim(), {
-						type: "api",
-						key: apiKey.trim(),
-					});
+					await bridge.connectProvider(
+						directory,
+						activeWorkspaceId,
+						providerId.trim(),
+						{ type: "api", key: apiKey.trim() },
+					);
 				}
 
-				await bridge.disposeInstance(directory);
+				await bridge.disposeInstance(directory, activeWorkspaceId);
 				onSaved();
 			} catch (err) {
 				setError(getErrorMessage(err, "Failed to save"));
@@ -266,6 +270,7 @@ export function DialogCustomProvider({
 		[
 			bridge,
 			directory,
+			activeWorkspaceId,
 			providerId,
 			name,
 			baseUrl,

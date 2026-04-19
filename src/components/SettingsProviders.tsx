@@ -48,7 +48,7 @@ function SourceBadge({ source }: { source: string }) {
 
 export function SettingsProviders() {
 	const { refreshProviders } = useActions();
-	const { activeDirectory } = useConnectionState();
+	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const bridge = window.electronAPI?.opencode;
 	const scopedDirectory = activeDirectory ?? undefined;
 
@@ -72,8 +72,8 @@ export function SettingsProviders() {
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
 		const [provRes, authRes] = await Promise.all([
-			bridge.listAllProviders(scopedDirectory),
-			bridge.getProviderAuthMethods(scopedDirectory),
+			bridge.listAllProviders(scopedDirectory, activeWorkspaceId),
+			bridge.getProviderAuthMethods(scopedDirectory, activeWorkspaceId),
 		]);
 		if (provRes.success && provRes.data) {
 			setAllProviders(provRes.data);
@@ -82,7 +82,7 @@ export function SettingsProviders() {
 			setAuthMethods(authRes.data);
 		}
 		setLoading(false);
-	}, [bridge, scopedDirectory]);
+	}, [bridge, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		void refresh();
@@ -92,8 +92,12 @@ export function SettingsProviders() {
 		if (!bridge) return;
 		setDisconnecting(providerID);
 		try {
-			await bridge.disconnectProvider(scopedDirectory, providerID);
-			await bridge.disposeInstance(scopedDirectory);
+			await bridge.disconnectProvider(
+				scopedDirectory,
+				activeWorkspaceId,
+				providerID,
+			);
+			await bridge.disposeInstance(scopedDirectory, activeWorkspaceId);
 			await refresh();
 			await refreshProviders();
 		} finally {

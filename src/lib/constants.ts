@@ -32,7 +32,6 @@ export const STORAGE_KEYS = {
 	NOTIFICATIONS_ENABLED: "opencode:notificationsEnabled",
 	SESSION_META: "opencode:sessionMeta",
 	WORKTREE_PARENTS: "opencode:worktreeParents",
-	STT_ENDPOINT: "opencode:sttEndpoint",
 	RECENT_MODELS: "opencode:recentModels",
 	FAVORITE_MODELS: "opencode:favoriteModels",
 	MODEL_MAX_AGE_MONTHS: "opencode:modelMaxAgeMonths",
@@ -52,12 +51,6 @@ export const HIGHLIGHT_DEBOUNCE_MS = 150;
 
 /** Duration the "Copied!" badge stays visible after a clipboard copy (ms). */
 export const COPY_FEEDBACK_MS = 2000;
-
-/** Minimum audio blob size (bytes) to send for STT transcription. */
-export const MIN_STT_AUDIO_BYTES = 1000;
-
-/** MediaRecorder chunk interval (ms). */
-export const STT_CHUNK_INTERVAL_MS = 100;
 
 /** Delay before sending a prompt after a merge operation (ms). */
 export const POST_MERGE_DELAY_MS = 300;

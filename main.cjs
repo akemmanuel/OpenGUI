@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron/main");
 const path = require("node:path");
 const { execSync, spawn } = require("node:child_process");
 const { createSettingsStore } = require("./settings-store.cjs");
+const { setupUpdateManager } = require("./main/update-manager.cjs");
 
 app.setName("OpenGUI");
 app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));
@@ -26,6 +27,10 @@ function parseCommand(command) {
 	const matches = command.match(/"[^"]*"|'[^']*'|\S+/g);
 	if (!matches) return [];
 	return matches.map((part) => part.replace(/^['"]|['"]$/g, ""));
+}
+
+function isGhostty(cmd) {
+	return cmd.trim().split(/\s+/)[0] === "ghostty";
 }
 
 function spawnCustomCommand(command, options = {}) {
@@ -277,7 +282,17 @@ ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
 	if (typeof dirPath !== "string" || dirPath.length === 0) return;
 	const platform = process.platform;
 	const spawnOpts = { detached: true, stdio: "ignore", cwd: dirPath };
-	if (spawnCustomCommand(command, spawnOpts)) return;
+	// Custom terminal handling – special case for Ghostty
+	if (command) {
+		const parts = parseCommand(command);
+		const [cmd, ...args] = parts;
+		if (isGhostty(cmd)) {
+			// Ghostty requires explicit --working-directory flag
+			spawn(cmd, [...args, "--working-directory", dirPath], spawnOpts).unref();
+			return;
+		}
+		if (spawnCustomCommand(command, spawnOpts)) return;
+	}
 	if (platform === "darwin") {
 		spawn("open", ["-a", "Terminal", dirPath], spawnOpts);
 	} else if (platform === "win32") {
@@ -324,6 +339,7 @@ ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
 			["kitty", "-d", dirPath],
 			["wezterm", "start", "--cwd", dirPath],
 			["xterm"],
+			["ghostty", "--working-directory", dirPath],
 		);
 		// Try sequentially; spawn emits 'error' when the command is not
 		// found so we move on to the next candidate.
@@ -351,6 +367,7 @@ ipcMain.handle("dialog:openDirectory", async (event) => {
 
 void app.whenReady().then(async () => {
 	createWindow();
+	setupUpdateManager();
 
 	// Load ESM opencode bridge (SDK is ESM-only)
 	try {

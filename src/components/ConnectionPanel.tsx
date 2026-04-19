@@ -10,7 +10,6 @@ import {
 	CheckCircle2,
 	Folder,
 	Layers,
-	Mic,
 	Play,
 	PlugZap,
 	Settings,
@@ -491,7 +490,6 @@ function GeneralSettings() {
 				</div>
 				<ThemeToggle />
 			</div>
-			<SttEndpointSetting />
 			<FileManagerSetting />
 			<TerminalSetting />
 			<ModelAgeFilterSetting />
@@ -561,27 +559,6 @@ function StorageInputSetting({
 			/>
 			<p className="text-[11px] text-muted-foreground">{helpText}</p>
 		</div>
-	);
-}
-
-// ---------------------------------------------------------------------------
-// STT endpoint setting
-// ---------------------------------------------------------------------------
-
-function SttEndpointSetting() {
-	return (
-		<StorageInputSetting
-			storageKey={STORAGE_KEYS.STT_ENDPOINT}
-			id="stt-endpoint"
-			icon={Mic}
-			label="Voice transcription endpoint"
-			placeholder="https://your-whisper-server.com/transcribe"
-			helpText="URL of Whisper-compatible STT server. Mic button only appears when this is set."
-			inputType="url"
-			onChangeExtra={() =>
-				window.dispatchEvent(new Event("stt-endpoint-changed"))
-			}
-		/>
 	);
 }
 

@@ -30,9 +30,13 @@ import type {
  *
  * `_projectDir` is set by the bridge/IPC layer to the *connection* directory
  * that returned the session, so the UI can group sessions reliably without
- * brittle string equality on `session.directory`.
+ * brittle string equality on `session.directory`. `_workspaceId` tags which
+ * workspace owns that connection, so identical paths stay isolated.
  */
-export type Session = BaseSession & { _projectDir?: string };
+export type Session = BaseSession & {
+	_projectDir?: string;
+	_workspaceId?: string;
+};
 
 import {
 	createContext,
@@ -55,6 +59,7 @@ import {
 	STORAGE_KEYS,
 } from "@/lib/constants";
 import {
+	migrateLegacyLocalStorage,
 	persistOrRemoveJSON,
 	storageGet,
 	storageParsed,
@@ -68,7 +73,7 @@ import {
 	persistSessionDrafts,
 	type SessionDraftMap,
 } from "@/lib/session-drafts";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 import type {
 	BridgeEvent,
 	ConnectionConfig,
@@ -117,9 +122,40 @@ function isModelAvailable(providers: Provider[], model: SelectedModel | null) {
 	return !!provider && model.modelID in provider.models;
 }
 
+const PROJECT_KEY_SEPARATOR = "\u0000";
+
+function makeProjectKey(workspaceId: string | null | undefined, directory: string) {
+	return `${workspaceId ?? ""}${PROJECT_KEY_SEPARATOR}${normalizeProjectPath(directory)}`;
+}
+
+function parseProjectKey(projectKey: string) {
+	const idx = projectKey.indexOf(PROJECT_KEY_SEPARATOR);
+	if (idx < 0) {
+		return { workspaceId: "", directory: projectKey };
+	}
+	return {
+		workspaceId: projectKey.slice(0, idx),
+		directory: projectKey.slice(idx + PROJECT_KEY_SEPARATOR.length),
+	};
+}
+
 function getSessionDirectory(session: Session | undefined | null) {
 	if (!session) return null;
 	return session._projectDir ?? session.directory ?? null;
+}
+
+function getSessionWorkspaceId(session: Session | undefined | null) {
+	if (!session) return null;
+	return session._workspaceId ?? null;
+}
+
+function getSessionProjectTarget(session: Session | undefined | null) {
+	const directory = getSessionDirectory(session);
+	if (!directory) return null;
+	return {
+		directory,
+		workspaceId: getSessionWorkspaceId(session) ?? undefined,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +163,7 @@ function getSessionDirectory(session: Session | undefined | null) {
 // ---------------------------------------------------------------------------
 
 interface RecentProject {
+	workspaceId?: string;
 	directory: string;
 	serverUrl: string;
 	username?: string;
@@ -251,11 +288,16 @@ function getWorkspaceRootDirectory(
 	directory: string,
 	worktreeParents: WorktreeParentMap,
 ): string {
-	return worktreeParents[directory]?.parentDir ?? directory;
+	const normalizedDirectory = normalizeProjectPath(directory);
+	return normalizeProjectPath(
+		worktreeParents[normalizedDirectory]?.parentDir ?? normalizedDirectory,
+	);
 }
 
 function getWorkspaceStoredConfig() {
-	const directory = storageGet(STORAGE_KEYS.DIRECTORY)?.trim() ?? "";
+	const directory = normalizeProjectPath(
+		storageGet(STORAGE_KEYS.DIRECTORY)?.trim() ?? "",
+	);
 	if (!directory) return null;
 	return {
 		directory,
@@ -285,7 +327,7 @@ function normalizeWorkspace(workspace: Workspace): Workspace {
 		projects: Array.from(
 			new Set(
 				(workspace.projects ?? [])
-					.map((project) => project.trim())
+					.map((project) => normalizeProjectPath(project))
 					.filter(Boolean),
 			),
 		),
@@ -362,14 +404,41 @@ function migrateLegacyWorkspaceStorage(): Workspace[] {
 }
 
 function getRecentProjects(): RecentProject[] {
-	return storageParsed<RecentProject[]>(STORAGE_KEYS.RECENT_PROJECTS) ?? [];
+	const projects = storageParsed<RecentProject[]>(STORAGE_KEYS.RECENT_PROJECTS) ?? [];
+	return projects
+		.map((project) => ({
+			...project,
+			directory: normalizeProjectPath(project.directory),
+			serverUrl: project.serverUrl.replace(/\/+$/, ""),
+			username: project.username?.trim() || undefined,
+			workspaceId: project.workspaceId?.trim() || undefined,
+		}))
+		.filter((project) => !!project.directory);
 }
 
 function addRecentProject(project: RecentProject): RecentProject[] {
-	const existing = getRecentProjects().filter(
-		(p) => p.directory !== project.directory,
-	);
-	const updated = [project, ...existing].slice(0, MAX_RECENT_PROJECTS);
+	const normalizedDirectory = normalizeProjectPath(project.directory);
+	const normalizedServerUrl = project.serverUrl.replace(/\/+$/, "");
+	const normalizedUsername = project.username?.trim() || undefined;
+	const normalizedWorkspaceId = project.workspaceId?.trim() || undefined;
+	const existing = getRecentProjects().filter((candidate) => {
+		return !(
+			(candidate.workspaceId?.trim() || undefined) === normalizedWorkspaceId &&
+			normalizeProjectPath(candidate.directory) === normalizedDirectory &&
+			candidate.serverUrl.replace(/\/+$/, "") === normalizedServerUrl &&
+			(candidate.username?.trim() || undefined) === normalizedUsername
+		);
+	});
+	const updated = [
+		{
+			...project,
+			workspaceId: normalizedWorkspaceId,
+			directory: normalizedDirectory,
+			serverUrl: normalizedServerUrl,
+			username: normalizedUsername,
+		},
+		...existing,
+	].slice(0, MAX_RECENT_PROJECTS);
 	storageSetJSON(STORAGE_KEYS.RECENT_PROJECTS, updated);
 	return updated;
 }
@@ -417,7 +486,7 @@ export interface OpenCodeState {
 	/** Currently selected workspace tab. */
 	activeWorkspaceId: string;
 	/** Maps connected project directories to their workspace. */
-	projectWorkspaceMap: Record<string, string>;
+	projectWorkspaceMap: Record<string, Set<string>>;
 	/** Per-project connection statuses keyed by directory */
 	connections: Record<string, ConnectionStatus>;
 	/** All sessions from all connected projects */
@@ -551,6 +620,11 @@ export function hasAnyConnection(
 	return Object.values(connections).some((c) => c.state === "connected");
 }
 
+// Must run before initial workspace state is computed. `frontend.tsx` imports
+// <App /> before executing module body, so migrating there is too late: this
+// module would already have snapshotted empty/default workspaces and then later
+// overwrite migrated settings on first render.
+migrateLegacyLocalStorage();
 const initialWorkspaces = migrateLegacyWorkspaceStorage();
 
 const initialState: OpenCodeState = {
@@ -621,18 +695,18 @@ type Action =
 	| { type: "SET_ACTIVE_WORKSPACE"; payload: string }
 	| {
 			type: "ASSIGN_PROJECT_WORKSPACE";
-			payload: { directory: string; workspaceId: string };
+			payload: { projectKey: string; workspaceId: string };
 	  }
 	| {
 			type: "SET_PROJECT_CONNECTION";
-			payload: { directory: string; status: ConnectionStatus };
+			payload: { projectKey: string; status: ConnectionStatus };
 	  }
-	| { type: "REMOVE_PROJECT"; payload: string }
+	| { type: "REMOVE_PROJECT"; payload: { projectKey: string; directory: string } }
 	| { type: "CLEAR_ALL_PROJECTS" }
 	| { type: "SET_SESSIONS"; payload: Session[] }
 	| {
 			type: "MERGE_PROJECT_SESSIONS";
-			payload: { directory: string; sessions: Session[] };
+			payload: { projectKey: string; directory: string; sessions: Session[] };
 	  }
 	| { type: "SET_ACTIVE_SESSION"; payload: string | null }
 	| { type: "SET_SESSION_DRAFT"; payload: { key: string; text: string } }
@@ -1074,8 +1148,14 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			};
 
 		case "ADD_WORKSPACE_PROJECT": {
-			const { workspaceId, directory, serverUrl, username, password } =
-				action.payload;
+			const {
+				workspaceId,
+				directory: rawDirectory,
+				serverUrl,
+				username,
+				password,
+			} = action.payload;
+			const directory = normalizeProjectPath(rawDirectory);
 			let changed = false;
 			const nextWorkspaces = state.workspaces.map((workspace) => {
 				if (workspace.id !== workspaceId) return workspace;
@@ -1096,32 +1176,41 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "SET_ACTIVE_WORKSPACE":
 			return { ...state, activeWorkspaceId: action.payload };
 
-		case "ASSIGN_PROJECT_WORKSPACE":
+		case "ASSIGN_PROJECT_WORKSPACE": {
+			const { projectKey, workspaceId } = action.payload;
+			const existing = state.projectWorkspaceMap[projectKey] ?? new Set();
+			const updated = new Set(existing).add(workspaceId);
 			return {
 				...state,
 				projectWorkspaceMap: {
 					...state.projectWorkspaceMap,
-					[action.payload.directory]: action.payload.workspaceId,
+					[projectKey]: updated,
 				},
 			};
+		}
 
 		case "SET_PROJECT_CONNECTION": {
-			const { directory, status } = action.payload;
+			const { projectKey, status } = action.payload;
 			return {
 				...state,
-				connections: { ...state.connections, [directory]: status },
+				connections: { ...state.connections, [projectKey]: status },
 			};
 		}
 
 		case "REMOVE_PROJECT": {
+			const { projectKey, directory } = action.payload;
 			const removedSessionIds = new Set(
 				state.sessions
-					.filter((s) => (s._projectDir ?? s.directory) === action.payload)
+					.filter(
+						(s) =>
+							getSessionWorkspaceId(s) === parseProjectKey(projectKey).workspaceId &&
+							(s._projectDir ?? s.directory) === directory,
+					)
 					.map((s) => s.id),
 			);
-			const { [action.payload]: _, ...rest } = state.connections;
+			const { [projectKey]: _, ...rest } = state.connections;
 			const {
-				[action.payload]: _removedWorkspace,
+				[projectKey]: _removedWorkspace,
 				...restProjectWorkspaceMap
 			} = state.projectWorkspaceMap;
 			const nextBusy = new Set(
@@ -1187,7 +1276,11 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 				connections: rest,
 				projectWorkspaceMap: restProjectWorkspaceMap,
 				sessions: state.sessions.filter(
-					(s) => (s._projectDir ?? s.directory) !== action.payload,
+					(s) =>
+						!(
+							getSessionWorkspaceId(s) === parseProjectKey(projectKey).workspaceId &&
+							(s._projectDir ?? s.directory) === directory
+						),
 				),
 				busySessionIds: nextBusy,
 				unreadSessionIds: nextUnread,
@@ -1213,7 +1306,7 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 					: {}),
 				// Clear draft if it belongs to the removed project
 				draftSessionDirectory:
-					state.draftSessionDirectory === action.payload
+					state.draftSessionDirectory === directory
 						? null
 						: state.draftSessionDirectory,
 			};
@@ -1255,13 +1348,14 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		}
 
 		case "MERGE_PROJECT_SESSIONS": {
-			const { directory, sessions } = action.payload;
-			// Remove any existing sessions for this project directory, then
-			// merge in the fresh list.  Sessions are matched by _projectDir
-			// (set by the bridge) so we don't rely on the potentially-divergent
-			// session.directory field.
+			const { projectKey, directory, sessions } = action.payload;
+			const { workspaceId } = parseProjectKey(projectKey);
 			const filtered = state.sessions.filter(
-				(s) => (s._projectDir ?? s.directory) !== directory,
+				(s) =>
+					!(
+						getSessionWorkspaceId(s) === workspaceId &&
+						(s._projectDir ?? s.directory) === directory
+					),
 			);
 			// Deduplicate by session ID: if the incoming batch contains a
 			// session that already exists under a *different* project
@@ -1535,7 +1629,10 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			// Ignore SSE echoes for sessions that were optimistically deleted.
 			if (state._deletedSessionIds.has(action.payload.id)) return state;
 			const projectDir = action.payload._projectDir ?? action.payload.directory;
-			if (!(projectDir in state.connections)) return state;
+			const workspaceId = getSessionWorkspaceId(action.payload);
+			if (!projectDir) return state;
+			const projectKey = makeProjectKey(workspaceId, projectDir);
+			if (!(projectKey in state.connections)) return state;
 			return {
 				...state,
 				sessions: sortSessionsNewestFirst([
@@ -1554,7 +1651,10 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 			// between the optimistic removal and the server's session.deleted event.
 			if (state._deletedSessionIds.has(updated.id)) return state;
 			const updProjectDir = updated._projectDir ?? updated.directory;
-			if (!(updProjectDir in state.connections)) return state;
+			const workspaceId = getSessionWorkspaceId(updated);
+			if (!updProjectDir) return state;
+			const projectKey = makeProjectKey(workspaceId, updProjectDir);
+			if (!(projectKey in state.connections)) return state;
 			const exists = state.sessions.some((s) => s.id === updated.id);
 			// Update in-place without re-sorting to prevent the sidebar from
 			// jumping around while sessions receive streaming updates.
@@ -2594,18 +2694,19 @@ export function OpenCodeProvider({
 	selectedAgentRef.current = state.selectedAgent;
 	const selectSessionRequestRef = useRef(0);
 	const childHydrationVersionRef = useRef<Record<string, number>>({});
-	const loadedResourceDirectoryRef = useRef<string | null>(null);
+	const loadedResourceProjectKeyRef = useRef<string | null>(null);
 	const resourceLoadRequestRef = useRef(0);
 
 	// --- SSE event handler ---
 	const handleBridgeEvent = useCallback((event: BridgeEvent) => {
-		if (!expectedDirectoriesRef.current.has(event.directory)) {
+		const projectKey = makeProjectKey(event.workspaceId, event.directory);
+		if (!expectedDirectoriesRef.current.has(projectKey)) {
 			return;
 		}
 		if (event.type === "connection:status") {
 			dispatch({
 				type: "SET_PROJECT_CONNECTION",
-				payload: { directory: event.directory, status: event.payload },
+				payload: { projectKey, status: event.payload },
 			});
 			return;
 		}
@@ -2619,6 +2720,7 @@ export function OpenCodeProvider({
 						payload: {
 							...oc.properties.info,
 							_projectDir: event.directory,
+							_workspaceId: event.workspaceId,
 						},
 					});
 					break;
@@ -2628,6 +2730,7 @@ export function OpenCodeProvider({
 						payload: {
 							...oc.properties.info,
 							_projectDir: event.directory,
+							_workspaceId: event.workspaceId,
 						},
 					});
 					break;
@@ -2841,20 +2944,23 @@ export function OpenCodeProvider({
 	// --- Actions ---
 
 	const loadServerResources = useCallback(
-		async (directory?: string | null) => {
+		async (directory?: string | null, workspaceId?: string | null) => {
 			if (!bridge) return;
 			const requestId = ++resourceLoadRequestRef.current;
 			const targetDirectory = directory?.trim() || undefined;
+			const targetWorkspaceId = workspaceId?.trim() || undefined;
 			const [provRes, agentRes, cmdRes] = await Promise.all([
-				bridge.getProviders(targetDirectory),
-				bridge.getAgents(targetDirectory),
-				bridge.getCommands(targetDirectory),
+				bridge.getProviders(targetDirectory, targetWorkspaceId),
+				bridge.getAgents(targetDirectory, targetWorkspaceId),
+				bridge.getCommands(targetDirectory, targetWorkspaceId),
 			]);
 
 			if (requestId !== resourceLoadRequestRef.current) return;
 
 			if (provRes.success && provRes.data) {
-				loadedResourceDirectoryRef.current = targetDirectory ?? null;
+				loadedResourceProjectKeyRef.current = targetDirectory
+					? makeProjectKey(targetWorkspaceId, targetDirectory)
+					: null;
 				dispatch({ type: "SET_PROVIDERS", payload: provRes.data });
 
 				const currentSelection = selectedModelRef.current;
@@ -2917,17 +3023,18 @@ export function OpenCodeProvider({
 				config.workspaceId ??
 				stateRef.current.activeWorkspaceId ??
 				LOCAL_WORKSPACE_ID;
+			const projectKey = makeProjectKey(workspaceId, config.directory);
 			dispatch({
 				type: "ASSIGN_PROJECT_WORKSPACE",
-				payload: { directory: config.directory, workspaceId },
+				payload: { projectKey, workspaceId },
 			});
-			expectedDirectoriesRef.current.add(config.directory);
+			expectedDirectoriesRef.current.add(projectKey);
 			if (!options?.suppressError) {
 				dispatch({ type: "SET_ERROR", payload: null });
 			}
-			const res = await bridge.addProject(config);
+			const res = await bridge.addProject({ ...config, workspaceId });
 			if (!res.success) {
-				expectedDirectoriesRef.current.delete(config.directory);
+				expectedDirectoriesRef.current.delete(projectKey);
 				if (!options?.suppressError) {
 					dispatch({
 						type: "SET_ERROR",
@@ -2936,23 +3043,22 @@ export function OpenCodeProvider({
 				}
 				return;
 			}
-			// Load sessions for this project.  The bridge already tags each
-			// session with `_projectDir` matching the connection directory, so
-			// no additional client-side filtering is needed – the server scopes
-			// sessions to this project via the x-opencode-directory header.
-			const sessRes = await bridge.listSessions(config.directory);
+			const sessRes = await bridge.listSessions(config.directory, workspaceId);
 			if (sessRes.success && sessRes.data) {
 				dispatch({
 					type: "MERGE_PROJECT_SESSIONS",
 					payload: {
+						projectKey,
 						directory: config.directory,
 						sessions: sessRes.data as Session[],
 					},
 				});
 			}
-			// Fetch current session statuses to restore busy spinners
 			try {
-				const statusRes = await bridge.getSessionStatuses(config.directory);
+				const statusRes = await bridge.getSessionStatuses(
+					config.directory,
+					workspaceId,
+				);
 				if (statusRes.success && statusRes.data) {
 					dispatch({
 						type: "INIT_BUSY_SESSIONS",
@@ -2962,8 +3068,8 @@ export function OpenCodeProvider({
 			} catch {
 				/* ignore – spinner will appear on next SSE event */
 			}
-			if (loadedResourceDirectoryRef.current === null) {
-				await loadServerResources(config.directory);
+			if (loadedResourceProjectKeyRef.current === null) {
+				await loadServerResources(config.directory, workspaceId);
 			}
 			const worktreeParentMap = getWorktreeParents();
 			const isWorktree = Boolean(worktreeParentMap[config.directory]);
@@ -2992,6 +3098,7 @@ export function OpenCodeProvider({
 			// Update recent projects only for the workspace root, not worktrees.
 			if (config.directory && !isWorktree) {
 				const updated = addRecentProject({
+					workspaceId,
 					directory: config.directory,
 					serverUrl: config.baseUrl,
 					username: config.username,
@@ -3006,6 +3113,7 @@ export function OpenCodeProvider({
 	const removeProject = useCallback(
 		async (directory: string) => {
 			if (!bridge) return;
+			const workspaceId = stateRef.current.activeWorkspaceId;
 			const worktreeParentMap = getWorktreeParents();
 			const workspaceDirectory = getWorkspaceRootDirectory(
 				directory,
@@ -3022,18 +3130,28 @@ export function OpenCodeProvider({
 					: [directory];
 
 			for (const dir of directoriesToRemove) {
-				expectedDirectoriesRef.current.delete(dir);
-				await bridge.removeProject(dir);
-				dispatch({ type: "REMOVE_PROJECT", payload: dir });
+				const projectKey = makeProjectKey(workspaceId, dir);
+				expectedDirectoriesRef.current.delete(projectKey);
+				await bridge.removeProject(dir, workspaceId);
+				dispatch({
+					type: "REMOVE_PROJECT",
+					payload: { projectKey, directory: dir },
+				});
 			}
 
 			if (workspaceDirectory === directory) {
-				const remainingRootDirectories = Object.keys(state.connections).filter(
-					(dir) =>
-						dir !== directory &&
-						!directoriesToRemove.includes(dir) &&
-						!worktreeParentMap[dir],
-				);
+				const remainingRootDirectories = Object.keys(state.connections)
+					.filter(
+						(projectKey) =>
+							parseProjectKey(projectKey).workspaceId === workspaceId,
+					)
+					.map((projectKey) => parseProjectKey(projectKey).directory)
+					.filter(
+						(dir) =>
+							dir !== directory &&
+							!directoriesToRemove.includes(dir) &&
+							!worktreeParentMap[dir],
+					);
 				const nextRoot = remainingRootDirectories[0] ?? null;
 				if (nextRoot) {
 					storageSet(STORAGE_KEYS.DIRECTORY, nextRoot);
@@ -3046,7 +3164,8 @@ export function OpenCodeProvider({
 				(s) => s.id === state.activeSessionId,
 			);
 			if (
-				(activeSession?._projectDir ?? activeSession?.directory) === directory
+				(activeSession?._projectDir ?? activeSession?.directory) === directory &&
+				getSessionWorkspaceId(activeSession) === workspaceId
 			) {
 				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
 			}
@@ -3198,11 +3317,11 @@ export function OpenCodeProvider({
 		for (const project of activeWorkspace.projects) {
 			directories.add(project);
 		}
-		for (const [directory, workspaceId] of Object.entries(
+		for (const [projectKey, workspaceIds] of Object.entries(
 			state.projectWorkspaceMap,
 		)) {
-			if (workspaceId === activeWorkspace.id) {
-				directories.add(directory);
+			if (workspaceIds?.has(activeWorkspace.id)) {
+				directories.add(parseProjectKey(projectKey).directory);
 			}
 		}
 		return directories;
@@ -3211,26 +3330,30 @@ export function OpenCodeProvider({
 	const activeWorkspaceConnections = useMemo(
 		() =>
 			Object.fromEntries(
-				Object.entries(state.connections).filter(([directory]) =>
-					activeWorkspaceProjectSet.has(directory),
+				Object.entries(state.connections).filter(([projectKey]) =>
+					state.projectWorkspaceMap[projectKey]?.has(activeWorkspace?.id ?? ""),
 				),
 			),
-		[state.connections, activeWorkspaceProjectSet],
+		[state.connections, state.projectWorkspaceMap, activeWorkspace?.id],
 	);
 
 	const activeWorkspaceSessions = useMemo(
 		() =>
 			state.sessions.filter((session) => {
+				if (!activeWorkspace) return false;
+				if (getSessionWorkspaceId(session)) {
+					return getSessionWorkspaceId(session) === activeWorkspace.id;
+				}
 				const directory = session._projectDir ?? session.directory;
 				return activeWorkspaceProjectSet.has(directory);
 			}),
-		[state.sessions, activeWorkspaceProjectSet],
+		[state.sessions, activeWorkspace, activeWorkspaceProjectSet],
 	);
 
 	const workspaceDirectory = useMemo(() => {
 		const connectedDirectories = Object.entries(activeWorkspaceConnections)
 			.filter(([, status]) => status.state === "connected")
-			.map(([directory]) => directory);
+			.map(([projectKey]) => parseProjectKey(projectKey).directory);
 		const rootDirectories = connectedDirectories.filter(
 			(directory) => !state.worktreeParents[directory],
 		);
@@ -3257,7 +3380,10 @@ export function OpenCodeProvider({
 
 	const workspaceConnection = useMemo(() => {
 		if (workspaceDirectory) {
-			return activeWorkspaceConnections[workspaceDirectory] ?? null;
+			const match = Object.entries(activeWorkspaceConnections).find(
+				([projectKey]) => parseProjectKey(projectKey).directory === workspaceDirectory,
+			);
+			return match?.[1] ?? null;
 		}
 		if (!activeWorkspace) return null;
 		return {
@@ -3270,8 +3396,17 @@ export function OpenCodeProvider({
 	}, [activeWorkspaceConnections, workspaceDirectory, activeWorkspace]);
 
 	const connectedDirectorySet = useMemo(
-		() => new Set(Object.keys(state.connections)),
-		[state.connections],
+		() =>
+			new Set(
+				Object.keys(state.connections)
+					.filter(
+						(projectKey) =>
+							parseProjectKey(projectKey).workspaceId ===
+							(activeWorkspace?.id ?? ""),
+					)
+					.map((projectKey) => parseProjectKey(projectKey).directory),
+			),
+		[state.connections, activeWorkspace?.id],
 	);
 
 	const activeResourceDirectory = useMemo(() => {
@@ -3292,16 +3427,20 @@ export function OpenCodeProvider({
 
 	useEffect(() => {
 		if (!bridge || !activeResourceDirectory) return;
-		if (loadedResourceDirectoryRef.current === activeResourceDirectory) return;
-		void loadServerResources(activeResourceDirectory);
-	}, [bridge, activeResourceDirectory, loadServerResources]);
+		if (
+			loadedResourceProjectKeyRef.current ===
+				makeProjectKey(activeWorkspace?.id, activeResourceDirectory)
+		)
+			return;
+		void loadServerResources(activeResourceDirectory, activeWorkspace?.id);
+	}, [bridge, activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
 
 	const disconnect = useCallback(async () => {
 		if (!bridge) return;
 		await bridge.disconnect();
 		expectedDirectoriesRef.current.clear();
 		storageRemove(STORAGE_KEYS.DIRECTORY);
-		loadedResourceDirectoryRef.current = null;
+		loadedResourceProjectKeyRef.current = null;
 		dispatch({ type: "CLEAR_ALL_PROJECTS" });
 	}, [bridge]);
 
@@ -3317,7 +3456,7 @@ export function OpenCodeProvider({
 			usernameOverride?: string,
 			passwordOverride?: string,
 		) => {
-			const trimmedDirectory = directory.trim();
+			const trimmedDirectory = normalizeProjectPath(directory);
 			if (!trimmedDirectory) return;
 			const workspace =
 				stateRef.current.workspaces.find(
@@ -3432,13 +3571,24 @@ export function OpenCodeProvider({
 		async (
 			sessionId: string,
 			options?: { before?: string; limit?: number },
+			projectTarget?: { directory?: string; workspaceId?: string },
 		) => {
 			if (!bridge) return { messages: [], hasMore: false, nextCursor: null };
 			const pageSize = options?.limit ?? MESSAGE_PAGE_SIZE;
-			const res = await bridge.getMessages(sessionId, {
-				limit: pageSize,
-				before: options?.before,
-			});
+			const resolvedTarget =
+				projectTarget ??
+				getSessionProjectTarget(
+					stateRef.current.sessions.find((session) => session.id === sessionId),
+				);
+			const res = await bridge.getMessages(
+				sessionId,
+				{
+					limit: pageSize,
+					before: options?.before,
+				},
+				resolvedTarget?.directory,
+				resolvedTarget?.workspaceId,
+			);
 			const data = res.success && res.data ? res.data : null;
 			const messages = data?.messages ?? [];
 			const nextCursor = data?.nextCursor ?? null;
@@ -3454,7 +3604,12 @@ export function OpenCodeProvider({
 	const hydrateChildSessionsForMessages = useCallback(
 		(
 			messages: MessageEntry[],
-			options?: { requestId?: number; sessionId?: string },
+			options?: {
+				requestId?: number;
+				sessionId?: string;
+				directory?: string;
+				workspaceId?: string;
+			},
 		) => {
 			if (!bridge || messages.length === 0) return;
 
@@ -3471,7 +3626,12 @@ export function OpenCodeProvider({
 					(childHydrationVersionRef.current[childSid] ?? 0) + 1;
 				childHydrationVersionRef.current[childSid] = nextVersion;
 				bridge
-					.getMessages(childSid, { limit: 10000 })
+					.getMessages(
+						childSid,
+						{ limit: 10000 },
+						options?.directory,
+						options?.workspaceId,
+					)
 					.then((childRes) => {
 						if (childHydrationVersionRef.current[childSid] !== nextVersion) {
 							return;
@@ -3538,6 +3698,9 @@ export function OpenCodeProvider({
 			const requestId = ++selectSessionRequestRef.current;
 			dispatch({ type: "SET_ACTIVE_SESSION", payload: id });
 			if (!id || !bridge) return;
+			const projectTarget = getSessionProjectTarget(
+				stateRef.current.sessions.find((session) => session.id === id),
+			);
 
 			if (hadCompleteBuffer && bufferMessages) {
 				// Buffer was consumed and displayed instantly by SET_ACTIVE_SESSION
@@ -3546,17 +3709,28 @@ export function OpenCodeProvider({
 				hydrateChildSessionsForMessages(bufferMessages, {
 					requestId,
 					sessionId: id,
+					directory: projectTarget?.directory,
+					workspaceId: projectTarget?.workspaceId,
 				});
 				return;
 			}
 
-			const { messages, hasMore, nextCursor } = await fetchMessagePage(id);
+			const { messages, hasMore, nextCursor } = await fetchMessagePage(
+				id,
+				undefined,
+				projectTarget ?? undefined,
+			);
 			if (requestId !== selectSessionRequestRef.current) return;
 			dispatch({
 				type: "SET_MESSAGES",
 				payload: { messages, hasMore, nextCursor },
 			});
-			hydrateChildSessionsForMessages(messages, { requestId, sessionId: id });
+			hydrateChildSessionsForMessages(messages, {
+				requestId,
+				sessionId: id,
+				directory: projectTarget?.directory,
+				workspaceId: projectTarget?.workspaceId,
+			});
 		},
 		[
 			bridge,
@@ -3620,7 +3794,11 @@ export function OpenCodeProvider({
 	const createSession = useCallback(
 		async (title?: string, directory?: string): Promise<Session | null> => {
 			if (!bridge) return null;
-			const res = await bridge.createSession(title, directory);
+			const res = await bridge.createSession(
+				title,
+				directory,
+				stateRef.current.activeWorkspaceId,
+			);
 			if (res.success && res.data) {
 				await selectSession(res.data.id);
 				return res.data;
@@ -3906,10 +4084,12 @@ export function OpenCodeProvider({
 	const findFiles = useCallback(
 		async (directory: string | null, query: string): Promise<string[]> => {
 			if (!bridge) return [];
-			const res = await bridge.findFiles(directory, query);
+			const workspaceId = stateRef.current.activeWorkspaceId;
+			const res = await bridge.findFiles(directory, workspaceId, query);
 			if (!res.success) {
 				console.error("[findFiles] bridge request failed", {
 					directory,
+					workspaceId,
 					query,
 					error: res.error,
 				});
@@ -4110,9 +4290,13 @@ export function OpenCodeProvider({
 	/** Re-fetch providers from the server and update global state. */
 	const refreshProviders = useCallback(async () => {
 		await loadServerResources(
-			activeResourceDirectory ?? loadedResourceDirectoryRef.current,
+			activeResourceDirectory ??
+				(loadedResourceProjectKeyRef.current
+					? parseProjectKey(loadedResourceProjectKeyRef.current).directory
+					: null),
+			activeWorkspace?.id,
 		);
-	}, [activeResourceDirectory, loadServerResources]);
+	}, [activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
 
 	const clearError = useCallback(() => {
 		dispatch({ type: "SET_ERROR", payload: null });
@@ -4396,8 +4580,12 @@ export function OpenCodeProvider({
 			);
 			if (!workspace) return;
 			for (const directory of workspace.projects) {
-				await bridge.removeProject(directory);
-				dispatch({ type: "REMOVE_PROJECT", payload: directory });
+				const projectKey = makeProjectKey(workspaceId, directory);
+				await bridge.removeProject(directory, workspaceId);
+				dispatch({
+					type: "REMOVE_PROJECT",
+					payload: { projectKey, directory },
+				});
 			}
 			const nextWorkspaces = stateRef.current.workspaces.filter(
 				(item) => item.id !== workspaceId,
@@ -4514,19 +4702,19 @@ export function OpenCodeProvider({
 			workspaceStatuses: Object.fromEntries(
 				state.workspaces.map((workspace) => {
 					const workspaceSessions = state.sessions.filter((session) => {
+						const sessionWorkspaceId = getSessionWorkspaceId(session);
+						if (sessionWorkspaceId) {
+							return sessionWorkspaceId === workspace.id;
+						}
 						const directory = session._projectDir ?? session.directory;
-						return (
-							workspace.projects.includes(directory) ||
-							state.projectWorkspaceMap[directory] === workspace.id
-						);
+						return workspace.projects.includes(directory);
 					});
 					const sessionIds = new Set(
 						workspaceSessions.map((session) => session.id),
 					);
 					const workspaceConnections = Object.entries(state.connections).filter(
-						([directory]) =>
-							workspace.projects.includes(directory) ||
-							state.projectWorkspaceMap[directory] === workspace.id,
+						([projectKey]) =>
+							state.projectWorkspaceMap[projectKey]?.has(workspace.id) || false,
 					);
 					return [
 						workspace.id,
@@ -4549,7 +4737,12 @@ export function OpenCodeProvider({
 					] as const;
 				}),
 			),
-			connections: activeWorkspaceConnections,
+			connections: Object.fromEntries(
+				Object.entries(activeWorkspaceConnections).map(([projectKey, status]) => [
+					parseProjectKey(projectKey).directory,
+					status,
+				]),
+			),
 			workspaceDirectory,
 			workspaceServerUrl:
 				activeWorkspace?.serverUrl ?? workspaceConnection?.serverUrl ?? null,

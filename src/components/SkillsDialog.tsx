@@ -127,7 +127,7 @@ interface SkillsDialogProps {
 
 export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 	const bridge = window.electronAPI?.opencode;
-	const { activeDirectory } = useConnectionState();
+	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const scopedDirectory = activeDirectory ?? undefined;
 
 	const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -139,8 +139,8 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
 		const [skillsRes, configRes] = await Promise.all([
-			bridge.getSkills(scopedDirectory),
-			bridge.getConfig(scopedDirectory),
+			bridge.getSkills(scopedDirectory, activeWorkspaceId),
+			bridge.getConfig(scopedDirectory, activeWorkspaceId),
 		]);
 		if (skillsRes.success && skillsRes.data) {
 			setSkills(skillsRes.data);
@@ -150,7 +150,7 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 			setUrls(configRes.data.skills.urls ?? []);
 		}
 		setLoading(false);
-	}, [bridge, scopedDirectory]);
+	}, [bridge, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		if (open) {
@@ -163,13 +163,16 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 		if (!bridge) return;
 		setSaving(true);
 		try {
-			await bridge.updateConfig(scopedDirectory, {
+			await bridge.updateConfig(scopedDirectory, activeWorkspaceId, {
 				skills: { paths: nextPaths, urls: nextUrls },
 			});
 			setPaths(nextPaths);
 			setUrls(nextUrls);
 			await new Promise((r) => setTimeout(r, SKILLS_REFRESH_DELAY_MS));
-			const skillsRes = await bridge.getSkills(scopedDirectory);
+			const skillsRes = await bridge.getSkills(
+				scopedDirectory,
+				activeWorkspaceId,
+			);
 			if (skillsRes.success && skillsRes.data) {
 				setSkills(skillsRes.data);
 			}
