@@ -7,17 +7,36 @@ import {
 	AlertCircle,
 	ArrowLeft,
 	Bell,
+	BookOpen,
 	CheckCircle2,
 	Folder,
+	FolderOpen,
+	Globe,
 	Layers,
 	Play,
+	Plus,
 	PlugZap,
+	RotateCcw,
 	Settings,
 	Square,
 	Terminal,
+	Trash2,
 	Unplug,
 } from "lucide-react";
+import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { SettingsProviders } from "@/components/SettingsProviders";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -102,12 +121,24 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
 						<TabsTrigger value="providers" className="flex-1">
 							Providers
 						</TabsTrigger>
+						<TabsTrigger value="skills" className="flex-1">
+							Skills
+						</TabsTrigger>
+						<TabsTrigger value="mcp" className="flex-1">
+							Tools
+						</TabsTrigger>
 					</TabsList>
 					<TabsContent value="general" className="mt-0 rounded-lg border p-4">
 						<GeneralSettings />
 					</TabsContent>
 					<TabsContent value="providers" className="mt-0 rounded-lg border p-4">
 						<SettingsProviders />
+					</TabsContent>
+					<TabsContent value="skills" className="mt-0 rounded-lg border p-4">
+						<SkillsTabContent />
+					</TabsContent>
+					<TabsContent value="mcp" className="mt-0 rounded-lg border p-4">
+						<McpTabContent />
 					</TabsContent>
 				</Tabs>
 			</div>
@@ -482,6 +513,22 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 // ---------------------------------------------------------------------------
 
 function GeneralSettings() {
+	const bridge = window.electronAPI?.opencode;
+	const [restarting, setRestarting] = useState(false);
+
+	const handleRestart = useCallback(async () => {
+		if (!bridge) return;
+		setRestarting(true);
+		try {
+			await bridge.stopServer();
+			await new Promise((r) => setTimeout(r, 1000));
+			await bridge.startServer();
+			await new Promise((r) => setTimeout(r, 2000));
+		} finally {
+			setRestarting(false);
+		}
+	}, [bridge]);
+
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex items-center justify-between gap-3">
@@ -494,6 +541,38 @@ function GeneralSettings() {
 			<TerminalSetting />
 			<ModelAgeFilterSetting />
 			<NotificationsToggle />
+			<AlertDialog>
+				<AlertDialogTrigger asChild>
+					<Button
+						variant="outline"
+						size="sm"
+						className="mt-2"
+						disabled={restarting}
+					>
+						{restarting ? (
+							<Spinner className="size-3.5 mr-2" />
+						) : (
+							<RotateCcw className="size-3.5 mr-2" />
+						)}
+						Restart Server
+					</Button>
+				</AlertDialogTrigger>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Restart Server?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This will restart the server. All open sessions will be stopped
+							and you will need to reconnect.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction onClick={handleRestart}>
+							Restart
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 			<div className="flex items-center justify-between gap-3 pt-3 border-t">
 				<span className="text-xs text-muted-foreground">Version</span>
 				<span className="text-xs text-muted-foreground font-mono">
@@ -751,5 +830,281 @@ function TerminalSetting() {
 			placeholder="Auto-detect"
 			helpText="Command to open your terminal (e.g. ghostty, kitty). Leave empty to auto-detect."
 		/>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Skills tab content (inline)
+// ---------------------------------------------------------------------------
+
+interface SkillInfo {
+	name: string;
+	description: string;
+	location: string;
+	content: string;
+}
+
+function SkillsTabContent() {
+	const bridge = window.electronAPI?.opencode;
+	const { activeDirectory } = useConnectionState();
+	const scopedDirectory = activeDirectory ?? undefined;
+
+	const [skills, setSkills] = useState<SkillInfo[]>([]);
+	const [paths, setPaths] = useState<string[]>([]);
+	const [urls, setUrls] = useState<string[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+
+	const refresh = useCallback(async () => {
+		if (!bridge) return;
+		const [skillsRes, configRes] = await Promise.all([
+			bridge.getSkills(scopedDirectory),
+			bridge.getConfig(scopedDirectory),
+		]);
+		if (skillsRes.success && skillsRes.data) {
+			setSkills(skillsRes.data);
+		}
+		if (configRes.success && configRes.data?.skills) {
+			setPaths(configRes.data.skills.paths ?? []);
+			setUrls(configRes.data.skills.urls ?? []);
+		}
+		setLoading(false);
+	}, [bridge, scopedDirectory]);
+
+	useEffect(() => {
+		void refresh();
+	}, [refresh]);
+
+	const saveConfig = async (nextPaths: string[], nextUrls: string[]) => {
+		if (!bridge) return;
+		setSaving(true);
+		try {
+			await bridge.updateConfig(scopedDirectory, {
+				skills: { paths: nextPaths, urls: nextUrls },
+			});
+			setPaths(nextPaths);
+			setUrls(nextUrls);
+			await new Promise((r) => setTimeout(r, 500));
+			const skillsRes = await bridge.getSkills(scopedDirectory);
+			if (skillsRes.success && skillsRes.data) {
+				setSkills(skillsRes.data);
+			}
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const getSourceType = (location: string): "local" | "url" => {
+		if (location.startsWith("http://") || location.startsWith("https://")) {
+			return "url";
+		}
+		return "local";
+	};
+
+	if (loading) {
+		return (
+			<div className="flex items-center justify-center py-8">
+				<Spinner className="size-5" />
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-6">
+			<div className="space-y-3">
+				<h3 className="text-sm font-medium">Available Skills</h3>
+				{skills.length === 0 ? (
+					<div className="text-center py-4 text-sm text-muted-foreground">
+						No skills discovered.
+					</div>
+				) : (
+					<div className="space-y-2">
+						{skills.map((skill) => {
+							const source = getSourceType(skill.location);
+							return (
+								<div
+									key={skill.name}
+									className="flex items-start gap-3 rounded-lg border p-3 bg-card"
+								>
+									<BookOpen className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+									<div className="flex-1 min-w-0">
+										<div className="flex items-center gap-2">
+											<span className="text-sm font-medium">{skill.name}</span>
+											<Badge
+												variant="secondary"
+												className="text-[10px] px-1.5 py-0"
+											>
+												{source === "url" ? "Remote" : "Local"}
+											</Badge>
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											{skill.description}
+										</p>
+										<p className="text-[10px] text-muted-foreground font-mono truncate mt-1">
+											{skill.location}
+										</p>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// MCP/Tools tab content (inline)
+// ---------------------------------------------------------------------------
+
+function McpTabContent() {
+	const bridge = window.electronAPI?.opencode;
+
+	const [mcpStatus, setMcpStatus] = useState<{ [key: string]: McpStatus }>({});
+	const [mcpTypes, setMcpTypes] = useState<{
+		[key: string]: "local" | "remote";
+	}>({});
+	const [loading, setLoading] = useState(true);
+	const [toggling, setToggling] = useState<string | null>(null);
+
+	const refresh = useCallback(async () => {
+		if (!bridge) return;
+		const [statusRes, configRes] = await Promise.all([
+			bridge.getMcpStatus(),
+			bridge.getConfig(),
+		]);
+		if (statusRes.success && statusRes.data) {
+			setMcpStatus(statusRes.data);
+		}
+		if (configRes.success && configRes.data?.mcp) {
+			const types: { [key: string]: "local" | "remote" } = {};
+			for (const [name, cfg] of Object.entries(configRes.data.mcp)) {
+				if (cfg && typeof cfg === "object" && "type" in cfg) {
+					types[name] = (cfg as { type: "local" | "remote" }).type;
+				}
+			}
+			setMcpTypes(types);
+		}
+		setLoading(false);
+	}, [bridge]);
+
+	useEffect(() => {
+		void refresh();
+	}, [refresh]);
+
+	const handleToggle = async (name: string, currentStatus: McpStatus) => {
+		if (!bridge) return;
+		setToggling(name);
+		try {
+			if (currentStatus.status === "connected") {
+				await bridge.disconnectMcp(name);
+			} else {
+				await bridge.connectMcp(name);
+			}
+			await new Promise((r) => setTimeout(r, 500));
+			await refresh();
+		} finally {
+			setToggling(null);
+		}
+	};
+
+	const STATUS_CONFIG = {
+		connected: {
+			variant: "default" as const,
+			label: "Connected",
+			icon: CheckCircle2,
+			className: "bg-emerald-600 hover:bg-emerald-600",
+		},
+		disabled: { variant: "secondary" as const, label: "Disabled" },
+		failed: {
+			variant: "destructive" as const,
+			label: "Failed",
+			icon: AlertCircle,
+		},
+		needs_auth: {
+			variant: "outline" as const,
+			label: "Needs auth",
+			className: "text-amber-500 border-amber-500",
+		},
+		needs_client_registration: {
+			variant: "outline" as const,
+			label: "Needs registration",
+			className: "text-amber-500 border-amber-500",
+		},
+	} as const;
+
+	const entries = Object.entries(mcpStatus).sort(([a], [b]) =>
+		a.localeCompare(b),
+	);
+
+	if (loading) {
+		return (
+			<div className="flex items-center justify-center py-8">
+				<Spinner className="size-5" />
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-2">
+			{entries.length === 0 ? (
+				<div className="text-center py-6 text-sm text-muted-foreground">
+					No MCP servers configured.
+				</div>
+			) : (
+				entries.map(([name, status]) => {
+					const isConnected = status.status === "connected";
+					const isToggling = toggling === name;
+					const type = mcpTypes[name];
+					const config = STATUS_CONFIG[
+						status.status as keyof typeof STATUS_CONFIG
+					] ?? { variant: "secondary" as const, label: "Unknown" };
+					const BadgeIcon = "icon" in config ? config.icon : undefined;
+
+					return (
+						<div
+							key={name}
+							className="flex items-center gap-3 rounded-lg border p-3 bg-card"
+						>
+							<div className="shrink-0 text-muted-foreground">
+								{type === "remote" ? (
+									<Globe className="size-4" />
+								) : (
+									<Terminal className="size-4" />
+								)}
+							</div>
+							<div className="flex-1 min-w-0">
+								<div className="flex items-center gap-2">
+									<span className="text-sm font-medium font-mono truncate">
+										{name}
+									</span>
+									<Badge
+										variant={config.variant}
+										className={`text-xs${BadgeIcon ? " gap-1" : ""}${"className" in config ? ` ${config.className}` : ""}`}
+									>
+										{BadgeIcon && <BadgeIcon className="size-3" />}
+										{config.label}
+									</Badge>
+								</div>
+								{status.status === "failed" && "error" in status && (
+									<p className="text-[11px] text-destructive truncate mt-0.5">
+										{status.error}
+									</p>
+								)}
+							</div>
+							<div className="flex items-center gap-1.5 shrink-0">
+								{isToggling && <Spinner className="size-3.5" />}
+								<Switch
+									checked={isConnected}
+									onCheckedChange={() => handleToggle(name, status)}
+									disabled={isToggling}
+								/>
+							</div>
+						</div>
+					);
+				})
+			)}
+		</div>
 	);
 }

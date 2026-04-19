@@ -29,6 +29,7 @@ interface DialogConnectProviderProps {
 	providerID: string;
 	providerName: string;
 	authMethods: ProviderAuthMethod[];
+	loading?: boolean;
 	onConnected: () => void;
 	onBack: () => void;
 }
@@ -42,6 +43,7 @@ export function DialogConnectProvider({
 	providerID,
 	providerName,
 	authMethods,
+	loading = false,
 	onConnected,
 	onBack,
 }: DialogConnectProviderProps) {
@@ -227,6 +229,22 @@ export function DialogConnectProvider({
 					<Check className="size-5 text-emerald-500" />
 				</div>
 				<p className="text-sm font-medium">{providerName} connected</p>
+			</div>
+		);
+	}
+
+	// Loading state
+	if (loading) {
+		return (
+			<div className="space-y-4">
+				<SubDialogHeader onBack={onBack}>
+					<ProviderIcon provider={providerID} className="size-5" />
+					<span className="text-sm font-medium">{providerName}</span>
+				</SubDialogHeader>
+				<div className="flex flex-col items-center justify-center py-8 gap-3">
+					<Loader2 className="size-5 animate-spin text-muted-foreground" />
+					<p className="text-sm text-muted-foreground">Loading...</p>
+				</div>
 			</div>
 		);
 	}
