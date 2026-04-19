@@ -51,7 +51,6 @@ import {
 	useMessages,
 	useModelState,
 	useSessionState,
-	type MessageEntry,
 } from "@/hooks/use-opencode";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
@@ -189,8 +188,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 const [historyIndex, setHistoryIndex] = React.useState(-1);
 	const [savedDraft, setSavedDraft] = React.useState("");
 	const [isCompacting, setIsCompacting] = React.useState(false);
-	const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
-		const isApplyingHistoryRef = React.useRef(false);
+	const isApplyingHistoryRef = React.useRef(false);
 
 		const isDisabled = Boolean(props.disabled);
 
