@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  A graphical desktop interface for <a href="https://opencode.ai">OpenCode</a> - the open-source AI coding assistant.
+  Desktop app for <a href="https://opencode.ai">OpenCode</a> with multi-project workspaces, streaming chat, prompt queue, model switching, voice input, and MCP tools.
 </p>
 
 <p align="center">
@@ -14,37 +14,68 @@
   <a href="https://github.com/akemmanuel/OpenGUI/actions"><img src="https://img.shields.io/github/actions/workflow/status/akemmanuel/OpenGUI/build.yml?branch=master" alt="Build Status" /></a>
 </p>
 
-<!-- TODO: Replace with a demo GIF showing: opening a project, sending a prompt, streaming response, prompt queue, model switching -->
-<!-- Record with: peek, OBS, or kooha. Then replace the screenshot below with the GIF. -->
+<p align="center">
+  <a href="https://github.com/akemmanuel/OpenGUI/releases/latest">Download latest release</a>
+  ·
+  <a href="#why-opengui">Why OpenGUI</a>
+  ·
+  <a href="#build-from-source">Build from source</a>
+</p>
+
+<!-- TODO: Replace screenshot with short demo GIF: open project, send prompt, stream response, queue prompt, switch model. -->
 <p align="center">
   <img src="screenshot.png" alt="OpenGUI Screenshot" width="800" />
 </p>
 
-OpenGUI wraps the OpenCode server in an Electron shell with a React frontend, giving you a native desktop experience for managing AI-assisted coding sessions across multiple projects.
+OpenGUI gives OpenCode users desktop workflow for long coding sessions. Manage multiple projects visually, watch responses stream live, queue prompts while agent works, and switch models or agents without terminal juggling.
 
-> This was a weekend project, vibecoded in 4 days with the $200 Claude Max plan and the $20 OpenAI Plus plan. Expect some bugs and rough edges. Feel free to open PRs - contributions and bug reports are welcome.
+> Early but usable. Bug reports and PRs welcome.
 
-## Features
+## Why OpenGUI
 
-- **Multi-project support** - connect multiple project directories simultaneously, each with its own sessions
-- **Real-time streaming** - watch assistant responses stream in via SSE with live token/context usage tracking
-- **Model & agent selection** - switch between providers, models, agents, and model variants on the fly
-- **Slash commands** - invoke OpenCode commands directly from the prompt box
-- **Voice input** - speech-to-text transcription via configurable STT endpoint
-- **Prompt queue** - queue messages while the assistant is busy; they auto-dispatch when idle
-- **MCP tools & skills** - manage MCP servers and skills from the UI
-- **Syntax highlighting** - code blocks rendered with shiki, theme-aware
-- **Math rendering** - LaTeX/KaTeX support in assistant responses
-- **Dark/light theme** - system-aware with manual toggle
-- **Cross-platform** - builds for Linux (.deb), macOS (.dmg), and Windows (.exe NSIS installer)
+OpenGUI is for OpenCode users who want stronger visual workflow than terminal alone:
 
-## Prerequisites
+- **Manage multiple projects at once** with separate sessions per workspace
+- **See streaming responses live** with token and context usage
+- **Queue prompts while agent is busy** instead of waiting to type next step
+- **Switch providers, models, agents, and variants** from UI
+- **Configure MCP tools and skills** without leaving app
+- **Use voice input** with Whisper-compatible transcription endpoint
+
+## Highlights
+
+- **Multi-project workspaces** for parallel coding sessions
+- **Real-time streaming** over SSE with live usage tracking
+- **Prompt queue** that auto-dispatches when assistant becomes idle
+- **Model & agent selection** directly from chat workflow
+- **Slash commands** from prompt box
+- **Syntax highlighting + math rendering** with Shiki and KaTeX
+- **Dark/light theme** with system-aware toggle
+- **Cross-platform builds** for Linux, macOS, and Windows
+
+## Download
+
+Grab prebuilt app from [latest release](https://github.com/akemmanuel/OpenGUI/releases/latest):
+
+- **Linux:** `.deb`
+- **macOS:** `.dmg`
+- **Windows:** `.exe` installer
+
+### Requirements
+
+- [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+
+> **Windows prerequisite:** OpenCode must be available on your `PATH` or at `%USERPROFILE%\.opencode\bin\opencode.exe`.
+
+> **Note:** Windows builds are unsigned. Windows SmartScreen will warn on first launch. Click **More info** -> **Run anyway**.
+
+## Build from source
+
+### Prerequisites
 
 - [Bun](https://bun.sh) v1.2+
-- [OpenCode CLI](https://opencode.ai) installed and available in your PATH
-- [Electron](https://www.electronjs.org/) (installed as a dev dependency)
-
-## Getting Started
+- [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+- [Electron](https://www.electronjs.org/) installed through project dependencies
 
 Install dependencies:
 
@@ -52,17 +83,17 @@ Install dependencies:
 bun install
 ```
 
-No manual config file is required. Connection settings are managed in the UI.
+No manual config file needed. Connection settings live in UI.
 
 ### Development
 
-Run the web frontend + Electron in development mode (with HMR):
+Run web frontend + Electron with HMR:
 
 ```bash
 bun run dev
 ```
 
-Or run just the web frontend (no Electron):
+Run only web frontend:
 
 ```bash
 bun run dev:web
@@ -70,13 +101,13 @@ bun run dev:web
 
 ### Production
 
-Build the frontend bundle:
+Build frontend bundle:
 
 ```bash
 bun run build
 ```
 
-Run the Electron app in production mode:
+Run Electron app in production mode:
 
 ```bash
 bun run start:electron
@@ -84,27 +115,23 @@ bun run start:electron
 
 ### Distribution
 
-Build a `.deb` package (Linux):
+Build Linux `.deb`:
 
 ```bash
 bun run dist
 ```
 
-Build a `.dmg` installer (macOS):
+Build macOS `.dmg`:
 
 ```bash
 bun run dist:mac
 ```
 
-Build a `.exe` installer (Windows):
+Build Windows `.exe` installer:
 
 ```bash
 bun run dist:win
 ```
-
-> **Windows prerequisite**: The [OpenCode CLI](https://opencode.ai) must be installed and available on your PATH (or at `%USERPROFILE%\.opencode\bin\opencode.exe`). OpenGUI does not bundle the CLI.
-
-> **Note**: Windows builds are unsigned. Windows SmartScreen will warn on first launch - click "More info" then "Run anyway".
 
 ## Architecture
 
