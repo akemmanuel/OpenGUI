@@ -2542,6 +2542,7 @@ interface ActionsContextValue {
 	) => Promise<void>;
 	findFiles: (directory: string | null, query: string) => Promise<string[]>;
 	sendCommand: (command: string, args: string) => Promise<void>;
+	summarizeSession: (model?: SelectedModel) => Promise<void>;
 	abortSession: () => Promise<void>;
 	respondPermission: (response: "once" | "always" | "reject") => Promise<void>;
 	replyQuestion: (answers: QuestionAnswer[]) => Promise<void>;
@@ -4136,6 +4137,57 @@ export function OpenCodeProvider({
 		],
 	);
 
+	const summarizeSession = useCallback(async () => {
+		if (!bridge) return;
+		const sessionId = await ensureSessionFromDraft();
+		if (!sessionId) return;
+
+		const model = state.selectedModel;
+		if (!model) {
+			dispatch({ type: "SET_ERROR", payload: "Compaction requires a model to be selected" });
+			return;
+		}
+
+		dispatch({ type: "SET_BUSY", payload: true });
+		try {
+			await bridge.summarizeSession(sessionId, model);
+
+			// Wait for session to complete (polling state via setInterval to capture updates)
+			// eslint-disable-next-line no-await-of-promise
+			await new Promise((resolve) => {
+				const checkInterval = setInterval(() => {
+					if (!stateRef.current.busySessionIds.has(sessionId)) {
+						clearInterval(checkInterval);
+						resolve(true);
+					}
+				}, 200);
+				// Timeout after 6 seconds
+				setTimeout(() => {
+					clearInterval(checkInterval);
+					resolve(true);
+				}, 6000);
+			});
+
+			// Brief delay to let the SDK server finish message updates
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			// Re-fetch messages to get updated token counts
+			const res = await bridge.getMessages(sessionId, { limit: 100 });
+			if (!res.success) {
+				throw new Error(
+					res.error ?? "Failed to refresh messages after compaction",
+				);
+			}
+			const messages = res.data?.messages ?? [];
+			dispatch({
+				type: "SET_MESSAGES",
+				payload: { messages, hasMore: false, nextCursor: null },
+			});
+		} catch (err) {
+			dispatch({ type: "SET_ERROR", payload: getErrorMessage(err) });
+		}
+		// Note: SET_BUSY=false is handled by SESSION_STATUS events from SSE
+	}, [bridge, state.selectedModel, ensureSessionFromDraft]);
+
 	// Auto-dispatch queued prompts when a session transitions from busy to idle.
 	// Builds a synthetic trigger map (sessionID -> true) for newly-idle sessions
 	// so the generic useDesktopNotification hook can handle the notification.
@@ -4793,6 +4845,7 @@ export function OpenCodeProvider({
 			sendPrompt,
 			findFiles,
 			sendCommand,
+			summarizeSession,
 			abortSession,
 			respondPermission,
 			replyQuestion,

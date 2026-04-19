@@ -488,6 +488,18 @@ class OpenCodeConnection {
 		await this._client.session.command(params);
 	}
 
+	async summarizeSession(sessionId, model) {
+		this._requireClient();
+		if (!model?.providerID || !model?.modelID) {
+			throw new Error("Compaction requires a model to be selected");
+		}
+		await this._client.session.summarize({
+			sessionID: sessionId,
+			providerID: model.providerID,
+			modelID: model.modelID,
+		});
+	}
+
 	// - questions ------------------------------------------------------------
 
 	async replyQuestion(requestID, answers) {
@@ -1348,6 +1360,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 		"opencode:command:send",
 		(conn, sessionId, command, args, model, agent, variant) =>
 			conn.sendCommand(sessionId, command, args, model, agent, variant),
+	);
+	handleSessionOp(
+		"opencode:session:summarize",
+		(conn, sessionId, model) => conn.summarizeSession(sessionId, model),
 	);
 	handleQuestionOp("opencode:question:reject", (conn, requestID) =>
 		conn.rejectQuestion(requestID),
