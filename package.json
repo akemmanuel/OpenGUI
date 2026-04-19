@@ -1,9 +1,13 @@
 {
 	"name": "opengui",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"private": false,
 	"description": "OpenGUI - A graphical interface for OpenCode",
 	"homepage": "https://github.com/akemmanuel/OpenGUI",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/akemmanuel/OpenGUI.git"
+	},
 	"license": "MIT",
 	"author": {
 		"name": "Emmanuel",
@@ -29,6 +33,7 @@
 	},
 	"dependencies": {
 		"@opencode-ai/sdk": "^1.4.8",
+		"electron-updater": "^6.8.3",
 		"@tanstack/react-virtual": "^3.13.24",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
@@ -66,7 +71,7 @@
 			"category": "Development"
 		},
 		"mac": {
-			"target": "dmg",
+			"target": ["dmg", "zip"],
 			"icon": "assets/icon.icns",
 			"category": "public.app-category.developer-tools",
 			"hardenedRuntime": true,
@@ -91,6 +96,7 @@
 			"dist/**/*",
 			"!dist/**/*.map",
 			"main.cjs",
+			"main/**/*.cjs",
 			"preload.cjs",
 			"settings-store.cjs",
 			"opencode-bridge.mjs",
@@ -102,6 +108,13 @@
 		"directories": {
 			"output": "release"
 		},
+		"publish": [
+			{
+				"provider": "github",
+				"owner": "akemmanuel",
+				"repo": "OpenGUI"
+			}
+		],
 		"nodeGypRebuild": false,
 		"npmRebuild": false
 	}
