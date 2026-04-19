@@ -1,5 +1,6 @@
 const { app, ipcMain, BrowserWindow } = require("electron");
-const { autoUpdater } = require("electron-updater");
+
+let autoUpdater = null;
 
 const SUPPORTED_PLATFORMS = new Set(["win32", "darwin"]);
 const STARTUP_CHECK_DELAY_MS = 10000;
@@ -100,6 +101,10 @@ async function checkForUpdates() {
 		return state;
 	}
 
+	if (!loadAutoUpdater()) {
+		return state;
+	}
+
 	setState({
 		status: "checking",
 		errorMessage: null,
@@ -123,8 +128,10 @@ async function checkForUpdates() {
 
 async function downloadUpdate() {
 	if (!isSupportedRuntime()) return state;
+	const updater = loadAutoUpdater();
+	if (!updater) return state;
 	try {
-		await autoUpdater.downloadUpdate();
+		await updater.downloadUpdate();
 	} catch (error) {
 		setState({
 			status: "error",
@@ -136,30 +143,51 @@ async function downloadUpdate() {
 
 function installUpdate() {
 	if (!isSupportedRuntime()) return false;
+	const updater = loadAutoUpdater();
+	if (!updater) return false;
 	setState({ status: "installing", errorMessage: null });
 	setImmediate(() => {
-		autoUpdater.quitAndInstall(false, true);
+		updater.quitAndInstall(false, true);
 	});
 	return true;
+}
+
+function loadAutoUpdater() {
+	if (autoUpdater) return autoUpdater;
+	try {
+		({ autoUpdater } = require("electron-updater"));
+	} catch (error) {
+		setState({
+			status: "disabled",
+			errorMessage:
+				error instanceof Error ? error.message : String(error),
+			platformSupported: SUPPORTED_PLATFORMS.has(process.platform),
+		});
+		return null;
+	}
+	return autoUpdater;
 }
 
 function setupAutoUpdater() {
 	if (initialized) return;
 	initialized = true;
 
-	autoUpdater.autoDownload = true;
-	autoUpdater.autoInstallOnAppQuit = true;
-	autoUpdater.autoRunAppAfterInstall = true;
-	autoUpdater.allowPrerelease = false;
+	const updater = loadAutoUpdater();
+	if (!updater) return;
+
+	updater.autoDownload = true;
+	updater.autoInstallOnAppQuit = true;
+	updater.autoRunAppAfterInstall = true;
+	updater.allowPrerelease = false;
 	if (process.platform === "darwin") {
-		autoUpdater.allowDowngrade = false;
+		updater.allowDowngrade = false;
 	}
 
-	autoUpdater.on("checking-for-update", () => {
+	updater.on("checking-for-update", () => {
 		setState({ status: "checking", errorMessage: null });
 	});
 
-	autoUpdater.on("update-available", (info) => {
+	updater.on("update-available", (info) => {
 		applyUpdateInfo(info, {
 			status: "available",
 			errorMessage: null,
@@ -167,7 +195,7 @@ function setupAutoUpdater() {
 		});
 	});
 
-	autoUpdater.on("update-not-available", (info) => {
+	updater.on("update-not-available", (info) => {
 		applyUpdateInfo(info, {
 			status: "not-available",
 			errorMessage: null,
@@ -175,7 +203,7 @@ function setupAutoUpdater() {
 		});
 	});
 
-	autoUpdater.on("download-progress", (progress) => {
+	updater.on("download-progress", (progress) => {
 		setState({
 			status: "downloading",
 			progressPercent: progress.percent,
@@ -186,7 +214,7 @@ function setupAutoUpdater() {
 		});
 	});
 
-	autoUpdater.on("update-downloaded", (info) => {
+	updater.on("update-downloaded", (info) => {
 		applyUpdateInfo(info, {
 			status: "downloaded",
 			downloaded: true,
@@ -195,7 +223,7 @@ function setupAutoUpdater() {
 		});
 	});
 
-	autoUpdater.on("error", (error) => {
+	updater.on("error", (error) => {
 		setState({
 			status: "error",
 			errorMessage: error == null ? "Unknown update error" : error.message,
@@ -204,7 +232,15 @@ function setupAutoUpdater() {
 }
 
 function setupUpdateManager() {
-	setupAutoUpdater();
+	if (isSupportedRuntime()) {
+		setupAutoUpdater();
+	} else {
+		setState({
+			status: "disabled",
+			errorMessage: null,
+			platformSupported: SUPPORTED_PLATFORMS.has(process.platform),
+		});
+	}
 
 	ipcMain.handle("updates:getState", () => state);
 	ipcMain.handle("updates:check", () => checkForUpdates());

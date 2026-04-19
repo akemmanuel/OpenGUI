@@ -104,9 +104,22 @@
 			"settings-store.cjs",
 			"opencode-bridge.mjs",
 			"package.json",
-			"!node_modules",
-			"node_modules/@opencode-ai/sdk/dist/**/*.js",
-			"node_modules/@opencode-ai/sdk/package.json"
+			"node_modules/electron-updater/**/*",
+			"node_modules/builder-util-runtime/**/*",
+			"node_modules/fs-extra/**/*",
+			"node_modules/js-yaml/**/*",
+			"node_modules/lazy-val/**/*",
+			"node_modules/lodash.escaperegexp/**/*",
+			"node_modules/lodash.isequal/**/*",
+			"node_modules/semver/**/*",
+			"node_modules/tiny-typed-emitter/**/*",
+			"node_modules/debug/**/*",
+			"node_modules/sax/**/*",
+			"node_modules/graceful-fs/**/*",
+			"node_modules/jsonfile/**/*",
+			"node_modules/universalify/**/*",
+			"node_modules/ms/**/*",
+			"node_modules/argparse/**/*"
 		],
 		"directories": {
 			"output": "release"
