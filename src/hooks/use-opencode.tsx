@@ -73,7 +73,6 @@ import {
 	getSessionDrafts,
 	persistQueuedPrompts,
 	persistSessionDrafts,
-	type QueuedPromptsMap,
 	type SessionDraftMap,
 } from "@/lib/session-drafts";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
