@@ -10,17 +10,14 @@ import {
 	BookOpen,
 	CheckCircle2,
 	Folder,
-	FolderOpen,
 	Globe,
 	Layers,
 	Play,
-	Plus,
 	PlugZap,
 	RotateCcw,
 	Settings,
 	Square,
 	Terminal,
-	Trash2,
 	Unplug,
 } from "lucide-react";
 import type { McpStatus } from "@opencode-ai/sdk/v2/client";
@@ -846,53 +843,27 @@ interface SkillInfo {
 
 function SkillsTabContent() {
 	const bridge = window.electronAPI?.opencode;
-	const { activeDirectory } = useConnectionState();
+	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const scopedDirectory = activeDirectory ?? undefined;
 
 	const [skills, setSkills] = useState<SkillInfo[]>([]);
-	const [paths, setPaths] = useState<string[]>([]);
-	const [urls, setUrls] = useState<string[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [saving, setSaving] = useState(false);
 
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
-		const [skillsRes, configRes] = await Promise.all([
-			bridge.getSkills(scopedDirectory),
-			bridge.getConfig(scopedDirectory),
-		]);
+		const skillsRes = await bridge.getSkills(
+			scopedDirectory,
+			activeWorkspaceId,
+		);
 		if (skillsRes.success && skillsRes.data) {
 			setSkills(skillsRes.data);
 		}
-		if (configRes.success && configRes.data?.skills) {
-			setPaths(configRes.data.skills.paths ?? []);
-			setUrls(configRes.data.skills.urls ?? []);
-		}
 		setLoading(false);
-	}, [bridge, scopedDirectory]);
+	}, [bridge, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
-
-	const saveConfig = async (nextPaths: string[], nextUrls: string[]) => {
-		if (!bridge) return;
-		setSaving(true);
-		try {
-			await bridge.updateConfig(scopedDirectory, {
-				skills: { paths: nextPaths, urls: nextUrls },
-			});
-			setPaths(nextPaths);
-			setUrls(nextUrls);
-			await new Promise((r) => setTimeout(r, 500));
-			const skillsRes = await bridge.getSkills(scopedDirectory);
-			if (skillsRes.success && skillsRes.data) {
-				setSkills(skillsRes.data);
-			}
-		} finally {
-			setSaving(false);
-		}
-	};
 
 	const getSourceType = (location: string): "local" | "url" => {
 		if (location.startsWith("http://") || location.startsWith("https://")) {
@@ -960,6 +931,8 @@ function SkillsTabContent() {
 
 function McpTabContent() {
 	const bridge = window.electronAPI?.opencode;
+	const { activeDirectory, activeWorkspaceId } = useConnectionState();
+	const scopedDirectory = activeDirectory ?? undefined;
 
 	const [mcpStatus, setMcpStatus] = useState<{ [key: string]: McpStatus }>({});
 	const [mcpTypes, setMcpTypes] = useState<{
@@ -971,8 +944,8 @@ function McpTabContent() {
 	const refresh = useCallback(async () => {
 		if (!bridge) return;
 		const [statusRes, configRes] = await Promise.all([
-			bridge.getMcpStatus(),
-			bridge.getConfig(),
+			bridge.getMcpStatus(scopedDirectory, activeWorkspaceId),
+			bridge.getConfig(scopedDirectory, activeWorkspaceId),
 		]);
 		if (statusRes.success && statusRes.data) {
 			setMcpStatus(statusRes.data);
@@ -987,7 +960,7 @@ function McpTabContent() {
 			setMcpTypes(types);
 		}
 		setLoading(false);
-	}, [bridge]);
+	}, [bridge, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		void refresh();
@@ -998,9 +971,9 @@ function McpTabContent() {
 		setToggling(name);
 		try {
 			if (currentStatus.status === "connected") {
-				await bridge.disconnectMcp(name);
+				await bridge.disconnectMcp(scopedDirectory, activeWorkspaceId, name);
 			} else {
-				await bridge.connectMcp(name);
+				await bridge.connectMcp(scopedDirectory, activeWorkspaceId, name);
 			}
 			await new Promise((r) => setTimeout(r, 500));
 			await refresh();
