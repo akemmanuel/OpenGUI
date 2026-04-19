@@ -1,11 +1,12 @@
 name: crocodile
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   review:
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'COLLABORATOR'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -13,9 +14,8 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+      # Safe with pull_request_target because no PR code gets checked out or executed.
+      # Restrict to trusted authors only because action may fetch repo content internally.
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ github.token }}
