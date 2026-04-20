@@ -5,11 +5,11 @@
     "": {
       "name": "bun-react-template",
       "dependencies": {
-        "@opencode-ai/sdk": "^1.4.8",
+        "@opencode-ai/sdk": "^1.14.18",
         "@tanstack/react-virtual": "^3.13.24",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
-        "electron-updater": "^6.6.2",
+        "electron-updater": "^6.8.3",
         "katex": "^0.16.45",
         "lucide-react": "^0.577.0",
         "radix-ui": "^1.4.3",
@@ -46,7 +46,7 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.10", "", {}, "sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.4.8", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-DTN0TwRxuBxdm2JvJO3Dg7Vp9/j8PFpTS/26qD6Mzi6UPI5+NBxgcDVkozKygi55Goj3AAQGJPp63qzbdc+8ag=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.14.19", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-9sTGsi8/HlBBeaWfsUjdJ2yi/SqpRvqSld0IFXc3ldaPb1w1uIPvgCGzhlHYQtqatXxSaX5lTN7zpudMaE21aw=="],
 
     "@oven/bun-darwin-aarch64": ["@oven/bun-darwin-aarch64@1.3.9", "", { "os": "darwin", "cpu": "arm64" }, "sha512-df7smckMWSUfaT5mzwN9Lfpd3ZGkOqo+vmQ8VV2a32gl14v6uZ/qeeo+1RlANXn8M0uzXPWWCkrKZIWSZUR0qw=="],
 
