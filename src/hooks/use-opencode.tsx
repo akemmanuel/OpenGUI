@@ -483,7 +483,7 @@ export interface MessageEntry {
 }
 
 export interface OpenCodeState {
-	/** Configured workspaces. Local is always pinned. */
+	/** Configured workspaces. */
 	workspaces: Workspace[];
 	/** Currently selected workspace tab. */
 	activeWorkspaceId: string;
@@ -695,6 +695,14 @@ type Action =
 			};
 		}
 	| { type: "SET_ACTIVE_WORKSPACE"; payload: string }
+	| {
+			type: "REORDER_WORKSPACES";
+			payload: { fromIndex: number; toIndex: number };
+	  }
+	| {
+			type: "REORDER_WORKSPACE_PROJECTS";
+			payload: { workspaceId: string; fromIndex: number; toIndex: number };
+	  }
 	| {
 			type: "ASSIGN_PROJECT_WORKSPACE";
 			payload: { projectKey: string; workspaceId: string };
@@ -1178,6 +1186,42 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 		case "SET_ACTIVE_WORKSPACE":
 			return { ...state, activeWorkspaceId: action.payload };
 
+		case "REORDER_WORKSPACES": {
+			const { fromIndex, toIndex } = action.payload;
+			if (state.workspaces.length <= 1) return state;
+			if (fromIndex < 0 || fromIndex >= state.workspaces.length) return state;
+			const clampedTo = Math.max(0, Math.min(toIndex, state.workspaces.length - 1));
+			if (clampedTo === fromIndex) return state;
+			const nextWorkspaces = [...state.workspaces];
+			const [moved] = nextWorkspaces.splice(fromIndex, 1);
+			if (!moved) return state;
+			nextWorkspaces.splice(clampedTo, 0, moved);
+			return { ...state, workspaces: nextWorkspaces };
+		}
+
+		case "REORDER_WORKSPACE_PROJECTS": {
+			const { workspaceId, fromIndex, toIndex } = action.payload;
+			let changed = false;
+			const nextWorkspaces = state.workspaces.map((workspace) => {
+				if (workspace.id !== workspaceId) return workspace;
+				const projects = workspace.projects ?? [];
+				if (projects.length <= 1) return workspace;
+				if (fromIndex < 0 || fromIndex >= projects.length) return workspace;
+				const clampedTo = Math.max(0, Math.min(toIndex, projects.length - 1));
+				if (clampedTo === fromIndex) return workspace;
+				const nextProjects = [...projects];
+				const [moved] = nextProjects.splice(fromIndex, 1);
+				if (!moved) return workspace;
+				nextProjects.splice(clampedTo, 0, moved);
+				changed = true;
+				return {
+					...workspace,
+					projects: nextProjects,
+				};
+			});
+			return changed ? { ...state, workspaces: nextWorkspaces } : state;
+		}
+
 		case "ASSIGN_PROJECT_WORKSPACE": {
 			const { projectKey, workspaceId } = action.payload;
 			const existing = state.projectWorkspaceMap[projectKey] ?? new Set();
@@ -1201,14 +1245,23 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 		case "REMOVE_PROJECT": {
 			const { projectKey, directory } = action.payload;
+			const { workspaceId } = parseProjectKey(projectKey);
 			const removedSessionIds = new Set(
 				state.sessions
 					.filter(
 						(s) =>
-							getSessionWorkspaceId(s) === parseProjectKey(projectKey).workspaceId &&
+							getSessionWorkspaceId(s) === workspaceId &&
 							(s._projectDir ?? s.directory) === directory,
 					)
 					.map((s) => s.id),
+			);
+			const nextWorkspaces = state.workspaces.map((workspace) =>
+				workspace.id === workspaceId
+					? {
+							...workspace,
+							projects: workspace.projects.filter((project) => project !== directory),
+						}
+					: workspace,
 			);
 			const { [projectKey]: _, ...rest } = state.connections;
 			const {
@@ -1275,12 +1328,13 @@ function reducer(state: OpenCodeState, action: Action): OpenCodeState {
 
 			return {
 				...state,
+				workspaces: nextWorkspaces,
 				connections: rest,
 				projectWorkspaceMap: restProjectWorkspaceMap,
 				sessions: state.sessions.filter(
 					(s) =>
 						!(
-							getSessionWorkspaceId(s) === parseProjectKey(projectKey).workspaceId &&
+							getSessionWorkspaceId(s) === workspaceId &&
 							(s._projectDir ?? s.directory) === directory
 						),
 				),
@@ -2603,6 +2657,8 @@ interface ActionsContextValue {
 	) => void;
 	removeWorkspace: (workspaceId: string) => Promise<void>;
 	switchWorkspace: (workspaceId: string) => void;
+	reorderWorkspaces: (fromIndex: number, toIndex: number) => void;
+	reorderProjects: (fromIndex: number, toIndex: number) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -4661,6 +4717,22 @@ export function OpenCodeProvider({
 		[bridge, selectSession],
 	);
 
+	const reorderWorkspaces = useCallback((fromIndex: number, toIndex: number) => {
+		dispatch({
+			type: "REORDER_WORKSPACES",
+			payload: { fromIndex, toIndex },
+		});
+	}, []);
+
+	const reorderProjects = useCallback((fromIndex: number, toIndex: number) => {
+		const workspaceId = stateRef.current.activeWorkspaceId;
+		if (!workspaceId) return;
+		dispatch({
+			type: "REORDER_WORKSPACE_PROJECTS",
+			payload: { workspaceId, fromIndex, toIndex },
+		});
+	}, []);
+
 	// ----- Split context values (memoised per domain) -----
 
 	const sessionCtx = useMemo<SessionContextValue>(
@@ -4887,6 +4959,8 @@ export function OpenCodeProvider({
 			updateWorkspace,
 			removeWorkspace,
 			switchWorkspace,
+			reorderWorkspaces,
+			reorderProjects,
 		}),
 		[
 			addProject,
@@ -4936,6 +5010,8 @@ export function OpenCodeProvider({
 			updateWorkspace,
 			removeWorkspace,
 			switchWorkspace,
+			reorderWorkspaces,
+			reorderProjects,
 		],
 	);
 

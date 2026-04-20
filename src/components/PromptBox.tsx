@@ -708,7 +708,9 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 				const cursorPos = textarea.selectionStart;
 				const direction = e.key === "ArrowUp" ? "up" : "down";
 				const inHistory = historyIndex >= 0;
+				const hasDraftContent = value.length > 0 || imagePreviews.length > 0;
 
+				if (!inHistory && hasDraftContent) return;
 				if (!canNavigateHistoryAtCursor(direction, value, cursorPos, inHistory))
 					return;
 

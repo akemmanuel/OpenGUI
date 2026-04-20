@@ -5,7 +5,7 @@
     "": {
       "name": "bun-react-template",
       "dependencies": {
-        "@opencode-ai/sdk": "^1.14.18",
+        "@opencode-ai/sdk": "^1.14.19",
         "@tanstack/react-virtual": "^3.13.24",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",

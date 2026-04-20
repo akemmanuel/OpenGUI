@@ -264,14 +264,29 @@ export function TitleBar({
 }: {
 	onToggleLeftSidebar?: () => void;
 }) {
-	const { createWorkspace, removeWorkspace, switchWorkspace, updateWorkspace } =
-		useActions();
+	const {
+		createWorkspace,
+		removeWorkspace,
+		switchWorkspace,
+		updateWorkspace,
+		reorderWorkspaces,
+	} = useActions();
 	const { activeWorkspaceId, workspaceStatuses, workspaces } =
 		useConnectionState();
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [platform, setPlatform] = useState<string | null>(null);
 	const [dialogMode, setDialogMode] = useState<"add" | "edit" | null>(null);
 	const tabsRef = useRef<HTMLDivElement>(null);
+	const suppressWorkspaceClickRef = useRef(false);
+	const [draggingWorkspaceId, setDraggingWorkspaceId] = useState<string | null>(
+		null,
+	);
+	const [dragOverWorkspaceId, setDragOverWorkspaceId] = useState<string | null>(
+		null,
+	);
+	const [dragOverWorkspacePosition, setDragOverWorkspacePosition] = useState<
+		"before" | "after" | null
+	>(null);
 
 	const handleTabsWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
 		const container = tabsRef.current;
@@ -281,6 +296,79 @@ export function TitleBar({
 			container.scrollLeft += e.deltaY;
 		}
 	}, []);
+
+	const clearWorkspaceDragState = useCallback(() => {
+		setDraggingWorkspaceId(null);
+		setDragOverWorkspaceId(null);
+		setDragOverWorkspacePosition(null);
+	}, []);
+
+	const getDraggedWorkspaceId = useCallback((event: React.DragEvent) => {
+		const workspaceId =
+			event.dataTransfer.getData("application/x-opengui-workspace-id") ||
+			event.dataTransfer.getData("text/plain");
+		return workspaceId || null;
+	}, []);
+
+	const getWorkspaceDropPosition = useCallback(
+		(event: React.DragEvent<HTMLElement>) => {
+			const rect = event.currentTarget.getBoundingClientRect();
+			return event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+		},
+		[],
+	);
+
+	const getWorkspaceTargetIndex = useCallback(
+		(fromIndex: number, anchorIndex: number, position: "before" | "after") => {
+			const slot = position === "before" ? anchorIndex : anchorIndex + 1;
+			return slot > fromIndex ? slot - 1 : slot;
+		},
+		[],
+	);
+
+	const isWorkspaceDropNoOp = useCallback(
+		(
+			draggedWorkspaceId: string,
+			targetWorkspaceId: string,
+			position: "before" | "after",
+		) => {
+			const fromIndex = workspaces.findIndex(
+				(workspace) => workspace.id === draggedWorkspaceId,
+			);
+			const anchorIndex = workspaces.findIndex(
+				(workspace) => workspace.id === targetWorkspaceId,
+			);
+			if (fromIndex === -1 || anchorIndex === -1) return true;
+			return (
+				getWorkspaceTargetIndex(fromIndex, anchorIndex, position) === fromIndex
+			);
+		},
+		[getWorkspaceTargetIndex, workspaces],
+	);
+
+	const dropWorkspaceOnTarget = useCallback(
+		(
+			draggedWorkspaceId: string,
+			targetWorkspaceId: string,
+			position: "before" | "after",
+		) => {
+			const fromIndex = workspaces.findIndex(
+				(workspace) => workspace.id === draggedWorkspaceId,
+			);
+			const anchorIndex = workspaces.findIndex(
+				(workspace) => workspace.id === targetWorkspaceId,
+			);
+			if (fromIndex === -1 || anchorIndex === -1) return;
+			const targetIndex = getWorkspaceTargetIndex(
+				fromIndex,
+				anchorIndex,
+				position,
+			);
+			if (targetIndex === fromIndex) return;
+			reorderWorkspaces(fromIndex, targetIndex);
+		},
+		[getWorkspaceTargetIndex, reorderWorkspaces, workspaces],
+	);
 
 	useEffect(() => {
 		const api = window.electronAPI;
@@ -371,35 +459,143 @@ export function TitleBar({
 							const status = workspaceStatuses[workspace.id];
 							const active = workspace.id === activeWorkspaceId;
 							return (
-								<button
+								<div
 									key={workspace.id}
-									type="button"
-									onClick={() => switchWorkspace(workspace.id)}
-									onDoubleClick={(e) => {
-										e.stopPropagation();
-										switchWorkspace(workspace.id);
-										setDialogMode("edit");
-									}}
-									className={`flex h-7 items-center gap-2 rounded-md border px-3 text-xs transition-colors whitespace-nowrap ${
-										active
-											? "border-border bg-background text-foreground"
-											: "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
-									}`}
+									className="relative shrink-0 overflow-visible"
 									style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+									onDragOver={(event) => {
+										event.preventDefault();
+										event.dataTransfer.dropEffect = "move";
+										const draggedWorkspaceId = getDraggedWorkspaceId(event);
+										if (!draggedWorkspaceId) {
+											setDragOverWorkspaceId(null);
+											setDragOverWorkspacePosition(null);
+											return;
+										}
+										const position = getWorkspaceDropPosition(event);
+										if (
+											isWorkspaceDropNoOp(
+												draggedWorkspaceId,
+												workspace.id,
+												position,
+											)
+										) {
+											setDragOverWorkspaceId(null);
+											setDragOverWorkspacePosition(null);
+											return;
+										}
+										setDragOverWorkspaceId(workspace.id);
+										setDragOverWorkspacePosition(position);
+									}}
+									onDrop={(event) => {
+										event.preventDefault();
+										const draggedWorkspaceId = getDraggedWorkspaceId(event);
+										if (!draggedWorkspaceId) {
+											clearWorkspaceDragState();
+											return;
+										}
+										const position = getWorkspaceDropPosition(event);
+										if (
+											!isWorkspaceDropNoOp(
+												draggedWorkspaceId,
+												workspace.id,
+												position,
+											)
+										) {
+											dropWorkspaceOnTarget(
+												draggedWorkspaceId,
+												workspace.id,
+												position,
+											);
+										}
+										clearWorkspaceDragState();
+									}}
+									onDragLeave={(event) => {
+										const relatedTarget = event.relatedTarget;
+										if (
+											relatedTarget instanceof Node &&
+											event.currentTarget.contains(relatedTarget)
+										) {
+											return;
+										}
+										if (dragOverWorkspaceId === workspace.id) {
+											setDragOverWorkspaceId(null);
+											setDragOverWorkspacePosition(null);
+										}
+									}}
 								>
-									<span className="truncate max-w-[120px]">
-										{workspace.name}
-									</span>
-									{status?.busy ? (
-										<Loader2 className="size-3 animate-spin" />
-									) : status?.error ? (
-										<AlertCircle className="size-3 text-destructive" />
-									) : status?.needsAttention ? (
-										<span className="size-2 rounded-full bg-amber-500" />
-									) : status?.connected ? (
-										<span className="size-2 rounded-full bg-emerald-500" />
-									) : null}
-								</button>
+									{dragOverWorkspaceId === workspace.id &&
+										dragOverWorkspacePosition && (
+											<div
+												aria-hidden
+												className={`pointer-events-none absolute top-1 bottom-1 z-10 w-0.5 rounded-full bg-primary ${
+													dragOverWorkspacePosition === "before"
+														? "left-0"
+														: "right-0"
+												}`}
+											/>
+										)}
+									<button
+										type="button"
+										draggable
+										onClick={(event) => {
+											if (suppressWorkspaceClickRef.current) {
+												event.preventDefault();
+												event.stopPropagation();
+												return;
+											}
+											switchWorkspace(workspace.id);
+										}}
+										onDoubleClick={(event) => {
+											if (suppressWorkspaceClickRef.current) {
+												event.preventDefault();
+												event.stopPropagation();
+												return;
+											}
+											event.stopPropagation();
+											switchWorkspace(workspace.id);
+											setDialogMode("edit");
+										}}
+										onDragStart={(event) => {
+											event.dataTransfer.setData(
+												"application/x-opengui-workspace-id",
+												workspace.id,
+											);
+											event.dataTransfer.setData("text/plain", workspace.id);
+											event.dataTransfer.effectAllowed = "move";
+											suppressWorkspaceClickRef.current = true;
+											setDraggingWorkspaceId(workspace.id);
+											setDragOverWorkspaceId(null);
+											setDragOverWorkspacePosition(null);
+										}}
+										onDragEnd={() => {
+											clearWorkspaceDragState();
+											requestAnimationFrame(() => {
+												suppressWorkspaceClickRef.current = false;
+											});
+										}}
+										className={`flex h-7 items-center gap-2 rounded-md border px-3 text-xs transition-colors whitespace-nowrap ${
+											draggingWorkspaceId === workspace.id ? "opacity-60 " : ""
+										}${
+											active
+												? "border-border bg-background text-foreground"
+												: "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
+										}`}
+									>
+										<span className="truncate max-w-[120px] cursor-grab active:cursor-grabbing">
+											{workspace.name}
+										</span>
+										{status?.busy ? (
+											<Loader2 className="size-3 animate-spin" />
+										) : status?.error ? (
+											<AlertCircle className="size-3 text-destructive" />
+										) : status?.needsAttention ? (
+											<span className="size-2 rounded-full bg-amber-500" />
+										) : status?.connected ? (
+											<span className="size-2 rounded-full bg-emerald-500" />
+										) : null}
+									</button>
+								</div>
 							);
 						})}
 						<Button

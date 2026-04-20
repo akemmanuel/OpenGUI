@@ -101,6 +101,7 @@ export function AppSidebar({
 		registerWorktree,
 		unregisterWorktree,
 		sendPrompt,
+		reorderProjects,
 	} = useActions();
 	const {
 		sessions,
@@ -175,12 +176,21 @@ export function AppSidebar({
 				openDirectories.includes(s._projectDir ?? s.directory) &&
 				!temporarySessions.has(s.id),
 		);
+		const rootOpenDirectories = openDirectories.filter(
+			(dir) => !worktreeDirs.has(dir),
+		);
+		const workspaceProjects = activeWorkspace?.projects ?? [];
+		const orderedRootDirectories = detachedProject
+			? rootOpenDirectories.filter((dir) => dir === detachedProject)
+			: [
+					...workspaceProjects.filter((dir) => rootOpenDirectories.includes(dir)),
+					...rootOpenDirectories.filter(
+						(dir) => !workspaceProjects.includes(dir),
+					),
+				];
 		const groups = new Map<string, typeof rootSessions>();
-		// Only show non-worktree directories as top-level projects
-		for (const dir of openDirectories) {
-			if (!worktreeDirs.has(dir)) {
-				groups.set(dir, []);
-			}
+		for (const dir of orderedRootDirectories) {
+			groups.set(dir, []);
 		}
 		for (const s of rootSessions) {
 			const sessionDir = s._projectDir ?? s.directory;
@@ -198,6 +208,7 @@ export function AppSidebar({
 		worktreeParents,
 		worktreeDirs,
 		detachedProject,
+		activeWorkspace,
 	]);
 
 	// Worktree dialog state
@@ -311,9 +322,95 @@ export function AppSidebar({
 	const popoverSessions = projectPopover
 		? (projectGroups.get(projectPopover.directory) ?? [])
 		: [];
+	const projectEntries = useMemo(() => Array.from(projectGroups), [projectGroups]);
+	const workspaceProjectDirectories = activeWorkspace?.projects ?? [];
+	const reorderableProjectDirectories = useMemo(
+		() =>
+			workspaceProjectDirectories.filter((directory) => projectGroups.has(directory)),
+		[workspaceProjectDirectories, projectGroups],
+	);
+	const canReorderProjects =
+		!detachedProject &&
+		sidebarState !== "collapsed" &&
+		reorderableProjectDirectories.length > 1;
+	const [draggingProjectDirectory, setDraggingProjectDirectory] = useState<
+		string | null
+	>(null);
+	const [dragOverProjectDirectory, setDragOverProjectDirectory] = useState<
+		string | null
+	>(null);
+	const [dragOverProjectPosition, setDragOverProjectPosition] = useState<
+		"before" | "after" | null
+	>(null);
+	const suppressProjectClickRef = useRef(false);
 	const projectLabel = detachedProject
 		? getProjectName(detachedProject)
 		: "Your projects";
+
+	const clearProjectDragState = useCallback(() => {
+		setDraggingProjectDirectory(null);
+		setDragOverProjectDirectory(null);
+		setDragOverProjectPosition(null);
+	}, []);
+
+	const getDraggedProjectDirectory = useCallback((event: React.DragEvent) => {
+		const directory =
+			event.dataTransfer.getData("application/x-opengui-project-directory") ||
+			event.dataTransfer.getData("text/plain");
+		return directory || null;
+	}, []);
+
+	const getProjectDropPosition = useCallback(
+		(event: React.DragEvent<HTMLElement>) => {
+			const rect = event.currentTarget.getBoundingClientRect();
+			return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+		},
+		[],
+	);
+
+	const getProjectTargetIndex = useCallback(
+		(fromIndex: number, anchorIndex: number, position: "before" | "after") => {
+			const slot = position === "before" ? anchorIndex : anchorIndex + 1;
+			return slot > fromIndex ? slot - 1 : slot;
+		},
+		[],
+	);
+
+	const isProjectDropNoOp = useCallback(
+		(
+			draggedDirectory: string,
+			targetDirectory: string,
+			position: "before" | "after",
+		) => {
+			const fromIndex = workspaceProjectDirectories.indexOf(draggedDirectory);
+			const anchorIndex = workspaceProjectDirectories.indexOf(targetDirectory);
+			if (fromIndex === -1 || anchorIndex === -1) return true;
+			return (
+				getProjectTargetIndex(fromIndex, anchorIndex, position) === fromIndex
+			);
+		},
+		[getProjectTargetIndex, workspaceProjectDirectories],
+	);
+
+	const dropProjectOnTarget = useCallback(
+		(
+			draggedDirectory: string,
+			targetDirectory: string,
+			position: "before" | "after",
+		) => {
+			const fromIndex = workspaceProjectDirectories.indexOf(draggedDirectory);
+			const anchorIndex = workspaceProjectDirectories.indexOf(targetDirectory);
+			if (fromIndex === -1 || anchorIndex === -1) return;
+			const targetIndex = getProjectTargetIndex(
+				fromIndex,
+				anchorIndex,
+				position,
+			);
+			if (targetIndex === fromIndex) return;
+			reorderProjects(fromIndex, targetIndex);
+		},
+		[getProjectTargetIndex, reorderProjects, workspaceProjectDirectories],
+	);
 
 	const handleAddProject = useCallback(async () => {
 		if (isLocalWorkspace) {
@@ -385,7 +482,7 @@ export function AppSidebar({
 							)}
 						</SidebarGroupLabel>
 						<SidebarGroupContent>
-							{Array.from(projectGroups).map(([directory, dirSessions]) => {
+							{projectEntries.map(([directory, dirSessions]) => {
 								const isCollapsed = collapsed[directory] ?? false;
 								const connStatus = connections[directory];
 								const isProjectConnected = connStatus?.state === "connected";
@@ -397,9 +494,17 @@ export function AppSidebar({
 								const visibleSessions = dirSessions.slice(0, visibleCount);
 								const hasMoreSessions = dirSessions.length > visibleCount;
 								const canShowLess = visibleCount > SESSION_PAGE_SIZE;
+								const canDragProject =
+									canReorderProjects &&
+									reorderableProjectDirectories.includes(directory);
 
 								return (
-									<div key={directory} className="mb-1">
+									<div
+										key={directory}
+										className={`mb-1 ${
+											draggingProjectDirectory === directory ? "opacity-60" : ""
+										}`}
+									>
 										{/* Project header */}
 										<SidebarMenu>
 											<ContextMenu.Root
@@ -408,10 +513,101 @@ export function AppSidebar({
 												}}
 											>
 												<ContextMenu.Trigger asChild>
-													<SidebarMenuItem>
+													<SidebarMenuItem
+														onDragOver={
+															canDragProject
+																? (event) => {
+																	event.preventDefault();
+																	event.dataTransfer.dropEffect = "move";
+																	const draggedDirectory =
+																		getDraggedProjectDirectory(event);
+																	if (!draggedDirectory) {
+																		setDragOverProjectDirectory(null);
+																		setDragOverProjectPosition(null);
+																		return;
+																	}
+																	const position = getProjectDropPosition(event);
+																	if (
+																		isProjectDropNoOp(
+																			draggedDirectory,
+																			directory,
+																			position,
+																		)
+																	) {
+																		setDragOverProjectDirectory(null);
+																		setDragOverProjectPosition(null);
+																		return;
+																	}
+																	setDragOverProjectDirectory(directory);
+																	setDragOverProjectPosition(position);
+																}
+																: undefined
+														}
+														onDrop={
+															canDragProject
+																? (event) => {
+																	event.preventDefault();
+																	const draggedDirectory =
+																		getDraggedProjectDirectory(event);
+																	if (!draggedDirectory) {
+																		clearProjectDragState();
+																		return;
+																	}
+																	const position = getProjectDropPosition(event);
+																	if (
+																		!isProjectDropNoOp(
+																			draggedDirectory,
+																			directory,
+																			position,
+																		)
+																	) {
+																		dropProjectOnTarget(
+																			draggedDirectory,
+																			directory,
+																			position,
+																		);
+																	}
+																	clearProjectDragState();
+																}
+																: undefined
+														}
+														onDragLeave={
+															canDragProject
+																? (event) => {
+																	const relatedTarget = event.relatedTarget;
+																	if (
+																		relatedTarget instanceof Node &&
+																		event.currentTarget.contains(relatedTarget)
+																	) {
+																		return;
+																	}
+																	if (dragOverProjectDirectory === directory) {
+																		setDragOverProjectDirectory(null);
+																		setDragOverProjectPosition(null);
+																	}
+																}
+																: undefined
+														}
+														className="overflow-visible"
+													>
+														{dragOverProjectDirectory === directory &&
+															dragOverProjectPosition && (
+																<div
+																	aria-hidden
+																	className={`pointer-events-none absolute left-2 right-2 z-10 h-0.5 rounded-full bg-primary ${
+																		dragOverProjectPosition === "before" ? "top-0" : "bottom-0"
+																	}`}
+																/>
+															)}
 														<SidebarMenuButton
+															draggable={canDragProject}
 															tooltip={abbreviatePath(directory, homeDir)}
 															onClick={(event) => {
+																if (suppressProjectClickRef.current) {
+																	event.preventDefault();
+																	event.stopPropagation();
+																	return;
+																}
 																if (sidebarState === "collapsed") {
 																	event.preventDefault();
 																	event.stopPropagation();
@@ -427,7 +623,43 @@ export function AppSidebar({
 																}
 																toggleCollapsed(directory);
 															}}
-															className="group/project font-medium min-w-0"
+															onDragStart={
+																canDragProject
+																	? (event) => {
+																		const target = event.target;
+																		if (
+																			target instanceof Element &&
+																			target.closest("[data-project-action]")
+																		) {
+																			event.preventDefault();
+																			return;
+																		}
+																		event.dataTransfer.setData(
+																			"application/x-opengui-project-directory",
+																			directory,
+																		);
+																		event.dataTransfer.setData("text/plain", directory);
+																		event.dataTransfer.effectAllowed = "move";
+																		suppressProjectClickRef.current = true;
+																		setDraggingProjectDirectory(directory);
+																		setDragOverProjectDirectory(null);
+																		setDragOverProjectPosition(null);
+																	}
+																	: undefined
+															}
+															onDragEnd={
+																canDragProject
+																	? () => {
+																		clearProjectDragState();
+																		requestAnimationFrame(() => {
+																			suppressProjectClickRef.current = false;
+																		});
+																	}
+																	: undefined
+															}
+															className={`group/project font-medium min-w-0 ${
+																canDragProject ? "cursor-grab active:cursor-grabbing" : ""
+															}`}
 														>
 															{isProjectConnecting ? (
 																<Spinner className="shrink-0 size-4 text-muted-foreground" />
@@ -448,6 +680,7 @@ export function AppSidebar({
 																// biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>), so we must use a <div>
 																<div
 																	role="button"
+																	data-project-action
 																	tabIndex={0}
 																	className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
 																	onClick={(e) => {
@@ -470,6 +703,7 @@ export function AppSidebar({
 																	{/* biome-ignore lint/a11y/useSemanticElements: nested inside SidebarMenuButton (already a <button>) */}
 																	<div
 																		role="button"
+																		data-project-action
 																		tabIndex={0}
 																		className="opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
 																		onClick={(e) => {
@@ -686,6 +920,7 @@ export function AppSidebar({
 												</ContextMenu.Portal>
 											</ContextMenu.Root>
 										</SidebarMenu>
+
 
 										{/* Sessions under this project */}
 										{!isCollapsed && sidebarState !== "collapsed" && (
