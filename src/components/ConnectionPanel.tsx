@@ -48,10 +48,22 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
 	NOTIFICATIONS_ENABLED_KEY,
 	useActions,
 	useConnectionState,
-} from "@/hooks/use-opencode";
+} from "@/hooks/use-agent-state";
+import {
+	setStoredAgentBackendId,
+	useAgentBackend,
+	useCurrentAgentBackendId,
+} from "@/hooks/use-agent-backend";
 import {
 	DEFAULT_MODEL_MAX_AGE_MONTHS,
 	DEFAULT_SERVER_URL,
@@ -171,6 +183,9 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 	const [password, setPassword] = useState("");
 	const [showAuth, setShowAuth] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const backend = useAgentBackend();
+	const workspaceProfile = backend?.workspace;
+	const serverApi = backend?.platform?.server;
 	const connectedProjectCount = Object.values(connections).filter(
 		(conn) => conn.state === "connected",
 	).length;
@@ -184,12 +199,12 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 		if (!isElectron) return;
 		setServerState("checking");
 		try {
-			const res = await window.electronAPI?.opencode.getServerStatus();
-			setServerState(res?.success && res.data?.running ? "running" : "stopped");
+			const status = await serverApi?.status();
+			setServerState(status?.running ? "running" : "stopped");
 		} catch {
 			setServerState("stopped");
 		}
-	}, [isElectron]);
+	}, [isElectron, serverApi]);
 
 	// Check server status on mount
 	useEffect(() => {
@@ -205,65 +220,60 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 		setServerState("starting");
 		setServerError(null);
 		try {
-			const res = await window.electronAPI?.opencode.startServer();
-			if (!res) {
+			if (!serverApi) {
 				setServerState("error");
 				setServerError("Electron API unavailable");
 				return;
 			}
-			if (res.success) {
-				setServerState("running");
-				clearError();
+			await serverApi.start();
+			setServerState("running");
+			clearError();
 
-				const normalizedLocal = DEFAULT_SERVER_URL.replace(/\/+$/, "");
-				const directoriesToReconnect = Object.entries(connections)
-					.filter(
-						([, conn]) =>
-							conn.state !== "connected" &&
-							(conn.serverUrl?.replace(/\/+$/, "") ?? "") === normalizedLocal,
-					)
-					.map(([dir]) => dir);
+			const normalizedLocal = DEFAULT_SERVER_URL.replace(/\/+$/, "");
+			const directoriesToReconnect = Object.entries(connections)
+				.filter(
+					([, conn]) =>
+						conn.state !== "connected" &&
+						(conn.serverUrl?.replace(/\/+$/, "") ?? "") === normalizedLocal,
+				)
+				.map(([dir]) => dir);
 
-				const typedDirectory = directory.trim();
-				const isTypedDirectoryLocal =
-					url.replace(/\/+$/, "") === normalizedLocal &&
-					typedDirectory.length > 0;
+			const typedDirectory = directory.trim();
+			const isTypedDirectoryLocal =
+				url.replace(/\/+$/, "") === normalizedLocal &&
+				typedDirectory.length > 0;
 
-				setIsSubmitting(true);
-				try {
-					const reconnectTasks = directoriesToReconnect.map((dir) =>
+			setIsSubmitting(true);
+			try {
+				const reconnectTasks = directoriesToReconnect.map((dir) =>
+					connectToProject(
+						dir,
+						DEFAULT_SERVER_URL,
+						username || undefined,
+						password || undefined,
+					),
+				);
+
+				if (
+					isTypedDirectoryLocal &&
+					!directoriesToReconnect.includes(typedDirectory)
+				) {
+					reconnectTasks.push(
 						connectToProject(
-							dir,
-							DEFAULT_SERVER_URL,
+							typedDirectory,
+							url,
 							username || undefined,
 							password || undefined,
 						),
 					);
-
-					if (
-						isTypedDirectoryLocal &&
-						!directoriesToReconnect.includes(typedDirectory)
-					) {
-						reconnectTasks.push(
-							connectToProject(
-								typedDirectory,
-								url,
-								username || undefined,
-								password || undefined,
-							),
-						);
-					}
-
-					if (reconnectTasks.length > 0) {
-						await Promise.allSettled(reconnectTasks);
-						onDone();
-					}
-				} finally {
-					setIsSubmitting(false);
 				}
-			} else {
-				setServerState("error");
-				setServerError(res.error ?? "Failed to start server");
+
+				if (reconnectTasks.length > 0) {
+					await Promise.allSettled(reconnectTasks);
+					onDone();
+				}
+			} finally {
+				setIsSubmitting(false);
 			}
 		} catch (err) {
 			setServerState("error");
@@ -275,18 +285,13 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 		setServerState("stopping");
 		setServerError(null);
 		try {
-			const res = await window.electronAPI?.opencode.stopServer();
-			if (!res) {
+			if (!serverApi) {
 				setServerState("error");
 				setServerError("Electron API unavailable");
 				return;
 			}
-			if (res.success) {
-				setServerState("stopped");
-			} else {
-				setServerState("error");
-				setServerError(res.error ?? "Failed to stop server");
-			}
+			await serverApi.stop();
+			setServerState("stopped");
 		} catch (err) {
 			setServerState("error");
 			setServerError(getErrorMessage(err, "Failed to stop server"));
@@ -299,17 +304,19 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 		clearError();
 		const trimmedUrl = url.trim();
 		const trimmedUsername = username.trim();
-		storageSet(STORAGE_KEYS.SERVER_URL, trimmedUrl);
-		if (trimmedUsername) {
+		if (workspaceProfile?.fields.serverUrl !== false) {
+			storageSet(STORAGE_KEYS.SERVER_URL, trimmedUrl);
+		}
+		if (workspaceProfile?.fields.username && trimmedUsername) {
 			storageSet(STORAGE_KEYS.USERNAME, trimmedUsername);
 		} else {
 			storageRemove(STORAGE_KEYS.USERNAME);
 		}
 		await connectToProject(
 			directory.trim(),
-			trimmedUrl,
-			trimmedUsername || undefined,
-			password || undefined,
+			workspaceProfile?.fields.serverUrl !== false ? trimmedUrl : undefined,
+			workspaceProfile?.fields.username ? (trimmedUsername || undefined) : undefined,
+			workspaceProfile?.fields.password ? (password || undefined) : undefined,
 		);
 		setIsSubmitting(false);
 		onDone();
@@ -318,7 +325,7 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 	return (
 		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 			{/* Local server status (Electron only) */}
-			{isElectron && (
+			{isElectron && serverApi && (
 				<div className="space-y-2">
 					<Label>Local server</Label>
 					<div className="flex items-center gap-2">
@@ -339,7 +346,7 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 									variant="outline"
 									size="sm"
 									onClick={handleStopServer}
-									title="Stop local opencode server"
+									title="Stop local server"
 								>
 									<Square className="size-3 mr-1.5" />
 									Stop server
@@ -358,7 +365,7 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 									size="sm"
 									onClick={handleStartServer}
 									disabled={isSubmitting}
-									title="Start local opencode server"
+									title="Start local server"
 								>
 									<Play className="size-3.5 mr-1.5" />
 									Start server
@@ -400,24 +407,26 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 			)}
 
 			{/* URL */}
-			<div className="space-y-2">
-				<Label htmlFor="server-url">Server URL</Label>
-				<Input
-					id="server-url"
-					type="url"
-					value={url}
-					onChange={(e) => setUrl(e.target.value)}
-					placeholder="http://127.0.0.1:4096"
-					disabled={isSubmitting || hasConnectedProjects}
-					className="font-mono text-sm"
-				/>
-				{hasConnectedProjects && (
-					<p className="text-[11px] text-muted-foreground">
-						This window is locked to one server while projects are open. Open a
-						new window to use another server.
-					</p>
-				)}
-			</div>
+			{workspaceProfile?.fields.serverUrl !== false && (
+				<div className="space-y-2">
+					<Label htmlFor="server-url">Server URL</Label>
+					<Input
+						id="server-url"
+						type="url"
+						value={url}
+						onChange={(e) => setUrl(e.target.value)}
+						placeholder="http://127.0.0.1:4096"
+						disabled={isSubmitting || hasConnectedProjects}
+						className="font-mono text-sm"
+					/>
+					{hasConnectedProjects && (
+						<p className="text-[11px] text-muted-foreground">
+							This window is locked to one server while projects are open. Open a
+							new window to use another server.
+						</p>
+					)}
+				</div>
+			)}
 
 			{/* Directory */}
 			<div className="space-y-2">
@@ -432,54 +441,61 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 					className="font-mono text-sm"
 				/>
 				<p className="text-[11px] text-muted-foreground">
-					This window can open multiple projects, but they all share the same
-					server connection. Use stable paths to reuse the same chats.
+					{workspaceProfile?.kind === "local-cli"
+						? "Claude Code runs locally in this project directory. Use stable paths to reuse the same chats."
+						: "This window can open multiple projects, but they all share the same server connection. Use stable paths to reuse the same chats."}
 				</p>
 			</div>
 
 			{/* Auth */}
-			<div className="space-y-2">
-				<button
-					type="button"
-					onClick={() => setShowAuth(!showAuth)}
-					className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-				>
-					{showAuth ? "Hide authentication" : "Authentication (optional)"}
-				</button>
+			{(workspaceProfile?.fields.username || workspaceProfile?.fields.password) && (
+				<div className="space-y-2">
+					<button
+						type="button"
+						onClick={() => setShowAuth(!showAuth)}
+						className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+					>
+						{showAuth ? "Hide authentication" : "Authentication (optional)"}
+					</button>
 
-				{showAuth && (
-					<div className="flex gap-2">
-						<div className="flex-1 space-y-1">
-							<Label htmlFor="auth-user" className="text-xs">
-								Username
-							</Label>
-							<Input
-								id="auth-user"
-								type="text"
-								value={username}
-								onChange={(e) => setUsername(e.target.value)}
-								placeholder="opencode"
-								disabled={hasConnectedProjects}
-								className="text-sm"
-							/>
+					{showAuth && (
+						<div className="flex gap-2">
+							{workspaceProfile?.fields.username && (
+								<div className="flex-1 space-y-1">
+									<Label htmlFor="auth-user" className="text-xs">
+										Username
+									</Label>
+									<Input
+										id="auth-user"
+										type="text"
+										value={username}
+										onChange={(e) => setUsername(e.target.value)}
+										placeholder="username"
+										disabled={hasConnectedProjects}
+										className="text-sm"
+									/>
+								</div>
+							)}
+							{workspaceProfile?.fields.password && (
+								<div className="flex-1 space-y-1">
+									<Label htmlFor="auth-pass" className="text-xs">
+										Password
+									</Label>
+									<Input
+										id="auth-pass"
+										type="password"
+										value={password}
+										onChange={(e) => setPassword(e.target.value)}
+										placeholder="Password"
+										disabled={hasConnectedProjects}
+										className="text-sm"
+									/>
+								</div>
+							)}
 						</div>
-						<div className="flex-1 space-y-1">
-							<Label htmlFor="auth-pass" className="text-xs">
-								Password
-							</Label>
-							<Input
-								id="auth-pass"
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								placeholder="Password"
-								disabled={hasConnectedProjects}
-								className="text-sm"
-							/>
-						</div>
-					</div>
-				)}
-			</div>
+					)}
+				</div>
+			)}
 
 			{/* Actions */}
 			<div className="flex justify-end gap-2">
@@ -493,7 +509,10 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 						<Button
 							type="submit"
 							size="sm"
-							disabled={!url.trim() || !directory.trim()}
+							disabled={
+								(workspaceProfile?.fields.serverUrl !== false && !url.trim()) ||
+								!directory.trim()
+							}
 						>
 							<PlugZap className="size-4 mr-1.5" />
 							Open project
@@ -510,24 +529,47 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 // ---------------------------------------------------------------------------
 
 function GeneralSettings() {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const backendId = useCurrentAgentBackendId();
+	const serverApi = backend?.platform?.server;
 	const [restarting, setRestarting] = useState(false);
 
 	const handleRestart = useCallback(async () => {
-		if (!bridge) return;
+		if (!serverApi) return;
 		setRestarting(true);
 		try {
-			await bridge.stopServer();
+			await serverApi.stop();
 			await new Promise((r) => setTimeout(r, 1000));
-			await bridge.startServer();
+			await serverApi.start();
 			await new Promise((r) => setTimeout(r, 2000));
 		} finally {
 			setRestarting(false);
 		}
-	}, [bridge]);
+	}, [serverApi]);
 
 	return (
 		<div className="flex flex-col gap-4">
+			<div className="flex items-center justify-between gap-3">
+				<div className="flex items-center gap-2">
+					<Label className="text-sm font-normal">Agent backend</Label>
+				</div>
+				<Select
+					value={backendId}
+					onValueChange={(value) =>
+						setStoredAgentBackendId(
+							value === "claude-code" ? "claude-code" : "opencode",
+						)
+					}
+				>
+					<SelectTrigger className="w-[180px] h-8">
+						<SelectValue placeholder="Select backend" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="opencode">OpenCode</SelectItem>
+						<SelectItem value="claude-code">Claude Code</SelectItem>
+					</SelectContent>
+				</Select>
+			</div>
 			<div className="flex items-center justify-between gap-3">
 				<div className="flex items-center gap-2">
 					<Label className="text-sm font-normal">Dark mode</Label>
@@ -538,38 +580,40 @@ function GeneralSettings() {
 			<TerminalSetting />
 			<ModelAgeFilterSetting />
 			<NotificationsToggle />
-			<AlertDialog>
-				<AlertDialogTrigger asChild>
-					<Button
-						variant="outline"
-						size="sm"
-						className="mt-2"
-						disabled={restarting}
-					>
-						{restarting ? (
-							<Spinner className="size-3.5 mr-2" />
-						) : (
-							<RotateCcw className="size-3.5 mr-2" />
-						)}
-						Restart Server
-					</Button>
-				</AlertDialogTrigger>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Restart Server?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This will restart the server. All open sessions will be stopped
-							and you will need to reconnect.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction onClick={handleRestart}>
-							Restart
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			{serverApi && (
+				<AlertDialog>
+					<AlertDialogTrigger asChild>
+						<Button
+							variant="outline"
+							size="sm"
+							className="mt-2"
+							disabled={restarting}
+						>
+							{restarting ? (
+								<Spinner className="size-3.5 mr-2" />
+							) : (
+								<RotateCcw className="size-3.5 mr-2" />
+							)}
+							Restart Server
+						</Button>
+					</AlertDialogTrigger>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Restart Server?</AlertDialogTitle>
+							<AlertDialogDescription>
+								This will restart the server. All open sessions will be stopped
+								and you will need to reconnect.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel>Cancel</AlertDialogCancel>
+							<AlertDialogAction onClick={handleRestart}>
+								Restart
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+			)}
 			<div className="flex items-center justify-between gap-3 pt-3 border-t">
 				<span className="text-xs text-muted-foreground">Version</span>
 				<span className="text-xs text-muted-foreground font-mono">
@@ -842,7 +886,8 @@ interface SkillInfo {
 }
 
 function SkillsTabContent() {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const skillsApi = backend?.platform?.skills;
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const scopedDirectory = activeDirectory ?? undefined;
 
@@ -850,16 +895,15 @@ function SkillsTabContent() {
 	const [loading, setLoading] = useState(true);
 
 	const refresh = useCallback(async () => {
-		if (!bridge) return;
-		const skillsRes = await bridge.getSkills(
-			scopedDirectory,
-			activeWorkspaceId,
+		if (!skillsApi) return;
+		setSkills(
+			await skillsApi.list({
+				directory: scopedDirectory,
+				workspaceId: activeWorkspaceId,
+			}),
 		);
-		if (skillsRes.success && skillsRes.data) {
-			setSkills(skillsRes.data);
-		}
 		setLoading(false);
-	}, [bridge, scopedDirectory, activeWorkspaceId]);
+	}, [skillsApi, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		void refresh();
@@ -930,7 +974,9 @@ function SkillsTabContent() {
 // ---------------------------------------------------------------------------
 
 function McpTabContent() {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const mcpApi = backend?.platform?.mcp;
+	const configApi = backend?.platform?.config;
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const scopedDirectory = activeDirectory ?? undefined;
 
@@ -942,17 +988,16 @@ function McpTabContent() {
 	const [toggling, setToggling] = useState<string | null>(null);
 
 	const refresh = useCallback(async () => {
-		if (!bridge) return;
-		const [statusRes, configRes] = await Promise.all([
-			bridge.getMcpStatus(scopedDirectory, activeWorkspaceId),
-			bridge.getConfig(scopedDirectory, activeWorkspaceId),
+		if (!mcpApi || !configApi) return;
+		const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+		const [statusData, configData] = await Promise.all([
+			mcpApi.status(target),
+			configApi.get(target),
 		]);
-		if (statusRes.success && statusRes.data) {
-			setMcpStatus(statusRes.data);
-		}
-		if (configRes.success && configRes.data?.mcp) {
+		setMcpStatus(statusData);
+		if (configData?.mcp) {
 			const types: { [key: string]: "local" | "remote" } = {};
-			for (const [name, cfg] of Object.entries(configRes.data.mcp)) {
+			for (const [name, cfg] of Object.entries(configData.mcp)) {
 				if (cfg && typeof cfg === "object" && "type" in cfg) {
 					types[name] = (cfg as { type: "local" | "remote" }).type;
 				}
@@ -960,20 +1005,20 @@ function McpTabContent() {
 			setMcpTypes(types);
 		}
 		setLoading(false);
-	}, [bridge, scopedDirectory, activeWorkspaceId]);
+	}, [mcpApi, configApi, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
 
 	const handleToggle = async (name: string, currentStatus: McpStatus) => {
-		if (!bridge) return;
+		if (!mcpApi) return;
 		setToggling(name);
 		try {
 			if (currentStatus.status === "connected") {
-				await bridge.disconnectMcp(scopedDirectory, activeWorkspaceId, name);
+				await mcpApi.disconnect({ directory: scopedDirectory, workspaceId: activeWorkspaceId }, name);
 			} else {
-				await bridge.connectMcp(scopedDirectory, activeWorkspaceId, name);
+				await mcpApi.connect({ directory: scopedDirectory, workspaceId: activeWorkspaceId }, name);
 			}
 			await new Promise((r) => setTimeout(r, 500));
 			await refresh();

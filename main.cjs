@@ -369,12 +369,19 @@ void app.whenReady().then(async () => {
 	createWindow();
 	setupUpdateManager();
 
-	// Load ESM opencode bridge (SDK is ESM-only)
+	// Load ESM backend bridges (SDKs are ESM-only)
 	try {
 		const { setupOpenCodeBridge } = await import("./opencode-bridge.mjs");
 		setupOpenCodeBridge(ipcMain, () => BrowserWindow.getAllWindows());
 	} catch (err) {
 		console.error("Failed to load opencode bridge:", err);
+	}
+
+	try {
+		const { setupClaudeCodeBridge } = await import("./claude-code-bridge.mjs");
+		setupClaudeCodeBridge(ipcMain, () => BrowserWindow.getAllWindows());
+	} catch (err) {
+		console.error("Failed to load claude-code bridge:", err);
 	}
 
 	app.on("activate", () => {

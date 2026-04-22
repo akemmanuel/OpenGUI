@@ -12,12 +12,14 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useActions, useModelState } from "@/hooks/use-opencode";
+import { useBackendCapabilities } from "@/hooks/use-agent-backend";
+import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { findModel } from "@/lib/utils";
 
 export function VariantSelector() {
 	const { cycleVariant } = useActions();
 	const { providers, selectedModel, currentVariant } = useModelState();
+	const capabilities = useBackendCapabilities();
 
 	// Get the current model's available variants
 	const variantKeys = useMemo(() => {
@@ -34,7 +36,7 @@ export function VariantSelector() {
 	}, [providers, selectedModel]);
 
 	// Don't render if no variants available
-	if (variantKeys.length === 0) return null;
+	if (!capabilities?.models || variantKeys.length === 0) return null;
 
 	const label = currentVariant ?? "default";
 	const tooltipText = `Variant: ${label} (click or Ctrl+T to cycle)`;

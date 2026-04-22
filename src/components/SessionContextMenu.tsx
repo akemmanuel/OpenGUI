@@ -2,7 +2,7 @@ import { Check, Palette, Pencil, Tag, Trash2, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
-import type { SessionColor } from "@/hooks/use-opencode";
+import type { SessionColor } from "@/hooks/use-agent-state";
 import {
 	CTX_ITEM_CLASS,
 	CTX_SEPARATOR_CLASS,

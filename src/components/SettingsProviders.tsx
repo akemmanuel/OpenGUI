@@ -16,7 +16,8 @@ import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useActions, useConnectionState } from "@/hooks/use-opencode";
+import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
 
@@ -49,7 +50,8 @@ function SourceBadge({ source }: { source: string }) {
 export function SettingsProviders() {
 	const { refreshProviders } = useActions();
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const providersApi = backend?.platform?.providers;
 	const scopedDirectory = activeDirectory ?? undefined;
 
 	// Data
@@ -75,34 +77,28 @@ export function SettingsProviders() {
 		(!connectProviderID ? false : authMethods[connectProviderID] === undefined);
 
 	const refresh = useCallback(async () => {
-		if (!bridge) return;
-		const [provRes, authRes] = await Promise.all([
-			bridge.listAllProviders(scopedDirectory, activeWorkspaceId),
-			bridge.getProviderAuthMethods(scopedDirectory, activeWorkspaceId),
+		if (!providersApi) return;
+		const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+		const [allProvidersData, providerAuthMethods] = await Promise.all([
+			providersApi.listAll(target),
+			providersApi.getAuthMethods(target),
 		]);
-		if (provRes.success && provRes.data) {
-			setAllProviders(provRes.data);
-		}
-		if (authRes.success && authRes.data) {
-			setAuthMethods(authRes.data);
-		}
+		setAllProviders(allProvidersData);
+		setAuthMethods(providerAuthMethods);
 		setLoading(false);
-	}, [bridge, scopedDirectory, activeWorkspaceId]);
+	}, [providersApi, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
 
 	const handleDisconnect = async (providerID: string) => {
-		if (!bridge) return;
+		if (!providersApi) return;
 		setDisconnecting(providerID);
 		try {
-			await bridge.disconnectProvider(
-				scopedDirectory,
-				activeWorkspaceId,
-				providerID,
-			);
-			await bridge.disposeInstance(scopedDirectory, activeWorkspaceId);
+			const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+			await providersApi.disconnect(target, providerID);
+			await providersApi.dispose(target);
 			await refresh();
 			await refreshProviders();
 		} finally {
@@ -118,6 +114,14 @@ export function SettingsProviders() {
 		await refresh();
 		await refreshProviders();
 	};
+
+	if (!providersApi) {
+		return (
+			<div className="text-center py-6 text-sm text-muted-foreground">
+				Current backend has no provider management.
+			</div>
+		);
+	}
 
 	if (loading) {
 		return (

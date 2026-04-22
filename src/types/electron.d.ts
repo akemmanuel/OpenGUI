@@ -47,7 +47,7 @@ export interface AllProvidersData {
 }
 
 // ---------------------------------------------------------------------------
-// Connection types mirrored from opencode-bridge
+// Connection + preload bridge types
 // ---------------------------------------------------------------------------
 
 export type ConnectionState =
@@ -91,7 +91,7 @@ export interface Workspace {
 	lastActiveSessionId?: string | null;
 }
 
-/** Bridge events are tagged with the directory they originate from. */
+/** Native preload events, tagged with source directory. Adapter normalizes these for app use. */
 export type BridgeEvent =
 	| {
 			type: "connection:status";
@@ -104,7 +104,15 @@ export type BridgeEvent =
 			payload: OpenCodeEvent;
 			directory: string;
 			workspaceId?: string;
+	  }
+	| {
+			type: "claude-code:event";
+			payload: unknown;
+			directory?: string;
+			workspaceId?: string;
 	  };
+
+export type NativeBackendEvent = BridgeEvent;
 
 /** Standard IPC result envelope */
 export interface IPCResult<T = unknown> {
@@ -117,7 +125,7 @@ export interface IPCResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge API exposed via preload
+// Native preload bridge API
 // ---------------------------------------------------------------------------
 
 export interface SelectedModel {
@@ -136,11 +144,11 @@ export interface MessagePageOptions {
 }
 
 export interface OpenCodeBridge {
-	/** Start the local opencode server on port 4096 (detached, survives app close). */
+	/** Start local backend server on port 4096 (detached, survives app close). */
 	startServer(): Promise<IPCResult<{ alreadyRunning?: boolean }>>;
-	/** Stop the local opencode server. */
+	/** Stop local backend server. */
 	stopServer(): Promise<IPCResult<{ alreadyStopped?: boolean; pid?: number }>>;
-	/** Check whether the local opencode server is running. */
+	/** Check whether local backend server is running. */
 	getServerStatus(): Promise<IPCResult<{ running: boolean }>>;
 
 	/** Connect a project directory (additive - does not tear down other projects). */
@@ -313,7 +321,7 @@ export interface OpenCodeBridge {
 		>
 	>;
 
-	/** Subscribe to bridge events (SSE + connection status). Returns unsubscribe fn. */
+	/** Subscribe to native preload events (backend stream + connection status). Returns unsubscribe fn. */
 	onEvent(callback: (event: BridgeEvent) => void): () => void;
 }
 
@@ -334,6 +342,100 @@ export interface GitMergeResult {
 	conflicts?: string[];
 	error?: string;
 }
+
+export interface ClaudeCodeBridge {
+	addProject(config: ConnectionConfig): Promise<IPCResult>;
+	removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
+	disconnect(): Promise<IPCResult>;
+
+	listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
+	deleteSession(
+		sessionId: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<boolean>>;
+	updateSession(
+		sessionId: string,
+		title: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+	getSessionStatuses(
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Record<string, { type: string }>>>;
+	forkSession(
+		sessionId: string,
+		messageID?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+
+	getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
+	getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
+	getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
+	getMessages(
+		sessionId: string,
+		options?: MessagePageOptions,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<
+		IPCResult<{
+			messages: Array<{ info: Message; parts: Part[] }>;
+			nextCursor: string | null;
+		}>
+	>;
+	startSession(input: {
+		text: string;
+		images?: string[];
+		model?: SelectedModel;
+		agent?: string;
+		variant?: string;
+		title?: string;
+		directory?: string;
+		workspaceId?: string;
+	}): Promise<IPCResult<Session>>;
+	prompt(
+		sessionId: string,
+		text: string,
+		images?: string[],
+		model?: SelectedModel,
+		agent?: string,
+		variant?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	abort(sessionId: string): Promise<IPCResult>;
+	respondPermission(
+		sessionId: string,
+		permissionId: string,
+		response: "once" | "always" | "reject",
+	): Promise<IPCResult>;
+	sendCommand(
+		sessionId: string,
+		command: string,
+		args: string,
+		model?: SelectedModel,
+		agent?: string,
+		variant?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	summarizeSession(
+		sessionId: string,
+		model?: SelectedModel,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	findFiles(
+		directory: string | null,
+		workspaceId: string | undefined,
+		query: string,
+	): Promise<IPCResult<string[]>>;
+	onEvent(callback: (event: BridgeEvent) => void): () => void;
+}
+
+export type NativeAgentBridge = OpenCodeBridge;
 
 export interface GitBridge {
 	isRepo(directory: string): Promise<IPCResult<boolean>>;
@@ -464,6 +566,7 @@ export interface ElectronAPI {
 	git?: GitBridge;
 	worktree?: WorktreeBridge;
 	opencode: OpenCodeBridge;
+	claudeCode?: ClaudeCodeBridge;
 }
 
 declare global {

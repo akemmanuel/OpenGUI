@@ -45,7 +45,7 @@ import {
 	useActions,
 	useConnectionState,
 	useSessionState,
-} from "@/hooks/use-opencode";
+} from "@/hooks/use-agent-state";
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import {
 	CTX_ITEM_CLASS,

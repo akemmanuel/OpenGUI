@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAgentBackend } from "@/hooks/use-agent-backend";
 import {
 	Dialog,
 	DialogContent,
@@ -21,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useActions, useConnectionState } from "@/hooks/use-opencode";
+import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 
 type WindowButtonKind = "default" | "mac";
 type MacButtonTone = "close" | "minimize" | "maximize";
@@ -151,7 +152,7 @@ function WorkspaceDialog({
 					</DialogTitle>
 					<DialogDescription>
 						{mode === "add"
-							? "Connect to a remote OpenCode server as a new workspace."
+							? "Connect to a remote agent server as a new workspace."
 							: "Update this workspace's connection settings."}
 					</DialogDescription>
 				</DialogHeader>
@@ -198,7 +199,7 @@ function WorkspaceDialog({
 							id="ws-username"
 							value={username}
 							onChange={(e) => setUsername(e.target.value)}
-							placeholder="opencode"
+							placeholder="username"
 							onKeyDown={(e) => {
 								if (e.key === "Enter") handleSubmit();
 							}}
@@ -271,6 +272,9 @@ export function TitleBar({
 		updateWorkspace,
 		reorderWorkspaces,
 	} = useActions();
+	const backend = useAgentBackend();
+	const workspaceProfile = backend?.workspace;
+	const canManageWorkspaces = workspaceProfile?.kind !== "local-cli";
 	const { activeWorkspaceId, workspaceStatuses, workspaces } =
 		useConnectionState();
 	const [isMaximized, setIsMaximized] = useState(false);
@@ -554,7 +558,9 @@ export function TitleBar({
 											}
 											event.stopPropagation();
 											switchWorkspace(workspace.id);
-											setDialogMode("edit");
+											if (canManageWorkspaces) {
+												setDialogMode("edit");
+											}
 										}}
 										onDragStart={(event) => {
 											event.dataTransfer.setData(
@@ -598,16 +604,18 @@ export function TitleBar({
 								</div>
 							);
 						})}
-						<Button
-							variant="ghost"
-							size="icon"
-							className="size-7 shrink-0"
-							onClick={() => setDialogMode("add")}
-							style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-						>
-							<Plus className="size-4" />
-							<span className="sr-only">Add workspace</span>
-						</Button>
+						{canManageWorkspaces && (
+							<Button
+								variant="ghost"
+								size="icon"
+								className="size-7 shrink-0"
+								onClick={() => setDialogMode("add")}
+								style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+							>
+								<Plus className="size-4" />
+								<span className="sr-only">Add workspace</span>
+							</Button>
+						)}
 					</div>
 				</div>
 
@@ -664,7 +672,7 @@ export function TitleBar({
 			</div>
 
 			<WorkspaceDialog
-				open={dialogMode !== null}
+				open={canManageWorkspaces && dialogMode !== null}
 				onOpenChange={(open) => {
 					if (!open) setDialogMode(null);
 				}}

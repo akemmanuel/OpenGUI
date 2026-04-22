@@ -47,13 +47,14 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
 	getChildSessionParts,
 	type MessageEntry,
 	useActions,
 	useMessages,
 	useSessionState,
-} from "@/hooks/use-opencode";
+} from "@/hooks/use-agent-state";
 import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
 import {
@@ -129,6 +130,7 @@ export function MessageList({
 		unrevert,
 		loadOlderMessages,
 	} = useActions();
+	const capabilities = useBackendCapabilities();
 	const {
 		isBusy,
 		isLoadingMessages,
@@ -373,12 +375,12 @@ export function MessageList({
 						turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
 						lastReasoningPartId={lastReasoningPartId}
 						onFork={
-							entry.info.role === "user" && !isFirstUserMsg
+							capabilities?.fork && entry.info.role === "user" && !isFirstUserMsg
 								? () => forkFromMessage(entry.info.id)
 								: undefined
 						}
 						onRevert={
-							entry.info.role === "user"
+							capabilities?.revert && entry.info.role === "user"
 								? () => revertToMessage(entry.info.id)
 								: undefined
 						}
@@ -419,7 +421,7 @@ export function MessageList({
 		scrollToBottom();
 	}, [scrollToBottom, visibleMessages]);
 
-	if (isLoadingMessages) {
+	if (isLoadingMessages && visibleMessages.length === 0) {
 		return (
 			<div className="flex-1 flex items-center justify-center">
 				<Spinner className="size-6 text-muted-foreground" />
@@ -499,7 +501,7 @@ export function MessageList({
 				)}
 
 				{/* Revert marker */}
-				{revertMessageID && revertedCount > 0 && (
+				{capabilities?.revert && revertMessageID && revertedCount > 0 && (
 					<div className="flex items-center gap-2 mt-4 select-none">
 						<div className="flex-1 h-px bg-orange-500/30" />
 						<div className="flex items-center gap-2 text-[11px] text-orange-500/80 font-mono">
@@ -521,7 +523,7 @@ export function MessageList({
 				)}
 
 				{/* Permission request */}
-				{pendingPermission && (
+				{capabilities?.permissions && pendingPermission && (
 					<div className="border rounded-lg p-4 bg-amber-500/10 border-amber-500/30 space-y-3">
 						<div className="flex items-start gap-2">
 							<ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
@@ -563,7 +565,7 @@ export function MessageList({
 				)}
 
 				{/* Question request */}
-				{pendingQuestion && (
+				{capabilities?.questions && pendingQuestion && (
 					<QuestionPanel
 						questions={pendingQuestion.questions}
 						onSubmit={(answers) => replyQuestion(answers)}

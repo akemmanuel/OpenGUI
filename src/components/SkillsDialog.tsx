@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { useConnectionState } from "@/hooks/use-opencode";
+import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useConnectionState } from "@/hooks/use-agent-state";
 import { SKILLS_REFRESH_DELAY_MS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -126,7 +127,9 @@ interface SkillsDialogProps {
 }
 
 export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const skillsApi = backend?.platform?.skills;
+	const configApi = backend?.platform?.config;
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const scopedDirectory = activeDirectory ?? undefined;
 
@@ -137,20 +140,19 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 	const [saving, setSaving] = useState(false);
 
 	const refresh = useCallback(async () => {
-		if (!bridge) return;
-		const [skillsRes, configRes] = await Promise.all([
-			bridge.getSkills(scopedDirectory, activeWorkspaceId),
-			bridge.getConfig(scopedDirectory, activeWorkspaceId),
+		if (!skillsApi || !configApi) return;
+		const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+		const [skillsData, configData] = await Promise.all([
+			skillsApi.list(target),
+			configApi.get(target),
 		]);
-		if (skillsRes.success && skillsRes.data) {
-			setSkills(skillsRes.data);
-		}
-		if (configRes.success && configRes.data?.skills) {
-			setPaths(configRes.data.skills.paths ?? []);
-			setUrls(configRes.data.skills.urls ?? []);
+		setSkills(skillsData);
+		if (configData?.skills) {
+			setPaths(configData.skills.paths ?? []);
+			setUrls(configData.skills.urls ?? []);
 		}
 		setLoading(false);
-	}, [bridge, scopedDirectory, activeWorkspaceId]);
+	}, [skillsApi, configApi, scopedDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		if (open) {
@@ -160,22 +162,17 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 	}, [open, refresh]);
 
 	const saveConfig = async (nextPaths: string[], nextUrls: string[]) => {
-		if (!bridge) return;
+		if (!skillsApi || !configApi) return;
 		setSaving(true);
 		try {
-			await bridge.updateConfig(scopedDirectory, activeWorkspaceId, {
+			const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+			await configApi.update(target, {
 				skills: { paths: nextPaths, urls: nextUrls },
 			});
 			setPaths(nextPaths);
 			setUrls(nextUrls);
 			await new Promise((r) => setTimeout(r, SKILLS_REFRESH_DELAY_MS));
-			const skillsRes = await bridge.getSkills(
-				scopedDirectory,
-				activeWorkspaceId,
-			);
-			if (skillsRes.success && skillsRes.data) {
-				setSkills(skillsRes.data);
-			}
+			setSkills(await skillsApi.list(target));
 		} finally {
 			setSaving(false);
 		}
@@ -223,7 +220,11 @@ export function SkillsDialog({ open, onOpenChange }: SkillsDialogProps) {
 				</DialogHeader>
 
 				<div className="overflow-y-auto flex-1 space-y-6 pr-1">
-					{loading ? (
+					{!skillsApi || !configApi ? (
+						<div className="text-center py-6 text-sm text-muted-foreground">
+							Current backend has no skills management.
+						</div>
+					) : loading ? (
 						<div className="flex items-center justify-center py-8">
 							<Spinner className="size-5" />
 						</div>

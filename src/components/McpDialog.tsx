@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { useConnectionState } from "@/hooks/use-opencode";
+import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useConnectionState } from "@/hooks/use-agent-state";
 import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
@@ -76,7 +77,9 @@ interface McpDialogProps {
 }
 
 export function McpDialog({ open, onOpenChange }: McpDialogProps) {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const mcpApi = backend?.platform?.mcp;
+	const configApi = backend?.platform?.config;
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 
 	const [mcpStatus, setMcpStatus] = useState<Record<string, McpStatus>>({});
@@ -87,17 +90,19 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 	const [toggling, setToggling] = useState<string | null>(null);
 
 	const refresh = useCallback(async () => {
-		if (!bridge) return;
-		const [statusRes, configRes] = await Promise.all([
-			bridge.getMcpStatus(activeDirectory ?? undefined, activeWorkspaceId),
-			bridge.getConfig(activeDirectory ?? undefined, activeWorkspaceId),
+		if (!mcpApi || !configApi) return;
+		const target = {
+			directory: activeDirectory ?? undefined,
+			workspaceId: activeWorkspaceId,
+		};
+		const [statusData, configData] = await Promise.all([
+			mcpApi.status(target),
+			configApi.get(target),
 		]);
-		if (statusRes.success && statusRes.data) {
-			setMcpStatus(statusRes.data);
-		}
-		if (configRes.success && configRes.data?.mcp) {
+		setMcpStatus(statusData);
+		if (configData?.mcp) {
 			const types: Record<string, "local" | "remote"> = {};
-			for (const [name, cfg] of Object.entries(configRes.data.mcp)) {
+			for (const [name, cfg] of Object.entries(configData.mcp)) {
 				if (cfg && typeof cfg === "object" && "type" in cfg) {
 					types[name] = (cfg as { type: "local" | "remote" }).type;
 				}
@@ -105,7 +110,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 			setMcpTypes(types);
 		}
 		setLoading(false);
-	}, [bridge, activeDirectory, activeWorkspaceId]);
+	}, [mcpApi, configApi, activeDirectory, activeWorkspaceId]);
 
 	useEffect(() => {
 		if (open) {
@@ -115,21 +120,17 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 	}, [open, refresh]);
 
 	const handleToggle = async (name: string, currentStatus: McpStatus) => {
-		if (!bridge) return;
+		if (!mcpApi) return;
 		setToggling(name);
 		try {
+			const target = {
+				directory: activeDirectory ?? undefined,
+				workspaceId: activeWorkspaceId,
+			};
 			if (currentStatus.status === "connected") {
-				await bridge.disconnectMcp(
-					activeDirectory ?? undefined,
-					activeWorkspaceId,
-					name,
-				);
+				await mcpApi.disconnect(target, name);
 			} else {
-				await bridge.connectMcp(
-					activeDirectory ?? undefined,
-					activeWorkspaceId,
-					name,
-				);
+				await mcpApi.connect(target, name);
 			}
 			await new Promise((r) => setTimeout(r, MCP_TOGGLE_DELAY_MS));
 			await refresh();
@@ -153,7 +154,11 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 				</DialogHeader>
 
 				<div className="overflow-y-auto flex-1 space-y-2 pr-1">
-					{loading ? (
+					{!mcpApi || !configApi ? (
+						<div className="text-center py-6 text-sm text-muted-foreground">
+							Current backend has no MCP management.
+						</div>
+					) : loading ? (
 						<div className="flex items-center justify-center py-8">
 							<Spinner className="size-5" />
 						</div>

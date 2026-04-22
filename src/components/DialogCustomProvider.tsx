@@ -11,7 +11,8 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useConnectionState } from "@/hooks/use-opencode";
+import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useConnectionState } from "@/hooks/use-agent-state";
 import { getErrorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -166,7 +167,9 @@ export function DialogCustomProvider({
 	onSaved,
 	onBack,
 }: DialogCustomProviderProps) {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const providersApi = backend?.platform?.providers;
+	const configApi = backend?.platform?.config;
 	const { activeWorkspaceId } = useConnectionState();
 
 	const [providerId, setProviderId] = useState("");
@@ -199,7 +202,7 @@ export function DialogCustomProvider({
 	const handleSubmit = useCallback(
 		async (e: FormEvent) => {
 			e.preventDefault();
-			if (!bridge) return;
+			if (!providersApi || !configApi) return;
 
 			const validationError = validate(providerId, name, baseUrl, models);
 			if (validationError) {
@@ -242,8 +245,10 @@ export function DialogCustomProvider({
 					providerConfig.env = [envMatch[1]];
 				}
 
+				const target = { directory, workspaceId: activeWorkspaceId };
+
 				// Update config to add the custom provider
-				await bridge.updateConfig(directory, activeWorkspaceId, {
+				await configApi.update(target, {
 					provider: {
 						[providerId.trim()]: providerConfig,
 					},
@@ -251,15 +256,13 @@ export function DialogCustomProvider({
 
 				// Set the API key if provided (and not an env reference)
 				if (apiKey.trim() && !envMatch) {
-					await bridge.connectProvider(
-						directory,
-						activeWorkspaceId,
-						providerId.trim(),
-						{ type: "api", key: apiKey.trim() },
-					);
+					await providersApi.connect(target, providerId.trim(), {
+						type: "api",
+						key: apiKey.trim(),
+					});
 				}
 
-				await bridge.disposeInstance(directory, activeWorkspaceId);
+				await providersApi.dispose(target);
 				onSaved();
 			} catch (err) {
 				setError(getErrorMessage(err, "Failed to save"));
@@ -268,7 +271,8 @@ export function DialogCustomProvider({
 			}
 		},
 		[
-			bridge,
+			providersApi,
+			configApi,
 			directory,
 			activeWorkspaceId,
 			providerId,

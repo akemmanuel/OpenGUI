@@ -108,6 +108,104 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.invoke("git:remote:url", directory),
 	},
 
+	// Claude Code bridge
+	claudeCode: {
+		addProject: (config) => ipcRenderer.invoke("claude-code:project:add", config),
+		removeProject: (directory, workspaceId) =>
+			ipcRenderer.invoke("claude-code:project:remove", directory, workspaceId),
+		disconnect: () => ipcRenderer.invoke("claude-code:disconnect"),
+		listSessions: (directory, workspaceId) =>
+			ipcRenderer.invoke("claude-code:session:list", directory, workspaceId),
+		deleteSession: (sessionId, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:session:delete",
+				sessionId,
+				directory,
+				workspaceId,
+			),
+		updateSession: (sessionId, title, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:session:update",
+				sessionId,
+				title,
+				directory,
+				workspaceId,
+			),
+		getSessionStatuses: (directory, workspaceId) =>
+			ipcRenderer.invoke("claude-code:session:statuses", directory, workspaceId),
+		forkSession: (sessionId, messageID, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:session:fork",
+				sessionId,
+				messageID,
+				directory,
+				workspaceId,
+			),
+		getProviders: (directory, workspaceId) =>
+			ipcRenderer.invoke("claude-code:providers", directory, workspaceId),
+		getAgents: (directory, workspaceId) =>
+			ipcRenderer.invoke("claude-code:agents", directory, workspaceId),
+		getCommands: (directory, workspaceId) =>
+			ipcRenderer.invoke("claude-code:commands", directory, workspaceId),
+		getMessages: (sessionId, options, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:messages",
+				sessionId,
+				options,
+				directory,
+				workspaceId,
+			),
+		startSession: (input) => ipcRenderer.invoke("claude-code:session:start", input),
+		prompt: (sessionId, text, images, model, agent, variant, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:prompt",
+				sessionId,
+				text,
+				images,
+				model,
+				agent,
+				variant,
+				directory,
+				workspaceId,
+			),
+		abort: (sessionId) => ipcRenderer.invoke("claude-code:abort", sessionId),
+		respondPermission: (sessionId, permissionId, response) =>
+			ipcRenderer.invoke(
+				"claude-code:permission",
+				sessionId,
+				permissionId,
+				response,
+			),
+		sendCommand: (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:command:send",
+				sessionId,
+				command,
+				args,
+				model,
+				agent,
+				variant,
+				directory,
+				workspaceId,
+			),
+		summarizeSession: (sessionId, model, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"claude-code:session:summarize",
+				sessionId,
+				model,
+				directory,
+				workspaceId,
+			),
+		findFiles: (directory, workspaceId, query) =>
+			ipcRenderer.invoke("claude-code:find:files", directory, workspaceId, query),
+		onEvent: (callback) => {
+			ipcRenderer.send("claude-code:renderer-ready");
+			const handler = (_event, data) => callback(data);
+			ipcRenderer.on("claude-code:bridge-event", handler);
+			return () => ipcRenderer.removeListener("claude-code:bridge-event", handler);
+		},
+	},
+
 	// OpenCode bridge
 	opencode: {
 		// Project management (multi-project)

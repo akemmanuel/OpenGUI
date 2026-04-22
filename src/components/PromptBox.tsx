@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/tooltip";
 import { VariantSelector } from "@/components/VariantSelector";
 import { WorktreeDialog } from "@/components/WorktreeDialog";
+import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
 	type QueueMode,
 	useActions,
@@ -51,7 +52,7 @@ import {
 	useMessages,
 	useModelState,
 	useSessionState,
-} from "@/hooks/use-opencode";
+} from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
 import { getSessionDraftKey } from "@/lib/session-drafts";
@@ -204,6 +205,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 			connectToProject,
 		} = useActions();
 		const { commands, agents, selectedAgent } = useModelState();
+		const capabilities = useBackendCapabilities();
 		const { sessions, activeSessionId, draftSessionDirectory, sessionDrafts } =
 			useSessionState();
 		const { messages } = useMessages();
@@ -434,7 +436,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 
 			// Detect slash command input: "/" at start with no spaces
 			const slashMatch = newValue.match(/^\/(\S*)$/);
-			if (slashMatch) {
+			if (capabilities?.commands && slashMatch) {
 				setSlashFilter(slashMatch[1] ?? "");
 				setSlashActiveIndex(0);
 				setShowSlash(true);
@@ -604,7 +606,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 			if (!hasValue) return;
 
 			// Intercept slash commands
-			if (value.startsWith("/")) {
+			if (capabilities?.commands && value.startsWith("/")) {
 				const trimmed = value.trim();
 				const spaceIndex = trimmed.indexOf(" ");
 				const commandName =
@@ -668,7 +670,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 			}
 
 			// Slash popover keyboard navigation
-			if (showSlash && filteredSlashCommands.length > 0) {
+			if (capabilities?.commands && showSlash && filteredSlashCommands.length > 0) {
 				if (e.key === "ArrowDown") {
 					e.preventDefault();
 					setSlashActiveIndex(
@@ -758,7 +760,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 				if (isDisabled) return;
 				void handleSubmit();
 			}
-			if (e.key === "Tab" && primaryAgents.length > 1) {
+			if (capabilities?.agents && e.key === "Tab" && primaryAgents.length > 1) {
 				e.preventDefault();
 				const effective = selectedAgent ?? "build";
 				const currentIndex = primaryAgents.indexOf(effective);
@@ -807,7 +809,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 						</div>
 					)}
 
-				{showSlash && filteredSlashCommands.length > 0 && (
+				{capabilities?.commands && showSlash && filteredSlashCommands.length > 0 && (
 					<div className="relative">
 						<SlashCommandPopover
 							commands={commands}
@@ -915,15 +917,17 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 								<TooltipContent>Add</TooltipContent>
 							</Tooltip>
 							<DropdownMenuContent side="top" align="start">
-								<DropdownMenuItem
-									onClick={(e) => {
-										e.stopPropagation();
-										fileInputRef.current?.click();
-									}}
-								>
-									<Paperclip className="size-4" />
-									Add file
-								</DropdownMenuItem>
+								{capabilities?.images && (
+									<DropdownMenuItem
+										onClick={(e) => {
+											e.stopPropagation();
+											fileInputRef.current?.click();
+										}}
+									>
+										<Paperclip className="size-4" />
+										Add file
+									</DropdownMenuItem>
+								)}
 								<DropdownMenuItem
 									onClick={(e) => {
 										e.stopPropagation();
@@ -1056,7 +1060,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 						)}
 
 <div className="ml-auto flex items-center gap-1.5">
-{contextPercent != null && contextPercent >= 0 && (
+{capabilities?.compact && contextPercent != null && contextPercent >= 0 && (
 								<Popover>
 									<PopoverTrigger asChild>
 										<div className="flex">

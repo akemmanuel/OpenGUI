@@ -13,7 +13,8 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useConnectionState } from "@/hooks/use-opencode";
+import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useConnectionState } from "@/hooks/use-agent-state";
 import { getErrorMessage, openExternalLink } from "@/lib/utils";
 import type {
 	ProviderAuthMethod,
@@ -47,7 +48,8 @@ export function DialogConnectProvider({
 	onConnected,
 	onBack,
 }: DialogConnectProviderProps) {
-	const bridge = window.electronAPI?.opencode;
+	const backend = useAgentBackend();
+	const providersApi = backend?.platform?.providers;
 	const { activeWorkspaceId } = useConnectionState();
 
 	// If only one method, auto-select it
@@ -85,33 +87,28 @@ export function DialogConnectProvider({
 	}, []);
 
 	const handleApiKeyConnect = useCallback(async () => {
-		if (!bridge || !apiKey.trim()) return;
+		if (!providersApi || !apiKey.trim()) return;
 		setConnecting(true);
 		setError(null);
 		try {
-			const res = await bridge.connectProvider(
-				directory,
-				activeWorkspaceId,
-				providerID,
-				{ type: "api", key: apiKey.trim() },
-			);
-			if (res.success) {
-				await bridge.disposeInstance(directory, activeWorkspaceId);
-				setSuccess(true);
-				setTimeout(onConnected, 600);
-			} else {
-				setError(res.error ?? "Failed to connect");
-			}
+			const target = { directory, workspaceId: activeWorkspaceId };
+			await providersApi.connect(target, providerID, {
+				type: "api",
+				key: apiKey.trim(),
+			});
+			await providersApi.dispose(target);
+			setSuccess(true);
+			setTimeout(onConnected, 600);
 		} catch (err) {
 			setError(getErrorMessage(err));
 		} finally {
 			setConnecting(false);
 		}
-	}, [bridge, directory, activeWorkspaceId, providerID, apiKey, onConnected]);
+	}, [providersApi, directory, activeWorkspaceId, providerID, apiKey, onConnected]);
 
 	const pollOAuth = useCallback(
 		async (methodIndex?: number) => {
-			if (!bridge) return;
+			if (!providersApi) return;
 			const maxAttempts = 60; // ~2 minutes at 2s intervals
 			let attempts = 0;
 			const poll = async () => {
@@ -124,16 +121,16 @@ export function DialogConnectProvider({
 				}
 				attempts++;
 				try {
-					const res = await bridge.oauthCallback(
-						directory,
-						activeWorkspaceId,
+					const target = { directory, workspaceId: activeWorkspaceId };
+					const done = await providersApi.oauthCallback(
+						target,
 						providerID,
 						methodIndex,
 					);
-					if (res.success && res.data) {
+					if (done) {
 						pollingRef.current = false;
 						setOauthPolling(false);
-						await bridge.disposeInstance(directory, activeWorkspaceId);
+						await providersApi.dispose(target);
 						setSuccess(true);
 						setTimeout(onConnected, 600);
 						return;
@@ -145,31 +142,26 @@ export function DialogConnectProvider({
 			};
 			void poll();
 		},
-		[bridge, directory, activeWorkspaceId, providerID, onConnected],
+		[providersApi, directory, activeWorkspaceId, providerID, onConnected],
 	);
 
 	const startOAuth = useCallback(
 		async (methodIndex?: number) => {
-			if (!bridge) return;
+			if (!providersApi) return;
 			setConnecting(true);
 			setError(null);
 			try {
-				const res = await bridge.oauthAuthorize(
-					directory,
-					activeWorkspaceId,
+				const auth = await providersApi.oauthAuthorize(
+					{ directory, workspaceId: activeWorkspaceId },
 					providerID,
 					methodIndex,
 				);
-				if (res.success && res.data) {
-					setOauthData(res.data);
-					if (res.data.method === "auto") {
-						// Start polling
-						setOauthPolling(true);
-						pollingRef.current = true;
-						void pollOAuth(methodIndex);
-					}
-				} else {
-					setError(res.error ?? "Failed to start OAuth");
+				setOauthData(auth);
+				if (auth.method === "auto") {
+					// Start polling
+					setOauthPolling(true);
+					pollingRef.current = true;
+					void pollOAuth(methodIndex);
 				}
 			} catch (err) {
 				setError(getErrorMessage(err));
@@ -177,34 +169,34 @@ export function DialogConnectProvider({
 				setConnecting(false);
 			}
 		},
-		[bridge, directory, activeWorkspaceId, providerID, pollOAuth],
+		[providersApi, directory, activeWorkspaceId, providerID, pollOAuth],
 	);
 
 	const handleOAuthCode = useCallback(async () => {
-		if (!bridge || !oauthCode.trim()) return;
+		if (!providersApi || !oauthCode.trim()) return;
 		setConnecting(true);
 		setError(null);
 		try {
-			const res = await bridge.oauthCallback(
-				directory,
-				activeWorkspaceId,
+			const target = { directory, workspaceId: activeWorkspaceId };
+			const done = await providersApi.oauthCallback(
+				target,
 				providerID,
 				undefined,
 				oauthCode.trim(),
 			);
-			if (res.success && res.data) {
-				await bridge.disposeInstance(directory, activeWorkspaceId);
+			if (done) {
+				await providersApi.dispose(target);
 				setSuccess(true);
 				setTimeout(onConnected, 600);
 			} else {
-				setError(res.error ?? "Invalid code");
+				setError("Invalid code");
 			}
 		} catch (err) {
 			setError(getErrorMessage(err));
 		} finally {
 			setConnecting(false);
 		}
-	}, [bridge, directory, activeWorkspaceId, providerID, oauthCode, onConnected]);
+	}, [providersApi, directory, activeWorkspaceId, providerID, oauthCode, onConnected]);
 
 	// Clean up polling on unmount
 	useEffect(() => {

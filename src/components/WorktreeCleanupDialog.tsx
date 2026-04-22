@@ -10,7 +10,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { useActions, useConnectionState } from "@/hooks/use-opencode";
+import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { getProjectName } from "@/lib/utils";
 
 export function WorktreeCleanupDialog() {

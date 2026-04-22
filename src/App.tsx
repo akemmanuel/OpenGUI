@@ -19,8 +19,12 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import {
+	useBackendCapabilities,
+	useCurrentAgentBackendId,
+} from "@/hooks/use-agent-backend";
+import {
 	hasAnyConnection,
-	OpenCodeProvider,
+	AgentBackendProvider,
 	type QueueMode,
 	resolveServerDefaultModel,
 	useActions,
@@ -28,7 +32,7 @@ import {
 	useMessages,
 	useModelState,
 	useSessionState,
-} from "@/hooks/use-opencode";
+} from "@/hooks/use-agent-state";
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { POST_MERGE_DELAY_MS } from "@/lib/constants";
 import {
@@ -74,6 +78,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 	} = useSessionState();
 	const { messages } = useMessages();
 	const { providers, selectedModel, providerDefaults } = useModelState();
+	const capabilities = useBackendCapabilities();
 	const {
 		connections,
 		bootState,
@@ -121,6 +126,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
 	// Find the last user message (for undo keybind), respecting revert state
 	const revertToLastMessage = useCallback(() => {
+		if (!capabilities?.revert) return;
 		const revertMsgId = activeSession?.revert?.messageID;
 		const userMessages = messages.filter((m) => m.info.role === "user");
 		// Find the last user message before the current revert point (or the very last)
@@ -128,11 +134,12 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 			? [...userMessages].reverse().find((m) => m.info.id < revertMsgId)
 			: userMessages[userMessages.length - 1];
 		if (target) void revertToMessage(target.info.id);
-	}, [activeSession, messages, revertToMessage]);
+	}, [capabilities?.revert, activeSession, messages, revertToMessage]);
 
 	// Ctrl+Z: undo last message; Ctrl+Shift+Z: redo
 	useEffect(() => {
 		const handleUndoRedo = (e: KeyboardEvent) => {
+			if (!capabilities?.revert) return;
 			if (e.key !== "z" || !(e.metaKey || e.ctrlKey)) return;
 			// Don't intercept native undo/redo in text inputs
 			const tag = (e.target as HTMLElement)?.tagName;
@@ -146,7 +153,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		};
 		window.addEventListener("keydown", handleUndoRedo);
 		return () => window.removeEventListener("keydown", handleUndoRedo);
-	}, [revertToLastMessage, unrevert]);
+	}, [capabilities?.revert, revertToLastMessage, unrevert]);
 
 	useEffect(() => {
 		return () => {
@@ -160,6 +167,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 	// Ctrl+T: cycle model variant (low / medium / high / default)
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
+			if (!capabilities?.models) return;
 			if (e.key === "t" && (e.metaKey || e.ctrlKey)) {
 				e.preventDefault();
 				cycleVariant();
@@ -167,7 +175,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [cycleVariant]);
+	}, [capabilities?.models, cycleVariant]);
 
 	useEffect(() => {
 		const handleDoubleEscape = (e: KeyboardEvent) => {
@@ -214,6 +222,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		let chordTimer: ReturnType<typeof setTimeout> | null = null;
 
 		const handleKeyDown = (e: KeyboardEvent) => {
+			if (!capabilities?.models) return;
 			if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
 				// Let native cut work when text is selected
 				const sel = window.getSelection();
@@ -406,8 +415,8 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 								<Spinner className="size-4 shrink-0" />
 								<span>
 									{bootState === "checking-server"
-										? "Checking local OpenCode server..."
-										: "Starting local OpenCode server..."}
+										? "Checking local server..."
+										: "Starting local server..."}
 								</span>
 							</div>
 						)}
@@ -618,12 +627,13 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
 export function App() {
 	const detachedProject = window.electronAPI?.getDetachedProject() ?? undefined;
+	const backendId = useCurrentAgentBackendId();
 
 	return (
-		<OpenCodeProvider detachedProject={detachedProject}>
+		<AgentBackendProvider key={backendId} detachedProject={detachedProject}>
 			<SidebarProvider className="!h-dvh">
 				<AppContent detachedProject={detachedProject} />
 			</SidebarProvider>
-		</OpenCodeProvider>
+		</AgentBackendProvider>
 	);
 }

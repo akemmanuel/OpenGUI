@@ -26,7 +26,8 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useActions, useModelState } from "@/hooks/use-opencode";
+import { useBackendCapabilities } from "@/hooks/use-agent-backend";
+import { useActions, useModelState } from "@/hooks/use-agent-state";
 import {
 	DEFAULT_MODEL_MAX_AGE_MONTHS,
 	MAX_RECENT_MODELS,
@@ -127,6 +128,7 @@ function ModelRow({
 export function ModelSelector() {
 	const { setModel } = useActions();
 	const { providers, selectedModel } = useModelState();
+	const capabilities = useBackendCapabilities();
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +137,8 @@ export function ModelSelector() {
 	const [modelMaxAgeMonths, setModelMaxAgeMonths] = useState(() =>
 		getStoredModelMaxAgeMonths(),
 	);
+
+	if (!capabilities?.models) return null;
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;

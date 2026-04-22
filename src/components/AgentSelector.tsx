@@ -14,12 +14,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { useActions, useModelState } from "@/hooks/use-opencode";
+import { useBackendCapabilities } from "@/hooks/use-agent-backend";
+import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { DEFAULT_AGENT_NAME, getPrimaryAgents } from "@/lib/utils";
 
 export function AgentSelector() {
 	const { setAgent } = useActions();
 	const { agents, selectedAgent } = useModelState();
+	const capabilities = useBackendCapabilities();
 
 	const primaryAgents = useMemo(() => getPrimaryAgents(agents), [agents]);
 
@@ -30,7 +32,7 @@ export function AgentSelector() {
 		setAgent(value === DEFAULT_AGENT_NAME ? null : value);
 	};
 
-	if (primaryAgents.length === 0) return null;
+	if (!capabilities?.agents || primaryAgents.length === 0) return null;
 
 	return (
 		<Select value={currentValue} onValueChange={handleChange}>
