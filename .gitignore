@@ -42,3 +42,6 @@ config.json
 src/components/provider-icons/svgs/
 
 .worktrees/
+
+# Local benchmark/debug output
+.tmp-bench-claude/
