@@ -18,7 +18,11 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { getErrorMessage, getProjectName } from "@/lib/utils";
+import {
+	getErrorMessage,
+	getProjectName,
+	normalizeProjectPath,
+} from "@/lib/utils";
 
 interface WorktreeDialogProps {
 	open: boolean;
@@ -82,9 +86,7 @@ export function WorktreeDialog({
 			.then((res) => {
 				if (cancelled) return;
 				if (res.success && res.data) {
-					// Filter out remote tracking refs like "origin/HEAD"
-					const local = res.data.filter((b) => !b.startsWith("origin/HEAD"));
-					setBranches(local);
+					setBranches(res.data);
 				} else {
 					setError(res.error ?? "Failed to list branches");
 				}
@@ -101,18 +103,19 @@ export function WorktreeDialog({
 	}, [open, directory, defaultBranch, defaultMode]);
 
 	const handleCreate = useCallback(async () => {
-		if (!effectiveBranch || !worktreePath.trim()) return;
+		const normalizedWorktreePath = normalizeProjectPath(worktreePath);
+		if (!effectiveBranch || !normalizedWorktreePath) return;
 		setLoading(true);
 		setError(null);
 		try {
 			const res = await window.electronAPI?.git?.addWorktree(
 				directory,
-				worktreePath.trim(),
+				normalizedWorktreePath,
 				effectiveBranch,
 				mode === "new",
 			);
 			if (res?.success) {
-				onCreated(worktreePath.trim(), effectiveBranch);
+				onCreated(normalizedWorktreePath, effectiveBranch);
 				onOpenChange(false);
 			} else {
 				setError(res?.error ?? "Failed to create worktree");

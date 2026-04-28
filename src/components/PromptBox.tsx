@@ -1,7 +1,6 @@
 import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
 ArrowUp,
-	BookOpen,
 	Check,
 	GitBranch,
 	ListEnd,
@@ -18,7 +17,6 @@ import { AgentSelector } from "@/components/AgentSelector";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
 import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
-import { SkillsDialog } from "@/components/SkillsDialog";
 import {
 	SlashCommandPopover,
 	useFilteredCommands,
@@ -44,6 +42,7 @@ import {
 } from "@/components/ui/tooltip";
 import { VariantSelector } from "@/components/VariantSelector";
 import { WorktreeDialog } from "@/components/WorktreeDialog";
+import { WorktreeSetupDialog } from "@/components/WorktreeSetupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
 	type QueueMode,
@@ -55,7 +54,11 @@ import {
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
-import { getSessionDraftKey } from "@/lib/session-drafts";
+import {
+	getSessionDraftImages,
+	getSessionDraftKey,
+	persistSessionDraftImages,
+} from "@/lib/session-drafts";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps
@@ -177,8 +180,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 		const [imagePreviews, setImagePreviews] = React.useState<string[]>([]);
 		const [isDragging, setIsDragging] = React.useState(false);
 		const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
-		const [skillsDialogOpen, setSkillsDialogOpen] = React.useState(false);
 		const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<
+			string | null
+		>(null);
+		const [setupWorktreePath, setSetupWorktreePath] = React.useState<
 			string | null
 		>(null);
 		const [currentProjectBranch, setCurrentProjectBranch] =
@@ -206,6 +211,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 		} = useActions();
 		const { commands, agents, selectedAgent } = useModelState();
 		const capabilities = useBackendCapabilities();
+		const canManageMcp = Boolean(capabilities?.mcp);
 		const { sessions, activeSessionId, draftSessionDirectory, sessionDrafts } =
 			useSessionState();
 		const { messages } = useMessages();
@@ -228,7 +234,9 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 		const { activeWorkspaceId, worktreeParents, isLocalWorkspace } =
 			useConnectionState();
 		const syncingDraftRef = React.useRef(false);
+		const syncingImageDraftRef = React.useRef(false);
 		const sessionDraftsRef = React.useRef(sessionDrafts);
+		const sessionDraftImagesRef = React.useRef(getSessionDraftImages());
 		const projectDir = React.useMemo(() => {
 			if (!draftSessionDirectory) return null;
 			const worktreeMeta = worktreeParents[draftSessionDirectory];
@@ -337,12 +345,17 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 
 		React.useEffect(() => {
 			syncingDraftRef.current = true;
+			syncingImageDraftRef.current = true;
 			setValue(
 				currentDraftKey
 					? (sessionDraftsRef.current[currentDraftKey] ?? "")
 					: "",
 			);
-			setImagePreviews([]);
+			setImagePreviews(
+				currentDraftKey
+					? [...(sessionDraftImagesRef.current[currentDraftKey] ?? [])]
+					: [],
+			);
 			setShowSlash(false);
 			setShowFileMention(false);
 			setFileMentionResults([]);
@@ -372,7 +385,26 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 			value,
 		]);
 
-
+		React.useEffect(() => {
+			if (!currentDraftKey) return;
+			if (syncingImageDraftRef.current) {
+				syncingImageDraftRef.current = false;
+				return;
+			}
+			const existingImages = sessionDraftImagesRef.current[currentDraftKey] ?? [];
+			const unchanged =
+				existingImages.length === imagePreviews.length &&
+				existingImages.every((image, index) => image === imagePreviews[index]);
+			if (unchanged) return;
+			const next = { ...sessionDraftImagesRef.current };
+			if (imagePreviews.length === 0) {
+				delete next[currentDraftKey];
+			} else {
+				next[currentDraftKey] = [...imagePreviews];
+			}
+			sessionDraftImagesRef.current = next;
+			persistSessionDraftImages(next);
+		}, [currentDraftKey, imagePreviews]);
 
 		React.useImperativeHandle(
 			ref,
@@ -628,7 +660,13 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 
 			const images = imagePreviews.length > 0 ? imagePreviews : undefined;
 			await onSubmit?.(value, images, isLoading ? queueMode : undefined);
-			if (currentDraftKey) clearSessionDraft(currentDraftKey);
+			if (currentDraftKey) {
+				clearSessionDraft(currentDraftKey);
+				const next = { ...sessionDraftImagesRef.current };
+				delete next[currentDraftKey];
+				sessionDraftImagesRef.current = next;
+				persistSessionDraftImages(next);
+			}
 			setValue("");
 			setImagePreviews([]);
 			setHistoryIndex(-1);
@@ -868,7 +906,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 								? queueMode === "interrupt"
 									? "Interrupt and send..."
 									: queueMode === "after-part"
-										? "Send after current part..."
+										? "Steer the model into a direction..."
 										: "Queue a message..."
 								: "Message..."
 					}
@@ -877,10 +915,6 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 				/>
 
 				<McpDialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen} />
-				<SkillsDialog
-					open={skillsDialogOpen}
-					onOpenChange={setSkillsDialogOpen}
-				/>
 				<WorktreeDialog
 					open={worktreeDialogDir !== null}
 					onOpenChange={(open) => {
@@ -892,8 +926,16 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 						registerWorktree(worktreePath, worktreeDialogDir, branch);
 						await connectToProject(worktreePath);
 						setDraftDirectory(worktreePath);
+						setSetupWorktreePath(worktreePath);
 						setWorktreeDialogDir(null);
 					}}
+				/>
+				<WorktreeSetupDialog
+					open={setupWorktreePath !== null}
+					onOpenChange={(open) => {
+						if (!open) setSetupWorktreePath(null);
+					}}
+					worktreePath={setupWorktreePath ?? ""}
 				/>
 
 				<div className="flex min-w-0 items-center gap-1 px-1.5 pb-2">
@@ -928,24 +970,17 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 										Add file
 									</DropdownMenuItem>
 								)}
-								<DropdownMenuItem
-									onClick={(e) => {
-										e.stopPropagation();
-										setMcpDialogOpen(true);
-									}}
-								>
-									<Wrench className="size-4" />
-									Tools
-								</DropdownMenuItem>
-								<DropdownMenuItem
-									onClick={(e) => {
-										e.stopPropagation();
-										setSkillsDialogOpen(true);
-									}}
-								>
-									<BookOpen className="size-4" />
-									Skills
-								</DropdownMenuItem>
+								{canManageMcp && (
+									<DropdownMenuItem
+										onClick={(e) => {
+											e.stopPropagation();
+											setMcpDialogOpen(true);
+										}}
+									>
+										<Wrench className="size-4" />
+										MCPs
+									</DropdownMenuItem>
+								)}
 							</DropdownMenuContent>
 						</DropdownMenu>
 
@@ -1047,14 +1082,14 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 											<ListEnd className="size-3.5 shrink-0" />
 										)}
 										<span className="truncate max-w-[100px]">
-											{queueMode === "after-part" ? "After part" : "Queue"}
+											{queueMode === "after-part" ? "Steer" : "Queue"}
 										</span>
 									</Button>
 								</TooltipTrigger>
 								<TooltipContent>
 									{queueMode === "after-part"
-										? "After part: wait for current part to finish, then send"
-										: "Queue: wait for full response, then send"}
+										? "Steer: wait for current part to finish, then send (Ctrl/Cmd+D to toggle)"
+										: "Queue: wait for full response, then send (Ctrl/Cmd+D to toggle)"}
 								</TooltipContent>
 							</Tooltip>
 						)}
@@ -1197,7 +1232,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 											<span className="sr-only">
 												{isLoading
 													? queueMode === "after-part"
-														? "Send after part"
+														? "Steer"
 														: "Queue message"
 													: "Send message"}
 											</span>
@@ -1206,7 +1241,7 @@ const [historyIndex, setHistoryIndex] = React.useState(-1);
 									<TooltipContent>
 										{isLoading
 											? queueMode === "after-part"
-												? "Send after part"
+												? "Steer"
 												: "Queue"
 											: "Send"}
 									</TooltipContent>

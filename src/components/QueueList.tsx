@@ -173,7 +173,7 @@ function QueueItemRow({
 										: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
 								)}
 							>
-								{item.mode === "interrupt" ? "interrupt" : "after part"}
+								{item.mode === "interrupt" ? "interrupt" : "steer"}
 							</span>
 						)}
 						{item.variant && (

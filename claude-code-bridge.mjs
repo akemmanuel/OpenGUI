@@ -62,36 +62,31 @@ const DEFAULT_STATUS = {
 	lastEventAt: null,
 };
 
-const BUILTIN_MODELS = {
-	sonnet: makeModel("sonnet", "Claude Sonnet", {
-		reasoning: true,
-		image: false,
-	}),
-	opus: makeModel("opus", "Claude Opus", {
-		reasoning: true,
-		image: false,
-	}),
-	haiku: makeModel("haiku", "Claude Haiku", {
-		reasoning: false,
-		image: false,
-	}),
-};
-
-const CLAUDE_PROVIDERS = {
-	providers: [
-		{
-			id: "anthropic",
-			name: "Anthropic",
-			source: "api",
-			env: ["ANTHROPIC_API_KEY"],
-			options: {},
-			models: BUILTIN_MODELS,
-		},
-	],
-	default: {
-		anthropic: "sonnet",
+const MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+const EFFORT_VARIANTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+const FALLBACK_SUPPORTED_MODELS = [
+	{
+		value: "default",
+		displayName: "Sonnet",
+		description: "Sonnet",
+		supportsEffort: true,
+		supportedEffortLevels: ["low", "medium", "high", "max"],
+		supportsAdaptiveThinking: true,
 	},
-};
+	{
+		value: "opus",
+		displayName: "Opus",
+		description: "Opus",
+		supportsEffort: true,
+		supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+		supportsAdaptiveThinking: true,
+	},
+	{
+		value: "haiku",
+		displayName: "Haiku",
+		description: "Haiku",
+	},
+];
 
 const BUILTIN_COMMANDS = [
 	{
@@ -117,7 +112,7 @@ const BUILTIN_COMMANDS = [
 	},
 ];
 
-function makeModel(id, name, { reasoning, image }) {
+function makeModel(id, name, { reasoning, image, family, variants }) {
 	return {
 		id,
 		providerID: "anthropic",
@@ -127,7 +122,7 @@ function makeModel(id, name, { reasoning, image }) {
 			npm: "@anthropic-ai/claude-agent-sdk",
 		},
 		name,
-		family: id,
+		family: family ?? id,
 		capabilities: {
 			temperature: true,
 			reasoning,
@@ -162,6 +157,121 @@ function makeModel(id, name, { reasoning, image }) {
 		options: {},
 		headers: {},
 		release_date: "",
+		...(variants ? { variants } : {}),
+	};
+}
+
+function makeClaudeEnv() {
+	return {
+		...process.env,
+		CLAUDE_AGENT_SDK_CLIENT_APP: "OpenGUI",
+	};
+}
+
+async function* holdOpenPrompt() {
+	yield* [];
+	await new Promise(() => {});
+}
+
+function firstDescriptionClause(description) {
+	if (typeof description !== "string") return "";
+	return description.split("·", 1)[0]?.trim() ?? "";
+}
+
+function deriveModelName(model) {
+	const headline = firstDescriptionClause(model?.description);
+	if (headline) return headline;
+	if (model?.value === "default") return "Sonnet";
+	if (typeof model?.displayName === "string" && model.displayName.trim()) {
+		return model.displayName.trim();
+	}
+	return typeof model?.value === "string" && model.value.trim()
+		? model.value.trim()
+		: "Claude";
+}
+
+function deriveModelFamily(model) {
+	const source = `${deriveModelName(model)} ${model?.displayName ?? ""}`.toLowerCase();
+	if (source.includes("opus")) return "opus";
+	if (source.includes("haiku")) return "haiku";
+	if (source.includes("sonnet") || model?.value === "default") return "sonnet";
+	return typeof model?.value === "string" && model.value.trim()
+		? model.value.trim().toLowerCase()
+		: "claude";
+}
+
+function buildModelVariants(model) {
+	const variants = {};
+	const supportsReasoning =
+		Boolean(model?.supportsAdaptiveThinking) ||
+		Boolean(model?.supportsEffort) ||
+		Array.isArray(model?.supportedEffortLevels);
+	if (!supportsReasoning) return undefined;
+	variants.none = {};
+	for (const level of model?.supportedEffortLevels ?? []) {
+		if (EFFORT_VARIANTS.has(level)) variants[level] = {};
+	}
+	return Object.keys(variants).length > 0 ? variants : undefined;
+}
+
+function buildProvidersFromSupportedModels(models) {
+	const normalizedModels = Array.isArray(models) && models.length > 0
+		? models
+		: FALLBACK_SUPPORTED_MODELS;
+	const providerModels = Object.fromEntries(
+		normalizedModels.map((model) => {
+			const reasoning =
+				Boolean(model?.supportsAdaptiveThinking) ||
+				Boolean(model?.supportsEffort) ||
+				Array.isArray(model?.supportedEffortLevels);
+			return [
+				model.value,
+				makeModel(model.value, deriveModelName(model), {
+					reasoning,
+					image: false,
+					family: deriveModelFamily(model),
+					variants: buildModelVariants(model),
+				}),
+			];
+		}),
+	);
+	const defaultModel =
+		normalizedModels.find((model) => model?.value === "default")?.value ??
+		normalizedModels[0]?.value ??
+		"default";
+	return {
+		providers: [
+			{
+				id: "anthropic",
+				name: "Anthropic",
+				source: "api",
+				env: ["ANTHROPIC_API_KEY"],
+				options: {},
+				models: providerModels,
+			},
+		],
+		default: {
+			anthropic: defaultModel,
+		},
+	};
+}
+
+function buildVariantQueryOptions(variant, modelInfo) {
+	const normalized = typeof variant === "string" ? variant.trim().toLowerCase() : "";
+	if (!normalized) return {};
+	if (normalized === "none") {
+		return { thinking: { type: "disabled" } };
+	}
+	if (!EFFORT_VARIANTS.has(normalized)) return {};
+	const supportedLevels = Array.isArray(modelInfo?.supportedEffortLevels)
+		? modelInfo.supportedEffortLevels
+		: null;
+	if (supportedLevels && !supportedLevels.includes(normalized)) return {};
+	return {
+		effort: normalized,
+		...(modelInfo?.supportsAdaptiveThinking
+			? { thinking: { type: "adaptive" } }
+			: {}),
 	};
 }
 
@@ -221,7 +331,7 @@ function makeSessionFromInfo(info, target = {}, fallbackTitle) {
 	};
 }
 
-function defaultAssistantInfo(sessionId, messageId, directory, modelId = "sonnet") {
+function defaultAssistantInfo(sessionId, messageId, directory, modelId = "default") {
 	return {
 		id: messageId,
 		sessionID: sessionId,
@@ -246,7 +356,7 @@ function defaultAssistantInfo(sessionId, messageId, directory, modelId = "sonnet
 	};
 }
 
-function defaultUserInfo(sessionId, messageId, modelId = "sonnet", createdAt = Date.now()) {
+function defaultUserInfo(sessionId, messageId, modelId = "default", createdAt = Date.now()) {
 	return {
 		id: messageId,
 		sessionID: sessionId,
@@ -261,11 +371,12 @@ function defaultUserInfo(sessionId, messageId, modelId = "sonnet", createdAt = D
 }
 
 function mapClaudeModelId(raw) {
-	if (typeof raw !== "string" || !raw.trim()) return "sonnet";
+	if (typeof raw !== "string" || !raw.trim()) return "default";
 	const value = raw.toLowerCase();
+	if (value === "default" || value.includes("sonnet")) return "default";
 	if (value.includes("opus")) return "opus";
 	if (value.includes("haiku")) return "haiku";
-	return "sonnet";
+	return raw;
 }
 
 function parseTimestamp(raw) {
@@ -749,6 +860,36 @@ class ClaudeCodeBridgeManager {
 		this.projects = new Map();
 		this.sessionTargets = new Map();
 		this.activeQueries = new Map();
+		this.providerCatalogs = new Map();
+		this.providerCatalogPromises = new Map();
+		// Maps tempSessionId → pending state for new sessions resolved before system/init
+		this.pendingTempSessions = new Map();
+	}
+
+	cleanupPendingTempSession(tempSessionId) {
+		if (!tempSessionId) return;
+		this.pendingTempSessions.delete(tempSessionId);
+		this.sessionTargets.delete(tempSessionId);
+		this.activeQueries.delete(tempSessionId);
+	}
+
+	cleanupTargetCaches(directory, workspaceId) {
+		for (const [sessionId, target] of this.sessionTargets.entries()) {
+			if (target.directory === directory && target.workspaceId === workspaceId) {
+				this.sessionTargets.delete(sessionId);
+			}
+		}
+		for (const [tempSessionId, state] of this.pendingTempSessions.entries()) {
+			if (
+				state?.target?.directory === directory &&
+				state?.target?.workspaceId === workspaceId
+			) {
+				this.pendingTempSessions.delete(tempSessionId);
+			}
+		}
+		const key = makeProjectKey(workspaceId, directory);
+		this.providerCatalogs.delete(key);
+		this.providerCatalogPromises.delete(key);
 	}
 
 	emitConnectionStatus(target, status) {
@@ -777,6 +918,7 @@ class ClaudeCodeBridgeManager {
 			entry.query?.close?.();
 			this.activeQueries.delete(sessionId);
 		}
+		this.cleanupTargetCaches(normalized, workspaceId);
 		this.emitConnectionStatus(
 			{ directory: normalized, workspaceId },
 			{ state: "idle", error: null },
@@ -788,12 +930,16 @@ class ClaudeCodeBridgeManager {
 			entry.query?.close?.();
 		}
 		this.activeQueries.clear();
+		this.sessionTargets.clear();
+		this.pendingTempSessions.clear();
+		this.providerCatalogs.clear();
+		this.providerCatalogPromises.clear();
 		for (const project of this.projects.values()) {
 			this.emitConnectionStatus(
 				{ directory: project.directory, workspaceId: project.workspaceId },
 				{ state: "idle", error: null },
 			);
-		}
+			}
 		this.projects.clear();
 	}
 
@@ -810,6 +956,88 @@ class ClaudeCodeBridgeManager {
 		};
 	}
 
+	getCachedProviderCatalog(directory, workspaceId, sessionId) {
+		const target = this.resolveTarget(directory, workspaceId, sessionId);
+		const key = makeProjectKey(target.workspaceId, target.directory);
+		const cached = this.providerCatalogs.get(key);
+		if (!cached) return null;
+		if (Date.now() - cached.loadedAt > MODEL_DISCOVERY_TTL_MS) return null;
+		return cached;
+	}
+
+	async discoverProviders(directory, workspaceId, sessionId) {
+		const target = this.resolveTarget(directory, workspaceId, sessionId);
+		const key = makeProjectKey(target.workspaceId, target.directory);
+		const cached = this.getCachedProviderCatalog(directory, workspaceId, sessionId);
+		if (cached) return cached;
+		const inflight = this.providerCatalogPromises.get(key);
+		if (inflight) return await inflight;
+
+		const load = (async () => {
+			try {
+				const probe = query({
+					prompt: holdOpenPrompt(),
+					options: {
+						cwd: target.directory,
+						model: "haiku",
+						pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE_PATH,
+						settingSources: ["user", "project", "local"],
+						managedSettings: { allowedMcpServers: [] },
+						permissionMode: "acceptEdits",
+						env: makeClaudeEnv(),
+					},
+				});
+				try {
+					const supportedModels = await probe.supportedModels();
+					const catalog = {
+						loadedAt: Date.now(),
+						target,
+						supportedModels,
+						providers: buildProvidersFromSupportedModels(supportedModels),
+					};
+					this.providerCatalogs.set(key, catalog);
+					return catalog;
+				} finally {
+					probe.close();
+				}
+			} catch {
+				const catalog = {
+					loadedAt: Date.now(),
+					target,
+					supportedModels: FALLBACK_SUPPORTED_MODELS,
+					providers: buildProvidersFromSupportedModels(FALLBACK_SUPPORTED_MODELS),
+				};
+				this.providerCatalogs.set(key, catalog);
+				return catalog;
+			} finally {
+				this.providerCatalogPromises.delete(key);
+			}
+		})();
+
+		this.providerCatalogPromises.set(key, load);
+		return await load;
+	}
+
+	lookupModelInfo(modelId, directory, workspaceId, sessionId) {
+		if (typeof modelId !== "string" || !modelId.trim()) return null;
+		const catalog = this.getCachedProviderCatalog(directory, workspaceId, sessionId);
+		if (!catalog) return null;
+		const raw = modelId.trim().toLowerCase();
+		for (const model of catalog.supportedModels) {
+			if (typeof model?.value === "string" && model.value.toLowerCase() === raw) {
+				return model;
+			}
+		}
+		for (const model of catalog.supportedModels) {
+			const name = deriveModelName(model).toLowerCase();
+			const family = deriveModelFamily(model).toLowerCase();
+			if (raw === family || raw.includes(family) || (name && raw.includes(name))) {
+				return model;
+			}
+		}
+		return null;
+	}
+
 	async listSessions(directory, workspaceId) {
 		const target = this.resolveTarget(directory, workspaceId);
 		const sessions = await listSessions({ dir: target.directory, limit: 10_000 });
@@ -822,6 +1050,21 @@ class ClaudeCodeBridgeManager {
 	async getMessages(sessionId, options, directory, workspaceId) {
 		const target = this.resolveTarget(directory, workspaceId, sessionId);
 		this.sessionTargets.set(sessionId, target);
+
+		// For pending temp sessions (created before system/init arrives), return
+		// just the synthetic user message so the renderer has something to show
+		// while the Claude Code subprocess is still initialising.
+		const pendingTemp = this.pendingTempSessions.get(sessionId);
+		if (pendingTemp) {
+			const synthetic = makeSyntheticUserMessage(
+				sessionId,
+				pendingTemp.syntheticUserId,
+				pendingTemp.promptText,
+				mapClaudeModelId(pendingTemp.model?.modelID),
+			);
+			return { messages: [synthetic], nextCursor: null };
+		}
+
 		const history = await getSessionMessages(sessionId, {
 			dir: target.directory,
 			includeSystemMessages: false,
@@ -872,6 +1115,7 @@ class ClaudeCodeBridgeManager {
 			this.activeQueries.get(sessionId)?.query?.close?.();
 			this.activeQueries.delete(sessionId);
 		}
+		this.cleanupPendingTempSession(sessionId);
 		this.sessionTargets.delete(sessionId);
 		this.emit({
 			type: "claude-code:event",
@@ -1089,11 +1333,28 @@ class ClaudeCodeBridgeManager {
 	handleQueryMessage(message, state) {
 		const sessionId = message?.session_id ?? state.sessionId;
 		if (!sessionId) return;
+
+		const prevTempId = state.tempSessionId;
+
+		// If the real sessionId from the subprocess differs from our temp ID we
+		// need to rename the session in the renderer before updating state.sessionId.
+		if (prevTempId && sessionId !== prevTempId) {
+			// Move the activeQueries entry from tempId → realId.
+			const entry = this.activeQueries.get(prevTempId);
+			if (entry) {
+				this.activeQueries.delete(prevTempId);
+				this.activeQueries.set(sessionId, entry);
+			}
+			// Remove the pending-temp tracking now that we have the real ID.
+			this.pendingTempSessions.delete(prevTempId);
+			state.tempSessionId = null;
+		}
+
 		state.sessionId = sessionId;
 		this.ensureActiveQuery(sessionId, state.query, state.target);
 
 		if (message.type === "system" && message.subtype === "init") {
-			const session = {
+			const realSession = {
 				...makeSessionFromInfo(
 					{
 						sessionId,
@@ -1107,19 +1368,34 @@ class ClaudeCodeBridgeManager {
 				),
 				_syntheticUserId: state.syntheticUserId,
 			};
-			this.emit({
-				type: "claude-code:event",
-				payload: {
-					type: "session.created",
-					directory: state.target.directory,
-					workspaceId: state.target.workspaceId,
-					session,
-				},
-			});
-			this.emitSyntheticUserMessage(state);
-			this.emitSessionStatus(sessionId, "busy");
-			state.resolveSession?.(session);
-			state.resolveSession = null;
+
+			if (prevTempId && sessionId !== prevTempId) {
+				// Tell the renderer to rename all state from tempId → realId.
+				this.emit({
+					type: "claude-code:event",
+					payload: {
+						type: "session.replaced",
+						oldId: prevTempId,
+						newId: sessionId,
+						directory: state.target.directory,
+						workspaceId: state.target.workspaceId,
+						session: realSession,
+					},
+				});
+			} else {
+				// First-time init for an existing session (no temp ID) — emit normally.
+				this.emit({
+					type: "claude-code:event",
+					payload: {
+						type: "session.created",
+						directory: state.target.directory,
+						workspaceId: state.target.workspaceId,
+						session: realSession,
+					},
+				});
+				this.emitSyntheticUserMessage(state);
+				this.emitSessionStatus(sessionId, "busy");
+			}
 			return;
 		}
 
@@ -1354,27 +1630,37 @@ class ClaudeCodeBridgeManager {
 		}
 	}
 
-	startQuery({ sessionId, text, title, directory, workspaceId, model }) {
+	startQuery({ sessionId, text, title, directory, workspaceId, model, variant }) {
 		const target = this.resolveTarget(directory, workspaceId, sessionId);
+		const modelInfo = this.lookupModelInfo(
+			model?.modelID,
+			target.directory,
+			target.workspaceId,
+			sessionId,
+		);
 		let state;
 		const targetRef = () => ({ sessionId: state?.sessionId, ...target });
-		let resolveSession;
-		let rejectSession;
-		const sessionPromise = !sessionId
-			? new Promise((resolve, reject) => {
-				resolveSession = resolve;
-				rejectSession = reject;
-			})
-			: Promise.resolve(null);
+
+		// For new sessions (no sessionId yet) pre-generate a temporary UUID so we
+		// can emit session.created + the synthetic user message immediately, letting
+		// the IPC call return right away instead of blocking for ~8 s until the
+		// Claude Code subprocess sends its first system/init message.
+		const tempSessionId = !sessionId ? crypto.randomUUID() : null;
+		const effectiveSessionId = sessionId ?? tempSessionId;
+
 		state = {
-			sessionId,
+			sessionId: effectiveSessionId,
+			// Remember the original tempId so we can emit session.replaced when
+			// the real session_id arrives in system/init.
+			tempSessionId,
 			target,
 			query: null,
-			resolveSession,
-			rejectSession,
+			resolveSession: null,
+			rejectSession: null,
 			fallbackTitle: makeSessionTitle(text, title),
 			promptText: text,
 			model,
+			variant,
 			syntheticUserId: `synthetic-user:${crypto.randomUUID()}`,
 			syntheticUserEmitted: false,
 			currentAssistantMessageId: null,
@@ -1389,73 +1675,111 @@ class ClaudeCodeBridgeManager {
 			includePartialMessages: true,
 			settingSources: ["user", "project", "local"],
 			enableFileCheckpointing: true,
+			// OpenGUI Claude Code backend does not expose MCP. Hard-disable MCP
+			// servers in spawned SDK sessions to avoid startup stalls from
+			// claude.ai connector handshakes before first system/init arrives.
+			managedSettings: { allowedMcpServers: [] },
 			tools: { type: "preset", preset: "claude_code" },
 			disallowedTools: ["AskUserQuestion"],
 			canUseTool: this.makePermissionHandler(targetRef),
-			env: {
-				...process.env,
-				CLAUDE_AGENT_SDK_CLIENT_APP: "OpenGUI",
-			},
+			env: makeClaudeEnv(),
+			...buildVariantQueryOptions(variant, modelInfo),
 			...(sessionId ? {} : { title: state.fallbackTitle }),
 		};
 		const iterator = query({ prompt: text, options });
 		state.query = iterator;
-		if (sessionId) {
-			this.ensureActiveQuery(sessionId, iterator, target);
-			this.emitSyntheticUserMessage(state);
-			this.emitSessionStatus(sessionId, "busy");
+
+		// Always register, emit the synthetic user message, and mark session busy
+		// immediately — both for new sessions (using the tempSessionId) and for
+		// existing ones.  This makes the user's message appear in the UI right away
+		// rather than waiting for the subprocess to start.
+		this.ensureActiveQuery(effectiveSessionId, iterator, target);
+		this.emitSyntheticUserMessage(state);
+		this.emitSessionStatus(effectiveSessionId, "busy");
+
+		let sessionPromise;
+		if (tempSessionId) {
+			// Emit session.created right now with the temp ID so the renderer can
+			// display the session in the sidebar and load messages immediately.
+			const tempSession = {
+				...makeSessionFromInfo(
+					{
+						sessionId: tempSessionId,
+						summary: state.fallbackTitle,
+						lastModified: Date.now(),
+						createdAt: Date.now(),
+						cwd: target.directory,
+					},
+					target,
+					state.fallbackTitle,
+				),
+				_syntheticUserId: state.syntheticUserId,
+			};
+			this.emit({
+				type: "claude-code:event",
+				payload: {
+					type: "session.created",
+					directory: target.directory,
+					workspaceId: target.workspaceId,
+					session: tempSession,
+				},
+			});
+			// Store state so getMessages can return the synthetic message while
+			// the subprocess is still initialising.
+			this.pendingTempSessions.set(tempSessionId, state);
+			// Resolve immediately — no need to wait for system/init.
+			sessionPromise = Promise.resolve(tempSession);
+		} else {
+			// Existing session — nothing extra to do; caller doesn't await.
+			sessionPromise = Promise.resolve(null);
 		}
+
 		void (async () => {
 			try {
 				for await (const message of iterator) {
 					this.handleQueryMessage(message, state);
-				}
-				if (!state.sessionId && state.rejectSession) {
-					state.rejectSession(new Error("Claude Code session did not initialize"));
-					state.rejectSession = null;
 				}
 				if (state.sessionId) {
 					await this.refreshSessionInfo(state.sessionId, target, state.fallbackTitle);
 					this.activeQueries.delete(state.sessionId);
 				}
 			} catch (error) {
-				if (!state.sessionId) {
-					state.rejectSession?.(error);
-					state.rejectSession = null;
-				} else {
-					this.emit({
-						type: "claude-code:event",
-						payload: {
-							type: "session.error",
-							sessionID: state.sessionId,
-							error: error instanceof Error ? error.message : String(error),
-						},
-					});
-					this.emitSessionStatus(state.sessionId, "idle");
-					this.activeQueries.delete(state.sessionId);
-				}
+				this.emit({
+					type: "claude-code:event",
+					payload: {
+						type: "session.error",
+						sessionID: state.sessionId,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				});
+				this.emitSessionStatus(state.sessionId, "idle");
+				this.activeQueries.delete(state.sessionId);
+			} finally {
+				this.cleanupPendingTempSession(state.tempSessionId);
 			}
 		})();
 		return sessionPromise;
 	}
 
-	async startSession({ text, title, directory, workspaceId, model }) {
+	async startSession({ text, title, directory, workspaceId, model, variant }) {
 		return await this.startQuery({
 			text,
 			title,
 			directory,
 			workspaceId,
 			model,
+			variant,
 		});
 	}
 
-	async prompt(sessionId, text, _images, model, _agent, _variant, directory, workspaceId) {
+	async prompt(sessionId, text, _images, model, _agent, variant, directory, workspaceId) {
 		void this.startQuery({
 			sessionId,
 			text,
 			directory,
 			workspaceId,
 			model,
+			variant,
 		});
 		return true;
 	}
@@ -1464,6 +1788,7 @@ class ClaudeCodeBridgeManager {
 		const entry = this.activeQueries.get(sessionId);
 		entry?.query?.close?.();
 		this.activeQueries.delete(sessionId);
+		this.cleanupPendingTempSession(sessionId);
 		this.emitSessionStatus(sessionId, "idle");
 		return true;
 	}
@@ -1493,9 +1818,9 @@ class ClaudeCodeBridgeManager {
 		return true;
 	}
 
-	async sendCommand(sessionId, command, args, model, _agent, _variant, directory, workspaceId) {
+	async sendCommand(sessionId, command, args, model, _agent, variant, directory, workspaceId) {
 		const text = `/${command}${args ? ` ${args}` : ""}`;
-		await this.prompt(sessionId, text, [], model, undefined, undefined, directory, workspaceId);
+		await this.prompt(sessionId, text, [], model, undefined, variant, directory, workspaceId);
 		return true;
 	}
 
@@ -1504,8 +1829,9 @@ class ClaudeCodeBridgeManager {
 		return true;
 	}
 
-	async getProviders() {
-		return CLAUDE_PROVIDERS;
+	async getProviders(directory, workspaceId) {
+		const catalog = await this.discoverProviders(directory, workspaceId);
+		return catalog.providers;
 	}
 
 	async getAgents() {
@@ -1620,9 +1946,9 @@ export function setupClaudeCodeBridge(ipcMain, _getWindows) {
 		}
 	});
 
-	ipcMain.handle("claude-code:providers", async () => {
+	ipcMain.handle("claude-code:providers", async (_event, directory, workspaceId) => {
 		try {
-			return ok(await manager.getProviders());
+			return ok(await manager.getProviders(directory, workspaceId));
 		} catch (error) {
 			return fail(error);
 		}

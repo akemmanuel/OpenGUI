@@ -77,6 +77,7 @@ import {
 	persistSessionDrafts,
 	type SessionDraftMap,
 } from "@/lib/session-drafts";
+import { prependProjectIfMissing } from "@/lib/sidebar-order";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 import type {
 	ConnectionConfig,
@@ -122,6 +123,18 @@ function isModelAvailable(providers: Provider[], model: SelectedModel | null) {
 	if (!model) return false;
 	const provider = providers.find((p) => p.id === model.providerID);
 	return !!provider && model.modelID in provider.models;
+}
+
+function isAgentAvailable(agents: Agent[], agent: string | null | undefined) {
+	if (agent == null) return true;
+	return agents.some((candidate) => candidate.name === agent);
+}
+
+function selectedModelsEqual(
+	a: SelectedModel | null | undefined,
+	b: SelectedModel | null | undefined,
+) {
+	return a?.providerID === b?.providerID && a?.modelID === b?.modelID;
 }
 
 const PROJECT_KEY_SEPARATOR = "\u0000";
@@ -193,9 +206,17 @@ export type SessionColor =
 interface SessionMeta {
 	color?: SessionColor;
 	tags?: string[];
+	pinnedAt?: string;
+	selectedModel?: SelectedModel | null;
+	selectedAgent?: string | null;
+}
+
+interface ProjectMeta {
+	pinnedAt?: string;
 }
 
 type SessionMetaMap = Record<string, SessionMeta>;
+type ProjectMetaMap = Record<string, ProjectMeta>;
 
 function getSessionMetaMap(): SessionMetaMap {
 	return storageParsed<SessionMetaMap>(STORAGE_KEYS.SESSION_META) ?? {};
@@ -205,12 +226,36 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 	// Prune empty entries
 	const pruned: SessionMetaMap = {};
 	for (const [id, m] of Object.entries(meta)) {
-		if ((m.color && m.color !== null) || (m.tags && m.tags.length > 0)) {
+		if (
+			(m.color && m.color !== null) ||
+			(m.tags && m.tags.length > 0) ||
+			(m.pinnedAt && m.pinnedAt.length > 0) ||
+			Object.hasOwn(m, "selectedModel") ||
+			Object.hasOwn(m, "selectedAgent")
+		) {
 			pruned[id] = m;
 		}
 	}
 	persistOrRemoveJSON(
 		STORAGE_KEYS.SESSION_META,
+		pruned,
+		Object.keys(pruned).length === 0,
+	);
+}
+
+function getProjectMetaMap(): ProjectMetaMap {
+	return storageParsed<ProjectMetaMap>(STORAGE_KEYS.PROJECT_META) ?? {};
+}
+
+function persistProjectMetaMap(meta: ProjectMetaMap) {
+	const pruned: ProjectMetaMap = {};
+	for (const [key, value] of Object.entries(meta)) {
+		if (value.pinnedAt && value.pinnedAt.length > 0) {
+			pruned[key] = value;
+		}
+	}
+	persistOrRemoveJSON(
+		STORAGE_KEYS.PROJECT_META,
 		pruned,
 		Object.keys(pruned).length === 0,
 	);
@@ -241,22 +286,41 @@ function getWorktreeParents(): WorktreeParentMap {
 	const raw =
 		storageParsed<Record<string, unknown>>(STORAGE_KEYS.WORKTREE_PARENTS) ?? {};
 	const result: WorktreeParentMap = {};
+	let changed = false;
 	for (const [dir, val] of Object.entries(raw)) {
+		const normalizedDir = normalizeProjectPath(dir);
+		if (!normalizedDir) {
+			changed = true;
+			continue;
+		}
 		if (typeof val === "string") {
-			// Migrate old format: plain string parentDir -> full metadata
-			result[dir] = {
-				parentDir: val,
+			changed = true;
+			result[normalizedDir] = {
+				parentDir: normalizeProjectPath(val),
 				branch: "unknown",
 				createdAt: new Date().toISOString(),
 				lastOpenedAt: new Date().toISOString(),
 			};
 		} else if (val && typeof val === "object" && "parentDir" in val) {
-			result[dir] = val as WorktreeMetadata;
+			const metadata = val as WorktreeMetadata;
+			const normalizedParentDir = normalizeProjectPath(metadata.parentDir);
+			if (!normalizedParentDir) {
+				changed = true;
+				continue;
+			}
+			if (
+				normalizedDir !== dir ||
+				normalizedParentDir !== metadata.parentDir
+			) {
+				changed = true;
+			}
+			result[normalizedDir] = {
+				...metadata,
+				parentDir: normalizedParentDir,
+			};
 		}
 	}
-	// Persist the migrated format back if any old entries were found
-	const hadOldFormat = Object.values(raw).some((v) => typeof v === "string");
-	if (hadOldFormat && Object.keys(result).length > 0) {
+	if (changed) {
 		persistWorktreeParents(result);
 	}
 	return result;
@@ -555,8 +619,10 @@ export interface InternalAgentState {
 	unreadSessionIds: Set<string>;
 	/** Local-only unsent textarea drafts keyed by session or draft directory. */
 	sessionDrafts: SessionDraftMap;
-	/** Local-only session metadata (colors, tags) keyed by session ID */
+	/** Local-only session metadata (colors, tags, pins) keyed by session ID */
 	sessionMeta: SessionMetaMap;
+	/** Local-only project metadata (pins) keyed by workspace+directory */
+	projectMeta: ProjectMetaMap;
 	/** Maps worktree directory -> metadata incl. parent project directory (local-only) */
 	worktreeParents: WorktreeParentMap;
 	/** Pending worktree cleanup prompt (shown after last session in a worktree is deleted) */
@@ -669,6 +735,7 @@ const initialState: InternalAgentState = {
 	unreadSessionIds: getUnreadSessionIds(),
 	sessionDrafts: getSessionDrafts(),
 	sessionMeta: getSessionMetaMap(),
+	projectMeta: getProjectMetaMap(),
 	worktreeParents: getWorktreeParents(),
 	pendingWorktreeCleanup: null,
 	childSessions: {},
@@ -813,6 +880,10 @@ type Action =
 			payload: { sessionId: string; meta: SessionMeta };
 	  }
 	| {
+			type: "SET_PROJECT_META";
+			payload: { projectKey: string; meta: ProjectMeta };
+	  }
+	| {
 			type: "REGISTER_WORKTREE";
 			payload: { worktreeDir: string; parentDir: string; branch: string };
 	  }
@@ -836,6 +907,10 @@ type Action =
 	| {
 			type: "CLEAR_AFTER_PART_TRIGGERED";
 			payload: { sessionID: string };
+	  }
+	| {
+			type: "SESSION_REPLACED";
+			payload: { oldId: string; newId: string; session: Session };
 	  };
 
 function getSessionSortTime(session: Session): number {
@@ -1176,14 +1251,13 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 			const nextWorkspaces = state.workspaces.map((workspace) => {
 				if (workspace.id !== workspaceId) return workspace;
 				changed = true;
+				const projects = workspace.projects ?? [];
 				return normalizeWorkspace({
 					...workspace,
 					serverUrl,
 					username: username ?? workspace.username,
 					password: password ?? workspace.password,
-					projects: Array.from(
-						new Set([...(workspace.projects ?? []), directory]),
-					),
+					projects: prependProjectIfMissing(projects, directory),
 				});
 			});
 			return changed ? { ...state, workspaces: nextWorkspaces } : state;
@@ -1332,9 +1406,27 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				}
 			}
 
+			const nextProjectMeta = { ...state.projectMeta };
+			if (projectKey in nextProjectMeta) {
+				delete nextProjectMeta[projectKey];
+				persistProjectMetaMap(nextProjectMeta);
+			}
+			const nextSessionMeta = { ...state.sessionMeta };
+			let didPruneSessionMeta = false;
+			for (const sessionId of removedSessionIds) {
+				if (!(sessionId in nextSessionMeta)) continue;
+				delete nextSessionMeta[sessionId];
+				didPruneSessionMeta = true;
+			}
+			if (didPruneSessionMeta) {
+				persistSessionMetaMap(nextSessionMeta);
+			}
+
 			return {
 				...state,
 				workspaces: nextWorkspaces,
+				sessionMeta: nextSessionMeta,
+				projectMeta: nextProjectMeta,
 				connections: rest,
 				projectWorkspaceMap: restProjectWorkspaceMap,
 				sessions: state.sessions.filter(
@@ -1434,6 +1526,19 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 
 		case "SET_ACTIVE_SESSION": {
 			const sid = action.payload;
+			const meta = sid ? state.sessionMeta[sid] : undefined;
+			const nextSelectedModel =
+				meta && Object.hasOwn(meta, "selectedModel")
+					? isModelAvailable(state.providers, meta.selectedModel ?? null)
+						? (meta.selectedModel ?? null)
+						: state.selectedModel
+					: state.selectedModel;
+			const nextSelectedAgent =
+				meta && Object.hasOwn(meta, "selectedAgent")
+					? isAgentAvailable(state.agents, meta.selectedAgent)
+						? (meta.selectedAgent ?? null)
+						: state.selectedAgent
+					: state.selectedAgent;
 			let startingBuffers = state._sessionBuffers;
 			const previousSid = state.activeSessionId;
 			// Always cache outgoing session messages (not just busy ones) for
@@ -1513,6 +1618,8 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				...state,
 				workspaces: nextWorkspaces,
 				activeSessionId: sid,
+				selectedModel: nextSelectedModel,
+				selectedAgent: nextSelectedAgent,
 				messages: initialMessages,
 				messageForwardBuffer: [],
 				messageHistoryHasMore: restoredHasMore,
@@ -1600,16 +1707,15 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 
 			if (normalizedMessages.length > 0) {
 				const serverLast = normalizedMessages[normalizedMessages.length - 1];
-				const serverLastId = serverLast ? serverLast.info.id : null;
-				if (serverLastId) {
-					for (const [id, entry] of existingByMsgId) {
-						if (
-							!action.payload.messages.some((message) => message.info.id === id)
-						) {
-							if (id > serverLastId) {
-								normalizedMessages.push(entry);
-							}
-						}
+				const serverLastCreated = serverLast?.info.time.created ?? 0;
+				const incomingIds = new Set(
+					action.payload.messages.map((message) => message.info.id),
+				);
+				for (const [id, entry] of existingByMsgId) {
+					if (incomingIds.has(id)) continue;
+					const entryCreated = entry.info.time.created ?? 0;
+					if (entryCreated > serverLastCreated) {
+						normalizedMessages.push(entry);
 					}
 				}
 			}
@@ -1733,6 +1839,71 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 			};
 		}
 
+		case "SESSION_REPLACED": {
+			// A new session was pre-created with a temp UUID; the real session ID
+			// has now arrived from the subprocess.  Rename every reference.
+			const { oldId, newId, session: realSession } = action.payload;
+
+			const renameSessionId = (id: string) => (id === oldId ? newId : id);
+			const nextSessionMeta = { ...state.sessionMeta };
+			if (oldId in nextSessionMeta) {
+				nextSessionMeta[newId] = nextSessionMeta[oldId]!;
+				delete nextSessionMeta[oldId];
+				persistSessionMetaMap(nextSessionMeta);
+			}
+
+			const nextSessions = state.sessions.map((s) =>
+				s.id === oldId ? realSession : s,
+			);
+
+			const nextMessages = state.messages.map((m) => {
+				if (m.info.sessionID !== oldId) return m;
+				return {
+					info: { ...m.info, sessionID: newId },
+					parts: m.parts.map((p) =>
+						"sessionID" in p ? { ...p, sessionID: newId } : p,
+					),
+				};
+			});
+
+			const nextBusy = new Set(
+				[...state.busySessionIds].map(renameSessionId),
+			);
+
+			const nextAfterPart = new Set(
+				[...state.afterPartPending].map(renameSessionId),
+			);
+			const nextAfterPartTriggered = new Set(
+				[...state._afterPartTriggered].map(renameSessionId),
+			);
+
+			const nextQueued: typeof state.queuedPrompts = {};
+			for (const [sid, q] of Object.entries(state.queuedPrompts)) {
+				nextQueued[renameSessionId(sid)] = q;
+			}
+
+			// Rename the session buffer key if it exists.
+			const nextBuffers = { ...state._sessionBuffers };
+			if (oldId in nextBuffers) {
+				nextBuffers[newId] = nextBuffers[oldId]!;
+				delete nextBuffers[oldId];
+			}
+
+			return {
+				...state,
+				sessions: nextSessions,
+				sessionMeta: nextSessionMeta,
+				activeSessionId:
+					state.activeSessionId === oldId ? newId : state.activeSessionId,
+				messages: nextMessages,
+				busySessionIds: nextBusy,
+				afterPartPending: nextAfterPart,
+				_afterPartTriggered: nextAfterPartTriggered,
+				queuedPrompts: nextQueued,
+				_sessionBuffers: nextBuffers,
+			};
+		}
+
 		case "SESSION_DELETED": {
 			const deletedId = action.payload;
 			const alreadyGone = !state.sessions.some((s) => s.id === deletedId);
@@ -1810,6 +1981,12 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				}
 			}
 
+			const nextSessionMeta = { ...state.sessionMeta };
+			if (deletedId in nextSessionMeta) {
+				delete nextSessionMeta[deletedId];
+				persistSessionMetaMap(nextSessionMeta);
+			}
+
 			return {
 				...state,
 				workspaces: state.workspaces.map((workspace) =>
@@ -1823,6 +2000,7 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				temporarySessions: nextTemp,
 				unreadSessionIds: nextUnread,
 				sessionDrafts: nextDrafts,
+				sessionMeta: nextSessionMeta,
 				_deletedSessionIds: nextDeleted,
 				childSessions: nextChildSessions,
 				trackedChildSessionIds: nextTracked,
@@ -2386,6 +2564,15 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 			return { ...state, sessionMeta: nextMeta };
 		}
 
+		case "SET_PROJECT_META": {
+			const { projectKey, meta } = action.payload;
+			const nextMeta = { ...state.projectMeta };
+			const existing = nextMeta[projectKey] ?? {};
+			nextMeta[projectKey] = { ...existing, ...meta };
+			persistProjectMetaMap(nextMeta);
+			return { ...state, projectMeta: nextMeta };
+		}
+
 		case "REGISTER_WORKTREE": {
 			const { worktreeDir, parentDir, branch } = action.payload;
 			const now = new Date().toISOString();
@@ -2582,6 +2769,7 @@ interface ConnectionContextValue {
 	bootLogs: string | null;
 	lastError: string | null;
 	worktreeParents: WorktreeParentMap;
+	projectMeta: Record<string, ProjectMeta>;
 	pendingWorktreeCleanup: InternalAgentState["pendingWorktreeCleanup"];
 }
 
@@ -2646,6 +2834,8 @@ interface ActionsContextValue {
 	forkFromMessage: (messageID: string) => Promise<void>;
 	setSessionColor: (sessionId: string, color: SessionColor) => void;
 	setSessionTags: (sessionId: string, tags: string[]) => void;
+	setSessionPinned: (sessionId: string, pinned: boolean) => void;
+	setProjectPinned: (directory: string, pinned: boolean) => void;
 	registerWorktree: (
 		worktreeDir: string,
 		parentDir: string,
@@ -2721,10 +2911,15 @@ function useDesktopNotification(
 
 		prevKeysRef.current = nowKeys;
 		notificationsRef.current = newNotifications;
+		const createdNotifications = newNotifications;
 
 		return () => {
-			for (const n of notificationsRef.current) {
-				n.close();
+			for (const notification of createdNotifications) {
+				notification.onclick = null;
+				notification.close();
+			}
+			if (notificationsRef.current === createdNotifications) {
+				notificationsRef.current = [];
 			}
 		};
 	}, [triggerMap, title, activeSessionId, sessions, selectSession]);
@@ -2791,6 +2986,16 @@ export function InternalAgentProvider({
 		switch (event.type) {
 			case "session.created":
 				dispatch({ type: "SESSION_CREATED", payload: event.session });
+				break;
+			case "session.replaced":
+				dispatch({
+					type: "SESSION_REPLACED",
+					payload: {
+						oldId: event.oldId,
+						newId: event.newId,
+						session: event.session,
+					},
+				});
 				break;
 			case "session.updated":
 				dispatch({ type: "SESSION_UPDATED", payload: event.session });
@@ -2865,8 +3070,6 @@ export function InternalAgentProvider({
 			case "session.error":
 				dispatch({ type: "SET_ERROR", payload: event.error });
 				break;
-			case "connection.status":
-				break;
 		}
 	}, []);
 
@@ -2938,6 +3141,34 @@ export function InternalAgentProvider({
 	useEffect(() => {
 		storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, state.activeWorkspaceId);
 	}, [state.activeWorkspaceId]);
+
+	useEffect(() => {
+		const sessionId = state.activeSessionId;
+		if (!sessionId) return;
+		const existing = state.sessionMeta[sessionId] ?? {};
+		if (
+			selectedModelsEqual(existing.selectedModel, state.selectedModel) &&
+			existing.selectedAgent === state.selectedAgent
+		) {
+			return;
+		}
+		dispatch({
+			type: "SET_SESSION_META",
+			payload: {
+				sessionId,
+				meta: {
+					selectedModel: state.selectedModel,
+					selectedAgent: state.selectedAgent,
+				},
+			},
+		});
+	}, [
+		dispatch,
+		state.activeSessionId,
+		state.selectedAgent,
+		state.selectedModel,
+		state.sessionMeta,
+	]);
 
 	// Persist unreadSessionIds to localStorage whenever it changes
 	useEffect(() => {
@@ -3860,6 +4091,19 @@ export function InternalAgentProvider({
 	const deleteSession = useCallback(
 		async (id: string) => {
 			if (!runtime) return;
+			if (
+				(backendId === "pi" || backendId === "codex") &&
+				stateRef.current.busySessionIds.has(id)
+			) {
+				dispatch({
+					type: "SET_ERROR",
+					payload:
+						backendId === "pi"
+							? "Stop Pi session before deleting it."
+							: "Stop Codex session before deleting it.",
+				});
+				return;
+			}
 			// Read from ref to avoid stale closures and, more importantly,
 			// to keep this callback's identity stable (deps don't include
 			// state.sessions / state.activeSessionId).
@@ -3916,7 +4160,7 @@ export function InternalAgentProvider({
 				}
 			}
 		},
-		[runtime, selectSession],
+		[backendId, runtime, selectSession],
 	);
 
 	const renameSession = useCallback(
@@ -4637,22 +4881,55 @@ export function InternalAgentProvider({
 		});
 	}, []);
 
+	const setSessionPinned = useCallback((sessionId: string, pinned: boolean) => {
+		dispatch({
+			type: "SET_SESSION_META",
+			payload: {
+				sessionId,
+				meta: { pinnedAt: pinned ? new Date().toISOString() : undefined },
+			},
+		});
+	}, []);
+
+	const setProjectPinned = useCallback((directory: string, pinned: boolean) => {
+		const workspaceId = stateRef.current.activeWorkspaceId;
+		if (!workspaceId) return;
+		dispatch({
+			type: "SET_PROJECT_META",
+			payload: {
+				projectKey: makeProjectKey(workspaceId, directory),
+				meta: { pinnedAt: pinned ? new Date().toISOString() : undefined },
+			},
+		});
+	}, []);
+
 	const registerWorktree = useCallback(
 		(worktreeDir: string, parentDir: string, branch: string) => {
+			const normalizedWorktreeDir = normalizeProjectPath(worktreeDir);
+			const normalizedParentDir = normalizeProjectPath(parentDir);
+			if (!normalizedWorktreeDir || !normalizedParentDir) return;
 			dispatch({
 				type: "REGISTER_WORKTREE",
-				payload: { worktreeDir, parentDir, branch },
+				payload: {
+					worktreeDir: normalizedWorktreeDir,
+					parentDir: normalizedParentDir,
+					branch,
+				},
 			});
 		},
 		[],
 	);
 
 	const unregisterWorktree = useCallback((worktreeDir: string) => {
-		dispatch({ type: "UNREGISTER_WORKTREE", payload: worktreeDir });
+		const normalizedWorktreeDir = normalizeProjectPath(worktreeDir);
+		if (!normalizedWorktreeDir) return;
+		dispatch({ type: "UNREGISTER_WORKTREE", payload: normalizedWorktreeDir });
 	}, []);
 
 	const touchWorktree = useCallback((worktreeDir: string) => {
-		dispatch({ type: "TOUCH_WORKTREE", payload: worktreeDir });
+		const normalizedWorktreeDir = normalizeProjectPath(worktreeDir);
+		if (!normalizedWorktreeDir) return;
+		dispatch({ type: "TOUCH_WORKTREE", payload: normalizedWorktreeDir });
 	}, []);
 
 	const clearWorktreeCleanup = useCallback(() => {
@@ -4928,6 +5205,14 @@ export function InternalAgentProvider({
 			bootLogs: state.bootLogs,
 			lastError: state.lastError,
 			worktreeParents: state.worktreeParents,
+			projectMeta: Object.fromEntries(
+				Object.entries(state.projectMeta)
+					.filter(([projectKey]) => {
+						const { workspaceId } = parseProjectKey(projectKey);
+						return workspaceId === state.activeWorkspaceId;
+					})
+					.map(([projectKey, meta]) => [parseProjectKey(projectKey).directory, meta]),
+			),
 			pendingWorktreeCleanup: state.pendingWorktreeCleanup,
 		}),
 		[
@@ -4950,6 +5235,7 @@ export function InternalAgentProvider({
 			state.bootLogs,
 			state.lastError,
 			state.worktreeParents,
+			state.projectMeta,
 			state.pendingWorktreeCleanup,
 		],
 	);
@@ -4996,6 +5282,8 @@ export function InternalAgentProvider({
 			forkFromMessage,
 			setSessionColor,
 			setSessionTags,
+			setSessionPinned,
+			setProjectPinned,
 			registerWorktree,
 			unregisterWorktree,
 			touchWorktree,
@@ -5047,6 +5335,8 @@ export function InternalAgentProvider({
 			forkFromMessage,
 			setSessionColor,
 			setSessionTags,
+			setSessionPinned,
+			setProjectPinned,
 			registerWorktree,
 			unregisterWorktree,
 			touchWorktree,

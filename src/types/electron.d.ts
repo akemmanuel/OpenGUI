@@ -110,6 +110,18 @@ export type BridgeEvent =
 			payload: unknown;
 			directory?: string;
 			workspaceId?: string;
+	  }
+	| {
+			type: "pi:event";
+			payload: unknown;
+			directory?: string;
+			workspaceId?: string;
+	  }
+	| {
+			type: "codex:event";
+			payload: unknown;
+			directory?: string;
+			workspaceId?: string;
 	  };
 
 export type NativeBackendEvent = BridgeEvent;
@@ -435,6 +447,183 @@ export interface ClaudeCodeBridge {
 	onEvent(callback: (event: BridgeEvent) => void): () => void;
 }
 
+export interface PiBridge {
+	addProject(config: ConnectionConfig): Promise<IPCResult>;
+	removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
+	disconnect(): Promise<IPCResult>;
+
+	listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
+	createSession(
+		title?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+	deleteSession(
+		sessionId: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<boolean>>;
+	updateSession(
+		sessionId: string,
+		title: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+	getSessionStatuses(
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Record<string, { type: string }>>>;
+	forkSession(
+		sessionId: string,
+		messageID?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+
+	getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
+	getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
+	getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
+	getMessages(
+		sessionId: string,
+		options?: MessagePageOptions,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<
+		IPCResult<{
+			messages: Array<{ info: Message; parts: Part[] }>;
+			nextCursor: string | null;
+		}>
+	>;
+	startSession(input: {
+		text: string;
+		images?: string[];
+		model?: SelectedModel;
+		agent?: string;
+		variant?: string;
+		title?: string;
+		directory?: string;
+		workspaceId?: string;
+	}): Promise<IPCResult<Session>>;
+	prompt(
+		sessionId: string,
+		text: string,
+		images?: string[],
+		model?: SelectedModel,
+		agent?: string,
+		variant?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	abort(sessionId: string): Promise<IPCResult>;
+	sendCommand(
+		sessionId: string,
+		command: string,
+		args: string,
+		model?: SelectedModel,
+		agent?: string,
+		variant?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	summarizeSession(
+		sessionId: string,
+		model?: SelectedModel,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	findFiles(
+		directory: string | null,
+		workspaceId: string | undefined,
+		query: string,
+	): Promise<IPCResult<string[]>>;
+	onEvent(callback: (event: BridgeEvent) => void): () => void;
+}
+
+export interface CodexBridge {
+	addProject(config: ConnectionConfig): Promise<IPCResult>;
+	removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
+	disconnect(): Promise<IPCResult>;
+
+	listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
+	createSession(
+		title?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+	deleteSession(
+		sessionId: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<boolean>>;
+	updateSession(
+		sessionId: string,
+		title: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Session>>;
+	getSessionStatuses(
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult<Record<string, { type: string }>>>;
+	getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
+	getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
+	getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
+	getMessages(
+		sessionId: string,
+		options?: MessagePageOptions,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<
+		IPCResult<{
+			messages: Array<{ info: Message; parts: Part[] }>;
+			nextCursor: string | null;
+		}>
+	>;
+	startSession(input: {
+		text: string;
+		images?: string[];
+		model?: SelectedModel;
+		agent?: string;
+		variant?: string;
+		title?: string;
+		directory?: string;
+		workspaceId?: string;
+	}): Promise<IPCResult<Session>>;
+	prompt(
+		sessionId: string,
+		text: string,
+		images?: string[],
+		model?: SelectedModel,
+		agent?: string,
+		variant?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	abort(sessionId: string): Promise<IPCResult>;
+	sendCommand(
+		sessionId: string,
+		command: string,
+		args: string,
+		model?: SelectedModel,
+		agent?: string,
+		variant?: string,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	summarizeSession(
+		sessionId: string,
+		model?: SelectedModel,
+		directory?: string,
+		workspaceId?: string,
+	): Promise<IPCResult>;
+	findFiles(
+		directory: string | null,
+		workspaceId: string | undefined,
+		query: string,
+	): Promise<IPCResult<string[]>>;
+	onEvent(callback: (event: BridgeEvent) => void): () => void;
+}
+
 export type NativeAgentBridge = OpenCodeBridge;
 
 export interface GitBridge {
@@ -567,6 +756,8 @@ export interface ElectronAPI {
 	worktree?: WorktreeBridge;
 	opencode: OpenCodeBridge;
 	claudeCode?: ClaudeCodeBridge;
+	pi?: PiBridge;
+	codex?: CodexBridge;
 }
 
 declare global {

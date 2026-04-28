@@ -53,10 +53,17 @@ function getTarget(target?: AgentBackendTarget) {
 	};
 }
 
+type SessionTags = {
+	_projectDir?: string;
+	_workspaceId?: string;
+};
+
+type TaggedSession = Session & SessionTags;
+
 function tagSession(
-	session: Session,
+	session: TaggedSession,
 	event: { directory: string; workspaceId?: string },
-): Session {
+): TaggedSession {
 	return {
 		...session,
 		_projectDir: event.directory,

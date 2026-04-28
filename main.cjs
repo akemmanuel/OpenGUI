@@ -384,6 +384,22 @@ void app.whenReady().then(async () => {
 		console.error("Failed to load claude-code bridge:", err);
 	}
 
+	try {
+		const { setupPiBridge } = await import("./pi-bridge.mjs");
+		setupPiBridge(ipcMain, () => BrowserWindow.getAllWindows(), {
+			userData: app.getPath("userData"),
+		});
+	} catch (err) {
+		console.error("Failed to load pi bridge:", err);
+	}
+
+	try {
+		const { setupCodexBridge } = await import("./codex-bridge.mjs");
+		setupCodexBridge(ipcMain, () => BrowserWindow.getAllWindows());
+	} catch (err) {
+		console.error("Failed to load codex bridge:", err);
+	}
+
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
 			createWindow();

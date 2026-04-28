@@ -147,7 +147,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-md max-h-[70vh] flex flex-col">
 				<DialogHeader>
-					<DialogTitle>Tools (MCP Servers)</DialogTitle>
+					<DialogTitle>MCPs</DialogTitle>
 					<DialogDescription>
 						Toggle MCP servers on or off for this session.
 					</DialogDescription>

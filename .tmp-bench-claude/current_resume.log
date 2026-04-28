@@ -1,0 +1,139 @@
+2026-04-23T20:43:30.335Z [DEBUG] MDM settings load completed in 0ms
+2026-04-23T20:43:30.405Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: /home/emmanuel/Code/OpenGUI/.claude/settings.json
+2026-04-23T20:43:30.408Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: /etc/claude-code/managed-settings.json
+2026-04-23T20:43:30.410Z [DEBUG] CA certs: Config fallback - globalEnv keys: , settingsEnv keys: DISABLE_AUTOUPDATER
+2026-04-23T20:43:30.411Z [DEBUG] [init] configureGlobalMTLS starting
+2026-04-23T20:43:30.411Z [DEBUG] [init] configureGlobalMTLS complete
+2026-04-23T20:43:30.411Z [DEBUG] [init] configureGlobalAgents starting
+2026-04-23T20:43:30.412Z [DEBUG] CA certs: stores=bundled,system, extraCertsPath=undefined
+2026-04-23T20:43:30.413Z [DEBUG] CA certs: Loaded 145 bundled root certificates
+2026-04-23T20:43:30.432Z [DEBUG] CA certs: Loaded 296 system CA certificates
+2026-04-23T20:43:30.434Z [DEBUG] mTLS: Creating HTTPS agent with custom certificates
+2026-04-23T20:43:30.435Z [DEBUG] [init] configureGlobalAgents complete
+2026-04-23T20:43:30.438Z [DEBUG] Error log sink initialized
+2026-04-23T20:43:30.445Z [DEBUG] [ToolSearch:optimistic] mode=tst, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-04-23T20:43:30.448Z [DEBUG] Applying permission update: Adding 2 allow rule(s) to destination 'localSettings': ["Bash(bun update *)","Bash(bun run *)"]
+2026-04-23T20:43:30.451Z [DEBUG] [claudeai-mcp] Fetching from https://api.anthropic.com/v1/mcp_servers?limit=1000
+2026-04-23T20:43:30.465Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-04-23T20:43:30.472Z [DEBUG] [STARTUP] Running setup()...
+2026-04-23T20:43:30.479Z [DEBUG] Loading skills from: managed=/etc/claude-code/.claude/skills, user=/home/emmanuel/.claude/skills, project=[]
+2026-04-23T20:43:30.480Z [DEBUG] Error log sink initialized
+2026-04-23T20:43:30.489Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-04-23T20:43:30.489Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-04-23T20:43:30.490Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-04-23T20:43:30.490Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-04-23T20:43:30.490Z [DEBUG] Total plugin skills loaded: 0
+2026-04-23T20:43:30.490Z [DEBUG] Total plugin commands loaded: 0
+2026-04-23T20:43:30.491Z [DEBUG] Failed to stat directory /etc/claude-code/.claude/commands: ENOENT: no such file or directory, statx '/etc/claude-code/.claude/commands'
+2026-04-23T20:43:30.492Z [DEBUG] Failed to stat directory /home/emmanuel/.claude/commands: ENOENT: no such file or directory, statx '/home/emmanuel/.claude/commands'
+2026-04-23T20:43:30.492Z [DEBUG] Loaded 0 unique skills (0 unconditional, 0 conditional, managed: 0, user: 0, project: 0, additional: 0, legacy commands: 0)
+2026-04-23T20:43:30.492Z [DEBUG] getSkills returning: 0 skill dir commands, 0 plugin skills, 10 bundled skills, 0 builtin plugin skills
+2026-04-23T20:43:30.503Z [DEBUG] Failed to stat directory /etc/claude-code/.claude/agents: ENOENT: no such file or directory, statx '/etc/claude-code/.claude/agents'
+2026-04-23T20:43:30.503Z [DEBUG] Failed to stat directory /home/emmanuel/.claude/agents: ENOENT: no such file or directory, statx '/home/emmanuel/.claude/agents'
+2026-04-23T20:43:30.504Z [DEBUG] Total plugin agents loaded: 0
+2026-04-23T20:43:30.516Z [DEBUG] Git remote URL: https://github.com/akemmanuel/OpenGUI.git
+2026-04-23T20:43:30.517Z [DEBUG] Parsed repository: github.com/akemmanuel/OpenGUI from URL: https://github.com/akemmanuel/OpenGUI.git
+2026-04-23T20:43:30.567Z [DEBUG] [STARTUP] setup() completed in 95ms
+2026-04-23T20:43:30.569Z [DEBUG] Cleared CA certificates cache
+2026-04-23T20:43:30.569Z [DEBUG] Cleared mTLS configuration cache
+2026-04-23T20:43:30.569Z [DEBUG] Cleared proxy agent cache
+2026-04-23T20:43:30.570Z [DEBUG] CA certs: stores=bundled,system, extraCertsPath=undefined
+2026-04-23T20:43:30.570Z [DEBUG] CA certs: Loaded 145 bundled root certificates
+2026-04-23T20:43:30.570Z [DEBUG] CA certs: Loaded 296 system CA certificates
+2026-04-23T20:43:30.571Z [DEBUG] mTLS: Creating HTTPS agent with custom certificates
+2026-04-23T20:43:30.572Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-04-23T20:43:30.592Z [DEBUG] [STARTUP] Commands and agents loaded in 19ms
+2026-04-23T20:43:30.592Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-04-23T20:43:30.592Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-04-23T20:43:30.592Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-04-23T20:43:30.593Z [DEBUG] Starting background startup prefetches
+2026-04-23T20:43:30.593Z [DEBUG] [Bootstrap] Fetching
+2026-04-23T20:43:30.601Z [DEBUG] [STARTUP] MCP configs resolved in 25ms (awaited at +136ms)
+2026-04-23T20:43:30.604Z [DEBUG] Total LSP servers loaded: 0
+2026-04-23T20:43:30.604Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-04-23T20:43:30.605Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-04-23T20:43:30.605Z [DEBUG] LSP manager initialized with 0 servers
+2026-04-23T20:43:30.605Z [DEBUG] Cleared CA certificates cache
+2026-04-23T20:43:30.605Z [DEBUG] Cleared mTLS configuration cache
+2026-04-23T20:43:30.605Z [DEBUG] Cleared proxy agent cache
+2026-04-23T20:43:30.605Z [DEBUG] CA certs: stores=bundled,system, extraCertsPath=undefined
+2026-04-23T20:43:30.605Z [DEBUG] CA certs: Loaded 145 bundled root certificates
+2026-04-23T20:43:30.606Z [DEBUG] CA certs: Loaded 296 system CA certificates
+2026-04-23T20:43:30.606Z [DEBUG] mTLS: Creating HTTPS agent with custom certificates
+2026-04-23T20:43:30.606Z [DEBUG] LSP server manager initialized successfully
+2026-04-23T20:43:30.606Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-04-23T20:43:30.612Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:30.614Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-04-23T20:43:30.614Z [DEBUG] [3P telemetry] isTelemetryEnabled=false (CLAUDE_CODE_ENABLE_TELEMETRY=undefined)
+2026-04-23T20:43:30.639Z [DEBUG] Ripgrep first use test: PASSED (mode=embedded, path=/home/emmanuel/Code/OpenGUI/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude)
+2026-04-23T20:43:30.641Z [DEBUG] "rg error (signal=undefined, code=2, stderr: rg: /home/emmanuel/.claude/plugins/cache: IO error for operation on /home/emmanuel/.claude/plugins/cache: No such file or directory (os error 2)\n), 0 results"
+2026-04-23T20:43:30.938Z [DEBUG] Org fast mode: disabled (extra_usage_disabled)
+2026-04-23T20:43:30.955Z [DEBUG] [Bootstrap] Fetch ok
+2026-04-23T20:43:30.955Z [DEBUG] [Bootstrap] Cache unchanged, skipping write
+2026-04-23T20:43:30.989Z [DEBUG] [auto-mode] verifyAutoModeGateAccess: enabledState=disabled disabledBySettings=false model=claude-haiku-4-5-20251001 modelSupported=false disableFastModeBreakerFires=false carouselAvailable=false canEnterAuto=false
+2026-04-23T20:43:30.990Z [WARN] auto mode disabled: tengu_auto_mode_config.enabled === "disabled" (circuit breaker)
+2026-04-23T20:43:30.990Z [DEBUG] [auto-mode] kickOutOfAutoIfNeeded applying: ctx.mode=default ctx.prePlanMode=undefined reason=circuit-breaker
+2026-04-23T20:43:30.990Z [DEBUG] [auto-mode] verifyAutoModeGateAccess setAvailable: true -> false
+2026-04-23T20:43:30.994Z [DEBUG] [claudeai-mcp] Fetched 4 servers
+2026-04-23T20:43:30.996Z [DEBUG] MCP server "claude.ai Google Calendar": Initializing claude.ai proxy transport for server mcpsrv_01NzsKtqWpJjnTQGhDX23fQU
+2026-04-23T20:43:30.997Z [DEBUG] MCP server "claude.ai Google Calendar": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01NzsKtqWpJjnTQGhDX23fQU
+2026-04-23T20:43:30.997Z [DEBUG] MCP server "claude.ai Google Calendar": claude.ai proxy transport created successfully
+2026-04-23T20:43:31.002Z [DEBUG] MCP server "claude.ai Google Calendar": Starting connection with timeout of 30000ms
+2026-04-23T20:43:31.002Z [DEBUG] MCP server "claude.ai Google Drive": Initializing claude.ai proxy transport for server mcpsrv_01P89bSDeWpJVuZguk3sjGYM
+2026-04-23T20:43:31.002Z [DEBUG] MCP server "claude.ai Google Drive": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01P89bSDeWpJVuZguk3sjGYM
+2026-04-23T20:43:31.003Z [DEBUG] MCP server "claude.ai Google Drive": claude.ai proxy transport created successfully
+2026-04-23T20:43:31.004Z [DEBUG] MCP server "claude.ai Google Drive": Starting connection with timeout of 30000ms
+2026-04-23T20:43:31.004Z [DEBUG] MCP server "claude.ai Gmail": Initializing claude.ai proxy transport for server mcpsrv_01J6d3Q5KM8Cr5F2gPBdr2fw
+2026-04-23T20:43:31.004Z [DEBUG] MCP server "claude.ai Gmail": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01J6d3Q5KM8Cr5F2gPBdr2fw
+2026-04-23T20:43:31.005Z [DEBUG] MCP server "claude.ai Gmail": claude.ai proxy transport created successfully
+2026-04-23T20:43:31.006Z [DEBUG] MCP server "claude.ai Gmail": Starting connection with timeout of 30000ms
+2026-04-23T20:43:31.006Z [DEBUG] MCP server "claude.ai Test": Initializing claude.ai proxy transport for server mcpsrv_01BnEdLr5gQ1jG4AVHezhFz7
+2026-04-23T20:43:31.006Z [DEBUG] MCP server "claude.ai Test": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01BnEdLr5gQ1jG4AVHezhFz7
+2026-04-23T20:43:31.007Z [DEBUG] MCP server "claude.ai Test": claude.ai proxy transport created successfully
+2026-04-23T20:43:31.008Z [DEBUG] MCP server "claude.ai Test": Starting connection with timeout of 30000ms
+2026-04-23T20:43:31.395Z [DEBUG] MCP server "claude.ai Google Calendar": claude.ai proxy connection failed after 399ms: Streamable HTTP error: Error POSTing to endpoint: {"type":"error","error":{"type":"authentication_error","message":"MCP server requires authentication but no OAuth token is configured."},"request_id":"req_011CaMMUcStgikytCTXNDGbz"}
+2026-04-23T20:43:31.395Z [ERROR] MCP server "claude.ai Google Calendar" Error: Streamable HTTP error: Error POSTing to endpoint: {"type":"error","error":{"type":"authentication_error","message":"MCP server requires authentication but no OAuth token is configured."},"request_id":"req_011CaMMUcStgikytCTXNDGbz"}
+2026-04-23T20:43:31.396Z [DEBUG] MCP server "claude.ai Google Calendar": Authentication required for claude.ai proxy server
+2026-04-23T20:43:31.420Z [DEBUG] MCP server "claude.ai Gmail": claude.ai proxy connection failed after 416ms: Streamable HTTP error: Error POSTing to endpoint: {"type":"error","error":{"type":"authentication_error","message":"MCP server requires authentication but no OAuth token is configured."},"request_id":"req_011CaMMUcWc2AazwW63jc2Jf"}
+2026-04-23T20:43:31.420Z [ERROR] MCP server "claude.ai Gmail" Error: Streamable HTTP error: Error POSTing to endpoint: {"type":"error","error":{"type":"authentication_error","message":"MCP server requires authentication but no OAuth token is configured."},"request_id":"req_011CaMMUcWc2AazwW63jc2Jf"}
+2026-04-23T20:43:31.420Z [DEBUG] MCP server "claude.ai Gmail": Authentication required for claude.ai proxy server
+2026-04-23T20:43:31.550Z [DEBUG] MCP server "claude.ai Google Drive": claude.ai proxy connection failed after 548ms: Streamable HTTP error: Error POSTing to endpoint: {"type":"error","error":{"type":"authentication_error","message":"MCP server requires authentication but no OAuth token is configured."},"request_id":"req_011CaMMUcTdmpbDv3zuckyQn"}
+2026-04-23T20:43:31.550Z [ERROR] MCP server "claude.ai Google Drive" Error: Streamable HTTP error: Error POSTing to endpoint: {"type":"error","error":{"type":"authentication_error","message":"MCP server requires authentication but no OAuth token is configured."},"request_id":"req_011CaMMUcTdmpbDv3zuckyQn"}
+2026-04-23T20:43:31.550Z [DEBUG] MCP server "claude.ai Google Drive": Authentication required for claude.ai proxy server
+2026-04-23T20:43:35.614Z [DEBUG] [MCP] claude.ai connectors: 1/4 not ready after 5000ms — proceeding; background connection continues
+2026-04-23T20:43:35.624Z [DEBUG] Plugin autoupdate: skipped (auto-updater disabled)
+2026-04-23T20:43:35.625Z [DEBUG] Grove: Using fresh cached config
+2026-04-23T20:43:35.638Z [DEBUG] Watching for changes in setting files /home/emmanuel/.claude/settings.json, /home/emmanuel/Code/OpenGUI/.claude/settings.json, /home/emmanuel/Code/OpenGUI/.claude/settings.local.json...
+2026-04-23T20:43:36.115Z [DEBUG] [ScheduledTasks] scheduler start() — enabled=false, hasTasks=false
+2026-04-23T20:43:36.118Z [DEBUG] installPluginsForHeadless: starting
+2026-04-23T20:43:36.118Z [DEBUG] installPluginsForHeadless: no marketplaces declared
+2026-04-23T20:43:36.124Z [DEBUG] Failed to stat directory /etc/claude-code/.claude/output-styles: ENOENT: no such file or directory, statx '/etc/claude-code/.claude/output-styles'
+2026-04-23T20:43:36.124Z [DEBUG] Failed to stat directory /home/emmanuel/.claude/output-styles: ENOENT: no such file or directory, statx '/home/emmanuel/.claude/output-styles'
+2026-04-23T20:43:36.125Z [DEBUG] Total plugin output styles loaded: 0
+2026-04-23T20:43:36.125Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:36.445Z [DEBUG] MCP server "claude.ai Test": claude.ai proxy connection failed after 5439ms: Streamable HTTP error: Error POSTing to endpoint: {"type":"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/","title":"Error 502: Bad gateway","status":502,"detail":"The origin web server returned an invalid or incomplete response to Cloudflare. This typically indicates the origin is overloaded or misconfigured.","instance":"9f0fb36f48b69b17","error_code":502,"error_name":"origin_bad_gateway","error_category":"origin_error","ray_id":"9f0fb36f48b69b17","timestamp":"2026-04-23T20:43:36Z","zone":"mcp-proxy.anthropic.com","cloudflare_error":true,"retryable":true,"retry_after":60,"owner_action_required":true,"what_you_should_do":"**Wait and retry.** Back off for at least 60 seconds. If the error persists, the website operator should check their origin server health and configuration.","footer":"This error was generated by Cloudflare on behalf of the website owner."}
+2026-04-23T20:43:36.445Z [ERROR] MCP server "claude.ai Test" Error: Streamable HTTP error: Error POSTing to endpoint: {"type":"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/","title":"Error 502: Bad gateway","status":502,"detail":"The origin web server returned an invalid or incomplete response to Cloudflare. This typically indicates the origin is overloaded or misconfigured.","instance":"9f0fb36f48b69b17","error_code":502,"error_name":"origin_bad_gateway","error_category":"origin_error","ray_id":"9f0fb36f48b69b17","timestamp":"2026-04-23T20:43:36Z","zone":"mcp-proxy.anthropic.com","cloudflare_error":true,"retryable":true,"retry_after":60,"owner_action_required":true,"what_you_should_do":"**Wait and retry.** Back off for at least 60 seconds. If the error persists, the website operator should check their origin server health and configuration.","footer":"This error was generated by Cloudflare on behalf of the website owner."}
+2026-04-23T20:43:36.446Z [WARN] [3P telemetry] Event dropped (no event logger initialized): mcp_server_connection
+2026-04-23T20:43:36.446Z [DEBUG] MCP server "claude.ai Test": Connection failed after 5439ms: Streamable HTTP error: Error POSTing to endpoint: {"type":"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/","title":"Error 502: Bad gateway","status":502,"detail":"The origin web server returned an invalid or incomplete response to Cloudflare. This typically indicates the origin is overloaded or misconfigured.","instance":"9f0fb36f48b69b17","error_code":502,"error_name":"origin_bad_gateway","error_category":"origin_error","ray_id":"9f0fb36f48b69b17","timestamp":"2026-04-23T20:43:36Z","zone":"mcp-proxy.anthropic.com","cloudflare_error":true,"retryable":true,"retry_after":60,"owner_action_required":true,"what_you_should_do":"**Wait and retry.** Back off for at least 60 seconds. If the error persists, the website operator should check their origin server health and configuration.","footer":"This error was generated by Cloudflare on behalf of the website owner."}
+2026-04-23T20:43:36.446Z [ERROR] MCP server "claude.ai Test" Connection failed: Streamable HTTP error: Error POSTing to endpoint: {"type":"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/","title":"Error 502: Bad gateway","status":502,"detail":"The origin web server returned an invalid or incomplete response to Cloudflare. This typically indicates the origin is overloaded or misconfigured.","instance":"9f0fb36f48b69b17","error_code":502,"error_name":"origin_bad_gateway","error_category":"origin_error","ray_id":"9f0fb36f48b69b17","timestamp":"2026-04-23T20:43:36Z","zone":"mcp-proxy.anthropic.com","cloudflare_error":true,"retryable":true,"retry_after":60,"owner_action_required":true,"what_you_should_do":"**Wait and retry.** Back off for at least 60 seconds. If the error persists, the website operator should check their origin server health and configuration.","footer":"This error was generated by Cloudflare on behalf of the website owner."}
+2026-04-23T20:43:36.459Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-04-23T20:43:36.460Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-04-23T20:43:36.460Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-04-23T20:43:36.461Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-04-23T20:43:36.466Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:36.467Z [DEBUG] FileHistory: Making snapshot for message e1314d9c-909b-4591-b702-0d3bbc4a38fb
+2026-04-23T20:43:36.468Z [DEBUG] FileHistory: Added snapshot for e1314d9c-909b-4591-b702-0d3bbc4a38fb, tracking 0 files
+2026-04-23T20:43:36.470Z [DEBUG] autocompact: tokens=21695 threshold=167000 effectiveWindow=180000
+2026-04-23T20:43:36.471Z [DEBUG] Tool search disabled for model 'claude-haiku-4-5-20251001': model does not support tool_reference blocks. This feature is only available on Claude Sonnet 4+, Opus 4+, and newer models.
+2026-04-23T20:43:36.504Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.118.d99; cc_entrypoint=sdk-ts; cch=00000;
+2026-04-23T20:43:36.505Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:36.506Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:36.507Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-04-23T20:43:36.507Z [DEBUG] [API:auth] OAuth token check starting
+2026-04-23T20:43:36.508Z [DEBUG] [API:auth] OAuth token check complete
+2026-04-23T20:43:36.510Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:36.515Z [DEBUG] [API REQUEST] /v1/messages x-client-request-id=5a66b0b8-baf8-40ce-8d87-d43760f12d45 source=sdk
+2026-04-23T20:43:36.676Z [DEBUG] [mcp-registry] Loaded 197 official MCP URLs (legacy)
+2026-04-23T20:43:37.892Z [DEBUG] Stream started - received first chunk
+2026-04-23T20:43:38.058Z [DEBUG] Fast mode unavailable: Fast mode is not available in the Agent SDK
+2026-04-23T20:43:38.072Z [DEBUG] LSP server manager shut down successfully

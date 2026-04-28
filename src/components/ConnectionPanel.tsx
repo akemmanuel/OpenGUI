@@ -185,6 +185,7 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const backend = useAgentBackend();
 	const workspaceProfile = backend?.workspace;
+	const localBackendLabel = backend?.label ?? "Selected backend";
 	const serverApi = backend?.platform?.server;
 	const connectedProjectCount = Object.values(connections).filter(
 		(conn) => conn.state === "connected",
@@ -442,7 +443,7 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 				/>
 				<p className="text-[11px] text-muted-foreground">
 					{workspaceProfile?.kind === "local-cli"
-						? "Claude Code runs locally in this project directory. Use stable paths to reuse the same chats."
+						? `${localBackendLabel} runs locally in this project directory. Use stable paths to reuse the same chats.`
 						: "This window can open multiple projects, but they all share the same server connection. Use stable paths to reuse the same chats."}
 				</p>
 			</div>
@@ -557,7 +558,13 @@ function GeneralSettings() {
 					value={backendId}
 					onValueChange={(value) =>
 						setStoredAgentBackendId(
-							value === "claude-code" ? "claude-code" : "opencode",
+							value === "claude-code"
+								? "claude-code"
+								: value === "pi"
+									? "pi"
+									: value === "codex"
+										? "codex"
+										: "opencode",
 						)
 					}
 				>
@@ -567,6 +574,8 @@ function GeneralSettings() {
 					<SelectContent>
 						<SelectItem value="opencode">OpenCode</SelectItem>
 						<SelectItem value="claude-code">Claude Code</SelectItem>
+						<SelectItem value="pi">Pi</SelectItem>
+						<SelectItem value="codex">Codex</SelectItem>
 					</SelectContent>
 				</Select>
 			</div>

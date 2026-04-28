@@ -206,6 +206,172 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		},
 	},
 
+	// Pi bridge
+	pi: {
+		addProject: (config) => ipcRenderer.invoke("pi:project:add", config),
+		removeProject: (directory, workspaceId) =>
+			ipcRenderer.invoke("pi:project:remove", directory, workspaceId),
+		disconnect: () => ipcRenderer.invoke("pi:disconnect"),
+		listSessions: (directory, workspaceId) =>
+			ipcRenderer.invoke("pi:session:list", directory, workspaceId),
+		createSession: (title, directory, workspaceId) =>
+			ipcRenderer.invoke("pi:session:create", title, directory, workspaceId),
+		deleteSession: (sessionId, directory, workspaceId) =>
+			ipcRenderer.invoke("pi:session:delete", sessionId, directory, workspaceId),
+		updateSession: (sessionId, title, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"pi:session:update",
+				sessionId,
+				title,
+				directory,
+				workspaceId,
+			),
+		getSessionStatuses: (directory, workspaceId) =>
+			ipcRenderer.invoke("pi:session:statuses", directory, workspaceId),
+		forkSession: (sessionId, messageID, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"pi:session:fork",
+				sessionId,
+				messageID,
+				directory,
+				workspaceId,
+			),
+		getProviders: (directory, workspaceId) =>
+			ipcRenderer.invoke("pi:providers", directory, workspaceId),
+		getAgents: (directory, workspaceId) =>
+			ipcRenderer.invoke("pi:agents", directory, workspaceId),
+		getCommands: (directory, workspaceId) =>
+			ipcRenderer.invoke("pi:commands", directory, workspaceId),
+		getMessages: (sessionId, options, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"pi:messages",
+				sessionId,
+				options,
+				directory,
+				workspaceId,
+			),
+		startSession: (input) => ipcRenderer.invoke("pi:session:start", input),
+		prompt: (sessionId, text, images, model, agent, variant, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"pi:prompt",
+				sessionId,
+				text,
+				images,
+				model,
+				agent,
+				variant,
+				directory,
+				workspaceId,
+			),
+		abort: (sessionId) => ipcRenderer.invoke("pi:abort", sessionId),
+		sendCommand: (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"pi:command:send",
+				sessionId,
+				command,
+				args,
+				model,
+				agent,
+				variant,
+				directory,
+				workspaceId,
+			),
+		summarizeSession: (sessionId, model, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"pi:session:summarize",
+				sessionId,
+				model,
+				directory,
+				workspaceId,
+			),
+		findFiles: (directory, workspaceId, query) =>
+			ipcRenderer.invoke("pi:find:files", directory, workspaceId, query),
+		onEvent: (callback) => {
+			const handler = (_event, data) => callback(data);
+			ipcRenderer.on("pi:bridge-event", handler);
+			return () => ipcRenderer.removeListener("pi:bridge-event", handler);
+		},
+	},
+
+	// Codex bridge
+	codex: {
+		addProject: (config) => ipcRenderer.invoke("codex:project:add", config),
+		removeProject: (directory, workspaceId) =>
+			ipcRenderer.invoke("codex:project:remove", directory, workspaceId),
+		disconnect: () => ipcRenderer.invoke("codex:disconnect"),
+		listSessions: (directory, workspaceId) =>
+			ipcRenderer.invoke("codex:session:list", directory, workspaceId),
+		createSession: (title, directory, workspaceId) =>
+			ipcRenderer.invoke("codex:session:create", title, directory, workspaceId),
+		deleteSession: (sessionId, directory, workspaceId) =>
+			ipcRenderer.invoke("codex:session:delete", sessionId, directory, workspaceId),
+		updateSession: (sessionId, title, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"codex:session:update",
+				sessionId,
+				title,
+				directory,
+				workspaceId,
+			),
+		getSessionStatuses: (directory, workspaceId) =>
+			ipcRenderer.invoke("codex:session:statuses", directory, workspaceId),
+		getProviders: (directory, workspaceId) =>
+			ipcRenderer.invoke("codex:providers", directory, workspaceId),
+		getAgents: (directory, workspaceId) =>
+			ipcRenderer.invoke("codex:agents", directory, workspaceId),
+		getCommands: (directory, workspaceId) =>
+			ipcRenderer.invoke("codex:commands", directory, workspaceId),
+		getMessages: (sessionId, options, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"codex:messages",
+				sessionId,
+				options,
+				directory,
+				workspaceId,
+			),
+		startSession: (input) => ipcRenderer.invoke("codex:session:start", input),
+		prompt: (sessionId, text, images, model, agent, variant, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"codex:prompt",
+				sessionId,
+				text,
+				images,
+				model,
+				agent,
+				variant,
+				directory,
+				workspaceId,
+			),
+		abort: (sessionId) => ipcRenderer.invoke("codex:abort", sessionId),
+		sendCommand: (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"codex:command:send",
+				sessionId,
+				command,
+				args,
+				model,
+				agent,
+				variant,
+				directory,
+				workspaceId,
+			),
+		summarizeSession: (sessionId, model, directory, workspaceId) =>
+			ipcRenderer.invoke(
+				"codex:session:summarize",
+				sessionId,
+				model,
+				directory,
+				workspaceId,
+			),
+		findFiles: (directory, workspaceId, query) =>
+			ipcRenderer.invoke("codex:find:files", directory, workspaceId, query),
+		onEvent: (callback) => {
+			const handler = (_event, data) => callback(data)
+			ipcRenderer.on("codex:bridge-event", handler)
+			return () => ipcRenderer.removeListener("codex:bridge-event", handler)
+		},
+	},
+
 	// OpenCode bridge
 	opencode: {
 		// Project management (multi-project)

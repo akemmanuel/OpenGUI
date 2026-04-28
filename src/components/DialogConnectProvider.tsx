@@ -75,16 +75,31 @@ export function DialogConnectProvider({
 	const [oauthPolling, setOauthPolling] = useState(false);
 	const pollingRef = useRef(false);
 	const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const connectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	// Clear polling timeout on unmount
+	// Clear pending timers on unmount
 	useEffect(() => {
 		return () => {
 			if (pollingTimerRef.current !== null) {
 				clearTimeout(pollingTimerRef.current);
 				pollingTimerRef.current = null;
 			}
+			if (connectedTimerRef.current !== null) {
+				clearTimeout(connectedTimerRef.current);
+				connectedTimerRef.current = null;
+			}
 		};
 	}, []);
+
+	const scheduleConnected = useCallback(() => {
+		if (connectedTimerRef.current !== null) {
+			clearTimeout(connectedTimerRef.current);
+		}
+		connectedTimerRef.current = setTimeout(() => {
+			connectedTimerRef.current = null;
+			onConnected();
+		}, 600);
+	}, [onConnected]);
 
 	const handleApiKeyConnect = useCallback(async () => {
 		if (!providersApi || !apiKey.trim()) return;
@@ -98,13 +113,13 @@ export function DialogConnectProvider({
 			});
 			await providersApi.dispose(target);
 			setSuccess(true);
-			setTimeout(onConnected, 600);
+			scheduleConnected();
 		} catch (err) {
 			setError(getErrorMessage(err));
 		} finally {
 			setConnecting(false);
 		}
-	}, [providersApi, directory, activeWorkspaceId, providerID, apiKey, onConnected]);
+	}, [providersApi, directory, activeWorkspaceId, providerID, apiKey, scheduleConnected]);
 
 	const pollOAuth = useCallback(
 		async (methodIndex?: number) => {
@@ -132,7 +147,7 @@ export function DialogConnectProvider({
 						setOauthPolling(false);
 						await providersApi.dispose(target);
 						setSuccess(true);
-						setTimeout(onConnected, 600);
+						scheduleConnected();
 						return;
 					}
 				} catch {
@@ -142,7 +157,7 @@ export function DialogConnectProvider({
 			};
 			void poll();
 		},
-		[providersApi, directory, activeWorkspaceId, providerID, onConnected],
+		[providersApi, directory, activeWorkspaceId, providerID, scheduleConnected],
 	);
 
 	const startOAuth = useCallback(
@@ -187,7 +202,7 @@ export function DialogConnectProvider({
 			if (done) {
 				await providersApi.dispose(target);
 				setSuccess(true);
-				setTimeout(onConnected, 600);
+				scheduleConnected();
 			} else {
 				setError("Invalid code");
 			}
@@ -196,7 +211,7 @@ export function DialogConnectProvider({
 		} finally {
 			setConnecting(false);
 		}
-	}, [providersApi, directory, activeWorkspaceId, providerID, oauthCode, onConnected]);
+	}, [providersApi, directory, activeWorkspaceId, providerID, oauthCode, scheduleConnected]);
 
 	// Clean up polling on unmount
 	useEffect(() => {

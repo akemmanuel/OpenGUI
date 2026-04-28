@@ -52,9 +52,11 @@ import {
 	getChildSessionParts,
 	type MessageEntry,
 	useActions,
+	useConnectionState,
 	useMessages,
 	useSessionState,
 } from "@/hooks/use-agent-state";
+import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
 import {
@@ -886,8 +888,9 @@ function TextPartView({ part, isUser }: { part: TextPart; isUser?: boolean }) {
 }
 
 function FilePartView({ part }: { part: FilePart }) {
+	const { workspaceServerUrl } = useConnectionState();
 	const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
-	const src = normalizeAttachmentImageSrc(part.url);
+	const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
 
 	if (isImage) {
 		return (
@@ -983,7 +986,10 @@ function ReasoningPartView({
 
 	const durationMs =
 		part.time.end && part.time.start ? part.time.end - part.time.start : null;
-	const durationLabel = durationMs !== null ? formatDuration(durationMs) : null;
+	const durationLabel =
+		durationMs !== null
+			? hideZeroDurationLabel(formatDuration(durationMs))
+			: null;
 
 	return (
 		<div className="text-xs font-mono text-muted-foreground overflow-hidden">
@@ -1086,19 +1092,9 @@ interface ImageAttachmentInfo {
 	filename?: string;
 }
 
-function normalizeAttachmentImageSrc(url: string): string {
-	const trimmed = url.trim();
-	if (!trimmed) return trimmed;
-	if (/^(data:|blob:|https?:|file:)/i.test(trimmed)) return trimmed;
-	if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
-		return `file:///${trimmed.replace(/\\/g, "/")}`;
-	}
-	if (trimmed.startsWith("/")) return `file://${trimmed}`;
-	return trimmed;
-}
-
 function extractImageAttachments(
 	state: ToolPart["state"],
+	serverUrl?: string | null,
 ): ImageAttachmentInfo[] {
 	if (state.status !== "completed") return [];
 	if (!Array.isArray(state.attachments) || state.attachments.length === 0) {
@@ -1114,10 +1110,15 @@ function extractImageAttachments(
 		})
 		.map((att) => ({
 			url: att.url,
-			src: normalizeAttachmentImageSrc(att.url),
+			src: resolveAttachmentImageSrc(att.url, serverUrl),
 			mime: att.mime,
 			filename: att.filename,
 		}));
+}
+
+function hideZeroDurationLabel(label: string | null): string | null {
+	if (!label) return null;
+	return label === "0.0s" ? null : label;
 }
 
 function formatDuration(ms: number): string {
@@ -1787,6 +1788,7 @@ function ChildSessionParts({
 }
 
 function ToolPartView({ part }: { part: ToolPart }) {
+	const { workspaceServerUrl } = useConnectionState();
 	const { state } = part;
 	const [expanded, setExpanded] = useState(false);
 	const autoExpandedRef = useRef(false);
@@ -1828,7 +1830,7 @@ function ToolPartView({ part }: { part: ToolPart }) {
 	const todos = isTodoWrite ? extractTodos(state) : null;
 	const taskInfo = isTask ? extractTaskInfo(state) : null;
 	const taskDurationLabel = isTask ? getTaskDurationLabel(state) : null;
-	const imageAttachments = extractImageAttachments(state);
+	const imageAttachments = extractImageAttachments(state, workspaceServerUrl);
 
 	const bashCommand =
 		isBash && "input" in state

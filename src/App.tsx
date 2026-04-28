@@ -177,6 +177,29 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [capabilities?.models, cycleVariant]);
 
+	// Ctrl+K: focus sidebar search
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key.toLowerCase() !== "k" || !(e.ctrlKey || e.metaKey)) return;
+
+			const target = e.target instanceof HTMLElement ? e.target : null;
+			const tag = target?.tagName;
+			if (
+				tag === "INPUT" ||
+				tag === "TEXTAREA" ||
+				target?.isContentEditable
+			) {
+				return;
+			}
+
+			e.preventDefault();
+			window.dispatchEvent(new CustomEvent("focus-sidebar-search"));
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, []);
+
 	useEffect(() => {
 		const handleDoubleEscape = (e: KeyboardEvent) => {
 			if (e.key !== "Escape" || e.repeat) return;

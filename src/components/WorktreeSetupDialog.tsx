@@ -134,12 +134,12 @@ export function WorktreeSetupDialog({
 								htmlFor="setup-command"
 								className="text-xs font-medium text-muted-foreground"
 							>
-								Command
+								Detected command
 							</label>
 							<Input
 								id="setup-command"
 								value={command}
-								onChange={(e) => setCommand(e.target.value)}
+								readOnly
 								placeholder="bun install"
 								className="font-mono text-sm"
 							/>

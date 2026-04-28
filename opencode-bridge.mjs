@@ -1038,19 +1038,172 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 		});
 	}
 
+	const WINDOWS_SHELL_COMMANDS = new Set(["bun", "npm", "pnpm", "yarn", "pip"]);
+	const WORKTREE_SETUP_CHECKS = [
+		{
+			file: "bun.lockb",
+			command: "bun install",
+			executable: "bun",
+			args: ["install"],
+		},
+		{
+			file: "bun.lock",
+			command: "bun install",
+			executable: "bun",
+			args: ["install"],
+		},
+		{
+			file: "pnpm-lock.yaml",
+			command: "pnpm install",
+			executable: "pnpm",
+			args: ["install"],
+		},
+		{
+			file: "yarn.lock",
+			command: "yarn install",
+			executable: "yarn",
+			args: ["install"],
+		},
+		{
+			file: "package-lock.json",
+			command: "npm install",
+			executable: "npm",
+			args: ["install"],
+		},
+		{
+			file: "package.json",
+			command: "bun install",
+			executable: "bun",
+			args: ["install"],
+		},
+		{
+			file: "Cargo.toml",
+			command: "cargo build",
+			executable: "cargo",
+			args: ["build"],
+		},
+		{
+			file: "go.mod",
+			command: "go mod download",
+			executable: "go",
+			args: ["mod", "download"],
+		},
+		{
+			file: "pyproject.toml",
+			command: "uv sync",
+			executable: "uv",
+			args: ["sync"],
+		},
+		{
+			file: "requirements.txt",
+			command: "pip install -r requirements.txt",
+			executable: "pip",
+			args: ["install", "-r", "requirements.txt"],
+		},
+	];
+
 	/**
-	 * Run a git command and return the result in the standard IPC envelope.
-	 * @param {string} directory - The cwd for git
-	 * @param {string} command - The git command to run (without "git" prefix)
-	 * @param {Array} [stdio] - stdio config (default: ["ignore", "pipe", "ignore"])
-	 * @returns {string} Raw stdout
+	 * Run child process without shell interpolation.
+	 * @param {string} executable
+	 * @param {string[]} args
+	 * @param {{ cwd: string, timeout?: number, shell?: boolean }} options
+	 * @returns {Promise<string>} Raw stdout
 	 */
-	function runGit(directory, command, stdio = ["ignore", "pipe", "ignore"]) {
-		return execSync(`git ${command}`, {
-			cwd: directory,
-			encoding: "utf-8",
-			stdio,
+	function runCommand(executable, args, options) {
+		return new Promise((resolve, reject) => {
+			const child = spawn(executable, args, {
+				cwd: options.cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: true,
+				shell: options.shell === true,
+				env: { ...process.env },
+			});
+
+			let stdout = "";
+			let stderr = "";
+			let timedOut = false;
+			let settled = false;
+			let timeoutId = null;
+
+			const cleanup = () => {
+				if (timeoutId !== null) {
+					clearTimeout(timeoutId);
+					timeoutId = null;
+				}
+			};
+
+			const fail = (message) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				const detail = (stderr || stdout || message).trim();
+				const error = new Error(detail || message);
+				error.stdout = stdout;
+				error.stderr = stderr;
+				reject(error);
+			};
+
+			if (child.stdout) {
+				child.stdout.on("data", (chunk) => {
+					stdout += chunk.toString();
+				});
+			}
+
+			if (child.stderr) {
+				child.stderr.on("data", (chunk) => {
+					stderr += chunk.toString();
+				});
+			}
+
+			child.on("error", (err) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				reject(err);
+			});
+
+			child.on("close", (code, signal) => {
+				if (settled) return;
+				cleanup();
+				if (timedOut) {
+					settled = true;
+					const error = new Error(
+						`Command timed out after ${options.timeout ?? 0}ms`,
+					);
+					error.stdout = stdout;
+					error.stderr = stderr;
+					reject(error);
+					return;
+				}
+				if (code === 0) {
+					settled = true;
+					resolve(stdout);
+					return;
+				}
+				fail(
+					signal
+						? `Command terminated by signal ${signal}`
+						: `Command exited with code ${code ?? "unknown"}`,
+				);
+			});
+
+			if (options.timeout && options.timeout > 0) {
+				timeoutId = setTimeout(() => {
+					timedOut = true;
+					child.kill("SIGKILL");
+				}, options.timeout);
+			}
 		});
+	}
+
+	/**
+	 * Run git command without shell interpolation.
+	 * @param {string} directory - cwd for git
+	 * @param {string[]} args - git arguments
+	 * @returns {Promise<string>} Raw stdout
+	 */
+	function runGit(directory, args) {
+		return runCommand("git", args, { cwd: directory });
 	}
 
 	// --- Project management ---
@@ -1592,7 +1745,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:is-repo", async (_event, directory) => {
 		try {
-			runGit(directory, "rev-parse --git-dir");
+			await runGit(directory, ["rev-parse", "--git-dir"]);
 			return { success: true, data: true };
 		} catch {
 			return { success: true, data: false };
@@ -1601,7 +1754,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:branch:list", async (_event, directory) => {
 		try {
-			const raw = runGit(directory, 'branch -a --format="%(refname:short)"');
+			const raw = await runGit(directory, ["branch", "--format=%(refname:short)"]);
 			const branches = raw
 				.split(/\r?\n/)
 				.map((b) => b.trim())
@@ -1614,7 +1767,11 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:current-branch", async (_event, directory) => {
 		try {
-			const branch = runGit(directory, "rev-parse --abbrev-ref HEAD").trim();
+			const branch = (await runGit(directory, [
+				"rev-parse",
+				"--abbrev-ref",
+				"HEAD",
+			])).trim();
 			return { success: true, data: branch };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
@@ -1623,7 +1780,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:worktree:list", async (_event, directory) => {
 		try {
-			const raw = runGit(directory, "worktree list --porcelain");
+			const raw = await runGit(directory, ["worktree", "list", "--porcelain"]);
 			const worktrees = [];
 			let current = {};
 			for (const line of raw.split(/\r?\n/)) {
@@ -1633,7 +1790,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 				} else if (line.startsWith("HEAD ")) {
 					current.head = line.slice("HEAD ".length);
 				} else if (line.startsWith("branch ")) {
-					// Convert refs/heads/main -> main
 					current.branch = line
 						.slice("branch ".length)
 						.replace(/^refs\/heads\//, "");
@@ -1663,7 +1819,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 				} else {
 					args.push(worktreePath, branch);
 				}
-				runGit(directory, args.join(" "), ["ignore", "pipe", "pipe"]);
+				await runGit(directory, args);
 				return { success: true, data: { path: worktreePath } };
 			} catch (err) {
 				return { success: false, error: err.message ?? String(err) };
@@ -1675,11 +1831,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 		"git:worktree:remove",
 		async (_event, directory, worktreePath) => {
 			try {
-				runGit(directory, `worktree remove "${worktreePath}"`, [
-					"ignore",
-					"pipe",
-					"pipe",
-				]);
+				await runGit(directory, ["worktree", "remove", worktreePath]);
 				return { success: true };
 			} catch (err) {
 				return { success: false, error: err.message ?? String(err) };
@@ -1693,21 +1845,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("worktree:detect-setup", async (_event, worktreePath) => {
 		try {
-			const checks = [
-				{ file: "bun.lockb", cmd: "bun install" },
-				{ file: "bun.lock", cmd: "bun install" },
-				{ file: "pnpm-lock.yaml", cmd: "pnpm install" },
-				{ file: "yarn.lock", cmd: "yarn install" },
-				{ file: "package-lock.json", cmd: "npm install" },
-				{ file: "package.json", cmd: "bun install" },
-				{ file: "Cargo.toml", cmd: "cargo build" },
-				{ file: "go.mod", cmd: "go mod download" },
-				{ file: "pyproject.toml", cmd: "uv sync" },
-				{ file: "requirements.txt", cmd: "pip install -r requirements.txt" },
-			];
-			for (const { file, cmd } of checks) {
-				if (existsSync(join(worktreePath, file))) {
-					return { detected: true, command: cmd, file };
+			for (const check of WORKTREE_SETUP_CHECKS) {
+				if (existsSync(join(worktreePath, check.file))) {
+					return {
+						detected: true,
+						command: check.command,
+						file: check.file,
+					};
 				}
 			}
 			return { detected: false };
@@ -1720,11 +1864,24 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 		"worktree:run-setup",
 		async (_event, worktreePath, command) => {
 			try {
-				execSync(command, {
+				const candidates = WORKTREE_SETUP_CHECKS.filter(
+					(check) => check.command === command,
+				);
+				const matched = candidates.find((check) =>
+					existsSync(join(worktreePath, check.file)),
+				);
+				if (!matched) {
+					return {
+						success: false,
+						error: "Unsupported setup command",
+					};
+				}
+				await runCommand(matched.executable, matched.args, {
 					cwd: worktreePath,
-					encoding: "utf-8",
-					stdio: "pipe",
 					timeout: 120_000,
+					shell:
+						process.platform === "win32" &&
+						WINDOWS_SHELL_COMMANDS.has(matched.executable),
 				});
 				return { success: true };
 			} catch (err) {
@@ -1738,16 +1895,15 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:merge", async (_event, directory, branch) => {
 		try {
-			runGit(directory, `merge "${branch}" --no-edit`, [
-				"ignore",
-				"pipe",
-				"pipe",
-			]);
+			await runGit(directory, ["merge", branch, "--no-edit"]);
 			return { success: true };
 		} catch (err) {
-			// Check if it's a merge conflict (vs other errors)
 			try {
-				const conflicted = runGit(directory, "diff --name-only --diff-filter=U")
+				const conflicted = (await runGit(directory, [
+					"diff",
+					"--name-only",
+					"--diff-filter=U",
+				]))
 					.split(/\r?\n/)
 					.map((f) => f.trim())
 					.filter(Boolean);
@@ -1763,7 +1919,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:merge:abort", async (_event, directory) => {
 		try {
-			runGit(directory, "merge --abort", ["ignore", "pipe", "pipe"]);
+			await runGit(directory, ["merge", "--abort"]);
 			return { success: true };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };
@@ -1772,7 +1928,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
 	ipcMain.handle("git:remote:url", async (_event, directory) => {
 		try {
-			const url = runGit(directory, "remote get-url origin").trim();
+			const url = (await runGit(directory, ["remote", "get-url", "origin"])).trim();
 			return { success: true, data: url };
 		} catch (err) {
 			return { success: false, error: err.message ?? String(err) };

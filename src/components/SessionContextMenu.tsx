@@ -1,4 +1,4 @@
-import { Check, Palette, Pencil, Tag, Trash2, X } from "lucide-react";
+import { Check, Palette, Pencil, Pin, PinOff, Tag, Trash2, X } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -93,6 +93,8 @@ interface SessionContextMenuProps {
 	currentTags: string[];
 	onSetColor: (color: SessionColor) => void;
 	onSetTags: (tags: string[]) => void;
+	pinned: boolean;
+	onTogglePin: () => void;
 	onRename: () => void;
 	onDelete: () => void;
 }
@@ -103,6 +105,8 @@ export function SessionContextMenu({
 	currentTags,
 	onSetColor,
 	onSetTags,
+	pinned,
+	onTogglePin,
 	onRename,
 	onDelete,
 }: SessionContextMenuProps) {
@@ -141,6 +145,13 @@ export function SessionContextMenu({
 					alignOffset={5}
 					onCloseAutoFocus={(e) => e.preventDefault()}
 				>
+					<ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onTogglePin}>
+						{pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+						<span>{pinned ? "Unpin" : "Pin to top"}</span>
+					</ContextMenu.Item>
+
+					<ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
+
 					{/* Rename */}
 					<ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onRename}>
 						<Pencil className="size-4" />

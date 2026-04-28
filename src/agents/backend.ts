@@ -81,6 +81,14 @@ export type AgentBackendEvent =
 			session: Session;
 	  }
 	| {
+			type: "session.replaced";
+			directory: string;
+			workspaceId?: string;
+			oldId: string;
+			newId: string;
+			session: Session;
+	  }
+	| {
 			type: "session.deleted";
 			directory: string;
 			workspaceId?: string;
