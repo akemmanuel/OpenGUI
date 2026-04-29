@@ -87,17 +87,25 @@ No manual config file needed. Connection settings live in UI.
 
 ### Development
 
-Run web frontend + Electron with HMR:
+Run Electron app with HMR:
 
 ```bash
-bun run dev
+bun dev
 ```
 
-Run only web frontend:
+Run web app with local backend API (projects, git, agents):
 
 ```bash
-bun run dev:web
+bun dev:web
 ```
+
+Open `http://127.0.0.1:3000`. Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
+
+### Docker
+
+Docker install supports contained mode and host-control mode. Host-control mode uses host CLIs through `nsenter` while Docker manages web server.
+
+See [docs/docker.md](docs/docker.md) for Docker modes and [docs/apache.md](docs/apache.md) for Apache reverse proxy + Basic Auth.
 
 ### Production
 
@@ -110,8 +118,16 @@ bun run build
 Run Electron app in production mode:
 
 ```bash
-bun run start:electron
+bun start
 ```
+
+Build and run web app in production mode:
+
+```bash
+bun start:web
+```
+
+For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or another HTTPS reverse proxy in front.
 
 ### Distribution
 
@@ -136,20 +152,21 @@ bun run dist:win
 ## Architecture
 
 ```
-main.cjs            Electron main process (window management, IPC)
-preload.cjs         Preload script (contextBridge API for renderer)
-opencode-bridge.mjs IPC bridge to the OpenCode SDK (SSE, sessions, prompts)
+main.cjs              Electron main process (window management, IPC)
+preload.cjs           Preload script (contextBridge API for renderer)
+opencode-bridge.mjs   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
+server/web-server.ts  Bun backend for browser mode (RPC, events, server FS browser)
 src/
-  index.ts          Bun web server (development + production)
-  index.html        HTML entry point
-  frontend.tsx      React entry point
-  App.tsx           Main app layout
+  index.ts            Renderer-only Bun dev server entry
+  index.html          HTML entry point
+  frontend.tsx        React entry point + web Electron shim install
+  App.tsx             Main app layout
   hooks/
-    use-opencode.tsx  Central state management (context + reducer)
-    useSTT.ts         Speech-to-text hook
-  components/       UI components (sidebar, messages, prompt box, etc.)
-  lib/              Utility modules
-  types/            TypeScript type definitions
+    use-agent-impl-core.tsx  Central agent/workspace state
+  components/         UI components (sidebar, messages, prompt box, etc.)
+  lib/
+    web-electron-api.ts      Browser shim for Electron preload API
+  types/              TypeScript type definitions
 ```
 
 ## Configuration

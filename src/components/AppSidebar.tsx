@@ -69,6 +69,7 @@ import {
 	ProjectMenuContent,
 	SessionItemMenu,
 } from "./SidebarItemMenus";
+import { ProjectPathDialog } from "./ProjectPathDialog";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 
@@ -119,6 +120,7 @@ export function AppSidebar({
 		projectMeta,
 		isLocalWorkspace,
 		activeWorkspace,
+		workspaceDirectory,
 	} = useConnectionState();
 
 	// Inline rename state
@@ -160,6 +162,19 @@ export function AppSidebar({
 
 	const homeDir = useHomeDir();
 	const normalizedRemoteProjectPath = normalizeProjectPath(remoteProjectPath);
+	const isWebRuntime =
+		typeof navigator !== "undefined" && !navigator.userAgent.includes("Electron");
+	const requestProjectPath = useCallback(
+		(initialPath?: string) =>
+			new Promise<string | null>((resolve) => {
+				window.dispatchEvent(
+					new CustomEvent("opengui:open-project-path-dialog", {
+						detail: { resolve, initialPath },
+					}),
+				);
+			}),
+		[],
+	);
 	const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 	const hasActiveSearch = normalizedSearchQuery.length > 0;
 
@@ -493,12 +508,20 @@ export function AppSidebar({
 
 	const handleAddProject = useCallback(async () => {
 		if (isLocalWorkspace) {
-			const dir = await openDirectory();
+			const dir = isWebRuntime
+				? await requestProjectPath(workspaceDirectory ?? undefined)
+				: await openDirectory();
 			if (dir) void connectToProject(dir);
 			return;
 		}
 		setShowRemoteProjectInput(true);
-	}, [connectToProject, isLocalWorkspace, openDirectory]);
+	}, [
+		connectToProject,
+		isLocalWorkspace,
+		isWebRuntime,
+		openDirectory,
+		requestProjectPath,
+	]);
 
 	const hasUnsentDraft = useCallback(
 		(sessionId: string) =>
@@ -1337,6 +1360,8 @@ export function AppSidebar({
 			)}
 
 			<SidebarRail />
+
+			<ProjectPathDialog />
 
 			{/* Worktree creation dialog */}
 			<WorktreeDialog

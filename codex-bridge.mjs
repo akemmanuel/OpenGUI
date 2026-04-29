@@ -1,10 +1,9 @@
 import { execFile as execFileCallback } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join, normalize } from "node:path"
 import { promisify } from "node:util"
-import { app } from "electron"
 import { Codex } from "@openai/codex-sdk"
 
 const execFile = promisify(execFileCallback)
@@ -318,8 +317,8 @@ function sanitizeFileName(id) {
 	return encodeURIComponent(id).replace(/%/g, "_")
 }
 
-function makeStoragePaths() {
-	const root = join(app.getPath("userData"), "codex")
+function makeStoragePaths(userData = join(homedir(), ".config", "OpenGUI")) {
+	const root = join(userData, "codex")
 	return {
 		root,
 		indexFile: join(root, "sessions.json"),
@@ -630,16 +629,17 @@ function buildToolPartFromItem(sessionId, messageId, item, existingPart, phase) 
 }
 
 class CodexBridgeManager {
-	constructor(getAllWindows) {
+	constructor(getAllWindows, options = {}) {
 		this.getAllWindows = getAllWindows
 		this.projects = new Map()
 		this.sessionIndex = new Map()
 		this.transcriptCache = new Map()
 		this.liveSessions = new Map()
 		this.aliases = new Map()
-		this.paths = makeStoragePaths()
+		this.paths = makeStoragePaths(options.userData)
 		this.storageReady = this.loadStorage()
 		this.codex = new Codex({
+			codexPathOverride: process.env.CODEX_EXECUTABLE?.trim() || "codex",
 			env: pickCodexEnv(process.env),
 		})
 	}
@@ -1506,8 +1506,8 @@ class CodexBridgeManager {
 	}
 }
 
-export function setupCodexBridge(ipcMain, getAllWindows) {
-	const manager = new CodexBridgeManager(getAllWindows)
+export function setupCodexBridge(ipcMain, getAllWindows, options = {}) {
+	const manager = new CodexBridgeManager(getAllWindows, options)
 
 	ipcMain.handle("codex:project:add", async (_event, config) => {
 		try {

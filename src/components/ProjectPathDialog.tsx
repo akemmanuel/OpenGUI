@@ -1,4 +1,4 @@
-import { FolderOpen, Server } from "lucide-react";
+import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +20,23 @@ interface OpenProjectPathDialogDetail {
 	initialPath?: string;
 }
 
+interface ServerDirectoryEntry {
+	name: string;
+	path: string;
+	type: "dir";
+}
+
+interface ServerDirectoryListing {
+	path: string;
+	parent: string | null;
+	roots: string[];
+	entries: ServerDirectoryEntry[];
+}
+
+function isWebRuntime() {
+	return !navigator.userAgent.includes("Electron");
+}
+
 function getPromptMessage(isLocalWorkspace: boolean) {
 	if (isLocalWorkspace) {
 		return "Open a local project folder for this window. You can also paste an absolute path manually.";
@@ -32,7 +49,12 @@ export function ProjectPathDialog() {
 		useConnectionState();
 	const [open, setOpen] = useState(false);
 	const [value, setValue] = useState("");
+	const [showServerBrowser, setShowServerBrowser] = useState(false);
+	const [serverListing, setServerListing] = useState<ServerDirectoryListing | null>(null);
+	const [serverBrowserError, setServerBrowserError] = useState<string | null>(null);
+	const [serverBrowserLoading, setServerBrowserLoading] = useState(false);
 	const resolverRef = useRef<((value: string | null) => void) | null>(null);
+	const webRuntime = isWebRuntime();
 
 	useEffect(() => {
 		const handleOpen = (event: Event) => {
@@ -40,6 +62,7 @@ export function ProjectPathDialog() {
 			resolverRef.current?.(null);
 			resolverRef.current = customEvent.detail.resolve;
 			setValue(customEvent.detail.initialPath ?? workspaceDirectory ?? "");
+			setShowServerBrowser(false);
 			setOpen(true);
 		};
 
@@ -61,7 +84,36 @@ export function ProjectPathDialog() {
 		const normalizedValue = nextValue ? normalizeProjectPath(nextValue) : null;
 		resolverRef.current?.(normalizedValue);
 		resolverRef.current = null;
+		setShowServerBrowser(false);
 		setOpen(false);
+	};
+
+	const loadServerDirectory = async (path?: string) => {
+		setServerBrowserLoading(true);
+		setServerBrowserError(null);
+		try {
+			const params = new URLSearchParams();
+			if (path) params.set("path", path);
+			const response = await fetch(`/api/fs/list?${params.toString()}`);
+			const body = await response.json();
+			if (!response.ok || !body?.ok) throw new Error(body?.error || "Failed to list server folders");
+			setServerListing(body.value);
+			setValue(body.value.path);
+		} catch (error) {
+			setServerBrowserError(error instanceof Error ? error.message : String(error));
+		} finally {
+			setServerBrowserLoading(false);
+		}
+	};
+
+	const openServerBrowser = () => {
+		setShowServerBrowser(true);
+		void loadServerDirectory(value.trim() || undefined);
+	};
+
+	const selectServerDirectory = (path: string) => {
+		setValue(path);
+		void loadServerDirectory(path);
 	};
 
 	return (
@@ -75,7 +127,9 @@ export function ProjectPathDialog() {
 				<DialogHeader>
 					<DialogTitle>Open Project</DialogTitle>
 					<DialogDescription>
-						{getPromptMessage(isLocalWorkspace)}
+						{webRuntime && isLocalWorkspace
+							? "Choose a project path on the OpenGUI server. If you use this from a phone, paths are server paths, not phone files."
+							: getPromptMessage(isLocalWorkspace)}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -115,15 +169,66 @@ export function ProjectPathDialog() {
 									type="button"
 									variant="outline"
 									onClick={async () => {
+										if (webRuntime) {
+											openServerBrowser();
+											return;
+										}
 										const nextPath = await window.electronAPI?.openDirectory();
 										if (nextPath) setValue(nextPath);
 									}}
 								>
 									<FolderOpen className="size-4" />
-									Browse
+									{webRuntime ? "Browse server" : "Browse"}
 								</Button>
 							)}
 						</div>
+						{showServerBrowser && (
+							<div className="rounded-lg border bg-muted/20 p-2">
+								<div className="mb-2 flex items-center justify-between gap-2 text-xs">
+									<span className="truncate font-mono text-muted-foreground">
+										{serverListing?.path ?? "Loading server folders..."}
+									</span>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										disabled={!serverListing?.parent || serverBrowserLoading}
+										onClick={() => serverListing?.parent && selectServerDirectory(serverListing.parent)}
+									>
+										<ChevronLeft className="size-4" />
+										Up
+									</Button>
+								</div>
+								{serverBrowserError && (
+									<div className="mb-2 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+										{serverBrowserError}
+									</div>
+								)}
+								<div className="max-h-56 overflow-y-auto rounded border bg-background">
+									{serverBrowserLoading ? (
+										<div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
+									) : serverListing?.entries.length ? (
+										serverListing.entries.map((entry) => (
+											<button
+												key={entry.path}
+												type="button"
+												className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+												onClick={() => selectServerDirectory(entry.path)}
+												onDoubleClick={() => closeWith(entry.path)}
+											>
+												<Folder className="size-4 shrink-0 text-muted-foreground" />
+												<span className="truncate">{entry.name}</span>
+											</button>
+										))
+									) : (
+										<div className="px-3 py-2 text-xs text-muted-foreground">No folders</div>
+									)}
+								</div>
+								<div className="mt-2 text-[11px] text-muted-foreground">
+									Allowed roots: {serverListing?.roots.join(", ") || "server default"}
+								</div>
+							</div>
+						)}
 					</div>
 				</div>
 

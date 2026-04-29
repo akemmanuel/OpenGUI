@@ -27,6 +27,12 @@ jobs:
       - name: Build frontend
         run: bun run build
 
+      - name: Run unit tests
+        run: bun test
+
+      - name: Build Docker image
+        run: docker build -t opengui:web .
+
       - name: Package .deb
         run: bunx electron-builder --linux deb --publish never
 

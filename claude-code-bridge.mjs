@@ -52,7 +52,7 @@ function resolveBundledClaudeExecutable() {
 	return undefined;
 }
 
-const CLAUDE_EXECUTABLE_PATH = resolveBundledClaudeExecutable();
+const CLAUDE_EXECUTABLE_PATH = resolveBundledClaudeExecutable() || "claude";
 
 const DEFAULT_STATUS = {
 	state: "idle",

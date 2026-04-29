@@ -1,0 +1,28 @@
+services:
+  opengui:
+    build: .
+    container_name: opengui
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    privileged: true
+    environment:
+      # Safer default for reverse-proxy deploys. Override HOST=0.0.0.0 for direct LAN access.
+      HOST: "${HOST:-127.0.0.1}"
+      PORT: "${PORT:-4839}"
+      OPENGUI_OPENCODE_PORT: "${OPENGUI_OPENCODE_PORT:-48391}"
+      OPENGUI_HOST_EXEC: "1"
+      OPENGUI_HOST_UID: "${OPENGUI_HOST_UID:-1000}"
+      OPENGUI_HOST_GID: "${OPENGUI_HOST_GID:-1000}"
+      OPENGUI_HOST_HOME: "${HOME}"
+      OPENGUI_ALLOWED_ROOTS: "${OPENGUI_ALLOWED_ROOTS:-${HOME}/Code}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+    volumes:
+      - "${HOME}:${HOME}"
+      - opengui-data:/app/.opengui-data
+
+volumes:
+  opengui-data:

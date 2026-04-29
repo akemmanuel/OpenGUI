@@ -1,0 +1,10 @@
+.git
+release
+dist
+node_modules
+.opencode/node_modules
+.ruff_cache
+*.log
+.env
+.env.*
+.DS_Store
