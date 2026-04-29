@@ -16,6 +16,12 @@ jobs:
     steps:
       # Runs only for same-repo or trusted contributors. Fork PRs from outsiders may not
       # have enough token permissions for automatic review comments.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ github.token }}
