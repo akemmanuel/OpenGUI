@@ -213,7 +213,7 @@ export function AppSidebar({
 		const orderedRootDirectories = detachedProject
 			? rootOpenDirectories.filter((dir) => dir === detachedProject)
 			: [
-					...workspaceProjects.filter((dir) => rootOpenDirectories.includes(dir)),
+					...workspaceProjects,
 					...rootOpenDirectories.filter(
 						(dir) => !workspaceProjects.includes(dir),
 					),
