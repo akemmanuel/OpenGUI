@@ -6,7 +6,10 @@
  */
 
 import { createRoot } from "react-dom/client";
+import { installWebElectronAPI } from "./lib/web-electron-api";
 import { App } from "./App";
+
+installWebElectronAPI();
 
 const elem = document.getElementById("root");
 if (!elem) throw new Error("Root element not found");

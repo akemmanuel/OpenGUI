@@ -18,29 +18,31 @@ bun install
 
 ## Development
 
-Run the web frontend + Electron in development mode (with HMR):
+Run Electron app in development mode (renderer HMR + Electron shell):
 
 ```bash
-bun run dev
+bun dev
 ```
 
-Or run just the web frontend (no Electron):
+Or run browser version with Bun backend API:
 
 ```bash
-bun run dev:web
+bun dev:web
 ```
 
 ## Code Style
 
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. Always use the bun scripts:
+This project currently uses `oxlint` via Bun scripts:
 
 ```bash
-bun run lint          # check and auto-fix lint + format issues
-bun run lint:check    # check only, no auto-fix
-bun run format        # auto-fix formatting only
+bun run lint          # lint check
+bun run lint:check    # lint check
+bun run lint:fix      # auto-fix where possible
+bun run typecheck     # TypeScript-aware checks
+bun test              # unit tests
 ```
 
-Run `bun run lint` before submitting a PR to make sure your code passes.
+Run `bun run lint:check`, `bun run typecheck`, and `bun test` before submitting a PR.
 
 ## Commit Messages
 
@@ -55,7 +57,7 @@ Write clear, concise commit messages. Focus on the "why" rather than the "what."
 1. Fork the repository
 2. Create a feature branch from `master`: `git checkout -b my-feature`
 3. Make your changes
-4. Run `bun run lint` to verify code style
+4. Run `bun run lint:check`, `bun run typecheck`, and `bun test`
 5. Commit your changes with a clear message
 6. Push to your fork and open a pull request against `master`
 
@@ -73,18 +75,19 @@ Check existing issues before opening a new one to avoid duplicates.
 If you're new to the codebase, here's where things live:
 
 ```
-main.cjs            Electron main process (window management, IPC)
-preload.cjs         Preload script (contextBridge API for renderer)
-opencode-bridge.mjs IPC bridge to the OpenCode SDK (SSE, sessions, prompts)
+main.cjs              Electron main process (window management, IPC)
+preload.cjs           Preload script (contextBridge API for renderer)
+opencode-bridge.mjs   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
+server/web-server.ts  Bun backend for browser mode (RPC, events, server FS browser)
 src/
-  index.ts          Bun web server (development + production)
-  index.html        HTML entry point
-  frontend.tsx      React entry point
-  App.tsx           Main app layout
-  hooks/            Custom React hooks (state management, STT)
-  components/       UI components (sidebar, messages, prompt box, etc.)
-  lib/              Utility modules
-  types/            TypeScript type definitions
+  index.ts            Renderer-only Bun dev server entry
+  index.html          HTML entry point
+  frontend.tsx        React entry point
+  App.tsx             Main app layout
+  hooks/              Custom React hooks (state management, backends, STT)
+  components/         UI components (sidebar, messages, prompt box, etc.)
+  lib/                Utility modules, including browser Electron shim
+  types/              TypeScript type definitions
 ```
 
 ## Areas Where Help Is Needed

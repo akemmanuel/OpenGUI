@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+
+cmd="$(basename "$0")"
+
+if [[ "${OPENGUI_HOST_EXEC:-0}" != "1" ]]; then
+	exec "/usr/bin/$cmd" "$@"
+fi
+
+if ! command -v nsenter >/dev/null 2>&1; then
+	echo "opengui host-exec: nsenter not found" >&2
+	exit 127
+fi
+
+host_uid="${OPENGUI_HOST_UID:-0}"
+host_gid="${OPENGUI_HOST_GID:-0}"
+host_home="${OPENGUI_HOST_HOME:-/root}"
+workdir="$PWD"
+
+# Preserve only useful env. Secrets/API keys pass through Docker env normally.
+export OPENGUI_HOST_CMD="$cmd"
+export OPENGUI_HOST_WORKDIR="$workdir"
+export HOME="$host_home"
+# Do not leak /usr/local/host-bin into host namespace. Host shebangs using
+# /usr/bin/env bash would find wrapper bash and recurse forever.
+export PATH="${OPENGUI_HOST_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$host_home/.bun/bin:$host_home/.local/bin}"
+
+exec nsenter -t 1 -m -u -i -n -p \
+	--setgid "$host_gid" \
+	--setuid "$host_uid" \
+	/bin/sh -lc 'cd "$OPENGUI_HOST_WORKDIR" 2>/dev/null || cd "$HOME"; exec "$OPENGUI_HOST_CMD" "$@"' \
+	sh "$@"

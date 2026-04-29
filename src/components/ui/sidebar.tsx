@@ -501,13 +501,16 @@ function SidebarMenuButton({
 	size = "default",
 	tooltip,
 	className,
+	disabled,
+	onKeyDown,
+	onClick,
 	...props
 }: React.ComponentProps<"button"> & {
 	asChild?: boolean;
 	isActive?: boolean;
 	tooltip?: string | React.ComponentProps<typeof TooltipContent>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
-	const Comp = asChild ? Slot.Root : "button";
+	const Comp: React.ElementType = asChild ? Slot.Root : "div";
 	const { isMobile, state } = useSidebar();
 
 	const button = (
@@ -516,8 +519,19 @@ function SidebarMenuButton({
 			data-sidebar="menu-button"
 			data-size={size}
 			data-active={isActive}
+			role={asChild ? undefined : "button"}
+			tabIndex={asChild || disabled ? undefined : 0}
+			aria-disabled={disabled || undefined}
 			className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-			{...props}
+			onClick={disabled ? undefined : (onClick as React.MouseEventHandler<HTMLDivElement> | undefined)}
+			onKeyDown={(event) => {
+				(onKeyDown as React.KeyboardEventHandler<HTMLDivElement> | undefined)?.(event);
+				if (asChild || disabled || event.defaultPrevented) return;
+				if (event.key !== "Enter" && event.key !== " ") return;
+				event.preventDefault();
+				event.currentTarget.click();
+			}}
+			{...(props as React.ComponentProps<"div">)}
 		/>
 	);
 

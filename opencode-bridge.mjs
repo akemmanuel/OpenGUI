@@ -20,7 +20,10 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 // Local server management
 // ---------------------------------------------------------------------------
 
-const LOCAL_SERVER_PORT = 4096;
+const LOCAL_SERVER_PORT = Number.parseInt(
+	process.env.OPENGUI_OPENCODE_PORT ?? "4096",
+	10,
+);
 const LOCAL_SERVER_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}`;
 const STARTUP_POLL_INTERVAL = 500; // ms
 const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
@@ -834,8 +837,17 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 	}
 
 	function normalizeServerConfig(config) {
+		let baseUrl = config.baseUrl.replace(/\/+$/, "");
+		const webLocalPort = process.env.OPENGUI_OPENCODE_PORT?.trim();
+		if (
+			webLocalPort &&
+			(baseUrl === "http://127.0.0.1:4096" ||
+				baseUrl === "http://localhost:4096")
+		) {
+			baseUrl = `http://127.0.0.1:${webLocalPort}`;
+		}
 		return {
-			baseUrl: config.baseUrl.replace(/\/+$/, ""),
+			baseUrl,
 			username: config.username?.trim() || undefined,
 			password: config.password?.trim() || undefined,
 		};
@@ -1234,7 +1246,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 				directory,
 				config.workspaceId,
 			);
-			await conn.connect(config);
+			await conn.connect(normalizedConfig);
 			windowState.serverConfig = normalizedConfig;
 			return { success: true, status: conn.getStatus() };
 		} catch (err) {

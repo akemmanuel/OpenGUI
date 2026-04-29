@@ -3747,9 +3747,20 @@ export function InternalAgentProvider({
 					(item) => item.id === stateRef.current.activeWorkspaceId,
 				) ?? createLocalWorkspace();
 			const url = serverUrl ?? workspace.serverUrl ?? DEFAULT_SERVER_URL;
+			const normalizedUrl = url.replace(/\/+$/, "");
 			const username = usernameOverride ?? workspace.username ?? undefined;
 			const password = passwordOverride ?? workspace.password ?? undefined;
 			const workspaceId = workspace.id;
+			const localServerApi = bridge?.platform?.server;
+			if (
+				workspace.isLocal &&
+				localServerApi &&
+				(normalizedUrl === DEFAULT_SERVER_URL ||
+					normalizedUrl === "http://127.0.0.1:4096" ||
+					normalizedUrl === "http://localhost:4096")
+			) {
+				await localServerApi.start();
+			}
 			const worktreeParentMap = getWorktreeParents();
 			const targetWorkspace = getWorkspaceRootDirectory(
 				trimmedDirectory,
@@ -3818,7 +3829,7 @@ export function InternalAgentProvider({
 				storageSet(STORAGE_KEYS.SERVER_URL, url);
 			}
 		},
-		[addProject, connectedDirectorySet],
+		[addProject, bridge?.platform?.server, connectedDirectorySet],
 	);
 
 	const refreshSessions = useCallback(async () => {

@@ -402,6 +402,7 @@ export function TitleBar({
 	}
 
 	const isMac = platform === "darwin";
+	const isWebRuntime = !navigator.userAgent.includes("Electron");
 
 	const dialogInitial =
 		dialogMode === "edit" && editingWorkspace
@@ -421,6 +422,7 @@ export function TitleBar({
 				};
 
 	const handleDoubleClick = () => {
+		if (isWebRuntime) return;
 		void window.electronAPI?.maximize();
 	};
 
@@ -452,7 +454,7 @@ export function TitleBar({
 				</div>
 
 				<div
-					className={`absolute inset-y-0 ${isMac ? "left-20 right-20" : "left-9 right-36"} flex items-center gap-1 px-2`}
+					className={`absolute inset-y-0 ${isMac && !isWebRuntime ? "left-20 right-20" : isWebRuntime ? "left-9 right-2" : "left-9 right-36"} flex items-center gap-1 px-2`}
 				>
 					<div
 						ref={tabsRef}
@@ -619,11 +621,12 @@ export function TitleBar({
 					</div>
 				</div>
 
-				<div
-					className={`absolute right-0 top-0 h-full flex items-center gap-2 ${isMac ? "px-2" : "pl-2"}`}
-					style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-				>
-					{isMac ? (
+				{!isWebRuntime && (
+					<div
+						className={`absolute right-0 top-0 h-full flex items-center gap-2 ${isMac ? "px-2" : "pl-2"}`}
+						style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+					>
+						{isMac ? (
 						<div className="flex items-center gap-2">
 							<WindowButton
 								icon={<Plus className="size-2" strokeWidth={2.75} />}
@@ -667,8 +670,9 @@ export function TitleBar({
 								isClose
 							/>
 						</div>
-					)}
-				</div>
+						)}
+					</div>
+				)}
 			</div>
 
 			<WorkspaceDialog
