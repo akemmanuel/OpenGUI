@@ -1,7 +1,7 @@
 name: crocodile
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
@@ -14,8 +14,8 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      # Safe with pull_request_target because no PR code gets checked out or executed.
-      # Restrict to trusted authors only because action may fetch repo content internally.
+      # Runs only for same-repo or trusted contributors. Fork PRs from outsiders may not
+      # have enough token permissions for automatic review comments.
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ github.token }}
