@@ -45,6 +45,14 @@ import {
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import { POST_MERGE_DELAY_MS, SESSION_PAGE_SIZE } from "@/lib/constants";
 import {
+	getSidebarCollapsedProjects,
+	isSidebarProjectCollapsed,
+	persistSidebarCollapsedProjects,
+	pruneSidebarCollapsedProjects,
+	toggleSidebarProjectCollapsed,
+	type SidebarCollapsedProjects,
+} from "@/lib/sidebar-collapsed";
+import {
 	sortSidebarSessionsNewestFirst,
 } from "@/lib/sidebar-order";
 import { partitionSidebarPins } from "@/lib/sidebar-pins";
@@ -325,6 +333,14 @@ export function AppSidebar({
 		[registerWorktree, worktreeParents, unregisterWorktree],
 	);
 
+	// Track collapsed state per project
+	const [collapsed, setCollapsed] = useState<SidebarCollapsedProjects>(() =>
+		getSidebarCollapsedProjects(),
+	);
+	const toggleCollapsed = useCallback((dir: string) => {
+		setCollapsed((prev) => toggleSidebarProjectCollapsed(prev, dir));
+	}, []);
+
 	// Prune stale git info entries when projects are removed
 	const openDirectories = useMemo(
 		() => Object.keys(connections),
@@ -335,14 +351,22 @@ export function AppSidebar({
 		setIsGitRepo((prev) => pruneRecord(prev, validDirs));
 		setKnownWorktrees((prev) => pruneRecord(prev, validDirs));
 		setRemoteUrls((prev) => pruneRecord(prev, validDirs));
-		setCollapsed((prev) => pruneRecord(prev, validDirs));
+		setCollapsed((prev) => {
+			const next = pruneSidebarCollapsedProjects(prev, openDirectories);
+			const prevKeys = Object.keys(prev);
+			const nextKeys = Object.keys(next);
+			if (
+				prevKeys.length === nextKeys.length &&
+				nextKeys.every((directory) => prev[directory])
+			) {
+				return prev;
+			}
+			return next;
+		});
 	}, [openDirectories]);
-
-	// Track collapsed state per project
-	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-	const toggleCollapsed = useCallback((dir: string) => {
-		setCollapsed((prev) => ({ ...prev, [dir]: !prev[dir] }));
-	}, []);
+	useEffect(() => {
+		persistSidebarCollapsedProjects(collapsed);
+	}, [collapsed]);
 	const [visibleByProject, setVisibleByProject] = useState<
 		Record<string, number>
 	>({});
@@ -696,7 +720,7 @@ export function AppSidebar({
 	) => {
 		const isCollapsed = hasActiveSearch
 			? false
-			: (collapsed[directory] ?? false);
+			: isSidebarProjectCollapsed(collapsed, directory);
 		const connStatus = connections[directory];
 		const isProjectConnected = connStatus?.state === "connected";
 		const isProjectConnecting =

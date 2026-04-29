@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"private": false,
 	"description": "OpenGUI - A graphical interface for OpenCode",
 	"homepage": "https://github.com/akemmanuel/OpenGUI",

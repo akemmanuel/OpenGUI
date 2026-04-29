@@ -42,6 +42,7 @@ export const STORAGE_KEYS = {
 	THEME: "theme",
 	RIGHT_SIDEBAR_OPEN: "opencode:rightSidebarOpen",
 	DISMISSED_UPDATE_VERSION: "opencode:dismissedUpdateVersion",
+	SIDEBAR_PROJECT_COLLAPSED: "opencode:sidebarProjectCollapsed",
 	FILE_MANAGER: "opencode:fileManager",
 	TERMINAL: "opencode:terminal",
 } as const;
