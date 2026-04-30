@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"private": false,
 	"description": "OpenGUI - Desktop and web command center for coding agents",
 	"homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -33,9 +33,13 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "^0.2.123",
+		"@mariozechner/jiti": "^2.6.5",
+		"@mariozechner/pi-agent-core": "^0.69.0",
+		"@mariozechner/pi-ai": "^0.69.0",
 		"@mariozechner/pi-coding-agent": "^0.69.0",
+		"@mariozechner/pi-tui": "^0.69.0",
 		"@openai/codex-sdk": "^0.123.0",
-		"@opencode-ai/sdk": "^1.14.29",
+		"@opencode-ai/sdk": "^1.14.30",
 		"@shikijs/core": "^3.23.0",
 		"@shikijs/engine-javascript": "^3.23.0",
 		"@shikijs/langs": "^3.23.0",

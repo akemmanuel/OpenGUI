@@ -14,7 +14,7 @@ import {
 	createAgentSessionServices,
 	getAgentDir,
 } from "@mariozechner/pi-coding-agent";
-import { prepareCompaction } from "./node_modules/@mariozechner/pi-coding-agent/dist/core/compaction/compaction.js";
+
 
 const execFile = promisify(execFileCallback);
 
@@ -48,7 +48,9 @@ const PI_THINKING_VARIANTS = ["off", "minimal", "low", "medium", "high", "xhigh"
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
 const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
-const PI_DAEMON_VERSION = "2026-04-24-bun-pi-discovery-v2";
+// Bump when daemon import/runtime behavior changes. Existing healthy daemon gets reused
+// across app restarts; failed lazy ESM imports inside pi-ai stay poisoned in-process.
+const PI_DAEMON_VERSION = "2026-04-30-bun-pi-daemon-restart-v3";
 const FRESH_PI_MODELS_TTL_MS = 60_000;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const freshPiModelsCache = new Map();
@@ -2116,19 +2118,6 @@ export class PiBridgeManager {
 		const { session } = await this.ensureSessionContext(sessionId, { directory, workspaceId });
 		if (model) {
 			await this.applySelectedModel(session, model);
-		}
-		const settings = session.settingsManager?.getCompactionSettings?.();
-		if (settings) {
-			const preparation = prepareCompaction(session.sessionManager.getBranch(), settings);
-			if (!preparation) {
-				throw new Error("Nothing to compact yet");
-			}
-			if (
-				preparation.messagesToSummarize.length === 0 &&
-				preparation.turnPrefixMessages.length === 0
-			) {
-				throw new Error("Nothing to compact yet (all history still fits in Pi's recent-message window)");
-			}
 		}
 		await session.compact();
 	}

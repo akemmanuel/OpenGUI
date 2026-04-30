@@ -1,6 +1,6 @@
 services:
   opengui:
-    build: .
+    image: "${OPENGUI_IMAGE:-ghcr.io/akemmanuel/opengui:latest}"
     container_name: opengui
     restart: unless-stopped
     network_mode: host

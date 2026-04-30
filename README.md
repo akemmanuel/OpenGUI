@@ -122,9 +122,11 @@ Open `http://127.0.0.1:3000`. Browser folder picker uses server paths. Set `OPEN
 
 ### Docker
 
+Official image: `ghcr.io/akemmanuel/opengui:latest`.
+
 Docker install supports contained mode and host-control mode. Host-control mode uses host CLIs through `nsenter` while Docker manages web server.
 
-See [docs/docker.md](docs/docker.md) for Docker modes and [docs/apache.md](docs/apache.md) for Apache reverse proxy + Basic Auth.
+See [docs/docker.md](docs/docker.md) for GHCR install, Docker modes, and [docs/apache.md](docs/apache.md) for Apache reverse proxy + Basic Auth.
 
 ### Production
 
