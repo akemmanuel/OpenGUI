@@ -1134,18 +1134,6 @@ export function AppSidebar({
 			</SidebarHeader>
 
 			<SidebarContent className="overflow-x-hidden" onClickCapture={onOpenChat}>
-				{pinnedEntries.length > 0 && (
-					<SidebarGroup>
-						<SidebarGroupLabel className="!text-sm">Pinned</SidebarGroupLabel>
-						<SidebarGroupContent>
-							{pinnedEntries.map((entry) =>
-								entry.kind === "project"
-									? renderProjectEntry(entry.directory, entry.sessions)
-									: renderSessionRow(entry.session, entry.projectDirectory),
-							)}
-						</SidebarGroupContent>
-					</SidebarGroup>
-				)}
 				{/* Project groups */}
 				{projectGroups.size > 0 && (
 					<SidebarGroup>
@@ -1163,7 +1151,19 @@ export function AppSidebar({
 								</button>
 							)}
 						</SidebarGroupLabel>
-						<SidebarGroupContent>
+						{pinnedEntries.length > 0 && (
+							<>
+								<SidebarGroupLabel className="mt-2 !text-sm">Pinned</SidebarGroupLabel>
+								<SidebarGroupContent>
+									{pinnedEntries.map((entry) =>
+										entry.kind === "project"
+											? renderProjectEntry(entry.directory, entry.sessions)
+											: renderSessionRow(entry.session, entry.projectDirectory),
+									)}
+								</SidebarGroupContent>
+							</>
+						)}
+						<SidebarGroupContent className={pinnedEntries.length > 0 ? "mt-2" : undefined}>
 							{filteredProjectEntries.length === 0 ? (
 								hasActiveSearch && pinnedEntries.length === 0 ? (
 									<div className="px-2 py-3 text-sm text-muted-foreground">
