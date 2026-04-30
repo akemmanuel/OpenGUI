@@ -850,6 +850,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 			baseUrl,
 			username: config.username?.trim() || undefined,
 			password: config.password?.trim() || undefined,
+			directory:
+				typeof config.directory === "string" && config.directory.trim()
+					? config.directory.trim()
+					: undefined,
 		};
 	}
 
