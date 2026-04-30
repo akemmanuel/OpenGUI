@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Desktop app for <a href="https://opencode.ai">OpenCode</a> with multi-project workspaces, streaming chat, prompt queue, model switching, voice input, and MCP tools.
+  Desktop + web command center for coding agents. Run <a href="https://opencode.ai">OpenCode</a>, Claude Code, Codex, and Pi across multiple projects with streaming chat, prompt queue, model switching, voice input, and MCP tools.
 </p>
 
 <p align="center">
@@ -19,22 +19,25 @@
   ·
   <a href="#why-opengui">Why OpenGUI</a>
   ·
+  <a href="#supported-agent-backends">Supported backends</a>
+  ·
   <a href="#build-from-source">Build from source</a>
 </p>
 
-<!-- TODO: Replace screenshot with short demo GIF: open project, send prompt, stream response, queue prompt, switch model. -->
+<!-- TODO: Replace screenshot with short demo GIF: open project, switch backend, send prompt, stream response, queue prompt. -->
 <p align="center">
-  <img src="screenshot.png" alt="OpenGUI Screenshot" width="800" />
+  <img src="demo.gif" alt="OpenGUI Demo" width="800" />
 </p>
 
-OpenGUI gives OpenCode users desktop workflow for long coding sessions. Manage multiple projects visually, watch responses stream live, queue prompts while agent works, and switch models or agents without terminal juggling.
+OpenGUI gives coding-agent users desktop and browser workflow for long sessions. Manage multiple projects visually, run different agent backends from one UI, watch responses stream live, queue prompts while agent works, and switch models or agents without terminal juggling.
 
 > Early but usable. Bug reports and PRs welcome.
 
 ## Why OpenGUI
 
-OpenGUI is for OpenCode users who want stronger visual workflow than terminal alone:
+OpenGUI is for people who like coding agents but want stronger workflow than terminal tabs alone:
 
+- **Run multiple agent backends in one app** instead of juggling separate tools
 - **Manage multiple projects at once** with separate sessions per workspace
 - **See streaming responses live** with token and context usage
 - **Queue prompts while agent is busy** instead of waiting to type next step
@@ -44,14 +47,27 @@ OpenGUI is for OpenCode users who want stronger visual workflow than terminal al
 
 ## Highlights
 
+- **Multi-agent workspace** for OpenCode, Claude Code, Codex, and Pi
 - **Multi-project workspaces** for parallel coding sessions
 - **Real-time streaming** over SSE with live usage tracking
 - **Prompt queue** that auto-dispatches when assistant becomes idle
-- **Model & agent selection** directly from chat workflow
+- **Model, backend, and agent selection** directly from chat workflow
 - **Slash commands** from prompt box
 - **Syntax highlighting + math rendering** with Shiki and KaTeX
 - **Dark/light theme** with system-aware toggle
+- **Desktop, web, and Docker deployment options**
 - **Cross-platform builds** for Linux, macOS, and Windows
+
+## Supported agent backends
+
+OpenGUI currently supports these coding-agent backends:
+
+- **OpenCode**
+- **Claude Code**
+- **Codex**
+- **Pi**
+
+Use one backend or switch between them per workflow.
 
 ## Download
 
@@ -63,9 +79,12 @@ Grab prebuilt app from [latest release](https://github.com/akemmanuel/OpenGUI/re
 
 ### Requirements
 
-- [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+Backend requirements depend on what you use:
 
-> **Windows prerequisite:** OpenCode must be available on your `PATH` or at `%USERPROFILE%\.opencode\bin\opencode.exe`.
+- **OpenCode backend:** [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+- **Other backends:** local CLI/auth/config for that backend available on your machine
+
+> **Windows prerequisite for OpenCode:** OpenCode must be available on your `PATH` or at `%USERPROFILE%\.opencode\bin\opencode.exe`.
 
 > **Note:** Windows builds are unsigned. Windows SmartScreen will warn on first launch. Click **More info** -> **Run anyway**.
 
@@ -74,7 +93,7 @@ Grab prebuilt app from [latest release](https://github.com/akemmanuel/OpenGUI/re
 ### Prerequisites
 
 - [Bun](https://bun.sh) v1.2+
-- [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+- At least one supported backend configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
 - [Electron](https://www.electronjs.org/) installed through project dependencies
 
 Install dependencies:
@@ -83,7 +102,7 @@ Install dependencies:
 bun install
 ```
 
-No manual config file needed. Connection settings live in UI.
+No manual config file needed. Connection settings live in UI. Pick backend, connect workspace, start prompting.
 
 ### Development
 
@@ -154,7 +173,10 @@ bun run dist:win
 ```
 main.cjs              Electron main process (window management, IPC)
 preload.cjs           Preload script (contextBridge API for renderer)
-opencode-bridge.mjs   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
+opencode-bridge.mjs    IPC bridge to OpenCode SDK
+claude-code-bridge.mjs IPC bridge to Claude Code SDK
+codex-bridge.mjs       IPC bridge to Codex SDK
+pi-bridge.mjs          IPC bridge to Pi runtime
 server/web-server.ts  Bun backend for browser mode (RPC, events, server FS browser)
 src/
   index.ts            Renderer-only Bun dev server entry

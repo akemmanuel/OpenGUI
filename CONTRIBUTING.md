@@ -5,7 +5,7 @@ Thanks for your interest in contributing to OpenGUI. This guide covers what you 
 ## Prerequisites
 
 - [Bun](https://bun.sh) v1.2+
-- [OpenCode CLI](https://opencode.ai) installed and available in your PATH
+- At least one supported backend available locally (OpenCode CLI, Claude Code, Codex, or Pi)
 - Git
 
 ## Setup
@@ -92,9 +92,9 @@ src/
 
 ## Areas Where Help Is Needed
 
-- Windows support (currently Linux and macOS only)
+- Windows support hardening and broader testing
 - Accessibility improvements
-- Test coverage (there are currently no tests)
+- More test coverage across UI and backend flows
 - Performance profiling for large sessions
 - Bug reports from different environments
 

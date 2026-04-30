@@ -2,7 +2,7 @@
 	"name": "opengui",
 	"version": "0.5.1",
 	"private": false,
-	"description": "OpenGUI - A graphical interface for OpenCode",
+	"description": "OpenGUI - Desktop and web command center for coding agents",
 	"homepage": "https://github.com/akemmanuel/OpenGUI",
 	"repository": {
 		"type": "git",
