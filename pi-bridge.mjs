@@ -472,22 +472,19 @@ function createAssistantInfo({
 	createdAt,
 	completedAt,
 }) {
+	const isCompleted = typeof completedAt === "number";
 	return {
 		id: messageId,
 		sessionID: sessionId,
 		role: "assistant",
 		time: {
 			created: typeof createdAt === "number" ? createdAt : timestamp,
-			completed:
-				message?.stopReason === "stop" ||
-				message?.stopReason === "length" ||
-				message?.stopReason === "toolUse" ||
-				message?.stopReason === "error" ||
-				message?.stopReason === "aborted"
-					? (typeof completedAt === "number" ? completedAt : coerceTimestamp(message?.timestamp))
-					: undefined,
+			completed: isCompleted ? completedAt : undefined,
 		},
-		error: message?.stopReason === "error" ? openGuiError(message?.errorMessage || "Pi error") : undefined,
+		error:
+			isCompleted && message?.stopReason === "error"
+				? openGuiError(message?.errorMessage || "Pi error")
+				: undefined,
 		parentID: parentID || "",
 		modelID: message?.model || "",
 		providerID: message?.provider || "pi",
@@ -508,7 +505,7 @@ function createAssistantInfo({
 				write: message?.usage?.cacheWrite ?? 0,
 			},
 		},
-		finish: message?.stopReason,
+		finish: isCompleted ? message?.stopReason : undefined,
 	};
 }
 
@@ -655,8 +652,8 @@ function syncAssistantParts(bundle, message, reasoningTimesByContentIndex) {
 					end:
 						typeof reasoningTime?.end === "number"
 							? reasoningTime.end
-							: message?.stopReason
-								? coerceTimestamp(message?.timestamp)
+							: typeof bundle.info.time.completed === "number"
+								? bundle.info.time.completed
 								: undefined,
 				},
 			});
@@ -1475,10 +1472,16 @@ export class PiBridgeManager {
 				(item) => item.type === "tool" && item.callID === event.toolCallId,
 			);
 			if (!part) return;
+			const partialOutput = event.partialResult?.content
+				? toolResultContentToText(event.partialResult.content)
+				: ("output" in part.state && typeof part.state.output === "string"
+					? part.state.output
+					: undefined);
 			part.state = {
 				status: "running",
 				input: normalizeToolInput(event.args || {}),
 				title: event.toolName,
+				...(typeof partialOutput === "string" ? { output: partialOutput } : {}),
 				metadata:
 					event.partialResult?.details && typeof event.partialResult.details === "object"
 						? event.partialResult.details

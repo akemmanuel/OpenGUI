@@ -966,14 +966,21 @@ function ReasoningPartView({
 	const { isBusy } = useSessionState();
 	const [expanded, setExpanded] = useState(isThinking);
 	const contentRef = useRef<HTMLDivElement>(null);
+	const hasText = !!part.text?.trim();
+	// Start false so first visible render counts as "became visible".
+	// Needed when backend batches snapshots and component first mounts only
+	// after reasoning text already exists.
+	const prevHasTextRef = useRef(false);
 
 	useEffect(() => {
-		if (isThinking) {
+		const becameVisible = hasText && !prevHasTextRef.current;
+		if (isThinking || (becameVisible && isLastReasoning && isBusy)) {
 			setExpanded(true);
 		} else if (!isLastReasoning || !isBusy) {
 			setExpanded(false);
 		}
-	}, [isThinking, isLastReasoning, isBusy]);
+		prevHasTextRef.current = hasText;
+	}, [hasText, isThinking, isLastReasoning, isBusy]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
 	useEffect(() => {
@@ -982,7 +989,7 @@ function ReasoningPartView({
 		}
 	}, [part.text, isThinking, expanded]);
 
-	if (!part.text?.trim()) return null;
+	if (!hasText) return null;
 
 	const durationMs =
 		part.time.end && part.time.start ? part.time.end - part.time.start : null;

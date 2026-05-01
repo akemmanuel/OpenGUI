@@ -1,8 +1,9 @@
-import { execFile as execFileCallback } from "node:child_process"
+import { execFile as execFileCallback, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join, normalize } from "node:path"
+import { createInterface } from "node:readline"
 import { promisify } from "node:util"
 import { Codex } from "@openai/codex-sdk"
 
@@ -19,8 +20,111 @@ const DEFAULT_STATUS = {
 const CODEX_VARIANTS = ["minimal", "low", "medium", "high", "xhigh"]
 const DEFAULT_MODEL_ID = "gpt-5.4"
 const DEFAULT_PROVIDER_ID = "openai"
+const CODEX_APP_SERVER_TIMEOUT_MS = 8_000
+const CODEX_PROVIDER_CACHE_TTL_MS = 60_000
 
-const CODEX_PROVIDER = {
+const STATIC_CODEX_MODEL_SPECS = [
+	{
+		id: "gpt-5.5",
+		name: "GPT-5.5",
+		reasoning: true,
+		image: true,
+		releaseDate: "2026-04-29",
+	},
+	{
+		id: "gpt-5.4",
+		name: "GPT-5.4",
+		reasoning: true,
+		image: true,
+		releaseDate: "2026-04-01",
+	},
+	{
+		id: "gpt-5.4-mini",
+		name: "GPT-5.4 Mini",
+		reasoning: true,
+		image: true,
+		releaseDate: "2026-04-01",
+	},
+	{
+		id: "gpt-5.4-nano",
+		name: "GPT-5.4 Nano",
+		reasoning: false,
+		image: true,
+		releaseDate: "2026-04-01",
+	},
+	{
+		id: "gpt-5",
+		name: "GPT-5",
+		reasoning: true,
+		image: true,
+	},
+	{
+		id: "gpt-5-mini",
+		name: "GPT-5 Mini",
+		reasoning: true,
+		image: true,
+	},
+	{
+		id: "gpt-5-nano",
+		name: "GPT-5 Nano",
+		reasoning: false,
+		image: true,
+	},
+	{
+		id: "gpt-5-codex",
+		name: "GPT-5 Codex",
+		reasoning: true,
+		image: true,
+		status: "deprecated",
+	},
+	{
+		id: "gpt-5.3-codex",
+		name: "GPT-5.3 Codex",
+		reasoning: true,
+		image: true,
+		releaseDate: "2026-03-01",
+	},
+	{
+		id: "gpt-5.2",
+		name: "GPT-5.2",
+		reasoning: true,
+		image: true,
+	},
+	{
+		id: "gpt-5.2-mini",
+		name: "GPT-5.2 Mini",
+		reasoning: true,
+		image: true,
+	},
+	{
+		id: "gpt-5.2-codex",
+		name: "GPT-5.2 Codex",
+		reasoning: true,
+		image: true,
+		status: "deprecated",
+	},
+	{
+		id: "codex-mini-latest",
+		name: "Codex Mini Latest",
+		reasoning: true,
+		image: true,
+		status: "deprecated",
+	},
+]
+
+const STATIC_CODEX_MODELS = Object.fromEntries(
+	STATIC_CODEX_MODEL_SPECS.map((spec) => [
+		spec.id,
+		makeModel(spec.id, spec.name, {
+			reasoning: spec.reasoning,
+			image: spec.image,
+			releaseDate: spec.releaseDate,
+			status: spec.status,
+		}),
+	]),
+)
+
+const STATIC_CODEX_PROVIDER = {
 	providers: [
 		{
 			id: DEFAULT_PROVIDER_ID,
@@ -28,28 +132,7 @@ const CODEX_PROVIDER = {
 			source: "api",
 			env: ["CODEX_API_KEY", "OPENAI_API_KEY"],
 			options: {},
-			models: {
-				"gpt-5.4": makeModel("gpt-5.4", "GPT-5.4", {
-					reasoning: true,
-					image: true,
-					releaseDate: "2026-04-01",
-				}),
-				"gpt-5.4-mini": makeModel("gpt-5.4-mini", "GPT-5.4 Mini", {
-					reasoning: true,
-					image: true,
-					releaseDate: "2026-04-01",
-				}),
-				"gpt-5.4-nano": makeModel("gpt-5.4-nano", "GPT-5.4 Nano", {
-					reasoning: false,
-					image: true,
-					releaseDate: "2026-04-01",
-				}),
-				"gpt-5.3-codex": makeModel("gpt-5.3-codex", "GPT-5.3 Codex", {
-					reasoning: true,
-					image: true,
-					releaseDate: "2026-03-01",
-				}),
-			},
+			models: STATIC_CODEX_MODELS,
 		},
 	],
 	default: {
@@ -57,7 +140,17 @@ const CODEX_PROVIDER = {
 	},
 }
 
-function makeModel(id, name, { reasoning, image, releaseDate }) {
+let codexProviderCache = {
+	expiresAt: 0,
+	promise: null,
+	value: null,
+}
+
+function makeModel(
+	id,
+	name,
+	{ reasoning, image, releaseDate, status = "active", variants = null, context, output },
+) {
 	return {
 		id,
 		providerID: DEFAULT_PROVIDER_ID,
@@ -95,17 +188,292 @@ function makeModel(id, name, { reasoning, image, releaseDate }) {
 			cache: { read: 0, write: 0 },
 		},
 		limit: {
-			context: 200_000,
-			output: 8_192,
+			context: Number.isFinite(context) ? context : 200_000,
+			output: Number.isFinite(output) ? output : 8_192,
 		},
-		status: "active",
+		status,
 		options: {},
 		headers: {},
 		release_date: releaseDate,
-		variants: Object.fromEntries(
-			CODEX_VARIANTS.map((variant) => [variant, { label: variant }]),
-		),
+		variants:
+			variants ??
+			Object.fromEntries(
+				CODEX_VARIANTS.map((variant) => [variant, { label: variant }]),
+			),
 	}
+}
+
+function titleCaseVariant(value) {
+	if (value === "xhigh") return "Extra High"
+	if (value === "none") return "None"
+	return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function normalizeReasoningEfforts(value) {
+	if (!Array.isArray(value)) return []
+	const efforts = []
+	for (const entry of value) {
+		const effort =
+			typeof entry === "string"
+				? entry
+				: typeof entry?.reasoningEffort === "string"
+					? entry.reasoningEffort
+					: null
+		if (!effort || efforts.includes(effort)) continue
+		efforts.push(effort)
+	}
+	return efforts
+}
+
+function humanizeModelId(id) {
+	return id
+		.replace(/^gpt/i, "GPT")
+		.replace(/-([a-z])/g, (_match, char) => ` ${char.toUpperCase()}`)
+}
+
+function buildVariantsFromReasoningEfforts(efforts) {
+	if (!efforts.length) return {}
+	return Object.fromEntries(
+		efforts.map((effort) => [
+			effort,
+			{
+				label: titleCaseVariant(effort),
+			},
+		]),
+	)
+}
+
+function mapCodexAppServerModel(model) {
+	if (!model || typeof model !== "object") return null
+	if (model.hidden === true) return null
+	const id =
+		typeof model.model === "string"
+			? model.model
+			: typeof model.id === "string"
+				? model.id
+				: null
+	if (!id) return null
+	const fallback = STATIC_CODEX_MODELS[id]
+	const efforts = normalizeReasoningEfforts(model.supportedReasoningEfforts)
+	const variants = buildVariantsFromReasoningEfforts(efforts)
+	const reasoning =
+		efforts.length > 0 ? efforts.some((effort) => effort !== "none") : true
+	const image = fallback?.capabilities?.input?.image ?? true
+	const name =
+		typeof model.displayName === "string" && model.displayName.trim()
+			? model.displayName.trim()
+			: fallback?.name ?? humanizeModelId(id)
+	return makeModel(id, name, {
+		reasoning,
+		image,
+		releaseDate: fallback?.release_date,
+		status:
+			typeof model.deprecationState === "string" && model.deprecationState !== "active"
+				? "deprecated"
+				: fallback?.status ?? "active",
+		variants,
+		context:
+			typeof model.contextWindow === "number"
+				? model.contextWindow
+				: typeof model.modelContextWindow === "number"
+					? model.modelContextWindow
+					: fallback?.limit?.context,
+		output:
+			typeof model.maxOutputTokens === "number"
+				? model.maxOutputTokens
+				: fallback?.limit?.output,
+	})
+}
+
+function selectDefaultModelId(models) {
+	if (models["gpt-5.5"]) return "gpt-5.5"
+	if (models[DEFAULT_MODEL_ID]) return DEFAULT_MODEL_ID
+	return Object.keys(models)[0] ?? DEFAULT_MODEL_ID
+}
+
+function buildCodexProviderFromModels(models) {
+	const defaultModelId = selectDefaultModelId(models)
+	return {
+		providers: [
+			{
+				...STATIC_CODEX_PROVIDER.providers[0],
+				models,
+			},
+		],
+		default: {
+			[DEFAULT_PROVIDER_ID]: defaultModelId,
+		},
+	}
+}
+
+async function withCodexAppServer(requestWork) {
+	const executable = process.env.CODEX_EXECUTABLE?.trim() || "codex"
+	const env = pickCodexEnv(process.env)
+	return await new Promise((resolve, reject) => {
+		const child = spawn(executable, ["app-server"], {
+			env,
+			stdio: ["pipe", "pipe", "pipe"],
+		})
+		const rl = createInterface({
+			input: child.stdout,
+			crlfDelay: Infinity,
+		})
+		let settled = false
+		let nextId = 1
+		let stderr = ""
+		const pending = new Map()
+
+		const cleanup = () => {
+			for (const entry of pending.values()) {
+				clearTimeout(entry.timer)
+			}
+			pending.clear()
+			rl.close()
+			if (!child.killed) {
+				try {
+					child.kill()
+				} catch {}
+			}
+		}
+
+		const settleResolve = (value) => {
+			if (settled) return
+			settled = true
+			cleanup()
+			resolve(value)
+		}
+
+		const settleReject = (error) => {
+			if (settled) return
+			settled = true
+			cleanup()
+			reject(error)
+		}
+
+		const request = (method, params = {}) =>
+			new Promise((resolveRequest, rejectRequest) => {
+				const id = nextId++
+				const timer = setTimeout(() => {
+					pending.delete(id)
+					rejectRequest(
+						new Error(`Codex app-server request timed out: ${method}`),
+					)
+				}, CODEX_APP_SERVER_TIMEOUT_MS)
+				pending.set(id, { resolve: resolveRequest, reject: rejectRequest, timer })
+				child.stdin.write(`${JSON.stringify({ id, method, params })}\n`)
+			})
+
+		rl.on("line", (line) => {
+			if (!line.trim()) return
+			let message
+			try {
+				message = JSON.parse(line)
+			} catch {
+				return
+			}
+			if (typeof message?.id !== "number") return
+			const entry = pending.get(message.id)
+			if (!entry) return
+			pending.delete(message.id)
+			clearTimeout(entry.timer)
+			if (message.error) {
+				entry.reject(
+					new Error(message.error?.message || `Codex app-server error: ${message.id}`),
+				)
+				return
+			}
+			entry.resolve(message.result)
+		})
+
+		child.stderr.on("data", (chunk) => {
+			stderr += String(chunk)
+		})
+
+		child.once("error", (error) => {
+			settleReject(error)
+		})
+
+		child.once("exit", (code, signal) => {
+			if (settled) return
+			settleReject(
+				new Error(
+					`Codex app-server exited early (${signal ?? code ?? "unknown"}): ${stderr.trim() || "no stderr"}`,
+				),
+			)
+		})
+
+		void (async () => {
+			try {
+				await request("initialize", {
+					clientInfo: {
+						name: "opengui_desktop",
+						title: "OpenGUI",
+						version: "0.1.0",
+					},
+					capabilities: {
+						experimentalApi: true,
+					},
+				})
+				child.stdin.write(`${JSON.stringify({ method: "initialized", params: {} })}\n`)
+				const result = await requestWork({ request })
+				settleResolve(result)
+			} catch (error) {
+				settleReject(error)
+			}
+		})()
+	})
+}
+
+async function fetchCodexProviderFromAppServer() {
+	return await withCodexAppServer(async ({ request }) => {
+		const account = await request("account/read", {})
+		if (!account?.account && account?.requiresOpenaiAuth) {
+			return buildCodexProviderFromModels({})
+		}
+		const models = {}
+		let cursor = undefined
+		do {
+			const response = await request("model/list", cursor ? { cursor } : {})
+			for (const rawModel of Array.isArray(response?.data) ? response.data : []) {
+				const model = mapCodexAppServerModel(rawModel)
+				if (!model) continue
+				models[model.id] = model
+			}
+			cursor =
+				typeof response?.nextCursor === "string" && response.nextCursor
+					? response.nextCursor
+					: undefined
+		} while (cursor)
+		return buildCodexProviderFromModels(
+			Object.keys(models).length > 0 ? models : STATIC_CODEX_MODELS,
+		)
+	})
+}
+
+async function getCodexProviderData() {
+	const now = Date.now()
+	if (codexProviderCache.value && codexProviderCache.expiresAt > now) {
+		return codexProviderCache.value
+	}
+	if (codexProviderCache.promise) {
+		return codexProviderCache.promise
+	}
+	codexProviderCache.promise = (async () => {
+		try {
+			const provider = await fetchCodexProviderFromAppServer()
+			codexProviderCache.value = provider
+			codexProviderCache.expiresAt = Date.now() + CODEX_PROVIDER_CACHE_TTL_MS
+			return provider
+		} catch (error) {
+			console.warn("Failed to discover Codex models via app-server:", error)
+			codexProviderCache.value = STATIC_CODEX_PROVIDER
+			codexProviderCache.expiresAt = Date.now() + CODEX_PROVIDER_CACHE_TTL_MS
+			return STATIC_CODEX_PROVIDER
+		} finally {
+			codexProviderCache.promise = null
+		}
+	})()
+	return codexProviderCache.promise
 }
 
 function normalizeDir(directory) {
@@ -1027,7 +1395,7 @@ class CodexBridgeManager {
 	}
 
 	async getProviders() {
-		return CODEX_PROVIDER
+		return await getCodexProviderData()
 	}
 
 	async getAgents() {
