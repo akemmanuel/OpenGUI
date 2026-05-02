@@ -51,15 +51,17 @@ import {
 	useState,
 } from "react";
 import {
+	type AgentBackendId,
 	getAgentBackendIdFromSessionId,
 	getAllAgentBackends,
 	getCurrentAgentBackend,
-	type AgentBackendId,
 } from "@/agents";
 import type { AgentBackendEvent } from "@/agents/backend";
 import {
 	resolveVariant,
+	updateVariantSelections,
 	useVariant,
+	variantKey,
 	type VariantSelections,
 } from "@/hooks/use-agent-variant";
 import {
@@ -145,9 +147,19 @@ function selectedModelsEqual(
 	return a?.providerID === b?.providerID && a?.modelID === b?.modelID;
 }
 
+function selectedVariantsEqual(
+	a: string | null | undefined,
+	b: string | null | undefined,
+) {
+	return (a ?? null) === (b ?? null);
+}
+
 const PROJECT_KEY_SEPARATOR = "\u0000";
 
-function makeProjectKey(workspaceId: string | null | undefined, directory: string) {
+function makeProjectKey(
+	workspaceId: string | null | undefined,
+	directory: string,
+) {
 	return `${workspaceId ?? ""}${PROJECT_KEY_SEPARATOR}${normalizeProjectPath(directory)}`;
 }
 
@@ -181,7 +193,9 @@ function getSessionProjectTarget(session: Session | undefined | null) {
 	};
 }
 
-function getSessionBackendId(session: Session | undefined | null): AgentBackendId | null {
+function getSessionBackendId(
+	session: Session | undefined | null,
+): AgentBackendId | null {
 	return session?._backendId ?? null;
 }
 
@@ -221,6 +235,7 @@ interface SessionMeta {
 	pinnedAt?: string;
 	selectedModel?: SelectedModel | null;
 	selectedAgent?: string | null;
+	selectedVariant?: string | null;
 }
 
 interface ProjectMeta {
@@ -243,7 +258,8 @@ function persistSessionMetaMap(meta: SessionMetaMap) {
 			(m.tags && m.tags.length > 0) ||
 			(m.pinnedAt && m.pinnedAt.length > 0) ||
 			Object.hasOwn(m, "selectedModel") ||
-			Object.hasOwn(m, "selectedAgent")
+			Object.hasOwn(m, "selectedAgent") ||
+			Object.hasOwn(m, "selectedVariant")
 		) {
 			pruned[id] = m;
 		}
@@ -320,10 +336,7 @@ function getWorktreeParents(): WorktreeParentMap {
 				changed = true;
 				continue;
 			}
-			if (
-				normalizedDir !== dir ||
-				normalizedParentDir !== metadata.parentDir
-			) {
+			if (normalizedDir !== dir || normalizedParentDir !== metadata.parentDir) {
 				changed = true;
 			}
 			result[normalizedDir] = {
@@ -482,7 +495,8 @@ function migrateLegacyWorkspaceStorage(): Workspace[] {
 }
 
 function getRecentProjects(): RecentProject[] {
-	const projects = storageParsed<RecentProject[]>(STORAGE_KEYS.RECENT_PROJECTS) ?? [];
+	const projects =
+		storageParsed<RecentProject[]>(STORAGE_KEYS.RECENT_PROJECTS) ?? [];
 	return projects
 		.map((project) => ({
 			...project,
@@ -777,7 +791,7 @@ type Action =
 				username?: string;
 				password?: string;
 			};
-		}
+	  }
 	| { type: "SET_ACTIVE_WORKSPACE"; payload: string }
 	| {
 			type: "REORDER_WORKSPACES";
@@ -795,7 +809,10 @@ type Action =
 			type: "SET_PROJECT_CONNECTION";
 			payload: { projectKey: string; status: ConnectionStatus };
 	  }
-	| { type: "REMOVE_PROJECT"; payload: { projectKey: string; directory: string } }
+	| {
+			type: "REMOVE_PROJECT";
+			payload: { projectKey: string; directory: string };
+	  }
 	| { type: "CLEAR_ALL_PROJECTS" }
 	| { type: "SET_SESSIONS"; payload: Session[] }
 	| {
@@ -1247,7 +1264,10 @@ function updateMessageArray(
 	return { messages: nextMessages, found: true };
 }
 
-function reducer(state: InternalAgentState, action: Action): InternalAgentState {
+function reducer(
+	state: InternalAgentState,
+	action: Action,
+): InternalAgentState {
 	switch (action.type) {
 		case "SET_WORKSPACES":
 			return {
@@ -1289,7 +1309,10 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 			const { fromIndex, toIndex } = action.payload;
 			if (state.workspaces.length <= 1) return state;
 			if (fromIndex < 0 || fromIndex >= state.workspaces.length) return state;
-			const clampedTo = Math.max(0, Math.min(toIndex, state.workspaces.length - 1));
+			const clampedTo = Math.max(
+				0,
+				Math.min(toIndex, state.workspaces.length - 1),
+			);
 			if (clampedTo === fromIndex) return state;
 			const nextWorkspaces = [...state.workspaces];
 			const [moved] = nextWorkspaces.splice(fromIndex, 1);
@@ -1358,15 +1381,15 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				workspace.id === workspaceId
 					? {
 							...workspace,
-							projects: workspace.projects.filter((project) => project !== directory),
+							projects: workspace.projects.filter(
+								(project) => project !== directory,
+							),
 						}
 					: workspace,
 			);
 			const { [projectKey]: _, ...rest } = state.connections;
-			const {
-				[projectKey]: _removedWorkspace,
-				...restProjectWorkspaceMap
-			} = state.projectWorkspaceMap;
+			const { [projectKey]: _removedWorkspace, ...restProjectWorkspaceMap } =
+				state.projectWorkspaceMap;
 			const nextBusy = new Set(
 				[...state.busySessionIds].filter((id) => !removedSessionIds.has(id)),
 			);
@@ -1563,6 +1586,26 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 						? (meta.selectedAgent ?? null)
 						: state.selectedAgent
 					: state.selectedAgent;
+			let nextVariantSelections = state.variantSelections;
+			if (
+				meta &&
+				Object.hasOwn(meta, "selectedVariant") &&
+				selectedModelsEqual(nextSelectedModel, meta.selectedModel ?? null) &&
+				nextSelectedModel
+			) {
+				const key = variantKey(
+					nextSelectedModel.providerID,
+					nextSelectedModel.modelID,
+				);
+				const desiredVariant = meta.selectedVariant ?? undefined;
+				if (nextVariantSelections[key] !== desiredVariant) {
+					nextVariantSelections = updateVariantSelections(
+						state.variantSelections,
+						key,
+						desiredVariant,
+					);
+				}
+			}
 			let startingBuffers = state._sessionBuffers;
 			const previousSid = state.activeSessionId;
 			// Always cache outgoing session messages (not just busy ones) for
@@ -1644,6 +1687,7 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				activeSessionId: sid,
 				selectedModel: nextSelectedModel,
 				selectedAgent: nextSelectedAgent,
+				variantSelections: nextVariantSelections,
 				messages: initialMessages,
 				messageForwardBuffer: [],
 				messageHistoryHasMore: restoredHasMore,
@@ -1881,9 +1925,7 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				};
 			});
 
-			const nextBusy = new Set(
-				[...state.busySessionIds].map(renameSessionId),
-			);
+			const nextBusy = new Set([...state.busySessionIds].map(renameSessionId));
 
 			const nextAfterPart = new Set(
 				[...state.afterPartPending].map(renameSessionId),
@@ -2830,6 +2872,7 @@ interface ActionsContextValue {
 	setModel: (model: SelectedModel | null) => void;
 	setAgent: (agent: string | null) => void;
 	cycleVariant: () => void;
+	revertVariant: () => void;
 	clearError: () => void;
 	refreshProviders: () => Promise<void>;
 	refreshSessions: () => Promise<void>;
@@ -2977,7 +3020,10 @@ export function InternalAgentProvider({
 		},
 	);
 
-	const allBackends = useMemo(() => getAllAgentBackends(window.electronAPI), []);
+	const allBackends = useMemo(
+		() => getAllAgentBackends(window.electronAPI),
+		[],
+	);
 	const backendsById = useMemo(
 		() =>
 			Object.fromEntries(
@@ -2986,13 +3032,16 @@ export function InternalAgentProvider({
 		[allBackends],
 	);
 	const activeSession = state.activeSessionId
-		? state.sessions.find((session) => session.id === state.activeSessionId) ?? null
+		? (state.sessions.find((session) => session.id === state.activeSessionId) ??
+			null)
 		: null;
 	const activeBackendId =
 		getSessionBackendId(activeSession) ??
 		state.draftSessionBackendId ??
 		preferredBackendId;
-	const bridge = backendsById[activeBackendId] ?? getCurrentAgentBackend(window.electronAPI, activeBackendId);
+	const bridge =
+		backendsById[activeBackendId] ??
+		getCurrentAgentBackend(window.electronAPI, activeBackendId);
 	const workspaceProfile = bridge?.workspace;
 	const runtime = bridge?.runtime;
 	const expectedDirectoriesRef = useRef<Set<string>>(new Set());
@@ -3132,7 +3181,9 @@ export function InternalAgentProvider({
 				});
 				break;
 			case "session.error":
-				dispatch({ type: "SET_ERROR", payload: event.error });
+				if (!event.sessionID) {
+					dispatch({ type: "SET_ERROR", payload: event.error });
+				}
 				break;
 		}
 	}, []);
@@ -3210,34 +3261,6 @@ export function InternalAgentProvider({
 		storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, state.activeWorkspaceId);
 	}, [state.activeWorkspaceId]);
 
-	useEffect(() => {
-		const sessionId = state.activeSessionId;
-		if (!sessionId) return;
-		const existing = state.sessionMeta[sessionId] ?? {};
-		if (
-			selectedModelsEqual(existing.selectedModel, state.selectedModel) &&
-			existing.selectedAgent === state.selectedAgent
-		) {
-			return;
-		}
-		dispatch({
-			type: "SET_SESSION_META",
-			payload: {
-				sessionId,
-				meta: {
-					selectedModel: state.selectedModel,
-					selectedAgent: state.selectedAgent,
-				},
-			},
-		});
-	}, [
-		dispatch,
-		state.activeSessionId,
-		state.selectedAgent,
-		state.selectedModel,
-		state.sessionMeta,
-	]);
-
 	// Persist unreadSessionIds to localStorage whenever it changes
 	useEffect(() => {
 		persistUnreadSessionIds(state.unreadSessionIds);
@@ -3268,6 +3291,7 @@ export function InternalAgentProvider({
 		setModel,
 		setAgent,
 		cycleVariant: doCycleVariant,
+		revertVariant: doRevertVariant,
 	} = useVariant({
 		selectedModel: state.selectedModel,
 		providers: state.providers,
@@ -3276,6 +3300,38 @@ export function InternalAgentProvider({
 		variantSelections: state.variantSelections,
 		dispatch,
 	});
+
+	useEffect(() => {
+		const sessionId = state.activeSessionId;
+		if (!sessionId) return;
+		const existing = state.sessionMeta[sessionId] ?? {};
+		const nextSelectedVariant = currentVariant ?? null;
+		if (
+			selectedModelsEqual(existing.selectedModel, state.selectedModel) &&
+			existing.selectedAgent === state.selectedAgent &&
+			selectedVariantsEqual(existing.selectedVariant, nextSelectedVariant)
+		) {
+			return;
+		}
+		dispatch({
+			type: "SET_SESSION_META",
+			payload: {
+				sessionId,
+				meta: {
+					selectedModel: state.selectedModel,
+					selectedAgent: state.selectedAgent,
+					selectedVariant: nextSelectedVariant,
+				},
+			},
+		});
+	}, [
+		currentVariant,
+		dispatch,
+		state.activeSessionId,
+		state.selectedAgent,
+		state.selectedModel,
+		state.sessionMeta,
+	]);
 
 	// --- Actions ---
 
@@ -3314,48 +3370,86 @@ export function InternalAgentProvider({
 				loadedResourceBackendIdRef.current = backendId;
 				dispatch({ type: "SET_PROVIDERS", payload: providersData });
 
+				const activeSessionId = stateRef.current.activeSessionId;
+				const activeSessionMeta = activeSessionId
+					? stateRef.current.sessionMeta[activeSessionId]
+					: undefined;
+				const sessionSelection =
+					activeSessionMeta &&
+					Object.hasOwn(activeSessionMeta, "selectedModel") &&
+					isModelAvailable(
+						providersData.providers,
+						activeSessionMeta.selectedModel ?? null,
+					)
+						? (activeSessionMeta.selectedModel ?? null)
+						: undefined;
 				const currentSelection = selectedModelRef.current;
 				const storedSelection =
 					stateRef.current.workspaces.find(
 						(workspace) => workspace.id === stateRef.current.activeWorkspaceId,
 					)?.selectedModel ??
 					storageParsed<SelectedModel>(STORAGE_KEYS.SELECTED_MODEL);
-				const nextSelection = isModelAvailable(
-					providersData.providers,
-					currentSelection,
-				)
-					? currentSelection
-					: isModelAvailable(providersData.providers, storedSelection)
-						? storedSelection
-						: resolveServerDefaultModel(
+				const nextSelection =
+					sessionSelection !== undefined
+						? sessionSelection
+						: isModelAvailable(
 								providersData.providers,
-								providersData.default,
-							);
+								currentSelection,
+							)
+							? currentSelection
+							: isModelAvailable(providersData.providers, storedSelection)
+								? storedSelection
+								: resolveServerDefaultModel(
+										providersData.providers,
+										providersData.default,
+								  );
 				dispatch({
 					type: "SET_SELECTED_MODEL",
 					payload: nextSelection ?? null,
 				});
 
-				const parsedVariants = storageParsed<VariantSelections>(
-					STORAGE_KEYS.VARIANT_SELECTIONS,
-				);
-				if (parsedVariants) {
-					dispatch({
-						type: "SET_VARIANT_SELECTIONS",
-						payload: parsedVariants,
-					});
-				}
-
 				dispatch({ type: "SET_AGENTS", payload: agentsData });
 				const savedAgent =
-					stateRef.current.workspaces.find(
-						(workspace) => workspace.id === stateRef.current.activeWorkspaceId,
-					)?.selectedAgent ?? storageGet(STORAGE_KEYS.SELECTED_AGENT);
+					activeSessionMeta &&
+					Object.hasOwn(activeSessionMeta, "selectedAgent") &&
+					isAgentAvailable(agentsData, activeSessionMeta.selectedAgent)
+						? (activeSessionMeta.selectedAgent ?? null)
+						: (stateRef.current.workspaces.find(
+								(workspace) => workspace.id === stateRef.current.activeWorkspaceId,
+						  )?.selectedAgent ?? storageGet(STORAGE_KEYS.SELECTED_AGENT));
 				const nextAgent =
 					savedAgent && agentsData.some((a: Agent) => a.name === savedAgent)
 						? savedAgent
 						: null;
 				dispatch({ type: "SET_SELECTED_AGENT", payload: nextAgent });
+
+				let nextVariantSelections =
+					storageParsed<VariantSelections>(STORAGE_KEYS.VARIANT_SELECTIONS) ??
+					stateRef.current.variantSelections;
+				if (
+					activeSessionMeta &&
+					Object.hasOwn(activeSessionMeta, "selectedVariant") &&
+					nextSelection
+				) {
+					const key = variantKey(
+						nextSelection.providerID,
+						nextSelection.modelID,
+					);
+					const desiredVariant = activeSessionMeta.selectedVariant ?? undefined;
+					if (nextVariantSelections[key] !== desiredVariant) {
+						nextVariantSelections = updateVariantSelections(
+							nextVariantSelections,
+							key,
+							desiredVariant,
+						);
+					}
+				}
+				if (nextVariantSelections !== stateRef.current.variantSelections) {
+					dispatch({
+						type: "SET_VARIANT_SELECTIONS",
+						payload: nextVariantSelections,
+					});
+				}
 
 				dispatch({ type: "SET_COMMANDS", payload: commandsData });
 			} catch (error) {
@@ -3587,7 +3681,8 @@ export function InternalAgentProvider({
 				(s) => s.id === state.activeSessionId,
 			);
 			if (
-				(activeSession?._projectDir ?? activeSession?.directory) === directory &&
+				(activeSession?._projectDir ?? activeSession?.directory) ===
+					directory &&
 				getSessionWorkspaceId(activeSession) === workspaceId
 			) {
 				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
@@ -3804,7 +3899,8 @@ export function InternalAgentProvider({
 	const workspaceConnection = useMemo(() => {
 		if (workspaceDirectory) {
 			const match = Object.entries(activeWorkspaceConnections).find(
-				([projectKey]) => parseProjectKey(projectKey).directory === workspaceDirectory,
+				([projectKey]) =>
+					parseProjectKey(projectKey).directory === workspaceDirectory,
 			);
 			return match?.[1] ?? null;
 		}
@@ -3847,9 +3943,10 @@ export function InternalAgentProvider({
 		state.draftSessionDirectory,
 		workspaceDirectory,
 	]);
-	const activeResourceBackendId = getSessionBackendId(activeSession)
-		?? state.draftSessionBackendId
-		?? preferredBackendId;
+	const activeResourceBackendId =
+		getSessionBackendId(activeSession) ??
+		state.draftSessionBackendId ??
+		preferredBackendId;
 
 	useEffect(() => {
 		if (!bridge || !activeResourceDirectory) return;
@@ -4034,9 +4131,11 @@ export function InternalAgentProvider({
 			if (backendIdFromId) {
 				return backendsById[backendIdFromId] ?? null;
 			}
-			const session = stateRef.current.sessions.find((item) => item.id === sessionId);
+			const session = stateRef.current.sessions.find(
+				(item) => item.id === sessionId,
+			);
 			const backendId = getSessionBackendId(session);
-			return backendId ? backendsById[backendId] ?? null : null;
+			return backendId ? (backendsById[backendId] ?? null) : null;
 		},
 		[backendsById],
 	);
@@ -4051,9 +4150,11 @@ export function InternalAgentProvider({
 				stateRef.current.temporarySessions.has(prevId)
 			) {
 				dispatch({ type: "SESSION_DELETED", payload: prevId });
-				getBackendForSessionId(prevId)?.runtime.deleteSession(prevId).catch(() => {
-					/* best-effort cleanup of temporary session */
-				});
+				getBackendForSessionId(prevId)
+					?.runtime.deleteSession(prevId)
+					.catch(() => {
+						/* best-effort cleanup of temporary session */
+					});
 			}
 		},
 		[getBackendForSessionId],
@@ -4479,11 +4580,9 @@ export function InternalAgentProvider({
 					agent,
 					variant,
 				});
-			} catch (error) {
-				dispatch({
-					type: "SET_ERROR",
-					payload: getErrorMessage(error) || "Prompt failed",
-				});
+			} catch {
+				// Prompt failures for existing sessions should render in the
+				// session transcript, not in the global app banner.
 				dispatch({ type: "SET_BUSY", payload: false });
 			}
 		},
@@ -4709,12 +4808,10 @@ export function InternalAgentProvider({
 					agent,
 					variant,
 				});
-			} catch (err) {
+			} catch {
+				// Command failures for existing sessions should render in the
+				// session transcript, not in the global app banner.
 				dispatch({ type: "SET_BUSY", payload: false });
-				dispatch({
-					type: "SET_ERROR",
-					payload: getErrorMessage(err),
-				});
 			}
 		},
 		[
@@ -4734,7 +4831,10 @@ export function InternalAgentProvider({
 
 		const model = state.selectedModel;
 		if (!model) {
-			dispatch({ type: "SET_ERROR", payload: "Compaction requires a model to be selected" });
+			dispatch({
+				type: "SET_ERROR",
+				payload: "Compaction requires a model to be selected",
+			});
 			return;
 		}
 
@@ -5084,7 +5184,10 @@ export function InternalAgentProvider({
 		async (messageID: string) => {
 			if (!runtime || !state.activeSessionId) return;
 			try {
-				const session = await runtime.forkSession(state.activeSessionId, messageID);
+				const session = await runtime.forkSession(
+					state.activeSessionId,
+					messageID,
+				);
 				dispatch({ type: "SESSION_CREATED", payload: session });
 				// Navigate to the newly forked session
 				await selectSession(session.id, { session });
@@ -5239,7 +5342,8 @@ export function InternalAgentProvider({
 
 	const removeWorkspace = useCallback(
 		async (workspaceId: string) => {
-			if (workspaceId === LOCAL_WORKSPACE_ID || allBackends.length === 0) return;
+			if (workspaceId === LOCAL_WORKSPACE_ID || allBackends.length === 0)
+				return;
 			const workspace = stateRef.current.workspaces.find(
 				(item) => item.id === workspaceId,
 			);
@@ -5272,12 +5376,15 @@ export function InternalAgentProvider({
 		[allBackends, selectSession],
 	);
 
-	const reorderWorkspaces = useCallback((fromIndex: number, toIndex: number) => {
-		dispatch({
-			type: "REORDER_WORKSPACES",
-			payload: { fromIndex, toIndex },
-		});
-	}, []);
+	const reorderWorkspaces = useCallback(
+		(fromIndex: number, toIndex: number) => {
+			dispatch({
+				type: "REORDER_WORKSPACES",
+				payload: { fromIndex, toIndex },
+			});
+		},
+		[],
+	);
 
 	const reorderProjects = useCallback((fromIndex: number, toIndex: number) => {
 		const workspaceId = stateRef.current.activeWorkspaceId;
@@ -5425,17 +5532,20 @@ export function InternalAgentProvider({
 				}),
 			),
 			connections: Object.fromEntries(
-				Object.entries(activeWorkspaceConnections).map(([projectKey, status]) => [
-					parseProjectKey(projectKey).directory,
-					status,
-				]),
+				Object.entries(activeWorkspaceConnections).map(
+					([projectKey, status]) => [
+						parseProjectKey(projectKey).directory,
+						status,
+					],
+				),
 			),
 			workspaceDirectory,
 			workspaceServerUrl: workspaceProfile?.fields.serverUrl
 				? (activeWorkspace?.serverUrl ?? workspaceConnection?.serverUrl ?? null)
 				: null,
-			workspaceUsername:
-				workspaceProfile?.fields.username ? (activeWorkspace?.username ?? null) : null,
+			workspaceUsername: workspaceProfile?.fields.username
+				? (activeWorkspace?.username ?? null)
+				: null,
 			isLocalWorkspace:
 				workspaceProfile?.kind === "local-cli"
 					? true
@@ -5452,7 +5562,10 @@ export function InternalAgentProvider({
 						const { workspaceId } = parseProjectKey(projectKey);
 						return workspaceId === state.activeWorkspaceId;
 					})
-					.map(([projectKey, meta]) => [parseProjectKey(projectKey).directory, meta]),
+					.map(([projectKey, meta]) => [
+						parseProjectKey(projectKey).directory,
+						meta,
+					]),
 			),
 			pendingWorktreeCleanup: state.pendingWorktreeCleanup,
 		}),
@@ -5503,6 +5616,7 @@ export function InternalAgentProvider({
 			setModel,
 			setAgent,
 			cycleVariant: doCycleVariant,
+			revertVariant: doRevertVariant,
 			clearError,
 			refreshProviders,
 			refreshSessions,
@@ -5557,6 +5671,7 @@ export function InternalAgentProvider({
 			setModel,
 			setAgent,
 			doCycleVariant,
+			doRevertVariant,
 			clearError,
 			refreshProviders,
 			refreshSessions,
@@ -5597,9 +5712,11 @@ export function InternalAgentProvider({
 	useEffect(() => {
 		const cleanup = () => {
 			for (const id of stateRef.current.temporarySessions) {
-				getBackendForSessionId(id)?.runtime.deleteSession(id).catch(() => {
-					/* best-effort cleanup on unload */
-				});
+				getBackendForSessionId(id)
+					?.runtime.deleteSession(id)
+					.catch(() => {
+						/* best-effort cleanup on unload */
+					});
 			}
 		};
 		window.addEventListener("beforeunload", cleanup);
@@ -5676,9 +5793,7 @@ export function useModelState(): ModelContextValue {
 export function useConnectionState(): ConnectionContextValue {
 	const ctx = useContext(ConnectionContext);
 	if (!ctx) {
-		throw new Error(
-			"useConnectionState must be used within provider",
-		);
+		throw new Error("useConnectionState must be used within provider");
 	}
 	return ctx;
 }

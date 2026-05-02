@@ -17,7 +17,7 @@ import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { findModel } from "@/lib/utils";
 
 function formatVariantLabel(value: string | undefined) {
-	if (!value) return "default";
+	if (!value) return "—";
 	if (value === "none") return "off";
 	return value;
 }
@@ -50,7 +50,7 @@ export function VariantSelector() {
 		? formatVariantLabel(currentVariant)
 		: "no reasoning";
 	const tooltipText = supportsReasoning
-		? `Variant: ${formatVariantLabel(currentVariant)} (click or Ctrl+T to cycle)`
+		? `Thinking effort: ${formatVariantLabel(currentVariant)} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)`
 		: `${model?.name ?? "Selected model"} has no reasoning effort options. Pick Sonnet or Opus.`;
 
 	return (

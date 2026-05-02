@@ -20,8 +20,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
-	hasAnyConnection,
 	AgentBackendProvider,
+	hasAnyConnection,
 	type QueueMode,
 	resolveServerDefaultModel,
 	useActions,
@@ -39,9 +39,9 @@ import {
 	openExternalLink,
 } from "@/lib/utils";
 import { AppSidebar } from "./components/AppSidebar";
+import { SettingsView } from "./components/ConnectionPanel";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
-import { SettingsView } from "./components/ConnectionPanel";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
@@ -60,6 +60,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		updateQueuedPrompt,
 		sendQueuedNow,
 		cycleVariant,
+		revertVariant,
 		startDraftSession,
 		removeProject,
 		unregisterWorktree,
@@ -137,7 +138,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 	useEffect(() => {
 		const handleUndoRedo = (e: KeyboardEvent) => {
 			if (!capabilities?.revert) return;
-			if (e.key !== "z" || !(e.metaKey || e.ctrlKey)) return;
+			if (e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey)) return;
 			// Don't intercept native undo/redo in text inputs
 			const tag = (e.target as HTMLElement)?.tagName;
 			if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -161,11 +162,11 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		};
 	}, []);
 
-	// Ctrl+T: cycle model variant (low / medium / high / default)
+	// Ctrl+T: cycle model variant forward
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (!capabilities?.models) return;
-			if (e.key === "t" && (e.metaKey || e.ctrlKey)) {
+			if (e.key.toLowerCase() === "t" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
 				e.preventDefault();
 				cycleVariant();
 			}
@@ -174,6 +175,19 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [capabilities?.models, cycleVariant]);
 
+	// Ctrl+Shift+T: cycle model variant backward
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (!capabilities?.models) return;
+			if (e.key.toLowerCase() === "t" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+				e.preventDefault();
+				revertVariant();
+			}
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [capabilities?.models, revertVariant]);
+
 	// Ctrl+K: focus sidebar search
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -181,11 +195,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
 			const target = e.target instanceof HTMLElement ? e.target : null;
 			const tag = target?.tagName;
-			if (
-				tag === "INPUT" ||
-				tag === "TEXTAREA" ||
-				target?.isContentEditable
-			) {
+			if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) {
 				return;
 			}
 

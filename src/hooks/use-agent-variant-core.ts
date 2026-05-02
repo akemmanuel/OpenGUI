@@ -34,19 +34,45 @@ export function updateVariantSelections(
 	return next;
 }
 
-function cycleVariantSelection(
+export function getEnabledVariantKeys(model: Model | undefined): string[] {
+	if (!model?.variants) return [];
+	return Object.keys(model.variants).filter(
+		(key) => !model.variants?.[key]?.disabled,
+	);
+}
+
+export function normalizeVariantSelection(
 	current: string | undefined,
 	model: Model | undefined,
 ): string | undefined {
-	if (!model?.variants) return undefined;
-	const keys = Object.keys(model.variants).filter(
-		(k) => !model.variants?.[k]?.disabled,
-	);
+	const keys = getEnabledVariantKeys(model);
+	if (keys.length === 0) return undefined;
+	if (current && keys.includes(current)) return current;
+	return keys[0];
+}
+
+export function cycleVariantSelection(
+	current: string | undefined,
+	model: Model | undefined,
+): string | undefined {
+	const keys = getEnabledVariantKeys(model);
 	if (keys.length === 0) return undefined;
 	if (current === undefined) return keys[0];
 	const idx = keys.indexOf(current);
-	if (idx < 0 || idx >= keys.length - 1) return undefined;
-	return keys[idx + 1];
+	if (idx < 0) return keys[0];
+	return keys[(idx + 1) % keys.length];
+}
+
+export function previousVariantSelection(
+	current: string | undefined,
+	model: Model | undefined,
+): string | undefined {
+	const keys = getEnabledVariantKeys(model);
+	if (keys.length === 0) return undefined;
+	if (current === undefined) return keys[keys.length - 1];
+	const idx = keys.indexOf(current);
+	if (idx < 0) return keys[keys.length - 1];
+	return keys[(idx - 1 + keys.length) % keys.length];
 }
 
 export function resolveVariant(
@@ -88,10 +114,22 @@ export function useVariant({
 	variantSelections,
 	dispatch,
 }: UseVariantParams) {
+	const model = useMemo(() => {
+		if (!selectedModel) return undefined;
+		return findModel(
+			providers,
+			selectedModel.providerID,
+			selectedModel.modelID,
+		);
+	}, [selectedModel, providers]);
+
 	const currentVariant = useMemo(
 		() =>
-			resolveVariant(selectedModel, variantSelections, agents, selectedAgent),
-		[selectedModel, variantSelections, agents, selectedAgent],
+			normalizeVariantSelection(
+				resolveVariant(selectedModel, variantSelections, agents, selectedAgent),
+				model,
+			),
+		[selectedModel, variantSelections, agents, selectedAgent, model],
 	);
 
 	const setModel = useCallback(
@@ -111,23 +149,19 @@ export function useVariant({
 
 	const cycleVariant = useCallback(() => {
 		if (!selectedModel) return;
-		const model = findModel(
-			providers,
-			selectedModel.providerID,
-			selectedModel.modelID,
-		);
 		const key = variantKey(selectedModel.providerID, selectedModel.modelID);
-		const current = variantSelections[key];
-		const next = cycleVariantSelection(current, model);
+		const next = cycleVariantSelection(currentVariant, model);
+		if (currentVariant === next) return;
 		const newSelections = updateVariantSelections(variantSelections, key, next);
 		dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
 		persistVariantSelections(newSelections);
-	}, [selectedModel, providers, variantSelections, dispatch]);
+	}, [selectedModel, currentVariant, model, variantSelections, dispatch]);
 
 	const setVariant = useCallback(
 		(variant: string | undefined) => {
 			if (!selectedModel) return;
 			const key = variantKey(selectedModel.providerID, selectedModel.modelID);
+			if (currentVariant === variant) return;
 			const newSelections = updateVariantSelections(
 				variantSelections,
 				key,
@@ -136,8 +170,22 @@ export function useVariant({
 			dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
 			persistVariantSelections(newSelections);
 		},
-		[selectedModel, variantSelections, dispatch],
+		[selectedModel, currentVariant, variantSelections, dispatch],
 	);
+
+	const revertVariant = useCallback(() => {
+		if (!selectedModel) return;
+		const key = variantKey(selectedModel.providerID, selectedModel.modelID);
+		const previous = previousVariantSelection(currentVariant, model);
+		if (currentVariant === previous) return;
+		const newSelections = updateVariantSelections(
+			variantSelections,
+			key,
+			previous,
+		);
+		dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
+		persistVariantSelections(newSelections);
+	}, [selectedModel, currentVariant, model, variantSelections, dispatch]);
 
 	return {
 		currentVariant,
@@ -145,5 +193,6 @@ export function useVariant({
 		setAgent,
 		cycleVariant,
 		setVariant,
+		revertVariant,
 	};
 }

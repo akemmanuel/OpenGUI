@@ -1,0 +1,6 @@
+allowBuilds:
+  '@google/genai': false
+  bun: true
+  electron: false
+  koffi: false
+  protobufjs: false

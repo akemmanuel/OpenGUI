@@ -216,7 +216,14 @@ function normalizeOpenCodeEvent(event: NativeBackendEvent): AgentBackendEvent | 
 				"message" in errData.data
 					? String((errData.data as { message: string }).message)
 					: errData.name;
-			return { type: "session.error", error: errMsg };
+			return {
+				type: "session.error",
+				error: errMsg,
+				sessionID:
+					typeof oc.properties.sessionID === "string"
+						? toCompositeSessionId(oc.properties.sessionID)
+						: undefined,
+			};
 		}
 		default:
 			return null;

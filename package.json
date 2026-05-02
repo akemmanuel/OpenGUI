@@ -1,6 +1,6 @@
 {
 	"name": "opengui",
-	"version": "0.5.5",
+	"version": "0.5.6",
 	"private": false,
 	"description": "OpenGUI - Desktop and web command center for coding agents",
 	"homepage": "https://github.com/akemmanuel/OpenGUI",

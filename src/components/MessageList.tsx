@@ -1441,12 +1441,54 @@ function computeLineDiff(oldStr: string, newStr: string): DiffResult {
 	return { added, removed, lines };
 }
 
-/** Compute added/removed line counts from oldString/newString in an edit tool input. */
+/** Compute added/removed line counts from Pi/Codex/Claude edit tool inputs. */
 function computeEditDiff(input: Record<string, unknown>): DiffResult | null {
-	const oldStr = input.oldString;
-	const newStr = input.newString;
-	if (typeof oldStr !== "string" || typeof newStr !== "string") return null;
-	return getCachedLineDiff(oldStr, newStr);
+	const oldStr =
+		typeof input.oldString === "string"
+			? input.oldString
+			: typeof input.oldText === "string"
+				? input.oldText
+				: null;
+	const newStr =
+		typeof input.newString === "string"
+			? input.newString
+			: typeof input.newText === "string"
+				? input.newText
+				: null;
+	if (oldStr != null && newStr != null) {
+		return getCachedLineDiff(oldStr, newStr);
+	}
+
+	const edits = input.edits;
+	if (!Array.isArray(edits) || edits.length === 0) return null;
+
+	const editDiffs = edits
+		.map((entry) => {
+			if (!entry || typeof entry !== "object") return null;
+			const oldText =
+				typeof (entry as Record<string, unknown>).oldText === "string"
+					? ((entry as Record<string, unknown>).oldText as string)
+					: null;
+			const newText =
+				typeof (entry as Record<string, unknown>).newText === "string"
+					? ((entry as Record<string, unknown>).newText as string)
+					: null;
+			if (oldText == null || newText == null) return null;
+			return getCachedLineDiff(oldText, newText);
+		})
+		.filter((diff): diff is DiffResult => diff !== null);
+
+	if (editDiffs.length === 0) return null;
+	if (editDiffs.length === 1) return editDiffs[0] ?? null;
+
+	return {
+		added: editDiffs.reduce((sum, diff) => sum + diff.added, 0),
+		removed: editDiffs.reduce((sum, diff) => sum + diff.removed, 0),
+		lines: editDiffs.flatMap((diff, index) => [
+			...(index > 0 ? [{ type: "same" as const, text: "" }] : []),
+			...diff.lines,
+		]),
+	};
 }
 
 /** Compute diff for write tools (entire file is new content). */
