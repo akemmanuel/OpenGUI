@@ -1,15 +1,19 @@
-import type { Session } from "@opencode-ai/sdk/v2/client";
+import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent, PiBridge } from "@/types/electron";
+import { normalizeProjectPath } from "@/lib/utils";
 import type {
 	AgentBackendCapabilities,
 	AgentBackendDescriptor,
 	AgentBackendEvent,
 	AgentBackendTarget,
 } from "./backend";
+import type { AgentBackendId } from "./index";
 
 type SessionTags = {
 	_projectDir?: string;
 	_workspaceId?: string;
+	_backendId?: AgentBackendId;
+	_rawId?: string;
 };
 
 type TaggedSession = Session & SessionTags;
@@ -66,20 +70,85 @@ function getTarget(target?: AgentBackendTarget) {
 	};
 }
 
+function toCompositeSessionId(rawId: string) {
+	return `pi:${rawId}`;
+}
+
+function toRawSessionId(sessionId: string) {
+	return sessionId.startsWith("pi:") ? sessionId.slice("pi:".length) : sessionId;
+}
+
 function tagPiSession(
 	session: TaggedSession,
 	target?: { directory?: string; workspaceId?: string },
 ): TaggedSession {
+	const rawId = session._rawId ?? session.id;
+	const projectDir = target?.directory ?? session._projectDir ?? session.directory;
 	return {
 		...session,
-		_projectDir: target?.directory ?? session._projectDir ?? session.directory,
+		id: toCompositeSessionId(rawId),
+		_projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
 		_workspaceId:
 			target?.workspaceId ??
 			session._workspaceId ??
 			("workspaceID" in session && typeof session.workspaceID === "string"
 				? session.workspaceID
 				: undefined),
+		_backendId: "pi",
+		_rawId: rawId,
 	};
+}
+
+function normalizeMessage(message: Message): Message {
+	return {
+		...message,
+		sessionID: toCompositeSessionId(message.sessionID),
+	};
+}
+
+function normalizePart(part: Part): Part {
+	return "sessionID" in part && typeof part.sessionID === "string"
+		? ({ ...part, sessionID: toCompositeSessionId(part.sessionID) } as Part)
+		: part;
+}
+
+function normalizePiEventPayload(payload: AgentBackendEvent): AgentBackendEvent {
+	switch (payload.type) {
+		case "message.updated":
+			return { ...payload, message: normalizeMessage(payload.message) };
+		case "message.part.updated":
+			return { ...payload, part: normalizePart(payload.part) };
+		case "message.part.delta":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "message.part.removed":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "message.removed":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "session.status":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "permission.requested":
+			return {
+				...payload,
+				request: {
+					...payload.request,
+					sessionID: toCompositeSessionId(payload.request.sessionID),
+				},
+			};
+		case "permission.cleared":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "question.requested":
+			return {
+				...payload,
+				request: {
+					...payload.request,
+					sessionID: toCompositeSessionId(payload.request.sessionID),
+				},
+			};
+		case "question.cleared":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		default:
+			return payload;
+	}
 }
 
 function normalizePiEvent(event: NativeBackendEvent): AgentBackendEvent | null {
@@ -106,13 +175,18 @@ function normalizePiEvent(event: NativeBackendEvent): AgentBackendEvent | null {
 	if (payload.type === "session.replaced") {
 		return {
 			...payload,
+			oldId: toCompositeSessionId(payload.oldId),
+			newId: toCompositeSessionId(payload.newId),
 			session: tagPiSession(payload.session, {
 				directory: payload.directory,
 				workspaceId: payload.workspaceId,
 			}),
 		};
 	}
-	return payload;
+	if (payload.type === "session.deleted") {
+		return { ...payload, sessionId: toCompositeSessionId(payload.sessionId) };
+	}
+	return normalizePiEventPayload(payload);
 }
 
 export function createPiBackend(bridge?: PiBridge): PiBackendAdapter | undefined {
@@ -148,11 +222,8 @@ export function createPiBackend(bridge?: PiBridge): PiBackendAdapter | undefined
 				);
 				return sessions.map((session) =>
 					tagPiSession(session, {
-						directory: session.directory ?? directory,
-						workspaceId:
-							("workspaceID" in session && typeof session.workspaceID === "string"
-								? session.workspaceID
-								: workspaceId),
+						directory: directory ?? session.directory,
+						workspaceId,
 					}),
 				);
 			},
@@ -178,49 +249,77 @@ export function createPiBackend(bridge?: PiBridge): PiBackendAdapter | undefined
 			},
 			deleteSession: async (sessionId) => {
 				return requireSuccess(
-					await bridge.deleteSession(sessionId),
+					await bridge.deleteSession(toRawSessionId(sessionId)),
 					"Failed to delete session",
 				);
 			},
 			renameSession: async (sessionId, title) => {
 				const session = requireSuccess(
-					await bridge.updateSession(sessionId, title),
+					await bridge.updateSession(toRawSessionId(sessionId), title),
 					"Failed to rename session",
 				);
 				return tagPiSession(session);
 			},
 			listSessionStatuses: async (target) => {
 				const { directory, workspaceId } = getTarget(target);
-				return requireSuccess(
+				const statuses = requireSuccess(
 					await bridge.getSessionStatuses(directory, workspaceId),
 					"Failed to list session statuses",
+				);
+				return Object.fromEntries(
+					Object.entries(statuses).map(([sessionId, status]) => [
+						toCompositeSessionId(sessionId),
+						status,
+					]),
 				);
 			},
 			getMessages: async (sessionId, options) => {
 				const { directory, workspaceId } = getTarget(options);
-				return requireSuccess(
-					await bridge.getMessages(sessionId, options, directory, workspaceId),
+				const page = requireSuccess(
+					await bridge.getMessages(
+						toRawSessionId(sessionId),
+						options,
+						directory,
+						workspaceId,
+					),
 					"Failed to get messages",
 				);
+				return {
+					...page,
+					messages: page.messages.map((entry) => ({
+						info: normalizeMessage(entry.info),
+						parts: entry.parts.map((part) => normalizePart(part)),
+					})),
+				};
 			},
 			prompt: async ({ sessionId, text, images, model, agent, variant }) => {
 				requireSuccess(
-					await bridge.prompt(sessionId, text, images, model, agent, variant),
+					await bridge.prompt(
+						toRawSessionId(sessionId),
+						text,
+						images,
+						model,
+						agent,
+						variant,
+					),
 					"Failed to send prompt",
 				);
 			},
 			abort: async (sessionId) => {
-				requireSuccess(await bridge.abort(sessionId), "Failed to abort session");
+				requireSuccess(
+					await bridge.abort(toRawSessionId(sessionId)),
+					"Failed to abort session",
+				);
 			},
 			compactSession: async (sessionId, model) => {
 				requireSuccess(
-					await bridge.summarizeSession(sessionId, model),
+					await bridge.summarizeSession(toRawSessionId(sessionId), model),
 					"Failed to compact session",
 				);
 			},
 			forkSession: async (sessionId, messageID) => {
 				const session = requireSuccess(
-					await bridge.forkSession(sessionId, messageID),
+					await bridge.forkSession(toRawSessionId(sessionId), messageID),
 					"Failed to fork session",
 				);
 				return tagPiSession(session);
@@ -254,7 +353,14 @@ export function createPiBackend(bridge?: PiBridge): PiBackendAdapter | undefined
 			},
 			sendCommand: async ({ sessionId, command, args, model, agent, variant }) => {
 				requireSuccess(
-					await bridge.sendCommand(sessionId, command, args, model, agent, variant),
+					await bridge.sendCommand(
+						toRawSessionId(sessionId),
+						command,
+						args,
+						model,
+						agent,
+						variant,
+					),
 					"Failed to send command",
 				);
 			},

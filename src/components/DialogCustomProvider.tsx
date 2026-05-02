@@ -11,6 +11,7 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { AgentBackendId } from "@/agents";
 import { useAgentBackend } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { getErrorMessage } from "@/lib/utils";
@@ -124,6 +125,7 @@ function KeyValueListEditor({
 
 interface DialogCustomProviderProps {
 	directory?: string;
+	backendId?: AgentBackendId;
 	onSaved: () => void;
 	onBack: () => void;
 }
@@ -164,10 +166,11 @@ function validate(
 
 export function DialogCustomProvider({
 	directory,
+	backendId,
 	onSaved,
 	onBack,
 }: DialogCustomProviderProps) {
-	const backend = useAgentBackend();
+	const backend = useAgentBackend(backendId);
 	const providersApi = backend?.platform?.providers;
 	const configApi = backend?.platform?.config;
 	const { activeWorkspaceId } = useConnectionState();

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AGENT_BACKEND_LABELS } from "@/agents";
 import { Input } from "@/components/ui/input";
 import {
 	Sidebar,
@@ -200,12 +201,17 @@ export function AppSidebar({
 		const openDirectories = Object.keys(connections).filter((dir) =>
 			detachedProject ? dir === detachedProject : true,
 		);
-		const rootSessions = sessions.filter(
-			(s) =>
-				!s.parentID &&
-				openDirectories.includes(s._projectDir ?? s.directory) &&
-				!temporarySessions.has(s.id),
+		const openDirectorySet = new Set(
+			openDirectories.map((dir) => normalizeProjectPath(dir)),
 		);
+		const rootSessions = sessions.filter((s) => {
+			const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
+			return (
+				!s.parentID &&
+				openDirectorySet.has(sessionDir) &&
+				!temporarySessions.has(s.id)
+			);
+		});
 		const rootOpenDirectories = openDirectories.filter(
 			(dir) => !worktreeDirs.has(dir),
 		);
@@ -223,7 +229,7 @@ export function AppSidebar({
 			groups.set(dir, []);
 		}
 		for (const s of rootSessions) {
-			const sessionDir = s._projectDir ?? s.directory;
+			const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
 			// If session belongs to a worktree, group it under the parent project
 			const parentDir = worktreeParents[sessionDir]?.parentDir;
 			const groupDir = parentDir ?? sessionDir;
@@ -649,6 +655,11 @@ export function AppSidebar({
 										}}
 									>
 										{session.title || "Untitled"}
+									</span>
+								)}
+								{session._backendId && (
+									<span className="shrink-0 rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground">
+										{AGENT_BACKEND_LABELS[session._backendId]}
 									</span>
 								)}
 								{worktreeBranch && (

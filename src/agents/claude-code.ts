@@ -1,18 +1,22 @@
-import type { Session } from "@opencode-ai/sdk/v2/client";
+import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
 import type {
 	ClaudeCodeBridge,
 	NativeBackendEvent,
 } from "@/types/electron";
+import { normalizeProjectPath } from "@/lib/utils";
 import type {
 	AgentBackendCapabilities,
 	AgentBackendDescriptor,
 	AgentBackendEvent,
 	AgentBackendTarget,
 } from "./backend";
+import type { AgentBackendId } from "./index";
 
 type SessionTags = {
 	_projectDir?: string;
 	_workspaceId?: string;
+	_backendId?: AgentBackendId;
+	_rawId?: string;
 };
 
 type TaggedSession = Session & SessionTags;
@@ -71,20 +75,87 @@ function getTarget(target?: AgentBackendTarget) {
 	};
 }
 
+function toCompositeSessionId(rawId: string) {
+	return `claude-code:${rawId}`;
+}
+
+function toRawSessionId(sessionId: string) {
+	return sessionId.startsWith("claude-code:")
+		? sessionId.slice("claude-code:".length)
+		: sessionId;
+}
+
 function tagClaudeSession(
 	session: TaggedSession,
 	target?: { directory?: string; workspaceId?: string },
 ): TaggedSession {
+	const rawId = session._rawId ?? session.id;
+	const projectDir = target?.directory ?? session._projectDir ?? session.directory;
 	return {
 		...session,
-		_projectDir: target?.directory ?? session._projectDir ?? session.directory,
+		id: toCompositeSessionId(rawId),
+		_projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
 		_workspaceId:
 			target?.workspaceId ??
 			session._workspaceId ??
 			("workspaceID" in session && typeof session.workspaceID === "string"
 				? session.workspaceID
 				: undefined),
+		_backendId: "claude-code",
+		_rawId: rawId,
 	};
+}
+
+function normalizeMessage(message: Message): Message {
+	return {
+		...message,
+		sessionID: toCompositeSessionId(message.sessionID),
+	};
+}
+
+function normalizePart(part: Part): Part {
+	return "sessionID" in part && typeof part.sessionID === "string"
+		? ({ ...part, sessionID: toCompositeSessionId(part.sessionID) } as Part)
+		: part;
+}
+
+function normalizeClaudeEventPayload(payload: AgentBackendEvent): AgentBackendEvent {
+	switch (payload.type) {
+		case "message.updated":
+			return { ...payload, message: normalizeMessage(payload.message) };
+		case "message.part.updated":
+			return { ...payload, part: normalizePart(payload.part) };
+		case "message.part.delta":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "message.part.removed":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "message.removed":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "session.status":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "permission.requested":
+			return {
+				...payload,
+				request: {
+					...payload.request,
+					sessionID: toCompositeSessionId(payload.request.sessionID),
+				},
+			};
+		case "permission.cleared":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		case "question.requested":
+			return {
+				...payload,
+				request: {
+					...payload.request,
+					sessionID: toCompositeSessionId(payload.request.sessionID),
+				},
+			};
+		case "question.cleared":
+			return { ...payload, sessionID: toCompositeSessionId(payload.sessionID) };
+		default:
+			return payload;
+	}
 }
 
 function normalizeClaudeCodeEvent(
@@ -113,6 +184,8 @@ function normalizeClaudeCodeEvent(
 		case "session.replaced":
 			return {
 				...payload,
+				oldId: toCompositeSessionId(payload.oldId),
+				newId: toCompositeSessionId(payload.newId),
 				session: tagClaudeSession(payload.session, {
 					directory: payload.directory,
 					workspaceId: payload.workspaceId,
@@ -126,8 +199,10 @@ function normalizeClaudeCodeEvent(
 					workspaceId: payload.workspaceId,
 				}),
 			};
+		case "session.deleted":
+			return { ...payload, sessionId: toCompositeSessionId(payload.sessionId) };
 		default:
-			return payload;
+			return normalizeClaudeEventPayload(payload);
 	}
 }
 
@@ -166,11 +241,8 @@ export function createClaudeCodeBackend(
 				);
 				return sessions.map((session) =>
 					tagClaudeSession(session, {
-						directory: session.directory ?? directory,
-						workspaceId:
-							("workspaceID" in session && typeof session.workspaceID === "string"
-								? session.workspaceID
-								: workspaceId),
+						directory: directory ?? session.directory,
+						workspaceId,
 					}),
 				);
 			},
@@ -190,36 +262,63 @@ export function createClaudeCodeBackend(
 			deleteSession: async (sessionId) => {
 				const target = getTarget();
 				return requireSuccess(
-					await bridge.deleteSession(sessionId, target.directory, target.workspaceId),
+					await bridge.deleteSession(
+						toRawSessionId(sessionId),
+						target.directory,
+						target.workspaceId,
+					),
 					"Failed to delete session",
 				);
 			},
 			renameSession: async (sessionId, title) => {
 				const target = getTarget();
 				const session = requireSuccess(
-					await bridge.updateSession(sessionId, title, target.directory, target.workspaceId),
+					await bridge.updateSession(
+						toRawSessionId(sessionId),
+						title,
+						target.directory,
+						target.workspaceId,
+					),
 					"Failed to rename session",
 				);
 				return tagClaudeSession(session, target);
 			},
 			listSessionStatuses: async (target) => {
 				const { directory, workspaceId } = getTarget(target);
-				return requireSuccess(
+				const statuses = requireSuccess(
 					await bridge.getSessionStatuses(directory, workspaceId),
 					"Failed to list session statuses",
+				);
+				return Object.fromEntries(
+					Object.entries(statuses).map(([sessionId, status]) => [
+						toCompositeSessionId(sessionId),
+						status,
+					]),
 				);
 			},
 			getMessages: async (sessionId, options) => {
 				const { directory, workspaceId } = getTarget(options);
-				return requireSuccess(
-					await bridge.getMessages(sessionId, options, directory, workspaceId),
+				const page = requireSuccess(
+					await bridge.getMessages(
+						toRawSessionId(sessionId),
+						options,
+						directory,
+						workspaceId,
+					),
 					"Failed to get messages",
 				);
+				return {
+					...page,
+					messages: page.messages.map((entry) => ({
+						info: normalizeMessage(entry.info),
+						parts: entry.parts.map((part) => normalizePart(part)),
+					})),
+				};
 			},
 			prompt: async ({ sessionId, text, images, model, agent, variant }) => {
 				requireSuccess(
 					await bridge.prompt(
-						sessionId,
+						toRawSessionId(sessionId),
 						text,
 						images,
 						model,
@@ -230,17 +329,20 @@ export function createClaudeCodeBackend(
 				);
 			},
 			abort: async (sessionId) => {
-				requireSuccess(await bridge.abort(sessionId), "Failed to abort session");
+				requireSuccess(
+					await bridge.abort(toRawSessionId(sessionId)),
+					"Failed to abort session",
+				);
 			},
 			compactSession: async (sessionId, model) => {
 				requireSuccess(
-					await bridge.summarizeSession(sessionId, model),
+					await bridge.summarizeSession(toRawSessionId(sessionId), model),
 					"Failed to compact session",
 				);
 			},
 			forkSession: async (sessionId, messageID) => {
 				const session = requireSuccess(
-					await bridge.forkSession(sessionId, messageID),
+					await bridge.forkSession(toRawSessionId(sessionId), messageID),
 					"Failed to fork session",
 				);
 				return tagClaudeSession(session);
@@ -275,7 +377,7 @@ export function createClaudeCodeBackend(
 			sendCommand: async ({ sessionId, command, args, model, agent, variant }) => {
 				requireSuccess(
 					await bridge.sendCommand(
-						sessionId,
+						toRawSessionId(sessionId),
 						command,
 						args,
 						model,
@@ -287,7 +389,11 @@ export function createClaudeCodeBackend(
 			},
 			respondPermission: async (sessionId, permissionId, response) => {
 				requireSuccess(
-					await bridge.respondPermission(sessionId, permissionId, response),
+					await bridge.respondPermission(
+						toRawSessionId(sessionId),
+						permissionId,
+						response,
+					),
 					"Failed to respond to permission request",
 				);
 			},

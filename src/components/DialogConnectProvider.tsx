@@ -13,6 +13,7 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { AgentBackendId } from "@/agents";
 import { useAgentBackend } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { getErrorMessage, openExternalLink } from "@/lib/utils";
@@ -27,6 +28,7 @@ import type {
 
 interface DialogConnectProviderProps {
 	directory?: string;
+	backendId?: AgentBackendId;
 	providerID: string;
 	providerName: string;
 	authMethods: ProviderAuthMethod[];
@@ -41,6 +43,7 @@ interface DialogConnectProviderProps {
 
 export function DialogConnectProvider({
 	directory,
+	backendId,
 	providerID,
 	providerName,
 	authMethods,
@@ -48,7 +51,7 @@ export function DialogConnectProvider({
 	onConnected,
 	onBack,
 }: DialogConnectProviderProps) {
-	const backend = useAgentBackend();
+	const backend = useAgentBackend(backendId);
 	const providersApi = backend?.platform?.providers;
 	const { activeWorkspaceId } = useConnectionState();
 

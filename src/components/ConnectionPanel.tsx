@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { AGENT_BACKEND_LABELS, type AgentBackendId } from "@/agents";
 import { Badge } from "@/components/ui/badge";
 import {
 	AlertDialog,
@@ -48,20 +49,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import {
 	NOTIFICATIONS_ENABLED_KEY,
 	useActions,
 	useConnectionState,
 } from "@/hooks/use-agent-state";
 import {
-	setStoredAgentBackendId,
 	useAgentBackend,
+	useAvailableBackendIds,
 	useCurrentAgentBackendId,
 } from "@/hooks/use-agent-backend";
 import {
@@ -183,7 +177,8 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 	const [password, setPassword] = useState("");
 	const [showAuth, setShowAuth] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const backend = useAgentBackend();
+	const preferredBackendId = useCurrentAgentBackendId();
+	const backend = useAgentBackend(preferredBackendId);
 	const workspaceProfile = backend?.workspace;
 	const localBackendLabel = backend?.label ?? "Selected backend";
 	const serverApi = backend?.platform?.server;
@@ -530,8 +525,8 @@ function _AddProjectForm({ onDone }: { onDone: () => void }) {
 // ---------------------------------------------------------------------------
 
 function GeneralSettings() {
-	const backend = useAgentBackend();
 	const backendId = useCurrentAgentBackendId();
+	const backend = useAgentBackend(backendId);
 	const serverApi = backend?.platform?.server;
 	const [restarting, setRestarting] = useState(false);
 
@@ -550,35 +545,6 @@ function GeneralSettings() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-center justify-between gap-3">
-				<div className="flex items-center gap-2">
-					<Label className="text-sm font-normal">Agent backend</Label>
-				</div>
-				<Select
-					value={backendId}
-					onValueChange={(value) =>
-						setStoredAgentBackendId(
-							value === "claude-code"
-								? "claude-code"
-								: value === "pi"
-									? "pi"
-									: value === "codex"
-										? "codex"
-										: "opencode",
-						)
-					}
-				>
-					<SelectTrigger className="w-[180px] h-8">
-						<SelectValue placeholder="Select backend" />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="opencode">OpenCode</SelectItem>
-						<SelectItem value="claude-code">Claude Code</SelectItem>
-						<SelectItem value="pi">Pi</SelectItem>
-						<SelectItem value="codex">Codex</SelectItem>
-					</SelectContent>
-				</Select>
-			</div>
 			<div className="flex items-center justify-between gap-3">
 				<div className="flex items-center gap-2">
 					<Label className="text-sm font-normal">Dark mode</Label>
@@ -895,7 +861,10 @@ interface SkillInfo {
 }
 
 function SkillsTabContent() {
-	const backend = useAgentBackend();
+	const initialBackendId = useCurrentAgentBackendId();
+	const availableBackendIds = useAvailableBackendIds();
+	const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
+	const backend = useAgentBackend(backendId);
 	const skillsApi = backend?.platform?.skills;
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
 	const scopedDirectory = activeDirectory ?? undefined;
@@ -935,6 +904,22 @@ function SkillsTabContent() {
 
 	return (
 		<div className="space-y-6">
+			{availableBackendIds.length > 1 && (
+				<div className="flex flex-wrap gap-1">
+					{availableBackendIds.map((id) => (
+						<Button
+							key={id}
+							type="button"
+							variant={backendId === id ? "default" : "outline"}
+							size="sm"
+							className="h-7 px-2 text-[11px]"
+							onClick={() => setBackendId(id)}
+						>
+							{AGENT_BACKEND_LABELS[id]}
+						</Button>
+					))}
+				</div>
+			)}
 			<div className="space-y-3">
 				<h3 className="text-sm font-medium">Available Skills</h3>
 				{skills.length === 0 ? (
@@ -983,7 +968,10 @@ function SkillsTabContent() {
 // ---------------------------------------------------------------------------
 
 function McpTabContent() {
-	const backend = useAgentBackend();
+	const initialBackendId = useCurrentAgentBackendId();
+	const availableBackendIds = useAvailableBackendIds();
+	const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
+	const backend = useAgentBackend(backendId);
 	const mcpApi = backend?.platform?.mcp;
 	const configApi = backend?.platform?.config;
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
@@ -1075,6 +1063,22 @@ function McpTabContent() {
 
 	return (
 		<div className="space-y-2">
+			{availableBackendIds.length > 1 && (
+				<div className="mb-3 flex flex-wrap gap-1">
+					{availableBackendIds.map((id) => (
+						<Button
+							key={id}
+							type="button"
+							variant={backendId === id ? "default" : "outline"}
+							size="sm"
+							className="h-7 px-2 text-[11px]"
+							onClick={() => setBackendId(id)}
+						>
+							{AGENT_BACKEND_LABELS[id]}
+						</Button>
+					))}
+				</div>
+			)}
 			{entries.length === 0 ? (
 				<div className="text-center py-6 text-sm text-muted-foreground">
 					No MCP servers configured.

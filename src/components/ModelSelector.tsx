@@ -11,6 +11,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { AGENT_BACKEND_LABELS } from "@/agents";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,8 +27,11 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useBackendCapabilities } from "@/hooks/use-agent-backend";
-import { useActions, useModelState } from "@/hooks/use-agent-state";
+import {
+	useAvailableBackendIds,
+	useBackendCapabilities,
+} from "@/hooks/use-agent-backend";
+import { useActions, useModelState, useSessionState } from "@/hooks/use-agent-state";
 import {
 	DEFAULT_MODEL_MAX_AGE_MONTHS,
 	MAX_RECENT_MODELS,
@@ -126,9 +130,14 @@ function ModelRow({
 }
 
 export function ModelSelector() {
-	const { setModel } = useActions();
+	const { setModel, setDraftBackend } = useActions();
 	const { providers, selectedModel } = useModelState();
+	const { sessions, activeSessionId, draftSessionBackendId } = useSessionState();
+	const availableBackendIds = useAvailableBackendIds();
 	const capabilities = useBackendCapabilities();
+	const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+	const lockedBackendId = activeSession?._backendId ?? null;
+	const selectedBackendId = lockedBackendId ?? draftSessionBackendId;
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -392,6 +401,34 @@ export function ModelSelector() {
 				<DialogHeader className="px-4 pt-4 pb-2">
 					<DialogTitle className="text-base">Select model</DialogTitle>
 				</DialogHeader>
+
+				{availableBackendIds.length > 1 && (
+					<div className="px-4 pb-2">
+						<div className="flex flex-wrap gap-1.5">
+							{availableBackendIds.map((backendId) => {
+								const isSelected = selectedBackendId === backendId;
+								return (
+									<Button
+										key={backendId}
+										type="button"
+										variant={isSelected ? "default" : "outline"}
+										size="sm"
+										className="h-7 px-2 text-[11px]"
+										disabled={!!lockedBackendId}
+										onClick={() => setDraftBackend(backendId)}
+									>
+										{AGENT_BACKEND_LABELS[backendId]}
+									</Button>
+								);
+							})}
+						</div>
+						{lockedBackendId && (
+							<p className="mt-2 text-[11px] text-muted-foreground">
+								Backend locked for this session.
+							</p>
+						)}
+					</div>
+				)}
 
 				<div className="px-4 pb-3">
 					<div className="relative">

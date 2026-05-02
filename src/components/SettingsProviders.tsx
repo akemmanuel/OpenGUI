@@ -7,6 +7,8 @@
  * 3. Custom provider + "View all" link
  */
 
+import type { AgentBackendId } from "@/agents";
+import { AGENT_BACKEND_LABELS } from "@/agents";
 import { Loader2, Plus, Unplug } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { DialogConnectProvider } from "@/components/DialogConnectProvider";
@@ -16,7 +18,11 @@ import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useAgentBackend } from "@/hooks/use-agent-backend";
+import {
+	useAgentBackend,
+	useAvailableBackendIds,
+	useCurrentAgentBackendId,
+} from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
@@ -50,7 +56,10 @@ function SourceBadge({ source }: { source: string }) {
 export function SettingsProviders() {
 	const { refreshProviders } = useActions();
 	const { activeDirectory, activeWorkspaceId } = useConnectionState();
-	const backend = useAgentBackend();
+	const initialBackendId = useCurrentAgentBackendId();
+	const availableBackendIds = useAvailableBackendIds();
+	const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
+	const backend = useAgentBackend(backendId);
 	const providersApi = backend?.platform?.providers;
 	const scopedDirectory = activeDirectory ?? undefined;
 
@@ -156,6 +165,7 @@ export function SettingsProviders() {
 		return (
 			<DialogConnectProvider
 				directory={scopedDirectory}
+				backendId={backendId}
 				providerID={connectProviderID}
 				providerName={provider?.name ?? connectProviderID}
 				authMethods={authMethods[connectProviderID] ?? []}
@@ -170,6 +180,7 @@ export function SettingsProviders() {
 		return (
 			<DialogCustomProvider
 				directory={scopedDirectory}
+				backendId={backendId}
 				onSaved={handleConnected}
 				onBack={() => setShowCustom(false)}
 			/>
@@ -196,6 +207,22 @@ export function SettingsProviders() {
 
 	return (
 		<div className="space-y-5 max-h-[50vh] overflow-y-auto pr-1">
+			{availableBackendIds.length > 1 && (
+				<div className="flex flex-wrap gap-1">
+					{availableBackendIds.map((id) => (
+						<Button
+							key={id}
+							type="button"
+							variant={backendId === id ? "default" : "outline"}
+							size="sm"
+							className="h-7 px-2 text-[11px]"
+							onClick={() => setBackendId(id)}
+						>
+							{AGENT_BACKEND_LABELS[id]}
+						</Button>
+					))}
+				</div>
+			)}
 			{/* Connected providers */}
 			{connectedProviders.length > 0 && (
 				<section className="space-y-2">

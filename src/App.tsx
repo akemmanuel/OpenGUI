@@ -18,10 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
-import {
-	useBackendCapabilities,
-	useCurrentAgentBackendId,
-} from "@/hooks/use-agent-backend";
+import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
 	hasAnyConnection,
 	AgentBackendProvider,
@@ -650,10 +647,9 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
 export function App() {
 	const detachedProject = window.electronAPI?.getDetachedProject() ?? undefined;
-	const backendId = useCurrentAgentBackendId();
 
 	return (
-		<AgentBackendProvider key={backendId} detachedProject={detachedProject}>
+		<AgentBackendProvider detachedProject={detachedProject}>
 			<SidebarProvider className="!h-dvh">
 				<AppContent detachedProject={detachedProject} />
 			</SidebarProvider>

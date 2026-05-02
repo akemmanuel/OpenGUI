@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useAgentBackend, useCurrentAgentBackendId } from "@/hooks/use-agent-backend";
 import {
 	Dialog,
 	DialogContent,
@@ -272,7 +272,8 @@ export function TitleBar({
 		updateWorkspace,
 		reorderWorkspaces,
 	} = useActions();
-	const backend = useAgentBackend();
+	const preferredBackendId = useCurrentAgentBackendId();
+	const backend = useAgentBackend(preferredBackendId);
 	const workspaceProfile = backend?.workspace;
 	const canManageWorkspaces = workspaceProfile?.kind !== "local-cli";
 	const { activeWorkspaceId, workspaceStatuses, workspaces } =

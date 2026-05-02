@@ -35,6 +35,8 @@ import type {
 export type Session = BaseSession & {
 	_projectDir?: string;
 	_workspaceId?: string;
+	_backendId?: AgentBackendId;
+	_rawId?: string;
 };
 
 import {
@@ -46,10 +48,15 @@ import {
 	useMemo,
 	useReducer,
 	useRef,
+	useState,
 } from "react";
-import { getCurrentAgentBackend } from "@/agents";
+import {
+	getAgentBackendIdFromSessionId,
+	getAllAgentBackends,
+	getCurrentAgentBackend,
+	type AgentBackendId,
+} from "@/agents";
 import type { AgentBackendEvent } from "@/agents/backend";
-import { useCurrentAgentBackendId } from "@/hooks/use-agent-backend";
 import {
 	resolveVariant,
 	useVariant,
@@ -62,6 +69,7 @@ import {
 } from "@/lib/constants";
 import {
 	migrateLegacyLocalStorage,
+	onSettingsChange,
 	persistOrRemoveJSON,
 	storageGet,
 	storageParsed,
@@ -171,6 +179,10 @@ function getSessionProjectTarget(session: Session | undefined | null) {
 		directory,
 		workspaceId: getSessionWorkspaceId(session) ?? undefined,
 	};
+}
+
+function getSessionBackendId(session: Session | undefined | null): AgentBackendId | null {
+	return session?._backendId ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -611,6 +623,8 @@ export interface InternalAgentState {
 	recentProjects: RecentProject[];
 	/** Directory for a draft (not-yet-created) session. Null when no draft is active. */
 	draftSessionDirectory: string | null;
+	/** Backend chosen for draft/new session. */
+	draftSessionBackendId: AgentBackendId | null;
 	/** Whether the current draft should create a temporary (non-persisted) session */
 	draftIsTemporary: boolean;
 	/** Set of session IDs marked as temporary (auto-deleted on navigate away) */
@@ -730,6 +744,7 @@ const initialState: InternalAgentState = {
 	queuedPrompts: getQueuedPrompts(),
 	recentProjects: getRecentProjects(),
 	draftSessionDirectory: null,
+	draftSessionBackendId: null,
 	draftIsTemporary: false,
 	temporarySessions: new Set(),
 	unreadSessionIds: getUnreadSessionIds(),
@@ -869,8 +884,12 @@ type Action =
 	  }
 	| { type: "QUEUE_CLEAR"; payload: { sessionID: string } }
 	| { type: "SET_RECENT_PROJECTS"; payload: RecentProject[] }
-	| { type: "START_DRAFT_SESSION"; payload: string }
+	| {
+			type: "START_DRAFT_SESSION";
+			payload: { directory: string; backendId: AgentBackendId };
+	  }
 	| { type: "SET_DRAFT_DIRECTORY"; payload: string }
+	| { type: "SET_DRAFT_BACKEND"; payload: AgentBackendId }
 	| { type: "CLEAR_DRAFT_SESSION" }
 	| { type: "SET_DRAFT_TEMPORARY"; payload: boolean }
 	| { type: "MARK_SESSION_TEMPORARY"; payload: string }
@@ -1463,6 +1482,10 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 					state.draftSessionDirectory === directory
 						? null
 						: state.draftSessionDirectory,
+				draftSessionBackendId:
+					state.draftSessionDirectory === directory
+						? null
+						: state.draftSessionBackendId,
 			};
 		}
 
@@ -1487,6 +1510,7 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				_pendingSnapshots: [],
 				_sessionBuffers: {},
 				draftSessionDirectory: null,
+				draftSessionBackendId: null,
 			};
 
 		case "SET_SESSIONS":
@@ -1632,6 +1656,7 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				unreadSessionIds: nextUnread,
 				// Selecting a real session clears any pending draft
 				draftSessionDirectory: sid ? null : state.draftSessionDirectory,
+				draftSessionBackendId: sid ? null : state.draftSessionBackendId,
 				_pendingSnapshots: [],
 				_sessionBuffers: isCompleteBuffer ? remainingBuffers : startingBuffers,
 			};
@@ -1801,11 +1826,6 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 			if (action.payload.parentID) return state;
 			// Ignore backend echoes for sessions that were optimistically deleted.
 			if (state._deletedSessionIds.has(action.payload.id)) return state;
-			const projectDir = action.payload._projectDir ?? action.payload.directory;
-			const workspaceId = getSessionWorkspaceId(action.payload);
-			if (!projectDir) return state;
-			const projectKey = makeProjectKey(workspaceId, projectDir);
-			if (!(projectKey in state.connections)) return state;
 			return {
 				...state,
 				sessions: sortSessionsNewestFirst([
@@ -1823,11 +1843,6 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 			// Without this guard the session flickers back into the sidebar
 			// between the optimistic removal and the server's session.deleted event.
 			if (state._deletedSessionIds.has(updated.id)) return state;
-			const updProjectDir = updated._projectDir ?? updated.directory;
-			const workspaceId = getSessionWorkspaceId(updated);
-			if (!updProjectDir) return state;
-			const projectKey = makeProjectKey(workspaceId, updProjectDir);
-			if (!(projectKey in state.connections)) return state;
 			const exists = state.sessions.some((s) => s.id === updated.id);
 			// Update in-place without re-sorting to prevent the sidebar from
 			// jumping around while sessions receive streaming updates.
@@ -2518,7 +2533,8 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 		case "START_DRAFT_SESSION":
 			return {
 				...state,
-				draftSessionDirectory: action.payload,
+				draftSessionDirectory: action.payload.directory,
+				draftSessionBackendId: action.payload.backendId,
 				activeSessionId: null,
 				messages: [],
 				messageForwardBuffer: [],
@@ -2537,8 +2553,16 @@ function reducer(state: InternalAgentState, action: Action): InternalAgentState 
 				draftSessionDirectory: action.payload,
 			};
 
+		case "SET_DRAFT_BACKEND":
+			return { ...state, draftSessionBackendId: action.payload };
+
 		case "CLEAR_DRAFT_SESSION":
-			return { ...state, draftSessionDirectory: null, draftIsTemporary: false };
+			return {
+				...state,
+				draftSessionDirectory: null,
+				draftSessionBackendId: null,
+				draftIsTemporary: false,
+			};
 
 		case "SET_DRAFT_TEMPORARY":
 			return { ...state, draftIsTemporary: action.payload };
@@ -2701,6 +2725,7 @@ interface SessionContextValue {
 	pendingPermissions: Record<string, PermissionRequest>;
 	pendingQuestions: Record<string, QuestionRequest>;
 	draftSessionDirectory: string | null;
+	draftSessionBackendId: AgentBackendId | null;
 	draftIsTemporary: boolean;
 	temporarySessions: Set<string>;
 	unreadSessionIds: Set<string>;
@@ -2828,6 +2853,7 @@ interface ActionsContextValue {
 	) => Promise<void>;
 	startDraftSession: (directory: string) => void;
 	setDraftDirectory: (directory: string) => void;
+	setDraftBackend: (backendId: AgentBackendId) => void;
 	setDraftTemporary: (temporary: boolean) => void;
 	revertToMessage: (messageID: string) => Promise<void>;
 	unrevert: () => Promise<void>;
@@ -2941,16 +2967,34 @@ export function InternalAgentProvider({
 	detachedProject?: string;
 }) {
 	const [state, dispatch] = useReducer(reducer, initialState);
-
-	const backendId = useCurrentAgentBackendId();
-	const bridge = useMemo(
-		() => getCurrentAgentBackend(window.electronAPI, backendId),
-		[backendId],
+	const [preferredBackendId, setPreferredBackendId] = useState<AgentBackendId>(
+		() => {
+			const stored = storageGet(STORAGE_KEYS.AGENT_BACKEND);
+			if (stored === "claude-code") return "claude-code";
+			if (stored === "pi") return "pi";
+			if (stored === "codex") return "codex";
+			return "opencode";
+		},
 	);
+
+	const allBackends = useMemo(() => getAllAgentBackends(window.electronAPI), []);
+	const backendsById = useMemo(
+		() =>
+			Object.fromEntries(
+				allBackends.map((backend) => [backend.id as AgentBackendId, backend]),
+			) as Record<AgentBackendId, (typeof allBackends)[number]>,
+		[allBackends],
+	);
+	const activeSession = state.activeSessionId
+		? state.sessions.find((session) => session.id === state.activeSessionId) ?? null
+		: null;
+	const activeBackendId =
+		getSessionBackendId(activeSession) ??
+		state.draftSessionBackendId ??
+		preferredBackendId;
+	const bridge = backendsById[activeBackendId] ?? getCurrentAgentBackend(window.electronAPI, activeBackendId);
 	const workspaceProfile = bridge?.workspace;
-	const host = bridge?.host;
 	const runtime = bridge?.runtime;
-	const platform = bridge?.platform;
 	const expectedDirectoriesRef = useRef<Set<string>>(new Set());
 
 	// Keep refs so selectSession can read current values without stale closures
@@ -2965,7 +3009,27 @@ export function InternalAgentProvider({
 	const selectSessionRequestRef = useRef(0);
 	const childHydrationVersionRef = useRef<Record<string, number>>({});
 	const loadedResourceProjectKeyRef = useRef<string | null>(null);
+	const loadedResourceBackendIdRef = useRef<AgentBackendId | null>(null);
 	const resourceLoadRequestRef = useRef(0);
+
+	useEffect(() => {
+		return onSettingsChange((change) => {
+			if (change.key !== STORAGE_KEYS.AGENT_BACKEND) return;
+			if (change.value === "claude-code") {
+				setPreferredBackendId("claude-code");
+				return;
+			}
+			if (change.value === "pi") {
+				setPreferredBackendId("pi");
+				return;
+			}
+			if (change.value === "codex") {
+				setPreferredBackendId("codex");
+				return;
+			}
+			setPreferredBackendId("opencode");
+		});
+	}, []);
 
 	// --- Backend event handler ---
 	const handleBackendEvent = useCallback((event: AgentBackendEvent) => {
@@ -3079,14 +3143,18 @@ export function InternalAgentProvider({
 	// streaming delta to be dispatched twice and produce garbled/doubled text.
 	const subscribedRef = useRef(false);
 	useEffect(() => {
-		if (!bridge || subscribedRef.current) return;
+		if (allBackends.length === 0 || subscribedRef.current) return;
 		subscribedRef.current = true;
-		const unsub = bridge.runtime.subscribe(handleBackendEvent);
+		const unsubs = allBackends.map((backend) =>
+			backend.runtime.subscribe(handleBackendEvent),
+		);
 		return () => {
-			unsub();
+			for (const unsub of unsubs) {
+				unsub();
+			}
 			subscribedRef.current = false;
 		};
-	}, [bridge, handleBackendEvent]);
+	}, [allBackends, handleBackendEvent]);
 
 	// Persist selectedModel to localStorage whenever it changes (covers
 	// both explicit setModel calls and implicit updates from the reducer,
@@ -3212,22 +3280,27 @@ export function InternalAgentProvider({
 	// --- Actions ---
 
 	const loadServerResources = useCallback(
-		async (directory?: string | null, workspaceId?: string | null) => {
-			if (!runtime) return;
+		async (
+			backendId: AgentBackendId,
+			directory?: string | null,
+			workspaceId?: string | null,
+		) => {
+			const backendRuntime = backendsById[backendId]?.runtime;
+			if (!backendRuntime) return;
 			const requestId = ++resourceLoadRequestRef.current;
 			const targetDirectory = directory?.trim() || undefined;
 			const targetWorkspaceId = workspaceId?.trim() || undefined;
 			try {
 				const [providersData, agentsData, commandsData] = await Promise.all([
-					runtime.listProviders({
+					backendRuntime.listProviders({
 						directory: targetDirectory,
 						workspaceId: targetWorkspaceId,
 					}),
-					runtime.listAgents({
+					backendRuntime.listAgents({
 						directory: targetDirectory,
 						workspaceId: targetWorkspaceId,
 					}),
-					runtime.listCommands({
+					backendRuntime.listCommands({
 						directory: targetDirectory,
 						workspaceId: targetWorkspaceId,
 					}),
@@ -3238,6 +3311,7 @@ export function InternalAgentProvider({
 				loadedResourceProjectKeyRef.current = targetDirectory
 					? makeProjectKey(targetWorkspaceId, targetDirectory)
 					: null;
+				loadedResourceBackendIdRef.current = backendId;
 				dispatch({ type: "SET_PROVIDERS", payload: providersData });
 
 				const currentSelection = selectedModelRef.current;
@@ -3291,12 +3365,12 @@ export function InternalAgentProvider({
 				});
 			}
 		},
-		[runtime],
+		[backendsById],
 	);
 
 	const addProject = useCallback(
 		async (config: ConnectionConfig, options?: { suppressError?: boolean }) => {
-			if (!host || !config.directory) return;
+			if (allBackends.length === 0 || !config.directory) return;
 			const workspaceId =
 				config.workspaceId ??
 				stateRef.current.activeWorkspaceId ??
@@ -3310,48 +3384,111 @@ export function InternalAgentProvider({
 			if (!options?.suppressError) {
 				dispatch({ type: "SET_ERROR", payload: null });
 			}
-			try {
-				await host.addProject({ ...config, workspaceId });
-			} catch (error) {
+			dispatch({
+				type: "SET_PROJECT_CONNECTION",
+				payload: {
+					projectKey,
+					status: {
+						state: "connecting",
+						serverUrl: config.baseUrl,
+						serverVersion: null,
+						error: null,
+						lastEventAt: Date.now(),
+					},
+				},
+			});
+			const backendConnectResults = await Promise.allSettled(
+				allBackends.map(async (backend) => {
+					await backend.host.addProject({ ...config, workspaceId });
+					return backend;
+				}),
+			);
+			const connectedBackends = backendConnectResults.flatMap((result) =>
+				result.status === "fulfilled" ? [result.value] : [],
+			);
+			if (connectedBackends.length === 0) {
 				expectedDirectoriesRef.current.delete(projectKey);
+				const firstError = backendConnectResults.find(
+					(result) => result.status === "rejected",
+				);
 				if (!options?.suppressError) {
 					dispatch({
 						type: "SET_ERROR",
-						payload: getErrorMessage(error) || "Connection failed",
+						payload:
+							(firstError?.status === "rejected"
+								? getErrorMessage(firstError.reason)
+								: null) || "Connection failed",
 					});
 				}
 				return;
 			}
-			if (runtime) {
-				const sessions = await runtime.listSessions({
-					directory: config.directory,
-					workspaceId,
-				});
-				dispatch({
-					type: "MERGE_PROJECT_SESSIONS",
-					payload: {
-						projectKey,
-						directory: config.directory,
-						sessions: sessions as Session[],
+			dispatch({
+				type: "SET_PROJECT_CONNECTION",
+				payload: {
+					projectKey,
+					status: {
+						state: "connected",
+						serverUrl: config.baseUrl,
+						serverVersion: null,
+						error: null,
+						lastEventAt: Date.now(),
 					},
-				});
-			}
+				},
+			});
+			const sessionResults = await Promise.all(
+				connectedBackends.map(async (backend) => {
+					try {
+						return await backend.runtime.listSessions({
+							directory: config.directory,
+							workspaceId,
+						});
+					} catch {
+						return [] as Session[];
+					}
+				}),
+			);
+			dispatch({
+				type: "MERGE_PROJECT_SESSIONS",
+				payload: {
+					projectKey,
+					directory: config.directory,
+					sessions: sessionResults.flat() as Session[],
+				},
+			});
 			try {
-				if (runtime) {
-					const statuses = await runtime.listSessionStatuses({
-						directory: config.directory,
-						workspaceId,
-					});
-					dispatch({
-						type: "INIT_BUSY_SESSIONS",
-						payload: statuses,
-					});
-				}
+				const statuses = Object.fromEntries(
+					(
+						await Promise.all(
+							connectedBackends.map(async (backend) => {
+								try {
+									return Object.entries(
+										await backend.runtime.listSessionStatuses({
+											directory: config.directory,
+											workspaceId,
+										}),
+									);
+								} catch {
+									return [] as Array<[string, { type: string }]>;
+								}
+							}),
+						)
+					).flat(),
+				);
+				dispatch({
+					type: "INIT_BUSY_SESSIONS",
+					payload: statuses,
+				});
 			} catch {
 				/* ignore – spinner will appear on next backend event */
 			}
 			if (loadedResourceProjectKeyRef.current === null) {
-				await loadServerResources(config.directory, workspaceId);
+				await loadServerResources(
+					connectedBackends.some((backend) => backend.id === preferredBackendId)
+						? preferredBackendId
+						: (connectedBackends[0]?.id as AgentBackendId),
+					config.directory,
+					workspaceId,
+				);
 			}
 			const worktreeParentMap = getWorktreeParents();
 			const isWorktree = Boolean(worktreeParentMap[config.directory]);
@@ -3389,12 +3526,12 @@ export function InternalAgentProvider({
 				dispatch({ type: "SET_RECENT_PROJECTS", payload: updated });
 			}
 		},
-		[host, runtime, loadServerResources],
+		[allBackends, loadServerResources, preferredBackendId],
 	);
 
 	const removeProject = useCallback(
 		async (directory: string) => {
-			if (!host) return;
+			if (allBackends.length === 0) return;
 			const workspaceId = stateRef.current.activeWorkspaceId;
 			const worktreeParentMap = getWorktreeParents();
 			const workspaceDirectory = getWorkspaceRootDirectory(
@@ -3414,7 +3551,11 @@ export function InternalAgentProvider({
 			for (const dir of directoriesToRemove) {
 				const projectKey = makeProjectKey(workspaceId, dir);
 				expectedDirectoriesRef.current.delete(projectKey);
-				await host.removeProject({ directory: dir, workspaceId });
+				await Promise.all(
+					allBackends.map((backend) =>
+						backend.host.removeProject({ directory: dir, workspaceId }),
+					),
+				);
 				dispatch({
 					type: "REMOVE_PROJECT",
 					payload: { projectKey, directory: dir },
@@ -3452,31 +3593,29 @@ export function InternalAgentProvider({
 				dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
 			}
 		},
-		[host, state.connections, state.sessions, state.activeSessionId],
+		[allBackends, state.connections, state.sessions, state.activeSessionId],
 	);
 
 	// --- Startup bootstrap: ensure local server, then auto-connect open projects ---
 	const startupAttempted = useRef(false);
 	useEffect(() => {
-		if (!bridge || startupAttempted.current) return;
+		if (startupAttempted.current) return;
 		startupAttempted.current = true;
 		let cancelled = false;
 
 		const bootstrap = async () => {
-			if (!bridge) {
-				dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
-				return;
-			}
-
+			const localServerBackend =
+				allBackends.find((backend) => backend.capabilities.localServer) ?? null;
+			const localServerPlatform = localServerBackend?.platform;
 			const shouldEnsureLocalServer =
-				bridge?.capabilities.localServer && isLocalServer();
+				Boolean(localServerBackend) && isLocalServer();
 			if (shouldEnsureLocalServer) {
 				dispatch({
 					type: "SET_BOOT_STATE",
 					payload: { state: "checking-server" },
 				});
 
-				if (!platform?.server) {
+				if (!localServerPlatform?.server) {
 					if (cancelled) return;
 					dispatch({
 						type: "SET_BOOT_STATE",
@@ -3487,7 +3626,7 @@ export function InternalAgentProvider({
 					});
 					return;
 				}
-				const status = await platform.server.status();
+				const status = await localServerPlatform.server.status();
 
 				if (!status.running) {
 					dispatch({
@@ -3495,7 +3634,7 @@ export function InternalAgentProvider({
 						payload: { state: "starting-server" },
 					});
 					try {
-						await platform.server.start();
+						await localServerPlatform.server.start();
 					} catch (error) {
 						if (cancelled) return;
 						dispatch({
@@ -3540,8 +3679,10 @@ export function InternalAgentProvider({
 							.map(([worktreeDir]) => worktreeDir);
 						expectedDirectoriesRef.current = new Set([
 							...expectedDirectoriesRef.current,
-							rootDirectory,
-							...relatedWorktrees,
+							makeProjectKey(workspace.id, rootDirectory),
+							...relatedWorktrees.map((worktreeDir) =>
+								makeProjectKey(workspace.id, worktreeDir),
+							),
 						]);
 						const baseConfig = {
 							workspaceId: workspace.id,
@@ -3581,7 +3722,7 @@ export function InternalAgentProvider({
 		return () => {
 			cancelled = true;
 		};
-	}, [bridge, platform, addProject, detachedProject]);
+	}, [allBackends, addProject, detachedProject]);
 
 	const activeWorkspace = useMemo(
 		() =>
@@ -3706,25 +3847,40 @@ export function InternalAgentProvider({
 		state.draftSessionDirectory,
 		workspaceDirectory,
 	]);
+	const activeResourceBackendId = getSessionBackendId(activeSession)
+		?? state.draftSessionBackendId
+		?? preferredBackendId;
 
 	useEffect(() => {
 		if (!bridge || !activeResourceDirectory) return;
 		if (
+			loadedResourceBackendIdRef.current === activeResourceBackendId &&
 			loadedResourceProjectKeyRef.current ===
 				makeProjectKey(activeWorkspace?.id, activeResourceDirectory)
 		)
 			return;
-		void loadServerResources(activeResourceDirectory, activeWorkspace?.id);
-	}, [bridge, activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
+		void loadServerResources(
+			activeResourceBackendId,
+			activeResourceDirectory,
+			activeWorkspace?.id,
+		);
+	}, [
+		bridge,
+		activeResourceBackendId,
+		activeResourceDirectory,
+		activeWorkspace?.id,
+		loadServerResources,
+	]);
 
 	const disconnect = useCallback(async () => {
-		if (!host) return;
-		await host.disconnect();
+		if (allBackends.length === 0) return;
+		await Promise.all(allBackends.map((backend) => backend.host.disconnect()));
 		expectedDirectoriesRef.current.clear();
 		storageRemove(STORAGE_KEYS.DIRECTORY);
 		loadedResourceProjectKeyRef.current = null;
+		loadedResourceBackendIdRef.current = null;
 		dispatch({ type: "CLEAR_ALL_PROJECTS" });
-	}, [host]);
+	}, [allBackends]);
 
 	const openDirectory = useCallback(async (): Promise<string | null> => {
 		if (!(workspaceProfile?.kind === "local-cli" || activeWorkspace?.isLocal)) {
@@ -3751,7 +3907,7 @@ export function InternalAgentProvider({
 			const username = usernameOverride ?? workspace.username ?? undefined;
 			const password = passwordOverride ?? workspace.password ?? undefined;
 			const workspaceId = workspace.id;
-			const localServerApi = bridge?.platform?.server;
+			const localServerApi = backendsById[preferredBackendId]?.platform?.server;
 			if (
 				workspace.isLocal &&
 				localServerApi &&
@@ -3775,7 +3931,7 @@ export function InternalAgentProvider({
 			if (activeWorkspaceProjects.has(targetWorkspace)) {
 				expectedDirectoriesRef.current = new Set([
 					...expectedDirectoriesRef.current,
-					...desiredDirectories,
+					...desiredDirectories.map((dir) => makeProjectKey(workspaceId, dir)),
 				]);
 				const missingDirectories = desiredDirectories.filter(
 					(dir) => !connectedDirectorySet.has(dir),
@@ -3796,7 +3952,7 @@ export function InternalAgentProvider({
 
 			expectedDirectoriesRef.current = new Set([
 				...expectedDirectoriesRef.current,
-				...desiredDirectories,
+				...desiredDirectories.map((dir) => makeProjectKey(workspaceId, dir)),
 			]);
 			await addProject({
 				workspaceId,
@@ -3829,18 +3985,61 @@ export function InternalAgentProvider({
 				storageSet(STORAGE_KEYS.SERVER_URL, url);
 			}
 		},
-		[addProject, bridge?.platform?.server, connectedDirectorySet],
+		[addProject, backendsById, preferredBackendId, connectedDirectorySet],
 	);
 
 	const refreshSessions = useCallback(async () => {
-		if (!runtime) return;
-		const sessions = await runtime.listSessions();
-		dispatch({ type: "SET_SESSIONS", payload: sessions });
-	}, [runtime]);
+		if (allBackends.length === 0) return;
+		const projectKeys = Object.keys(stateRef.current.projectWorkspaceMap);
+		if (projectKeys.length === 0) {
+			dispatch({ type: "SET_SESSIONS", payload: [] });
+			return;
+		}
+		const projectResults = await Promise.all(
+			projectKeys.map(async (projectKey) => {
+				const { directory, workspaceId } = parseProjectKey(projectKey);
+				const sessions = (
+					await Promise.all(
+						allBackends.map(async (backend) => {
+							try {
+								return await backend.runtime.listSessions({
+									directory,
+									workspaceId,
+								});
+							} catch {
+								return [] as Session[];
+							}
+						}),
+					)
+				).flat();
+				return { projectKey, directory, sessions };
+			}),
+		);
+		for (const result of projectResults) {
+			dispatch({
+				type: "MERGE_PROJECT_SESSIONS",
+				payload: result,
+			});
+		}
+	}, [allBackends]);
 
 	// Single ref to avoid stale closures and prevent unnecessary callback recreation
 	const stateRef = useRef(state);
 	stateRef.current = state;
+
+	const getBackendForSessionId = useCallback(
+		(sessionId: string | null | undefined) => {
+			if (!sessionId) return null;
+			const backendIdFromId = getAgentBackendIdFromSessionId(sessionId);
+			if (backendIdFromId) {
+				return backendsById[backendIdFromId] ?? null;
+			}
+			const session = stateRef.current.sessions.find((item) => item.id === sessionId);
+			const backendId = getSessionBackendId(session);
+			return backendId ? backendsById[backendId] ?? null : null;
+		},
+		[backendsById],
+	);
 
 	/** Best-effort cleanup of a temporary session if it exists. */
 	const cleanupTemporarySession = useCallback(
@@ -3852,12 +4051,12 @@ export function InternalAgentProvider({
 				stateRef.current.temporarySessions.has(prevId)
 			) {
 				dispatch({ type: "SESSION_DELETED", payload: prevId });
-				runtime?.deleteSession(prevId).catch(() => {
+				getBackendForSessionId(prevId)?.runtime.deleteSession(prevId).catch(() => {
 					/* best-effort cleanup of temporary session */
 				});
 			}
 		},
-		[runtime],
+		[getBackendForSessionId],
 	);
 
 	const fetchMessagePage = useCallback(
@@ -3866,14 +4065,17 @@ export function InternalAgentProvider({
 			options?: { before?: string; limit?: number },
 			projectTarget?: { directory?: string; workspaceId?: string },
 		) => {
-			if (!runtime) return { messages: [], hasMore: false, nextCursor: null };
+			const sessionRuntime = getBackendForSessionId(sessionId)?.runtime;
+			if (!sessionRuntime) {
+				return { messages: [], hasMore: false, nextCursor: null };
+			}
 			const pageSize = options?.limit ?? MESSAGE_PAGE_SIZE;
 			const resolvedTarget =
 				projectTarget ??
 				getSessionProjectTarget(
 					stateRef.current.sessions.find((session) => session.id === sessionId),
 				);
-			const data = await runtime.getMessages(sessionId, {
+			const data = await sessionRuntime.getMessages(sessionId, {
 				limit: pageSize,
 				before: options?.before,
 				directory: resolvedTarget?.directory,
@@ -3887,7 +4089,7 @@ export function InternalAgentProvider({
 				nextCursor,
 			};
 		},
-		[runtime],
+		[getBackendForSessionId],
 	);
 
 	const hydrateChildSessionsForMessages = useCallback(
@@ -3900,7 +4102,7 @@ export function InternalAgentProvider({
 				workspaceId?: string;
 			},
 		) => {
-			if (!runtime || messages.length === 0) return;
+			if (messages.length === 0) return;
 
 			const childSessionIds = new Set<string>();
 			for (const msg of messages) {
@@ -3914,7 +4116,12 @@ export function InternalAgentProvider({
 				const nextVersion =
 					(childHydrationVersionRef.current[childSid] ?? 0) + 1;
 				childHydrationVersionRef.current[childSid] = nextVersion;
-				runtime
+				const childRuntime =
+					(options?.sessionId
+						? getBackendForSessionId(options.sessionId)?.runtime
+						: runtime) ?? runtime;
+				if (!childRuntime) continue;
+				childRuntime
 					.getMessages(childSid, {
 						limit: 10000,
 						directory: options?.directory,
@@ -3952,11 +4159,11 @@ export function InternalAgentProvider({
 					});
 			}
 		},
-		[runtime],
+		[getBackendForSessionId, runtime],
 	);
 
 	const selectSession = useCallback(
-		async (id: string | null) => {
+		async (id: string | null, options?: { session?: Session | null }) => {
 			if (id === stateRef.current.activeSessionId) return;
 
 			cleanupTemporarySession(id);
@@ -3983,10 +4190,12 @@ export function InternalAgentProvider({
 
 			const requestId = ++selectSessionRequestRef.current;
 			dispatch({ type: "SET_ACTIVE_SESSION", payload: id });
-			if (!id || !runtime) return;
-			const projectTarget = getSessionProjectTarget(
-				stateRef.current.sessions.find((session) => session.id === id),
-			);
+			if (!id) return;
+			const resolvedSession =
+				options?.session && options.session.id === id
+					? options.session
+					: stateRef.current.sessions.find((session) => session.id === id);
+			const projectTarget = getSessionProjectTarget(resolvedSession);
 
 			if (hadCompleteBuffer && bufferMessages) {
 				// Buffer was consumed and displayed instantly by SET_ACTIVE_SESSION
@@ -4019,7 +4228,6 @@ export function InternalAgentProvider({
 			});
 		},
 		[
-			bridge,
 			cleanupTemporarySession,
 			fetchMessagePage,
 			hydrateChildSessionsForMessages,
@@ -4035,7 +4243,6 @@ export function InternalAgentProvider({
 			messageHistoryCursor,
 		} = stateRef.current;
 		if (
-			!runtime ||
 			!activeSessionId ||
 			isLoadingOlderMessages ||
 			!messageHistoryHasMore ||
@@ -4071,7 +4278,7 @@ export function InternalAgentProvider({
 			dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: false });
 			return false;
 		}
-	}, [bridge, fetchMessagePage]);
+	}, [fetchMessagePage]);
 
 	const loadNewerMessages = useCallback(async (): Promise<boolean> => {
 		return false;
@@ -4079,14 +4286,24 @@ export function InternalAgentProvider({
 
 	const createSession = useCallback(
 		async (title?: string, directory?: string): Promise<Session | null> => {
-			if (!runtime) return null;
+			const targetBackendId =
+				stateRef.current.draftSessionBackendId ??
+				getSessionBackendId(
+					stateRef.current.sessions.find(
+						(session) => session.id === stateRef.current.activeSessionId,
+					),
+				) ??
+				preferredBackendId;
+			const targetRuntime = backendsById[targetBackendId]?.runtime;
+			if (!targetRuntime) return null;
 			try {
-				const session = await runtime.createSession({
+				const session = await targetRuntime.createSession({
 					title,
 					directory,
 					workspaceId: stateRef.current.activeWorkspaceId,
 				});
-				await selectSession(session.id);
+				dispatch({ type: "SESSION_CREATED", payload: session });
+				await selectSession(session.id, { session });
 				return session;
 			} catch (error) {
 				dispatch({
@@ -4096,41 +4313,37 @@ export function InternalAgentProvider({
 				return null;
 			}
 		},
-		[runtime, selectSession],
+		[backendsById, preferredBackendId, selectSession],
 	);
 
 	const deleteSession = useCallback(
 		async (id: string) => {
-			if (!runtime) return;
+			const currentSessions = stateRef.current.sessions;
+			const deletedSession = currentSessions.find((s) => s.id === id);
+			const sessionBackendId = getSessionBackendId(deletedSession);
+			const sessionRuntime = sessionBackendId
+				? backendsById[sessionBackendId]?.runtime
+				: null;
+			if (!sessionRuntime) return;
 			if (
-				(backendId === "pi" || backendId === "codex") &&
+				(sessionBackendId === "pi" || sessionBackendId === "codex") &&
 				stateRef.current.busySessionIds.has(id)
 			) {
 				dispatch({
 					type: "SET_ERROR",
 					payload:
-						backendId === "pi"
+						sessionBackendId === "pi"
 							? "Stop Pi session before deleting it."
 							: "Stop Codex session before deleting it.",
 				});
 				return;
 			}
-			// Read from ref to avoid stale closures and, more importantly,
-			// to keep this callback's identity stable (deps don't include
-			// state.sessions / state.activeSessionId).
-			const currentSessions = stateRef.current.sessions;
 			const currentActiveId = stateRef.current.activeSessionId;
-
-			// Before removing, check if this session belongs to a worktree
-			// and whether it's the last session there.
-			const deletedSession = currentSessions.find((s) => s.id === id);
 			const deletedDir =
 				deletedSession?._projectDir ?? deletedSession?.directory;
 			const wtMeta = deletedDir
 				? stateRef.current.worktreeParents[deletedDir]
 				: undefined;
-
-			// Determine next session *before* removing the deleted one from state
 			const needsSwitch = currentActiveId === id;
 			const nextId = needsSwitch
 				? (() => {
@@ -4141,21 +4354,15 @@ export function InternalAgentProvider({
 					})()
 				: null;
 
-			// Optimistic removal first - avoids the one-frame gap where the
-			// deleted session is still visible but already deselected
 			dispatch({ type: "SESSION_DELETED", payload: id });
-
-			// Then switch to the adjacent session (runs against the already-
-			// pruned list so there is no flicker)
 			if (needsSwitch && nextId) {
 				void selectSession(nextId);
 			}
 
-			runtime.deleteSession(id).catch(() => {
+			sessionRuntime.deleteSession(id).catch(() => {
 				/* best-effort deletion */
 			});
 
-			// If the deleted session was in a worktree, check if it was the last one
 			if (deletedDir && wtMeta) {
 				const remaining = currentSessions.filter(
 					(s) => s.id !== id && (s._projectDir ?? s.directory) === deletedDir,
@@ -4171,19 +4378,20 @@ export function InternalAgentProvider({
 				}
 			}
 		},
-		[backendId, runtime, selectSession],
+		[backendsById, selectSession],
 	);
 
 	const renameSession = useCallback(
 		async (id: string, title: string) => {
-			if (!runtime) return;
+			const sessionRuntime = getBackendForSessionId(id)?.runtime;
+			if (!sessionRuntime) return;
 			const trimmed = title.trim();
 			if (!trimmed) return;
-			runtime.renameSession(id, trimmed).catch(() => {
+			sessionRuntime.renameSession(id, trimmed).catch(() => {
 				/* best-effort rename – backend events will reconcile */
 			});
 		},
-		[runtime],
+		[getBackendForSessionId],
 	);
 
 	// Track which sessions are currently dispatching a queued prompt
@@ -4247,7 +4455,8 @@ export function InternalAgentProvider({
 			overrideAgent?: string,
 			overrideVariant?: string,
 		) => {
-			if (!runtime) return;
+			const sessionRuntime = getBackendForSessionId(sessionId)?.runtime;
+			if (!sessionRuntime) return;
 			dispatch({ type: "SET_BUSY", payload: true });
 
 			const model = overrideModel ?? state.selectedModel ?? undefined;
@@ -4262,7 +4471,7 @@ export function InternalAgentProvider({
 				);
 
 			try {
-				await runtime.prompt({
+				await sessionRuntime.prompt({
 					sessionId,
 					text,
 					images,
@@ -4279,7 +4488,7 @@ export function InternalAgentProvider({
 			}
 		},
 		[
-			runtime,
+			getBackendForSessionId,
 			state.selectedModel,
 			state.selectedAgent,
 			state.variantSelections,
@@ -4344,6 +4553,7 @@ export function InternalAgentProvider({
 						directory: draftDirectory,
 						workspaceId: stateRef.current.activeWorkspaceId,
 					});
+					dispatch({ type: "SESSION_CREATED", payload: session });
 					dispatch({ type: "CLEAR_DRAFT_SESSION" });
 					if (wasTemporary) {
 						dispatch({
@@ -4351,7 +4561,7 @@ export function InternalAgentProvider({
 							payload: session.id,
 						});
 					}
-					await selectSession(session.id);
+					await selectSession(session.id, { session });
 					return;
 				} catch (error) {
 					dispatch({
@@ -4407,7 +4617,7 @@ export function InternalAgentProvider({
 						});
 					}
 					if (effectiveMode === "interrupt") {
-						await runtime.abort(sessionId);
+						await getBackendForSessionId(sessionId)?.runtime.abort(sessionId);
 					} else {
 						dispatch({
 							type: "SET_AFTER_PART_PENDING",
@@ -4470,8 +4680,9 @@ export function InternalAgentProvider({
 						directory: stateRef.current.draftSessionDirectory,
 						workspaceId: stateRef.current.activeWorkspaceId,
 					});
+					dispatch({ type: "SESSION_CREATED", payload: session });
 					dispatch({ type: "CLEAR_DRAFT_SESSION" });
-					await selectSession(session.id);
+					await selectSession(session.id, { session });
 					return;
 				} catch (err) {
 					dispatch({ type: "SET_BUSY", payload: false });
@@ -4594,11 +4805,9 @@ export function InternalAgentProvider({
 				type: "CLEAR_AFTER_PART_TRIGGERED",
 				payload: { sessionID: sessionId },
 			});
-			if (runtime) {
-				void runtime.abort(sessionId);
-			}
+			void getBackendForSessionId(sessionId)?.runtime.abort(sessionId);
 		}
-	}, [state._afterPartTriggered, runtime]);
+	}, [getBackendForSessionId, state._afterPartTriggered]);
 
 	// Desktop notifications for newly-idle sessions
 	useDesktopNotification(
@@ -4688,13 +4897,23 @@ export function InternalAgentProvider({
 	const startDraftSession = useCallback(
 		(directory: string) => {
 			cleanupTemporarySession();
-			dispatch({ type: "START_DRAFT_SESSION", payload: directory });
+			dispatch({
+				type: "START_DRAFT_SESSION",
+				payload: {
+					directory,
+					backendId: getSessionBackendId(activeSession) ?? preferredBackendId,
+				},
+			});
 		},
-		[cleanupTemporarySession],
+		[activeSession, cleanupTemporarySession, preferredBackendId],
 	);
 
 	const setDraftDirectory = useCallback((directory: string) => {
 		dispatch({ type: "SET_DRAFT_DIRECTORY", payload: directory });
+	}, []);
+
+	const setDraftBackend = useCallback((backendId: AgentBackendId) => {
+		dispatch({ type: "SET_DRAFT_BACKEND", payload: backendId });
 	}, []);
 
 	const setDraftTemporary = useCallback((temporary: boolean) => {
@@ -4704,13 +4923,19 @@ export function InternalAgentProvider({
 	/** Re-fetch providers from the server and update global state. */
 	const refreshProviders = useCallback(async () => {
 		await loadServerResources(
+			activeResourceBackendId,
 			activeResourceDirectory ??
 				(loadedResourceProjectKeyRef.current
 					? parseProjectKey(loadedResourceProjectKeyRef.current).directory
 					: null),
 			activeWorkspace?.id,
 		);
-	}, [activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
+	}, [
+		activeResourceBackendId,
+		activeResourceDirectory,
+		activeWorkspace?.id,
+		loadServerResources,
+	]);
 
 	const clearError = useCallback(() => {
 		dispatch({ type: "SET_ERROR", payload: null });
@@ -4768,9 +4993,7 @@ export function InternalAgentProvider({
 						payload: { sessionID: sessionId, fromIndex: index, toIndex: 0 },
 					});
 				}
-				if (runtime) {
-					await runtime.abort(sessionId);
-				}
+				await getBackendForSessionId(sessionId)?.runtime.abort(sessionId);
 				return;
 			}
 
@@ -4788,7 +5011,7 @@ export function InternalAgentProvider({
 				target.variant,
 			);
 		},
-		[state.queuedPrompts, runtime, dispatchPromptDirect],
+		[state.queuedPrompts, getBackendForSessionId, dispatchPromptDirect],
 	);
 
 	const setSessionDraft = useCallback((key: string, text: string) => {
@@ -4862,8 +5085,9 @@ export function InternalAgentProvider({
 			if (!runtime || !state.activeSessionId) return;
 			try {
 				const session = await runtime.forkSession(state.activeSessionId, messageID);
+				dispatch({ type: "SESSION_CREATED", payload: session });
 				// Navigate to the newly forked session
-				await selectSession(session.id);
+				await selectSession(session.id, { session });
 			} catch (err) {
 				dispatch({
 					type: "SET_ERROR",
@@ -5015,14 +5239,18 @@ export function InternalAgentProvider({
 
 	const removeWorkspace = useCallback(
 		async (workspaceId: string) => {
-			if (workspaceId === LOCAL_WORKSPACE_ID || !host) return;
+			if (workspaceId === LOCAL_WORKSPACE_ID || allBackends.length === 0) return;
 			const workspace = stateRef.current.workspaces.find(
 				(item) => item.id === workspaceId,
 			);
 			if (!workspace) return;
 			for (const directory of workspace.projects) {
 				const projectKey = makeProjectKey(workspaceId, directory);
-				await host.removeProject({ directory, workspaceId });
+				await Promise.all(
+					allBackends.map((backend) =>
+						backend.host.removeProject({ directory, workspaceId }),
+					),
+				);
 				dispatch({
 					type: "REMOVE_PROJECT",
 					payload: { projectKey, directory },
@@ -5041,7 +5269,7 @@ export function InternalAgentProvider({
 				void selectSession(nextWorkspace?.lastActiveSessionId ?? null);
 			}
 		},
-		[host, selectSession],
+		[allBackends, selectSession],
 	);
 
 	const reorderWorkspaces = useCallback((fromIndex: number, toIndex: number) => {
@@ -5080,6 +5308,7 @@ export function InternalAgentProvider({
 			pendingPermissions: state.pendingPermissions,
 			pendingQuestions: state.pendingQuestions,
 			draftSessionDirectory: state.draftSessionDirectory,
+			draftSessionBackendId: state.draftSessionBackendId,
 			draftIsTemporary: state.draftIsTemporary,
 			temporarySessions: state.temporarySessions,
 			unreadSessionIds: state.unreadSessionIds,
@@ -5099,6 +5328,7 @@ export function InternalAgentProvider({
 			state.pendingPermissions,
 			state.pendingQuestions,
 			state.draftSessionDirectory,
+			state.draftSessionBackendId,
 			state.draftIsTemporary,
 			state.temporarySessions,
 			state.unreadSessionIds,
@@ -5287,6 +5517,7 @@ export function InternalAgentProvider({
 			connectToProject,
 			startDraftSession,
 			setDraftDirectory,
+			setDraftBackend,
 			setDraftTemporary,
 			revertToMessage,
 			unrevert,
@@ -5340,6 +5571,7 @@ export function InternalAgentProvider({
 			connectToProject,
 			startDraftSession,
 			setDraftDirectory,
+			setDraftBackend,
 			setDraftTemporary,
 			revertToMessage,
 			unrevert,
@@ -5365,14 +5597,14 @@ export function InternalAgentProvider({
 	useEffect(() => {
 		const cleanup = () => {
 			for (const id of stateRef.current.temporarySessions) {
-				runtime?.deleteSession(id).catch(() => {
+				getBackendForSessionId(id)?.runtime.deleteSession(id).catch(() => {
 					/* best-effort cleanup on unload */
 				});
 			}
 		};
 		window.addEventListener("beforeunload", cleanup);
 		return () => window.removeEventListener("beforeunload", cleanup);
-	}, [runtime]);
+	}, [getBackendForSessionId]);
 
 	return (
 		<ActionsContext.Provider value={actionsCtx}>
