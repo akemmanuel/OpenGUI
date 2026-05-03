@@ -103,6 +103,36 @@ jobs:
       - name: Package .exe (NSIS)
         run: bunx electron-builder --win nsis --publish never
 
+      - name: Verify Windows updater metadata
+        shell: pwsh
+        run: |
+          $latest = "release/latest.yml"
+          if (!(Test-Path $latest)) {
+            throw "Missing $latest"
+          }
+
+          $content = Get-Content $latest -Raw
+          $paths = @()
+          foreach ($line in ($content -split "`n")) {
+            if ($line -match '^\s*-?\s*url:\s*(.+)$') {
+              $paths += $Matches[1].Trim().Trim('"').Trim("'")
+            }
+            if ($line -match '^path:\s*(.+)$') {
+              $paths += $Matches[1].Trim().Trim('"').Trim("'")
+            }
+          }
+
+          if ($paths.Count -eq 0) {
+            throw "No updater asset paths found in $latest"
+          }
+
+          foreach ($asset in ($paths | Select-Object -Unique)) {
+            $assetPath = Join-Path "release" $asset
+            if (!(Test-Path $assetPath)) {
+              throw "Windows updater metadata references missing asset: $asset"
+            }
+          }
+
       - name: Upload Windows updater artifacts
         uses: actions/upload-artifact@v6
         with:

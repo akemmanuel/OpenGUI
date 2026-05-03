@@ -96,7 +96,8 @@
 		},
 		"win": {
 			"target": "nsis",
-			"icon": "assets/icon.png"
+			"icon": "assets/icon.png",
+			"artifactName": "OpenGUI.Setup.${version}.${ext}"
 		},
 		"nsis": {
 			"oneClick": false,
