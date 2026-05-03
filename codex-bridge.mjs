@@ -424,6 +424,126 @@ async function withCodexAppServer(requestWork) {
 	})
 }
 
+function codexTimestampToMs(value) {
+	if (!Number.isFinite(value)) return Date.now()
+	return value > 10_000_000_000 ? value : value * 1000
+}
+
+function normalizeCodexAppServerThread(thread, workspaceId) {
+	const createdAt = codexTimestampToMs(thread?.createdAt)
+	const updatedAt = codexTimestampToMs(thread?.updatedAt ?? thread?.createdAt)
+	const directory = normalizeDir(thread?.cwd) || ""
+	const title = firstLine(thread?.name || thread?.preview || "").slice(0, 80) || "Untitled"
+	return {
+		id: thread.id,
+		slug: thread.id,
+		projectID: directory,
+		workspaceID: workspaceId,
+		directory,
+		title,
+		version: "codex",
+		time: {
+			created: createdAt,
+			updated: updatedAt,
+		},
+	}
+}
+
+function appServerUserText(item) {
+	const content = Array.isArray(item?.content) ? item.content : []
+	return content
+		.map((entry) => {
+			if (typeof entry?.text === "string") return entry.text
+			if (Array.isArray(entry?.text_elements)) {
+				return entry.text_elements.map((el) => el?.text || "").join("")
+			}
+			return ""
+		})
+		.filter(Boolean)
+		.join("\n\n")
+		.trim()
+}
+
+function appServerItemText(item) {
+	if (typeof item?.text === "string") return item.text
+	if (typeof item?.message === "string") return item.message
+	if (Array.isArray(item?.content)) return appServerUserText(item)
+	return ""
+}
+
+function buildMessagesFromCodexAppServerThread(thread) {
+	const sessionId = thread.id
+	const directory = normalizeDir(thread.cwd) || ""
+	const modelId = thread.model || thread.modelId || DEFAULT_MODEL_ID
+	const messages = []
+	let seq = 0
+	for (const turn of Array.isArray(thread.turns) ? thread.turns : []) {
+		const createdAt = codexTimestampToMs(turn.startedAt ?? thread.createdAt)
+		for (const item of Array.isArray(turn.items) ? turn.items : []) {
+			const type = item?.type
+			if (type === "userMessage") {
+				const text = appServerUserText(item)
+				if (!text) continue
+				const messageId = item.id || `${turn.id}:user:${seq++}`
+				messages.push({
+					info: defaultUserInfo(sessionId, messageId, modelId, undefined, createdAt),
+					parts: [makeTextPart(sessionId, messageId, `${messageId}:text`, text, true)],
+				})
+				continue
+			}
+			if (type === "agentMessage" || type === "assistantMessage" || type === "reasoning") {
+				const text = appServerItemText(item)
+				if (!text) continue
+				const messageId = item.id || `${turn.id}:assistant:${seq++}`
+				const info = defaultAssistantInfo(sessionId, messageId, directory, modelId, undefined, createdAt)
+				messages.push({
+					info,
+					parts:
+						type === "reasoning"
+							? [makeReasoningPart(sessionId, messageId, `${messageId}:reasoning`, text, createdAt)]
+							: [makeTextPart(sessionId, messageId, `${messageId}:text`, text, true)],
+				})
+			}
+		}
+	}
+	return messages
+}
+
+async function listCodexAppServerSessions(target = {}) {
+	const workspaceId = target.workspaceId ?? "local"
+	if (target.workspaceId !== undefined && target.workspaceId !== "local") return []
+	return await withCodexAppServer(async ({ request }) => {
+		const sessions = []
+		let cursor = undefined
+		do {
+			const response = await request("thread/list", {
+				limit: 100,
+				sortKey: "updated_at",
+				sortDirection: "desc",
+				...(cursor ? { cursor } : {}),
+			})
+			for (const thread of Array.isArray(response?.data) ? response.data : []) {
+				if (!thread?.id) continue
+				const session = normalizeCodexAppServerThread(thread, workspaceId)
+				if (target.directory && normalizeDir(session.directory) !== normalizeDir(target.directory)) continue
+				sessions.push(session)
+			}
+			cursor = typeof response?.nextCursor === "string" && response.nextCursor ? response.nextCursor : undefined
+		} while (cursor)
+		return sessions
+	})
+}
+
+async function readCodexAppServerMessages(sessionId) {
+	return await withCodexAppServer(async ({ request }) => {
+		const response = await request("thread/read", {
+			threadId: sessionId,
+			includeTurns: true,
+		})
+		return buildMessagesFromCodexAppServerThread(response?.thread ?? { id: sessionId, turns: [] })
+	})
+}
+
 async function fetchCodexProviderFromAppServer() {
 	return await withCodexAppServer(async ({ request }) => {
 		const account = await request("account/read", {})
@@ -1223,6 +1343,25 @@ class CodexBridgeManager {
 		const directory = normalizeDir(target.directory)
 		const workspaceId = target.workspaceId
 		const byId = new Map()
+		try {
+			for (const session of await listCodexAppServerSessions({ directory, workspaceId })) {
+				byId.set(session.id, session)
+				if (!this.sessionIndex.has(session.id)) {
+					this.sessionIndex.set(session.id, {
+						id: session.id,
+						directory: session.directory,
+						workspaceId: session.workspaceID,
+						title: session.title,
+						preview: session.title,
+						createdAt: session.time?.created ?? Date.now(),
+						updatedAt: session.time?.updated ?? Date.now(),
+						origin: "codex",
+					})
+				}
+			}
+		} catch (error) {
+			console.warn("Failed to discover Codex sessions via app-server:", error)
+		}
 		for (const live of this.liveSessions.values()) {
 			if (live.hidden) continue
 			if (directory && live.project.directory !== directory) continue
@@ -1415,6 +1554,21 @@ class CodexBridgeManager {
 			}
 		}
 		const transcript = await this.loadTranscript(sessionId)
+		if (transcript.messages.length > 0) {
+			return {
+				messages: cloneJSON(transcript.messages),
+				nextCursor: null,
+			}
+		}
+		try {
+			const messages = await readCodexAppServerMessages(this.resolveSessionId(sessionId))
+			if (messages.length > 0) {
+				await this.persistTranscript(sessionId, messages)
+				return { messages: cloneJSON(messages), nextCursor: null }
+			}
+		} catch (error) {
+			console.warn("Failed to read Codex session via app-server:", error)
+		}
 		return {
 			messages: cloneJSON(transcript.messages),
 			nextCursor: null,
