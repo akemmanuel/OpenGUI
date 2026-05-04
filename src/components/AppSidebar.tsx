@@ -17,6 +17,7 @@ import { ContextMenu } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_BACKEND_LABELS } from "@/agents";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
 	Sidebar,
 	SidebarContent,
@@ -93,6 +94,9 @@ export function AppSidebar({
 	onOpenChat: () => void;
 	settingsActive?: boolean;
 }) {
+	const [showDevTag, setShowDevTag] = useState(
+		typeof window !== "undefined" && window.location.protocol !== "file:",
+	);
 	const { state: sidebarState, setOpen: setSidebarOpen } = useSidebar();
 	const {
 		selectSession,
@@ -131,6 +135,18 @@ export function AppSidebar({
 		activeWorkspace,
 		workspaceDirectory,
 	} = useConnectionState();
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		if (window.location.protocol !== "file:") {
+			setShowDevTag(true);
+			return;
+		}
+
+		void window.electronAPI
+			?.isPackaged?.()
+			.then((isPackaged) => setShowDevTag(!isPackaged));
+	}, []);
 
 	// Inline rename state
 	const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -1115,6 +1131,11 @@ export function AppSidebar({
 						alt="OpenGUI"
 						className="h-5 block dark:hidden group-data-[collapsible=icon]:!hidden"
 					/>
+					{showDevTag && (
+						<Badge className="bg-orange-500 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-white group-data-[collapsible=icon]:hidden">
+							dev
+						</Badge>
+					)}
 				</div>
 				<div className="group-data-[collapsible=icon]:hidden">
 					<div className="relative">
