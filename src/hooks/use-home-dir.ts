@@ -8,22 +8,22 @@ import { useEffect, useState } from "react";
  * Electron API is unavailable.
  */
 export function useHomeDir(): string {
-	const [homeDir, setHomeDir] = useState("");
+  const [homeDir, setHomeDir] = useState("");
 
-	useEffect(() => {
-		let cancelled = false;
-		window.electronAPI
-			?.getHomeDir?.()
-			.then((d) => {
-				if (!cancelled) setHomeDir(d ?? "");
-			})
-			.catch(() => {
-				/* Electron API unavailable */
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, []);
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI
+      ?.getHomeDir?.()
+      .then((d) => {
+        if (!cancelled) setHomeDir(d ?? "");
+      })
+      .catch(() => {
+        /* Electron API unavailable */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-	return homeDir;
+  return homeDir;
 }

@@ -1,0 +1,89 @@
+{
+  "common": {
+    "autoDetect": "Detectar automáticamente",
+    "back": "Volver",
+    "browse": "Explorar",
+    "cancel": "Cancelar",
+    "restart": "Reiniciar",
+    "settings": "Ajustes",
+    "version": "Versión"
+  },
+  "settings": {
+    "subtitle": "Gestiona las preferencias de la app y los proveedores del espacio de trabajo activo.",
+    "tabs": {
+      "general": "General",
+      "providers": "Proveedores",
+      "skills": "Skills",
+      "tools": "Herramientas"
+    },
+    "general": {
+      "agentBackend": "Backend del agente",
+      "darkMode": "Modo oscuro",
+      "appearance": "Apariencia",
+      "themeLight": "Claro",
+      "themeDark": "Oscuro",
+      "themeSystem": "Sistema",
+      "contrast": "Contraste",
+      "accent": "Acento",
+      "customAccent": "Color de acento personalizado",
+      "codeFontSize": "Tamaño de código",
+      "language": "Idioma",
+      "defaultChatDirectory": "Directorio de chat predeterminado",
+      "defaultChatDirectoryHelp": "Los chats nuevos empiezan en este directorio de trabajo.",
+      "desktopNotifications": "Notificaciones de escritorio",
+      "blockedByBrowser": "Bloqueado por el navegador",
+      "fileManager": "Gestor de archivos",
+      "fileManagerHelp": "Comando para abrir tu gestor de archivos, por ejemplo nemo o nautilus. Déjalo vacío para detectarlo automáticamente.",
+      "terminal": "Terminal",
+      "terminalHelp": "Comando para abrir tu terminal, por ejemplo ghostty o kitty. Déjalo vacío para detectarlo automáticamente.",
+      "hideOldModels": "Ocultar modelos antiguos",
+      "months": "meses",
+      "hideOldModelsHelp": "Los modelos seleccionados y favoritos siempre siguen visibles. Los modelos sin una fecha de lanzamiento válida también siguen visibles.",
+      "restartServer": "Reiniciar servidor",
+      "restartServerTitle": "¿Reiniciar servidor?",
+      "restartServerDescription": "Esto reiniciará el servidor. Todas las sesiones abiertas se detendrán y tendrás que volver a conectarte."
+    }
+  },
+  "sidebar": {
+    "allProjectsPinned": "Todos los proyectos están fijados",
+    "chats": "Chats",
+    "clearSearch": "Borrar búsqueda lateral",
+    "loadMore": "Cargar más ({{count}})",
+    "newChat": "Nuevo chat",
+    "newSession": "Nueva sesión",
+    "noChats": "No hay chats",
+    "noMatches": "No hay resultados para \"{{query}}\"",
+    "noSessionsYet": "Todavía no hay sesiones",
+    "pinned": "Fijado",
+    "projects": "Proyectos",
+    "searchPlaceholder": "Buscar proyectos y sesiones...",
+    "showLess": "Mostrar menos",
+    "untitled": "Sin título"
+  },
+  "setupWizard": {
+    "title": "Bienvenido a OpenGUI",
+    "backendStatusSubtitle": "Comprueba qué backends de agentes de IA están instalados. Instala los que falten ahora o más tarde.",
+    "detectingBackends": "Detectando backends instalados...",
+    "detectedBackends": "{{count}} backend(s) instalados",
+    "folderSubtitle": "Elige la carpeta en la que quieres trabajar.",
+    "installed": "Instalado",
+    "notInstalled": "No instalado",
+    "requiredCommand": "Comando requerido",
+    "installCommand": "Comando de instalación",
+    "installCli": "Instalar CLI",
+    "reinstallCli": "Reinstalar CLI",
+    "docs": "Docs",
+    "folderTitle": "Carpeta del proyecto",
+    "folderHelp": "Los chats nuevos se abrirán en esta carpeta por defecto.",
+    "folderEmptyHint": "Déjalo vacío si quieres que se te pregunte cada vez. Puedes cambiarlo en",
+    "settingsGeneral": "Ajustes → General",
+    "skipSetup": "Omitir configuración",
+    "continue": "Continuar",
+    "launch": "Iniciar OpenGUI"
+  },
+  "languages": {
+    "de": "Deutsch",
+    "en": "English",
+    "es": "Español"
+  }
+}

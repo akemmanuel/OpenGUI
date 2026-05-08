@@ -10,32 +10,23 @@ import sprite from "./sprite.svg";
 import { type ProviderIconName, providerIconNames } from "./types";
 
 type ProviderIconProps = SVGAttributes<SVGSVGElement> & {
-	/** Provider ID (must match a key in the sprite sheet). */
-	provider: string;
+  /** Provider ID (must match a key in the sprite sheet). */
+  provider: string;
 };
 
 const iconNameSet = new Set<string>(providerIconNames);
 
 /** Resolve a provider ID to a valid icon name, falling back to "synthetic". */
 function resolveProviderIcon(id: string): ProviderIconName {
-	if (iconNameSet.has(id)) return id as ProviderIconName;
-	return "synthetic";
+  if (iconNameSet.has(id)) return id as ProviderIconName;
+  return "synthetic";
 }
 
-export function ProviderIcon({
-	provider,
-	className,
-	...rest
-}: ProviderIconProps) {
-	const iconId = resolveProviderIcon(provider);
-	return (
-		<svg
-			aria-hidden="true"
-			data-provider-icon={iconId}
-			className={className}
-			{...rest}
-		>
-			<use href={`${sprite}#${iconId}`} />
-		</svg>
-	);
+export function ProviderIcon({ provider, className, ...rest }: ProviderIconProps) {
+  const iconId = resolveProviderIcon(provider);
+  return (
+    <svg aria-hidden="true" data-provider-icon={iconId} className={className} {...rest}>
+      <use href={`${sprite}#${iconId}`} />
+    </svg>
+  );
 }

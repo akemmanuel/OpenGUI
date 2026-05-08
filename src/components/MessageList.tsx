@@ -3,67 +3,48 @@
  * Handles user messages, assistant text, tool calls, and permission requests.
  */
 
-import type {
-	FilePart,
-	Part,
-	QuestionAnswer,
-	QuestionInfo,
-	ReasoningPart,
-	TextPart,
-	ToolPart,
-} from "@opencode-ai/sdk/v2/client";
+import type { FilePart, Part, ReasoningPart, TextPart, ToolPart } from "@opencode-ai/sdk/v2/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-	AlertTriangle,
-	Check,
-	CheckCircle2,
-	ChevronRight,
-	Circle,
-	CircleCheck,
-	FileCode,
-	FileEdit,
-	FilePlus,
-	GitFork,
-	Layers,
-	MessageCircleQuestion,
-	Search,
-	ShieldAlert,
-	SquareTerminal,
-	Undo2,
-	Wrench,
-	X,
-	XCircle,
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  FileCode,
+  FileEdit,
+  FilePlus,
+  GitFork,
+  Layers,
+  MessageCircleQuestion,
+  Search,
+  ShieldAlert,
+  SquareTerminal,
+  Undo2,
+  Wrench,
+  X,
+  XCircle,
 } from "lucide-react";
-import {
-	memo,
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { QuestionPanel } from "@/components/message-list/QuestionPanel";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
-	getChildSessionParts,
-	type MessageEntry,
-	useActions,
-	useConnectionState,
-	useMessages,
-	useSessionState,
+  type MessageEntry,
+  useActions,
+  useConnectionState,
+  useMessages,
+  useSessionState,
 } from "@/hooks/use-agent-state";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
+import { parseUnifiedDiff, type DiffLine, type DiffResult } from "@/lib/diff";
 import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
-import {
-	cn,
-	looksLikeTerminalOutput,
-	normalizeTerminalOutput,
-} from "@/lib/utils";
+import { cn, looksLikeTerminalOutput, normalizeTerminalOutput } from "@/lib/utils";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
 
@@ -75,654 +56,507 @@ const VIRTUALIZATION_OVERSCAN_BUSY = 16;
 
 /** Check if a part will produce visible output. */
 function isRenderablePart(part: Part): boolean {
-	if (!RENDERABLE_TYPES.has(part.type)) return false;
-	// text parts with empty content render nothing
-	if (part.type === "text" && !part.text?.trim()) return false;
-	return true;
+  if (!RENDERABLE_TYPES.has(part.type)) return false;
+  // text parts with empty content render nothing
+  if (part.type === "text" && !part.text?.trim()) return false;
+  return true;
 }
 
 /** Check if a message entry has any visible content (renderable parts or error). */
 function hasVisibleContent(entry: MessageEntry): boolean {
-	if (entry.parts.some(isRenderablePart)) return true;
-	// Assistant messages with errors should stay visible
-	if (entry.info.role === "assistant" && entry.info.error) return true;
-	// Messages with no parts yet (still loading) should stay visible
-	if (entry.parts.length === 0) return true;
-	return false;
+  if (entry.parts.some(isRenderablePart)) return true;
+  // Assistant messages with errors should stay visible
+  if (entry.info.role === "assistant" && entry.info.error) return true;
+  // Messages with no parts yet (still loading) should stay visible
+  if (entry.parts.length === 0) return true;
+  return false;
+}
+
+function getEntryText(entry: MessageEntry): string {
+  return (entry.parts as TextPart[])
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+const SYSTEM_APPEND_RE = /^\s*<SYSTEM-APPEND>[\s\S]*?<\/SYSTEM-APPEND>\s*/;
+
+function stripLeadingSystemAppend(entry: MessageEntry): MessageEntry {
+  if (entry.info.role !== "user") return entry;
+  let stripped = false;
+  const parts = entry.parts.map((part) => {
+    if (stripped || part.type !== "text" || typeof part.text !== "string") {
+      return part;
+    }
+    const nextText = part.text.replace(SYSTEM_APPEND_RE, "");
+    if (nextText === part.text) return part;
+    stripped = true;
+    return { ...part, text: nextText };
+  });
+  return stripped ? { ...entry, parts } : entry;
 }
 
 function TerminalOutput({
-	content,
-	className,
-	preRef,
+  content,
+  className,
+  preRef,
 }: {
-	content: string;
-	className?: string;
-	preRef?: React.RefObject<HTMLPreElement | null>;
+  content: string;
+  className?: string;
+  preRef?: React.RefObject<HTMLPreElement | null>;
 }) {
-	const normalizedContent = useMemo(
-		() => normalizeTerminalOutput(content),
-		[content],
-	);
+  const normalizedContent = useMemo(() => normalizeTerminalOutput(content), [content]);
 
-	return (
-		<pre
-			ref={preRef}
-			className={cn(
-				"terminal-output select-text w-full min-w-0 max-w-full text-muted-foreground overflow-y-auto overflow-x-hidden",
-				className,
-			)}
-		>
-			{normalizedContent}
-		</pre>
-	);
+  return (
+    <pre
+      ref={preRef}
+      className={cn(
+        "terminal-output select-text w-full min-w-0 max-w-full text-muted-foreground overflow-y-auto overflow-x-hidden",
+        className,
+      )}
+    >
+      {normalizedContent}
+    </pre>
+  );
 }
 
-export function MessageList({
-	detachedProject: _detachedProject,
+function RevertBanner({
+  revertedCount,
+  onRestore,
 }: {
-	detachedProject?: string;
+  revertedCount: number;
+  onRestore: () => void;
 }) {
-	const {
-		respondPermission,
-		replyQuestion,
-		rejectQuestion,
-		forkFromMessage,
-		revertToMessage,
-		unrevert,
-		loadOlderMessages,
-	} = useActions();
-	const capabilities = useBackendCapabilities();
-	const {
-		isBusy,
-		isLoadingMessages,
-		pendingPermissions,
-		pendingQuestions,
-		activeSessionId,
-		sessions,
-		draftSessionDirectory,
-	} = useSessionState();
-	const { messages, messageHistoryHasMore, isLoadingOlderMessages } =
-		useMessages();
-	const activeSession = useMemo(
-		() => sessions.find((s) => s.id === activeSessionId),
-		[sessions, activeSessionId],
-	);
-	const revertMessageID = activeSession?.revert?.messageID;
-	const pendingPermission = activeSessionId
-		? (pendingPermissions[activeSessionId] ?? null)
-		: null;
-	const pendingQuestion = activeSessionId
-		? (pendingQuestions[activeSessionId] ?? null)
-		: null;
-
-	const [nowMs, setNowMs] = useState(() => Date.now());
-
-	useEffect(() => {
-		if (!isBusy) return;
-		setNowMs(Date.now());
-		const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-		return () => window.clearInterval(timer);
-	}, [isBusy]);
-
-	const listRef = useRef<HTMLDivElement>(null);
-	/** Whether the user is currently near the bottom of the scroll container. */
-	const isNearBottomRef = useRef(true);
-	/** Set to true while we are programmatically scrolling to avoid the onScroll handler unsetting sticky. */
-	const isProgrammaticScrollRef = useRef(false);
-	/** RAF handle so we batch at most one scroll per frame. */
-	const rafRef = useRef<number | null>(null);
-	const prevSessionRef = useRef<string | null>(null);
-	const sessionJustSwitchedRef = useRef(false);
-	/** Sentinel element at the top of the list for triggering older message loads. */
-	const topSentinelRef = useRef<HTMLDivElement>(null);
-	/** Track message count before a prepend so we can preserve scroll position. */
-	const prevMessageCountRef = useRef(0);
-
-	// ---- auto-load older messages when scrolled near the top ----
-
-	useEffect(() => {
-		const sentinel = topSentinelRef.current;
-		const scrollContainer = listRef.current;
-		if (!sentinel || !scrollContainer) return;
-
-		const observer = new IntersectionObserver(
-			(entries) => {
-				const entry = entries[0];
-				if (
-					entry?.isIntersecting &&
-					messageHistoryHasMore &&
-					!isLoadingOlderMessages
-				) {
-					// Snapshot scroll metrics before prepend
-					prevMessageCountRef.current = scrollContainer.scrollHeight;
-					void loadOlderMessages();
-				}
-			},
-			{ root: scrollContainer, rootMargin: "200px 0px 0px 0px", threshold: 0 },
-		);
-		observer.observe(sentinel);
-		return () => observer.disconnect();
-	}, [messageHistoryHasMore, isLoadingOlderMessages, loadOlderMessages]);
-
-	// ---- preserve scroll position after older messages are prepended ----
-	// We use a MutationObserver on the scroll container's childList to detect
-	// when older messages are inserted. This avoids lint issues with effect
-	// dependencies while still firing synchronously before paint.
-
-	useLayoutEffect(() => {
-		const el = listRef.current;
-		if (!el) return;
-		const observer = new MutationObserver(() => {
-			if (prevMessageCountRef.current === 0) return;
-			const prevScrollHeight = prevMessageCountRef.current;
-			const newScrollHeight = el.scrollHeight;
-			if (newScrollHeight > prevScrollHeight) {
-				isProgrammaticScrollRef.current = true;
-				el.scrollTop += newScrollHeight - prevScrollHeight;
-				requestAnimationFrame(() => {
-					isProgrammaticScrollRef.current = false;
-				});
-			}
-			prevMessageCountRef.current = 0;
-		});
-		observer.observe(el, { childList: true, subtree: true });
-		return () => observer.disconnect();
-	}, []);
-
-	// ---- helpers ----
-
-	const checkNearBottom = useCallback(() => {
-		const el = listRef.current;
-		if (!el) return true;
-		return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
-	}, []);
-
-	const scrollToBottom = useCallback(() => {
-		if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-		rafRef.current = requestAnimationFrame(() => {
-			rafRef.current = null;
-			const el = listRef.current;
-			if (!el) return;
-			isProgrammaticScrollRef.current = true;
-			el.scrollTop = el.scrollHeight;
-			// Reset programmatic flag after the browser has had time to fire the scroll event.
-			requestAnimationFrame(() => {
-				isProgrammaticScrollRef.current = false;
-			});
-		});
-	}, []);
-
-	// ---- onScroll: track whether user scrolled away ----
-
-	const handleScroll = useCallback(() => {
-		if (isProgrammaticScrollRef.current) return;
-		isNearBottomRef.current = checkNearBottom();
-	}, [checkNearBottom]);
-
-	// ---- session switch: mark flag so the layout effect can scroll before paint ----
-
-	useLayoutEffect(() => {
-		if (activeSessionId !== prevSessionRef.current) {
-			prevSessionRef.current = activeSessionId;
-			isNearBottomRef.current = true;
-			sessionJustSwitchedRef.current = true;
-		}
-	}, [activeSessionId]);
-
-	// ---- visible messages (filter out step-only / empty entries) ----
-
-	const visibleMessages = useMemo(() => {
-		const rendered = messages.filter(hasVisibleContent);
-		if (!revertMessageID) return rendered;
-		// Hide messages at or after the revert point
-		return rendered.filter((m) => m.info.id < revertMessageID);
-	}, [messages, revertMessageID]);
-
-	// Count reverted messages for the banner
-	const revertedCount = useMemo(() => {
-		if (!revertMessageID) return 0;
-		return messages.filter(
-			(m) => hasVisibleContent(m) && m.info.id >= revertMessageID,
-		).length;
-	}, [messages, revertMessageID]);
-
-	const turnDurationByAssistantId = useMemo(() => {
-		const userStartById = new Map<string, number>();
-		const latestAssistantByParent = new Map<string, MessageEntry>();
-
-		for (const entry of visibleMessages) {
-			if (entry.info.role === "user") {
-				userStartById.set(entry.info.id, entry.info.time.created);
-				continue;
-			}
-			if (entry.info.role !== "assistant") continue;
-			const parentId = entry.info.parentID;
-			const existing = latestAssistantByParent.get(parentId);
-			if (!existing || entry.info.time.created >= existing.info.time.created) {
-				latestAssistantByParent.set(parentId, entry);
-			}
-		}
-
-		const durationByAssistantId = new Map<string, string>();
-		for (const [parentId, assistantEntry] of latestAssistantByParent) {
-			const start = userStartById.get(parentId);
-			if (typeof start !== "number") continue;
-			const completedAt = (assistantEntry.info.time as { completed?: number })
-				.completed;
-			const end =
-				typeof completedAt === "number" ? completedAt : isBusy ? nowMs : null;
-			if (typeof end !== "number") continue;
-			const duration = end - start;
-			if (!Number.isFinite(duration) || duration < 0) continue;
-			durationByAssistantId.set(
-				assistantEntry.info.id,
-				formatDuration(duration),
-			);
-		}
-
-		return durationByAssistantId;
-	}, [visibleMessages, isBusy, nowMs]);
-
-	// Find the last reasoning part across all assistant messages so we can
-	// auto-collapse earlier reasoning blocks when a new one starts.
-	const lastReasoningPartId = useMemo(() => {
-		for (let i = visibleMessages.length - 1; i >= 0; i--) {
-			const entry = visibleMessages[i];
-			if (!entry || entry.info.role !== "assistant") continue;
-			for (let j = entry.parts.length - 1; j >= 0; j--) {
-				const part = entry.parts[j];
-				if (part?.type === "reasoning") return part.id;
-			}
-		}
-		return undefined;
-	}, [visibleMessages]);
-	const firstUserMessageIndex = useMemo(
-		() => visibleMessages.findIndex((message) => message.info.role === "user"),
-		[visibleMessages],
-	);
-	const shouldVirtualizeMessages =
-		visibleMessages.length >= VIRTUALIZATION_MESSAGE_THRESHOLD;
-	const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-		count: visibleMessages.length,
-		enabled: shouldVirtualizeMessages,
-		getScrollElement: () => listRef.current,
-		getItemKey: (index) => visibleMessages[index]?.info.id ?? index,
-		estimateSize: (index) =>
-			visibleMessages[index]?.info.role === "user" ? 96 : 220,
-		overscan: isBusy
-			? VIRTUALIZATION_OVERSCAN_BUSY
-			: VIRTUALIZATION_OVERSCAN_IDLE,
-		useAnimationFrameWithResizeObserver: true,
-	});
-	const virtualItems = shouldVirtualizeMessages
-		? messageVirtualizer.getVirtualItems()
-		: [];
-	const virtualHeight = shouldVirtualizeMessages
-		? messageVirtualizer.getTotalSize()
-		: 0;
-
-	const renderMessageBubble = useCallback(
-		(entry: MessageEntry, idx: number) => {
-			const prev = idx > 0 ? (visibleMessages[idx - 1] ?? null) : null;
-			const isConsecutive = prev !== null && prev.info.role === entry.info.role;
-			const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
-			const isFirstUserMsg =
-				entry.info.role === "user" && firstUserMessageIndex === idx;
-
-			return (
-				<div key={entry.info.id} className={spacing}>
-					<MessageBubble
-						entry={entry}
-						turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
-						lastReasoningPartId={lastReasoningPartId}
-						onFork={
-							capabilities?.fork && entry.info.role === "user" && !isFirstUserMsg
-								? () => forkFromMessage(entry.info.id)
-								: undefined
-						}
-						onRevert={
-							capabilities?.revert && entry.info.role === "user"
-								? () => revertToMessage(entry.info.id)
-								: undefined
-						}
-					/>
-				</div>
-			);
-		},
-		[
-			firstUserMessageIndex,
-			visibleMessages,
-			turnDurationByAssistantId,
-			lastReasoningPartId,
-			forkFromMessage,
-			revertToMessage,
-		],
-	);
-
-	// ---- session switch: jump to bottom synchronously before paint ----
-
-	useLayoutEffect(() => {
-		if (!sessionJustSwitchedRef.current) return;
-		const el = listRef.current;
-		if (!el || visibleMessages.length === 0) return;
-		scrollToBottom();
-		sessionJustSwitchedRef.current = false;
-	}, [scrollToBottom, visibleMessages]);
-
-	// ---- streaming / new content: scroll only if sticky ----
-
-	useEffect(() => {
-		// visibleMessages is intentionally in the dep array so this effect
-		// re-fires on every streaming delta, keeping the view pinned to the
-		// bottom while new tokens arrive.
-		if (!visibleMessages.length) return;
-		if (!isNearBottomRef.current) return;
-		// Skip if we already handled this render in the layout effect above.
-		if (sessionJustSwitchedRef.current) return;
-		scrollToBottom();
-	}, [scrollToBottom, visibleMessages]);
-
-	if (isLoadingMessages && visibleMessages.length === 0) {
-		return (
-			<div className="flex-1 flex items-center justify-center">
-				<Spinner className="size-6 text-muted-foreground" />
-			</div>
-		);
-	}
-
-	const isDraft = !activeSessionId && !!draftSessionDirectory;
-
-	if (
-		isDraft ||
-		!activeSessionId ||
-		(visibleMessages.length === 0 && !isBusy)
-	) {
-		return (
-			<div className="flex-1 flex items-center justify-center">
-				<div className="w-full max-w-3xl flex flex-col items-center">
-					<img
-						src={logoDark}
-						alt="OpenGUI"
-						draggable={false}
-						className="hidden dark:block w-82 select-none pointer-events-none"
-					/>
-					<img
-						src={logoLight}
-						alt="OpenGUI"
-						draggable={false}
-						className="dark:hidden w-82 select-none pointer-events-none"
-					/>
-				</div>
-			</div>
-		);
-	}
-
-	return (
-		<div
-			ref={listRef}
-			onScroll={handleScroll}
-			className="flex-1 overflow-auto px-4 py-4"
-		>
-			<div className="max-w-[640px] mx-auto">
-				{/* Sentinel for auto-loading older messages */}
-				{messageHistoryHasMore && (
-					<div ref={topSentinelRef} className="h-px w-full" />
-				)}
-				{isLoadingOlderMessages && (
-					<div className="flex items-center justify-center py-3">
-						<Spinner className="size-4 text-muted-foreground" />
-					</div>
-				)}
-				{visibleMessages.length > 0 && shouldVirtualizeMessages && (
-					<div className="relative w-full" style={{ height: virtualHeight }}>
-						{virtualItems.map((virtualItem) => {
-							const entry = visibleMessages[virtualItem.index];
-							if (!entry) return null;
-
-							return (
-								<div
-									key={virtualItem.key}
-									data-index={virtualItem.index}
-									ref={messageVirtualizer.measureElement}
-									className="absolute left-0 top-0 w-full"
-									style={{ transform: `translateY(${virtualItem.start}px)` }}
-								>
-									{renderMessageBubble(entry, virtualItem.index)}
-								</div>
-							);
-						})}
-					</div>
-				)}
-				{visibleMessages.length > 0 && !shouldVirtualizeMessages && (
-					<div>
-						{visibleMessages.map((entry, index) =>
-							renderMessageBubble(entry, index),
-						)}
-					</div>
-				)}
-
-				{/* Revert marker */}
-				{capabilities?.revert && revertMessageID && revertedCount > 0 && (
-					<div className="flex items-center gap-2 mt-4 select-none">
-						<div className="flex-1 h-px bg-orange-500/30" />
-						<div className="flex items-center gap-2 text-[11px] text-orange-500/80 font-mono">
-							<Undo2 className="size-3" />
-							<span>
-								{revertedCount} message{revertedCount !== 1 ? "s" : ""} reverted
-							</span>
-							<span className="text-orange-500/50">|</span>
-							<button
-								type="button"
-								onClick={() => unrevert()}
-								className="hover:text-orange-500 transition-colors cursor-pointer"
-							>
-								Restore
-							</button>
-						</div>
-						<div className="flex-1 h-px bg-orange-500/30" />
-					</div>
-				)}
-
-				{/* Permission request */}
-				{capabilities?.permissions && pendingPermission && (
-					<div className="border rounded-lg p-4 bg-amber-500/10 border-amber-500/30 space-y-3">
-						<div className="flex items-start gap-2">
-							<ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
-							<div className="space-y-1">
-								<p className="text-sm font-medium">
-									Permission: {pendingPermission.permission}
-								</p>
-								{pendingPermission.patterns.length > 0 && (
-									<p className="text-xs text-muted-foreground">
-										{pendingPermission.patterns.join(", ")}
-									</p>
-								)}
-							</div>
-						</div>
-						<div className="flex gap-2">
-							<Button
-								size="sm"
-								variant="default"
-								onClick={() => respondPermission("once")}
-							>
-								Allow once
-							</Button>
-							<Button
-								size="sm"
-								variant="secondary"
-								onClick={() => respondPermission("always")}
-							>
-								Always allow
-							</Button>
-							<Button
-								size="sm"
-								variant="destructive"
-								onClick={() => respondPermission("reject")}
-							>
-								Reject
-							</Button>
-						</div>
-					</div>
-				)}
-
-				{/* Question request */}
-				{capabilities?.questions && pendingQuestion && (
-					<QuestionPanel
-						questions={pendingQuestion.questions}
-						onSubmit={(answers) => replyQuestion(answers)}
-						onDismiss={() => rejectQuestion()}
-					/>
-				)}
-			</div>
-		</div>
-	);
+  return (
+    <div className="flex items-center gap-2 mt-4 select-none">
+      <div className="flex-1 h-px bg-orange-500/30" />
+      <div className="flex items-center gap-2 text-[11px] text-orange-500/80 font-mono">
+        <Undo2 className="size-3" />
+        <span>
+          {revertedCount} message{revertedCount !== 1 ? "s" : ""} reverted
+        </span>
+        <span className="text-orange-500/50">|</span>
+        <button
+          type="button"
+          onClick={onRestore}
+          className="hover:text-orange-500 transition-colors cursor-pointer"
+        >
+          Restore
+        </button>
+      </div>
+      <div className="flex-1 h-px bg-orange-500/30" />
+    </div>
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Question panel
-// ---------------------------------------------------------------------------
+export function MessageList({ detachedProject: _detachedProject }: { detachedProject?: string }) {
+  const {
+    respondPermission,
+    replyQuestion,
+    rejectQuestion,
+    forkFromMessage,
+    revertToMessage,
+    unrevert,
+    loadOlderMessages,
+  } = useActions();
+  const capabilities = useBackendCapabilities();
+  const {
+    isBusy,
+    isLoadingMessages,
+    pendingPermissions,
+    pendingQuestions,
+    activeSessionId,
+    sessions,
+    draftSessionDirectory,
+    sessionMeta,
+  } = useSessionState();
+  const { messages, messageHistoryHasMore, isLoadingOlderMessages } = useMessages();
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId),
+    [sessions, activeSessionId],
+  );
+  const revertMessageID = activeSession?.revert?.messageID;
+  const pendingPermission = activeSessionId ? (pendingPermissions[activeSessionId] ?? null) : null;
+  const pendingQuestion = activeSessionId ? (pendingQuestions[activeSessionId] ?? null) : null;
 
-function QuestionPanel({
-	questions,
-	onSubmit,
-	onDismiss,
-}: {
-	questions: QuestionInfo[];
-	onSubmit: (answers: QuestionAnswer[]) => void;
-	onDismiss: () => void;
-}) {
-	// Each question gets an array of selected labels
-	const [selections, setSelections] = useState<string[][]>(() =>
-		questions.map(() => []),
-	);
-	// Custom text inputs per question (when custom answers are allowed)
-	const [customTexts, setCustomTexts] = useState<string[]>(() =>
-		questions.map(() => ""),
-	);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
-	const toggleOption = useCallback(
-		(qIdx: number, label: string, multiple: boolean) => {
-			setSelections((prev) => {
-				const next = [...prev];
-				const current = next[qIdx] ?? [];
-				if (multiple) {
-					next[qIdx] = current.includes(label)
-						? current.filter((l) => l !== label)
-						: [...current, label];
-				} else {
-					next[qIdx] = current.includes(label) ? [] : [label];
-				}
-				return next;
-			});
-		},
-		[],
-	);
+  useEffect(() => {
+    if (!isBusy) return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isBusy]);
 
-	const handleCustomTextChange = useCallback((qIdx: number, text: string) => {
-		setCustomTexts((prev) => {
-			const next = [...prev];
-			next[qIdx] = text;
-			return next;
-		});
-	}, []);
+  const listRef = useRef<HTMLDivElement>(null);
+  /** Whether the user is currently near the bottom of the scroll container. */
+  const isNearBottomRef = useRef(true);
+  /** Set to true while we are programmatically scrolling to avoid the onScroll handler unsetting sticky. */
+  const isProgrammaticScrollRef = useRef(false);
+  /** RAF handle so we batch at most one scroll per frame. */
+  const rafRef = useRef<number | null>(null);
+  const prevSessionRef = useRef<string | null>(null);
+  const sessionJustSwitchedRef = useRef(false);
+  /** Sentinel element at the top of the list for triggering older message loads. */
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  /** Track message count before a prepend so we can preserve scroll position. */
+  const prevMessageCountRef = useRef(0);
 
-	const handleSubmit = useCallback(() => {
-		const answers: QuestionAnswer[] = questions.map((_q, i) => {
-			const selected = selections[i] ?? [];
-			const custom = (customTexts[i] ?? "").trim();
-			if (custom) {
-				return [...selected, custom];
-			}
-			return selected;
-		});
-		onSubmit(answers);
-	}, [questions, selections, customTexts, onSubmit]);
+  // ---- auto-load older messages when scrolled near the top ----
 
-	const hasAnyAnswer =
-		selections.some((s) => s.length > 0) ||
-		customTexts.some((t) => t.trim().length > 0);
+  useEffect(() => {
+    const sentinel = topSentinelRef.current;
+    const scrollContainer = listRef.current;
+    if (!sentinel || !scrollContainer) return;
 
-	return (
-		<div className="border rounded-lg p-4 bg-primary/5 border-primary/20 space-y-4">
-			<div className="flex items-start gap-2">
-				<MessageCircleQuestion className="size-5 text-primary shrink-0 mt-0.5" />
-				<span className="text-sm font-medium">
-					The assistant has a question
-				</span>
-			</div>
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && messageHistoryHasMore && !isLoadingOlderMessages) {
+          // Snapshot scroll metrics before prepend
+          prevMessageCountRef.current = scrollContainer.scrollHeight;
+          void loadOlderMessages();
+        }
+      },
+      { root: scrollContainer, rootMargin: "200px 0px 0px 0px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [messageHistoryHasMore, isLoadingOlderMessages, loadOlderMessages]);
 
-			{questions.map((q, qIdx) => {
-				const allowCustom = q.custom !== false; // defaults to true
-				return (
-					<div key={`q-${q.header}-${qIdx}`} className="space-y-2">
-						<div className="space-y-0.5">
-							<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-								{q.header}
-							</p>
-							<p className="text-sm">{q.question}</p>
-						</div>
+  // ---- preserve scroll position after older messages are prepended ----
+  // We use a MutationObserver on the scroll container's childList to detect
+  // when older messages are inserted. This avoids lint issues with effect
+  // dependencies while still firing synchronously before paint.
 
-						<div className="flex flex-wrap gap-1.5">
-							{q.options.map((opt) => {
-								const isSelected = (selections[qIdx] ?? []).includes(opt.label);
-								return (
-									<button
-										key={opt.label}
-										type="button"
-										title={opt.description}
-										onClick={() =>
-											toggleOption(qIdx, opt.label, q.multiple ?? false)
-										}
-										className={cn(
-											"inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
-											isSelected
-												? "bg-primary text-primary-foreground border-primary"
-												: "bg-muted/40 border-border hover:bg-muted text-foreground",
-										)}
-									>
-										{isSelected && <Check className="size-3" />}
-										{opt.label}
-									</button>
-								);
-							})}
-						</div>
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const observer = new MutationObserver(() => {
+      if (prevMessageCountRef.current === 0) return;
+      const prevScrollHeight = prevMessageCountRef.current;
+      const newScrollHeight = el.scrollHeight;
+      if (newScrollHeight > prevScrollHeight) {
+        isProgrammaticScrollRef.current = true;
+        el.scrollTop += newScrollHeight - prevScrollHeight;
+        requestAnimationFrame(() => {
+          isProgrammaticScrollRef.current = false;
+        });
+      }
+      prevMessageCountRef.current = 0;
+    });
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
-						{allowCustom && (
-							<input
-								type="text"
-								placeholder="Type a custom answer..."
-								value={customTexts[qIdx] ?? ""}
-								onChange={(e) => handleCustomTextChange(qIdx, e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && hasAnyAnswer) {
-										e.preventDefault();
-										handleSubmit();
-									}
-								}}
-								className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-							/>
-						)}
-					</div>
-				);
-			})}
+  // ---- helpers ----
 
-			<div className="flex gap-2 pt-1">
-				<Button
-					size="sm"
-					variant="default"
-					disabled={!hasAnyAnswer}
-					onClick={handleSubmit}
-				>
-					Submit
-				</Button>
-				<Button size="sm" variant="ghost" onClick={onDismiss}>
-					<X className="size-3.5 mr-1" />
-					Dismiss
-				</Button>
-			</div>
-		</div>
-	);
+  const checkNearBottom = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const el = listRef.current;
+      if (!el) return;
+      isProgrammaticScrollRef.current = true;
+      el.scrollTop = el.scrollHeight;
+      // Reset programmatic flag after the browser has had time to fire the scroll event.
+      requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+      });
+    });
+  }, []);
+
+  // ---- onScroll: track whether user scrolled away ----
+
+  const handleScroll = useCallback(() => {
+    if (isProgrammaticScrollRef.current) return;
+    isNearBottomRef.current = checkNearBottom();
+  }, [checkNearBottom]);
+
+  // ---- session switch: mark flag so the layout effect can scroll before paint ----
+
+  useLayoutEffect(() => {
+    if (activeSessionId !== prevSessionRef.current) {
+      prevSessionRef.current = activeSessionId;
+      isNearBottomRef.current = true;
+      sessionJustSwitchedRef.current = true;
+    }
+  }, [activeSessionId]);
+
+  // ---- visible messages (filter out step-only / empty entries) ----
+
+  const visibleMessages = useMemo(() => {
+    let rendered = messages.filter(hasVisibleContent);
+    const hiddenBootstrapPrefix = activeSessionId
+      ? (sessionMeta[activeSessionId]?.hiddenBootstrapPrefix ?? null)
+      : null;
+    if (hiddenBootstrapPrefix) {
+      let bootstrapComplete = false;
+      rendered = rendered.filter((entry) => {
+        if (bootstrapComplete) return true;
+        if (entry.info.role === "user" && getEntryText(entry).startsWith(hiddenBootstrapPrefix)) {
+          return false;
+        }
+        if (entry.info.role === "user") {
+          bootstrapComplete = true;
+          return true;
+        }
+        return false;
+      });
+    }
+    if (activeSessionId && sessionMeta[activeSessionId]?.hideSystemAppendBlocks) {
+      rendered = rendered.map(stripLeadingSystemAppend);
+    }
+
+    if (!revertMessageID) return rendered;
+    // Hide messages at or after the revert point
+    return rendered.filter((m) => m.info.id < revertMessageID);
+  }, [messages, revertMessageID, activeSessionId, sessionMeta]);
+
+  // Count reverted messages for the banner
+  const revertedCount = useMemo(() => {
+    if (!revertMessageID) return 0;
+    return messages.filter((m) => hasVisibleContent(m) && m.info.id >= revertMessageID).length;
+  }, [messages, revertMessageID]);
+
+  const turnDurationByAssistantId = useMemo(() => {
+    const userStartById = new Map<string, number>();
+    const latestAssistantByParent = new Map<string, MessageEntry>();
+
+    for (const entry of visibleMessages) {
+      if (entry.info.role === "user") {
+        userStartById.set(entry.info.id, entry.info.time.created);
+        continue;
+      }
+      if (entry.info.role !== "assistant") continue;
+      const parentId = entry.info.parentID;
+      const existing = latestAssistantByParent.get(parentId);
+      if (!existing || entry.info.time.created >= existing.info.time.created) {
+        latestAssistantByParent.set(parentId, entry);
+      }
+    }
+
+    const durationByAssistantId = new Map<string, string>();
+    for (const [parentId, assistantEntry] of latestAssistantByParent) {
+      const start = userStartById.get(parentId);
+      if (typeof start !== "number") continue;
+      const completedAt = (assistantEntry.info.time as { completed?: number }).completed;
+      const end = typeof completedAt === "number" ? completedAt : isBusy ? nowMs : null;
+      if (typeof end !== "number") continue;
+      const duration = end - start;
+      if (!Number.isFinite(duration) || duration < 0) continue;
+      durationByAssistantId.set(assistantEntry.info.id, formatDuration(duration));
+    }
+
+    return durationByAssistantId;
+  }, [visibleMessages, isBusy, nowMs]);
+
+  // Find the last reasoning part across all assistant messages so we can
+  // auto-collapse earlier reasoning blocks when a new one starts.
+  const lastReasoningPartId = useMemo(() => {
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      const entry = visibleMessages[i];
+      if (!entry || entry.info.role !== "assistant") continue;
+      for (let j = entry.parts.length - 1; j >= 0; j--) {
+        const part = entry.parts[j];
+        if (part?.type === "reasoning") return part.id;
+      }
+    }
+    return undefined;
+  }, [visibleMessages]);
+  const firstUserMessageIndex = useMemo(
+    () => visibleMessages.findIndex((message) => message.info.role === "user"),
+    [visibleMessages],
+  );
+  const shouldVirtualizeMessages = visibleMessages.length >= VIRTUALIZATION_MESSAGE_THRESHOLD;
+  const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: visibleMessages.length,
+    enabled: shouldVirtualizeMessages,
+    getScrollElement: () => listRef.current,
+    getItemKey: (index) => visibleMessages[index]?.info.id ?? index,
+    estimateSize: (index) => (visibleMessages[index]?.info.role === "user" ? 96 : 220),
+    overscan: isBusy ? VIRTUALIZATION_OVERSCAN_BUSY : VIRTUALIZATION_OVERSCAN_IDLE,
+    useAnimationFrameWithResizeObserver: true,
+  });
+  const virtualItems = shouldVirtualizeMessages ? messageVirtualizer.getVirtualItems() : [];
+  const virtualHeight = shouldVirtualizeMessages ? messageVirtualizer.getTotalSize() : 0;
+
+  const renderMessageBubble = useCallback(
+    (entry: MessageEntry, idx: number) => {
+      const prev = idx > 0 ? (visibleMessages[idx - 1] ?? null) : null;
+      const isConsecutive = prev !== null && prev.info.role === entry.info.role;
+      const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
+      const isFirstUserMsg = entry.info.role === "user" && firstUserMessageIndex === idx;
+
+      return (
+        <div key={entry.info.id} className={spacing}>
+          <MessageBubble
+            entry={entry}
+            turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
+            lastReasoningPartId={lastReasoningPartId}
+            onFork={
+              capabilities?.fork && entry.info.role === "user" && !isFirstUserMsg
+                ? () => forkFromMessage(entry.info.id)
+                : undefined
+            }
+            onRevert={
+              capabilities?.revert && entry.info.role === "user"
+                ? () => revertToMessage(entry.info.id)
+                : undefined
+            }
+          />
+        </div>
+      );
+    },
+    [
+      firstUserMessageIndex,
+      visibleMessages,
+      turnDurationByAssistantId,
+      lastReasoningPartId,
+      forkFromMessage,
+      revertToMessage,
+    ],
+  );
+
+  // ---- session switch: jump to bottom synchronously before paint ----
+
+  useLayoutEffect(() => {
+    if (!sessionJustSwitchedRef.current) return;
+    const el = listRef.current;
+    if (!el || visibleMessages.length === 0) return;
+    scrollToBottom();
+    sessionJustSwitchedRef.current = false;
+  }, [scrollToBottom, visibleMessages]);
+
+  // ---- streaming / new content: scroll only if sticky ----
+
+  useEffect(() => {
+    // visibleMessages is intentionally in the dep array so this effect
+    // re-fires on every streaming delta, keeping the view pinned to the
+    // bottom while new tokens arrive.
+    if (!visibleMessages.length) return;
+    if (!isNearBottomRef.current) return;
+    // Skip if we already handled this render in the layout effect above.
+    if (sessionJustSwitchedRef.current) return;
+    scrollToBottom();
+  }, [scrollToBottom, visibleMessages]);
+
+  if (isLoadingMessages && visibleMessages.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Spinner className="size-6 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const isDraft = !activeSessionId && !!draftSessionDirectory;
+
+  if (isDraft || !activeSessionId || (visibleMessages.length === 0 && !isBusy)) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="w-full max-w-3xl flex flex-col items-center">
+          <img
+            src={logoDark}
+            alt="OpenGUI"
+            draggable={false}
+            className="hidden dark:block w-82 select-none pointer-events-none"
+          />
+          <img
+            src={logoLight}
+            alt="OpenGUI"
+            draggable={false}
+            className="dark:hidden w-82 select-none pointer-events-none"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={listRef} onScroll={handleScroll} className="flex-1 overflow-auto px-4 py-4">
+      <div className="max-w-[640px] mx-auto">
+        {/* Sentinel for auto-loading older messages */}
+        {messageHistoryHasMore && <div ref={topSentinelRef} className="h-px w-full" />}
+        {isLoadingOlderMessages && (
+          <div className="flex items-center justify-center py-3">
+            <Spinner className="size-4 text-muted-foreground" />
+          </div>
+        )}
+        {visibleMessages.length > 0 && shouldVirtualizeMessages && (
+          <div className="relative w-full" style={{ height: virtualHeight }}>
+            {virtualItems.map((virtualItem) => {
+              const entry = visibleMessages[virtualItem.index];
+              if (!entry) return null;
+
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={messageVirtualizer.measureElement}
+                  className="absolute left-0 top-0 w-full"
+                  style={{ transform: `translateY(${virtualItem.start}px)` }}
+                >
+                  {renderMessageBubble(entry, virtualItem.index)}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {visibleMessages.length > 0 && !shouldVirtualizeMessages && (
+          <div>{visibleMessages.map((entry, index) => renderMessageBubble(entry, index))}</div>
+        )}
+
+        {/* Revert marker */}
+        {capabilities?.revert && revertMessageID && revertedCount > 0 && (
+          <RevertBanner revertedCount={revertedCount} onRestore={unrevert} />
+        )}
+
+        {/* Permission request */}
+        {capabilities?.permissions && pendingPermission && (
+          <div className="border rounded-lg p-4 bg-amber-500/10 border-amber-500/30 space-y-3">
+            <div className="flex items-start gap-2">
+              <ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Permission: {pendingPermission.permission}</p>
+                {pendingPermission.patterns.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {pendingPermission.patterns.join(", ")}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="default" onClick={() => respondPermission("once")}>
+                Allow once
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => respondPermission("always")}>
+                Always allow
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => respondPermission("reject")}>
+                Reject
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Question request */}
+        {capabilities?.questions && pendingQuestion && (
+          <QuestionPanel
+            questions={pendingQuestion.questions}
+            onSubmit={(answers) => replyQuestion(answers)}
+            onDismiss={() => rejectQuestion()}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -730,139 +564,130 @@ function QuestionPanel({
 // ---------------------------------------------------------------------------
 
 const MessageBubble = memo(function MessageBubble({
-	entry,
-	turnDurationLabel,
-	lastReasoningPartId,
-	onFork,
-	onRevert,
+  entry,
+  turnDurationLabel,
+  lastReasoningPartId,
+  onFork,
+  onRevert,
 }: {
-	entry: MessageEntry;
-	turnDurationLabel?: string;
-	lastReasoningPartId?: string;
-	onFork?: () => void;
-	onRevert?: () => void;
+  entry: MessageEntry;
+  turnDurationLabel?: string;
+  lastReasoningPartId?: string;
+  onFork?: () => void;
+  onRevert?: () => void;
 }) {
-	const { info, parts } = entry;
-	const isUser = info.role === "user";
-	const [expanded, setExpanded] = useState(false);
-	const isSummary =
-		info.role === "assistant" && "summary" in info && info.summary === true;
+  const { info, parts } = entry;
+  const isUser = info.role === "user";
+  const [expanded, setExpanded] = useState(false);
+  const isSummary = info.role === "assistant" && "summary" in info && info.summary === true;
 
-	// Check if user message text exceeds the collapse threshold
-	const userTextLength = isUser
-		? parts.reduce(
-				(sum, p) => sum + (p.type === "text" ? (p.text?.length ?? 0) : 0),
-				0,
-			)
-		: 0;
-	const shouldCollapse = isUser && userTextLength > USER_MSG_COLLAPSE_CHARS;
+  // Check if user message text exceeds the collapse threshold
+  const userTextLength = isUser
+    ? parts.reduce((sum, p) => sum + (p.type === "text" ? (p.text?.length ?? 0) : 0), 0)
+    : 0;
+  const shouldCollapse = isUser && userTextLength > USER_MSG_COLLAPSE_CHARS;
 
-	return (
-		<div className={isUser ? "flex justify-end" : ""}>
-			{isSummary && (
-				<div className="flex items-center gap-2 mb-2 select-none">
-					<div className="flex-1 h-px bg-amber-500/30" />
-					<div className="flex items-center gap-1.5 text-[11px] text-amber-500/80 font-mono">
-						<Layers className="size-3" />
-						<span>Context compacted</span>
-					</div>
-					<div className="flex-1 h-px bg-amber-500/30" />
-				</div>
-			)}
-			<div
-				className={cn(
-					"min-w-0 group relative",
-					isUser
-						? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
-						: "flex-1 flex flex-col gap-1",
-				)}
-			>
-				{isUser && (onFork || onRevert) && (
-					<div className="absolute -left-9 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-						{onRevert && (
-							<button
-								type="button"
-								onClick={onRevert}
-								title="Revert to this message"
-								className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
-							>
-								<Undo2 className="size-3.5" />
-							</button>
-						)}
-						{onFork && (
-							<button
-								type="button"
-								onClick={onFork}
-								title="Fork from this message"
-								className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
-							>
-								<GitFork className="size-3.5" />
-							</button>
-						)}
-					</div>
-				)}
-				{parts.length > 0 && (
-					<div className={cn(shouldCollapse && !expanded && "relative")}>
-						<div
-							className={cn(
-								"flex flex-col gap-1",
-								shouldCollapse && !expanded && "max-h-[8lh] overflow-hidden",
-							)}
-						>
-							{parts.map((part) => (
-								<PartView
-									key={part.id}
-									part={part}
-									isUser={isUser}
-									lastReasoningPartId={lastReasoningPartId}
-								/>
-							))}
-						</div>
-						{shouldCollapse && !expanded && (
-							<div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t to-transparent rounded-b-2xl pointer-events-none" />
-						)}
-						{shouldCollapse && (
-							<button
-								type="button"
-								onClick={() => setExpanded(!expanded)}
-								className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
-							>
-								{expanded ? "Show less" : "Show more"}
-							</button>
-						)}
-					</div>
-				)}
-				{info.role === "assistant" && info.error && (
-					<div className="text-xs text-destructive flex items-center gap-1">
-						<AlertTriangle className="size-3" />
-						{"data" in info.error &&
-						info.error.data &&
-						typeof info.error.data === "object" &&
-						"message" in info.error.data
-							? String(info.error.data.message)
-							: info.error.name}
-					</div>
-				)}
-				{info.role === "assistant" && turnDurationLabel && (
-					<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
-						{turnDurationLabel}
-						{"providerID" in info && info.providerID && (
-							<ProviderIcon
-								provider={info.providerID}
-								className="size-3 shrink-0 opacity-60"
-							/>
-						)}
-						{"modelID" in info && info.modelID && (
-							<span className="opacity-60">{info.modelID}</span>
-						)}
-						{"mode" in info && info.mode && (
-							<span className="opacity-40">{info.mode}</span>
-						)}
-					</div>
-				)}
-			</div>
-		</div>
-	);
+  return (
+    <div className={isUser ? "flex justify-end" : ""}>
+      {isSummary && (
+        <div className="flex items-center gap-2 mb-2 select-none">
+          <div className="flex-1 h-px bg-amber-500/30" />
+          <div className="flex items-center gap-1.5 text-[11px] text-amber-500/80 font-mono">
+            <Layers className="size-3" />
+            <span>Context compacted</span>
+          </div>
+          <div className="flex-1 h-px bg-amber-500/30" />
+        </div>
+      )}
+      <div
+        className={cn(
+          "min-w-0 group relative",
+          isUser
+            ? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
+            : "flex-1 flex flex-col gap-1",
+        )}
+      >
+        {isUser && (onFork || onRevert) && (
+          <div className="absolute -left-9 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onRevert && (
+              <button
+                type="button"
+                onClick={onRevert}
+                title="Revert to this message"
+                className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <Undo2 className="size-3.5" />
+              </button>
+            )}
+            {onFork && (
+              <button
+                type="button"
+                onClick={onFork}
+                title="Fork from this message"
+                className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <GitFork className="size-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+        {parts.length > 0 && (
+          <div className={cn(shouldCollapse && !expanded && "relative")}>
+            <div
+              className={cn(
+                "flex flex-col gap-1",
+                shouldCollapse && !expanded && "max-h-[8lh] overflow-hidden",
+              )}
+            >
+              {parts.map((part) => (
+                <PartView
+                  key={part.id}
+                  part={part}
+                  isUser={isUser}
+                  lastReasoningPartId={lastReasoningPartId}
+                />
+              ))}
+            </div>
+            {shouldCollapse && !expanded && (
+              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t to-transparent rounded-b-2xl pointer-events-none" />
+            )}
+            {shouldCollapse && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
+              >
+                {expanded ? "Show less" : "Show more"}
+              </button>
+            )}
+          </div>
+        )}
+        {info.role === "assistant" && info.error && (
+          <div className="text-xs text-destructive flex items-center gap-1">
+            <AlertTriangle className="size-3" />
+            {"data" in info.error &&
+            info.error.data &&
+            typeof info.error.data === "object" &&
+            "message" in info.error.data
+              ? String(info.error.data.message)
+              : info.error.name}
+          </div>
+        )}
+        {info.role === "assistant" && turnDurationLabel && (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
+            {turnDurationLabel}
+            {"providerID" in info && info.providerID && (
+              <ProviderIcon provider={info.providerID} className="size-3 shrink-0 opacity-60" />
+            )}
+            {"modelID" in info && info.modelID && (
+              <span className="opacity-60">{info.modelID}</span>
+            )}
+            {"mode" in info && info.mode && <span className="opacity-40">{info.mode}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -870,174 +695,149 @@ const MessageBubble = memo(function MessageBubble({
 // ---------------------------------------------------------------------------
 
 function TextPartView({ part, isUser }: { part: TextPart; isUser?: boolean }) {
-	if (!part.text) return null;
+  if (!part.text) return null;
 
-	if (isUser) {
-		return (
-			<div className="text-sm whitespace-pre-wrap break-words select-text">
-				{part.text}
-			</div>
-		);
-	}
+  if (isUser) {
+    return <div className="text-sm whitespace-pre-wrap break-words select-text">{part.text}</div>;
+  }
 
-	return (
-		<div>
-			<MarkdownRenderer content={part.text} />
-		</div>
-	);
+  return (
+    <div>
+      <MarkdownRenderer content={part.text} />
+    </div>
+  );
 }
 
 function FilePartView({ part }: { part: FilePart }) {
-	const { workspaceServerUrl } = useConnectionState();
-	const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
-	const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
+  const { workspaceServerUrl } = useConnectionState();
+  const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
+  const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
 
-	if (isImage) {
-		return (
-			<div>
-				<img
-					src={src}
-					alt={part.filename ?? "Image"}
-					className="max-h-64 max-w-full rounded-lg object-contain"
-				/>
-				{part.filename && (
-					<p className="text-xs text-muted-foreground mt-1 truncate">
-						{part.filename}
-					</p>
-				)}
-			</div>
-		);
-	}
+  if (isImage) {
+    return (
+      <div>
+        <img
+          src={src}
+          alt={part.filename ?? "Image"}
+          className="max-h-64 max-w-full rounded-lg object-contain"
+        />
+        {part.filename && (
+          <p className="text-xs text-muted-foreground mt-1 truncate">{part.filename}</p>
+        )}
+      </div>
+    );
+  }
 
-	return (
-		<div className="text-sm text-muted-foreground italic">
-			{part.filename ?? "File attachment"}
-		</div>
-	);
+  return (
+    <div className="text-sm text-muted-foreground italic">{part.filename ?? "File attachment"}</div>
+  );
 }
 
 const PartView = memo(function PartView({
-	part,
-	isUser,
-	lastReasoningPartId,
+  part,
+  isUser,
+  lastReasoningPartId,
 }: {
-	part: Part;
-	isUser?: boolean;
-	lastReasoningPartId?: string;
+  part: Part;
+  isUser?: boolean;
+  lastReasoningPartId?: string;
 }) {
-	switch (part.type) {
-		case "text":
-			return <TextPartView part={part} isUser={isUser} />;
-		case "file":
-			return <FilePartView part={part} />;
-		case "reasoning":
-			return (
-				<ReasoningPartView
-					part={part}
-					isLastReasoning={part.id === lastReasoningPartId}
-				/>
-			);
-		case "tool":
-			return <ToolPartView part={part} />;
-		case "step-start":
-		case "step-finish":
-		case "snapshot":
-		case "patch":
-		case "compaction":
-		case "retry":
-			return null;
-		default:
-			return null;
-	}
+  switch (part.type) {
+    case "text":
+      return <TextPartView part={part} isUser={isUser} />;
+    case "file":
+      return <FilePartView part={part} />;
+    case "reasoning":
+      return <ReasoningPartView part={part} isLastReasoning={part.id === lastReasoningPartId} />;
+    case "tool":
+      return <ToolPartView part={part} />;
+    case "step-start":
+    case "step-finish":
+    case "snapshot":
+    case "patch":
+    case "compaction":
+    case "retry":
+      return null;
+    default:
+      return null;
+  }
 });
 
 const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
 const TIMELINE_BUTTON_RESET =
-	"m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
+  "m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
 
 function ReasoningPartView({
-	part,
-	isLastReasoning,
+  part,
+  isLastReasoning,
 }: {
-	part: ReasoningPart;
-	isLastReasoning?: boolean;
+  part: ReasoningPart;
+  isLastReasoning?: boolean;
 }) {
-	const isThinking = !part.time.end;
-	const { isBusy } = useSessionState();
-	const [expanded, setExpanded] = useState(isThinking);
-	const contentRef = useRef<HTMLDivElement>(null);
-	const hasText = !!part.text?.trim();
-	// Start false so first visible render counts as "became visible".
-	// Needed when backend batches snapshots and component first mounts only
-	// after reasoning text already exists.
-	const prevHasTextRef = useRef(false);
+  const isThinking = !part.time.end;
+  const { isBusy } = useSessionState();
+  const [expanded, setExpanded] = useState(isThinking);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const hasText = !!part.text?.trim();
+  // Start false so first visible render counts as "became visible".
+  // Needed when backend batches snapshots and component first mounts only
+  // after reasoning text already exists.
+  const prevHasTextRef = useRef(false);
 
-	useEffect(() => {
-		const becameVisible = hasText && !prevHasTextRef.current;
-		if (isThinking || (becameVisible && isLastReasoning && isBusy)) {
-			setExpanded(true);
-		} else if (!isLastReasoning || !isBusy) {
-			setExpanded(false);
-		}
-		prevHasTextRef.current = hasText;
-	}, [hasText, isThinking, isLastReasoning, isBusy]);
+  useEffect(() => {
+    const becameVisible = hasText && !prevHasTextRef.current;
+    if (isThinking || (becameVisible && isLastReasoning && isBusy)) {
+      setExpanded(true);
+    } else if (!isLastReasoning || !isBusy) {
+      setExpanded(false);
+    }
+    prevHasTextRef.current = hasText;
+  }, [hasText, isThinking, isLastReasoning, isBusy]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
-	useEffect(() => {
-		if (isThinking && expanded && contentRef.current) {
-			contentRef.current.scrollTop = contentRef.current.scrollHeight;
-		}
-	}, [part.text, isThinking, expanded]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
+  useEffect(() => {
+    if (isThinking && expanded && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    }
+  }, [part.text, isThinking, expanded]);
 
-	if (!hasText) return null;
+  if (!hasText) return null;
 
-	const durationMs =
-		part.time.end && part.time.start ? part.time.end - part.time.start : null;
-	const durationLabel =
-		durationMs !== null
-			? hideZeroDurationLabel(formatDuration(durationMs))
-			: null;
+  const durationMs = part.time.end && part.time.start ? part.time.end - part.time.start : null;
+  const durationLabel =
+    durationMs !== null ? hideZeroDurationLabel(formatDuration(durationMs)) : null;
 
-	return (
-		<div className="text-xs font-mono text-muted-foreground overflow-hidden">
-			<details
-				open={expanded}
-				onToggle={(e) => setExpanded(e.currentTarget.open)}
-				className="m-0"
-			>
-				<summary
-					className={cn(
-						TIMELINE_ROW_BASE,
-						TIMELINE_BUTTON_RESET,
-						"list-none hover:text-foreground transition-colors cursor-pointer [&::-webkit-details-marker]:hidden",
-					)}
-				>
-					<span className="w-3 shrink-0 flex items-center justify-center">
-						<ChevronRight
-							className={cn(
-								"size-3 transition-transform duration-150",
-								expanded && "rotate-90",
-							)}
-						/>
-					</span>
-					<span className="font-medium">
-						{isThinking ? "Thinking..." : "Thinking"}
-					</span>
-					{durationLabel && <span className="opacity-60">{durationLabel}</span>}
-				</summary>
-			</details>
-			{expanded && (
-				<div
-					ref={contentRef}
-					className="pl-5 pt-1 text-xs text-muted-foreground leading-relaxed max-h-96 overflow-auto"
-				>
-					<div className="[&_.markdown-renderer]:text-xs [&_.markdown-renderer]:text-muted-foreground [&_.markdown-renderer_code]:text-[0.85em]">
-						<MarkdownRenderer content={part.text.trim()} />
-					</div>
-				</div>
-			)}
-		</div>
-	);
+  return (
+    <div className="text-xs font-mono text-muted-foreground overflow-hidden">
+      <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)} className="m-0">
+        <summary
+          className={cn(
+            TIMELINE_ROW_BASE,
+            TIMELINE_BUTTON_RESET,
+            "list-none hover:text-foreground transition-colors cursor-pointer [&::-webkit-details-marker]:hidden",
+          )}
+        >
+          <span className="w-3 shrink-0 flex items-center justify-center">
+            <ChevronRight
+              className={cn("size-3 transition-transform duration-150", expanded && "rotate-90")}
+            />
+          </span>
+          <span className="font-medium">{isThinking ? "Thinking..." : "Thinking"}</span>
+          {durationLabel && <span className="opacity-60">{durationLabel}</span>}
+        </summary>
+      </details>
+      {expanded && (
+        <div
+          ref={contentRef}
+          className="pl-5 pt-1 text-xs text-muted-foreground leading-relaxed max-h-96 overflow-auto"
+        >
+          <div className="[&_.markdown-renderer]:text-xs [&_.markdown-renderer]:text-muted-foreground [&_.markdown-renderer_code]:text-[0.85em]">
+            <MarkdownRenderer content={part.text.trim()} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,35 +846,32 @@ function ReasoningPartView({
 // ---------------------------------------------------------------------------
 
 function TodoListView({ todos }: { todos: TodoItem[] }) {
-	return (
-		<div className="border-t border-border/40 pt-1.5 mt-1.5 space-y-0.5">
-			{todos.map((todo, i) => {
-				const cfg = todoStatusConfig[todo.status] ?? {
-					icon: Circle,
-					color: "text-muted-foreground",
-				};
-				const Icon = cfg.icon;
-				const isCancelled = todo.status === "cancelled";
-				return (
-					<div
-						key={`todo-${todo.content}-${i}`}
-						className="flex items-center gap-1.5 min-h-5"
-					>
-						<Icon className={cn("size-3 shrink-0", cfg.color)} />
-						<span
-							className={cn(
-								"flex-1 text-[11px] leading-tight",
-								isCancelled && "line-through opacity-50",
-								todo.status === "completed" && "text-muted-foreground",
-							)}
-						>
-							{todo.content}
-						</span>
-					</div>
-				);
-			})}
-		</div>
-	);
+  return (
+    <div className="border-t border-border/40 pt-1.5 mt-1.5 space-y-0.5">
+      {todos.map((todo, i) => {
+        const cfg = todoStatusConfig[todo.status] ?? {
+          icon: Circle,
+          color: "text-muted-foreground",
+        };
+        const Icon = cfg.icon;
+        const isCancelled = todo.status === "cancelled";
+        return (
+          <div key={`todo-${todo.content}-${i}`} className="flex items-center gap-1.5 min-h-5">
+            <Icon className={cn("size-3 shrink-0", cfg.color)} />
+            <span
+              className={cn(
+                "flex-1 text-[11px] leading-tight",
+                isCancelled && "line-through opacity-50",
+                todo.status === "completed" && "text-muted-foreground",
+              )}
+            >
+              {todo.content}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1082,544 +879,315 @@ function TodoListView({ todos }: { todos: TodoItem[] }) {
 // ---------------------------------------------------------------------------
 
 interface TaskInfo {
-	description: string;
-	subagentType?: string;
-	/** Child session ID from metadata (for live step tracking). */
-	childSessionId?: string;
-	/** Subagent tool calls extracted from metadata (if available). */
-	toolCalls: Array<{ tool: string; title?: string; status?: string }>;
-	/** Final markdown output from the subagent. */
-	output: string;
+  description: string;
+  subagentType?: string;
+  /** Child session ID from metadata (for live step tracking). */
+  childSessionId?: string;
+  /** Subagent tool calls extracted from metadata (if available). */
+  toolCalls: Array<{ tool: string; title?: string; status?: string }>;
+  /** Final markdown output from the subagent. */
+  output: string;
 }
 
 interface ImageAttachmentInfo {
-	url: string;
-	src: string;
-	mime: string;
-	filename?: string;
+  url: string;
+  src: string;
+  mime: string;
+  filename?: string;
 }
 
 function extractImageAttachments(
-	state: ToolPart["state"],
-	serverUrl?: string | null,
+  state: ToolPart["state"],
+  serverUrl?: string | null,
 ): ImageAttachmentInfo[] {
-	if (state.status !== "completed") return [];
-	if (!Array.isArray(state.attachments) || state.attachments.length === 0) {
-		return [];
-	}
+  if (state.status !== "completed") return [];
+  if (!Array.isArray(state.attachments) || state.attachments.length === 0) {
+    return [];
+  }
 
-	return state.attachments
-		.filter((att) => {
-			const mime = (att.mime ?? "").toLowerCase();
-			return (
-				mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg"
-			);
-		})
-		.map((att) => ({
-			url: att.url,
-			src: resolveAttachmentImageSrc(att.url, serverUrl),
-			mime: att.mime,
-			filename: att.filename,
-		}));
+  return state.attachments
+    .filter((att) => {
+      const mime = (att.mime ?? "").toLowerCase();
+      return mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg";
+    })
+    .map((att) => ({
+      url: att.url,
+      src: resolveAttachmentImageSrc(att.url, serverUrl),
+      mime: att.mime,
+      filename: att.filename,
+    }));
 }
 
 function hideZeroDurationLabel(label: string | null): string | null {
-	if (!label) return null;
-	return label === "0.0s" ? null : label;
+  if (!label) return null;
+  return label === "0.0s" ? null : label;
 }
 
 function formatDuration(ms: number): string {
-	const safeMs = Math.max(0, Math.round(ms));
-	if (safeMs < 1000) return `${(safeMs / 1000).toFixed(1)}s`;
-	const totalSeconds = Math.round(safeMs / 1000);
-	if (totalSeconds < 60) {
-		if (totalSeconds < 10) return `${(safeMs / 1000).toFixed(1)}s`;
-		return `${totalSeconds}s`;
-	}
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	if (minutes < 60) {
-		return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-	}
-	const hours = Math.floor(minutes / 60);
-	const remMinutes = minutes % 60;
-	return `${hours}h ${String(remMinutes).padStart(2, "0")}m`;
+  const safeMs = Math.max(0, Math.round(ms));
+  if (safeMs < 1000) return `${(safeMs / 1000).toFixed(1)}s`;
+  const totalSeconds = Math.round(safeMs / 1000);
+  if (totalSeconds < 60) {
+    if (totalSeconds < 10) return `${(safeMs / 1000).toFixed(1)}s`;
+    return `${totalSeconds}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return `${hours}h ${String(remMinutes).padStart(2, "0")}m`;
 }
 
 function getTaskDurationLabel(state: ToolPart["state"]): string | null {
-	if (
-		(state.status === "completed" || state.status === "error") &&
-		"time" in state &&
-		state.time &&
-		typeof state.time.start === "number" &&
-		typeof state.time.end === "number"
-	) {
-		const duration = state.time.end - state.time.start;
-		if (Number.isFinite(duration) && duration >= 0) {
-			return formatDuration(duration);
-		}
-	}
-	return null;
+  if (
+    (state.status === "completed" || state.status === "error") &&
+    "time" in state &&
+    state.time &&
+    typeof state.time.start === "number" &&
+    typeof state.time.end === "number"
+  ) {
+    const duration = state.time.end - state.time.start;
+    if (Number.isFinite(duration) && duration >= 0) {
+      return formatDuration(duration);
+    }
+  }
+  return null;
 }
 
 /** Extract execution info from a task tool call (input for header, output/metadata for content). */
 function extractTaskInfo(state: ToolPart["state"]): TaskInfo | null {
-	const input = "input" in state ? state.input : null;
-	const description =
-		input && typeof input.description === "string"
-			? input.description.trim()
-			: "";
-	const subagentType =
-		input && typeof input.subagent_type === "string"
-			? input.subagent_type.trim()
-			: undefined;
+  const input = "input" in state ? state.input : null;
+  const description =
+    input && typeof input.description === "string" ? input.description.trim() : "";
+  const subagentType =
+    input && typeof input.subagent_type === "string" ? input.subagent_type.trim() : undefined;
 
-	// Extract child session ID and tool calls from metadata if present
-	let childSessionId: string | undefined;
-	const toolCalls: TaskInfo["toolCalls"] = [];
-	if (
-		"metadata" in state &&
-		state.metadata &&
-		typeof state.metadata === "object"
-	) {
-		const meta = state.metadata as Record<string, unknown>;
-		if (typeof meta.sessionId === "string") {
-			childSessionId = meta.sessionId;
-		}
-		// Try common metadata shapes: toolCalls, tools, calls
-		const rawCalls = meta.toolCalls ?? meta.tools ?? meta.calls;
-		if (Array.isArray(rawCalls)) {
-			for (const tc of rawCalls) {
-				if (
-					typeof tc === "object" &&
-					tc !== null &&
-					"tool" in tc &&
-					typeof tc.tool === "string"
-				) {
-					toolCalls.push({
-						tool: tc.tool,
-						title: typeof tc.title === "string" ? tc.title : undefined,
-						status: typeof tc.status === "string" ? tc.status : undefined,
-					});
-				}
-			}
-		}
-	}
+  // Extract child session ID and tool calls from metadata if present
+  let childSessionId: string | undefined;
+  const toolCalls: TaskInfo["toolCalls"] = [];
+  if ("metadata" in state && state.metadata && typeof state.metadata === "object") {
+    const meta = state.metadata as Record<string, unknown>;
+    if (typeof meta.sessionId === "string") {
+      childSessionId = meta.sessionId;
+    }
+    // Try common metadata shapes: toolCalls, tools, calls
+    const rawCalls = meta.toolCalls ?? meta.tools ?? meta.calls;
+    if (Array.isArray(rawCalls)) {
+      for (const tc of rawCalls) {
+        if (typeof tc === "object" && tc !== null && "tool" in tc && typeof tc.tool === "string") {
+          toolCalls.push({
+            tool: tc.tool,
+            title: typeof tc.title === "string" ? tc.title : undefined,
+            status: typeof tc.status === "string" ? tc.status : undefined,
+          });
+        }
+      }
+    }
+  }
 
-	// Extract output text
-	let output = "";
-	if ("output" in state && typeof state.output === "string") {
-		output = state.output.trim();
-	}
+  // Extract output text
+  let output = "";
+  if ("output" in state && typeof state.output === "string") {
+    output = state.output.trim();
+  }
 
-	if (!description && !output && toolCalls.length === 0) return null;
+  if (!description && !output && toolCalls.length === 0) return null;
 
-	return { description, subagentType, childSessionId, toolCalls, output };
+  return { description, subagentType, childSessionId, toolCalls, output };
 }
 
 // ---------------------------------------------------------------------------
 // Edit diff helper
 // ---------------------------------------------------------------------------
 
-type DiffLine = { type: "same" | "add" | "remove"; text: string };
-
-type DiffResult = {
-	added: number;
-	removed: number;
-	lines: DiffLine[];
-};
-
 type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
 
 interface ApplyPatchFileDiff {
-	id: string;
-	type: ApplyPatchChangeType;
-	path: string;
-	previousPath: string | null;
-	added: number;
-	removed: number;
-	lines: DiffLine[];
+  id: string;
+  type: ApplyPatchChangeType;
+  path: string;
+  previousPath: string | null;
+  added: number;
+  removed: number;
+  lines: DiffLine[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function toFiniteNumber(value: unknown): number | null {
-	return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function parseUnifiedDiff(diffText: string): DiffResult | null {
-	const lines = diffText.split("\n");
-	const diffLines: DiffLine[] = [];
-	let added = 0;
-	let removed = 0;
-
-	for (const line of lines) {
-		if (!line || line.startsWith("@@") || line.startsWith("diff --git ")) {
-			continue;
-		}
-		if (
-			line.startsWith("+++") ||
-			line.startsWith("---") ||
-			line.startsWith("index ")
-		) {
-			continue;
-		}
-		if (line === "\\ No newline at end of file") continue;
-		const prefix = line[0];
-		const text = line.slice(1);
-		if (prefix === "+") {
-			diffLines.push({ type: "add", text });
-			added++;
-			continue;
-		}
-		if (prefix === "-") {
-			diffLines.push({ type: "remove", text });
-			removed++;
-			continue;
-		}
-		if (prefix === " ") {
-			diffLines.push({ type: "same", text });
-		}
-	}
-
-	if (diffLines.length === 0) return null;
-	return { added, removed, lines: diffLines };
+function computeApplyPatchDiff(file: Record<string, unknown>): DiffResult | null {
+  const unifiedDiff = typeof file.diff === "string" ? file.diff : null;
+  return unifiedDiff ? parseUnifiedDiff(unifiedDiff) : null;
 }
 
-function computeApplyPatchDiff(
-	file: Record<string, unknown>,
-): DiffResult | null {
-	const unifiedDiff = typeof file.diff === "string" ? file.diff : null;
-	const before = typeof file.before === "string" ? file.before : null;
-	const after = typeof file.after === "string" ? file.after : null;
-	if (unifiedDiff) {
-		return parseUnifiedDiff(unifiedDiff);
-	}
-	if (before != null || after != null) {
-		return getCachedLineDiff(before ?? "", after ?? "");
-	}
-	return null;
-}
+function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
+  if (!("metadata" in state) || !isRecord(state.metadata)) return [];
+  const rawFiles = state.metadata.files;
+  if (!Array.isArray(rawFiles)) return [];
 
-function extractApplyPatchFiles(
-	state: ToolPart["state"],
-): ApplyPatchFileDiff[] {
-	if (!("metadata" in state) || !isRecord(state.metadata)) return [];
-	const rawFiles = state.metadata.files;
-	if (!Array.isArray(rawFiles)) return [];
+  return rawFiles
+    .map((entry, index) => {
+      if (!isRecord(entry)) return null;
+      const diff = computeApplyPatchDiff(entry);
+      const typeValue = typeof entry.type === "string" ? entry.type.toLowerCase() : "update";
+      const type: ApplyPatchChangeType =
+        typeValue === "add" || typeValue === "delete" || typeValue === "move"
+          ? typeValue
+          : "update";
+      const pathValue =
+        typeof entry.relativePath === "string"
+          ? entry.relativePath
+          : typeof entry.movePath === "string"
+            ? entry.movePath
+            : typeof entry.filePath === "string"
+              ? entry.filePath
+              : `patch-${index + 1}`;
+      const previousPath = typeof entry.filePath === "string" ? entry.filePath : null;
+      const added = toFiniteNumber(entry.additions) ?? diff?.added ?? 0;
+      const removed = toFiniteNumber(entry.deletions) ?? diff?.removed ?? 0;
 
-	return rawFiles
-		.map((entry, index) => {
-			if (!isRecord(entry)) return null;
-			const diff = computeApplyPatchDiff(entry);
-			const typeValue =
-				typeof entry.type === "string" ? entry.type.toLowerCase() : "update";
-			const type: ApplyPatchChangeType =
-				typeValue === "add" || typeValue === "delete" || typeValue === "move"
-					? typeValue
-					: "update";
-			const pathValue =
-				typeof entry.relativePath === "string"
-					? entry.relativePath
-					: typeof entry.movePath === "string"
-						? entry.movePath
-						: typeof entry.filePath === "string"
-							? entry.filePath
-							: `patch-${index + 1}`;
-			const previousPath =
-				typeof entry.filePath === "string" ? entry.filePath : null;
-			const added = toFiniteNumber(entry.additions) ?? diff?.added ?? 0;
-			const removed = toFiniteNumber(entry.deletions) ?? diff?.removed ?? 0;
-
-			return {
-				id: `${pathValue}-${index}`,
-				type,
-				path: pathValue,
-				previousPath,
-				added,
-				removed,
-				lines: diff?.lines ?? [],
-			};
-		})
-		.filter((file): file is ApplyPatchFileDiff => file !== null);
+      return {
+        id: `${pathValue}-${index}`,
+        type,
+        path: pathValue,
+        previousPath,
+        added,
+        removed,
+        lines: diff?.lines ?? [],
+      };
+    })
+    .filter((file): file is ApplyPatchFileDiff => file !== null);
 }
 
 function getApplyPatchActionLabel(file: ApplyPatchFileDiff): string {
-	if (file.type === "add") return "Created";
-	if (file.type === "delete") return "Deleted";
-	if (file.type === "move") return "Moved";
-	return "Patched";
+  if (file.type === "add") return "Created";
+  if (file.type === "delete") return "Deleted";
+  if (file.type === "move") return "Moved";
+  return "Patched";
 }
 
 function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string | null {
-	if (files.length === 0) return null;
-	if (files.length === 1) {
-		const file = files[0];
-		if (!file) return null;
-		return file.type === "move" &&
-			file.previousPath &&
-			file.previousPath !== file.path
-			? `${file.previousPath} -> ${file.path}`
-			: file.path;
-	}
-	return `${files.length} files`;
-}
-
-/** LRU cache for expensive LCS diff results (keyed by old+new string hash).
- *  Prevents recomputation when ToolPartView re-renders due to sibling updates. */
-const _diffCache = new Map<string, DiffResult>();
-const DIFF_CACHE_MAX = 64;
-
-function getCachedLineDiff(oldStr: string, newStr: string): DiffResult {
-	const key = `${oldStr.length}:${newStr.length}:${oldStr.slice(0, 64)}:${newStr.slice(0, 64)}`;
-	const cached = _diffCache.get(key);
-	if (cached) return cached;
-	const result = computeLineDiff(oldStr, newStr);
-	if (_diffCache.size >= DIFF_CACHE_MAX) {
-		const firstKey = _diffCache.keys().next().value;
-		if (firstKey !== undefined) _diffCache.delete(firstKey);
-	}
-	_diffCache.set(key, result);
-	return result;
-}
-
-/** Compute a simple line-level diff between two strings using LCS. */
-function computeLineDiff(oldStr: string, newStr: string): DiffResult {
-	const oldLines = oldStr.split("\n");
-	const newLines = newStr.split("\n");
-
-	// LCS table for line-level diff
-	const m = oldLines.length;
-	const n = newLines.length;
-	const dp: number[][] = Array.from({ length: m + 1 }, () =>
-		Array.from<number>({ length: n + 1 }).fill(0),
-	);
-	for (let i = 1; i <= m; i++) {
-		for (let j = 1; j <= n; j++) {
-			const row = dp[i];
-			const prevRow = dp[i - 1];
-			if (row && prevRow) {
-				row[j] =
-					oldLines[i - 1] === newLines[j - 1]
-						? (prevRow[j - 1] ?? 0) + 1
-						: Math.max(prevRow[j] ?? 0, row[j - 1] ?? 0);
-			}
-		}
-	}
-
-	// Backtrack to produce diff lines
-	const lines: DiffLine[] = [];
-	let i = m;
-	let j = n;
-	while (i > 0 || j > 0) {
-		if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-			lines.push({ type: "same", text: oldLines[i - 1] ?? "" });
-			i--;
-			j--;
-		} else if (
-			j > 0 &&
-			(i === 0 || (dp[i]?.[j - 1] ?? 0) >= (dp[i - 1]?.[j] ?? 0))
-		) {
-			lines.push({ type: "add", text: newLines[j - 1] ?? "" });
-			j--;
-		} else {
-			lines.push({ type: "remove", text: oldLines[i - 1] ?? "" });
-			i--;
-		}
-	}
-	lines.reverse();
-
-	let added = 0;
-	let removed = 0;
-	for (const l of lines) {
-		if (l.type === "add") added++;
-		if (l.type === "remove") removed++;
-	}
-
-	return { added, removed, lines };
-}
-
-/** Compute added/removed line counts from Pi/Codex/Claude edit tool inputs. */
-function computeEditDiff(input: Record<string, unknown>): DiffResult | null {
-	const oldStr =
-		typeof input.oldString === "string"
-			? input.oldString
-			: typeof input.oldText === "string"
-				? input.oldText
-				: null;
-	const newStr =
-		typeof input.newString === "string"
-			? input.newString
-			: typeof input.newText === "string"
-				? input.newText
-				: null;
-	if (oldStr != null && newStr != null) {
-		return getCachedLineDiff(oldStr, newStr);
-	}
-
-	const edits = input.edits;
-	if (!Array.isArray(edits) || edits.length === 0) return null;
-
-	const editDiffs = edits
-		.map((entry) => {
-			if (!entry || typeof entry !== "object") return null;
-			const oldText =
-				typeof (entry as Record<string, unknown>).oldText === "string"
-					? ((entry as Record<string, unknown>).oldText as string)
-					: null;
-			const newText =
-				typeof (entry as Record<string, unknown>).newText === "string"
-					? ((entry as Record<string, unknown>).newText as string)
-					: null;
-			if (oldText == null || newText == null) return null;
-			return getCachedLineDiff(oldText, newText);
-		})
-		.filter((diff): diff is DiffResult => diff !== null);
-
-	if (editDiffs.length === 0) return null;
-	if (editDiffs.length === 1) return editDiffs[0] ?? null;
-
-	return {
-		added: editDiffs.reduce((sum, diff) => sum + diff.added, 0),
-		removed: editDiffs.reduce((sum, diff) => sum + diff.removed, 0),
-		lines: editDiffs.flatMap((diff, index) => [
-			...(index > 0 ? [{ type: "same" as const, text: "" }] : []),
-			...diff.lines,
-		]),
-	};
-}
-
-/** Compute diff for write tools (entire file is new content). */
-function computeWriteDiff(input: Record<string, unknown>): DiffResult | null {
-	const content = input.content;
-	if (typeof content !== "string") return null;
-	const splitLines = content.split("\n");
-	return {
-		added: splitLines.length,
-		removed: 0,
-		lines: splitLines.map((t) => ({ type: "add" as const, text: t })),
-	};
+  if (files.length === 0) return null;
+  if (files.length === 1) {
+    const file = files[0];
+    if (!file) return null;
+    return file.type === "move" && file.previousPath && file.previousPath !== file.path
+      ? `${file.previousPath} -> ${file.path}`
+      : file.path;
+  }
+  return `${files.length} files`;
 }
 
 /** Inline diff viewer component. */
 function DiffView({ lines }: { lines: DiffLine[] }) {
-	// Collapse runs of unchanged lines in the middle, keep 2 context lines around changes
-	const CONTEXT = 2;
-	const changeIndices = new Set<number>();
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i]?.type !== "same") {
-			for (
-				let c = Math.max(0, i - CONTEXT);
-				c <= Math.min(lines.length - 1, i + CONTEXT);
-				c++
-			) {
-				changeIndices.add(c);
-			}
-		}
-	}
+  // Collapse runs of unchanged lines in the middle, keep 2 context lines around changes
+  const CONTEXT = 2;
+  const changeIndices = new Set<number>();
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]?.type !== "same") {
+      for (let c = Math.max(0, i - CONTEXT); c <= Math.min(lines.length - 1, i + CONTEXT); c++) {
+        changeIndices.add(c);
+      }
+    }
+  }
 
-	const elements: React.ReactNode[] = [];
-	let skipping = false;
-	for (let i = 0; i < lines.length; i++) {
-		if (!changeIndices.has(i)) {
-			if (!skipping) {
-				skipping = true;
-				elements.push(
-					<div
-						key={`skip-${i}`}
-						className="text-muted-foreground/40 px-2 select-none"
-					>
-						...
-					</div>,
-				);
-			}
-			continue;
-		}
-		skipping = false;
-		const line = lines[i];
-		if (!line) continue;
-		const bg =
-			line.type === "add"
-				? "bg-emerald-500/10 text-emerald-400"
-				: line.type === "remove"
-					? "bg-red-500/10 text-red-400"
-					: "text-muted-foreground/60";
-		const prefix =
-			line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
-		elements.push(
-			<div key={i} className={cn("px-2 whitespace-pre-wrap break-all", bg)}>
-				<span className="select-none inline-block w-4 shrink-0 opacity-60">
-					{prefix}
-				</span>
-				{line.text || "\u00A0"}
-			</div>,
-		);
-	}
+  const elements: React.ReactNode[] = [];
+  let skipping = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (!changeIndices.has(i)) {
+      if (!skipping) {
+        skipping = true;
+        elements.push(
+          <div key={`skip-${i}`} className="text-muted-foreground/40 px-2 select-none">
+            ...
+          </div>,
+        );
+      }
+      continue;
+    }
+    skipping = false;
+    const line = lines[i];
+    if (!line) continue;
+    const bg =
+      line.type === "add"
+        ? "bg-emerald-500/10 text-emerald-400"
+        : line.type === "remove"
+          ? "bg-red-500/10 text-red-400"
+          : "text-muted-foreground/60";
+    const prefix = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
+    elements.push(
+      <div key={i} className={cn("px-2 whitespace-pre-wrap break-all", bg)}>
+        <span className="select-none inline-block w-4 shrink-0 opacity-60">{prefix}</span>
+        {line.text || "\u00A0"}
+      </div>,
+    );
+  }
 
-	return (
-		<div className="mt-1 ml-5 rounded border border-border/40 bg-background/60 overflow-auto max-h-64 text-[11px] font-mono leading-relaxed">
-			{elements}
-		</div>
-	);
+  return (
+    <div className="mt-1 ml-5 rounded border border-border/40 bg-background/60 overflow-auto max-h-64 text-[11px] font-mono leading-relaxed">
+      {elements}
+    </div>
+  );
 }
 
 function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) {
-	return (
-		<div className="mt-1 ml-5 space-y-1.5">
-			{files.map((file) => {
-				const hasDiff = file.lines.length > 0;
-				const actionLabel = getApplyPatchActionLabel(file);
-				const pathLabel =
-					file.type === "move" &&
-					file.previousPath &&
-					file.previousPath !== file.path
-						? `${file.previousPath} -> ${file.path}`
-						: file.path;
-				return (
-					<details
-						key={file.id}
-						open={files.length === 1}
-						className="rounded border border-border/40 bg-background/40 overflow-hidden"
-					>
-						<summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 hover:bg-accent/30 transition-colors [&::-webkit-details-marker]:hidden">
-							<ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-90" />
-							<span
-								className={cn(
-									"shrink-0 text-[11px] font-medium",
-									file.type === "add"
-										? "text-emerald-500"
-										: file.type === "delete"
-											? "text-red-400"
-											: "text-foreground/70",
-								)}
-							>
-								{actionLabel}
-							</span>
-							<span
-								className="truncate text-[11px] text-muted-foreground"
-								title={pathLabel}
-							>
-								{pathLabel}
-							</span>
-							<span className="ml-auto flex items-center gap-1 whitespace-nowrap text-[11px]">
-								<span className="text-emerald-500">+{file.added}</span>
-								<span className="text-red-400">-{file.removed}</span>
-							</span>
-						</summary>
-						{hasDiff ? (
-							<DiffView lines={file.lines} />
-						) : (
-							<div className="px-2 pb-2 text-[11px] text-muted-foreground">
-								No line diff available.
-							</div>
-						)}
-					</details>
-				);
-			})}
-		</div>
-	);
+  return (
+    <div className="mt-1 ml-5 space-y-1.5">
+      {files.map((file) => {
+        const hasDiff = file.lines.length > 0;
+        const actionLabel = getApplyPatchActionLabel(file);
+        const pathLabel =
+          file.type === "move" && file.previousPath && file.previousPath !== file.path
+            ? `${file.previousPath} -> ${file.path}`
+            : file.path;
+        return (
+          <details
+            key={file.id}
+            open={files.length === 1}
+            className="rounded border border-border/40 bg-background/40 overflow-hidden"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 hover:bg-accent/30 transition-colors [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-90" />
+              <span
+                className={cn(
+                  "shrink-0 text-[11px] font-medium",
+                  file.type === "add"
+                    ? "text-emerald-500"
+                    : file.type === "delete"
+                      ? "text-red-400"
+                      : "text-foreground/70",
+                )}
+              >
+                {actionLabel}
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground" title={pathLabel}>
+                {pathLabel}
+              </span>
+              <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-[11px]">
+                <span className="text-emerald-500">+{file.added}</span>
+                <span className="text-red-400">-{file.removed}</span>
+              </span>
+            </summary>
+            {hasDiff ? (
+              <DiffView lines={file.lines} />
+            ) : (
+              <div className="px-2 pb-2 text-[11px] text-muted-foreground">
+                No line diff available.
+              </div>
+            )}
+          </details>
+        );
+      })}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1628,629 +1196,478 @@ function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) {
 
 /** Get a compact display label and icon for a tool part from a child session. */
 function getToolDisplayInfo(
-	tool: string,
-	toolState: ToolPart["state"],
+  tool: string,
+  toolState: ToolPart["state"],
 ): { icon: typeof Wrench; label: string; subtitle: string } {
-	const input =
-		"input" in toolState ? (toolState.input as Record<string, unknown>) : null;
-	const title =
-		"title" in toolState && typeof toolState.title === "string"
-			? toolState.title
-			: null;
-	const running =
-		toolState.status === "running" || toolState.status === "pending";
+  const input = "input" in toolState ? (toolState.input as Record<string, unknown>) : null;
+  const title =
+    "title" in toolState && typeof toolState.title === "string" ? toolState.title : null;
+  const running = toolState.status === "running" || toolState.status === "pending";
 
-	const lower = tool.toLowerCase();
+  const lower = tool.toLowerCase();
 
-	if (lower === "bash" || lower === "shell" || lower === "execute_command") {
-		const cmd = input?.command;
-		const cmdStr = typeof cmd === "string" ? cmd : (title ?? "");
-		return {
-			icon: SquareTerminal,
-			label: running ? "Running" : "Ran",
-			subtitle: cmdStr,
-		};
-	}
-	if (lower === "read" || lower === "mcp_read") {
-		const path = input?.filePath ?? input?.path;
-		return {
-			icon: FileCode,
-			label: running ? "Reading" : "Read",
-			subtitle: typeof path === "string" ? path : (title ?? ""),
-		};
-	}
-	if (lower === "edit") {
-		const path = input?.filePath ?? input?.path;
-		return {
-			icon: FileEdit,
-			label: running ? "Editing" : "Edited",
-			subtitle: typeof path === "string" ? path : (title ?? ""),
-		};
-	}
-	if (lower === "apply_patch") {
-		return {
-			icon: FileEdit,
-			label: running ? "Patching" : "Patched",
-			subtitle: title ?? "",
-		};
-	}
-	if (lower === "write") {
-		const path = input?.filePath ?? input?.path;
-		return {
-			icon: FilePlus,
-			label: running ? "Writing" : "Wrote",
-			subtitle: typeof path === "string" ? path : (title ?? ""),
-		};
-	}
-	if (lower === "grep" || lower === "mcp_grep") {
-		const pattern = input?.pattern;
-		return {
-			icon: Search,
-			label: running ? "Searching" : "Searched",
-			subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
-		};
-	}
-	if (lower === "glob" || lower === "mcp_glob") {
-		const pattern = input?.pattern;
-		return {
-			icon: Search,
-			label: running ? "Globbing" : "Globbed",
-			subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
-		};
-	}
-	if (lower === "task") {
-		const desc = input?.description;
-		const subagent = input?.subagent_type ?? input?.subagentType;
-		const label =
-			typeof subagent === "string"
-				? subagent.charAt(0).toUpperCase() + subagent.slice(1)
-				: running
-					? "Running"
-					: "Ran";
-		return {
-			icon: Layers,
-			label,
-			subtitle: typeof desc === "string" ? `(${desc})` : (title ?? ""),
-		};
-	}
-	if (lower === "todowrite") {
-		const todoCount = Array.isArray(input?.todos) ? input.todos.length : 0;
-		return {
-			icon: CircleCheck,
-			label: running ? "Writing todos" : `Wrote ${todoCount} todos`,
-			subtitle: "",
-		};
-	}
-	if (lower === "question" || lower === "mcp_question") {
-		const qCount = Array.isArray(input?.questions) ? input.questions.length : 0;
-		return {
-			icon: MessageCircleQuestion,
-			label: running
-				? "Asking"
-				: `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`,
-			subtitle: "",
-		};
-	}
-	// Fallback for any other tool
-	return {
-		icon: Wrench,
-		label: tool,
-		subtitle: title ?? "",
-	};
-}
-
-/**
- * Renders all parts (tool + text) from a child (subagent) session in
- * chronological order, so text streams inline between tool calls.
- */
-function ChildSessionParts({
-	childSessionId,
-	fallbackOutput,
-	isRunning: _isRunning,
-}: {
-	childSessionId: string;
-	fallbackOutput: string;
-	isRunning: boolean;
-}) {
-	const { childSessions } = useMessages();
-	const parts = useMemo(
-		() => getChildSessionParts(childSessions, childSessionId),
-		[childSessions, childSessionId],
-	);
-
-	const hasText = parts.some((p) => p.type === "text");
-
-	return (
-		<>
-			{parts.map((part) => {
-				if (part.type === "tool") {
-					const toolPart = part as ToolPart;
-					const info = getToolDisplayInfo(toolPart.tool, toolPart.state);
-					const Icon = info.icon;
-					const running =
-						toolPart.state.status === "running" ||
-						toolPart.state.status === "pending";
-					const error = toolPart.state.status === "error";
-					const completed = toolPart.state.status === "completed";
-					return (
-						<div
-							key={part.id}
-							className="flex items-center gap-1.5 text-xs font-mono min-h-5"
-						>
-							<span className="w-3 shrink-0 flex items-center justify-center">
-								{running ? (
-									<Spinner className="size-2.5" />
-								) : completed ? (
-									<Check className="size-2.5 text-emerald-500" />
-								) : error ? (
-									<X className="size-2.5 text-destructive" />
-								) : (
-									<Icon className="size-2.5 text-muted-foreground" />
-								)}
-							</span>
-							<span className="text-muted-foreground shrink-0">
-								{info.label}
-								{running && !info.subtitle ? "..." : ""}
-							</span>
-							{info.subtitle && (
-								<span
-									className="text-muted-foreground/60 truncate"
-									title={info.subtitle}
-								>
-									{info.subtitle}
-									{running ? "..." : ""}
-								</span>
-							)}
-						</div>
-					);
-				}
-				if (part.type === "text") {
-					const text = (part as TextPart).text;
-					if (!text) return null;
-					const terminalLike = looksLikeTerminalOutput(text);
-					return (
-						<div key={part.id} className="text-xs">
-							{terminalLike ? (
-								<TerminalOutput content={text} />
-							) : (
-								<>
-									<MarkdownRenderer content={text} />
-								</>
-							)}
-						</div>
-					);
-				}
-				return null;
-			})}
-			{/* Fallback: show task output when no live text parts are available */}
-			{!hasText && fallbackOutput && (
-				<div className="text-xs">
-					{looksLikeTerminalOutput(fallbackOutput) ? (
-						<TerminalOutput content={fallbackOutput} />
-					) : (
-						<MarkdownRenderer content={fallbackOutput} />
-					)}
-				</div>
-			)}
-		</>
-	);
+  if (lower === "bash" || lower === "shell" || lower === "execute_command") {
+    const cmd = input?.command;
+    const cmdStr = typeof cmd === "string" ? cmd : (title ?? "");
+    return {
+      icon: SquareTerminal,
+      label: running ? "Running" : "Ran",
+      subtitle: cmdStr,
+    };
+  }
+  if (lower === "read" || lower === "mcp_read") {
+    const path = input?.filePath ?? input?.path;
+    return {
+      icon: FileCode,
+      label: running ? "Reading" : "Read",
+      subtitle: typeof path === "string" ? path : (title ?? ""),
+    };
+  }
+  if (lower === "edit") {
+    const path = input?.filePath ?? input?.path;
+    return {
+      icon: FileEdit,
+      label: running ? "Editing" : "Edited",
+      subtitle: typeof path === "string" ? path : (title ?? ""),
+    };
+  }
+  if (lower === "apply_patch") {
+    return {
+      icon: FileEdit,
+      label: running ? "Patching" : "Patched",
+      subtitle: title ?? "",
+    };
+  }
+  if (lower === "write") {
+    const path = input?.filePath ?? input?.path;
+    return {
+      icon: FilePlus,
+      label: running ? "Writing" : "Wrote",
+      subtitle: typeof path === "string" ? path : (title ?? ""),
+    };
+  }
+  if (lower === "grep" || lower === "mcp_grep") {
+    const pattern = input?.pattern;
+    return {
+      icon: Search,
+      label: running ? "Searching" : "Searched",
+      subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
+    };
+  }
+  if (lower === "glob" || lower === "mcp_glob") {
+    const pattern = input?.pattern;
+    return {
+      icon: Search,
+      label: running ? "Globbing" : "Globbed",
+      subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
+    };
+  }
+  if (lower === "task") {
+    const desc = input?.description;
+    const subagent = input?.subagent_type ?? input?.subagentType;
+    const label =
+      typeof subagent === "string"
+        ? subagent.charAt(0).toUpperCase() + subagent.slice(1)
+        : running
+          ? "Running"
+          : "Ran";
+    return {
+      icon: Layers,
+      label,
+      subtitle: typeof desc === "string" ? `(${desc})` : (title ?? ""),
+    };
+  }
+  if (lower === "todowrite") {
+    const todoCount = Array.isArray(input?.todos) ? input.todos.length : 0;
+    return {
+      icon: CircleCheck,
+      label: running ? "Writing todos" : `Wrote ${todoCount} todos`,
+      subtitle: "",
+    };
+  }
+  if (lower === "question" || lower === "mcp_question") {
+    const qCount = Array.isArray(input?.questions) ? input.questions.length : 0;
+    return {
+      icon: MessageCircleQuestion,
+      label: running ? "Asking" : `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`,
+      subtitle: "",
+    };
+  }
+  // Fallback for any other tool
+  return {
+    icon: Wrench,
+    label: tool,
+    subtitle: title ?? "",
+  };
 }
 
 function ToolPartView({ part }: { part: ToolPart }) {
-	const { workspaceServerUrl } = useConnectionState();
-	const { state } = part;
-	const [expanded, setExpanded] = useState(false);
-	const autoExpandedRef = useRef(false);
-	const bashAutoExpandedRef = useRef(false);
-	const toolLower = part.tool.toLowerCase();
-	const isBash =
-		toolLower === "bash" ||
-		toolLower === "shell" ||
-		toolLower === "execute_command";
-	const isGlob = toolLower === "glob";
-	const isEdit = toolLower === "edit";
-	const isApplyPatch = toolLower === "apply_patch";
-	const isWrite = toolLower === "write";
-	const isTodoWrite = toolLower === "todowrite";
-	const isTask = toolLower === "task";
-	const isGrep = toolLower === "grep" || toolLower === "mcp_grep";
-	const isRead = toolLower === "read" || toolLower === "mcp_read";
-	const isQuestion = toolLower === "question" || toolLower === "mcp_question";
-	const diff =
-		isEdit && "input" in state
-			? computeEditDiff(state.input)
-			: isApplyPatch
-				? null
-				: isWrite && "input" in state
-					? computeWriteDiff(state.input)
-					: null;
-	const applyPatchFiles = isApplyPatch ? extractApplyPatchFiles(state) : [];
-	const applyPatchSummary =
-		applyPatchFiles.length > 0
-			? applyPatchFiles.reduce(
-					(acc, file) => ({
-						added: acc.added + file.added,
-						removed: acc.removed + file.removed,
-						lines: acc.lines,
-					}),
-					{ added: 0, removed: 0, lines: [] as DiffLine[] },
-				)
-			: null;
-	const todos = isTodoWrite ? extractTodos(state) : null;
-	const taskInfo = isTask ? extractTaskInfo(state) : null;
-	const taskDurationLabel = isTask ? getTaskDurationLabel(state) : null;
-	const imageAttachments = extractImageAttachments(state, workspaceServerUrl);
+  const { workspaceServerUrl } = useConnectionState();
+  const { state } = part;
+  const [expanded, setExpanded] = useState(false);
+  const autoExpandedRef = useRef(false);
+  const bashAutoExpandedRef = useRef(false);
+  const toolLower = part.tool.toLowerCase();
+  const isBash = toolLower === "bash" || toolLower === "shell" || toolLower === "execute_command";
+  const isGlob = toolLower === "glob";
+  const isEdit = toolLower === "edit";
+  const isApplyPatch = toolLower === "apply_patch";
+  const isWrite = toolLower === "write";
+  const isTodoWrite = toolLower === "todowrite";
+  const isTask = toolLower === "task";
+  const isGrep = toolLower === "grep" || toolLower === "mcp_grep";
+  const isRead = toolLower === "read" || toolLower === "mcp_read";
+  const isQuestion = toolLower === "question" || toolLower === "mcp_question";
+  const diff = null as DiffResult | null;
+  const applyPatchFiles = isApplyPatch ? extractApplyPatchFiles(state) : [];
+  const applyPatchSummary =
+    applyPatchFiles.length > 0
+      ? applyPatchFiles.reduce(
+          (acc, file) => ({
+            added: acc.added + file.added,
+            removed: acc.removed + file.removed,
+            lines: acc.lines,
+          }),
+          { added: 0, removed: 0, lines: [] as DiffLine[] },
+        )
+      : null;
+  const todos = isTodoWrite ? extractTodos(state) : null;
+  const taskInfo = isTask ? extractTaskInfo(state) : null;
+  const taskDurationLabel = isTask ? getTaskDurationLabel(state) : null;
+  const imageAttachments = extractImageAttachments(state, workspaceServerUrl);
 
-	const bashCommand =
-		isBash && "input" in state
-			? typeof state.input.command === "string"
-				? state.input.command
-				: null
-			: null;
-	const globPattern =
-		isGlob && "input" in state
-			? typeof state.input.pattern === "string"
-				? state.input.pattern
-				: null
-			: null;
-	const grepPattern =
-		isGrep && "input" in state
-			? typeof state.input.pattern === "string"
-				? state.input.pattern
-				: null
-			: null;
-	const filePath =
-		(isRead || isEdit || isWrite) && "input" in state
-			? typeof state.input.filePath === "string"
-				? state.input.filePath
-				: null
-			: null;
-	const isRunning = state.status === "running" || state.status === "pending";
-	const taskContentRef = useRef<HTMLDivElement>(null);
-	const toolOutputRef = useRef<HTMLPreElement>(null);
+  const bashCommand =
+    isBash && "input" in state
+      ? typeof state.input.command === "string"
+        ? state.input.command
+        : null
+      : null;
+  const globPattern =
+    isGlob && "input" in state
+      ? typeof state.input.pattern === "string"
+        ? state.input.pattern
+        : null
+      : null;
+  const grepPattern =
+    isGrep && "input" in state
+      ? typeof state.input.pattern === "string"
+        ? state.input.pattern
+        : null
+      : null;
+  const filePath =
+    (isRead || isEdit || isWrite) && "input" in state
+      ? typeof state.input.filePath === "string"
+        ? state.input.filePath
+        : null
+      : null;
+  const isRunning = state.status === "running" || state.status === "pending";
+  const taskContentRef = useRef<HTMLDivElement>(null);
+  const toolOutputRef = useRef<HTMLPreElement>(null);
 
-	// Auto-expand running tasks with a child session ID so steps are visible,
-	// and auto-collapse when the task finishes
-	useEffect(() => {
-		if (!isTask) return;
-		if (isRunning && taskInfo?.childSessionId && !autoExpandedRef.current) {
-			setExpanded(true);
-			autoExpandedRef.current = true;
-		} else if (!isRunning && autoExpandedRef.current) {
-			setExpanded(false);
-		}
-	}, [isTask, taskInfo?.childSessionId, isRunning]);
+  // Auto-expand running tasks with a child session ID so steps are visible,
+  // and auto-collapse when the task finishes
+  useEffect(() => {
+    if (!isTask) return;
+    if (isRunning && taskInfo?.childSessionId && !autoExpandedRef.current) {
+      setExpanded(true);
+      autoExpandedRef.current = true;
+    } else if (!isRunning && autoExpandedRef.current) {
+      setExpanded(false);
+    }
+  }, [isTask, taskInfo?.childSessionId, isRunning]);
 
-	// Auto-scroll task content to bottom as new tool calls stream in
-	// biome-ignore lint/correctness/useExhaustiveDependencies: taskInfo triggers scroll on new streamed content
-	useEffect(() => {
-		if (isTask && isRunning && expanded && taskContentRef.current) {
-			taskContentRef.current.scrollTop = taskContentRef.current.scrollHeight;
-		}
-	}, [taskInfo, isTask, isRunning, expanded]);
+  // Auto-scroll task content to bottom as new tool calls stream in
+  // biome-ignore lint/correctness/useExhaustiveDependencies: taskInfo triggers scroll on new streamed content
+  useEffect(() => {
+    if (isTask && isRunning && expanded && taskContentRef.current) {
+      taskContentRef.current.scrollTop = taskContentRef.current.scrollHeight;
+    }
+  }, [taskInfo, isTask, isRunning, expanded]);
 
-	const rawOutputText =
-		"output" in state && typeof state.output === "string" ? state.output : null;
-	const outputText = rawOutputText?.trim() || null;
-	const bashMetadataOutput =
-		isBash &&
-		"metadata" in state &&
-		state.metadata &&
-		typeof state.metadata === "object" &&
-		typeof (state.metadata as Record<string, unknown>).output === "string"
-			? ((state.metadata as Record<string, unknown>).output as string)
-			: null;
-	const bashOutputText = isBash
-		? isRunning
-			? (bashMetadataOutput ?? rawOutputText)
-			: (rawOutputText ?? bashMetadataOutput)
-		: outputText;
+  const rawOutputText = "output" in state && typeof state.output === "string" ? state.output : null;
+  const outputText = rawOutputText?.trim() || null;
+  const bashMetadataOutput =
+    isBash &&
+    "metadata" in state &&
+    state.metadata &&
+    typeof state.metadata === "object" &&
+    typeof (state.metadata as Record<string, unknown>).output === "string"
+      ? ((state.metadata as Record<string, unknown>).output as string)
+      : null;
+  const bashOutputText = isBash
+    ? isRunning
+      ? (bashMetadataOutput ?? rawOutputText)
+      : (rawOutputText ?? bashMetadataOutput)
+    : outputText;
 
-	useEffect(() => {
-		if (
-			!isBash ||
-			!isRunning ||
-			!bashOutputText ||
-			bashAutoExpandedRef.current
-		) {
-			return;
-		}
-		setExpanded(true);
-		bashAutoExpandedRef.current = true;
-	}, [isBash, isRunning, bashOutputText]);
+  useEffect(() => {
+    if (!isBash || !isRunning || !bashOutputText || bashAutoExpandedRef.current) {
+      return;
+    }
+    setExpanded(true);
+    bashAutoExpandedRef.current = true;
+  }, [isBash, isRunning, bashOutputText]);
 
-	useEffect(() => {
-		if (!isBash || !expanded || !bashOutputText || !toolOutputRef.current)
-			return;
-		toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
-	}, [isBash, expanded, bashOutputText]);
+  useEffect(() => {
+    if (!isBash || !expanded || !bashOutputText || !toolOutputRef.current) return;
+    toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
+  }, [isBash, expanded, bashOutputText]);
 
-	const hasDynamicLabel =
-		isRead ||
-		isEdit ||
-		isApplyPatch ||
-		isBash ||
-		isWrite ||
-		isGrep ||
-		isGlob ||
-		isTask ||
-		isTodoWrite ||
-		isQuestion;
-	const displayInfo = getToolDisplayInfo(part.tool, part.state);
-	const toolVerb = displayInfo.label;
-	// Inline context label (filename, command, pattern, description, or title)
-	const taskDescription =
-		isTask && taskInfo?.description ? `(${taskInfo.description})` : null;
-	const applyPatchLabel = isApplyPatch
-		? getApplyPatchContextLabel(applyPatchFiles)
-		: null;
-	const contextLabel = filePath
-		? filePath
-		: applyPatchLabel
-			? applyPatchLabel
-			: bashCommand
-				? bashCommand
-				: grepPattern
-					? grepPattern
-					: globPattern
-						? globPattern
-						: taskDescription
-							? taskDescription
-							: state.status === "completed" &&
-									state.title &&
-									!isTodoWrite &&
-									!isTask &&
-									!isQuestion
-								? state.title
-								: null;
+  const hasDynamicLabel =
+    isRead ||
+    isEdit ||
+    isApplyPatch ||
+    isBash ||
+    isWrite ||
+    isGrep ||
+    isGlob ||
+    isTask ||
+    isTodoWrite ||
+    isQuestion;
+  const displayInfo = getToolDisplayInfo(part.tool, part.state);
+  const toolVerb = displayInfo.label;
+  // Inline context label (filename, command, pattern, description, or title)
+  const taskDescription = isTask && taskInfo?.description ? `(${taskInfo.description})` : null;
+  const applyPatchLabel = isApplyPatch ? getApplyPatchContextLabel(applyPatchFiles) : null;
+  const contextLabel = filePath
+    ? filePath
+    : applyPatchLabel
+      ? applyPatchLabel
+      : bashCommand
+        ? bashCommand
+        : grepPattern
+          ? grepPattern
+          : globPattern
+            ? globPattern
+            : taskDescription
+              ? taskDescription
+              : state.status === "completed" &&
+                  state.title &&
+                  !isTodoWrite &&
+                  !isTask &&
+                  !isQuestion
+                ? state.title
+                : null;
 
-	const grepMatchCount =
-		isGrep && outputText
-			? (() => {
-					const m = outputText?.match(/^Found (\d+) match/);
-					return m?.[1] ? Number.parseInt(m[1], 10) : null;
-				})()
-			: null;
+  const grepMatchCount =
+    isGrep && outputText
+      ? (() => {
+          const m = outputText?.match(/^Found (\d+) match/);
+          return m?.[1] ? Number.parseInt(m[1], 10) : null;
+        })()
+      : null;
 
-	const diffSummary = diff ?? applyPatchSummary;
-	const hasApplyPatchView = applyPatchFiles.length > 0;
-	const hasBashOutput = isBash && !!bashOutputText?.trim();
-	const hasTextOutput = hasBashOutput || !!outputText;
-	// Tool is expandable if it has output text or has a diff
-	const hasDiffView = diff && diff.lines.length > 0;
-	const isExpandable =
-		((isBash || isGrep || (isApplyPatch && !hasApplyPatchView)) &&
-			hasTextOutput) ||
-		hasDiffView ||
-		hasApplyPatchView ||
-		(isTask && taskInfo);
+  const diffSummary = diff ?? applyPatchSummary;
+  const hasApplyPatchView = applyPatchFiles.length > 0;
+  const hasBashOutput = isBash && !!bashOutputText?.trim();
+  const hasTextOutput = hasBashOutput || !!outputText;
+  // Tool is expandable if it has output text or has a diff
+  const hasDiffView = diff && diff.lines.length > 0;
+  const isExpandable =
+    ((isBash || isGrep || (isApplyPatch && !hasApplyPatchView)) && hasTextOutput) ||
+    hasDiffView ||
+    hasApplyPatchView ||
+    (isTask && taskInfo);
 
-	const hasExpandedContent =
-		(todos && todos.length > 0) || imageAttachments.length > 0;
+  const hasExpandedContent = (todos && todos.length > 0) || imageAttachments.length > 0;
 
-	return (
-		<div className="text-xs font-mono text-muted-foreground overflow-hidden">
-			{/* Slim single-line header */}
-			{isExpandable ? (
-				<details
-					open={expanded}
-					onToggle={(e) => setExpanded(e.currentTarget.open)}
-					className="m-0"
-				>
-					<summary
-						className={cn(
-							TIMELINE_ROW_BASE,
-							TIMELINE_BUTTON_RESET,
-							"list-none hover:text-foreground cursor-pointer transition-colors [&::-webkit-details-marker]:hidden",
-						)}
-					>
-						<span className="w-3 shrink-0 flex items-center justify-center">
-							<ChevronRight
-								className={cn(
-									"size-3 transition-transform duration-150",
-									expanded && "rotate-90",
-								)}
-							/>
-						</span>
-						<span className="font-medium text-foreground/70">
-							{toolVerb}
-							{hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
-						</span>
-						{contextLabel && (
-							<>
-								{!hasDynamicLabel && (
-									<span className="text-muted-foreground/40">·</span>
-								)}
-								<span className="truncate" title={contextLabel}>
-									{contextLabel}
-									{hasDynamicLabel && isRunning ? "..." : ""}
-								</span>
-							</>
-						)}
+  return (
+    <div className="text-xs font-mono text-muted-foreground overflow-hidden">
+      {/* Slim single-line header */}
+      {isExpandable ? (
+        <details
+          open={expanded}
+          onToggle={(e) => setExpanded(e.currentTarget.open)}
+          className="m-0"
+        >
+          <summary
+            className={cn(
+              TIMELINE_ROW_BASE,
+              TIMELINE_BUTTON_RESET,
+              "list-none hover:text-foreground cursor-pointer transition-colors [&::-webkit-details-marker]:hidden",
+            )}
+          >
+            <span className="w-3 shrink-0 flex items-center justify-center">
+              <ChevronRight
+                className={cn("size-3 transition-transform duration-150", expanded && "rotate-90")}
+              />
+            </span>
+            <span className="font-medium text-foreground/70">
+              {toolVerb}
+              {hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
+            </span>
+            {contextLabel && (
+              <>
+                {!hasDynamicLabel && <span className="text-muted-foreground/40">·</span>}
+                <span className="truncate" title={contextLabel}>
+                  {contextLabel}
+                  {hasDynamicLabel && isRunning ? "..." : ""}
+                </span>
+              </>
+            )}
 
-						{grepMatchCount != null && (
-							<span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
-								{grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
-							</span>
-						)}
-						{diffSummary && (
-							<span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
-								<span className="text-emerald-500">+{diffSummary.added}</span>
-								<span className="text-red-400">-{diffSummary.removed}</span>
-							</span>
-						)}
-						{isTask && taskDurationLabel && (
-							<span className="ml-auto opacity-70 tabular-nums text-[11px] whitespace-nowrap">
-								{taskDurationLabel}
-							</span>
-						)}
-						{isTask &&
-							(state.status === "running" || state.status === "pending") && (
-								<Spinner className="size-3 ml-auto shrink-0" />
-							)}
-					</summary>
-				</details>
-			) : (
-				<div className={cn(TIMELINE_ROW_BASE, "cursor-default")}>
-					<span className="w-3 shrink-0 flex items-center justify-center">
-						<ToolStatusIcon status={state.status} />
-					</span>
-					<span className="font-medium text-foreground/70">
-						{toolVerb}
-						{hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
-					</span>
-					{contextLabel && (
-						<>
-							{!hasDynamicLabel && (
-								<span className="text-muted-foreground/40">·</span>
-							)}
-							<span className="truncate" title={contextLabel}>
-								{contextLabel}
-								{hasDynamicLabel && isRunning ? "..." : ""}
-							</span>
-						</>
-					)}
-					{grepMatchCount != null && (
-						<span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
-							{grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
-						</span>
-					)}
-					{diffSummary && (
-						<span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
-							<span className="text-emerald-500">+{diffSummary.added}</span>
-							<span className="text-red-400">-{diffSummary.removed}</span>
-						</span>
-					)}
-				</div>
-			)}
-			{/* Expanded bash output */}
-			{isExpandable &&
-				expanded &&
-				!hasDiffView &&
-				!hasApplyPatchView &&
-				!isTask &&
-				(isBash ? bashOutputText : outputText) && (
-					<div className="pl-7 pt-1">
-						<TerminalOutput
-							content={(isBash ? bashOutputText : outputText) ?? ""}
-							preRef={toolOutputRef}
-							className="max-h-64"
-						/>
-					</div>
-				)}
-			{/* Expanded diff view for edit/write tools */}
-			{hasDiffView && expanded && <DiffView lines={diff.lines} />}
-			{hasApplyPatchView && expanded && (
-				<ApplyPatchFilesView files={applyPatchFiles} />
-			)}
-			{/* Expanded task content */}
-			{isTask && expanded && taskInfo && (
-				<div
-					ref={taskContentRef}
-					className="pl-7 pt-1 pb-1 space-y-1 max-h-96 overflow-auto"
-				>
-					{/* Live child session parts in chronological order */}
-					{taskInfo.childSessionId ? (
-						<ChildSessionParts
-							childSessionId={taskInfo.childSessionId}
-							fallbackOutput={taskInfo.output}
-							isRunning={isRunning}
-						/>
-					) : (
-						<>
-							{taskInfo.toolCalls.length > 0 && (
-								<div className="space-y-0.5">
-									{taskInfo.toolCalls.map((tc, i) => (
-										<div
-											key={`${tc.tool}-${i}`}
-											className="flex items-center gap-1.5 text-xs font-mono"
-										>
-											<Wrench className="size-2.5 text-muted-foreground shrink-0" />
-											<span className="text-muted-foreground">{tc.tool}</span>
-											{tc.title && (
-												<span className="text-muted-foreground/70 truncate">
-													{tc.title}
-												</span>
-											)}
-											{tc.status === "completed" && (
-												<CheckCircle2 className="size-2.5 text-emerald-500 ml-auto shrink-0" />
-											)}
-											{tc.status === "error" && (
-												<XCircle className="size-2.5 text-destructive ml-auto shrink-0" />
-											)}
-										</div>
-									))}
-								</div>
-							)}
-							{taskInfo.output && (
-								<div className="text-xs">
-									{looksLikeTerminalOutput(taskInfo.output) ? (
-										<TerminalOutput content={taskInfo.output} />
-									) : (
-										<MarkdownRenderer content={taskInfo.output} />
-									)}
-								</div>
-							)}
-						</>
-					)}
-				</div>
-			)}
-			{/* Error on a second line */}
-			{state.status === "error" && state.error && (
-				<div className="text-destructive pl-5 truncate" title={state.error}>
-					{state.error}
-				</div>
-			)}
-			{/* Expanded content for special tools */}
-			{hasExpandedContent && (
-				<div className="pl-5 mt-0.5 space-y-1">
-					{imageAttachments.length > 0 && (
-						<div
-							className={cn(
-								"grid gap-2 pt-1",
-								imageAttachments.length === 1 ? "grid-cols-1" : "grid-cols-2",
-							)}
-						>
-							{imageAttachments.map((image, idx) => (
-								<div
-									key={`${image.url}-${idx}`}
-									className="overflow-hidden rounded-md border border-border/60 bg-background/60"
-								>
-									<img
-										src={image.src}
-										alt={image.filename ?? `Image attachment ${idx + 1}`}
-										loading="lazy"
-										className="w-full max-h-52 object-contain bg-black/20"
-									/>
-									{image.filename && (
-										<div
-											className="px-2 py-1 text-[10px] text-muted-foreground truncate"
-											title={image.filename}
-										>
-											{image.filename}
-										</div>
-									)}
-								</div>
-							))}
-						</div>
-					)}
-					{todos && todos.length > 0 && <TodoListView todos={todos} />}
-				</div>
-			)}
-		</div>
-	);
+            {grepMatchCount != null && (
+              <span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
+                {grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
+              </span>
+            )}
+            {diffSummary && (
+              <span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
+                <span className="text-emerald-500">+{diffSummary.added}</span>
+                <span className="text-red-400">-{diffSummary.removed}</span>
+              </span>
+            )}
+            {isTask && taskDurationLabel && (
+              <span className="ml-auto opacity-70 tabular-nums text-[11px] whitespace-nowrap">
+                {taskDurationLabel}
+              </span>
+            )}
+            {isTask && (state.status === "running" || state.status === "pending") && (
+              <Spinner className="size-3 ml-auto shrink-0" />
+            )}
+          </summary>
+        </details>
+      ) : (
+        <div className={cn(TIMELINE_ROW_BASE, "cursor-default")}>
+          <span className="w-3 shrink-0 flex items-center justify-center">
+            <ToolStatusIcon status={state.status} />
+          </span>
+          <span className="font-medium text-foreground/70">
+            {toolVerb}
+            {hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
+          </span>
+          {contextLabel && (
+            <>
+              {!hasDynamicLabel && <span className="text-muted-foreground/40">·</span>}
+              <span className="truncate" title={contextLabel}>
+                {contextLabel}
+                {hasDynamicLabel && isRunning ? "..." : ""}
+              </span>
+            </>
+          )}
+          {grepMatchCount != null && (
+            <span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
+              {grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
+            </span>
+          )}
+          {diffSummary && (
+            <span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
+              <span className="text-emerald-500">+{diffSummary.added}</span>
+              <span className="text-red-400">-{diffSummary.removed}</span>
+            </span>
+          )}
+        </div>
+      )}
+      {/* Expanded bash output */}
+      {isExpandable &&
+        expanded &&
+        !hasDiffView &&
+        !hasApplyPatchView &&
+        !isTask &&
+        (isBash ? bashOutputText : outputText) && (
+          <div className="pl-7 pt-1">
+            <TerminalOutput
+              content={(isBash ? bashOutputText : outputText) ?? ""}
+              preRef={toolOutputRef}
+              className="max-h-64"
+            />
+          </div>
+        )}
+      {/* Expanded diff view for edit/write tools */}
+      {hasDiffView && expanded && <DiffView lines={diff.lines} />}
+      {hasApplyPatchView && expanded && <ApplyPatchFilesView files={applyPatchFiles} />}
+      {/* Expanded task content */}
+      {isTask && expanded && taskInfo && (
+        <div ref={taskContentRef} className="pl-7 pt-1 space-y-1 max-h-96 overflow-auto">
+          {taskInfo.toolCalls.length > 0 && (
+            <div className="space-y-0.5">
+              {taskInfo.toolCalls.map((tc, i) => (
+                <div
+                  key={`${tc.tool}-${i}`}
+                  className="flex items-center gap-1.5 text-xs font-mono"
+                >
+                  <Wrench className="size-2.5 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground">{tc.tool}</span>
+                  {tc.title && (
+                    <span className="text-muted-foreground/70 truncate">{tc.title}</span>
+                  )}
+                  {tc.status === "completed" && (
+                    <CheckCircle2 className="size-2.5 text-emerald-500 ml-auto shrink-0" />
+                  )}
+                  {tc.status === "error" && (
+                    <XCircle className="size-2.5 text-destructive ml-auto shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {taskInfo.output && (
+            <div className="text-xs">
+              {looksLikeTerminalOutput(taskInfo.output) ? (
+                <TerminalOutput content={taskInfo.output} />
+              ) : (
+                <MarkdownRenderer content={taskInfo.output} />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Error on a second line */}
+      {state.status === "error" && state.error && (
+        <div className="text-destructive pl-5 truncate" title={state.error}>
+          {state.error}
+        </div>
+      )}
+      {/* Expanded content for special tools */}
+      {hasExpandedContent && (
+        <div className="pl-5 mt-0.5 space-y-1">
+          {imageAttachments.length > 0 && (
+            <div
+              className={cn(
+                "grid gap-2 pt-1",
+                imageAttachments.length === 1 ? "grid-cols-1" : "grid-cols-2",
+              )}
+            >
+              {imageAttachments.map((image, idx) => (
+                <div
+                  key={`${image.url}-${idx}`}
+                  className="overflow-hidden rounded-md border border-border/60 bg-background/60"
+                >
+                  <img
+                    src={image.src}
+                    alt={image.filename ?? `Image attachment ${idx + 1}`}
+                    loading="lazy"
+                    className="w-full max-h-52 object-contain bg-black/20"
+                  />
+                  {image.filename && (
+                    <div
+                      className="px-2 py-1 text-[10px] text-muted-foreground truncate"
+                      title={image.filename}
+                    >
+                      {image.filename}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {todos && todos.length > 0 && <TodoListView todos={todos} />}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ToolStatusIcon({ status }: { status: string }) {
-	switch (status) {
-		case "running":
-		case "pending":
-			return <Spinner className="size-3 shrink-0" />;
-		case "completed":
-			return <Check className="size-3 shrink-0" />;
-		case "error":
-			return <X className="size-3 shrink-0" />;
-		default:
-			return <span className="size-3 shrink-0" />;
-	}
+  switch (status) {
+    case "running":
+    case "pending":
+      return <Spinner className="size-3 shrink-0" />;
+    case "completed":
+      return <Check className="size-3 shrink-0" />;
+    case "error":
+      return <X className="size-3 shrink-0" />;
+    default:
+      return <span className="size-3 shrink-0" />;
+  }
 }

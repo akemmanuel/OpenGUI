@@ -8,28 +8,28 @@ import { useEffect } from "react";
  * call unconditionally and toggle via the flag.
  */
 export function useOutsideClick(
-	ref: RefObject<HTMLElement | null>,
-	onClose: () => void,
-	active: boolean,
+  ref: RefObject<HTMLElement | null>,
+  onClose: () => void,
+  active: boolean,
 ): void {
-	useEffect(() => {
-		if (!active) return;
+  useEffect(() => {
+    if (!active) return;
 
-		const onPointerDown = (event: MouseEvent) => {
-			const target = event.target as Node;
-			if (ref.current?.contains(target)) return;
-			onClose();
-		};
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (ref.current?.contains(target)) return;
+      onClose();
+    };
 
-		const onEscape = (event: KeyboardEvent) => {
-			if (event.key === "Escape") onClose();
-		};
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
 
-		window.addEventListener("mousedown", onPointerDown);
-		window.addEventListener("keydown", onEscape);
-		return () => {
-			window.removeEventListener("mousedown", onPointerDown);
-			window.removeEventListener("keydown", onEscape);
-		};
-	}, [ref, onClose, active]);
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [ref, onClose, active]);
 }

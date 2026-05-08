@@ -4,31 +4,34 @@
  * Kills both processes on exit.
  */
 
-const server = Bun.spawn(["bun", "--hot", "src/index.ts"], {
-	stdio: ["inherit", "inherit", "inherit"],
-	env: { ...Bun.env },
+const host = "127.0.0.1";
+const port = Number(Bun.env.OPENGUI_VITE_PORT || 5173);
+const url = `http://${host}:${port}`;
+
+const server = Bun.spawn(["vp", "dev", "--host", host, "--port", String(port)], {
+  stdio: ["inherit", "inherit", "inherit"],
+  env: { ...Bun.env, OPENGUI_SKIP_WEB_BACKEND: "1" },
 });
 
-const url = "http://localhost:3000";
 const maxAttempts = 60;
 
 for (let i = 0; i < maxAttempts; i++) {
-	try {
-		await fetch(url);
-		break;
-	} catch {
-		if (i === maxAttempts - 1) {
-			console.error(`Server did not start within ${maxAttempts} seconds`);
-			server.kill();
-			process.exit(1);
-		}
-		await Bun.sleep(1000);
-	}
+  try {
+    await fetch(url);
+    break;
+  } catch {
+    if (i === maxAttempts - 1) {
+      console.error(`Server did not start within ${maxAttempts} seconds`);
+      server.kill();
+      process.exit(1);
+    }
+    await Bun.sleep(1000);
+  }
 }
 
-const electron = Bun.spawn(["bunx", "electron", "."], {
-	stdio: ["inherit", "inherit", "inherit"],
-	env: { ...Bun.env, BUN_DEV_SERVER_URL: url },
+const electron = Bun.spawn(["electron", "."], {
+  stdio: ["inherit", "inherit", "inherit"],
+  env: { ...Bun.env, BUN_DEV_SERVER_URL: url },
 });
 
 // When Electron closes, kill the server and exit

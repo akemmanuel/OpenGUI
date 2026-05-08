@@ -12,20 +12,20 @@
  *   either boundary to make it easy to step through entries and restore draft.
  */
 export function canNavigateHistoryAtCursor(
-	direction: "up" | "down",
-	text: string,
-	cursorPosition: number,
-	inHistory: boolean,
+  direction: "up" | "down",
+  text: string,
+  cursorPosition: number,
+  inHistory: boolean,
 ): boolean {
-	const pos = Math.max(0, Math.min(cursorPosition, text.length));
+  const pos = Math.max(0, Math.min(cursorPosition, text.length));
 
-	// Already browsing history - allow from either boundary
-	if (inHistory) return pos === 0 || pos === text.length;
+  // Already browsing history - allow from either boundary
+  if (inHistory) return pos === 0 || pos === text.length;
 
-	// Never steal plain arrows while user is editing a non-empty draft
-	if (text.length > 0) return false;
+  // Never steal plain arrows while user is editing a non-empty draft
+  if (text.length > 0) return false;
 
-	// Empty draft: only Arrow Up enters history
-	if (direction === "up") return pos === 0;
-	return false;
+  // Empty draft: only Arrow Up enters history
+  if (direction === "up") return pos === 0;
+  return false;
 }

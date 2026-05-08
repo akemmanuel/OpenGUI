@@ -1,0 +1,89 @@
+{
+  "common": {
+    "autoDetect": "Automatisch erkennen",
+    "back": "Zurück",
+    "browse": "Durchsuchen",
+    "cancel": "Abbrechen",
+    "restart": "Neu starten",
+    "settings": "Einstellungen",
+    "version": "Version"
+  },
+  "settings": {
+    "subtitle": "App-Einstellungen und Anbieter für den aktiven Workspace verwalten.",
+    "tabs": {
+      "general": "Allgemein",
+      "providers": "Anbieter",
+      "skills": "Skills",
+      "tools": "Werkzeuge"
+    },
+    "general": {
+      "agentBackend": "Agent-Backend",
+      "darkMode": "Dunkelmodus",
+      "appearance": "Erscheinungsbild",
+      "themeLight": "Hell",
+      "themeDark": "Dunkel",
+      "themeSystem": "System",
+      "contrast": "Kontrast",
+      "accent": "Akzent",
+      "customAccent": "Eigene Akzentfarbe",
+      "codeFontSize": "Code-Schriftgröße",
+      "language": "Sprache",
+      "defaultChatDirectory": "Standard-Chat-Verzeichnis",
+      "defaultChatDirectoryHelp": "Neue Chats starten in diesem Arbeitsverzeichnis.",
+      "desktopNotifications": "Desktop-Benachrichtigungen",
+      "blockedByBrowser": "Vom Browser blockiert",
+      "fileManager": "Dateimanager",
+      "fileManagerHelp": "Befehl zum Öffnen deines Dateimanagers, z. B. nemo oder nautilus. Leer lassen für automatische Erkennung.",
+      "terminal": "Terminal",
+      "terminalHelp": "Befehl zum Öffnen deines Terminals, z. B. ghostty oder kitty. Leer lassen für automatische Erkennung.",
+      "hideOldModels": "Alte Modelle ausblenden",
+      "months": "Monate",
+      "hideOldModelsHelp": "Ausgewählte und favorisierte Modelle bleiben immer sichtbar. Modelle ohne gültiges Veröffentlichungsdatum bleiben ebenfalls sichtbar.",
+      "restartServer": "Server neu starten",
+      "restartServerTitle": "Server neu starten?",
+      "restartServerDescription": "Dadurch wird der Server neu gestartet. Alle offenen Sitzungen werden beendet und müssen danach neu verbunden werden."
+    }
+  },
+  "sidebar": {
+    "allProjectsPinned": "Alle Projekte sind angeheftet",
+    "chats": "Chats",
+    "clearSearch": "Sidebar-Suche leeren",
+    "loadMore": "Mehr laden ({{count}})",
+    "newChat": "Neuer Chat",
+    "newSession": "Neue Sitzung",
+    "noChats": "Keine Chats",
+    "noMatches": "Keine Treffer für \"{{query}}\"",
+    "noSessionsYet": "Noch keine Sitzungen",
+    "pinned": "Angeheftet",
+    "projects": "Projekte",
+    "searchPlaceholder": "Projekte und Sitzungen durchsuchen...",
+    "showLess": "Weniger anzeigen",
+    "untitled": "Ohne Titel"
+  },
+  "setupWizard": {
+    "title": "Willkommen bei OpenGUI",
+    "backendStatusSubtitle": "Prüfe, welche KI-Agent-Backends installiert sind. Fehlende kannst du jetzt oder später installieren.",
+    "detectingBackends": "Installierte Backends werden erkannt...",
+    "detectedBackends": "{{count}} Backend(s) installiert",
+    "folderSubtitle": "Wähle den Ordner aus, in dem du arbeiten willst.",
+    "installed": "Installiert",
+    "notInstalled": "Nicht installiert",
+    "requiredCommand": "Erforderlicher Befehl",
+    "installCommand": "Installationsbefehl",
+    "installCli": "CLI installieren",
+    "reinstallCli": "CLI erneut installieren",
+    "docs": "Doku",
+    "folderTitle": "Projektordner",
+    "folderHelp": "Neue Chats werden standardmäßig in diesem Ordner geöffnet.",
+    "folderEmptyHint": "Leer lassen, wenn du jedes Mal gefragt werden willst. Änderbar unter",
+    "settingsGeneral": "Einstellungen → Allgemein",
+    "skipSetup": "Einrichtung überspringen",
+    "continue": "Weiter",
+    "launch": "OpenGUI starten"
+  },
+  "languages": {
+    "de": "Deutsch",
+    "en": "English",
+    "es": "Español"
+  }
+}

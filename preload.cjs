@@ -1,551 +1,173 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const invoke =
+  (channel) =>
+  (...args) =>
+    ipcRenderer.invoke(channel, ...args);
+
+function createBridgeApi(prefix, options = {}) {
+  const api = {
+    addProject: invoke(`${prefix}:project:add`),
+    removeProject: invoke(`${prefix}:project:remove`),
+    disconnect: invoke(`${prefix}:disconnect`),
+    listSessions: invoke(`${prefix}:session:list`),
+    createSession: invoke(`${prefix}:session:create`),
+    deleteSession: invoke(`${prefix}:session:delete`),
+    updateSession: invoke(`${prefix}:session:update`),
+    getSessionStatuses: invoke(`${prefix}:session:statuses`),
+    forkSession: invoke(`${prefix}:session:fork`),
+    getProviders: invoke(`${prefix}:providers`),
+    getAgents: invoke(`${prefix}:agents`),
+    getCommands: invoke(`${prefix}:commands`),
+    getMessages: invoke(`${prefix}:messages`),
+    startSession: invoke(`${prefix}:session:start`),
+    prompt: invoke(`${prefix}:prompt`),
+    abort: invoke(`${prefix}:abort`),
+    respondPermission: invoke(`${prefix}:permission`),
+    sendCommand: invoke(`${prefix}:command:send`),
+    summarizeSession: invoke(`${prefix}:session:summarize`),
+    findFiles: invoke(`${prefix}:find:files`),
+    onEvent: (callback) => {
+      if (options.rendererReady) ipcRenderer.send(`${prefix}:renderer-ready`);
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on(`${prefix}:bridge-event`, handler);
+      return () => ipcRenderer.removeListener(`${prefix}:bridge-event`, handler);
+    },
+  };
+
+  for (const [name, channel] of Object.entries(options.extraInvoke ?? {})) {
+    api[name] = invoke(`${prefix}:${String(channel)}`);
+  }
+
+  return api;
+}
+
 contextBridge.exposeInMainWorld("electronAPI", {
-	settings: {
-		getAllSync: () => ipcRenderer.sendSync("settings:get-all-sync"),
-		getSync: (key) => ipcRenderer.sendSync("settings:get-sync", key),
-		setSync: (key, value) => ipcRenderer.sendSync("settings:set-sync", key, value),
-		removeSync: (key) => ipcRenderer.sendSync("settings:remove-sync", key),
-		mergeSync: (entries) => ipcRenderer.sendSync("settings:merge-sync", entries),
-		set: (key, value) => ipcRenderer.invoke("settings:set", key, value),
-		remove: (key) => ipcRenderer.invoke("settings:remove", key),
-		onDidChange: (callback) => {
-			const handler = (_event, change) => callback(change);
-			ipcRenderer.on("settings:changed", handler);
-			return () => ipcRenderer.removeListener("settings:changed", handler);
-		},
-	},
+  settings: {
+    getAllSync: () => ipcRenderer.sendSync("settings:get-all-sync"),
+    getSync: (key) => ipcRenderer.sendSync("settings:get-sync", key),
+    setSync: (key, value) => ipcRenderer.sendSync("settings:set-sync", key, value),
+    removeSync: (key) => ipcRenderer.sendSync("settings:remove-sync", key),
+    mergeSync: (entries) => ipcRenderer.sendSync("settings:merge-sync", entries),
+    set: invoke("settings:set"),
+    remove: invoke("settings:remove"),
+    onDidChange: (callback) => {
+      const handler = (_event, change) => callback(change);
+      ipcRenderer.on("settings:changed", handler);
+      return () => ipcRenderer.removeListener("settings:changed", handler);
+    },
+  },
 
-	// Window controls
-	minimize: () => ipcRenderer.invoke("window:minimize"),
-	maximize: () => ipcRenderer.invoke("window:maximize"),
-	close: () => ipcRenderer.invoke("window:close"),
-	isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
-	getPlatform: () => ipcRenderer.invoke("platform:get"),
-	onMaximizeChange: (callback) => {
-		const handler = (_event, isMaximized) => callback(isMaximized);
-		ipcRenderer.on("window:maximizeChanged", handler);
-		return () => ipcRenderer.removeListener("window:maximizeChanged", handler);
-	},
+  // Window controls
+  minimize: invoke("window:minimize"),
+  maximize: invoke("window:maximize"),
+  close: invoke("window:close"),
+  isMaximized: invoke("window:isMaximized"),
+  getPlatform: invoke("platform:get"),
+  getSystemLocale: invoke("platform:locale"),
+  detectBackends: invoke("platform:detectBackends"),
+  isPackaged: invoke("app:isPackaged"),
+  onMaximizeChange: (callback) => {
+    const handler = (_event, isMaximized) => callback(isMaximized);
+    ipcRenderer.on("window:maximizeChanged", handler);
+    return () => ipcRenderer.removeListener("window:maximizeChanged", handler);
+  },
 
-	// Directory picker
-	openDirectory: () => ipcRenderer.invoke("dialog:openDirectory"),
+  // Directory picker
+  openDirectory: invoke("dialog:openDirectory"),
 
-	// Detach a project into its own window
-	detachProject: (projectDir) =>
-		ipcRenderer.invoke("window:detachProject", projectDir),
+  // Detach a project into its own window
+  detachProject: invoke("window:detachProject"),
 
-	// Get the detached project directory from the URL query param (empty if not detached)
-	getDetachedProject: () => {
-		const params = new URLSearchParams(window.location.search);
-		return params.get("detach") || null;
-	},
-	getDetachedProjects: () => ipcRenderer.invoke("window:getDetachedProjects"),
-	onDetachedProjectsChange: (callback) => {
-		const handler = (_event, detachedProjects) => callback(detachedProjects);
-		ipcRenderer.on("window:detachedProjectsChanged", handler);
-		return () =>
-			ipcRenderer.removeListener("window:detachedProjectsChanged", handler);
-	},
+  // Get the detached project directory from the URL query param (empty if not detached)
+  getDetachedProject: () => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("detach") || null;
+  },
+  getDetachedProjects: invoke("window:getDetachedProjects"),
+  onDetachedProjectsChange: (callback) => {
+    const handler = (_event, detachedProjects) => callback(detachedProjects);
+    ipcRenderer.on("window:detachedProjectsChanged", handler);
+    return () => ipcRenderer.removeListener("window:detachedProjectsChanged", handler);
+  },
 
-	// Open a URL in the system browser
-	openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+  // Open a URL in the system browser
+  openExternal: invoke("shell:openExternal"),
 
-	updates: {
-		getState: () => ipcRenderer.invoke("updates:getState"),
-		check: () => ipcRenderer.invoke("updates:check"),
-		download: () => ipcRenderer.invoke("updates:download"),
-		install: () => ipcRenderer.invoke("updates:install"),
-		onStateChanged: (callback) => {
-			const handler = (_event, nextState) => callback(nextState);
-			ipcRenderer.on("updates:state-changed", handler);
-			return () => ipcRenderer.removeListener("updates:state-changed", handler);
-		},
-	},
+  updates: {
+    getState: invoke("updates:getState"),
+    check: invoke("updates:check"),
+    download: invoke("updates:download"),
+    install: invoke("updates:install"),
+    onStateChanged: (callback) => {
+      const handler = (_event, nextState) => callback(nextState);
+      ipcRenderer.on("updates:state-changed", handler);
+      return () => ipcRenderer.removeListener("updates:state-changed", handler);
+    },
+  },
 
-	// Open a directory in the system file browser
-	openInFileBrowser: (dirPath, command = "") =>
-		ipcRenderer.invoke("shell:openInFileBrowser", dirPath, command),
+  // Open a directory in the system file browser
+  openInFileBrowser: invoke("shell:openInFileBrowser"),
 
-	// Open a terminal at a directory
-	openInTerminal: (dirPath, command = "") =>
-		ipcRenderer.invoke("shell:openInTerminal", dirPath, command),
+  // Open a terminal at a directory
+  openInTerminal: invoke("shell:openInTerminal"),
 
-	// Home directory (for path abbreviation)
-	getHomeDir: () => ipcRenderer.invoke("platform:homeDir"),
+  // Home directory (for path abbreviation)
+  getHomeDir: invoke("platform:homeDir"),
 
-	// Worktree setup helpers
-	worktree: {
-		detectSetup: (worktreePath) =>
-			ipcRenderer.invoke("worktree:detect-setup", worktreePath),
-		runSetup: (worktreePath, command) =>
-			ipcRenderer.invoke("worktree:run-setup", worktreePath, command),
-	},
+  // Backend installer – runs allowlisted backend install and streams progress events
+  installBackend: invoke("backend:install"),
+  onInstallProgress: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("backend:install-progress", handler);
+    return () => ipcRenderer.removeListener("backend:install-progress", handler);
+  },
 
-	// Git helpers
-	git: {
-		isRepo: (directory) => ipcRenderer.invoke("git:is-repo", directory),
-		listBranches: (directory) =>
-			ipcRenderer.invoke("git:branch:list", directory),
-		currentBranch: (directory) =>
-			ipcRenderer.invoke("git:current-branch", directory),
-		listWorktrees: (directory) =>
-			ipcRenderer.invoke("git:worktree:list", directory),
-		addWorktree: (directory, worktreePath, branch, isNewBranch) =>
-			ipcRenderer.invoke(
-				"git:worktree:add",
-				directory,
-				worktreePath,
-				branch,
-				isNewBranch,
-			),
-		removeWorktree: (directory, worktreePath) =>
-			ipcRenderer.invoke("git:worktree:remove", directory, worktreePath),
-		merge: (directory, branch) =>
-			ipcRenderer.invoke("git:merge", directory, branch),
-		mergeAbort: (directory) => ipcRenderer.invoke("git:merge:abort", directory),
-		getRemoteUrl: (directory) =>
-			ipcRenderer.invoke("git:remote:url", directory),
-	},
+  // Worktree setup helpers
+  worktree: {
+    detectSetup: invoke("worktree:detect-setup"),
+    runSetup: invoke("worktree:run-setup"),
+  },
 
-	// Claude Code bridge
-	claudeCode: {
-		addProject: (config) => ipcRenderer.invoke("claude-code:project:add", config),
-		removeProject: (directory, workspaceId) =>
-			ipcRenderer.invoke("claude-code:project:remove", directory, workspaceId),
-		disconnect: () => ipcRenderer.invoke("claude-code:disconnect"),
-		listSessions: (directory, workspaceId) =>
-			ipcRenderer.invoke("claude-code:session:list", directory, workspaceId),
-		deleteSession: (sessionId, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:session:delete",
-				sessionId,
-				directory,
-				workspaceId,
-			),
-		updateSession: (sessionId, title, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:session:update",
-				sessionId,
-				title,
-				directory,
-				workspaceId,
-			),
-		getSessionStatuses: (directory, workspaceId) =>
-			ipcRenderer.invoke("claude-code:session:statuses", directory, workspaceId),
-		forkSession: (sessionId, messageID, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:session:fork",
-				sessionId,
-				messageID,
-				directory,
-				workspaceId,
-			),
-		getProviders: (directory, workspaceId) =>
-			ipcRenderer.invoke("claude-code:providers", directory, workspaceId),
-		getAgents: (directory, workspaceId) =>
-			ipcRenderer.invoke("claude-code:agents", directory, workspaceId),
-		getCommands: (directory, workspaceId) =>
-			ipcRenderer.invoke("claude-code:commands", directory, workspaceId),
-		getMessages: (sessionId, options, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:messages",
-				sessionId,
-				options,
-				directory,
-				workspaceId,
-			),
-		startSession: (input) => ipcRenderer.invoke("claude-code:session:start", input),
-		prompt: (sessionId, text, images, model, agent, variant, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:prompt",
-				sessionId,
-				text,
-				images,
-				model,
-				agent,
-				variant,
-				directory,
-				workspaceId,
-			),
-		abort: (sessionId) => ipcRenderer.invoke("claude-code:abort", sessionId),
-		respondPermission: (sessionId, permissionId, response) =>
-			ipcRenderer.invoke(
-				"claude-code:permission",
-				sessionId,
-				permissionId,
-				response,
-			),
-		sendCommand: (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:command:send",
-				sessionId,
-				command,
-				args,
-				model,
-				agent,
-				variant,
-				directory,
-				workspaceId,
-			),
-		summarizeSession: (sessionId, model, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"claude-code:session:summarize",
-				sessionId,
-				model,
-				directory,
-				workspaceId,
-			),
-		findFiles: (directory, workspaceId, query) =>
-			ipcRenderer.invoke("claude-code:find:files", directory, workspaceId, query),
-		onEvent: (callback) => {
-			ipcRenderer.send("claude-code:renderer-ready");
-			const handler = (_event, data) => callback(data);
-			ipcRenderer.on("claude-code:bridge-event", handler);
-			return () => ipcRenderer.removeListener("claude-code:bridge-event", handler);
-		},
-	},
+  // Git helpers
+  git: {
+    isRepo: invoke("git:is-repo"),
+    listBranches: invoke("git:branch:list"),
+    currentBranch: invoke("git:current-branch"),
+    listWorktrees: invoke("git:worktree:list"),
+    addWorktree: invoke("git:worktree:add"),
+    removeWorktree: invoke("git:worktree:remove"),
+    merge: invoke("git:merge"),
+    mergeAbort: invoke("git:merge:abort"),
+    getRemoteUrl: invoke("git:remote:url"),
+  },
 
-	// Pi bridge
-	pi: {
-		addProject: (config) => ipcRenderer.invoke("pi:project:add", config),
-		removeProject: (directory, workspaceId) =>
-			ipcRenderer.invoke("pi:project:remove", directory, workspaceId),
-		disconnect: () => ipcRenderer.invoke("pi:disconnect"),
-		listSessions: (directory, workspaceId) =>
-			ipcRenderer.invoke("pi:session:list", directory, workspaceId),
-		createSession: (title, directory, workspaceId) =>
-			ipcRenderer.invoke("pi:session:create", title, directory, workspaceId),
-		deleteSession: (sessionId, directory, workspaceId) =>
-			ipcRenderer.invoke("pi:session:delete", sessionId, directory, workspaceId),
-		updateSession: (sessionId, title, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"pi:session:update",
-				sessionId,
-				title,
-				directory,
-				workspaceId,
-			),
-		getSessionStatuses: (directory, workspaceId) =>
-			ipcRenderer.invoke("pi:session:statuses", directory, workspaceId),
-		forkSession: (sessionId, messageID, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"pi:session:fork",
-				sessionId,
-				messageID,
-				directory,
-				workspaceId,
-			),
-		getProviders: (directory, workspaceId) =>
-			ipcRenderer.invoke("pi:providers", directory, workspaceId),
-		getAgents: (directory, workspaceId) =>
-			ipcRenderer.invoke("pi:agents", directory, workspaceId),
-		getCommands: (directory, workspaceId) =>
-			ipcRenderer.invoke("pi:commands", directory, workspaceId),
-		getMessages: (sessionId, options, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"pi:messages",
-				sessionId,
-				options,
-				directory,
-				workspaceId,
-			),
-		startSession: (input) => ipcRenderer.invoke("pi:session:start", input),
-		prompt: (sessionId, text, images, model, agent, variant, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"pi:prompt",
-				sessionId,
-				text,
-				images,
-				model,
-				agent,
-				variant,
-				directory,
-				workspaceId,
-			),
-		abort: (sessionId) => ipcRenderer.invoke("pi:abort", sessionId),
-		sendCommand: (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"pi:command:send",
-				sessionId,
-				command,
-				args,
-				model,
-				agent,
-				variant,
-				directory,
-				workspaceId,
-			),
-		summarizeSession: (sessionId, model, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"pi:session:summarize",
-				sessionId,
-				model,
-				directory,
-				workspaceId,
-			),
-		findFiles: (directory, workspaceId, query) =>
-			ipcRenderer.invoke("pi:find:files", directory, workspaceId, query),
-		onEvent: (callback) => {
-			const handler = (_event, data) => callback(data);
-			ipcRenderer.on("pi:bridge-event", handler);
-			return () => ipcRenderer.removeListener("pi:bridge-event", handler);
-		},
-	},
-
-	// Codex bridge
-	codex: {
-		addProject: (config) => ipcRenderer.invoke("codex:project:add", config),
-		removeProject: (directory, workspaceId) =>
-			ipcRenderer.invoke("codex:project:remove", directory, workspaceId),
-		disconnect: () => ipcRenderer.invoke("codex:disconnect"),
-		listSessions: (directory, workspaceId) =>
-			ipcRenderer.invoke("codex:session:list", directory, workspaceId),
-		createSession: (title, directory, workspaceId) =>
-			ipcRenderer.invoke("codex:session:create", title, directory, workspaceId),
-		deleteSession: (sessionId, directory, workspaceId) =>
-			ipcRenderer.invoke("codex:session:delete", sessionId, directory, workspaceId),
-		updateSession: (sessionId, title, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"codex:session:update",
-				sessionId,
-				title,
-				directory,
-				workspaceId,
-			),
-		getSessionStatuses: (directory, workspaceId) =>
-			ipcRenderer.invoke("codex:session:statuses", directory, workspaceId),
-		getProviders: (directory, workspaceId) =>
-			ipcRenderer.invoke("codex:providers", directory, workspaceId),
-		getAgents: (directory, workspaceId) =>
-			ipcRenderer.invoke("codex:agents", directory, workspaceId),
-		getCommands: (directory, workspaceId) =>
-			ipcRenderer.invoke("codex:commands", directory, workspaceId),
-		getMessages: (sessionId, options, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"codex:messages",
-				sessionId,
-				options,
-				directory,
-				workspaceId,
-			),
-		startSession: (input) => ipcRenderer.invoke("codex:session:start", input),
-		prompt: (sessionId, text, images, model, agent, variant, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"codex:prompt",
-				sessionId,
-				text,
-				images,
-				model,
-				agent,
-				variant,
-				directory,
-				workspaceId,
-			),
-		abort: (sessionId) => ipcRenderer.invoke("codex:abort", sessionId),
-		sendCommand: (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"codex:command:send",
-				sessionId,
-				command,
-				args,
-				model,
-				agent,
-				variant,
-				directory,
-				workspaceId,
-			),
-		summarizeSession: (sessionId, model, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"codex:session:summarize",
-				sessionId,
-				model,
-				directory,
-				workspaceId,
-			),
-		findFiles: (directory, workspaceId, query) =>
-			ipcRenderer.invoke("codex:find:files", directory, workspaceId, query),
-		onEvent: (callback) => {
-			const handler = (_event, data) => callback(data)
-			ipcRenderer.on("codex:bridge-event", handler)
-			return () => ipcRenderer.removeListener("codex:bridge-event", handler)
-		},
-	},
-
-	// OpenCode bridge
-	opencode: {
-		// Project management (multi-project)
-		addProject: (config) => ipcRenderer.invoke("opencode:project:add", config),
-		removeProject: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:project:remove", directory, workspaceId),
-		disconnect: () => ipcRenderer.invoke("opencode:disconnect"),
-
-		// Sessions
-		listSessions: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:session:list", directory, workspaceId),
-		createSession: (title, directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:session:create", title, directory, workspaceId),
-		deleteSession: (id) => ipcRenderer.invoke("opencode:session:delete", id),
-		updateSession: (id, title) =>
-			ipcRenderer.invoke("opencode:session:update", id, title),
-		getSessionStatuses: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:session:statuses", directory, workspaceId),
-		revertSession: (id, messageID, partID) =>
-			ipcRenderer.invoke("opencode:session:revert", id, messageID, partID),
-		unrevertSession: (id) =>
-			ipcRenderer.invoke("opencode:session:unrevert", id),
-		forkSession: (id, messageID) =>
-			ipcRenderer.invoke("opencode:session:fork", id, messageID),
-
-		// Providers / models
-		getProviders: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:providers", directory, workspaceId),
-		// Provider management
-		listAllProviders: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:provider:list", directory, workspaceId),
-		getProviderAuthMethods: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:provider:auth-methods", directory, workspaceId),
-		connectProvider: (directory, workspaceId, providerID, auth) =>
-			ipcRenderer.invoke(
-				"opencode:provider:connect",
-				directory,
-				workspaceId,
-				providerID,
-				auth,
-			),
-		disconnectProvider: (directory, workspaceId, providerID) =>
-			ipcRenderer.invoke(
-				"opencode:provider:disconnect",
-				directory,
-				workspaceId,
-				providerID,
-			),
-		oauthAuthorize: (directory, workspaceId, providerID, method) =>
-			ipcRenderer.invoke(
-				"opencode:provider:oauth:authorize",
-				directory,
-				workspaceId,
-				providerID,
-				method,
-			),
-		oauthCallback: (directory, workspaceId, providerID, method, code) =>
-			ipcRenderer.invoke(
-				"opencode:provider:oauth:callback",
-				directory,
-				workspaceId,
-				providerID,
-				method,
-				code,
-			),
-		disposeInstance: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:instance:dispose", directory, workspaceId),
-		// Agents
-		getAgents: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:agents", directory, workspaceId),
-
-		// Messages
-		getMessages: (sessionId, options, directory, workspaceId) =>
-			ipcRenderer.invoke(
-				"opencode:messages",
-				sessionId,
-				options,
-				directory,
-				workspaceId,
-			),
-		prompt: (sessionId, text, images, model, agent, variant) =>
-			ipcRenderer.invoke(
-				"opencode:prompt",
-				sessionId,
-				text,
-				images,
-				model,
-				agent,
-				variant,
-			),
-		abort: (sessionId) => ipcRenderer.invoke("opencode:abort", sessionId),
-
-		// Permissions
-		respondPermission: (sessionId, permissionId, response) =>
-			ipcRenderer.invoke(
-				"opencode:permission",
-				sessionId,
-				permissionId,
-				response,
-			),
-
-		// Commands
-		getCommands: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:commands", directory, workspaceId),
-		sendCommand: (sessionId, command, args, model, agent, variant) =>
-			ipcRenderer.invoke(
-				"opencode:command:send",
-				sessionId,
-				command,
-				args,
-				model,
-				agent,
-				variant,
-			),
-		summarizeSession: (sessionId, model) =>
-			ipcRenderer.invoke("opencode:session:summarize", sessionId, model),
-
-		// Questions
-		replyQuestion: (requestID, answers) =>
-			ipcRenderer.invoke("opencode:question:reply", requestID, answers),
-		rejectQuestion: (requestID) =>
-			ipcRenderer.invoke("opencode:question:reject", requestID),
-
-		// MCP
-		getMcpStatus: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:mcp:status", directory, workspaceId),
-		addMcp: (directory, workspaceId, name, config) =>
-			ipcRenderer.invoke(
-				"opencode:mcp:add",
-				directory,
-				workspaceId,
-				name,
-				config,
-			),
-		connectMcp: (directory, workspaceId, name) =>
-			ipcRenderer.invoke("opencode:mcp:connect", directory, workspaceId, name),
-		disconnectMcp: (directory, workspaceId, name) =>
-			ipcRenderer.invoke(
-				"opencode:mcp:disconnect",
-				directory,
-				workspaceId,
-				name,
-			),
-
-		// Config
-		getConfig: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:config:get", directory, workspaceId),
-		updateConfig: (directory, workspaceId, config) =>
-			ipcRenderer.invoke(
-				"opencode:config:update",
-				directory,
-				workspaceId,
-				config,
-			),
-
-		// File search
-		findFiles: (directory, workspaceId, query) =>
-			ipcRenderer.invoke("opencode:find:files", directory, workspaceId, query),
-
-		// Skills
-		getSkills: (directory, workspaceId) =>
-			ipcRenderer.invoke("opencode:skills", directory, workspaceId),
-
-		// Local server management
-		startServer: () => ipcRenderer.invoke("opencode:server:start"),
-		stopServer: () => ipcRenderer.invoke("opencode:server:stop"),
-		getServerStatus: () => ipcRenderer.invoke("opencode:server:status"),
-
-		// SSE events from main process
-		onEvent: (callback) => {
-			const handler = (_event, data) => callback(data);
-			ipcRenderer.on("opencode:bridge-event", handler);
-			// Return cleanup function
-			return () => ipcRenderer.removeListener("opencode:bridge-event", handler);
-		},
-	},
+  claudeCode: createBridgeApi("claude-code", { rendererReady: true }),
+  pi: createBridgeApi("pi"),
+  codex: createBridgeApi("codex"),
+  opencode: createBridgeApi("opencode", {
+    extraInvoke: {
+      revertSession: "session:revert",
+      unrevertSession: "session:unrevert",
+      listAllProviders: "provider:list",
+      getProviderAuthMethods: "provider:auth-methods",
+      connectProvider: "provider:connect",
+      disconnectProvider: "provider:disconnect",
+      oauthAuthorize: "provider:oauth:authorize",
+      oauthCallback: "provider:oauth:callback",
+      disposeInstance: "instance:dispose",
+      replyQuestion: "question:reply",
+      rejectQuestion: "question:reject",
+      getMcpStatus: "mcp:status",
+      addMcp: "mcp:add",
+      connectMcp: "mcp:connect",
+      disconnectMcp: "mcp:disconnect",
+      getConfig: "config:get",
+      updateConfig: "config:update",
+      getSkills: "skills",
+      startServer: "server:start",
+      stopServer: "server:stop",
+      getServerStatus: "server:status",
+    },
+  }),
 });

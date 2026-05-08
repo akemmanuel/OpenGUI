@@ -19,9 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
-	useAgentBackend,
-	useAvailableBackendIds,
-	useCurrentAgentBackendId,
+  useAgentBackend,
+  useAvailableBackendIds,
+  useCurrentAgentBackendId,
 } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
@@ -32,21 +32,21 @@ import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
 // ---------------------------------------------------------------------------
 
 function SourceBadge({ source }: { source: string }) {
-	if (source === "custom") {
-		return (
-			<Badge variant="outline" className="text-[10px] px-1.5 py-0">
-				custom
-			</Badge>
-		);
-	}
-	if (source === "env" || source === "api" || source === "config") {
-		return (
-			<Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-				{source === "api" ? "api key" : source}
-			</Badge>
-		);
-	}
-	return null;
+  if (source === "custom") {
+    return (
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+        custom
+      </Badge>
+    );
+  }
+  if (source === "env" || source === "api" || source === "config") {
+    return (
+      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+        {source === "api" ? "api key" : source}
+      </Badge>
+    );
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,288 +54,257 @@ function SourceBadge({ source }: { source: string }) {
 // ---------------------------------------------------------------------------
 
 export function SettingsProviders() {
-	const { refreshProviders } = useActions();
-	const { activeDirectory, activeWorkspaceId } = useConnectionState();
-	const initialBackendId = useCurrentAgentBackendId();
-	const availableBackendIds = useAvailableBackendIds();
-	const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
-	const backend = useAgentBackend(backendId);
-	const providersApi = backend?.platform?.providers;
-	const scopedDirectory = activeDirectory ?? undefined;
+  const { refreshProviders } = useActions();
+  const { activeDirectory, activeWorkspaceId } = useConnectionState();
+  const initialBackendId = useCurrentAgentBackendId();
+  const availableBackendIds = useAvailableBackendIds();
+  const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
+  const backend = useAgentBackend(backendId);
+  const providersApi = backend?.platform?.providers;
+  const scopedDirectory = activeDirectory ?? undefined;
 
-	// Data
-	const [allProviders, setAllProviders] = useState<AllProvidersData | null>(
-		null,
-	);
-	const [authMethods, setAuthMethods] = useState<
-		Record<string, ProviderAuthMethod[]>
-	>({});
-	const [loading, setLoading] = useState(true);
-	const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  // Data
+  const [allProviders, setAllProviders] = useState<AllProvidersData | null>(null);
+  const [authMethods, setAuthMethods] = useState<Record<string, ProviderAuthMethod[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
-	// Sub-dialog state
-	const [connectProviderID, setConnectProviderID] = useState<string | null>(
-		null,
-	);
-	const [showCustom, setShowCustom] = useState(false);
-	const [showSelectAll, setShowSelectAll] = useState(false);
+  // Sub-dialog state
+  const [connectProviderID, setConnectProviderID] = useState<string | null>(null);
+  const [showCustom, setShowCustom] = useState(false);
+  const [showSelectAll, setShowSelectAll] = useState(false);
 
-	// Wait for auth methods to be loaded for this provider
-	const isAuthLoading =
-		loading ||
-		(!connectProviderID ? false : authMethods[connectProviderID] === undefined);
+  // Wait for auth methods to be loaded for this provider
+  const isAuthLoading =
+    loading || (!connectProviderID ? false : authMethods[connectProviderID] === undefined);
 
-	const refresh = useCallback(async () => {
-		if (!providersApi) return;
-		const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
-		const [allProvidersData, providerAuthMethods] = await Promise.all([
-			providersApi.listAll(target),
-			providersApi.getAuthMethods(target),
-		]);
-		setAllProviders(allProvidersData);
-		setAuthMethods(providerAuthMethods);
-		setLoading(false);
-	}, [providersApi, scopedDirectory, activeWorkspaceId]);
+  const refresh = useCallback(async () => {
+    if (!providersApi) return;
+    const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+    const [allProvidersData, providerAuthMethods] = await Promise.all([
+      providersApi.listAll(target),
+      providersApi.getAuthMethods(target),
+    ]);
+    setAllProviders(allProvidersData);
+    setAuthMethods(providerAuthMethods);
+    setLoading(false);
+  }, [providersApi, scopedDirectory, activeWorkspaceId]);
 
-	useEffect(() => {
-		void refresh();
-	}, [refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
-	const handleDisconnect = async (providerID: string) => {
-		if (!providersApi) return;
-		setDisconnecting(providerID);
-		try {
-			const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
-			await providersApi.disconnect(target, providerID);
-			await providersApi.dispose(target);
-			await refresh();
-			await refreshProviders();
-		} finally {
-			setDisconnecting(null);
-		}
-	};
+  const handleDisconnect = async (providerID: string) => {
+    if (!providersApi) return;
+    setDisconnecting(providerID);
+    try {
+      const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
+      await providersApi.disconnect(target, providerID);
+      await providersApi.dispose(target);
+      await refresh();
+      await refreshProviders();
+    } finally {
+      setDisconnecting(null);
+    }
+  };
 
-	const handleConnected = async () => {
-		// Called after a provider is connected (from any sub-dialog)
-		setConnectProviderID(null);
-		setShowCustom(false);
-		setShowSelectAll(false);
-		await refresh();
-		await refreshProviders();
-	};
+  const handleConnected = async () => {
+    // Called after a provider is connected (from any sub-dialog)
+    setConnectProviderID(null);
+    setShowCustom(false);
+    setShowSelectAll(false);
+    await refresh();
+    await refreshProviders();
+  };
 
-	if (!providersApi) {
-		return (
-			<div className="text-center py-6 text-sm text-muted-foreground">
-				Current backend has no provider management.
-			</div>
-		);
-	}
+  if (!providersApi) {
+    return (
+      <div className="text-center py-6 text-sm text-muted-foreground">
+        Current backend has no provider management.
+      </div>
+    );
+  }
 
-	if (loading) {
-		return (
-			<div className="flex items-center justify-center py-8">
-				<Spinner className="size-5" />
-			</div>
-		);
-	}
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Spinner className="size-5" />
+      </div>
+    );
+  }
 
-	if (!allProviders) {
-		return (
-			<div className="text-center py-6 text-sm text-muted-foreground">
-				Could not load providers. Is the server connected?
-			</div>
-		);
-	}
+  if (!allProviders) {
+    return (
+      <div className="text-center py-6 text-sm text-muted-foreground">
+        Could not load providers. Is the server connected?
+      </div>
+    );
+  }
 
-	const connectedSet = new Set(allProviders.connected);
-	const connectedProviders = allProviders.all.filter((p) =>
-		connectedSet.has(p.id),
-	);
-	const popularNotConnected = POPULAR_PROVIDER_IDS.filter(
-		(id) => !connectedSet.has(id),
-	);
-	// For popular providers that aren't in the `all` list (not yet fetched from server),
-	// create a minimal entry
-	const allById = new Map(allProviders.all.map((p) => [p.id, p]));
+  const connectedSet = new Set(allProviders.connected);
+  const connectedProviders = allProviders.all.filter((p) => connectedSet.has(p.id));
+  const popularNotConnected = POPULAR_PROVIDER_IDS.filter((id) => !connectedSet.has(id));
+  // For popular providers that aren't in the `all` list (not yet fetched from server),
+  // create a minimal entry
+  const allById = new Map(allProviders.all.map((p) => [p.id, p]));
 
-	// If a connect dialog is open, show it instead
-	if (connectProviderID) {
-		const provider = allById.get(connectProviderID);
-		return (
-			<DialogConnectProvider
-				directory={scopedDirectory}
-				backendId={backendId}
-				providerID={connectProviderID}
-				providerName={provider?.name ?? connectProviderID}
-				authMethods={authMethods[connectProviderID] ?? []}
-				loading={isAuthLoading}
-				onConnected={handleConnected}
-				onBack={() => setConnectProviderID(null)}
-			/>
-		);
-	}
+  // If a connect dialog is open, show it instead
+  if (connectProviderID) {
+    const provider = allById.get(connectProviderID);
+    return (
+      <DialogConnectProvider
+        directory={scopedDirectory}
+        backendId={backendId}
+        providerID={connectProviderID}
+        providerName={provider?.name ?? connectProviderID}
+        authMethods={authMethods[connectProviderID] ?? []}
+        loading={isAuthLoading}
+        onConnected={handleConnected}
+        onBack={() => setConnectProviderID(null)}
+      />
+    );
+  }
 
-	if (showCustom) {
-		return (
-			<DialogCustomProvider
-				directory={scopedDirectory}
-				backendId={backendId}
-				onSaved={handleConnected}
-				onBack={() => setShowCustom(false)}
-			/>
-		);
-	}
+  if (showCustom) {
+    return (
+      <DialogCustomProvider
+        directory={scopedDirectory}
+        backendId={backendId}
+        onSaved={handleConnected}
+        onBack={() => setShowCustom(false)}
+      />
+    );
+  }
 
-	if (showSelectAll) {
-		return (
-			<DialogSelectProvider
-				providers={allProviders.all}
-				connectedIds={connectedSet}
-				onSelect={(id: string) => {
-					setShowSelectAll(false);
-					setConnectProviderID(id);
-				}}
-				onCustom={() => {
-					setShowSelectAll(false);
-					setShowCustom(true);
-				}}
-				onBack={() => setShowSelectAll(false)}
-			/>
-		);
-	}
+  if (showSelectAll) {
+    return (
+      <DialogSelectProvider
+        providers={allProviders.all}
+        connectedIds={connectedSet}
+        onSelect={(id: string) => {
+          setShowSelectAll(false);
+          setConnectProviderID(id);
+        }}
+        onCustom={() => {
+          setShowSelectAll(false);
+          setShowCustom(true);
+        }}
+        onBack={() => setShowSelectAll(false)}
+      />
+    );
+  }
 
-	return (
-		<div className="space-y-5 max-h-[50vh] overflow-y-auto pr-1">
-			{availableBackendIds.length > 1 && (
-				<div className="flex flex-wrap gap-1">
-					{availableBackendIds.map((id) => (
-						<Button
-							key={id}
-							type="button"
-							variant={backendId === id ? "default" : "outline"}
-							size="sm"
-							className="h-7 px-2 text-[11px]"
-							onClick={() => setBackendId(id)}
-						>
-							{AGENT_BACKEND_LABELS[id]}
-						</Button>
-					))}
-				</div>
-			)}
-			{/* Connected providers */}
-			{connectedProviders.length > 0 && (
-				<section className="space-y-2">
-					<h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-						Connected
-					</h4>
-					{connectedProviders.map((provider) => {
-						const isEnv = provider.source === "env";
-						const isDisconnecting = disconnecting === provider.id;
-						return (
-							<div
-								key={provider.id}
-								className="flex items-center gap-3 rounded-lg border p-3 bg-card"
-							>
-								<ProviderIcon
-									provider={provider.id}
-									className="size-5 shrink-0"
-								/>
-								<div className="flex-1 min-w-0">
-									<div className="flex items-center gap-2">
-										<span className="text-sm font-medium truncate">
-											{provider.name || provider.id}
-										</span>
-										<SourceBadge source={provider.source} />
-									</div>
-								</div>
-								{isEnv ? (
-									<span
-										className="text-[11px] text-muted-foreground shrink-0"
-										title="Connected from your environment variables"
-									>
-										from env
-									</span>
-								) : (
-									<Button
-										variant="ghost"
-										size="sm"
-										className="text-destructive shrink-0"
-										disabled={isDisconnecting}
-										onClick={() => handleDisconnect(provider.id)}
-									>
-										{isDisconnecting ? (
-											<Loader2 className="size-3.5 animate-spin" />
-										) : (
-											<Unplug className="size-3.5" />
-										)}
-										<span className="ml-1.5">Disconnect</span>
-									</Button>
-								)}
-							</div>
-						);
-					})}
-				</section>
-			)}
+  return (
+    <div className="space-y-5 max-h-[50vh] overflow-y-auto pr-1">
+      {availableBackendIds.length > 1 && (
+        <div className="flex flex-wrap gap-1">
+          {availableBackendIds.map((id) => (
+            <Button
+              key={id}
+              type="button"
+              variant={backendId === id ? "default" : "outline"}
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={() => setBackendId(id)}
+            >
+              {AGENT_BACKEND_LABELS[id]}
+            </Button>
+          ))}
+        </div>
+      )}
+      {/* Connected providers */}
+      {connectedProviders.length > 0 && (
+        <section className="space-y-2">
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Connected
+          </h4>
+          {connectedProviders.map((provider) => {
+            const isEnv = provider.source === "env";
+            const isDisconnecting = disconnecting === provider.id;
+            return (
+              <div
+                key={provider.id}
+                className="flex items-center gap-3 rounded-lg border p-3 bg-card"
+              >
+                <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">
+                      {provider.name || provider.id}
+                    </span>
+                    <SourceBadge source={provider.source} />
+                  </div>
+                </div>
+                {isEnv ? (
+                  <span
+                    className="text-[11px] text-muted-foreground shrink-0"
+                    title="Connected from your environment variables"
+                  >
+                    from env
+                  </span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive shrink-0"
+                    disabled={isDisconnecting}
+                    onClick={() => handleDisconnect(provider.id)}
+                  >
+                    {isDisconnecting ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Unplug className="size-3.5" />
+                    )}
+                    <span className="ml-1.5">Disconnect</span>
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
 
-			{/* Popular providers (not yet connected) */}
-			{popularNotConnected.length > 0 && (
-				<section className="space-y-2">
-					<h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-						Popular
-					</h4>
-					{popularNotConnected.map((id) => {
-						const provider = allById.get(id);
-						return (
-							<div
-								key={id}
-								className="flex items-center gap-3 rounded-lg border p-3 bg-card"
-							>
-								<ProviderIcon provider={id} className="size-5 shrink-0" />
-								<span className="text-sm font-medium truncate flex-1">
-									{provider?.name || id}
-								</span>
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setConnectProviderID(id)}
-								>
-									<Plus className="size-3.5 mr-1" />
-									Connect
-								</Button>
-							</div>
-						);
-					})}
-				</section>
-			)}
+      {/* Popular providers (not yet connected) */}
+      {popularNotConnected.length > 0 && (
+        <section className="space-y-2">
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Popular
+          </h4>
+          {popularNotConnected.map((id) => {
+            const provider = allById.get(id);
+            return (
+              <div key={id} className="flex items-center gap-3 rounded-lg border p-3 bg-card">
+                <ProviderIcon provider={id} className="size-5 shrink-0" />
+                <span className="text-sm font-medium truncate flex-1">{provider?.name || id}</span>
+                <Button variant="outline" size="sm" onClick={() => setConnectProviderID(id)}>
+                  <Plus className="size-3.5 mr-1" />
+                  Connect
+                </Button>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
-			{/* Custom + View all */}
-			<section className="space-y-2">
-				<h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-					Other
-				</h4>
-				<div className="flex items-center gap-3 rounded-lg border p-3 bg-card">
-					<ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-					<span className="text-sm font-medium truncate flex-1">
-						Custom provider
-					</span>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => setShowCustom(true)}
-					>
-						<Plus className="size-3.5 mr-1" />
-						Connect
-					</Button>
-				</div>
-				<button
-					type="button"
-					className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
-					onClick={() => setShowSelectAll(true)}
-				>
-					View all providers
-				</button>
-			</section>
-		</div>
-	);
+      {/* Custom + View all */}
+      <section className="space-y-2">
+        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Other</h4>
+        <div className="flex items-center gap-3 rounded-lg border p-3 bg-card">
+          <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
+          <span className="text-sm font-medium truncate flex-1">Custom provider</span>
+          <Button variant="outline" size="sm" onClick={() => setShowCustom(true)}>
+            <Plus className="size-3.5 mr-1" />
+            Connect
+          </Button>
+        </div>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+          onClick={() => setShowSelectAll(true)}
+        >
+          View all providers
+        </button>
+      </section>
+    </div>
+  );
 }

@@ -3,15 +3,15 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-	return twMerge(clsx(inputs));
+  return twMerge(clsx(inputs));
 }
 
 /** Abbreviate an absolute path by replacing the home directory prefix with ~. */
 export function abbreviatePath(path: string, homeDir: string): string {
-	if (homeDir && path.startsWith(homeDir)) {
-		return `~${path.slice(homeDir.length)}`;
-	}
-	return path;
+  if (homeDir && path.startsWith(homeDir)) {
+    return `~${path.slice(homeDir.length)}`;
+  }
+  return path;
 }
 
 /**
@@ -19,27 +19,27 @@ export function abbreviatePath(path: string, homeDir: string): string {
  * Returns  1 if a > b, -1 if a < b, 0 if equal.
  */
 export function compareSemver(a: string, b: string): -1 | 0 | 1 {
-	const pa = a.split(".").map(Number);
-	const pb = b.split(".").map(Number);
-	const len = Math.max(pa.length, pb.length);
-	for (let i = 0; i < len; i++) {
-		const na = pa[i] ?? 0;
-		const nb = pb[i] ?? 0;
-		if (na > nb) return 1;
-		if (na < nb) return -1;
-	}
-	return 0;
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
 }
 
 /** Find a model by provider ID and model ID in a providers list. */
 export function findModel(
-	providers: Provider[],
-	providerID: string,
-	modelID: string,
+  providers: Provider[],
+  providerID: string,
+  modelID: string,
 ): Model | undefined {
-	const prov = providers.find((p) => p.id === providerID);
-	if (!prov) return undefined;
-	return prov.models[modelID];
+  const prov = providers.find((p) => p.id === providerID);
+  if (!prov) return undefined;
+  return prov.models[modelID];
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ export const DEFAULT_AGENT_NAME = "build";
 
 /** Check whether an agent is selectable (primary/all mode and not hidden). */
 export function isSelectableAgent(agent: Agent): boolean {
-	return (agent.mode === "primary" || agent.mode === "all") && !agent.hidden;
+  return (agent.mode === "primary" || agent.mode === "all") && !agent.hidden;
 }
 
 /**
@@ -59,206 +59,199 @@ export function isSelectableAgent(agent: Agent): boolean {
  * The default agent ("build") is sorted first; the rest keeps original order.
  */
 export function getPrimaryAgents(agents: Agent[]): Agent[] {
-	return agents.filter(isSelectableAgent).sort((a, b) => {
-		const aIsDefault = a.name === DEFAULT_AGENT_NAME ? 1 : 0;
-		const bIsDefault = b.name === DEFAULT_AGENT_NAME ? 1 : 0;
-		return bIsDefault - aIsDefault;
-	});
+  return agents.filter(isSelectableAgent).sort((a, b) => {
+    const aIsDefault = a.name === DEFAULT_AGENT_NAME ? 1 : 0;
+    const bIsDefault = b.name === DEFAULT_AGENT_NAME ? 1 : 0;
+    return bIsDefault - aIsDefault;
+  });
 }
 
 /** Normalize project path for stable workspace/session keys. */
 export function normalizeProjectPath(path: string): string {
-	const trimmed = path.trim();
-	if (!trimmed) return "";
-	if (/^[/\\]+$/.test(trimmed)) return trimmed[0] ?? trimmed;
-	const windowsDriveRoot = trimmed.match(/^([A-Za-z]:)([/\\]+)$/);
-	if (windowsDriveRoot) {
-		return `${windowsDriveRoot[1]}${trimmed.includes("\\") ? "\\" : "/"}`;
-	}
-	return trimmed.replace(/[/\\]+$/, "");
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^[/\\]+$/.test(trimmed)) return trimmed[0] ?? trimmed;
+  const windowsDriveRoot = trimmed.match(/^([A-Za-z]:)([/\\]+)$/);
+  if (windowsDriveRoot) {
+    return `${windowsDriveRoot[1]}${trimmed.includes("\\") ? "\\" : "/"}`;
+  }
+  return trimmed.replace(/[/\\]+$/, "");
 }
 
 /** Extract the trailing directory name from an absolute path (cross-platform). */
 export function getProjectName(directory: string, fallback = "repo"): string {
-	const parts = normalizeProjectPath(directory).split(/[/\\]/);
-	return parts[parts.length - 1] || fallback;
+  const parts = normalizeProjectPath(directory).split(/[/\\]/);
+  return parts[parts.length - 1] || fallback;
 }
 
 /** Safely extract an error message from an unknown catch value. */
-export function getErrorMessage(
-	err: unknown,
-	fallback = "Unexpected error",
-): string {
-	if (err instanceof Error) return err.message;
-	if (typeof err === "string") return err;
-	return fallback;
+export function getErrorMessage(err: unknown, fallback = "Unexpected error"): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return fallback;
 }
 
 /** Open a URL in the system browser via the Electron bridge, with fallback. */
 export function openExternalLink(url: string): void {
-	if (window.electronAPI?.openExternal) {
-		void window.electronAPI.openExternal(url);
-	} else {
-		window.open(url, "_blank", "noopener,noreferrer");
-	}
+  if (window.electronAPI?.openExternal) {
+    void window.electronAPI.openExternal(url);
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 }
 
 export function looksLikeTerminalOutput(content: string): boolean {
-	return (
-		content.includes("\u001b[") ||
-		content.includes("\u009b") ||
-		content.includes("\r") ||
-		content.includes("\b") ||
-		/[│┌┐└┘├┤┬┴┼╭╮╯╰═║╔╗╚╝╠╣╦╩╬]/.test(content)
-	);
+  return (
+    content.includes("\u001b[") ||
+    content.includes("\u009b") ||
+    content.includes("\r") ||
+    content.includes("\b") ||
+    /[│┌┐└┘├┤┬┴┼╭╮╯╰═║╔╗╚╝╠╣╦╩╬]/.test(content)
+  );
 }
 
 function writeChar(line: string[], cursor: number, char: string): number {
-	while (line.length < cursor) line.push(" ");
-	line[cursor] = char;
-	return cursor + 1;
+  while (line.length < cursor) line.push(" ");
+  line[cursor] = char;
+  return cursor + 1;
 }
 
 export function normalizeTerminalOutput(content: string): string {
-	const lines: string[] = [];
-	let currentLine: string[] = [];
-	let cursor = 0;
+  const lines: string[] = [];
+  let currentLine: string[] = [];
+  let cursor = 0;
 
-	const commitLine = () => {
-		lines.push(currentLine.join(""));
-		currentLine = [];
-		cursor = 0;
-	};
+  const commitLine = () => {
+    lines.push(currentLine.join(""));
+    currentLine = [];
+    cursor = 0;
+  };
 
-	for (let i = 0; i < content.length; i++) {
-		const char = content[i] ?? "";
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i] ?? "";
 
-		if (char === "\u001b" || char === "\u009b") {
-			let finalChar = "";
-			let params = "";
+    if (char === "\u001b" || char === "\u009b") {
+      let finalChar = "";
+      let params = "";
 
-			if (char === "\u001b" && content[i + 1] === "]") {
-				i += 2;
-				while (i < content.length) {
-					if (content[i] === "\u0007") break;
-					if (content[i] === "\u001b" && content[i + 1] === "\\") {
-						i += 1;
-						break;
-					}
-					i += 1;
-				}
-				continue;
-			}
+      if (char === "\u001b" && content[i + 1] === "]") {
+        i += 2;
+        while (i < content.length) {
+          if (content[i] === "\u0007") break;
+          if (content[i] === "\u001b" && content[i + 1] === "\\") {
+            i += 1;
+            break;
+          }
+          i += 1;
+        }
+        continue;
+      }
 
-			if (char === "\u001b" && content[i + 1] === "[") {
-				i += 2;
-			} else if (char === "\u009b") {
-				i += 1;
-			} else {
-				continue;
-			}
+      if (char === "\u001b" && content[i + 1] === "[") {
+        i += 2;
+      } else if (char === "\u009b") {
+        i += 1;
+      } else {
+        continue;
+      }
 
-			for (; i < content.length; i++) {
-				const code = content.charCodeAt(i);
-				if (code >= 0x40 && code <= 0x7e) {
-					finalChar = content[i] ?? "";
-					break;
-				}
-				params += content[i] ?? "";
-			}
+      for (; i < content.length; i++) {
+        const code = content.charCodeAt(i);
+        if (code >= 0x40 && code <= 0x7e) {
+          finalChar = content[i] ?? "";
+          break;
+        }
+        params += content[i] ?? "";
+      }
 
-			const [firstParam = ""] = params.split(";");
-			const amount = Number.parseInt(firstParam, 10);
-			const count = Number.isFinite(amount) ? amount : 1;
+      const [firstParam = ""] = params.split(";");
+      const amount = Number.parseInt(firstParam, 10);
+      const count = Number.isFinite(amount) ? amount : 1;
 
-			switch (finalChar) {
-				case "C":
-					cursor += count;
-					break;
-				case "D":
-					cursor = Math.max(0, cursor - count);
-					break;
-				case "G":
-					cursor = Math.max(0, count - 1);
-					break;
-				case "K": {
-					const mode = Number.isFinite(amount) ? amount : 0;
-					if (mode === 0) {
-						currentLine.length = cursor;
-					} else if (mode === 1) {
-						for (let j = 0; j <= cursor && j < currentLine.length; j++) {
-							currentLine[j] = " ";
-						}
-					} else if (mode === 2) {
-						currentLine = [];
-						cursor = 0;
-					}
-					break;
-				}
-				case "J":
-					if (amount === 2 || amount === 3) {
-						lines.length = 0;
-						currentLine = [];
-						cursor = 0;
-					}
-					break;
-				default:
-					break;
-			}
+      switch (finalChar) {
+        case "C":
+          cursor += count;
+          break;
+        case "D":
+          cursor = Math.max(0, cursor - count);
+          break;
+        case "G":
+          cursor = Math.max(0, count - 1);
+          break;
+        case "K": {
+          const mode = Number.isFinite(amount) ? amount : 0;
+          if (mode === 0) {
+            currentLine.length = cursor;
+          } else if (mode === 1) {
+            for (let j = 0; j <= cursor && j < currentLine.length; j++) {
+              currentLine[j] = " ";
+            }
+          } else if (mode === 2) {
+            currentLine = [];
+            cursor = 0;
+          }
+          break;
+        }
+        case "J":
+          if (amount === 2 || amount === 3) {
+            lines.length = 0;
+            currentLine = [];
+            cursor = 0;
+          }
+          break;
+        default:
+          break;
+      }
 
-			continue;
-		}
+      continue;
+    }
 
-		if (char === "\r") {
-			cursor = 0;
-			continue;
-		}
+    if (char === "\r") {
+      cursor = 0;
+      continue;
+    }
 
-		if (char === "\n") {
-			commitLine();
-			continue;
-		}
+    if (char === "\n") {
+      commitLine();
+      continue;
+    }
 
-		if (char === "\b") {
-			cursor = Math.max(0, cursor - 1);
-			continue;
-		}
+    if (char === "\b") {
+      cursor = Math.max(0, cursor - 1);
+      continue;
+    }
 
-		if (char === "\t") {
-			const spaces = 4 - (cursor % 4 || 0);
-			for (let j = 0; j < spaces; j++) {
-				cursor = writeChar(currentLine, cursor, " ");
-			}
-			continue;
-		}
+    if (char === "\t") {
+      const spaces = 4 - (cursor % 4 || 0);
+      for (let j = 0; j < spaces; j++) {
+        cursor = writeChar(currentLine, cursor, " ");
+      }
+      continue;
+    }
 
-		cursor = writeChar(currentLine, cursor, char);
-	}
+    cursor = writeChar(currentLine, cursor, char);
+  }
 
-	if (currentLine.length > 0 || content.endsWith("\n")) {
-		lines.push(currentLine.join(""));
-	}
+  if (currentLine.length > 0 || content.endsWith("\n")) {
+    lines.push(currentLine.join(""));
+  }
 
-	return lines.join("\n");
+  return lines.join("\n");
 }
 
 /** Build a compare URL for creating a pull request from a remote URL and branch. */
-export function buildPRUrl(
-	remoteUrl: string,
-	branch: string,
-	baseBranch = "main",
-): string | null {
-	let base: string | null = null;
-	const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
-	if (sshMatch) {
-		base = `https://${sshMatch[1]}/${sshMatch[2]}`;
-	}
-	const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
-	if (httpsMatch) {
-		base = `https://${httpsMatch[1]}/${httpsMatch[2]}`;
-	}
-	if (!base) return null;
-	return `${base}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`;
+export function buildPRUrl(remoteUrl: string, branch: string, baseBranch = "main"): string | null {
+  let base: string | null = null;
+  const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+  if (sshMatch) {
+    base = `https://${sshMatch[1]}/${sshMatch[2]}`;
+  }
+  const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
+  if (httpsMatch) {
+    base = `https://${httpsMatch[1]}/${httpsMatch[2]}`;
+  }
+  if (!base) return null;
+  return `${base}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`;
 }
 
 /**
@@ -266,18 +259,18 @@ export function buildPRUrl(
  * Accepts an ISO string or epoch-ms number.
  */
 export function formatTimeAgo(date: string | number): string {
-	const ms = typeof date === "string" ? Date.parse(date) : date;
-	if (Number.isNaN(ms)) return "";
-	const seconds = Math.floor((Date.now() - ms) / 1000);
-	if (seconds < 60) return "just now";
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m ago`;
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
-	const days = Math.floor(hours / 24);
-	if (days < 30) return `${days}d ago`;
-	const months = Math.floor(days / 30);
-	return `${months}mo ago`;
+  const ms = typeof date === "string" ? Date.parse(date) : date;
+  if (Number.isNaN(ms)) return "";
+  const seconds = Math.floor((Date.now() - ms) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
 }
 
 /**
@@ -285,50 +278,47 @@ export function formatTimeAgo(date: string | number): string {
  * Prefers the authoritative `total` field; falls back to summing components.
  */
 export function computeTokenTotal(tokens: {
-	total?: number;
-	input?: number;
-	output?: number;
-	reasoning?: number;
-	cache?: { read?: number; write?: number };
+  total?: number;
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cache?: { read?: number; write?: number };
 }): number {
-	if (typeof tokens.total === "number" && tokens.total > 0) return tokens.total;
-	return (
-		(tokens.input ?? 0) +
-		(tokens.output ?? 0) +
-		(tokens.reasoning ?? 0) +
-		(tokens.cache?.read ?? 0) +
-		(tokens.cache?.write ?? 0)
-	);
+  if (typeof tokens.total === "number" && tokens.total > 0) return tokens.total;
+  return (
+    (tokens.input ?? 0) +
+    (tokens.output ?? 0) +
+    (tokens.reasoning ?? 0) +
+    (tokens.cache?.read ?? 0) +
+    (tokens.cache?.write ?? 0)
+  );
 }
 
 /** Prune keys not in `validKeys` from a Record. Returns prev if unchanged. */
-export function pruneRecord<T>(
-	prev: Record<string, T>,
-	validKeys: Set<string>,
-): Record<string, T> {
-	let changed = false;
-	const next: Record<string, T> = {};
-	for (const key of Object.keys(prev)) {
-		if (validKeys.has(key)) {
-			const val = prev[key];
-			if (val !== undefined) next[key] = val;
-		} else {
-			changed = true;
-		}
-	}
-	return changed ? next : prev;
+export function pruneRecord<T>(prev: Record<string, T>, validKeys: Set<string>): Record<string, T> {
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const key of Object.keys(prev)) {
+    if (validKeys.has(key)) {
+      const val = prev[key];
+      if (val !== undefined) next[key] = val;
+    } else {
+      changed = true;
+    }
+  }
+  return changed ? next : prev;
 }
 
 /** Return a new Set with the given items added. */
 export function setWith<T>(s: Set<T>, ...items: T[]): Set<T> {
-	const next = new Set(s);
-	for (const item of items) next.add(item);
-	return next;
+  const next = new Set(s);
+  for (const item of items) next.add(item);
+  return next;
 }
 
 /** Return a new Set with the given items removed. */
 export function setWithout<T>(s: Set<T>, ...items: T[]): Set<T> {
-	const next = new Set(s);
-	for (const item of items) next.delete(item);
-	return next;
+  const next = new Set(s);
+  for (const item of items) next.delete(item);
+  return next;
 }

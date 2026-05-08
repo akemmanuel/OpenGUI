@@ -1,0 +1,89 @@
+{
+  "common": {
+    "autoDetect": "Auto-detect",
+    "back": "Back",
+    "browse": "Browse",
+    "cancel": "Cancel",
+    "restart": "Restart",
+    "settings": "Settings",
+    "version": "Version"
+  },
+  "settings": {
+    "subtitle": "Manage app preferences and providers for active workspace.",
+    "tabs": {
+      "general": "General",
+      "providers": "Providers",
+      "skills": "Skills",
+      "tools": "Tools"
+    },
+    "general": {
+      "agentBackend": "Agent backend",
+      "darkMode": "Dark mode",
+      "appearance": "Appearance",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "themeSystem": "System",
+      "contrast": "Contrast",
+      "accent": "Accent",
+      "customAccent": "Custom accent color",
+      "codeFontSize": "Code font size",
+      "language": "Language",
+      "defaultChatDirectory": "Default chat directory",
+      "defaultChatDirectoryHelp": "New chats start in this working directory.",
+      "desktopNotifications": "Desktop notifications",
+      "blockedByBrowser": "Blocked by browser",
+      "fileManager": "File manager",
+      "fileManagerHelp": "Command to open your file manager (e.g. nemo, nautilus). Leave empty to auto-detect.",
+      "terminal": "Terminal",
+      "terminalHelp": "Command to open your terminal (e.g. ghostty, kitty). Leave empty to auto-detect.",
+      "hideOldModels": "Hide old models",
+      "months": "months",
+      "hideOldModelsHelp": "Selected and favorite models always stay visible. Models without a valid release date also stay visible.",
+      "restartServer": "Restart Server",
+      "restartServerTitle": "Restart Server?",
+      "restartServerDescription": "This will restart the server. All open sessions will be stopped and you will need to reconnect."
+    }
+  },
+  "sidebar": {
+    "allProjectsPinned": "All projects pinned",
+    "chats": "Chats",
+    "clearSearch": "Clear sidebar search",
+    "loadMore": "Load more ({{count}})",
+    "newChat": "New Chat",
+    "newSession": "New session",
+    "noChats": "No chats",
+    "noMatches": "No matches for \"{{query}}\"",
+    "noSessionsYet": "No sessions yet",
+    "pinned": "Pinned",
+    "projects": "Projects",
+    "searchPlaceholder": "Search projects and sessions...",
+    "showLess": "Show less",
+    "untitled": "Untitled"
+  },
+  "setupWizard": {
+    "title": "Welcome to OpenGUI",
+    "backendStatusSubtitle": "Check which AI agent backends are installed. Install any missing ones now or later.",
+    "detectingBackends": "Detecting installed backends...",
+    "detectedBackends": "{{count}} backend(s) installed",
+    "folderSubtitle": "Choose the folder you want to work in.",
+    "installed": "Installed",
+    "notInstalled": "Not installed",
+    "requiredCommand": "Required command",
+    "installCommand": "Install command",
+    "installCli": "Install CLI",
+    "reinstallCli": "Reinstall CLI",
+    "docs": "Docs",
+    "folderTitle": "Project Folder",
+    "folderHelp": "New chats will open in this directory by default.",
+    "folderEmptyHint": "Leave this empty if you want to be asked each time. You can change it under",
+    "settingsGeneral": "Settings → General",
+    "skipSetup": "Skip setup",
+    "continue": "Continue",
+    "launch": "Launch OpenGUI"
+  },
+  "languages": {
+    "de": "Deutsch",
+    "en": "English",
+    "es": "Español"
+  }
+}

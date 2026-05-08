@@ -6,10 +6,13 @@
  */
 
 import { createRoot } from "react-dom/client";
-import { installWebElectronAPI } from "./lib/web-electron-api";
 import { App } from "./App";
+import { applyStoredAppearance } from "./hooks/use-theme";
+import { initI18n } from "./i18n";
+import { installWebElectronAPI } from "./lib/web-electron-api";
 
 installWebElectronAPI();
+applyStoredAppearance();
 
 const elem = document.getElementById("root");
 if (!elem) throw new Error("Root element not found");
@@ -18,14 +21,20 @@ if (!elem) throw new Error("Root element not found");
 // streaming output in the Electron renderer.
 const app = <App />;
 
-if (import.meta.hot) {
-	// With hot module reloading, `import.meta.hot.data` is persisted.
-	if (!import.meta.hot.data.root) {
-		import.meta.hot.data.root = createRoot(elem);
-	}
-	const root = import.meta.hot.data.root;
-	root.render(app);
-} else {
-	// The hot module reloading API is not available in production.
-	createRoot(elem).render(app);
+async function renderApp() {
+  await initI18n();
+  if (import.meta.hot) {
+    // With hot module reloading, `import.meta.hot.data` is persisted.
+    if (!import.meta.hot.data.root) {
+      import.meta.hot.data.root = createRoot(elem!);
+    }
+    const root = import.meta.hot.data.root;
+    root.render(app);
+    return;
+  }
+
+  // The hot module reloading API is not available in production.
+  createRoot(elem!).render(app);
 }
+
+void renderApp();
