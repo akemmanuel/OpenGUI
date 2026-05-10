@@ -4,11 +4,11 @@
  */
 
 import type { Part, TextPart } from "@opencode-ai/sdk/v2/client";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { ShieldAlert, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { QuestionPanel } from "@/components/message-list/QuestionPanel";
 import { MessageBubble } from "@/components/message-list/MessageBubble";
+import { VirtualMessageScroller } from "@/components/message-list/VirtualMessageScroller";
 import type { TurnFooter } from "@/components/message-list/types";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -19,16 +19,11 @@ import {
   useMessages,
   useSessionState,
 } from "@/hooks/use-agent-state";
-import { NEAR_BOTTOM_PX } from "@/lib/constants";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
 
 /** Part types that actually render something visible. */
 const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
-const VIRTUALIZATION_MESSAGE_THRESHOLD = 60;
-const VIRTUALIZATION_OVERSCAN_IDLE = 12;
-const VIRTUALIZATION_OVERSCAN_BUSY = 16;
-
 /** Check if a part will produce visible output. */
 function isRenderablePart(part: Part): boolean {
   if (!RENDERABLE_TYPES.has(part.type)) return false;
@@ -135,106 +130,8 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
   const pendingPermission = activeSessionId ? (pendingPermissions[activeSessionId] ?? null) : null;
   const pendingQuestion = activeSessionId ? (pendingQuestions[activeSessionId] ?? null) : null;
 
-  const listRef = useRef<HTMLDivElement>(null);
-  /** Whether the user is currently near the bottom of the scroll container. */
-  const isNearBottomRef = useRef(true);
-  /** Set to true while we are programmatically scrolling to avoid the onScroll handler unsetting sticky. */
-  const isProgrammaticScrollRef = useRef(false);
-  /** RAF handle so we batch at most one scroll per frame. */
-  const rafRef = useRef<number | null>(null);
-  const prevSessionRef = useRef<string | null>(null);
-  const sessionJustSwitchedRef = useRef(false);
-  /** Sentinel element at the top of the list for triggering older message loads. */
-  const topSentinelRef = useRef<HTMLDivElement>(null);
-  /** Track message count before a prepend so we can preserve scroll position. */
-  const prevMessageCountRef = useRef(0);
-
-  // ---- auto-load older messages when scrolled near the top ----
-
-  useEffect(() => {
-    const sentinel = topSentinelRef.current;
-    const scrollContainer = listRef.current;
-    if (!sentinel || !scrollContainer) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry?.isIntersecting && messageHistoryHasMore && !isLoadingOlderMessages) {
-          // Snapshot scroll metrics before prepend
-          prevMessageCountRef.current = scrollContainer.scrollHeight;
-          void loadOlderMessages();
-        }
-      },
-      { root: scrollContainer, rootMargin: "200px 0px 0px 0px", threshold: 0 },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [messageHistoryHasMore, isLoadingOlderMessages, loadOlderMessages]);
-
-  // ---- preserve scroll position after older messages are prepended ----
-  // We use a MutationObserver on the scroll container's childList to detect
-  // when older messages are inserted. This avoids lint issues with effect
-  // dependencies while still firing synchronously before paint.
-
-  useLayoutEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    const observer = new MutationObserver(() => {
-      if (prevMessageCountRef.current === 0) return;
-      const prevScrollHeight = prevMessageCountRef.current;
-      const newScrollHeight = el.scrollHeight;
-      if (newScrollHeight > prevScrollHeight) {
-        isProgrammaticScrollRef.current = true;
-        el.scrollTop += newScrollHeight - prevScrollHeight;
-        requestAnimationFrame(() => {
-          isProgrammaticScrollRef.current = false;
-        });
-      }
-      prevMessageCountRef.current = 0;
-    });
-    observer.observe(el, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
-  // ---- helpers ----
-
-  const checkNearBottom = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
-  }, []);
-
-  const scrollToBottom = useCallback(() => {
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      const el = listRef.current;
-      if (!el) return;
-      isProgrammaticScrollRef.current = true;
-      el.scrollTop = el.scrollHeight;
-      // Reset programmatic flag after the browser has had time to fire the scroll event.
-      requestAnimationFrame(() => {
-        isProgrammaticScrollRef.current = false;
-      });
-    });
-  }, []);
-
-  // ---- onScroll: track whether user scrolled away ----
-
-  const handleScroll = useCallback(() => {
-    if (isProgrammaticScrollRef.current) return;
-    isNearBottomRef.current = checkNearBottom();
-  }, [checkNearBottom]);
-
-  // ---- session switch: mark flag so the layout effect can scroll before paint ----
-
-  useLayoutEffect(() => {
-    if (activeSessionId !== prevSessionRef.current) {
-      prevSessionRef.current = activeSessionId;
-      isNearBottomRef.current = true;
-      sessionJustSwitchedRef.current = true;
-    }
-  }, [activeSessionId]);
+  const [expandedUserMessages, setExpandedUserMessages] = useState<Set<string>>(() => new Set());
+  const [expandedToolParts, setExpandedToolParts] = useState<Set<string>>(() => new Set());
 
   // ---- visible messages (filter out step-only / empty entries) ----
 
@@ -364,18 +261,23 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     () => visibleMessages.findIndex((message) => message.info.role === "user"),
     [visibleMessages],
   );
-  const shouldVirtualizeMessages = visibleMessages.length >= VIRTUALIZATION_MESSAGE_THRESHOLD;
-  const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: visibleMessages.length,
-    enabled: shouldVirtualizeMessages,
-    getScrollElement: () => listRef.current,
-    getItemKey: (index) => visibleMessages[index]?.info.id ?? index,
-    estimateSize: (index) => (visibleMessages[index]?.info.role === "user" ? 96 : 220),
-    overscan: isBusy ? VIRTUALIZATION_OVERSCAN_BUSY : VIRTUALIZATION_OVERSCAN_IDLE,
-    useAnimationFrameWithResizeObserver: true,
-  });
-  const virtualItems = shouldVirtualizeMessages ? messageVirtualizer.getVirtualItems() : [];
-  const virtualHeight = shouldVirtualizeMessages ? messageVirtualizer.getTotalSize() : 0;
+  const toggleUserMessage = useCallback((messageId: string) => {
+    setExpandedUserMessages((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }, []);
+
+  const toggleToolPart = useCallback((partId: string, expanded: boolean) => {
+    setExpandedToolParts((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(partId);
+      else next.delete(partId);
+      return next;
+    });
+  }, []);
 
   const renderMessageBubble = useCallback(
     (entry: MessageEntry, idx: number) => {
@@ -400,6 +302,10 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
                 ? () => revertToMessage(entry.info.id)
                 : undefined
             }
+            expandedUserMessages={expandedUserMessages}
+            expandedToolParts={expandedToolParts}
+            onToggleUserMessage={toggleUserMessage}
+            onToggleToolPart={toggleToolPart}
           />
         </div>
       );
@@ -411,31 +317,13 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
       lastReasoningPartId,
       forkFromMessage,
       revertToMessage,
+      expandedUserMessages,
+      expandedToolParts,
+      toggleUserMessage,
+      toggleToolPart,
+      capabilities,
     ],
   );
-
-  // ---- session switch: jump to bottom synchronously before paint ----
-
-  useLayoutEffect(() => {
-    if (!sessionJustSwitchedRef.current) return;
-    const el = listRef.current;
-    if (!el || visibleMessages.length === 0) return;
-    scrollToBottom();
-    sessionJustSwitchedRef.current = false;
-  }, [scrollToBottom, visibleMessages]);
-
-  // ---- streaming / new content: scroll only if sticky ----
-
-  useEffect(() => {
-    // visibleMessages is intentionally in the dep array so this effect
-    // re-fires on every streaming delta, keeping the view pinned to the
-    // bottom while new tokens arrive.
-    if (!visibleMessages.length) return;
-    if (!isNearBottomRef.current) return;
-    // Skip if we already handled this render in the layout effect above.
-    if (sessionJustSwitchedRef.current) return;
-    scrollToBottom();
-  }, [scrollToBottom, visibleMessages]);
 
   if (isLoadingMessages && visibleMessages.length === 0) {
     return (
@@ -468,82 +356,58 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     );
   }
 
+  const trailingContent = (
+    <>
+      {capabilities?.revert && revertMessageID && revertedCount > 0 && (
+        <RevertBanner revertedCount={revertedCount} onRestore={unrevert} />
+      )}
+
+      {capabilities?.permissions && pendingPermission && (
+        <div className="border rounded-lg p-4 bg-amber-500/10 border-amber-500/30 space-y-3 mt-4">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Permission: {pendingPermission.permission}</p>
+              {pendingPermission.patterns.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {pendingPermission.patterns.join(", ")}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="default" onClick={() => respondPermission("once")}>
+              Allow once
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => respondPermission("always")}>
+              Always allow
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => respondPermission("reject")}>
+              Reject
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {capabilities?.questions && pendingQuestion && (
+        <QuestionPanel
+          questions={pendingQuestion.questions}
+          onSubmit={(answers) => replyQuestion(answers)}
+          onDismiss={() => rejectQuestion()}
+        />
+      )}
+    </>
+  );
+
   return (
-    <div ref={listRef} onScroll={handleScroll} className="flex-1 overflow-auto px-4 py-4">
-      <div className="max-w-[640px] mx-auto">
-        {/* Sentinel for auto-loading older messages */}
-        {messageHistoryHasMore && <div ref={topSentinelRef} className="h-px w-full" />}
-        {isLoadingOlderMessages && (
-          <div className="flex items-center justify-center py-3">
-            <Spinner className="size-4 text-muted-foreground" />
-          </div>
-        )}
-        {visibleMessages.length > 0 && shouldVirtualizeMessages && (
-          <div className="relative w-full" style={{ height: virtualHeight }}>
-            {virtualItems.map((virtualItem) => {
-              const entry = visibleMessages[virtualItem.index];
-              if (!entry) return null;
-
-              return (
-                <div
-                  key={virtualItem.key}
-                  data-index={virtualItem.index}
-                  ref={messageVirtualizer.measureElement}
-                  className="absolute left-0 top-0 w-full"
-                  style={{ transform: `translateY(${virtualItem.start}px)` }}
-                >
-                  {renderMessageBubble(entry, virtualItem.index)}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {visibleMessages.length > 0 && !shouldVirtualizeMessages && (
-          <div>{visibleMessages.map((entry, index) => renderMessageBubble(entry, index))}</div>
-        )}
-
-        {/* Revert marker */}
-        {capabilities?.revert && revertMessageID && revertedCount > 0 && (
-          <RevertBanner revertedCount={revertedCount} onRestore={unrevert} />
-        )}
-
-        {/* Permission request */}
-        {capabilities?.permissions && pendingPermission && (
-          <div className="border rounded-lg p-4 bg-amber-500/10 border-amber-500/30 space-y-3">
-            <div className="flex items-start gap-2">
-              <ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Permission: {pendingPermission.permission}</p>
-                {pendingPermission.patterns.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {pendingPermission.patterns.join(", ")}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="default" onClick={() => respondPermission("once")}>
-                Allow once
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => respondPermission("always")}>
-                Always allow
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => respondPermission("reject")}>
-                Reject
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Question request */}
-        {capabilities?.questions && pendingQuestion && (
-          <QuestionPanel
-            questions={pendingQuestion.questions}
-            onSubmit={(answers) => replyQuestion(answers)}
-            onDismiss={() => rejectQuestion()}
-          />
-        )}
-      </div>
-    </div>
+    <VirtualMessageScroller
+      messages={visibleMessages}
+      isBusy={isBusy}
+      hasOlder={messageHistoryHasMore}
+      isLoadingOlder={isLoadingOlderMessages}
+      loadOlder={loadOlderMessages}
+      renderMessage={renderMessageBubble}
+      trailingContent={trailingContent}
+    />
   );
 }

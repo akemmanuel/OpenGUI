@@ -1,5 +1,5 @@
 import { AlertTriangle, GitFork, Layers, Undo2 } from "lucide-react";
-import { memo, useState } from "react";
+import { memo } from "react";
 import { ProviderIcon } from "@/components/provider-icons";
 import type { MessageEntry } from "@/hooks/use-agent-state";
 import { USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
@@ -14,16 +14,24 @@ export const MessageBubble = memo(function MessageBubble({
   lastReasoningPartId,
   onFork,
   onRevert,
+  expandedUserMessages,
+  expandedToolParts,
+  onToggleUserMessage,
+  onToggleToolPart,
 }: {
   entry: MessageEntry;
   turnFooter?: TurnFooter;
   lastReasoningPartId?: string;
   onFork?: () => void;
   onRevert?: () => void;
+  expandedUserMessages?: ReadonlySet<string>;
+  expandedToolParts?: ReadonlySet<string>;
+  onToggleUserMessage?: (messageId: string) => void;
+  onToggleToolPart?: (partId: string, expanded: boolean) => void;
 }) {
   const { info, parts } = entry;
   const isUser = info.role === "user";
-  const [expanded, setExpanded] = useState(false);
+  const expanded = expandedUserMessages?.has(info.id) ?? false;
   const isSummary = info.role === "assistant" && "summary" in info && info.summary === true;
 
   const userTextLength = isUser
@@ -89,6 +97,8 @@ export const MessageBubble = memo(function MessageBubble({
                   part={part}
                   isUser={isUser}
                   lastReasoningPartId={lastReasoningPartId}
+                  expandedToolParts={expandedToolParts}
+                  onToggleToolPart={onToggleToolPart}
                 />
               ))}
             </div>
@@ -98,7 +108,7 @@ export const MessageBubble = memo(function MessageBubble({
             {shouldCollapse && (
               <button
                 type="button"
-                onClick={() => setExpanded(!expanded)}
+                onClick={() => onToggleUserMessage?.(info.id)}
                 className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
               >
                 {expanded ? "Show less" : "Show more"}

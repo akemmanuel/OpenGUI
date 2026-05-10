@@ -17,7 +17,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
 import { Spinner } from "@/components/ui/spinner";
@@ -218,10 +218,19 @@ function ToolBody({
   }
 }
 
-export function ToolPartView({ part }: { part: ToolPart }) {
+export function ToolPartView({
+  part,
+  expandedToolParts,
+  onToggleToolPart,
+}: {
+  part: ToolPart;
+  expandedToolParts?: ReadonlySet<string>;
+  onToggleToolPart?: (partId: string, expanded: boolean) => void;
+}) {
   const { workspaceServerUrl } = useConnectionState();
   const presentation = getToolPresentation(part, workspaceServerUrl);
-  const [expanded, setExpanded] = useState(false);
+  const expanded = expandedToolParts?.has(part.id) ?? false;
+  const setExpanded = (nextExpanded: boolean) => onToggleToolPart?.(part.id, nextExpanded);
   const autoExpandedRef = useRef(false);
   const bashAutoExpandedRef = useRef(false);
   const taskContentRef = useRef<HTMLDivElement>(null);

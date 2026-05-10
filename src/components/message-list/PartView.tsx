@@ -9,10 +9,14 @@ export const PartView = memo(function PartView({
   part,
   isUser,
   lastReasoningPartId,
+  expandedToolParts,
+  onToggleToolPart,
 }: {
   part: Part;
   isUser?: boolean;
   lastReasoningPartId?: string;
+  expandedToolParts?: ReadonlySet<string>;
+  onToggleToolPart?: (partId: string, expanded: boolean) => void;
 }) {
   switch (part.type) {
     case "text":
@@ -22,7 +26,13 @@ export const PartView = memo(function PartView({
     case "reasoning":
       return <ReasoningPartView part={part} isLastReasoning={part.id === lastReasoningPartId} />;
     case "tool":
-      return <ToolPartView part={part} />;
+      return (
+        <ToolPartView
+          part={part}
+          expandedToolParts={expandedToolParts}
+          onToggleToolPart={onToggleToolPart}
+        />
+      );
     case "step-start":
     case "step-finish":
     case "snapshot":
