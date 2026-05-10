@@ -1,4 +1,5 @@
-const { BrowserWindow } = require("electron/main");
+// @ts-nocheck
+import { BrowserWindow } from "electron/main";
 
 function broadcastToAllWindows(channel, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -8,4 +9,4 @@ function broadcastToAllWindows(channel, payload) {
   }
 }
 
-module.exports = { broadcastToAllWindows };
+export { broadcastToAllWindows };

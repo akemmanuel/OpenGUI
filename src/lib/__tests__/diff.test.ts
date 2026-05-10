@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "@voidzero-dev/vite-plus-test";
 import { parseUnifiedDiff } from "@/lib/diff";
 
 test("parseUnifiedDiff ignores headers and counts changed lines", () => {

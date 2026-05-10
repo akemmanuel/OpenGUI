@@ -92,14 +92,17 @@ Backend requirements depend on what you use:
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) v1.2+
+- [Bun](https://bun.sh) v1.2+ runtime
+- [pnpm](https://pnpm.io/) 10+ package manager
 - At least one supported backend configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
 - [Electron](https://www.electronjs.org/) installed through project dependencies
+
+OpenGUI uses Bun as the runtime for the Electron/web backend, pnpm for dependency management, and Vite+ (`vp`) as the development/build/check task runner.
 
 Install dependencies:
 
 ```bash
-bun install
+pnpm install
 ```
 
 No manual config file needed. Connection settings live in UI. Pick backend, connect workspace, start prompting.
@@ -109,13 +112,13 @@ No manual config file needed. Connection settings live in UI. Pick backend, conn
 Run Electron app with HMR:
 
 ```bash
-bun dev
+vp run dev
 ```
 
 Run web app with local backend API (projects, git, agents):
 
 ```bash
-bun dev:web
+vp run dev:web
 ```
 
 Open `http://127.0.0.1:3000`. Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
@@ -133,19 +136,19 @@ See [docs/docker.md](docs/docker.md) for GHCR install, Docker modes, and [docs/a
 Build frontend bundle:
 
 ```bash
-bun run build
+vp build
 ```
 
 Run Electron app in production mode:
 
 ```bash
-bun start
+vp run start
 ```
 
 Build and run web app in production mode:
 
 ```bash
-bun start:web
+vp run start:web
 ```
 
 For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or another HTTPS reverse proxy in front.
@@ -155,33 +158,32 @@ For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or a
 Build Linux `.deb`:
 
 ```bash
-bun run dist
+vp run dist:linux
 ```
 
 Build macOS `.dmg`:
 
 ```bash
-bun run dist:mac
+vp run dist:mac
 ```
 
 Build Windows `.exe` installer:
 
 ```bash
-bun run dist:win
+vp run dist:win
 ```
 
 ## Architecture
 
 ```
-main.cjs              Electron main process (window management, IPC)
-preload.cjs           Preload script (contextBridge API for renderer)
-opencode-bridge.mjs    IPC bridge to OpenCode SDK
-claude-code-bridge.mjs IPC bridge to Claude Code SDK
-codex-bridge.mjs       IPC bridge to Codex SDK
-pi-bridge.mjs          IPC bridge to Pi runtime
-server/web-server.ts  Bun backend for browser mode (RPC, events, server FS browser)
+main.ts              Electron main process (window management, IPC)
+preload.js           Preload script (contextBridge API for renderer)
+opencode-bridge.ts    IPC bridge to OpenCode SDK
+claude-code-bridge.ts IPC bridge to Claude Code SDK
+codex-bridge.ts       IPC bridge to Codex SDK
+pi-bridge.ts          IPC bridge to Pi runtime
+server/web-server.ts  Bun runtime backend for browser mode (RPC, events, server FS browser)
 src/
-  index.ts            Renderer-only Bun dev server entry
   index.html          HTML entry point
   frontend.tsx        React entry point + web Electron shim install
   App.tsx             Main app layout

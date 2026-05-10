@@ -1,5 +1,6 @@
-const fs = require("node:fs");
-const path = require("node:path");
+// @ts-nocheck
+import fs from "node:fs";
+import path from "node:path";
 
 const SETTINGS_FILE_NAME = "settings.json";
 const SETTINGS_VERSION = 1;
@@ -98,8 +99,4 @@ function createSettingsStore(baseDir) {
   };
 }
 
-module.exports = {
-  SETTINGS_FILE_NAME,
-  SETTINGS_VERSION,
-  createSettingsStore,
-};
+export { SETTINGS_FILE_NAME, SETTINGS_VERSION, createSettingsStore };

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { areNotificationsEnabled } from "@/hooks/agent-state-persistence";
-import type { Session } from "@/hooks/use-agent-impl-core";
+import type { Session } from "@/hooks/agent-state-types";
 
 export function useDesktopNotification(
   triggerMap: Record<string, unknown>,

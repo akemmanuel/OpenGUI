@@ -1,7 +1,7 @@
 import { normalizeProjectPath } from "@/lib/utils";
 import type { AgentBackendId } from "@/agents";
 import type { ProjectMetaMap } from "@/hooks/agent-state-persistence";
-import type { MessageEntry, Session } from "@/hooks/use-agent-impl-core";
+import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
 
 const PROJECT_KEY_SEPARATOR = "\u0000";

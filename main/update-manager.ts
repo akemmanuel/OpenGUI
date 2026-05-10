@@ -1,5 +1,9 @@
-const { app, ipcMain } = require("electron");
-const { broadcastToAllWindows } = require("../lib/window-broadcast.cjs");
+// @ts-nocheck
+import { app, ipcMain } from "electron";
+import { createRequire } from "node:module";
+import { broadcastToAllWindows } from "../lib/window-broadcast.js";
+
+const require = createRequire(import.meta.url);
 
 let autoUpdater = null;
 
@@ -253,10 +257,8 @@ function setupUpdateManager() {
   }, STARTUP_CHECK_DELAY_MS);
 }
 
-module.exports = {
-  setupUpdateManager,
-  getUpdateState: getState,
-};
+export { setupUpdateManager };
+export const getUpdateState = getState;
 
 /**
  * @typedef {Object} UpdateState

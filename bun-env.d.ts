@@ -15,3 +15,11 @@ declare module "*.module.css" {
   const classes: { readonly [key: string]: string };
   export = classes;
 }
+
+declare module "@voidzero-dev/vite-plus-test" {
+  export const afterEach: typeof import("bun:test").afterEach;
+  export const beforeAll: typeof import("bun:test").beforeAll;
+  export const describe: typeof import("bun:test").describe;
+  export const expect: typeof import("bun:test").expect;
+  export const test: typeof import("bun:test").test;
+}

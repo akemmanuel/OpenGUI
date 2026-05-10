@@ -1,4 +1,5 @@
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
+import type { NativeBackendEvent } from "@/types/electron";
 import { normalizeProjectPath } from "@/lib/utils";
 import type { AgentBackendEvent, AgentBackendTarget } from "./backend";
 import type { AgentBackendId } from "./index";
@@ -16,6 +17,7 @@ export type SessionTags = {
 };
 
 export type TaggedSession = Session & SessionTags;
+type BackendEventTarget = { directory?: string; workspaceId?: string };
 
 export function requireSuccess<T>(result: BridgeResult<T>, fallback: string): T {
   if (result.success) return result.data as T;
@@ -75,6 +77,61 @@ export function normalizePartSessionId(backendId: AgentBackendId, part: Part): P
         sessionID: createBackendIdCodec(backendId).compose(part.sessionID),
       } as Part)
     : part;
+}
+
+export function normalizeBridgeConnectionStatus(
+  event: NativeBackendEvent,
+): AgentBackendEvent | null {
+  if (event.type !== "connection:status") return null;
+  return {
+    type: "connection.status",
+    directory: event.directory,
+    workspaceId: event.workspaceId,
+    status: event.payload,
+  };
+}
+
+export function normalizeTaggedBackendEvent(
+  backendId: AgentBackendId,
+  event: NativeBackendEvent,
+  nativeEventType: string,
+): AgentBackendEvent | null {
+  const connectionStatus = normalizeBridgeConnectionStatus(event);
+  if (connectionStatus) return connectionStatus;
+  if (event.type !== nativeEventType) return null;
+
+  const payload = (event.payload ?? null) as AgentBackendEvent | null;
+  if (!payload) return null;
+
+  const codec = createBackendIdCodec(backendId);
+  const tagSession = (session: TaggedSession, target: BackendEventTarget) =>
+    tagBackendSession(backendId, session, target);
+
+  switch (payload.type) {
+    case "session.created":
+    case "session.updated":
+      return {
+        ...payload,
+        session: tagSession(payload.session, {
+          directory: payload.directory,
+          workspaceId: payload.workspaceId,
+        }),
+      };
+    case "session.replaced":
+      return {
+        ...payload,
+        oldId: codec.compose(payload.oldId),
+        newId: codec.compose(payload.newId),
+        session: tagSession(payload.session, {
+          directory: payload.directory,
+          workspaceId: payload.workspaceId,
+        }),
+      };
+    case "session.deleted":
+      return { ...payload, sessionId: codec.compose(payload.sessionId) };
+    default:
+      return normalizeBackendEventPayload(backendId, payload);
+  }
 }
 
 export function normalizeBackendEventPayload(

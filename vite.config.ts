@@ -8,6 +8,32 @@ import { defineConfig } from "vite-plus";
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const webBackendPort = Number(process.env.OPENGUI_WEB_BACKEND_PORT || 3001);
 
+function openguiElectronBuild() {
+  return {
+    name: "opengui-electron-build",
+    apply: "build",
+    async closeBundle() {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn("vp", ["build", "--config", "vite.electron.config.ts"], {
+          cwd: configDir,
+          stdio: "inherit",
+          env: process.env,
+        });
+
+        child.once("error", reject);
+        child.once("exit", (code) => {
+          if (code === 0) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(`Electron build failed with exit code ${code}`));
+        });
+      });
+    },
+  };
+}
+
 function openguiWebBackend() {
   let backend: ChildProcess | undefined;
 
@@ -44,7 +70,7 @@ export default defineConfig({
   root: "src",
   base: "./",
   publicDir: false,
-  plugins: [react(), tailwindcss(), openguiWebBackend()],
+  plugins: [react(), tailwindcss(), openguiWebBackend(), openguiElectronBuild()],
   resolve: {
     alias: {
       "@": path.resolve(configDir, "src"),
@@ -87,23 +113,23 @@ export default defineConfig({
         cache: false,
       },
       "dist:linux": {
-        command: "electron-builder --linux deb",
+        command: "vp build && electron-builder --linux deb",
         cache: false,
       },
       "dist:mac": {
-        command: "electron-builder --mac dmg",
+        command: "vp build && electron-builder --mac dmg",
         cache: false,
       },
       "dist:mac:arm64": {
-        command: "electron-builder --mac dmg --arm64",
+        command: "vp build && electron-builder --mac dmg --arm64",
         cache: false,
       },
       "dist:win": {
-        command: "electron-builder --win nsis",
+        command: "vp build && electron-builder --win nsis",
         cache: false,
       },
       "dist:win:portable": {
-        command: "electron-builder --win portable",
+        command: "vp build && electron-builder --win portable",
         cache: false,
       },
     },

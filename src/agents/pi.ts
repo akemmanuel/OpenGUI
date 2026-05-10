@@ -8,7 +8,7 @@ import type {
 import {
   createBackendIdCodec,
   getTarget,
-  normalizeBackendEventPayload,
+  normalizeTaggedBackendEvent,
   normalizeMessageSessionId,
   normalizePartSessionId,
   requireSuccess,
@@ -60,41 +60,7 @@ function tagPiSession(
 }
 
 function normalizePiEvent(event: NativeBackendEvent): AgentBackendEvent | null {
-  if (event.type === "connection:status") {
-    return {
-      type: "connection.status",
-      directory: event.directory,
-      workspaceId: event.workspaceId,
-      status: event.payload,
-    } satisfies AgentBackendEvent;
-  }
-  if (event.type !== "pi:event") return null;
-  const payload = (event.payload ?? null) as AgentBackendEvent | null;
-  if (!payload) return null;
-  if (payload.type === "session.created" || payload.type === "session.updated") {
-    return {
-      ...payload,
-      session: tagPiSession(payload.session, {
-        directory: payload.directory,
-        workspaceId: payload.workspaceId,
-      }),
-    };
-  }
-  if (payload.type === "session.replaced") {
-    return {
-      ...payload,
-      oldId: toCompositeSessionId(payload.oldId),
-      newId: toCompositeSessionId(payload.newId),
-      session: tagPiSession(payload.session, {
-        directory: payload.directory,
-        workspaceId: payload.workspaceId,
-      }),
-    };
-  }
-  if (payload.type === "session.deleted") {
-    return { ...payload, sessionId: toCompositeSessionId(payload.sessionId) };
-  }
-  return normalizeBackendEventPayload("pi", payload);
+  return normalizeTaggedBackendEvent("pi", event, "pi:event");
 }
 
 export function createPiBackend(bridge?: PiBridge): PiBackendAdapter | undefined {

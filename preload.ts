@@ -1,4 +1,5 @@
-const { contextBridge, ipcRenderer } = require("electron");
+// @ts-nocheck
+import { contextBridge, ipcRenderer } from "electron";
 
 const invoke =
   (channel) =>

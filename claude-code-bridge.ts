@@ -1,5 +1,6 @@
+// @ts-nocheck
 /**
- * ESM bridge module loaded by main.cjs via dynamic import().
+ * ESM bridge module loaded by main.ts via dynamic import().
  * Hosts Claude Code Agent SDK project/session state and wires IPC handlers.
  */
 

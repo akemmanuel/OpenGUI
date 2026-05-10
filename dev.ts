@@ -8,6 +8,12 @@ const host = "127.0.0.1";
 const port = Number(Bun.env.OPENGUI_VITE_PORT || 5173);
 const url = `http://${host}:${port}`;
 
+const build = Bun.spawnSync(["bun", "scripts/build-electron.ts"], {
+  stdio: ["inherit", "inherit", "inherit"],
+});
+
+if (!build.success) process.exit(build.exitCode);
+
 const server = Bun.spawn(["vp", "dev", "--host", host, "--port", String(port)], {
   stdio: ["inherit", "inherit", "inherit"],
   env: { ...Bun.env, OPENGUI_SKIP_WEB_BACKEND: "1" },

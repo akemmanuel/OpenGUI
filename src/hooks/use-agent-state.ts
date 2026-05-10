@@ -19,6 +19,6 @@ export type {
   QueueMode,
   QueuedPrompt,
   Session,
-  SessionColor,
-  WorktreeMetadata,
-} from "./use-agent-impl-core";
+} from "./agent-state-types";
+
+export type { SessionColor, WorktreeMetadata } from "./agent-state-persistence";

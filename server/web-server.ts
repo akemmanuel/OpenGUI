@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
-import { createRequire } from "node:module";
+import { createSettingsStore as createSettingsStoreImpl } from "../settings-store.ts";
 import index from "../src/index.html";
 import type { ServerWebSocket } from "bun";
 
@@ -175,8 +175,7 @@ function openTerminal(dirPath: string, command = "") {
 }
 
 function createSettingsStore(userData: string) {
-  const require = createRequire(import.meta.url);
-  return require("../settings-store.cjs").createSettingsStore(userData);
+  return createSettingsStoreImpl(userData);
 }
 
 async function setupHandlers(
@@ -258,10 +257,10 @@ async function setupHandlers(
     { setupPiBridge },
     { setupCodexBridge },
   ] = await Promise.all([
-    import("../opencode-bridge.mjs"),
-    import("../claude-code-bridge.mjs"),
-    import("../pi-bridge.mjs"),
-    import("../codex-bridge.mjs"),
+    import("../opencode-bridge.ts"),
+    import("../claude-code-bridge.ts"),
+    import("../pi-bridge.ts"),
+    import("../codex-bridge.ts"),
   ]);
 
   setupOpenCodeBridge(ipcMain, getAllWindows);

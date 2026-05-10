@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
@@ -2662,7 +2663,7 @@ class PiDaemonClient {
     if (!port) throw new Error("Could not allocate Pi daemon port");
     const token = randomUUID();
     const baseUrl = `http://127.0.0.1:${port}`;
-    const daemonPath = join(__dirname, "pi-daemon-server.mjs");
+    const daemonPath = join(__dirname, "pi-daemon-server.js");
     if (!(await fileExists(daemonPath)))
       throw new Error(`Pi daemon script not found: ${daemonPath}`);
 

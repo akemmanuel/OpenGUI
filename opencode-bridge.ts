@@ -1,9 +1,10 @@
+// @ts-nocheck
 /**
- * ESM bridge module loaded by main.cjs via dynamic import().
+ * ESM bridge module loaded by main.ts via dynamic import().
  * Hosts OpenCodeConnection instances (one per project) and wires IPC handlers.
  *
- * This file MUST be .mjs so Electron's Node runtime treats it as ESM,
- * allowing us to import the ESM-only @opencode-ai/sdk.
+ * TypeScript ESM bridge compiled to dist-electron/opencode-bridge.js,
+ * allowing imports from the ESM-only @opencode-ai/sdk.
  *
  * Uses v2 SDK which supports variant selection and named parameters.
  */
@@ -766,7 +767,7 @@ class OpenCodeConnection {
 }
 
 // ---------------------------------------------------------------------------
-// Setup: called from main.cjs with (ipcMain, mainWindow)
+// Setup: called from main.ts with (ipcMain, mainWindow)
 // ---------------------------------------------------------------------------
 
 export function setupOpenCodeBridge(ipcMain, _getWindows) {

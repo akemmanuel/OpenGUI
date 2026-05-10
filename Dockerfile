@@ -4,6 +4,7 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		bash \
 		ca-certificates \
+		curl \
 		git \
 		iproute2 \
 		openssh-client \
@@ -14,11 +15,16 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+ENV PNPM_HOME=/pnpm
+ENV PATH=/app/node_modules/.bin:$PNPM_HOME:$PATH
+
+RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=/bin/bash PNPM_HOME=/pnpm sh -
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN bun run build
+RUN vp build
 COPY docker/host-exec /usr/local/bin/opengui-host-exec
 COPY docker/entrypoint.sh /usr/local/bin/opengui-entrypoint
 RUN chmod +x /usr/local/bin/opengui-host-exec /usr/local/bin/opengui-entrypoint \

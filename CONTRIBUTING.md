@@ -4,16 +4,20 @@ Thanks for your interest in contributing to OpenGUI. This guide covers what you 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) v1.2+
+- [Bun](https://bun.sh) v1.2+ runtime
+- [pnpm](https://pnpm.io/) 10+
+- [Vite+](https://github.com/mariozechner/vite-plus) (`vp`) available via project dependencies
 - At least one supported backend available locally (OpenCode CLI, Claude Code, Codex, or Pi)
 - Git
+
+Tooling convention: Bun runs the app/server code, pnpm owns dependency installation and lockfile changes, and Vite+ (`vp`) is the command surface for development, checks, tests, builds, and project tasks.
 
 ## Setup
 
 ```bash
 git clone https://github.com/akemmanuel/OpenGUI.git
 cd OpenGUI
-bun install
+pnpm install
 ```
 
 ## Development
@@ -21,28 +25,27 @@ bun install
 Run Electron app in development mode (renderer HMR + Electron shell):
 
 ```bash
-bun dev
+vp run dev
 ```
 
-Or run browser version with Bun backend API:
+Or run browser version with backend API:
 
 ```bash
-bun dev:web
+vp run dev:web
 ```
 
 ## Code Style
 
-This project currently uses `oxlint` via Bun scripts:
+This project uses Vite+ tasks:
 
 ```bash
-bun run lint          # lint check
-bun run lint:check    # lint check
-bun run lint:fix      # auto-fix where possible
-bun run typecheck     # TypeScript-aware checks
-bun test              # unit tests
+vp lint          # lint check
+vp check         # lint, format, and type checks
+vp test          # unit tests
+vp fmt           # format
 ```
 
-Run `bun run lint:check`, `bun run typecheck`, and `bun test` before submitting a PR.
+Run `vp check` and `vp test` before submitting a PR.
 
 ## Commit Messages
 
@@ -57,7 +60,7 @@ Write clear, concise commit messages. Focus on the "why" rather than the "what."
 1. Fork the repository
 2. Create a feature branch from `master`: `git checkout -b my-feature`
 3. Make your changes
-4. Run `bun run lint:check`, `bun run typecheck`, and `bun test`
+4. Run `vp check` and `vp test`
 5. Commit your changes with a clear message
 6. Push to your fork and open a pull request against `master`
 
@@ -75,12 +78,14 @@ Check existing issues before opening a new one to avoid duplicates.
 If you're new to the codebase, here's where things live:
 
 ```
-main.cjs              Electron main process (window management, IPC)
-preload.cjs           Preload script (contextBridge API for renderer)
-opencode-bridge.mjs   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
-server/web-server.ts  Bun backend for browser mode (RPC, events, server FS browser)
+main.ts              Electron main process (window management, IPC)
+preload.js           Preload script (contextBridge API for renderer)
+opencode-bridge.ts   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
+claude-code-bridge.ts IPC bridge to Claude Code SDK
+codex-bridge.ts      IPC bridge to Codex SDK
+pi-bridge.ts         IPC bridge to Pi runtime
+server/web-server.ts  Bun runtime backend for browser mode (RPC, events, server FS browser)
 src/
-  index.ts            Renderer-only Bun dev server entry
   index.html          HTML entry point
   frontend.tsx        React entry point
   App.tsx             Main app layout

@@ -15,7 +15,7 @@ import type {
   QueueMode,
   QueuedPrompt,
   Session,
-} from "@/hooks/use-agent-impl-core";
+} from "@/hooks/agent-state-types";
 import type {
   ProjectMeta,
   RecentProject,

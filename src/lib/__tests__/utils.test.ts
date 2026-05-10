@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { Provider } from "@opencode-ai/sdk/v2/client";
 import { abbreviatePath, findModel } from "../utils";
 

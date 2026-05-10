@@ -8,7 +8,7 @@ import type {
 import {
   createBackendIdCodec,
   getTarget,
-  normalizeBackendEventPayload,
+  normalizeTaggedBackendEvent,
   normalizeMessageSessionId,
   normalizePartSessionId,
   requireSuccess,
@@ -61,49 +61,7 @@ function tagClaudeSession(
 }
 
 function normalizeClaudeCodeEvent(event: NativeBackendEvent): AgentBackendEvent | null {
-  if (event.type === "connection:status") {
-    return {
-      type: "connection.status",
-      directory: event.directory,
-      workspaceId: event.workspaceId,
-      status: event.payload,
-    };
-  }
-  if (event.type !== "claude-code:event") return null;
-  const payload = (event.payload ?? null) as AgentBackendEvent | null;
-  if (!payload) return null;
-  switch (payload.type) {
-    case "session.created":
-      return {
-        ...payload,
-        session: tagClaudeSession(payload.session, {
-          directory: payload.directory,
-          workspaceId: payload.workspaceId,
-        }),
-      };
-    case "session.replaced":
-      return {
-        ...payload,
-        oldId: toCompositeSessionId(payload.oldId),
-        newId: toCompositeSessionId(payload.newId),
-        session: tagClaudeSession(payload.session, {
-          directory: payload.directory,
-          workspaceId: payload.workspaceId,
-        }),
-      };
-    case "session.updated":
-      return {
-        ...payload,
-        session: tagClaudeSession(payload.session, {
-          directory: payload.directory,
-          workspaceId: payload.workspaceId,
-        }),
-      };
-    case "session.deleted":
-      return { ...payload, sessionId: toCompositeSessionId(payload.sessionId) };
-    default:
-      return normalizeBackendEventPayload("claude-code", payload);
-  }
+  return normalizeTaggedBackendEvent("claude-code", event, "claude-code:event");
 }
 
 export function createClaudeCodeBackend(

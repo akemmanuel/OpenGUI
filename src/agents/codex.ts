@@ -8,7 +8,7 @@ import type {
 import {
   createBackendIdCodec,
   getTarget,
-  normalizeBackendEventPayload,
+  normalizeTaggedBackendEvent,
   normalizeMessageSessionId,
   normalizePartSessionId,
   requireSuccess,
@@ -60,41 +60,7 @@ function tagCodexSession(
 }
 
 function normalizeCodexEvent(event: NativeBackendEvent): AgentBackendEvent | null {
-  if (event.type === "connection:status") {
-    return {
-      type: "connection.status",
-      directory: event.directory,
-      workspaceId: event.workspaceId,
-      status: event.payload,
-    };
-  }
-  if (event.type !== "codex:event") return null;
-  const payload = (event.payload ?? null) as AgentBackendEvent | null;
-  if (!payload) return null;
-  if (payload.type === "session.created" || payload.type === "session.updated") {
-    return {
-      ...payload,
-      session: tagCodexSession(payload.session, {
-        directory: payload.directory,
-        workspaceId: payload.workspaceId,
-      }),
-    };
-  }
-  if (payload.type === "session.replaced") {
-    return {
-      ...payload,
-      oldId: toCompositeSessionId(payload.oldId),
-      newId: toCompositeSessionId(payload.newId),
-      session: tagCodexSession(payload.session, {
-        directory: payload.directory,
-        workspaceId: payload.workspaceId,
-      }),
-    };
-  }
-  if (payload.type === "session.deleted") {
-    return { ...payload, sessionId: toCompositeSessionId(payload.sessionId) };
-  }
-  return normalizeBackendEventPayload("codex", payload);
+  return normalizeTaggedBackendEvent("codex", event, "codex:event");
 }
 
 export function createCodexBackend(bridge?: CodexBridge): CodexBackendAdapter | undefined {

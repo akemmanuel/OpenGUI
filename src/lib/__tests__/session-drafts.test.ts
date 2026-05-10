@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { STORAGE_KEYS } from "../constants";
 import {
   getSessionDraftImages,

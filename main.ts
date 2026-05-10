@@ -1,9 +1,14 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron/main");
-const path = require("node:path");
-const { execSync, spawn } = require("node:child_process");
-const { createSettingsStore } = require("./settings-store.cjs");
-const { setupUpdateManager } = require("./main/update-manager.cjs");
-const { broadcastToAllWindows } = require("./lib/window-broadcast.cjs");
+// @ts-nocheck
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron/main";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { execSync, spawn } from "node:child_process";
+import { createSettingsStore } from "./settings-store.js";
+import { setupUpdateManager } from "./main/update-manager.js";
+import { broadcastToAllWindows } from "./lib/window-broadcast.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.setName("OpenGUI");
 app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));
@@ -128,7 +133,7 @@ function createBrowserWindow({ width, height, minWidth = 450, minHeight = 500 })
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.cjs"),
+      preload: path.join(__dirname, "preload.js"),
     },
     ...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
   });
@@ -313,7 +318,7 @@ ipcMain.handle("app:isPackaged", () => {
 });
 
 ipcMain.handle("platform:homeDir", () => {
-  return require("node:os").homedir();
+  return homedir();
 });
 
 ipcMain.handle("platform:detectBackends", () => {
@@ -434,23 +439,23 @@ void app.whenReady().then(async () => {
   const bridges = [
     {
       name: "opencode",
-      path: "./opencode-bridge.mjs",
+      path: "./opencode-bridge.js",
       setupName: "setupOpenCodeBridge",
     },
     {
       name: "claude-code",
-      path: "./claude-code-bridge.mjs",
+      path: "./claude-code-bridge.js",
       setupName: "setupClaudeCodeBridge",
     },
     {
       name: "pi",
-      path: "./pi-bridge.mjs",
+      path: "./pi-bridge.ts",
       setupName: "setupPiBridge",
       options: { userData: app.getPath("userData") },
     },
     {
       name: "codex",
-      path: "./codex-bridge.mjs",
+      path: "./codex-bridge.js",
       setupName: "setupCodexBridge",
     },
   ];

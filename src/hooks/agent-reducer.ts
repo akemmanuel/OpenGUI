@@ -6,10 +6,14 @@ import type {
   PermissionRequest,
   Provider,
   QuestionRequest,
-  Session,
 } from "@opencode-ai/sdk/v2/client";
 import type { AgentBackendId } from "@/agents";
-import type { InternalAgentState, MessageEntry, QueuedPrompt } from "@/hooks/use-agent-impl-core";
+import type {
+  InternalAgentState,
+  MessageEntry,
+  QueuedPrompt,
+  Session,
+} from "@/hooks/agent-state-types";
 import {
   applyStreamingDeltaToPart,
   bufferNonActiveEvent,

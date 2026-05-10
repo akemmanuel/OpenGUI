@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { getSidebarSessionProjectDirectory, partitionSidebarPins } from "../sidebar-pins";
 
 describe("getSidebarSessionProjectDirectory", () => {
