@@ -124,6 +124,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener("backend:install-progress", handler);
   },
 
+  // Skills install progress events
+  onSkillsInstallProgress: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("opencode:skills:install-progress", handler);
+    return () => ipcRenderer.removeListener("opencode:skills:install-progress", handler);
+  },
+
   // Worktree setup helpers
   worktree: {
     detectSetup: invoke("worktree:detect-setup"),
@@ -169,6 +176,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
       startServer: "server:start",
       stopServer: "server:stop",
       getServerStatus: "server:status",
+      // Skills marketplace
+      marketplaceList: "skills:marketplace:list",
+      marketplaceSearch: "skills:marketplace:search",
+      marketplaceDetail: "skills:marketplace:detail",
+      marketplaceAudit: "skills:marketplace:audit",
+      marketplaceCurated: "skills:marketplace:curated",
+      installSkill: "skills:install",
+      removeSkill: "skills:remove",
+      updateSkill: "skills:update",
+      listInstalledSkills: "skills:list-installed",
+      checkSkillsCli: "skills:check-cli",
     },
   }),
 });

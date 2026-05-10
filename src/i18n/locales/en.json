@@ -4,6 +4,7 @@
     "back": "Back",
     "browse": "Browse",
     "cancel": "Cancel",
+    "close": "Close",
     "restart": "Restart",
     "settings": "Settings",
     "version": "Version"
@@ -14,6 +15,7 @@
       "general": "General",
       "providers": "Providers",
       "skills": "Skills",
+      "marketplace": "Marketplace",
       "tools": "Tools"
     },
     "general": {
@@ -42,6 +44,52 @@
       "restartServer": "Restart Server",
       "restartServerTitle": "Restart Server?",
       "restartServerDescription": "This will restart the server. All open sessions will be stopped and you will need to reconnect."
+    },
+    "skills": {
+      "installed": "Installed Skills",
+      "noSkills": "No skills discovered.",
+      "browseMarketplace": "Browse Marketplace",
+      "remove": "Remove",
+      "update": "Update",
+      "local": "Local",
+      "remote": "Remote",
+      "sdkSkills": "Agent SDK",
+      "installedSkills": "Filesystem",
+      "cliAvailable": "CLI available",
+      "cliUnavailable": "Install Node.js or Bun to use marketplace"
+    },
+    "marketplace": {
+      "title": "Skills Marketplace",
+      "searchPlaceholder": "Search skills…",
+      "all": "All",
+      "trending": "Trending",
+      "hot": "Hot",
+      "official": "Official",
+      "install": "Install",
+      "installing": "Installing…",
+      "installed": "Installed",
+      "nameConflict": "Name used",
+      "installs": "{{count}} installs",
+      "installsLabel": "installs",
+      "details": "Details",
+      "audit": "Security",
+      "noResults": "No skills found",
+      "loading": "Loading skills…",
+      "error": "Failed to load skills",
+      "retry": "Retry",
+      "projectScope": "Project",
+      "globalScope": "Global",
+      "installScope": "Install scope",
+      "installScopeHelp": "Project installs skills into .agents/skills/ in the current project directory. Global installs into ~/.agents/skills/.",
+      "source": "Source",
+      "skillFile": "File",
+      "installSuccess": "Skill installed successfully",
+      "installFailed": "Installation failed",
+      "confirmRemove": "Remove skill \"{{name}}\"?",
+      "confirmRemoveDesc": "This will uninstall the skill from your agents.",
+      "confirmUpdate": "Update skill \"{{name}}\"?",
+      "confirmUpdateDesc": "This will fetch the latest version from the source.",
+      "sku": "skill"
     }
   },
   "sidebar": {

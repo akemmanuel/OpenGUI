@@ -43,6 +43,18 @@ export interface MessageEntry {
   parts: Part[];
 }
 
+export interface TurnRun {
+  id: string;
+  sessionID: string;
+  startedAt: number;
+  completedAt?: number;
+  status: "running" | "completed" | "error" | "aborted";
+  assistantMessageID?: string;
+  providerID?: string;
+  modelID?: string;
+  thinkingLevel?: string;
+}
+
 export interface InternalAgentState {
   /** Configured workspaces. */
   workspaces: Workspace[];
@@ -135,6 +147,10 @@ export interface InternalAgentState {
     worktreeDir: string;
     parentDir: string;
   } | null;
+  /** Explicit frontend request/turn runs, keyed by turn ID. */
+  turnRuns: Record<string, TurnRun>;
+  /** Currently running turn ID per session. */
+  activeTurnRunBySession: Record<string, string>;
   /** Messages/parts for child (subagent) sessions, keyed by child sessionID */
   childSessions: Record<string, Record<string, { info: Message; parts: Record<string, Part> }>>;
   /** Set of child session IDs we're actively tracking (from running Task tool parts) */

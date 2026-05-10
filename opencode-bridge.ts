@@ -11,10 +11,11 @@
 
 import { execSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { Agent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
-import { join, normalize, sep } from "node:path";
+import { basename, join, normalize, sep } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 
 // ---------------------------------------------------------------------------
@@ -626,15 +627,21 @@ class OpenCodeConnection {
     this._abortController = abortController;
 
     try {
-      const events = await this._client.event.subscribe({
-        signal: abortController.signal,
-        // Disable SDK-level retry - we handle reconnection at the app level
-        // with our own backoff. Without this, the SDK silently retries with
-        // exponential backoff (3s/6s/12s/24s/30s) and the app has no
-        // visibility into the disconnect.
-        sseMaxRetryAttempts: 1,
-        onSseError: (err) => console.warn("[OpenCodeConnection] SDK SSE error:", err),
-      });
+      const events = await this._client.event.subscribe(
+        {},
+        {
+          signal: abortController.signal,
+          // Disable SDK-level retry - we handle reconnection at the app level
+          // with our own backoff. Without this, the SDK silently retries with
+          // exponential backoff (3s/6s/12s/24s/30s) and the app has no
+          // visibility into the disconnect.
+          sseMaxRetryAttempts: 1,
+          onSseError: (err) => {
+            if (abortController.signal.aborted) return;
+            console.warn("[OpenCodeConnection] SDK SSE error:", err);
+          },
+        },
+      );
 
       const stream = events.stream ?? events;
       for await (const event of stream) {
@@ -654,11 +661,13 @@ class OpenCodeConnection {
         this._reconnectAttempt = 0;
       }
 
-      // Stream ended cleanly (server closed the connection).
-      // Reconnect unless we intentionally aborted.
+      // Newer OpenCode servers can close the project-scoped /event stream
+      // cleanly after sending the initial server.connected event. Treat a
+      // clean EOF as non-fatal; otherwise every open project enters a tight
+      // reconnect/log loop while the connection itself remains healthy.
       if (!abortController.signal.aborted && this._streamGeneration === streamGeneration) {
-        console.warn("[OpenCodeConnection] SSE stream ended cleanly, reconnecting...");
-        this._scheduleReconnect(lifecycle);
+        if (this._abortController === abortController) this._abortController = null;
+        this._setStatus({ state: "connected", error: null });
       }
     } catch (err) {
       if (
@@ -715,6 +724,7 @@ class OpenCodeConnection {
         // for longer than the stale threshold), proactively restart.
         const lastEvent = this._status.lastEventAt;
         if (
+          this._abortController &&
           lastEvent &&
           Date.now() - lastEvent > SSE_STALE_THRESHOLD &&
           this._status.state === "connected"
@@ -1834,6 +1844,449 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       return { success: true, data: url };
     } catch (err) {
       return { success: false, error: err.message ?? String(err) };
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Skills.sh Marketplace API proxy
+  // -----------------------------------------------------------------------
+
+  const SKILLS_API_BASE = "https://skills.sh/api/v1";
+  const SKILLS_LEGACY_API_BASE = "https://skills.sh";
+
+  function normalizeLegacySkill(skill) {
+    const id =
+      skill.id ||
+      [skill.source, skill.skillId || skill.slug || skill.name].filter(Boolean).join("/");
+    const parts = id.split("/");
+    const slug = skill.skillId || skill.slug || parts.at(-1) || skill.name;
+    const source = skill.source || parts.slice(0, -1).join("/");
+    return {
+      id,
+      slug,
+      name: skill.name || slug,
+      source,
+      installs: skill.installs || 0,
+      sourceType: source.includes("/") ? "github" : "well-known",
+      installUrl: source.includes("/")
+        ? `https://github.com/${source}`
+        : source
+          ? `https://${source}`
+          : null,
+      url: `https://skills.sh/${id}`,
+    };
+  }
+
+  function normalizeLegacySearch(data) {
+    const skills = Array.isArray(data.skills) ? data.skills.map(normalizeLegacySkill) : [];
+    return {
+      data: skills,
+      query: data.query || "",
+      searchType: data.searchType || "fuzzy",
+      count: data.count ?? skills.length,
+      durationMs: data.durationMs ?? data.duration_ms ?? 0,
+    };
+  }
+
+  async function skillsFetch(path, apiKey) {
+    const headers = { Accept: "application/json" };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const res = await fetch(`${SKILLS_API_BASE}${path}`, { headers });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`skills.sh API ${res.status}: ${body || res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async function legacySkillsSearch(query, limit) {
+    const params = new URLSearchParams({ q: query, limit: String(limit || 50) });
+    const res = await fetch(`${SKILLS_LEGACY_API_BASE}/api/search?${params}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`skills.sh search API ${res.status}: ${body || res.statusText}`);
+    }
+    return normalizeLegacySearch(await res.json());
+  }
+
+  async function legacySkillDownload(source, slug) {
+    const [owner, repo] = source.split("/");
+    if (!owner || !repo) return null;
+    const res = await fetch(
+      `${SKILLS_LEGACY_API_BASE}/api/download/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(slug)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  ipcMain.handle(
+    "opencode:skills:marketplace:list",
+    async (_event, view, page, perPage, _apiKey) => {
+      try {
+        // Match the official `skills` npm package: it uses the public legacy
+        // /api/search endpoint. The documented /api/v1 endpoints currently
+        // return 401 without an API key despite the docs saying auth is optional.
+        const data = await legacySkillsSearch("skill", perPage || 50);
+        return {
+          success: true,
+          data: {
+            data: data.data,
+            pagination: {
+              page: page || 0,
+              perPage: perPage || data.data.length,
+              total: data.data.length,
+              hasMore: false,
+            },
+          },
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+  );
+
+  ipcMain.handle("opencode:skills:marketplace:search", async (_event, query, limit, _apiKey) => {
+    try {
+      const data = await legacySkillsSearch(query, limit || 50);
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("opencode:skills:marketplace:detail", async (_event, source, slug, apiKey) => {
+    try {
+      const legacy = await legacySkillDownload(source, slug);
+      if (legacy) {
+        return {
+          success: true,
+          data: {
+            id: `${source}/${slug}`,
+            source,
+            slug,
+            installs: 0,
+            hash: legacy.hash || null,
+            files: legacy.files || null,
+          },
+        };
+      }
+
+      // Fallback for API-key users / non-GitHub sources.
+      const data = await skillsFetch(
+        `/skills/${encodeURIComponent(source)}/${encodeURIComponent(slug)}`,
+        apiKey,
+      );
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("opencode:skills:marketplace:audit", async (_event, source, slug, apiKey) => {
+    try {
+      if (!apiKey) {
+        return { success: true, data: { id: `${source}/${slug}`, source, slug, audits: [] } };
+      }
+      const data = await skillsFetch(
+        `/skills/audit/${encodeURIComponent(source)}/${encodeURIComponent(slug)}`,
+        apiKey,
+      );
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("opencode:skills:marketplace:curated", async (_event, _apiKey) => {
+    try {
+      // No equivalent public curated endpoint is used by the official CLI.
+      // Use legacy public search so the marketplace remains usable without an API key.
+      const data = await legacySkillsSearch("official", 50);
+      return {
+        success: true,
+        data: {
+          data: [
+            {
+              owner: "skills.sh",
+              totalInstalls: data.data.reduce((sum, skill) => sum + (skill.installs || 0), 0),
+              featuredRepo: "search",
+              featuredSkill: data.data[0]?.name || "Skills",
+              skills: data.data,
+            },
+          ],
+          totalOwners: 1,
+          totalSkills: data.data.length,
+          generatedAt: new Date().toISOString(),
+        },
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Skills CLI integration (install, remove, update, list)
+  // -----------------------------------------------------------------------
+
+  function getSkillsCli() {
+    try {
+      execSync("bunx skills --version", { stdio: "ignore", timeout: 10_000 });
+      return "bunx";
+    } catch {
+      try {
+        execSync("npx skills --version", { stdio: "ignore", timeout: 10_000 });
+        return "npx";
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  ipcMain.handle("opencode:skills:check-cli", async () => {
+    const cli = getSkillsCli();
+    return { success: true, data: { available: cli !== null, command: cli } };
+  });
+
+  function spawnSkillsInstall(event, cli, source, cwd, globalScope) {
+    return new Promise((resolve) => {
+      const args = ["skills", "add", source, "-y"];
+      if (globalScope) args.push("-g");
+      const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const child = spawn(cli, args, {
+        cwd: globalScope ? homedir() : cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
+        windowsHide: true,
+      });
+
+      const sendChunk = (chunk, type) => {
+        try {
+          if (event && !event.sender.isDestroyed()) {
+            event.sender.send("opencode:skills:install-progress", {
+              chunk: String(chunk),
+              type,
+            });
+          }
+        } catch {}
+      };
+
+      if (child.stdout) child.stdout.on("data", (data) => sendChunk(data, "stdout"));
+      if (child.stderr) child.stderr.on("data", (data) => sendChunk(data, "stderr"));
+      child.on("close", (code) => {
+        sendChunk(`\n--- Process exited with code ${code} ---\n`, "system");
+        resolve({ success: code === 0, exitCode: code });
+      });
+      child.on("error", (err) => {
+        sendChunk(`\n--- Error: ${err.message} ---\n`, "system");
+        resolve({ success: false, error: err.message });
+      });
+    });
+  }
+
+  ipcMain.handle("opencode:skills:install", async (event, source, directory, globalScope) => {
+    try {
+      const cli = getSkillsCli();
+      if (!cli)
+        return {
+          success: false,
+          error: "Neither bunx nor npx found. Install Node.js or Bun first.",
+        };
+      return await spawnSkillsInstall(event, cli, source, directory, !!globalScope);
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("opencode:skills:remove", async (event, skillName, directory, globalScope) => {
+    try {
+      const cli = getSkillsCli();
+      if (!cli) return { success: false, error: "Neither bunx nor npx found." };
+      const args = ["skills", "rm", skillName, "-y"];
+      if (globalScope) args.push("-g");
+      const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const child = spawn(cli, args, {
+        cwd: globalScope ? homedir() : directory,
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
+        windowsHide: true,
+      });
+
+      const sendChunk = (chunk, type) => {
+        try {
+          if (event && !event.sender.isDestroyed()) {
+            event.sender.send("opencode:skills:install-progress", {
+              chunk: String(chunk),
+              type,
+            });
+          }
+        } catch {}
+      };
+
+      if (child.stdout) child.stdout.on("data", (data) => sendChunk(data, "stdout"));
+      if (child.stderr) child.stderr.on("data", (data) => sendChunk(data, "stderr"));
+      const code = await new Promise((resolve) => {
+        child.on("close", resolve);
+        child.on("error", (err) => {
+          sendChunk(`\n--- Error: ${err.message} ---\n`, "system");
+          resolve(null);
+        });
+      });
+      return { success: code === 0, exitCode: code };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("opencode:skills:update", async (event, skillName, directory, globalScope) => {
+    try {
+      const cli = getSkillsCli();
+      if (!cli) return { success: false, error: "Neither bunx nor npx found." };
+      const args = ["skills", "update"];
+      if (skillName && skillName !== "*") args.push(skillName);
+      if (globalScope) args.push("-g");
+      args.push("-y");
+      const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const child = spawn(cli, args, {
+        cwd: globalScope ? homedir() : directory,
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
+        windowsHide: true,
+      });
+
+      const sendChunk = (chunk, type) => {
+        try {
+          if (event && !event.sender.isDestroyed()) {
+            event.sender.send("opencode:skills:install-progress", {
+              chunk: String(chunk),
+              type,
+            });
+          }
+        } catch {}
+      };
+
+      if (child.stdout) child.stdout.on("data", (data) => sendChunk(data, "stdout"));
+      if (child.stderr) child.stderr.on("data", (data) => sendChunk(data, "stderr"));
+      const code = await new Promise((resolve) => {
+        child.on("close", resolve);
+        child.on("error", (err) => {
+          sendChunk(`\n--- Error: ${err.message} ---\n`, "system");
+          resolve(null);
+        });
+      });
+      return { success: code === 0, exitCode: code };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Parse YAML frontmatter from SKILL.md
+  function parseSkillFrontmatter(text) {
+    const match = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);
+    if (!match) return { name: basename(process.cwd()), description: "" };
+    const frontmatter = match[1];
+    const nameMatch = frontmatter.match(/^name\s*:\s*(.+)$/m);
+    const descMatch = frontmatter.match(/^description\s*:\s*(.+)$/m);
+    return {
+      name: nameMatch ? nameMatch[1].trim() : "",
+      description: descMatch ? descMatch[1].trim() : "",
+    };
+  }
+
+  async function readSkillsLock(lockPath) {
+    try {
+      const parsed = JSON.parse(await readFile(lockPath, "utf-8"));
+      return parsed && typeof parsed === "object" && parsed.skills ? parsed.skills : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function toSkillSlug(name) {
+    return String(name || "")
+      .toLowerCase()
+      .replace(/[\s_]+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  }
+
+  function normalizeLockSource(source) {
+    if (!source || typeof source !== "string") return undefined;
+    let value = source.trim();
+    if (value.startsWith("https://github.com/")) value = value.replace("https://github.com/", "");
+    value = value.replace(/\.git$/, "").toLowerCase();
+    if (value.includes("github.com/")) value = value.split("github.com/").pop();
+    return value;
+  }
+
+  // Scan filesystem for installed skills
+  async function scanSkillsDir(dir, lockSkills = {}) {
+    const skills = [];
+    if (!dir || !existsSync(dir)) return skills;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return skills;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillDir = join(dir, entry.name);
+      const skillMdPath = join(skillDir, "SKILL.md");
+      if (!existsSync(skillMdPath)) continue;
+      try {
+        const content = await readFile(skillMdPath, "utf-8");
+        const { name, description } = parseSkillFrontmatter(content);
+        const skillName = name || entry.name;
+        const slug = toSkillSlug(skillName || entry.name);
+        const lockEntry = lockSkills[skillName] || lockSkills[entry.name] || lockSkills[slug] || {};
+        const source = normalizeLockSource(lockEntry.source);
+        skills.push({
+          name: skillName,
+          slug,
+          description,
+          location: skillMdPath,
+          content,
+          source,
+          remoteKey: source ? `${source}@${slug}` : undefined,
+          sourceType: lockEntry.sourceType,
+          sourceUrl: lockEntry.sourceUrl,
+          skillPath: lockEntry.skillPath,
+          skillFolderHash: lockEntry.skillFolderHash,
+          computedHash: lockEntry.computedHash,
+        });
+      } catch {}
+    }
+    return skills;
+  }
+
+  ipcMain.handle("opencode:skills:list-installed", async (_event, directory) => {
+    try {
+      const projectLock = directory
+        ? await readSkillsLock(join(directory, "skills-lock.json"))
+        : {};
+      const globalLock = await readSkillsLock(join(homedir(), ".agents", ".skill-lock.json"));
+      const projectSkills = (
+        await scanSkillsDir(directory ? join(directory, ".agents", "skills") : null, projectLock)
+      ).map((skill) => ({ ...skill, scope: "project" }));
+      const globalSkills = (
+        await scanSkillsDir(join(homedir(), ".agents", "skills"), globalLock)
+      ).map((skill) => ({ ...skill, scope: "global" }));
+      const all = [...projectSkills, ...globalSkills];
+      const seen = new Set();
+      const deduped = [];
+      for (const s of all) {
+        const key = s.remoteKey || `${s.scope}:${s.location}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(s);
+      }
+      return { success: true, data: deduped };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   });
 }

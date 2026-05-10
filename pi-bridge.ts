@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   SessionManager,
   createAgentSessionFromServices,
@@ -45,7 +46,6 @@ const PROVIDER_ENVS = {
   azure: ["AZURE_OPENAI_API_KEY"],
 };
 
-const PI_THINKING_VARIANTS = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
 const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
@@ -258,8 +258,9 @@ function inferPiSessionModel(info, directory) {
 
 function normalizePiModel(model) {
   const input = Array.isArray(model?.input) ? model.input : [];
-  const variants = model?.reasoning
-    ? Object.fromEntries(PI_THINKING_VARIANTS.map((variant) => [variant, { label: variant }]))
+  const supportedVariants = model?.reasoning ? getSupportedThinkingLevels(model) : [];
+  const variants = supportedVariants.length
+    ? Object.fromEntries(supportedVariants.map((variant) => [variant, { label: variant }]))
     : undefined;
   return {
     id: model.id,
@@ -382,7 +383,25 @@ function parsePiListModelsTable(text, referenceModels = []) {
 function mergeModels(primaryModels, discoveredModels) {
   const byKey = new Map();
   for (const model of primaryModels) byKey.set(`${model.provider}/${model.id}`, model);
-  for (const model of discoveredModels) byKey.set(`${model.provider}/${model.id}`, model);
+  for (const model of discoveredModels) {
+    const key = `${model.provider}/${model.id}`;
+    const existing = byKey.get(key);
+    byKey.set(
+      key,
+      existing
+        ? {
+            ...existing,
+            ...model,
+            thinkingLevelMap: model.thinkingLevelMap ?? existing.thinkingLevelMap,
+            compat: model.compat ?? existing.compat,
+            headers:
+              model.headers && Object.keys(model.headers).length > 0
+                ? model.headers
+                : existing.headers,
+          }
+        : model,
+    );
+  }
   return Array.from(byKey.values());
 }
 
@@ -2082,6 +2101,11 @@ export class PiBridgeManager {
   applySelectedVariant(session, variant) {
     if (typeof variant !== "string" || !variant.trim()) return;
     if (typeof session.setThinkingLevel !== "function") return;
+    const model = session.model;
+    if (model) {
+      const supported = getSupportedThinkingLevels(model);
+      if (!supported.includes(variant)) return;
+    }
     session.setThinkingLevel(variant);
   }
 

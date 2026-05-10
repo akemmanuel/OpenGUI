@@ -133,7 +133,7 @@ function createBrowserWindow({ width, height, minWidth = 450, minHeight = 500 })
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
     },
     ...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
   });
@@ -170,7 +170,7 @@ function createWindow() {
   if (isDev) {
     void mainWindow.loadURL(DEV_SERVER_URL);
   } else {
-    void mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
+    void mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
   mainWindow.once("ready-to-show", () => {
@@ -209,7 +209,7 @@ function createProjectWindow(projectDir) {
 
   const loadUrl = isDev
     ? `${DEV_SERVER_URL}?detach=${encodeURIComponent(projectDir)}`
-    : `file://${path.join(__dirname, "dist", "index.html")}?detach=${encodeURIComponent(projectDir)}`;
+    : `file://${path.join(__dirname, "..", "dist", "index.html")}?detach=${encodeURIComponent(projectDir)}`;
 
   void win.loadURL(loadUrl);
 
@@ -449,7 +449,7 @@ void app.whenReady().then(async () => {
     },
     {
       name: "pi",
-      path: "./pi-bridge.ts",
+      path: "./pi-bridge.js",
       setupName: "setupPiBridge",
       options: { userData: app.getPath("userData") },
     },

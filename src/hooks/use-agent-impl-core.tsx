@@ -318,6 +318,8 @@ const initialState: InternalAgentState = {
   projectMeta: getProjectMetaMap(),
   worktreeParents: getWorktreeParents(),
   pendingWorktreeCleanup: null,
+  turnRuns: {},
+  activeTurnRunBySession: {},
   childSessions: {},
   trackedChildSessionIds: new Set(),
   _pendingSnapshots: [],
@@ -1661,7 +1663,10 @@ export function InternalAgentProvider({
       const nextCursor = data?.nextCursor ?? null;
       return {
         messages,
-        hasMore: nextCursor !== null || messages.length >= pageSize,
+        // Only an explicit backend cursor means older history can be loaded.
+        // Pi/Codex currently return full transcripts without cursors; inferring
+        // hasMore from page size makes the UI show unreachable history.
+        hasMore: nextCursor !== null,
         nextCursor,
       };
     },
@@ -2160,6 +2165,17 @@ export function InternalAgentProvider({
           state.agents,
           state.selectedAgent,
         );
+      dispatch({
+        type: "TURN_RUN_STARTED",
+        payload: {
+          id: crypto.randomUUID(),
+          sessionID: sessionId,
+          startedAt: Date.now(),
+          providerID: model?.providerID,
+          modelID: model?.modelID,
+          thinkingLevel: variant,
+        },
+      });
 
       const projectTarget = getSessionProjectTarget(
         stateRef.current.sessions.find((session) => session.id === sessionId),
@@ -2185,6 +2201,7 @@ export function InternalAgentProvider({
     },
     [
       getBackendForSessionId,
+      activeBackendId,
       state.selectedModel,
       state.selectedAgent,
       state.variantSelections,
@@ -2240,6 +2257,7 @@ export function InternalAgentProvider({
           selectedAgentRef.current,
         );
         const wasTemporary = stateRef.current.draftIsTemporary;
+        const startedAt = Date.now();
         try {
           const session = await runtime.startSession({
             text,
@@ -2253,6 +2271,17 @@ export function InternalAgentProvider({
           });
           const titledSession = { ...session, title: pendingTitle };
           dispatch({ type: "SESSION_CREATED", payload: titledSession });
+          dispatch({
+            type: "TURN_RUN_STARTED",
+            payload: {
+              id: crypto.randomUUID(),
+              sessionID: session.id,
+              startedAt,
+              providerID: model?.providerID,
+              modelID: model?.modelID,
+              thinkingLevel: variant,
+            },
+          });
           dispatch({
             type: "SET_SESSION_NAMING",
             payload: { sessionId: session.id, naming: true },
@@ -3104,6 +3133,15 @@ export function InternalAgentProvider({
     });
   }, []);
 
+  const reorderVisibleProjects = useCallback((orderedDirectories: string[]) => {
+    const workspaceId = stateRef.current.activeWorkspaceId;
+    if (!workspaceId) return;
+    dispatch({
+      type: "REORDER_VISIBLE_WORKSPACE_PROJECTS",
+      payload: { workspaceId, orderedDirectories },
+    });
+  }, []);
+
   // ----- Split context values (memoised per domain) -----
 
   const sessionCtx = useMemo<SessionContextValue>(
@@ -3158,6 +3196,13 @@ export function InternalAgentProvider({
   const messagesCtx = useMemo<MessagesContextValue>(
     () => ({
       messages: state.messages,
+      turnRuns: state.activeSessionId
+        ? Object.fromEntries(
+            Object.entries(state.turnRuns).filter(
+              ([, run]) => run.sessionID === state.activeSessionId,
+            ),
+          )
+        : {},
       childSessions: state.childSessions,
       messageHistoryHasMore: state.messageHistoryHasMore,
       messageWindowHasNewer: state.messageWindowHasNewer,
@@ -3166,6 +3211,8 @@ export function InternalAgentProvider({
     }),
     [
       state.messages,
+      state.activeSessionId,
+      state.turnRuns,
       state.childSessions,
       state.messageHistoryHasMore,
       state.messageWindowHasNewer,
@@ -3348,6 +3395,7 @@ export function InternalAgentProvider({
       switchWorkspace,
       reorderWorkspaces,
       reorderProjects,
+      reorderVisibleProjects,
     }),
     [
       addProject,
@@ -3406,6 +3454,7 @@ export function InternalAgentProvider({
       switchWorkspace,
       reorderWorkspaces,
       reorderProjects,
+      reorderVisibleProjects,
     ],
   );
 

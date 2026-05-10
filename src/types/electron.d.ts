@@ -321,6 +321,157 @@ export interface OpenCodeBridge {
 
   /** Subscribe to native preload events (backend stream + connection status). Returns unsubscribe fn. */
   onEvent(callback: (event: BridgeEvent) => void): () => void;
+
+  // -----------------------------------------------------------------------
+  // Skills Marketplace
+  // -----------------------------------------------------------------------
+
+  /** List skills from skills.sh leaderboard */
+  marketplaceList(
+    view?: string,
+    page?: number,
+    perPage?: number,
+    apiKey?: string,
+  ): Promise<IPCResult<MarketplaceListResponse>>;
+
+  /** Search skills on skills.sh */
+  marketplaceSearch(
+    query: string,
+    limit?: number,
+    apiKey?: string,
+  ): Promise<IPCResult<MarketplaceSearchResponse>>;
+
+  /** Get detailed info for a single skill */
+  marketplaceDetail(
+    source: string,
+    slug: string,
+    apiKey?: string,
+  ): Promise<IPCResult<MarketplaceDetailResponse>>;
+
+  /** Get security audit for a skill */
+  marketplaceAudit(
+    source: string,
+    slug: string,
+    apiKey?: string,
+  ): Promise<IPCResult<MarketplaceAuditResponse>>;
+
+  /** Get official curated skills */
+  marketplaceCurated(apiKey?: string): Promise<IPCResult<MarketplaceCuratedResponse>>;
+
+  /** Install a skill using `bunx skills add` */
+  installSkill(
+    source: string,
+    directory?: string,
+    globalScope?: boolean,
+  ): Promise<IPCResult<{ exitCode?: number }>>;
+
+  /** Remove an installed skill */
+  removeSkill(
+    skillName: string,
+    directory?: string,
+    globalScope?: boolean,
+  ): Promise<IPCResult<{ exitCode?: number }>>;
+
+  /** Update installed skills */
+  updateSkill(
+    skillName?: string,
+    directory?: string,
+    globalScope?: boolean,
+  ): Promise<IPCResult<{ exitCode?: number }>>;
+
+  /** List installed skills from filesystem */
+  listInstalledSkills(directory?: string): Promise<IPCResult<InstalledSkillInfo[]>>;
+
+  /** Check if `bunx skills` / `npx skills` is available */
+  checkSkillsCli(): Promise<IPCResult<{ available: boolean; command: string | null }>>;
+}
+
+// ---------------------------------------------------------------------------
+// Skills Marketplace Types
+// ---------------------------------------------------------------------------
+
+export interface MarketplaceSkill {
+  id: string;
+  slug: string;
+  name: string;
+  source: string;
+  installs: number;
+  sourceType: "github" | "well-known";
+  installUrl: string | null;
+  url: string;
+  isDuplicate?: boolean;
+  installsYesterday?: number;
+  change?: number;
+}
+
+export interface MarketplaceListResponse {
+  data: MarketplaceSkill[];
+  pagination: {
+    page: number;
+    perPage: number;
+    total: number;
+    hasMore: boolean;
+  };
+}
+
+export interface MarketplaceSearchResponse {
+  data: MarketplaceSkill[];
+  query: string;
+  searchType: "fuzzy" | "semantic";
+  count: number;
+  durationMs: number;
+}
+
+export interface MarketplaceDetailResponse {
+  id: string;
+  source: string;
+  slug: string;
+  installs: number;
+  hash: string | null;
+  files: Array<{ path: string; contents: string }> | null;
+}
+
+export interface MarketplaceAuditResponse {
+  id: string;
+  source: string;
+  slug: string;
+  audits: Array<{
+    provider: string;
+    slug: string;
+    status: "pass" | "warn" | "fail";
+    summary: string;
+    auditedAt: string;
+    riskLevel?: string;
+  }>;
+}
+
+export interface MarketplaceCuratedResponse {
+  data: Array<{
+    owner: string;
+    totalInstalls: number;
+    featuredRepo: string;
+    featuredSkill: string;
+    skills: MarketplaceSkill[];
+  }>;
+  totalOwners: number;
+  totalSkills: number;
+  generatedAt: string;
+}
+
+export interface InstalledSkillInfo {
+  name: string;
+  slug?: string;
+  description: string;
+  location: string;
+  content: string;
+  source?: string;
+  remoteKey?: string;
+  scope?: "project" | "global";
+  sourceType?: string;
+  sourceUrl?: string;
+  skillPath?: string;
+  skillFolderHash?: string;
+  computedHash?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -744,6 +895,9 @@ export interface ElectronAPI {
   installBackend: (backendId: AgentBackendId) => Promise<InstallResult>;
   /** Subscribe to install progress chunks. Returns unsubscribe fn. */
   onInstallProgress: (callback: (progress: InstallProgress) => void) => () => void;
+
+  /** Subscribe to skills install progress chunks. Returns unsubscribe fn. */
+  onSkillsInstallProgress: (callback: (progress: InstallProgress) => void) => () => void;
 
   /** Open a project in a detached window. */
   detachProject: (projectDir: string) => Promise<void>;

@@ -57,6 +57,30 @@ import type { ConnectionStatus, ProvidersData, SelectedModel, Workspace } from "
 
 const MAX_DELETED_SESSION_IDS = 200;
 
+function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Message) {
+  if (msg.role !== "assistant") return null;
+  const activeTurnId = state.activeTurnRunBySession[msg.sessionID];
+  if (!activeTurnId) return null;
+  const run = state.turnRuns[activeTurnId];
+  if (!run || run.status !== "running") return null;
+
+  return {
+    turnRuns: {
+      ...state.turnRuns,
+      [activeTurnId]: {
+        ...run,
+        assistantMessageID: msg.id,
+        providerID:
+          "providerID" in msg && typeof msg.providerID === "string"
+            ? msg.providerID
+            : run.providerID,
+        modelID: "modelID" in msg && typeof msg.modelID === "string" ? msg.modelID : run.modelID,
+        thinkingLevel: run.thinkingLevel,
+      },
+    },
+  } satisfies Partial<InternalAgentState>;
+}
+
 function isModelAvailable(providers: Provider[], model: SelectedModel | null) {
   if (!model) return false;
   const provider = providers.find((item) => item.id === model.providerID);
@@ -97,6 +121,10 @@ type Action =
       payload: { workspaceId: string; fromIndex: number; toIndex: number };
     }
   | {
+      type: "REORDER_VISIBLE_WORKSPACE_PROJECTS";
+      payload: { workspaceId: string; orderedDirectories: string[] };
+    }
+  | {
       type: "ASSIGN_PROJECT_WORKSPACE";
       payload: { projectKey: string; workspaceId: string };
     }
@@ -129,6 +157,17 @@ type Action =
   | { type: "SET_LOADING_OLDER_MESSAGES"; payload: boolean }
   | { type: "SET_LOADING_NEWER_MESSAGES"; payload: boolean }
   | { type: "SET_BUSY"; payload: boolean }
+  | {
+      type: "TURN_RUN_STARTED";
+      payload: {
+        id: string;
+        sessionID: string;
+        startedAt: number;
+        providerID?: string;
+        modelID?: string;
+        thinkingLevel?: string;
+      };
+    }
   | { type: "SET_ERROR"; payload: string | null }
   | {
       type: "SET_BOOT_STATE";
@@ -310,6 +349,38 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         const [moved] = nextProjects.splice(fromIndex, 1);
         if (!moved) return workspace;
         nextProjects.splice(clampedTo, 0, moved);
+        changed = true;
+        return {
+          ...workspace,
+          projects: nextProjects,
+        };
+      });
+      return changed ? { ...state, workspaces: nextWorkspaces } : state;
+    }
+
+    case "REORDER_VISIBLE_WORKSPACE_PROJECTS": {
+      const { workspaceId, orderedDirectories } = action.payload;
+      const orderedSet = new Set(orderedDirectories);
+      if (orderedSet.size <= 1) return state;
+      let changed = false;
+      const nextWorkspaces = state.workspaces.map((workspace) => {
+        if (workspace.id !== workspaceId) return workspace;
+        const projects = workspace.projects ?? [];
+        const projectSet = new Set(projects);
+        const nextVisibleOrder = orderedDirectories.filter((directory) =>
+          projectSet.has(directory),
+        );
+        const visibleProjectsInWorkspace = projects.filter((project) => orderedSet.has(project));
+        if (visibleProjectsInWorkspace.length <= 1) return workspace;
+        if (
+          visibleProjectsInWorkspace.every((project, index) => project === nextVisibleOrder[index])
+        ) {
+          return workspace;
+        }
+        const nextOrderedProjects = [...nextVisibleOrder];
+        const nextProjects = projects.map((project) =>
+          orderedSet.has(project) ? (nextOrderedProjects.shift() ?? project) : project,
+        );
         changed = true;
         return {
           ...workspace,
@@ -791,6 +862,21 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     case "SET_BUSY":
       return { ...state, isBusy: action.payload };
 
+    case "TURN_RUN_STARTED": {
+      const run = action.payload;
+      return {
+        ...state,
+        turnRuns: {
+          ...state.turnRuns,
+          [run.id]: { ...run, status: "running" },
+        },
+        activeTurnRunBySession: {
+          ...state.activeTurnRunBySession,
+          [run.sessionID]: run.id,
+        },
+      };
+    }
+
     case "SET_ERROR":
       return { ...state, lastError: action.payload };
 
@@ -1057,16 +1143,21 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
     case "MESSAGE_UPDATED": {
       const msg = action.payload;
+      const turnPatch = bindAssistantMessageToActiveTurn(state, msg) ?? {};
       if (msg.sessionID !== state.activeSessionId) {
-        return bufferNonActiveEvent(state, msg.sessionID, msg.id, (entry) => ({
-          ...entry,
-          info: msg,
-        }));
+        return {
+          ...bufferNonActiveEvent(state, msg.sessionID, msg.id, (entry) => ({
+            ...entry,
+            info: msg,
+          })),
+          ...turnPatch,
+        };
       }
       // Queue snapshot if messages are still loading from the server
       if (state.isLoadingMessages) {
         return {
           ...state,
+          ...turnPatch,
           _pendingSnapshots: [...state._pendingSnapshots, action],
         };
       }
@@ -1074,6 +1165,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       if (existsInWindow) {
         return {
           ...state,
+          ...turnPatch,
           messages: state.messages.map((m) => (m.info.id === msg.id ? { ...m, info: msg } : m)),
         };
       }
@@ -1082,6 +1174,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       const didTrim = appendedMessages.length < state.messages.length + 1;
       return {
         ...state,
+        ...turnPatch,
         messages: appendedMessages,
         messageForwardBuffer: [],
         // If limitMessageWindow trimmed messages, older history exists
@@ -1358,8 +1451,27 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         nextUnread = new Set(state.unreadSessionIds);
         nextUnread.add(sessionID);
       }
+      const activeTurnId = state.activeTurnRunBySession[sessionID];
+      const activeTurn = activeTurnId ? state.turnRuns[activeTurnId] : undefined;
+      const completedTurnPatch =
+        !isBusy && activeTurn?.status === "running"
+          ? {
+              turnRuns: {
+                ...state.turnRuns,
+                [activeTurn.id]: {
+                  ...activeTurn,
+                  completedAt: Date.now(),
+                  status: "completed" as const,
+                },
+              },
+              activeTurnRunBySession: Object.fromEntries(
+                Object.entries(state.activeTurnRunBySession).filter(([sid]) => sid !== sessionID),
+              ),
+            }
+          : {};
       return {
         ...state,
+        ...completedTurnPatch,
         busySessionIds: newBusy,
         unreadSessionIds: nextUnread,
         _sessionBuffers: nextBuffers,

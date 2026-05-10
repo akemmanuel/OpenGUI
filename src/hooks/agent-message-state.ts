@@ -2,7 +2,11 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client";
 import type { InternalAgentState, MessageEntry } from "@/hooks/agent-state-types";
 
 export const MESSAGE_PAGE_SIZE = 30;
-const MAX_MESSAGE_WINDOW = 100;
+/**
+ * Keep a generous active-session window so long local transcripts do not appear truncated.
+ * Rendering is virtualized, so the DOM cost stays bounded while we avoid discarding history early.
+ */
+const MAX_MESSAGE_WINDOW = 1000;
 /** Maximum number of idle session message snapshots to keep in the LRU cache */
 export const MAX_SESSION_BUFFER_CACHE = 8;
 

@@ -18,7 +18,7 @@ const DEFAULT_STATUS = {
   lastEventAt: null,
 };
 
-const CODEX_VARIANTS = ["minimal", "low", "medium", "high", "xhigh"];
+const CODEX_VALID_VARIANTS = ["none", "minimal", "low", "medium", "high", "xhigh"];
 const DEFAULT_MODEL_ID = "gpt-5.4";
 const DEFAULT_PROVIDER_ID = "openai";
 const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
@@ -196,9 +196,7 @@ function makeModel(
     options: {},
     headers: {},
     release_date: releaseDate,
-    variants:
-      variants ??
-      Object.fromEntries(CODEX_VARIANTS.map((variant) => [variant, { label: variant }])),
+    variants: variants ?? undefined,
   };
 }
 
@@ -230,10 +228,14 @@ function humanizeModelId(id) {
     .replace(/-([a-z])/g, (_match, char) => ` ${char.toUpperCase()}`);
 }
 
-function buildVariantsFromReasoningEfforts(efforts) {
+function buildVariantsFromReasoningEfforts(efforts, defaultEffort) {
   if (!efforts.length) return {};
+  const ordered =
+    typeof defaultEffort === "string" && efforts.includes(defaultEffort)
+      ? [defaultEffort, ...efforts.filter((effort) => effort !== defaultEffort)]
+      : efforts;
   return Object.fromEntries(
-    efforts.map((effort) => [
+    ordered.map((effort) => [
       effort,
       {
         label: titleCaseVariant(effort),
@@ -250,7 +252,7 @@ function mapCodexAppServerModel(model) {
   if (!id) return null;
   const fallback = STATIC_CODEX_MODELS[id];
   const efforts = normalizeReasoningEfforts(model.supportedReasoningEfforts);
-  const variants = buildVariantsFromReasoningEfforts(efforts);
+  const variants = buildVariantsFromReasoningEfforts(efforts, model.defaultReasoningEffort);
   const reasoning = efforts.length > 0 ? efforts.some((effort) => effort !== "none") : true;
   const image = fallback?.capabilities?.input?.image ?? true;
   const name =
@@ -630,10 +632,7 @@ async function readCodexAppServerMessages(sessionId) {
 
 async function fetchCodexProviderFromAppServer() {
   return await withCodexAppServer(async ({ request }) => {
-    const account = await request("account/read", {});
-    if (!account?.account && account?.requiresOpenaiAuth) {
-      return buildCodexProviderFromModels({});
-    }
+    await request("account/read", {}).catch(() => null);
     const models = {};
     let cursor = undefined;
     do {
@@ -678,6 +677,28 @@ async function getCodexProviderData() {
     }
   })();
   return codexProviderCache.promise;
+}
+
+function getCodexModel(providerData, modelId) {
+  if (!providerData || !modelId) return null;
+  for (const provider of Array.isArray(providerData.providers) ? providerData.providers : []) {
+    const model = provider?.models?.[modelId];
+    if (model) return model;
+  }
+  return null;
+}
+
+async function resolveSupportedCodexVariant(model, variant) {
+  const normalized = resolveVariant(variant);
+  if (!normalized) return undefined;
+  const modelId = resolveSelectedModelId(model);
+  const providerData = await getCodexProviderData();
+  const codexModel = getCodexModel(providerData, modelId);
+  const variants = Object.keys(codexModel?.variants ?? {}).filter(
+    (key) => !codexModel?.variants?.[key]?.disabled,
+  );
+  if (variants.length === 0) return undefined;
+  return variants.includes(normalized) ? normalized : undefined;
 }
 
 function normalizeDir(directory) {
@@ -741,7 +762,7 @@ function resolveSelectedModelId(selectedModel) {
 
 function resolveVariant(variant) {
   if (typeof variant !== "string") return undefined;
-  return CODEX_VARIANTS.includes(variant) ? variant : undefined;
+  return CODEX_VALID_VARIANTS.includes(variant) ? variant : undefined;
 }
 
 function defaultUserInfo(sessionId, messageId, modelId, variant, createdAt = Date.now()) {
@@ -2350,11 +2371,12 @@ class CodexBridgeManager {
     if (state.running) {
       throw new Error("Codex session already running");
     }
-    this.appendSyntheticUserMessage(state, text, images, model, variant);
+    const resolvedVariant = await resolveSupportedCodexVariant(model, variant);
+    this.appendSyntheticUserMessage(state, text, images, model, resolvedVariant);
     if (state.threadId) {
       await this.persistTranscript(state.threadId, state.messages);
     }
-    void this.runTurn(state, text, images, model, variant).catch((error) => {
+    void this.runTurn(state, text, images, model, resolvedVariant).catch((error) => {
       state.running = false;
       state.abortController = null;
       this.emitBackend(state.project, {

@@ -15,7 +15,9 @@ import {
   Layers,
   RotateCcw,
   Settings,
+  ShoppingBag,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { useCallback, useEffect, useState } from "react";
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AppearanceSetting } from "@/components/AppearanceSetting";
 import { SettingsProviders } from "@/components/SettingsProviders";
+import { SkillsMarketplace } from "@/components/SkillsMarketplace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,6 +119,10 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
             <TabsTrigger value="skills" className="flex-1">
               {t("settings.tabs.skills")}
             </TabsTrigger>
+            <TabsTrigger value="marketplace" className="flex-1">
+              <ShoppingBag className="size-3.5 mr-1.5" />
+              {t("settings.tabs.marketplace")}
+            </TabsTrigger>
             <TabsTrigger value="mcp" className="flex-1">
               {t("settings.tabs.tools")}
             </TabsTrigger>
@@ -128,6 +135,9 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
           </TabsContent>
           <TabsContent value="skills" className="mt-0 rounded-lg border p-4">
             <SkillsTabContent />
+          </TabsContent>
+          <TabsContent value="marketplace" className="mt-0 rounded-lg border p-4">
+            <SkillsMarketplace />
           </TabsContent>
           <TabsContent value="mcp" className="mt-0 rounded-lg border p-4">
             <McpTabContent />
@@ -567,6 +577,7 @@ interface SkillInfo {
 }
 
 function SkillsTabContent() {
+  const { t } = useTranslation();
   const initialBackendId = useCurrentAgentBackendId();
   const availableBackendIds = useAvailableBackendIds();
   const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
@@ -575,18 +586,26 @@ function SkillsTabContent() {
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
   const scopedDirectory = activeDirectory ?? undefined;
 
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [sdkSkills, setSdkSkills] = useState<SkillInfo[]>([]);
+  const [fsSkills, setFsSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"all" | "sdk" | "installed">("all");
 
   const refresh = useCallback(async () => {
     if (!skillsApi) return;
-    setSkills(
-      await skillsApi.list({
-        directory: scopedDirectory,
-        workspaceId: activeWorkspaceId,
-      }),
-    );
-    setLoading(false);
+    setLoading(true);
+    try {
+      const [sdk, installed] = await Promise.all([
+        skillsApi
+          .list({ directory: scopedDirectory, workspaceId: activeWorkspaceId })
+          .catch(() => []),
+        skillsApi.listInstalled(scopedDirectory).catch(() => []),
+      ]);
+      setSdkSkills(sdk as SkillInfo[]);
+      setFsSkills(installed as SkillInfo[]);
+    } finally {
+      setLoading(false);
+    }
   }, [skillsApi, scopedDirectory, activeWorkspaceId]);
 
   useEffect(() => {
@@ -599,6 +618,43 @@ function SkillsTabContent() {
     }
     return "local";
   };
+
+  const handleRemove = useCallback(
+    async (name: string) => {
+      if (!skillsApi) return;
+      try {
+        await skillsApi.remove(name, scopedDirectory, false);
+        await refresh();
+      } catch {}
+    },
+    [skillsApi, scopedDirectory, refresh],
+  );
+
+  const handleUpdate = useCallback(
+    async (name: string) => {
+      if (!skillsApi) return;
+      try {
+        await skillsApi.update(name, scopedDirectory, false);
+        await refresh();
+      } catch {}
+    },
+    [skillsApi, scopedDirectory, refresh],
+  );
+
+  // Merge and deduplicate
+  const allSkills = useCallback(() => {
+    const seen = new Set<string>();
+    const merged: SkillInfo[] = [];
+    for (const s of [...sdkSkills, ...fsSkills]) {
+      if (seen.has(s.name)) continue;
+      seen.add(s.name);
+      merged.push(s);
+    }
+    return merged;
+  }, [sdkSkills, fsSkills]);
+
+  const currentSkills =
+    activeTab === "sdk" ? sdkSkills : activeTab === "installed" ? fsSkills : allSkills();
 
   if (loading) {
     return (
@@ -626,38 +682,110 @@ function SkillsTabContent() {
           ))}
         </div>
       )}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium">Available Skills</h3>
-        {skills.length === 0 ? (
-          <div className="text-center py-4 text-sm text-muted-foreground">
-            No skills discovered.
+
+      {/* Browse Marketplace CTA */}
+      <div className="flex items-center justify-between rounded-lg border bg-gradient-to-r from-primary/5 to-primary/10 p-4">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium">{t("settings.tabs.marketplace")}</p>
+          <p className="text-xs text-muted-foreground">{t("settings.skills.browseMarketplace")}</p>
+        </div>
+        <span className="text-2xl">🛍️</span>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b pb-2">
+        <button
+          type="button"
+          className={`text-xs font-medium px-2.5 py-1 rounded-t transition-colors ${
+            activeTab === "all"
+              ? "text-foreground border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveTab("all")}
+        >
+          All ({allSkills().length})
+        </button>
+        <button
+          type="button"
+          className={`text-xs font-medium px-2.5 py-1 rounded-t transition-colors ${
+            activeTab === "sdk"
+              ? "text-foreground border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveTab("sdk")}
+        >
+          {t("settings.skills.sdkSkills")} ({sdkSkills.length})
+        </button>
+        <button
+          type="button"
+          className={`text-xs font-medium px-2.5 py-1 rounded-t transition-colors ${
+            activeTab === "installed"
+              ? "text-foreground border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveTab("installed")}
+        >
+          {t("settings.skills.installedSkills")} ({fsSkills.length})
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {currentSkills.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">
+            {t("settings.skills.noSkills")}
           </div>
         ) : (
-          <div className="space-y-2">
-            {skills.map((skill) => {
-              const source = getSourceType(skill.location);
-              return (
-                <div
-                  key={skill.name}
-                  className="flex items-start gap-3 rounded-lg border p-3 bg-card"
-                >
-                  <BookOpen className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{skill.name}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        {source === "url" ? "Remote" : "Local"}
+          currentSkills.map((skill) => {
+            const source = getSourceType(skill.location);
+            const isFs = fsSkills.some((s) => s.name === skill.name);
+            return (
+              <div
+                key={skill.name}
+                className="flex items-start gap-3 rounded-lg border p-3 bg-card"
+              >
+                <BookOpen className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{skill.name}</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      {source === "url" ? t("settings.skills.remote") : t("settings.skills.local")}
+                    </Badge>
+                    {isFs && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {t("settings.skills.installedSkills")}
                       </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{skill.description}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono truncate mt-1">
-                      {skill.location}
-                    </p>
+                    )}
                   </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{skill.description}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono truncate mt-1">
+                    {skill.location}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
+                {isFs && (
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => handleUpdate(skill.name)}
+                    >
+                      {t("settings.skills.update")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+                      onClick={() => handleRemove(skill.name)}
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>

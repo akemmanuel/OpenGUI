@@ -17,6 +17,12 @@ import type {
   AllProvidersData,
   ConnectionConfig,
   ConnectionStatus,
+  InstalledSkillInfo,
+  MarketplaceAuditResponse,
+  MarketplaceCuratedResponse,
+  MarketplaceDetailResponse,
+  MarketplaceListResponse,
+  MarketplaceSearchResponse,
   ProviderAuth,
   ProviderAuthMethod,
   ProviderOAuthAuthorization,
@@ -229,14 +235,42 @@ export interface AgentPlatformBackend {
     disconnect(target: AgentBackendTarget, name: string): Promise<void>;
   };
   skills?: {
-    list(target?: AgentBackendTarget): Promise<
-      Array<{
-        name: string;
-        description: string;
-        location: string;
-        content: string;
-      }>
-    >;
+    list(target?: AgentBackendTarget): Promise<InstalledSkillInfo[]>;
+
+    marketplace: {
+      list(
+        view?: string,
+        page?: number,
+        perPage?: number,
+        apiKey?: string,
+      ): Promise<MarketplaceListResponse>;
+      search(query: string, limit?: number, apiKey?: string): Promise<MarketplaceSearchResponse>;
+      detail(source: string, slug: string, apiKey?: string): Promise<MarketplaceDetailResponse>;
+      audit(source: string, slug: string, apiKey?: string): Promise<MarketplaceAuditResponse>;
+      curated(apiKey?: string): Promise<MarketplaceCuratedResponse>;
+    };
+
+    install(
+      source: string,
+      directory?: string,
+      globalScope?: boolean,
+    ): Promise<{ exitCode?: number }>;
+
+    remove(
+      skillName: string,
+      directory?: string,
+      globalScope?: boolean,
+    ): Promise<{ exitCode?: number }>;
+
+    update(
+      skillName?: string,
+      directory?: string,
+      globalScope?: boolean,
+    ): Promise<{ exitCode?: number }>;
+
+    listInstalled(directory?: string): Promise<InstalledSkillInfo[]>;
+
+    checkCli(): Promise<{ available: boolean; command: string | null }>;
   };
   config?: {
     get(target?: AgentBackendTarget): Promise<OpenCodeConfig>;

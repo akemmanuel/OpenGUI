@@ -1,0 +1,138 @@
+import { AlertTriangle, GitFork, Layers, Undo2 } from "lucide-react";
+import { memo, useState } from "react";
+import { ProviderIcon } from "@/components/provider-icons";
+import type { MessageEntry } from "@/hooks/use-agent-state";
+import { USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import { DurationLabel } from "./DurationLabel";
+import { PartView } from "./PartView";
+import type { TurnFooter } from "./types";
+
+export const MessageBubble = memo(function MessageBubble({
+  entry,
+  turnFooter,
+  lastReasoningPartId,
+  onFork,
+  onRevert,
+}: {
+  entry: MessageEntry;
+  turnFooter?: TurnFooter;
+  lastReasoningPartId?: string;
+  onFork?: () => void;
+  onRevert?: () => void;
+}) {
+  const { info, parts } = entry;
+  const isUser = info.role === "user";
+  const [expanded, setExpanded] = useState(false);
+  const isSummary = info.role === "assistant" && "summary" in info && info.summary === true;
+
+  const userTextLength = isUser
+    ? parts.reduce((sum, p) => sum + (p.type === "text" ? (p.text?.length ?? 0) : 0), 0)
+    : 0;
+  const shouldCollapse = isUser && userTextLength > USER_MSG_COLLAPSE_CHARS;
+
+  return (
+    <div className={isUser ? "flex justify-end" : ""}>
+      {isSummary && (
+        <div className="flex items-center gap-2 mb-2 select-none">
+          <div className="flex-1 h-px bg-amber-500/30" />
+          <div className="flex items-center gap-1.5 text-[11px] text-amber-500/80 font-mono">
+            <Layers className="size-3" />
+            <span>Context compacted</span>
+          </div>
+          <div className="flex-1 h-px bg-amber-500/30" />
+        </div>
+      )}
+      <div
+        className={cn(
+          "min-w-0 group relative",
+          isUser
+            ? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
+            : "flex-1 flex flex-col gap-1",
+        )}
+      >
+        {isUser && (onFork || onRevert) && (
+          <div className="absolute -left-9 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onRevert && (
+              <button
+                type="button"
+                onClick={onRevert}
+                title="Revert to this message"
+                className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <Undo2 className="size-3.5" />
+              </button>
+            )}
+            {onFork && (
+              <button
+                type="button"
+                onClick={onFork}
+                title="Fork from this message"
+                className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <GitFork className="size-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+        {parts.length > 0 && (
+          <div className={cn(shouldCollapse && !expanded && "relative")}>
+            <div
+              className={cn(
+                "flex flex-col gap-1",
+                shouldCollapse && !expanded && "max-h-[8lh] overflow-hidden",
+              )}
+            >
+              {parts.map((part) => (
+                <PartView
+                  key={part.id}
+                  part={part}
+                  isUser={isUser}
+                  lastReasoningPartId={lastReasoningPartId}
+                />
+              ))}
+            </div>
+            {shouldCollapse && !expanded && (
+              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t to-transparent rounded-b-2xl pointer-events-none" />
+            )}
+            {shouldCollapse && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
+              >
+                {expanded ? "Show less" : "Show more"}
+              </button>
+            )}
+          </div>
+        )}
+        {info.role === "assistant" && info.error && (
+          <div className="text-xs text-destructive flex items-center gap-1">
+            <AlertTriangle className="size-3" />
+            {"data" in info.error &&
+            info.error.data &&
+            typeof info.error.data === "object" &&
+            "message" in info.error.data
+              ? String(info.error.data.message)
+              : info.error.name}
+          </div>
+        )}
+        {info.role === "assistant" && turnFooter && (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
+            <DurationLabel footer={turnFooter} />
+            {turnFooter.providerID && (
+              <ProviderIcon
+                provider={turnFooter.providerID}
+                className="size-3 shrink-0 opacity-60"
+              />
+            )}
+            {turnFooter.modelID && <span className="opacity-60">{turnFooter.modelID}</span>}
+            {turnFooter.thinkingLevel && (
+              <span className="opacity-40">{turnFooter.thinkingLevel}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});

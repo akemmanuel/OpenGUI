@@ -374,7 +374,29 @@ export function installWebElectronAPI() {
       startServer: () => invoke("opencode:server:start"),
       stopServer: () => invoke("opencode:server:stop"),
       getServerStatus: () => invoke("opencode:server:status"),
+      // Skills marketplace
+      marketplaceList: (view?: string, page?: number, perPage?: number, apiKey?: string) =>
+        invoke("opencode:skills:marketplace:list", view, page, perPage, apiKey),
+      marketplaceSearch: (query: string, limit?: number, apiKey?: string) =>
+        invoke("opencode:skills:marketplace:search", query, limit, apiKey),
+      marketplaceDetail: (source: string, slug: string, apiKey?: string) =>
+        invoke("opencode:skills:marketplace:detail", source, slug, apiKey),
+      marketplaceAudit: (source: string, slug: string, apiKey?: string) =>
+        invoke("opencode:skills:marketplace:audit", source, slug, apiKey),
+      marketplaceCurated: (apiKey?: string) =>
+        invoke("opencode:skills:marketplace:curated", apiKey),
+      installSkill: (source: string, directory?: string, globalScope?: boolean) =>
+        invoke("opencode:skills:install", source, directory, globalScope),
+      removeSkill: (skillName: string, directory?: string, globalScope?: boolean) =>
+        invoke("opencode:skills:remove", skillName, directory, globalScope),
+      updateSkill: (skillName: string, directory?: string, globalScope?: boolean) =>
+        invoke("opencode:skills:update", skillName, directory, globalScope),
+      listInstalledSkills: (directory?: string) =>
+        invoke("opencode:skills:list-installed", directory),
+      checkSkillsCli: () => invoke("opencode:skills:check-cli"),
       onEvent: (callback: Listener) => on("opencode:bridge-event", callback),
+      onSkillsInstallProgress: (callback: Listener) =>
+        on("opencode:skills:install-progress", callback),
     },
   } as unknown as ElectronAPI;
 }

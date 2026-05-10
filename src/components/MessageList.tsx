@@ -3,54 +3,29 @@
  * Handles user messages, assistant text, tool calls, and permission requests.
  */
 
-import type { FilePart, Part, ReasoningPart, TextPart, ToolPart } from "@opencode-ai/sdk/v2/client";
+import type { Part, TextPart } from "@opencode-ai/sdk/v2/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  ChevronRight,
-  Circle,
-  CircleCheck,
-  FileCode,
-  FileEdit,
-  FilePlus,
-  GitFork,
-  Layers,
-  MessageCircleQuestion,
-  Search,
-  ShieldAlert,
-  SquareTerminal,
-  Undo2,
-  Wrench,
-  X,
-  XCircle,
-} from "lucide-react";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { ShieldAlert, Undo2 } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { QuestionPanel } from "@/components/message-list/QuestionPanel";
-import { ProviderIcon } from "@/components/provider-icons";
+import { MessageBubble } from "@/components/message-list/MessageBubble";
+import type { TurnFooter } from "@/components/message-list/types";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
   type MessageEntry,
   useActions,
-  useConnectionState,
   useMessages,
   useSessionState,
 } from "@/hooks/use-agent-state";
-import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
-import { NEAR_BOTTOM_PX, USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
-import { parseUnifiedDiff, type DiffLine, type DiffResult } from "@/lib/diff";
-import { extractTodos, type TodoItem, todoStatusConfig } from "@/lib/todos";
-import { cn, looksLikeTerminalOutput, normalizeTerminalOutput } from "@/lib/utils";
+import { NEAR_BOTTOM_PX } from "@/lib/constants";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
 
 /** Part types that actually render something visible. */
 const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
-const VIRTUALIZATION_MESSAGE_THRESHOLD = 120;
+const VIRTUALIZATION_MESSAGE_THRESHOLD = 60;
 const VIRTUALIZATION_OVERSCAN_IDLE = 12;
 const VIRTUALIZATION_OVERSCAN_BUSY = 16;
 
@@ -70,6 +45,10 @@ function hasVisibleContent(entry: MessageEntry): boolean {
   // Messages with no parts yet (still loading) should stay visible
   if (entry.parts.length === 0) return true;
   return false;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function getEntryText(entry: MessageEntry): string {
@@ -95,30 +74,6 @@ function stripLeadingSystemAppend(entry: MessageEntry): MessageEntry {
     return { ...part, text: nextText };
   });
   return stripped ? { ...entry, parts } : entry;
-}
-
-function TerminalOutput({
-  content,
-  className,
-  preRef,
-}: {
-  content: string;
-  className?: string;
-  preRef?: React.RefObject<HTMLPreElement | null>;
-}) {
-  const normalizedContent = useMemo(() => normalizeTerminalOutput(content), [content]);
-
-  return (
-    <pre
-      ref={preRef}
-      className={cn(
-        "terminal-output select-text w-full min-w-0 max-w-full text-muted-foreground overflow-y-auto overflow-x-hidden",
-        className,
-      )}
-    >
-      {normalizedContent}
-    </pre>
-  );
 }
 
 function RevertBanner({
@@ -171,7 +126,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     draftSessionDirectory,
     sessionMeta,
   } = useSessionState();
-  const { messages, messageHistoryHasMore, isLoadingOlderMessages } = useMessages();
+  const { messages, turnRuns, messageHistoryHasMore, isLoadingOlderMessages } = useMessages();
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId),
     [sessions, activeSessionId],
@@ -179,15 +134,6 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
   const revertMessageID = activeSession?.revert?.messageID;
   const pendingPermission = activeSessionId ? (pendingPermissions[activeSessionId] ?? null) : null;
   const pendingQuestion = activeSessionId ? (pendingQuestions[activeSessionId] ?? null) : null;
-
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!isBusy) return;
-    setNowMs(Date.now());
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [isBusy]);
 
   const listRef = useRef<HTMLDivElement>(null);
   /** Whether the user is currently near the bottom of the scroll container. */
@@ -326,37 +272,80 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     return messages.filter((m) => hasVisibleContent(m) && m.info.id >= revertMessageID).length;
   }, [messages, revertMessageID]);
 
-  const turnDurationByAssistantId = useMemo(() => {
-    const userStartById = new Map<string, number>();
-    const latestAssistantByParent = new Map<string, MessageEntry>();
+  const turnFooterByMessageId = useMemo(() => {
+    const footerByMessageId = new Map<string, TurnFooter>();
+    const visibleMessageIds = new Set(visibleMessages.map((entry) => entry.info.id));
+    const sessionThinkingLevel =
+      nonEmptyString(activeSession?.model?.variant) ??
+      (activeSessionId ? nonEmptyString(sessionMeta[activeSessionId]?.selectedVariant) : undefined);
 
+    for (const turn of Object.values(turnRuns)) {
+      const matchingAssistantId =
+        turn.assistantMessageID && visibleMessageIds.has(turn.assistantMessageID)
+          ? turn.assistantMessageID
+          : visibleMessages.findLast(
+              (entry) =>
+                entry.info.role === "assistant" && entry.info.time.created >= turn.startedAt,
+            )?.info.id;
+      if (!matchingAssistantId) continue;
+      footerByMessageId.set(matchingAssistantId, {
+        startedAt: turn.startedAt,
+        completedAt: turn.completedAt,
+        running: turn.status === "running",
+        providerID: turn.providerID,
+        modelID: turn.modelID,
+        thinkingLevel: turn.thinkingLevel,
+      });
+    }
+
+    const latestAssistantByParentId = new Map<string, MessageEntry>();
     for (const entry of visibleMessages) {
-      if (entry.info.role === "user") {
-        userStartById.set(entry.info.id, entry.info.time.created);
-        continue;
-      }
       if (entry.info.role !== "assistant") continue;
-      const parentId = entry.info.parentID;
-      const existing = latestAssistantByParent.get(parentId);
-      if (!existing || entry.info.time.created >= existing.info.time.created) {
-        latestAssistantByParent.set(parentId, entry);
-      }
+      const parentId = "parentID" in entry.info ? entry.info.parentID : undefined;
+      if (!parentId) continue;
+      latestAssistantByParentId.set(parentId, entry);
     }
 
-    const durationByAssistantId = new Map<string, string>();
-    for (const [parentId, assistantEntry] of latestAssistantByParent) {
-      const start = userStartById.get(parentId);
-      if (typeof start !== "number") continue;
-      const completedAt = (assistantEntry.info.time as { completed?: number }).completed;
-      const end = typeof completedAt === "number" ? completedAt : isBusy ? nowMs : null;
-      if (typeof end !== "number") continue;
-      const duration = end - start;
-      if (!Number.isFinite(duration) || duration < 0) continue;
-      durationByAssistantId.set(assistantEntry.info.id, formatDuration(duration));
+    for (const entry of latestAssistantByParentId.values()) {
+      if (footerByMessageId.has(entry.info.id)) continue;
+
+      const providerID =
+        "providerID" in entry.info && typeof entry.info.providerID === "string"
+          ? entry.info.providerID
+          : undefined;
+      const modelID =
+        "modelID" in entry.info && typeof entry.info.modelID === "string"
+          ? entry.info.modelID
+          : undefined;
+      const completedAt = (entry.info.time as { completed?: number }).completed;
+      const parentId = "parentID" in entry.info ? entry.info.parentID : undefined;
+      const parent = visibleMessages.find((item) => item.info.id === parentId);
+      const parentModel =
+        parent?.info.role === "user" && "model" in parent.info ? parent.info.model : null;
+      const thinkingLevel =
+        ("variant" in entry.info ? nonEmptyString(entry.info.variant) : undefined) ??
+        (parentModel && typeof parentModel === "object" && "variant" in parentModel
+          ? nonEmptyString(parentModel.variant)
+          : undefined) ??
+        sessionThinkingLevel;
+      const durationMs =
+        typeof completedAt === "number" && parent?.info.role === "user"
+          ? completedAt - parent.info.time.created
+          : undefined;
+
+      if (!providerID && !modelID && !thinkingLevel && !(durationMs && durationMs > 0)) continue;
+
+      footerByMessageId.set(entry.info.id, {
+        durationMs: durationMs && durationMs > 0 ? durationMs : undefined,
+        running: false,
+        providerID,
+        modelID,
+        thinkingLevel,
+      });
     }
 
-    return durationByAssistantId;
-  }, [visibleMessages, isBusy, nowMs]);
+    return footerByMessageId;
+  }, [visibleMessages, turnRuns, activeSession, activeSessionId, sessionMeta]);
 
   // Find the last reasoning part across all assistant messages so we can
   // auto-collapse earlier reasoning blocks when a new one starts.
@@ -399,7 +388,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
         <div key={entry.info.id} className={spacing}>
           <MessageBubble
             entry={entry}
-            turnDurationLabel={turnDurationByAssistantId.get(entry.info.id)}
+            turnFooter={turnFooterByMessageId.get(entry.info.id)}
             lastReasoningPartId={lastReasoningPartId}
             onFork={
               capabilities?.fork && entry.info.role === "user" && !isFirstUserMsg
@@ -418,7 +407,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     [
       firstUserMessageIndex,
       visibleMessages,
-      turnDurationByAssistantId,
+      turnFooterByMessageId,
       lastReasoningPartId,
       forkFromMessage,
       revertToMessage,
@@ -557,1117 +546,4 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
       </div>
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Message bubble
-// ---------------------------------------------------------------------------
-
-const MessageBubble = memo(function MessageBubble({
-  entry,
-  turnDurationLabel,
-  lastReasoningPartId,
-  onFork,
-  onRevert,
-}: {
-  entry: MessageEntry;
-  turnDurationLabel?: string;
-  lastReasoningPartId?: string;
-  onFork?: () => void;
-  onRevert?: () => void;
-}) {
-  const { info, parts } = entry;
-  const isUser = info.role === "user";
-  const [expanded, setExpanded] = useState(false);
-  const isSummary = info.role === "assistant" && "summary" in info && info.summary === true;
-
-  // Check if user message text exceeds the collapse threshold
-  const userTextLength = isUser
-    ? parts.reduce((sum, p) => sum + (p.type === "text" ? (p.text?.length ?? 0) : 0), 0)
-    : 0;
-  const shouldCollapse = isUser && userTextLength > USER_MSG_COLLAPSE_CHARS;
-
-  return (
-    <div className={isUser ? "flex justify-end" : ""}>
-      {isSummary && (
-        <div className="flex items-center gap-2 mb-2 select-none">
-          <div className="flex-1 h-px bg-amber-500/30" />
-          <div className="flex items-center gap-1.5 text-[11px] text-amber-500/80 font-mono">
-            <Layers className="size-3" />
-            <span>Context compacted</span>
-          </div>
-          <div className="flex-1 h-px bg-amber-500/30" />
-        </div>
-      )}
-      <div
-        className={cn(
-          "min-w-0 group relative",
-          isUser
-            ? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
-            : "flex-1 flex flex-col gap-1",
-        )}
-      >
-        {isUser && (onFork || onRevert) && (
-          <div className="absolute -left-9 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            {onRevert && (
-              <button
-                type="button"
-                onClick={onRevert}
-                title="Revert to this message"
-                className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <Undo2 className="size-3.5" />
-              </button>
-            )}
-            {onFork && (
-              <button
-                type="button"
-                onClick={onFork}
-                title="Fork from this message"
-                className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <GitFork className="size-3.5" />
-              </button>
-            )}
-          </div>
-        )}
-        {parts.length > 0 && (
-          <div className={cn(shouldCollapse && !expanded && "relative")}>
-            <div
-              className={cn(
-                "flex flex-col gap-1",
-                shouldCollapse && !expanded && "max-h-[8lh] overflow-hidden",
-              )}
-            >
-              {parts.map((part) => (
-                <PartView
-                  key={part.id}
-                  part={part}
-                  isUser={isUser}
-                  lastReasoningPartId={lastReasoningPartId}
-                />
-              ))}
-            </div>
-            {shouldCollapse && !expanded && (
-              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t to-transparent rounded-b-2xl pointer-events-none" />
-            )}
-            {shouldCollapse && (
-              <button
-                type="button"
-                onClick={() => setExpanded(!expanded)}
-                className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
-              >
-                {expanded ? "Show less" : "Show more"}
-              </button>
-            )}
-          </div>
-        )}
-        {info.role === "assistant" && info.error && (
-          <div className="text-xs text-destructive flex items-center gap-1">
-            <AlertTriangle className="size-3" />
-            {"data" in info.error &&
-            info.error.data &&
-            typeof info.error.data === "object" &&
-            "message" in info.error.data
-              ? String(info.error.data.message)
-              : info.error.name}
-          </div>
-        )}
-        {info.role === "assistant" && turnDurationLabel && (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
-            {turnDurationLabel}
-            {"providerID" in info && info.providerID && (
-              <ProviderIcon provider={info.providerID} className="size-3 shrink-0 opacity-60" />
-            )}
-            {"modelID" in info && info.modelID && (
-              <span className="opacity-60">{info.modelID}</span>
-            )}
-            {"mode" in info && info.mode && <span className="opacity-40">{info.mode}</span>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Part renderers
-// ---------------------------------------------------------------------------
-
-function TextPartView({ part, isUser }: { part: TextPart; isUser?: boolean }) {
-  if (!part.text) return null;
-
-  if (isUser) {
-    return <div className="text-sm whitespace-pre-wrap break-words select-text">{part.text}</div>;
-  }
-
-  return (
-    <div>
-      <MarkdownRenderer content={part.text} />
-    </div>
-  );
-}
-
-function FilePartView({ part }: { part: FilePart }) {
-  const { workspaceServerUrl } = useConnectionState();
-  const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
-  const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
-
-  if (isImage) {
-    return (
-      <div>
-        <img
-          src={src}
-          alt={part.filename ?? "Image"}
-          className="max-h-64 max-w-full rounded-lg object-contain"
-        />
-        {part.filename && (
-          <p className="text-xs text-muted-foreground mt-1 truncate">{part.filename}</p>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="text-sm text-muted-foreground italic">{part.filename ?? "File attachment"}</div>
-  );
-}
-
-const PartView = memo(function PartView({
-  part,
-  isUser,
-  lastReasoningPartId,
-}: {
-  part: Part;
-  isUser?: boolean;
-  lastReasoningPartId?: string;
-}) {
-  switch (part.type) {
-    case "text":
-      return <TextPartView part={part} isUser={isUser} />;
-    case "file":
-      return <FilePartView part={part} />;
-    case "reasoning":
-      return <ReasoningPartView part={part} isLastReasoning={part.id === lastReasoningPartId} />;
-    case "tool":
-      return <ToolPartView part={part} />;
-    case "step-start":
-    case "step-finish":
-    case "snapshot":
-    case "patch":
-    case "compaction":
-    case "retry":
-      return null;
-    default:
-      return null;
-  }
-});
-
-const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
-const TIMELINE_BUTTON_RESET =
-  "m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
-
-function ReasoningPartView({
-  part,
-  isLastReasoning,
-}: {
-  part: ReasoningPart;
-  isLastReasoning?: boolean;
-}) {
-  const isThinking = !part.time.end;
-  const { isBusy } = useSessionState();
-  const [expanded, setExpanded] = useState(isThinking);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const hasText = !!part.text?.trim();
-  // Start false so first visible render counts as "became visible".
-  // Needed when backend batches snapshots and component first mounts only
-  // after reasoning text already exists.
-  const prevHasTextRef = useRef(false);
-
-  useEffect(() => {
-    const becameVisible = hasText && !prevHasTextRef.current;
-    if (isThinking || (becameVisible && isLastReasoning && isBusy)) {
-      setExpanded(true);
-    } else if (!isLastReasoning || !isBusy) {
-      setExpanded(false);
-    }
-    prevHasTextRef.current = hasText;
-  }, [hasText, isThinking, isLastReasoning, isBusy]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
-  useEffect(() => {
-    if (isThinking && expanded && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
-    }
-  }, [part.text, isThinking, expanded]);
-
-  if (!hasText) return null;
-
-  const durationMs = part.time.end && part.time.start ? part.time.end - part.time.start : null;
-  const durationLabel =
-    durationMs !== null ? hideZeroDurationLabel(formatDuration(durationMs)) : null;
-
-  return (
-    <div className="text-xs font-mono text-muted-foreground overflow-hidden">
-      <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)} className="m-0">
-        <summary
-          className={cn(
-            TIMELINE_ROW_BASE,
-            TIMELINE_BUTTON_RESET,
-            "list-none hover:text-foreground transition-colors cursor-pointer [&::-webkit-details-marker]:hidden",
-          )}
-        >
-          <span className="w-3 shrink-0 flex items-center justify-center">
-            <ChevronRight
-              className={cn("size-3 transition-transform duration-150", expanded && "rotate-90")}
-            />
-          </span>
-          <span className="font-medium">{isThinking ? "Thinking..." : "Thinking"}</span>
-          {durationLabel && <span className="opacity-60">{durationLabel}</span>}
-        </summary>
-      </details>
-      {expanded && (
-        <div
-          ref={contentRef}
-          className="pl-5 pt-1 text-xs text-muted-foreground leading-relaxed max-h-96 overflow-auto"
-        >
-          <div className="[&_.markdown-renderer]:text-xs [&_.markdown-renderer]:text-muted-foreground [&_.markdown-renderer_code]:text-[0.85em]">
-            <MarkdownRenderer content={part.text.trim()} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Todo list renderer (for todowrite tool calls)
-// Uses shared types/utils from @/lib/todos
-// ---------------------------------------------------------------------------
-
-function TodoListView({ todos }: { todos: TodoItem[] }) {
-  return (
-    <div className="border-t border-border/40 pt-1.5 mt-1.5 space-y-0.5">
-      {todos.map((todo, i) => {
-        const cfg = todoStatusConfig[todo.status] ?? {
-          icon: Circle,
-          color: "text-muted-foreground",
-        };
-        const Icon = cfg.icon;
-        const isCancelled = todo.status === "cancelled";
-        return (
-          <div key={`todo-${todo.content}-${i}`} className="flex items-center gap-1.5 min-h-5">
-            <Icon className={cn("size-3 shrink-0", cfg.color)} />
-            <span
-              className={cn(
-                "flex-1 text-[11px] leading-tight",
-                isCancelled && "line-through opacity-50",
-                todo.status === "completed" && "text-muted-foreground",
-              )}
-            >
-              {todo.content}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Task tool renderer (collapsible details like Thinking)
-// ---------------------------------------------------------------------------
-
-interface TaskInfo {
-  description: string;
-  subagentType?: string;
-  /** Child session ID from metadata (for live step tracking). */
-  childSessionId?: string;
-  /** Subagent tool calls extracted from metadata (if available). */
-  toolCalls: Array<{ tool: string; title?: string; status?: string }>;
-  /** Final markdown output from the subagent. */
-  output: string;
-}
-
-interface ImageAttachmentInfo {
-  url: string;
-  src: string;
-  mime: string;
-  filename?: string;
-}
-
-function extractImageAttachments(
-  state: ToolPart["state"],
-  serverUrl?: string | null,
-): ImageAttachmentInfo[] {
-  if (state.status !== "completed") return [];
-  if (!Array.isArray(state.attachments) || state.attachments.length === 0) {
-    return [];
-  }
-
-  return state.attachments
-    .filter((att) => {
-      const mime = (att.mime ?? "").toLowerCase();
-      return mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg";
-    })
-    .map((att) => ({
-      url: att.url,
-      src: resolveAttachmentImageSrc(att.url, serverUrl),
-      mime: att.mime,
-      filename: att.filename,
-    }));
-}
-
-function hideZeroDurationLabel(label: string | null): string | null {
-  if (!label) return null;
-  return label === "0.0s" ? null : label;
-}
-
-function formatDuration(ms: number): string {
-  const safeMs = Math.max(0, Math.round(ms));
-  if (safeMs < 1000) return `${(safeMs / 1000).toFixed(1)}s`;
-  const totalSeconds = Math.round(safeMs / 1000);
-  if (totalSeconds < 60) {
-    if (totalSeconds < 10) return `${(safeMs / 1000).toFixed(1)}s`;
-    return `${totalSeconds}s`;
-  }
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes < 60) {
-    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remMinutes = minutes % 60;
-  return `${hours}h ${String(remMinutes).padStart(2, "0")}m`;
-}
-
-function getTaskDurationLabel(state: ToolPart["state"]): string | null {
-  if (
-    (state.status === "completed" || state.status === "error") &&
-    "time" in state &&
-    state.time &&
-    typeof state.time.start === "number" &&
-    typeof state.time.end === "number"
-  ) {
-    const duration = state.time.end - state.time.start;
-    if (Number.isFinite(duration) && duration >= 0) {
-      return formatDuration(duration);
-    }
-  }
-  return null;
-}
-
-/** Extract execution info from a task tool call (input for header, output/metadata for content). */
-function extractTaskInfo(state: ToolPart["state"]): TaskInfo | null {
-  const input = "input" in state ? state.input : null;
-  const description =
-    input && typeof input.description === "string" ? input.description.trim() : "";
-  const subagentType =
-    input && typeof input.subagent_type === "string" ? input.subagent_type.trim() : undefined;
-
-  // Extract child session ID and tool calls from metadata if present
-  let childSessionId: string | undefined;
-  const toolCalls: TaskInfo["toolCalls"] = [];
-  if ("metadata" in state && state.metadata && typeof state.metadata === "object") {
-    const meta = state.metadata as Record<string, unknown>;
-    if (typeof meta.sessionId === "string") {
-      childSessionId = meta.sessionId;
-    }
-    // Try common metadata shapes: toolCalls, tools, calls
-    const rawCalls = meta.toolCalls ?? meta.tools ?? meta.calls;
-    if (Array.isArray(rawCalls)) {
-      for (const tc of rawCalls) {
-        if (typeof tc === "object" && tc !== null && "tool" in tc && typeof tc.tool === "string") {
-          toolCalls.push({
-            tool: tc.tool,
-            title: typeof tc.title === "string" ? tc.title : undefined,
-            status: typeof tc.status === "string" ? tc.status : undefined,
-          });
-        }
-      }
-    }
-  }
-
-  // Extract output text
-  let output = "";
-  if ("output" in state && typeof state.output === "string") {
-    output = state.output.trim();
-  }
-
-  if (!description && !output && toolCalls.length === 0) return null;
-
-  return { description, subagentType, childSessionId, toolCalls, output };
-}
-
-// ---------------------------------------------------------------------------
-// Edit diff helper
-// ---------------------------------------------------------------------------
-
-type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
-
-interface ApplyPatchFileDiff {
-  id: string;
-  type: ApplyPatchChangeType;
-  path: string;
-  previousPath: string | null;
-  added: number;
-  removed: number;
-  lines: DiffLine[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function toFiniteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function computeApplyPatchDiff(file: Record<string, unknown>): DiffResult | null {
-  const unifiedDiff = typeof file.diff === "string" ? file.diff : null;
-  return unifiedDiff ? parseUnifiedDiff(unifiedDiff) : null;
-}
-
-function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
-  if (!("metadata" in state) || !isRecord(state.metadata)) return [];
-  const rawFiles = state.metadata.files;
-  if (!Array.isArray(rawFiles)) return [];
-
-  return rawFiles
-    .map((entry, index) => {
-      if (!isRecord(entry)) return null;
-      const diff = computeApplyPatchDiff(entry);
-      const typeValue = typeof entry.type === "string" ? entry.type.toLowerCase() : "update";
-      const type: ApplyPatchChangeType =
-        typeValue === "add" || typeValue === "delete" || typeValue === "move"
-          ? typeValue
-          : "update";
-      const pathValue =
-        typeof entry.relativePath === "string"
-          ? entry.relativePath
-          : typeof entry.movePath === "string"
-            ? entry.movePath
-            : typeof entry.filePath === "string"
-              ? entry.filePath
-              : `patch-${index + 1}`;
-      const previousPath = typeof entry.filePath === "string" ? entry.filePath : null;
-      const added = toFiniteNumber(entry.additions) ?? diff?.added ?? 0;
-      const removed = toFiniteNumber(entry.deletions) ?? diff?.removed ?? 0;
-
-      return {
-        id: `${pathValue}-${index}`,
-        type,
-        path: pathValue,
-        previousPath,
-        added,
-        removed,
-        lines: diff?.lines ?? [],
-      };
-    })
-    .filter((file): file is ApplyPatchFileDiff => file !== null);
-}
-
-function getApplyPatchActionLabel(file: ApplyPatchFileDiff): string {
-  if (file.type === "add") return "Created";
-  if (file.type === "delete") return "Deleted";
-  if (file.type === "move") return "Moved";
-  return "Patched";
-}
-
-function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string | null {
-  if (files.length === 0) return null;
-  if (files.length === 1) {
-    const file = files[0];
-    if (!file) return null;
-    return file.type === "move" && file.previousPath && file.previousPath !== file.path
-      ? `${file.previousPath} -> ${file.path}`
-      : file.path;
-  }
-  return `${files.length} files`;
-}
-
-/** Inline diff viewer component. */
-function DiffView({ lines }: { lines: DiffLine[] }) {
-  // Collapse runs of unchanged lines in the middle, keep 2 context lines around changes
-  const CONTEXT = 2;
-  const changeIndices = new Set<number>();
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i]?.type !== "same") {
-      for (let c = Math.max(0, i - CONTEXT); c <= Math.min(lines.length - 1, i + CONTEXT); c++) {
-        changeIndices.add(c);
-      }
-    }
-  }
-
-  const elements: React.ReactNode[] = [];
-  let skipping = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (!changeIndices.has(i)) {
-      if (!skipping) {
-        skipping = true;
-        elements.push(
-          <div key={`skip-${i}`} className="text-muted-foreground/40 px-2 select-none">
-            ...
-          </div>,
-        );
-      }
-      continue;
-    }
-    skipping = false;
-    const line = lines[i];
-    if (!line) continue;
-    const bg =
-      line.type === "add"
-        ? "bg-emerald-500/10 text-emerald-400"
-        : line.type === "remove"
-          ? "bg-red-500/10 text-red-400"
-          : "text-muted-foreground/60";
-    const prefix = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
-    elements.push(
-      <div key={i} className={cn("px-2 whitespace-pre-wrap break-all", bg)}>
-        <span className="select-none inline-block w-4 shrink-0 opacity-60">{prefix}</span>
-        {line.text || "\u00A0"}
-      </div>,
-    );
-  }
-
-  return (
-    <div className="mt-1 ml-5 rounded border border-border/40 bg-background/60 overflow-auto max-h-64 text-[11px] font-mono leading-relaxed">
-      {elements}
-    </div>
-  );
-}
-
-function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) {
-  return (
-    <div className="mt-1 ml-5 space-y-1.5">
-      {files.map((file) => {
-        const hasDiff = file.lines.length > 0;
-        const actionLabel = getApplyPatchActionLabel(file);
-        const pathLabel =
-          file.type === "move" && file.previousPath && file.previousPath !== file.path
-            ? `${file.previousPath} -> ${file.path}`
-            : file.path;
-        return (
-          <details
-            key={file.id}
-            open={files.length === 1}
-            className="rounded border border-border/40 bg-background/40 overflow-hidden"
-          >
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 hover:bg-accent/30 transition-colors [&::-webkit-details-marker]:hidden">
-              <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-90" />
-              <span
-                className={cn(
-                  "shrink-0 text-[11px] font-medium",
-                  file.type === "add"
-                    ? "text-emerald-500"
-                    : file.type === "delete"
-                      ? "text-red-400"
-                      : "text-foreground/70",
-                )}
-              >
-                {actionLabel}
-              </span>
-              <span className="truncate text-[11px] text-muted-foreground" title={pathLabel}>
-                {pathLabel}
-              </span>
-              <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-[11px]">
-                <span className="text-emerald-500">+{file.added}</span>
-                <span className="text-red-400">-{file.removed}</span>
-              </span>
-            </summary>
-            {hasDiff ? (
-              <DiffView lines={file.lines} />
-            ) : (
-              <div className="px-2 pb-2 text-[11px] text-muted-foreground">
-                No line diff available.
-              </div>
-            )}
-          </details>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Child tool part display helpers (for live subagent step tracking)
-// ---------------------------------------------------------------------------
-
-/** Get a compact display label and icon for a tool part from a child session. */
-function getToolDisplayInfo(
-  tool: string,
-  toolState: ToolPart["state"],
-): { icon: typeof Wrench; label: string; subtitle: string } {
-  const input = "input" in toolState ? (toolState.input as Record<string, unknown>) : null;
-  const title =
-    "title" in toolState && typeof toolState.title === "string" ? toolState.title : null;
-  const running = toolState.status === "running" || toolState.status === "pending";
-
-  const lower = tool.toLowerCase();
-
-  if (lower === "bash" || lower === "shell" || lower === "execute_command") {
-    const cmd = input?.command;
-    const cmdStr = typeof cmd === "string" ? cmd : (title ?? "");
-    return {
-      icon: SquareTerminal,
-      label: running ? "Running" : "Ran",
-      subtitle: cmdStr,
-    };
-  }
-  if (lower === "read" || lower === "mcp_read") {
-    const path = input?.filePath ?? input?.path;
-    return {
-      icon: FileCode,
-      label: running ? "Reading" : "Read",
-      subtitle: typeof path === "string" ? path : (title ?? ""),
-    };
-  }
-  if (lower === "edit") {
-    const path = input?.filePath ?? input?.path;
-    return {
-      icon: FileEdit,
-      label: running ? "Editing" : "Edited",
-      subtitle: typeof path === "string" ? path : (title ?? ""),
-    };
-  }
-  if (lower === "apply_patch") {
-    return {
-      icon: FileEdit,
-      label: running ? "Patching" : "Patched",
-      subtitle: title ?? "",
-    };
-  }
-  if (lower === "write") {
-    const path = input?.filePath ?? input?.path;
-    return {
-      icon: FilePlus,
-      label: running ? "Writing" : "Wrote",
-      subtitle: typeof path === "string" ? path : (title ?? ""),
-    };
-  }
-  if (lower === "grep" || lower === "mcp_grep") {
-    const pattern = input?.pattern;
-    return {
-      icon: Search,
-      label: running ? "Searching" : "Searched",
-      subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
-    };
-  }
-  if (lower === "glob" || lower === "mcp_glob") {
-    const pattern = input?.pattern;
-    return {
-      icon: Search,
-      label: running ? "Globbing" : "Globbed",
-      subtitle: typeof pattern === "string" ? pattern : (title ?? ""),
-    };
-  }
-  if (lower === "task") {
-    const desc = input?.description;
-    const subagent = input?.subagent_type ?? input?.subagentType;
-    const label =
-      typeof subagent === "string"
-        ? subagent.charAt(0).toUpperCase() + subagent.slice(1)
-        : running
-          ? "Running"
-          : "Ran";
-    return {
-      icon: Layers,
-      label,
-      subtitle: typeof desc === "string" ? `(${desc})` : (title ?? ""),
-    };
-  }
-  if (lower === "todowrite") {
-    const todoCount = Array.isArray(input?.todos) ? input.todos.length : 0;
-    return {
-      icon: CircleCheck,
-      label: running ? "Writing todos" : `Wrote ${todoCount} todos`,
-      subtitle: "",
-    };
-  }
-  if (lower === "question" || lower === "mcp_question") {
-    const qCount = Array.isArray(input?.questions) ? input.questions.length : 0;
-    return {
-      icon: MessageCircleQuestion,
-      label: running ? "Asking" : `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`,
-      subtitle: "",
-    };
-  }
-  // Fallback for any other tool
-  return {
-    icon: Wrench,
-    label: tool,
-    subtitle: title ?? "",
-  };
-}
-
-function ToolPartView({ part }: { part: ToolPart }) {
-  const { workspaceServerUrl } = useConnectionState();
-  const { state } = part;
-  const [expanded, setExpanded] = useState(false);
-  const autoExpandedRef = useRef(false);
-  const bashAutoExpandedRef = useRef(false);
-  const toolLower = part.tool.toLowerCase();
-  const isBash = toolLower === "bash" || toolLower === "shell" || toolLower === "execute_command";
-  const isGlob = toolLower === "glob";
-  const isEdit = toolLower === "edit";
-  const isApplyPatch = toolLower === "apply_patch";
-  const isWrite = toolLower === "write";
-  const isTodoWrite = toolLower === "todowrite";
-  const isTask = toolLower === "task";
-  const isGrep = toolLower === "grep" || toolLower === "mcp_grep";
-  const isRead = toolLower === "read" || toolLower === "mcp_read";
-  const isQuestion = toolLower === "question" || toolLower === "mcp_question";
-  const diff = null as DiffResult | null;
-  const applyPatchFiles = isApplyPatch ? extractApplyPatchFiles(state) : [];
-  const applyPatchSummary =
-    applyPatchFiles.length > 0
-      ? applyPatchFiles.reduce(
-          (acc, file) => ({
-            added: acc.added + file.added,
-            removed: acc.removed + file.removed,
-            lines: acc.lines,
-          }),
-          { added: 0, removed: 0, lines: [] as DiffLine[] },
-        )
-      : null;
-  const todos = isTodoWrite ? extractTodos(state) : null;
-  const taskInfo = isTask ? extractTaskInfo(state) : null;
-  const taskDurationLabel = isTask ? getTaskDurationLabel(state) : null;
-  const imageAttachments = extractImageAttachments(state, workspaceServerUrl);
-
-  const bashCommand =
-    isBash && "input" in state
-      ? typeof state.input.command === "string"
-        ? state.input.command
-        : null
-      : null;
-  const globPattern =
-    isGlob && "input" in state
-      ? typeof state.input.pattern === "string"
-        ? state.input.pattern
-        : null
-      : null;
-  const grepPattern =
-    isGrep && "input" in state
-      ? typeof state.input.pattern === "string"
-        ? state.input.pattern
-        : null
-      : null;
-  const filePath =
-    (isRead || isEdit || isWrite) && "input" in state
-      ? typeof state.input.filePath === "string"
-        ? state.input.filePath
-        : null
-      : null;
-  const isRunning = state.status === "running" || state.status === "pending";
-  const taskContentRef = useRef<HTMLDivElement>(null);
-  const toolOutputRef = useRef<HTMLPreElement>(null);
-
-  // Auto-expand running tasks with a child session ID so steps are visible,
-  // and auto-collapse when the task finishes
-  useEffect(() => {
-    if (!isTask) return;
-    if (isRunning && taskInfo?.childSessionId && !autoExpandedRef.current) {
-      setExpanded(true);
-      autoExpandedRef.current = true;
-    } else if (!isRunning && autoExpandedRef.current) {
-      setExpanded(false);
-    }
-  }, [isTask, taskInfo?.childSessionId, isRunning]);
-
-  // Auto-scroll task content to bottom as new tool calls stream in
-  // biome-ignore lint/correctness/useExhaustiveDependencies: taskInfo triggers scroll on new streamed content
-  useEffect(() => {
-    if (isTask && isRunning && expanded && taskContentRef.current) {
-      taskContentRef.current.scrollTop = taskContentRef.current.scrollHeight;
-    }
-  }, [taskInfo, isTask, isRunning, expanded]);
-
-  const rawOutputText = "output" in state && typeof state.output === "string" ? state.output : null;
-  const outputText = rawOutputText?.trim() || null;
-  const bashMetadataOutput =
-    isBash &&
-    "metadata" in state &&
-    state.metadata &&
-    typeof state.metadata === "object" &&
-    typeof (state.metadata as Record<string, unknown>).output === "string"
-      ? ((state.metadata as Record<string, unknown>).output as string)
-      : null;
-  const bashOutputText = isBash
-    ? isRunning
-      ? (bashMetadataOutput ?? rawOutputText)
-      : (rawOutputText ?? bashMetadataOutput)
-    : outputText;
-
-  useEffect(() => {
-    if (!isBash || !isRunning || !bashOutputText || bashAutoExpandedRef.current) {
-      return;
-    }
-    setExpanded(true);
-    bashAutoExpandedRef.current = true;
-  }, [isBash, isRunning, bashOutputText]);
-
-  useEffect(() => {
-    if (!isBash || !expanded || !bashOutputText || !toolOutputRef.current) return;
-    toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
-  }, [isBash, expanded, bashOutputText]);
-
-  const hasDynamicLabel =
-    isRead ||
-    isEdit ||
-    isApplyPatch ||
-    isBash ||
-    isWrite ||
-    isGrep ||
-    isGlob ||
-    isTask ||
-    isTodoWrite ||
-    isQuestion;
-  const displayInfo = getToolDisplayInfo(part.tool, part.state);
-  const toolVerb = displayInfo.label;
-  // Inline context label (filename, command, pattern, description, or title)
-  const taskDescription = isTask && taskInfo?.description ? `(${taskInfo.description})` : null;
-  const applyPatchLabel = isApplyPatch ? getApplyPatchContextLabel(applyPatchFiles) : null;
-  const contextLabel = filePath
-    ? filePath
-    : applyPatchLabel
-      ? applyPatchLabel
-      : bashCommand
-        ? bashCommand
-        : grepPattern
-          ? grepPattern
-          : globPattern
-            ? globPattern
-            : taskDescription
-              ? taskDescription
-              : state.status === "completed" &&
-                  state.title &&
-                  !isTodoWrite &&
-                  !isTask &&
-                  !isQuestion
-                ? state.title
-                : null;
-
-  const grepMatchCount =
-    isGrep && outputText
-      ? (() => {
-          const m = outputText?.match(/^Found (\d+) match/);
-          return m?.[1] ? Number.parseInt(m[1], 10) : null;
-        })()
-      : null;
-
-  const diffSummary = diff ?? applyPatchSummary;
-  const hasApplyPatchView = applyPatchFiles.length > 0;
-  const hasBashOutput = isBash && !!bashOutputText?.trim();
-  const hasTextOutput = hasBashOutput || !!outputText;
-  // Tool is expandable if it has output text or has a diff
-  const hasDiffView = diff && diff.lines.length > 0;
-  const isExpandable =
-    ((isBash || isGrep || (isApplyPatch && !hasApplyPatchView)) && hasTextOutput) ||
-    hasDiffView ||
-    hasApplyPatchView ||
-    (isTask && taskInfo);
-
-  const hasExpandedContent = (todos && todos.length > 0) || imageAttachments.length > 0;
-
-  return (
-    <div className="text-xs font-mono text-muted-foreground overflow-hidden">
-      {/* Slim single-line header */}
-      {isExpandable ? (
-        <details
-          open={expanded}
-          onToggle={(e) => setExpanded(e.currentTarget.open)}
-          className="m-0"
-        >
-          <summary
-            className={cn(
-              TIMELINE_ROW_BASE,
-              TIMELINE_BUTTON_RESET,
-              "list-none hover:text-foreground cursor-pointer transition-colors [&::-webkit-details-marker]:hidden",
-            )}
-          >
-            <span className="w-3 shrink-0 flex items-center justify-center">
-              <ChevronRight
-                className={cn("size-3 transition-transform duration-150", expanded && "rotate-90")}
-              />
-            </span>
-            <span className="font-medium text-foreground/70">
-              {toolVerb}
-              {hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
-            </span>
-            {contextLabel && (
-              <>
-                {!hasDynamicLabel && <span className="text-muted-foreground/40">·</span>}
-                <span className="truncate" title={contextLabel}>
-                  {contextLabel}
-                  {hasDynamicLabel && isRunning ? "..." : ""}
-                </span>
-              </>
-            )}
-
-            {grepMatchCount != null && (
-              <span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
-                {grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
-              </span>
-            )}
-            {diffSummary && (
-              <span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
-                <span className="text-emerald-500">+{diffSummary.added}</span>
-                <span className="text-red-400">-{diffSummary.removed}</span>
-              </span>
-            )}
-            {isTask && taskDurationLabel && (
-              <span className="ml-auto opacity-70 tabular-nums text-[11px] whitespace-nowrap">
-                {taskDurationLabel}
-              </span>
-            )}
-            {isTask && (state.status === "running" || state.status === "pending") && (
-              <Spinner className="size-3 ml-auto shrink-0" />
-            )}
-          </summary>
-        </details>
-      ) : (
-        <div className={cn(TIMELINE_ROW_BASE, "cursor-default")}>
-          <span className="w-3 shrink-0 flex items-center justify-center">
-            <ToolStatusIcon status={state.status} />
-          </span>
-          <span className="font-medium text-foreground/70">
-            {toolVerb}
-            {hasDynamicLabel && isRunning && !contextLabel ? "..." : ""}
-          </span>
-          {contextLabel && (
-            <>
-              {!hasDynamicLabel && <span className="text-muted-foreground/40">·</span>}
-              <span className="truncate" title={contextLabel}>
-                {contextLabel}
-                {hasDynamicLabel && isRunning ? "..." : ""}
-              </span>
-            </>
-          )}
-          {grepMatchCount != null && (
-            <span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
-              {grepMatchCount} {grepMatchCount === 1 ? "match" : "matches"}
-            </span>
-          )}
-          {diffSummary && (
-            <span className="flex items-center gap-1 ml-auto whitespace-nowrap text-[11px]">
-              <span className="text-emerald-500">+{diffSummary.added}</span>
-              <span className="text-red-400">-{diffSummary.removed}</span>
-            </span>
-          )}
-        </div>
-      )}
-      {/* Expanded bash output */}
-      {isExpandable &&
-        expanded &&
-        !hasDiffView &&
-        !hasApplyPatchView &&
-        !isTask &&
-        (isBash ? bashOutputText : outputText) && (
-          <div className="pl-7 pt-1">
-            <TerminalOutput
-              content={(isBash ? bashOutputText : outputText) ?? ""}
-              preRef={toolOutputRef}
-              className="max-h-64"
-            />
-          </div>
-        )}
-      {/* Expanded diff view for edit/write tools */}
-      {hasDiffView && expanded && <DiffView lines={diff.lines} />}
-      {hasApplyPatchView && expanded && <ApplyPatchFilesView files={applyPatchFiles} />}
-      {/* Expanded task content */}
-      {isTask && expanded && taskInfo && (
-        <div ref={taskContentRef} className="pl-7 pt-1 space-y-1 max-h-96 overflow-auto">
-          {taskInfo.toolCalls.length > 0 && (
-            <div className="space-y-0.5">
-              {taskInfo.toolCalls.map((tc, i) => (
-                <div
-                  key={`${tc.tool}-${i}`}
-                  className="flex items-center gap-1.5 text-xs font-mono"
-                >
-                  <Wrench className="size-2.5 text-muted-foreground shrink-0" />
-                  <span className="text-muted-foreground">{tc.tool}</span>
-                  {tc.title && (
-                    <span className="text-muted-foreground/70 truncate">{tc.title}</span>
-                  )}
-                  {tc.status === "completed" && (
-                    <CheckCircle2 className="size-2.5 text-emerald-500 ml-auto shrink-0" />
-                  )}
-                  {tc.status === "error" && (
-                    <XCircle className="size-2.5 text-destructive ml-auto shrink-0" />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {taskInfo.output && (
-            <div className="text-xs">
-              {looksLikeTerminalOutput(taskInfo.output) ? (
-                <TerminalOutput content={taskInfo.output} />
-              ) : (
-                <MarkdownRenderer content={taskInfo.output} />
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      {/* Error on a second line */}
-      {state.status === "error" && state.error && (
-        <div className="text-destructive pl-5 truncate" title={state.error}>
-          {state.error}
-        </div>
-      )}
-      {/* Expanded content for special tools */}
-      {hasExpandedContent && (
-        <div className="pl-5 mt-0.5 space-y-1">
-          {imageAttachments.length > 0 && (
-            <div
-              className={cn(
-                "grid gap-2 pt-1",
-                imageAttachments.length === 1 ? "grid-cols-1" : "grid-cols-2",
-              )}
-            >
-              {imageAttachments.map((image, idx) => (
-                <div
-                  key={`${image.url}-${idx}`}
-                  className="overflow-hidden rounded-md border border-border/60 bg-background/60"
-                >
-                  <img
-                    src={image.src}
-                    alt={image.filename ?? `Image attachment ${idx + 1}`}
-                    loading="lazy"
-                    className="w-full max-h-52 object-contain bg-black/20"
-                  />
-                  {image.filename && (
-                    <div
-                      className="px-2 py-1 text-[10px] text-muted-foreground truncate"
-                      title={image.filename}
-                    >
-                      {image.filename}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {todos && todos.length > 0 && <TodoListView todos={todos} />}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ToolStatusIcon({ status }: { status: string }) {
-  switch (status) {
-    case "running":
-    case "pending":
-      return <Spinner className="size-3 shrink-0" />;
-    case "completed":
-      return <Check className="size-3 shrink-0" />;
-    case "error":
-      return <X className="size-3 shrink-0" />;
-    default:
-      return <span className="size-3 shrink-0" />;
-  }
 }

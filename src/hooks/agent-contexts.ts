@@ -13,6 +13,7 @@ import type {
   InternalAgentState,
   MessageEntry,
   QueueMode,
+  TurnRun,
   QueuedPrompt,
   Session,
 } from "@/hooks/agent-state-types";
@@ -52,6 +53,7 @@ export interface SessionContextValue {
 
 export interface MessagesContextValue {
   messages: MessageEntry[];
+  turnRuns: Record<string, TurnRun>;
   childSessions: InternalAgentState["childSessions"];
   messageHistoryHasMore: boolean;
   messageWindowHasNewer: boolean;
@@ -170,6 +172,7 @@ export interface ActionsContextValue {
   switchWorkspace: (workspaceId: string) => void;
   reorderWorkspaces: (fromIndex: number, toIndex: number) => void;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
+  reorderVisibleProjects: (orderedDirectories: string[]) => void;
 }
 
 export const SessionContext = createContext<SessionContextValue | null>(null);

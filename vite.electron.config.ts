@@ -1,4 +1,5 @@
 import { builtinModules } from "node:module";
+import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
@@ -30,6 +31,25 @@ function isExternal(id: string) {
 }
 
 export default defineConfig({
+  plugins: [
+    {
+      name: "opengui-preload-cjs",
+      apply: "build",
+      async closeBundle() {
+        await buildWithEsbuild({
+          entryPoints: ["preload.ts"],
+          outfile: "dist-electron/preload.cjs",
+          bundle: true,
+          platform: "node",
+          format: "cjs",
+          target: "node20",
+          sourcemap: true,
+          minify: true,
+          external: ["electron"],
+        });
+      },
+    },
+  ],
   build: {
     emptyOutDir: true,
     minify: true,

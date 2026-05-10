@@ -5,6 +5,7 @@ import {
   ChevronUp,
   CirclePlus,
   FolderOpen,
+  GripVertical,
   GitBranch,
   MessageSquare,
   Plus,
@@ -13,8 +14,25 @@ import {
   SquarePen,
   X,
 } from "lucide-react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { ContextMenu } from "radix-ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AGENT_BACKEND_LABELS } from "@/agents";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
@@ -70,6 +88,30 @@ import { ProjectPathDialog } from "./ProjectPathDialog";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 
+type SortableProjectFrameProps = {
+  directory: string;
+  children: (props: { dragHandleProps: Record<string, unknown> }) => ReactNode;
+};
+
+function SortableProjectFrame({ directory, children }: SortableProjectFrameProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: directory,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={isDragging ? "relative z-10 opacity-60" : undefined}
+    >
+      {children({ dragHandleProps: { ...attributes, ...listeners } })}
+    </div>
+  );
+}
+
 export function AppSidebar({
   detachedProject,
   onOpenSettings,
@@ -101,7 +143,7 @@ export function AppSidebar({
     registerWorktree,
     unregisterWorktree,
     sendPrompt,
-    reorderProjects,
+    reorderVisibleProjects,
   } = useActions();
   const {
     sessions,
@@ -490,22 +532,30 @@ export function AppSidebar({
   const visibleChatSessions = filteredChatSessions.slice(0, visibleChatCount);
   const hasMoreChats = filteredChatSessions.length > visibleChatCount;
   const canShowLessChats = visibleChatCount > SESSION_PAGE_SIZE;
-  const workspaceProjectDirectories = activeWorkspace?.projects ?? [];
-  const reorderableProjectDirectories = useMemo(
-    () => workspaceProjectDirectories.filter((directory) => projectGroups.has(directory)),
-    [workspaceProjectDirectories, projectGroups],
+  const sortableProjectDirectories = useMemo(
+    () => filteredProjectEntries.map(([directory]) => directory),
+    [filteredProjectEntries],
   );
   const canReorderProjects =
     !detachedProject &&
     !hasActiveSearch &&
     sidebarState !== "collapsed" &&
-    filteredProjectEntries.length > 1;
-  const [draggingProjectDirectory, setDraggingProjectDirectory] = useState<string | null>(null);
-  const [dragOverProjectDirectory, setDragOverProjectDirectory] = useState<string | null>(null);
-  const [dragOverProjectPosition, setDragOverProjectPosition] = useState<"before" | "after" | null>(
-    null,
+    sortableProjectDirectories.length > 1;
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const suppressProjectClickRef = useRef(false);
+  const handleProjectDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = sortableProjectDirectories.indexOf(String(active.id));
+      const newIndex = sortableProjectDirectories.indexOf(String(over.id));
+      if (oldIndex === -1 || newIndex === -1) return;
+      reorderVisibleProjects(arrayMove(sortableProjectDirectories, oldIndex, newIndex));
+    },
+    [reorderVisibleProjects, sortableProjectDirectories],
+  );
   const projectLabel = detachedProject ? getProjectName(detachedProject) : t("sidebar.projects");
 
   useEffect(() => {
@@ -522,54 +572,6 @@ export function AppSidebar({
       window.removeEventListener("focus-sidebar-search", focusSidebarSearch);
     };
   }, [setSidebarOpen]);
-
-  const clearProjectDragState = useCallback(() => {
-    setDraggingProjectDirectory(null);
-    setDragOverProjectDirectory(null);
-    setDragOverProjectPosition(null);
-  }, []);
-
-  const getDraggedProjectDirectory = useCallback((event: React.DragEvent) => {
-    const directory =
-      event.dataTransfer.getData("application/x-opengui-project-directory") ||
-      event.dataTransfer.getData("text/plain");
-    return directory || null;
-  }, []);
-
-  const getProjectDropPosition = useCallback((event: React.DragEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
-  }, []);
-
-  const getProjectTargetIndex = useCallback(
-    (fromIndex: number, anchorIndex: number, position: "before" | "after") => {
-      const slot = position === "before" ? anchorIndex : anchorIndex + 1;
-      return slot > fromIndex ? slot - 1 : slot;
-    },
-    [],
-  );
-
-  const isProjectDropNoOp = useCallback(
-    (draggedDirectory: string, targetDirectory: string, position: "before" | "after") => {
-      const fromIndex = workspaceProjectDirectories.indexOf(draggedDirectory);
-      const anchorIndex = workspaceProjectDirectories.indexOf(targetDirectory);
-      if (fromIndex === -1 || anchorIndex === -1) return true;
-      return getProjectTargetIndex(fromIndex, anchorIndex, position) === fromIndex;
-    },
-    [getProjectTargetIndex, workspaceProjectDirectories],
-  );
-
-  const dropProjectOnTarget = useCallback(
-    (draggedDirectory: string, targetDirectory: string, position: "before" | "after") => {
-      const fromIndex = workspaceProjectDirectories.indexOf(draggedDirectory);
-      const anchorIndex = workspaceProjectDirectories.indexOf(targetDirectory);
-      if (fromIndex === -1 || anchorIndex === -1) return;
-      const targetIndex = getProjectTargetIndex(fromIndex, anchorIndex, position);
-      if (targetIndex === fromIndex) return;
-      reorderProjects(fromIndex, targetIndex);
-    },
-    [getProjectTargetIndex, reorderProjects, workspaceProjectDirectories],
-  );
 
   const handleAddProject = useCallback(async () => {
     if (isLocalWorkspace) {
@@ -792,7 +794,7 @@ export function AppSidebar({
   const renderProjectEntry = (
     directory: string,
     dirSessions: typeof sessions,
-    options?: { canDrag?: boolean },
+    options?: { canDrag?: boolean; dragHandleProps?: Record<string, unknown> },
   ) => {
     const isCollapsed = hasActiveSearch ? false : isSidebarProjectCollapsed(collapsed, directory);
     const connStatus = connections[directory];
@@ -804,14 +806,12 @@ export function AppSidebar({
     const hasMoreSessions = dirSessions.length > visibleCount;
     const canShowLess = visibleCount > SESSION_PAGE_SIZE;
     const canDragProject = !!options?.canDrag;
+    const dragHandleProps = options?.dragHandleProps ?? {};
     const normalizedDirectory = normalizeProjectPath(directory);
     const isPinned = !!projectMeta[normalizedDirectory]?.pinnedAt;
 
     return (
-      <div
-        key={directory}
-        className={`mb-1 ${draggingProjectDirectory === directory ? "opacity-60" : ""}`}
-      >
+      <div key={directory} className="mb-1">
         <SidebarMenu>
           <ContextMenu.Root
             onOpenChange={(open) => {
@@ -819,122 +819,18 @@ export function AppSidebar({
             }}
           >
             <ContextMenu.Trigger asChild>
-              <SidebarMenuItem
-                onDragOver={
-                  canDragProject
-                    ? (event) => {
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                        const draggedDirectory = getDraggedProjectDirectory(event);
-                        if (!draggedDirectory) {
-                          setDragOverProjectDirectory(null);
-                          setDragOverProjectPosition(null);
-                          return;
-                        }
-                        const position = getProjectDropPosition(event);
-                        if (isProjectDropNoOp(draggedDirectory, directory, position)) {
-                          setDragOverProjectDirectory(null);
-                          setDragOverProjectPosition(null);
-                          return;
-                        }
-                        setDragOverProjectDirectory(directory);
-                        setDragOverProjectPosition(position);
-                      }
-                    : undefined
-                }
-                onDrop={
-                  canDragProject
-                    ? (event) => {
-                        event.preventDefault();
-                        const draggedDirectory = getDraggedProjectDirectory(event);
-                        if (!draggedDirectory) {
-                          clearProjectDragState();
-                          return;
-                        }
-                        const position = getProjectDropPosition(event);
-                        if (!isProjectDropNoOp(draggedDirectory, directory, position)) {
-                          dropProjectOnTarget(draggedDirectory, directory, position);
-                        }
-                        clearProjectDragState();
-                      }
-                    : undefined
-                }
-                onDragLeave={
-                  canDragProject
-                    ? (event) => {
-                        const relatedTarget = event.relatedTarget;
-                        if (
-                          relatedTarget instanceof Node &&
-                          event.currentTarget.contains(relatedTarget)
-                        ) {
-                          return;
-                        }
-                        if (dragOverProjectDirectory === directory) {
-                          setDragOverProjectDirectory(null);
-                          setDragOverProjectPosition(null);
-                        }
-                      }
-                    : undefined
-                }
-                className="overflow-visible"
-              >
-                {dragOverProjectDirectory === directory && dragOverProjectPosition && (
-                  <div
-                    aria-hidden
-                    className={`pointer-events-none absolute left-2 right-2 z-10 h-0.5 rounded-full bg-primary ${
-                      dragOverProjectPosition === "before" ? "top-0" : "bottom-0"
-                    }`}
-                  />
-                )}
+              <SidebarMenuItem className="overflow-visible">
                 <SidebarMenuButton
                   asChild
-                  draggable={canDragProject}
                   tooltip={abbreviatePath(directory, homeDir)}
-                  onDragStart={
-                    canDragProject
-                      ? (event) => {
-                          const target = event.target;
-                          if (
-                            target instanceof Element &&
-                            target.closest("[data-project-action]")
-                          ) {
-                            event.preventDefault();
-                            return;
-                          }
-                          event.dataTransfer.setData(
-                            "application/x-opengui-project-directory",
-                            directory,
-                          );
-                          event.dataTransfer.setData("text/plain", directory);
-                          event.dataTransfer.effectAllowed = "move";
-                          suppressProjectClickRef.current = true;
-                          setDraggingProjectDirectory(directory);
-                          setDragOverProjectDirectory(null);
-                          setDragOverProjectPosition(null);
-                        }
-                      : undefined
-                  }
-                  onDragEnd={
-                    canDragProject
-                      ? () => {
-                          clearProjectDragState();
-                          requestAnimationFrame(() => {
-                            suppressProjectClickRef.current = false;
-                          });
-                        }
-                      : undefined
-                  }
-                  className={`group/project font-medium min-w-0 ${
-                    canDragProject ? "cursor-grab active:cursor-grabbing" : ""
-                  }`}
+                  className="group/project font-medium min-w-0"
                 >
                   <div
                     role="button"
                     tabIndex={0}
                     onClick={(event) => {
-                      if (suppressProjectClickRef.current) {
-                        event.preventDefault();
-                        event.stopPropagation();
+                      const target = event.target;
+                      if (target instanceof Element && target.closest("[data-project-action]")) {
                         return;
                       }
                       if (sidebarState === "collapsed") {
@@ -951,6 +847,10 @@ export function AppSidebar({
                       toggleCollapsed(directory);
                     }}
                     onKeyDown={(event) => {
+                      const target = event.target;
+                      if (target instanceof Element && target.closest("[data-project-action]")) {
+                        return;
+                      }
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         toggleCollapsed(directory);
@@ -959,6 +859,23 @@ export function AppSidebar({
                   >
                     {isProjectConnecting ? (
                       <Spinner className="shrink-0 size-4 text-muted-foreground" />
+                    ) : canDragProject ? (
+                      <span className="relative -ml-1 flex size-5 shrink-0 items-center justify-center">
+                        <ChevronRight
+                          className={`size-4 transition-all group-hover/project:scale-75 group-hover/project:opacity-0 ${
+                            !isCollapsed ? "rotate-90" : ""
+                          }`}
+                        />
+                        <span
+                          {...dragHandleProps}
+                          data-project-action
+                          data-project-drag-handle
+                          className="absolute inset-0 flex cursor-grab items-center justify-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground active:cursor-grabbing group-hover/project:opacity-100"
+                          aria-label={`Reorder ${getProjectName(directory)}`}
+                        >
+                          <GripVertical className="size-3.5" />
+                        </span>
+                      </span>
                     ) : sidebarState === "collapsed" ? (
                       <FolderOpen className="shrink-0 size-4" />
                     ) : (
@@ -1332,12 +1249,31 @@ export function AppSidebar({
                     {t("sidebar.allProjectsPinned")}
                   </div>
                 ) : null
+              ) : canReorderProjects ? (
+                <DndContext
+                  sensors={dndSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleProjectDragEnd}
+                >
+                  <SortableContext
+                    items={sortableProjectDirectories}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {filteredProjectEntries.map(([directory, dirSessions]) => (
+                      <SortableProjectFrame key={directory} directory={directory}>
+                        {({ dragHandleProps }) =>
+                          renderProjectEntry(directory, dirSessions, {
+                            canDrag: true,
+                            dragHandleProps,
+                          })
+                        }
+                      </SortableProjectFrame>
+                    ))}
+                  </SortableContext>
+                </DndContext>
               ) : (
                 filteredProjectEntries.map(([directory, dirSessions]) =>
-                  renderProjectEntry(directory, dirSessions, {
-                    canDrag:
-                      canReorderProjects && reorderableProjectDirectories.includes(directory),
-                  }),
+                  renderProjectEntry(directory, dirSessions),
                 )
               )}
             </SidebarGroupContent>
@@ -1531,7 +1467,7 @@ export function AppSidebar({
       </SidebarContent>
 
       {!detachedProject && (
-        <SidebarFooter className="border-t border-sidebar-border p-0">
+        <SidebarFooter className="border-t border-sidebar-border p-0 gap-0">
           {activeSessionDirectory && (
             <Tooltip>
               <TooltipTrigger asChild>

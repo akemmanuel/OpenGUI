@@ -495,6 +495,52 @@ export function createOpenCodeBackend(
             "Failed to get skills",
           );
         },
+        marketplace: {
+          list: async (view, page, perPage, apiKey) =>
+            requireSuccess(
+              await bridge.marketplaceList(view, page, perPage, apiKey),
+              "Failed to list marketplace",
+            ),
+          search: async (query, limit, apiKey) =>
+            requireSuccess(
+              await bridge.marketplaceSearch(query, limit, apiKey),
+              "Failed to search marketplace",
+            ),
+          detail: async (source, slug, apiKey) =>
+            requireSuccess(
+              await bridge.marketplaceDetail(source, slug, apiKey),
+              "Failed to get skill detail",
+            ),
+          audit: async (source, slug, apiKey) =>
+            requireSuccess(
+              await bridge.marketplaceAudit(source, slug, apiKey),
+              "Failed to get skill audit",
+            ),
+          curated: async (apiKey) =>
+            requireSuccess(await bridge.marketplaceCurated(apiKey), "Failed to get curated skills"),
+        },
+        install: async (source, directory, globalScope) =>
+          requireSuccess(
+            await bridge.installSkill(source, directory, globalScope),
+            "Failed to install skill",
+          ),
+        remove: async (skillName, directory, globalScope) =>
+          requireSuccess(
+            await bridge.removeSkill(skillName, directory, globalScope),
+            "Failed to remove skill",
+          ),
+        update: async (skillName, directory, globalScope) =>
+          requireSuccess(
+            await bridge.updateSkill(skillName, directory, globalScope),
+            "Failed to update skill",
+          ),
+        listInstalled: async (directory) =>
+          requireSuccess(
+            await bridge.listInstalledSkills(directory),
+            "Failed to list installed skills",
+          ),
+        checkCli: async () =>
+          requireSuccess(await bridge.checkSkillsCli(), "Failed to check skills CLI"),
       },
       config: {
         get: async (target) => {

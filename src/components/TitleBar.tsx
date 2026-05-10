@@ -9,6 +9,23 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAgentBackend, useCurrentAgentBackendId } from "@/hooks/use-agent-backend";
@@ -26,6 +43,34 @@ import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 
 type WindowButtonKind = "default" | "mac";
 type MacButtonTone = "close" | "minimize" | "maximize";
+
+function SortableWorkspaceTab({
+  id,
+  children,
+}: {
+  id: string;
+  children: (props: { dragProps: Record<string, unknown>; isDragging: boolean }) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="relative shrink-0 overflow-visible"
+      style={
+        {
+          WebkitAppRegion: "no-drag",
+          transform: CSS.Transform.toString(transform),
+          transition,
+        } as React.CSSProperties
+      }
+    >
+      {children({ dragProps: { ...attributes, ...listeners }, isDragging })}
+    </div>
+  );
+}
 
 function WindowButton({
   icon,
@@ -255,12 +300,11 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
   const [platform, setPlatform] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
-  const suppressWorkspaceClickRef = useRef(false);
-  const [draggingWorkspaceId, setDraggingWorkspaceId] = useState<string | null>(null);
-  const [dragOverWorkspaceId, setDragOverWorkspaceId] = useState<string | null>(null);
-  const [dragOverWorkspacePosition, setDragOverWorkspacePosition] = useState<
-    "before" | "after" | null
-  >(null);
+  const workspaceIds = useMemo(() => workspaces.map((workspace) => workspace.id), [workspaces]);
+  const workspaceDndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const handleTabsWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const container = tabsRef.current;
@@ -271,52 +315,17 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
     }
   }, []);
 
-  const clearWorkspaceDragState = useCallback(() => {
-    setDraggingWorkspaceId(null);
-    setDragOverWorkspaceId(null);
-    setDragOverWorkspacePosition(null);
-  }, []);
-
-  const getDraggedWorkspaceId = useCallback((event: React.DragEvent) => {
-    const workspaceId =
-      event.dataTransfer.getData("application/x-opengui-workspace-id") ||
-      event.dataTransfer.getData("text/plain");
-    return workspaceId || null;
-  }, []);
-
-  const getWorkspaceDropPosition = useCallback((event: React.DragEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return event.clientX < rect.left + rect.width / 2 ? "before" : "after";
-  }, []);
-
-  const getWorkspaceTargetIndex = useCallback(
-    (fromIndex: number, anchorIndex: number, position: "before" | "after") => {
-      const slot = position === "before" ? anchorIndex : anchorIndex + 1;
-      return slot > fromIndex ? slot - 1 : slot;
+  const handleWorkspaceDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = workspaceIds.indexOf(String(active.id));
+      const newIndex = workspaceIds.indexOf(String(over.id));
+      if (oldIndex === -1 || newIndex === -1) return;
+      const nextWorkspaceIds = arrayMove(workspaceIds, oldIndex, newIndex);
+      reorderWorkspaces(oldIndex, nextWorkspaceIds.indexOf(String(active.id)));
     },
-    [],
-  );
-
-  const isWorkspaceDropNoOp = useCallback(
-    (draggedWorkspaceId: string, targetWorkspaceId: string, position: "before" | "after") => {
-      const fromIndex = workspaces.findIndex((workspace) => workspace.id === draggedWorkspaceId);
-      const anchorIndex = workspaces.findIndex((workspace) => workspace.id === targetWorkspaceId);
-      if (fromIndex === -1 || anchorIndex === -1) return true;
-      return getWorkspaceTargetIndex(fromIndex, anchorIndex, position) === fromIndex;
-    },
-    [getWorkspaceTargetIndex, workspaces],
-  );
-
-  const dropWorkspaceOnTarget = useCallback(
-    (draggedWorkspaceId: string, targetWorkspaceId: string, position: "before" | "after") => {
-      const fromIndex = workspaces.findIndex((workspace) => workspace.id === draggedWorkspaceId);
-      const anchorIndex = workspaces.findIndex((workspace) => workspace.id === targetWorkspaceId);
-      if (fromIndex === -1 || anchorIndex === -1) return;
-      const targetIndex = getWorkspaceTargetIndex(fromIndex, anchorIndex, position);
-      if (targetIndex === fromIndex) return;
-      reorderWorkspaces(fromIndex, targetIndex);
-    },
-    [getWorkspaceTargetIndex, reorderWorkspaces, workspaces],
+    [reorderWorkspaces, workspaceIds],
   );
 
   useEffect(() => {
@@ -397,139 +406,61 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
         </div>
 
         <div
-          className={`absolute inset-y-0 ${isMac && !isWebRuntime ? "left-20 right-20" : isWebRuntime ? "left-9 right-2" : "left-9 right-36"} flex items-center gap-1 px-2`}
+          className={`absolute inset-y-0 ${isWebRuntime ? "left-9 right-2" : isMac ? "left-9 right-20" : "left-9 right-36"} flex items-center gap-1 px-2`}
         >
           <div
             ref={tabsRef}
             onWheel={handleTabsWheel}
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none"
           >
-            {workspaces.map((workspace) => {
-              const status = workspaceStatuses[workspace.id];
-              const active = workspace.id === activeWorkspaceId;
-              return (
-                <div
-                  key={workspace.id}
-                  className="relative shrink-0 overflow-visible"
-                  style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    const draggedWorkspaceId = getDraggedWorkspaceId(event);
-                    if (!draggedWorkspaceId) {
-                      setDragOverWorkspaceId(null);
-                      setDragOverWorkspacePosition(null);
-                      return;
-                    }
-                    const position = getWorkspaceDropPosition(event);
-                    if (isWorkspaceDropNoOp(draggedWorkspaceId, workspace.id, position)) {
-                      setDragOverWorkspaceId(null);
-                      setDragOverWorkspacePosition(null);
-                      return;
-                    }
-                    setDragOverWorkspaceId(workspace.id);
-                    setDragOverWorkspacePosition(position);
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const draggedWorkspaceId = getDraggedWorkspaceId(event);
-                    if (!draggedWorkspaceId) {
-                      clearWorkspaceDragState();
-                      return;
-                    }
-                    const position = getWorkspaceDropPosition(event);
-                    if (!isWorkspaceDropNoOp(draggedWorkspaceId, workspace.id, position)) {
-                      dropWorkspaceOnTarget(draggedWorkspaceId, workspace.id, position);
-                    }
-                    clearWorkspaceDragState();
-                  }}
-                  onDragLeave={(event) => {
-                    const relatedTarget = event.relatedTarget;
-                    if (
-                      relatedTarget instanceof Node &&
-                      event.currentTarget.contains(relatedTarget)
-                    ) {
-                      return;
-                    }
-                    if (dragOverWorkspaceId === workspace.id) {
-                      setDragOverWorkspaceId(null);
-                      setDragOverWorkspacePosition(null);
-                    }
-                  }}
-                >
-                  {dragOverWorkspaceId === workspace.id && dragOverWorkspacePosition && (
-                    <div
-                      aria-hidden
-                      className={`pointer-events-none absolute top-1 bottom-1 z-10 w-0.5 rounded-full bg-primary ${
-                        dragOverWorkspacePosition === "before" ? "left-0" : "right-0"
-                      }`}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    draggable
-                    onClick={(event) => {
-                      if (suppressWorkspaceClickRef.current) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        return;
-                      }
-                      switchWorkspace(workspace.id);
-                    }}
-                    onDoubleClick={(event) => {
-                      if (suppressWorkspaceClickRef.current) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        return;
-                      }
-                      event.stopPropagation();
-                      switchWorkspace(workspace.id);
-                      if (canManageWorkspaces) {
-                        setDialogMode("edit");
-                      }
-                    }}
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData(
-                        "application/x-opengui-workspace-id",
-                        workspace.id,
-                      );
-                      event.dataTransfer.setData("text/plain", workspace.id);
-                      event.dataTransfer.effectAllowed = "move";
-                      suppressWorkspaceClickRef.current = true;
-                      setDraggingWorkspaceId(workspace.id);
-                      setDragOverWorkspaceId(null);
-                      setDragOverWorkspacePosition(null);
-                    }}
-                    onDragEnd={() => {
-                      clearWorkspaceDragState();
-                      requestAnimationFrame(() => {
-                        suppressWorkspaceClickRef.current = false;
-                      });
-                    }}
-                    className={`flex h-7 items-center gap-2 rounded-md border px-3 text-xs transition-colors whitespace-nowrap ${
-                      draggingWorkspaceId === workspace.id ? "opacity-60 " : ""
-                    }${
-                      active
-                        ? "border-border bg-background text-foreground"
-                        : "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
-                    }`}
-                  >
-                    <span className="truncate max-w-[120px] cursor-grab active:cursor-grabbing">
-                      {workspace.name}
-                    </span>
-                    {status?.busy ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : status?.error ? (
-                      <AlertCircle className="size-3 text-destructive" />
-                    ) : status?.needsAttention ? (
-                      <span className="size-2 rounded-full bg-amber-500" />
-                    ) : status?.connected ? (
-                      <span className="size-2 rounded-full bg-emerald-500" />
-                    ) : null}
-                  </button>
-                </div>
-              );
-            })}
+            <DndContext
+              sensors={workspaceDndSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleWorkspaceDragEnd}
+            >
+              <SortableContext items={workspaceIds} strategy={horizontalListSortingStrategy}>
+                {workspaces.map((workspace) => {
+                  const status = workspaceStatuses[workspace.id];
+                  const active = workspace.id === activeWorkspaceId;
+                  return (
+                    <SortableWorkspaceTab key={workspace.id} id={workspace.id}>
+                      {({ dragProps, isDragging }) => (
+                        <button
+                          type="button"
+                          {...dragProps}
+                          onClick={() => switchWorkspace(workspace.id)}
+                          onDoubleClick={(event) => {
+                            event.stopPropagation();
+                            switchWorkspace(workspace.id);
+                            if (canManageWorkspaces) {
+                              setDialogMode("edit");
+                            }
+                          }}
+                          className={`flex h-7 cursor-grab items-center gap-2 rounded-md border px-3 text-xs transition-colors whitespace-nowrap active:cursor-grabbing ${
+                            isDragging ? "opacity-60 " : ""
+                          }${
+                            active
+                              ? "border-border bg-background text-foreground"
+                              : "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
+                          }`}
+                        >
+                          <span className="truncate max-w-[120px]">{workspace.name}</span>
+                          {status?.busy ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : status?.error ? (
+                            <AlertCircle className="size-3 text-destructive" />
+                          ) : status?.needsAttention ? (
+                            <span className="size-2 rounded-full bg-amber-500" />
+                          ) : status?.connected ? (
+                            <span className="size-2 rounded-full bg-emerald-500" />
+                          ) : null}
+                        </button>
+                      )}
+                    </SortableWorkspaceTab>
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
             {canManageWorkspaces && (
               <Button
                 variant="ghost"

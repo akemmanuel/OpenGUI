@@ -7,6 +7,22 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -35,6 +51,7 @@ function QueueItemRow({
   item,
   index,
   total,
+  dragHandleProps,
   onRemove,
   onMoveUp: _onMoveUp,
   onMoveDown: _onMoveDown,
@@ -53,6 +70,7 @@ function QueueItemRow({
   onMoveToBottom?: (index: number) => void;
   onEdit?: (id: string, newText: string) => void;
   onSendNow?: (id: string) => void;
+  dragHandleProps?: Record<string, unknown>;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
@@ -134,7 +152,11 @@ function QueueItemRow({
         "hover:bg-accent/50 transition-colors",
       )}
     >
-      <div className="size-3.5 text-muted-foreground/50 shrink-0">
+      <div
+        {...dragHandleProps}
+        className="size-3.5 cursor-grab text-muted-foreground/50 shrink-0 active:cursor-grabbing"
+        aria-label="Reorder queued prompt"
+      >
         <GripVertical className="size-3.5" />
       </div>
 
@@ -281,6 +303,34 @@ function QueueItemRow({
   );
 }
 
+function SortableQueueItem({
+  id,
+  children,
+}: {
+  id: string;
+  children: (props: {
+    dragHandleProps: Record<string, unknown>;
+    isDragging: boolean;
+  }) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={isDragging ? "relative z-10 opacity-60" : undefined}
+    >
+      {children({ dragHandleProps: { ...attributes, ...listeners }, isDragging })}
+    </div>
+  );
+}
+
 export function QueueList({
   items,
   onRemove,
@@ -292,97 +342,51 @@ export function QueueList({
   onSendNow,
   onReorder,
 }: QueueListProps) {
-  const [dragOverIndex, setDragOverIndex] = React.useState<number | null>(null);
+  const itemIds = React.useMemo(() => items.map((item) => item.id), [items]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const handleDragEnd = React.useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const fromIndex = itemIds.indexOf(String(active.id));
+      const toIndex = itemIds.indexOf(String(over.id));
+      if (fromIndex === -1 || toIndex === -1) return;
+      onReorder?.(fromIndex, toIndex);
+    },
+    [itemIds, onReorder],
+  );
 
   if (items.length === 0) return null;
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverIndex(index);
-  };
-
-  const handleDrop = (e: React.DragEvent, toIndex: number) => {
-    e.preventDefault();
-    const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
-    if (!isNaN(fromIndex) && fromIndex !== toIndex) {
-      onReorder?.(fromIndex, toIndex);
-    }
-  };
-
-  const handleDragEnd = () => {
-    setDragOverIndex(null);
-  };
 
   return (
     <div className="rounded-xl border bg-background shadow-xs">
       <div className="flex flex-col max-h-[216px] overflow-y-auto">
-        <div
-          onDragEnter={() => setDragOverIndex(0)}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setDragOverIndex(0);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
-            if (!isNaN(fromIndex) && fromIndex !== 0) {
-              onReorder?.(fromIndex, 0);
-            }
-            setDragOverIndex(null);
-          }}
-          onDragLeave={() => setDragOverIndex(null)}
-          onDragEnd={handleDragEnd}
-          className={cn("h-1 -mb-1", dragOverIndex === 0 && "border-t-2 border-primary")}
-        />
-        {items.map((item, idx) => (
-          <div
-            key={item.id}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData("text/plain", String(idx));
-              e.dataTransfer.effectAllowed = "move";
-            }}
-            onDragOver={(e) => handleDragOver(e, idx)}
-            onDrop={(e) => handleDrop(e, idx)}
-            onDragEnd={handleDragEnd}
-            className={cn("cursor-move", dragOverIndex === idx + 1 && "border-b-2 border-primary")}
-          >
-            <QueueItemRow
-              item={item}
-              index={idx}
-              total={items.length}
-              onRemove={onRemove}
-              onMoveUp={onMoveUp}
-              onMoveDown={onMoveDown}
-              onMoveToTop={onMoveToTop}
-              onMoveToBottom={onMoveToBottom}
-              onEdit={onEdit}
-              onSendNow={onSendNow}
-            />
-          </div>
-        ))}
-        <div
-          draggable
-          onDragEnter={() => setDragOverIndex(items.length)}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setDragOverIndex(items.length);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
-            if (!isNaN(fromIndex)) {
-              onReorder?.(fromIndex, items.length - 1);
-            }
-            setDragOverIndex(null);
-          }}
-          onDragLeave={() => setDragOverIndex(null)}
-          onDragEnd={handleDragEnd}
-          className={cn("h-1 -mt-1", dragOverIndex === items.length && "border-b-2 border-primary")}
-        />
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+            {items.map((item, idx) => (
+              <SortableQueueItem key={item.id} id={item.id}>
+                {({ dragHandleProps }) => (
+                  <QueueItemRow
+                    item={item}
+                    index={idx}
+                    total={items.length}
+                    dragHandleProps={dragHandleProps}
+                    onRemove={onRemove}
+                    onMoveUp={onMoveUp}
+                    onMoveDown={onMoveDown}
+                    onMoveToTop={onMoveToTop}
+                    onMoveToBottom={onMoveToBottom}
+                    onEdit={onEdit}
+                    onSendNow={onSendNow}
+                  />
+                )}
+              </SortableQueueItem>
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
     </div>
   );
