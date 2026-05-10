@@ -12,7 +12,9 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { cn, openExternalLink } from "@/lib/utils";
 
 type StarryNight = Awaited<ReturnType<typeof createStarryNight>>;
@@ -161,11 +163,17 @@ const markdownComponents = {
 };
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
-  const remarkPlugins = useMemo(() => [remarkGfm], []);
+  const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
+  const rehypePlugins = useMemo(() => [rehypeKatex], []);
 
   return (
     <div className="markdown-renderer text-sm leading-relaxed select-text">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={remarkPlugins} skipHtml>
+      <ReactMarkdown
+        components={markdownComponents}
+        rehypePlugins={rehypePlugins}
+        remarkPlugins={remarkPlugins}
+        skipHtml
+      >
         {content}
       </ReactMarkdown>
     </div>
