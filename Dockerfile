@@ -15,16 +15,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-ENV PNPM_HOME=/pnpm
-ENV PATH=/app/node_modules/.bin:$PNPM_HOME:$PATH
+ENV PATH=/app/node_modules/.bin:$PATH
 
-RUN npm install -g pnpm@10.33.4
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY . .
-RUN vp build
+RUN bunx vp build
 COPY docker/host-exec /usr/local/bin/opengui-host-exec
 COPY docker/entrypoint.sh /usr/local/bin/opengui-entrypoint
 RUN chmod +x /usr/local/bin/opengui-host-exec /usr/local/bin/opengui-entrypoint \
