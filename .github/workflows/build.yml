@@ -70,7 +70,7 @@ jobs:
         run: pnpm exec vp build
 
       - name: Package mac artifacts
-        run: pnpm exec electron-builder --mac dmg zip --x64 --arm64 --publish never
+        run: pnpm exec electron-builder --mac zip --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -79,7 +79,6 @@ jobs:
         with:
           name: mac-release
           path: |
-            release/*.dmg
             release/*.zip
             release/*.blockmap
             release/latest-mac.yml
@@ -233,7 +232,6 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/linux-deb/*.deb
-            artifacts/mac-release/*.dmg
             artifacts/mac-release/*.zip
             artifacts/mac-release/*.blockmap
             artifacts/mac-release/latest-mac.yml
