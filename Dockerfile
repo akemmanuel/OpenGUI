@@ -18,7 +18,7 @@ WORKDIR /app
 ENV PNPM_HOME=/pnpm
 ENV PATH=/app/node_modules/.bin:$PNPM_HOME:$PATH
 
-RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=/bin/bash PNPM_HOME=/pnpm sh -
+RUN corepack enable && corepack prepare pnpm@10.33.4 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile

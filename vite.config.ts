@@ -14,11 +14,15 @@ function openguiElectronBuild() {
     apply: "build",
     async closeBundle() {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn("vp", ["build", "--config", "vite.electron.config.ts"], {
-          cwd: configDir,
-          stdio: "inherit",
-          env: process.env,
-        });
+        const child = spawn(
+          process.execPath,
+          ["node_modules/vite-plus/bin/vp.js", "build", "--config", "vite.electron.config.ts"],
+          {
+            cwd: configDir,
+            stdio: "inherit",
+            env: process.env,
+          },
+        );
 
         child.once("error", reject);
         child.once("exit", (code) => {
