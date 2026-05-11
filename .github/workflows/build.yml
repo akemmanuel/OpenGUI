@@ -10,30 +10,33 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
         with:
-          bun-version: latest
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: bun run lint:check
+        run: pnpm exec vp lint
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check
+        run: pnpm exec vp check
 
       - name: Build frontend
-        run: bun run build
+        run: pnpm exec vp build
 
       - name: Run unit tests
-        run: bun test
+        run: pnpm exec vp test
 
       - name: Build Docker image
         run: docker build -t opengui:web .
 
       - name: Package .deb
-        run: bunx electron-builder --linux deb --publish never
+        run: pnpm exec electron-builder --linux deb --publish never
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v6
@@ -47,24 +50,27 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
         with:
-          bun-version: latest
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: bun run lint:check
+        run: pnpm exec vp lint
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check
+        run: pnpm exec vp check
 
       - name: Build frontend
-        run: bun run build
+        run: pnpm exec vp build
 
       - name: Package mac artifacts
-        run: bunx electron-builder --mac dmg zip --x64 --arm64 --publish never
+        run: pnpm exec electron-builder --mac dmg zip --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -84,24 +90,27 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
         with:
-          bun-version: latest
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: bun run lint:check
+        run: pnpm exec vp lint
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check
+        run: pnpm exec vp check
 
       - name: Build frontend
-        run: bun run build
+        run: pnpm exec vp build
 
       - name: Package .exe (NSIS)
-        run: bunx electron-builder --win nsis --publish never
+        run: pnpm exec electron-builder --win nsis --publish never
 
       - name: Verify Windows updater metadata
         shell: pwsh
