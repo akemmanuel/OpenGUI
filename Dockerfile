@@ -18,7 +18,7 @@ WORKDIR /app
 ENV PNPM_HOME=/pnpm
 ENV PATH=/app/node_modules/.bin:$PNPM_HOME:$PATH
 
-RUN corepack enable && corepack prepare pnpm@10.33.4 --activate
+RUN npm install -g pnpm@10.33.4
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
