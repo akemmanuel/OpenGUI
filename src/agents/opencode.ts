@@ -1,15 +1,9 @@
 import type { Event as OpenCodeEvent, QuestionAnswer } from "@opencode-ai/sdk/v2/client";
-import type {
-  NativeBackendEvent,
-  NativeAgentBridge,
-  OpenCodeBridge,
-  SelectedModel,
-} from "@/types/electron";
+import type { NativeBackendEvent, NativeAgentBridge, OpenCodeBridge } from "@/types/electron";
 import type {
   AgentBackendCapabilities,
   AgentBackendDescriptor,
   AgentBackendEvent,
-  AgentBackendTarget,
 } from "./backend";
 import {
   createBackendIdCodec,
@@ -21,7 +15,7 @@ import {
   type TaggedSession,
 } from "./shared";
 
-export interface OpenCodeBackendAdapter extends OpenCodeBridge, AgentBackendDescriptor {
+interface OpenCodeBackendAdapter extends OpenCodeBridge, AgentBackendDescriptor {
   native: OpenCodeBridge;
 }
 
@@ -562,20 +556,4 @@ export function createOpenCodeBackend(
   };
 
   return adapter;
-}
-
-export function toOpenCodeTarget(directory?: string, workspaceId?: string): AgentBackendTarget {
-  return { directory, workspaceId };
-}
-
-export function toOpenCodePromptOptions(input: {
-  model?: SelectedModel | null;
-  agent?: string | null;
-  variant?: string;
-}) {
-  return {
-    model: input.model ?? undefined,
-    agent: input.agent ?? undefined,
-    variant: input.variant,
-  };
 }

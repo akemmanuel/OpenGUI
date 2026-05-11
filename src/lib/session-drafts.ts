@@ -3,7 +3,7 @@ import { STORAGE_KEYS } from "@/lib/constants";
 import { persistOrRemoveJSON, storageParsed } from "@/lib/safe-storage";
 
 export type SessionDraftMap = Record<string, string>;
-export type SessionDraftImagesMap = Record<string, string[]>;
+type SessionDraftImagesMap = Record<string, string[]>;
 export type QueueMode = "queue" | "interrupt" | "after-part";
 export type QueuedPrompt = {
   id: string;
@@ -15,7 +15,7 @@ export type QueuedPrompt = {
   variant?: string;
   mode: QueueMode;
 };
-export type QueuedPromptsMap = Record<string, QueuedPrompt[]>;
+type QueuedPromptsMap = Record<string, QueuedPrompt[]>;
 
 export function getSessionDraftKey(input: {
   sessionId?: string | null;

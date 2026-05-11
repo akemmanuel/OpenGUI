@@ -43,7 +43,11 @@ function openguiWebBackend() {
     configureServer(server: {
       httpServer?: { once: (event: "close", listener: () => void) => void };
     }) {
-      if (process.env.OPENGUI_SKIP_WEB_BACKEND === "1" || process.env.NODE_ENV === "test") {
+      if (
+        process.env.OPENGUI_SKIP_WEB_BACKEND === "1" ||
+        process.env.NODE_ENV === "test" ||
+        process.env.VITEST === "true"
+      ) {
         return;
       }
 

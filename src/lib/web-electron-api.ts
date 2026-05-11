@@ -1,4 +1,5 @@
-import type { ElectronAPI } from "@/types/electron";
+import type { AgentBackendId } from "@/agents";
+import type { ElectronAPI, InstallProgress } from "@/types/electron";
 
 type Listener = (data: unknown) => void;
 
@@ -191,7 +192,7 @@ export function installWebElectronAPI() {
   if (window.electronAPI) return;
   subscribeEvents();
 
-  window.electronAPI = {
+  const api = {
     settings: {
       getAllSync: getAllSettingsSync,
       getSync: settingsGetSync,
@@ -209,6 +210,7 @@ export function installWebElectronAPI() {
     getPlatform: () => invoke("platform:get"),
     getSystemLocale: () => invoke("platform:locale"),
     detectBackends: () => invoke("platform:detectBackends"),
+    isPackaged: () => invoke("app:isPackaged"),
     onMaximizeChange: () => () => {},
     openDirectory: () => invoke("dialog:openDirectory"),
     detachProject: (projectDir: string) => invoke("window:detachProject", projectDir),
@@ -228,6 +230,9 @@ export function installWebElectronAPI() {
     openInTerminal: (dirPath: string, command = "") =>
       invoke("shell:openInTerminal", dirPath, command),
     getHomeDir: () => invoke("platform:homeDir"),
+    installBackend: (backendId: AgentBackendId) => invoke("backend:install", backendId),
+    onInstallProgress: (callback: (progress: InstallProgress) => void) =>
+      on("backend:install-progress", callback as Listener),
     worktree: {
       detectSetup: (worktreePath: string) => invoke("worktree:detect-setup", worktreePath),
       runSetup: (worktreePath: string, command: string) =>
@@ -398,5 +403,7 @@ export function installWebElectronAPI() {
       onSkillsInstallProgress: (callback: Listener) =>
         on("opencode:skills:install-progress", callback),
     },
-  } as unknown as ElectronAPI;
+  };
+
+  window.electronAPI = api as unknown as ElectronAPI;
 }

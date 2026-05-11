@@ -2,7 +2,7 @@ import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { parseUnifiedDiff, type DiffLine, type DiffResult } from "@/lib/diff";
 import { getToolInput, isRecord, stringField, toFiniteNumber } from "./toolTypes";
 
-export type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
+type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
 
 export interface ApplyPatchFileDiff {
   id: string;
@@ -22,7 +22,7 @@ function computeApplyPatchDiff(file: Record<string, unknown>): DiffResult | null
   return parseDiffText(file.diff);
 }
 
-export function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
+function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
   if (!("metadata" in state) || !isRecord(state.metadata)) return [];
   const rawFiles = state.metadata.files;
   if (!Array.isArray(rawFiles)) return [];

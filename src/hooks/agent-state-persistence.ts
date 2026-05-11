@@ -1,15 +1,7 @@
-import { DEFAULT_SERVER_URL, MAX_RECENT_PROJECTS, STORAGE_KEYS } from "@/lib/constants";
+import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import { persistOrRemoveJSON, storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
 import { normalizeProjectPath } from "@/lib/utils";
-import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
-
-export interface RecentProject {
-  workspaceId?: string;
-  directory: string;
-  serverUrl: string;
-  username?: string;
-  lastConnected: number;
-}
+import type { SelectedModel, Workspace } from "@/types/electron";
 
 export const NOTIFICATIONS_ENABLED_KEY = STORAGE_KEYS.NOTIFICATIONS_ENABLED;
 export const LOCAL_WORKSPACE_ID = "local";
@@ -102,11 +94,7 @@ export function getStoredDefaultChatDirectory(): string | null {
   return stored ? normalizeProjectPath(stored) : null;
 }
 
-export function resolveDefaultChatDirectory(homeDir: string | null): string | null {
-  return getStoredDefaultChatDirectory() ?? (homeDir ? normalizeProjectPath(homeDir) : null);
-}
-
-export interface WorktreeMetadata {
+interface WorktreeMetadata {
   parentDir: string;
   branch: string;
   createdAt: string;
@@ -114,10 +102,6 @@ export interface WorktreeMetadata {
 }
 
 export type WorktreeParentMap = Record<string, WorktreeMetadata>;
-
-export function getWorktreeParentDir(map: WorktreeParentMap, dir: string): string | undefined {
-  return map[dir]?.parentDir;
-}
 
 export function getWorktreeParents(): WorktreeParentMap {
   const raw = storageParsed<Record<string, unknown>>(STORAGE_KEYS.WORKTREE_PARENTS) ?? {};
@@ -250,46 +234,6 @@ export function getActiveWorkspaceId(workspaces: Workspace[]) {
   return workspaces[0]?.id ?? LOCAL_WORKSPACE_ID;
 }
 
-export function getRecentProjects(): RecentProject[] {
-  const projects = storageParsed<RecentProject[]>(STORAGE_KEYS.RECENT_PROJECTS) ?? [];
-  return projects
-    .map((project) => ({
-      ...project,
-      directory: normalizeProjectPath(project.directory),
-      serverUrl: project.serverUrl.replace(/\/+$/, ""),
-      username: project.username?.trim() || undefined,
-      workspaceId: project.workspaceId?.trim() || undefined,
-    }))
-    .filter((project) => !!project.directory);
-}
-
-export function addRecentProject(project: RecentProject): RecentProject[] {
-  const normalizedDirectory = normalizeProjectPath(project.directory);
-  const normalizedServerUrl = project.serverUrl.replace(/\/+$/, "");
-  const normalizedUsername = project.username?.trim() || undefined;
-  const normalizedWorkspaceId = project.workspaceId?.trim() || undefined;
-  const existing = getRecentProjects().filter((candidate) => {
-    return !(
-      (candidate.workspaceId?.trim() || undefined) === normalizedWorkspaceId &&
-      normalizeProjectPath(candidate.directory) === normalizedDirectory &&
-      candidate.serverUrl.replace(/\/+$/, "") === normalizedServerUrl &&
-      (candidate.username?.trim() || undefined) === normalizedUsername
-    );
-  });
-  const updated = [
-    {
-      ...project,
-      workspaceId: normalizedWorkspaceId,
-      directory: normalizedDirectory,
-      serverUrl: normalizedServerUrl,
-      username: normalizedUsername,
-    },
-    ...existing,
-  ].slice(0, MAX_RECENT_PROJECTS);
-  storageSetJSON(STORAGE_KEYS.RECENT_PROJECTS, updated);
-  return updated;
-}
-
 export function getUnreadSessionIds(): Set<string> {
   const arr = storageParsed<string[]>(STORAGE_KEYS.UNREAD_SESSIONS);
   return arr ? new Set(arr) : new Set();
@@ -302,8 +246,4 @@ export function persistUnreadSessionIds(ids: Set<string>) {
 export function areNotificationsEnabled(): boolean {
   const raw = storageGet(STORAGE_KEYS.NOTIFICATIONS_ENABLED);
   return raw === null || raw === "true";
-}
-
-export function hasAnyConnection(connections: Record<string, ConnectionStatus>): boolean {
-  return Object.values(connections).some((c) => c.state === "connected");
 }

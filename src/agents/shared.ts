@@ -4,12 +4,12 @@ import { normalizeProjectPath } from "@/lib/utils";
 import type { AgentBackendEvent, AgentBackendTarget } from "./backend";
 import type { AgentBackendId } from "./index";
 
-export type BridgeResult<T> =
+type BridgeResult<T> =
   | { success: true; data?: T }
   | { success: false; error?: string }
   | { success: boolean; data?: T; error?: string };
 
-export type SessionTags = {
+type SessionTags = {
   _projectDir?: string;
   _workspaceId?: string;
   _backendId?: AgentBackendId;
@@ -79,9 +79,7 @@ export function normalizePartSessionId(backendId: AgentBackendId, part: Part): P
     : part;
 }
 
-export function normalizeBridgeConnectionStatus(
-  event: NativeBackendEvent,
-): AgentBackendEvent | null {
+function normalizeBridgeConnectionStatus(event: NativeBackendEvent): AgentBackendEvent | null {
   if (event.type !== "connection:status") return null;
   return {
     type: "connection.status",
@@ -134,7 +132,7 @@ export function normalizeTaggedBackendEvent(
   }
 }
 
-export function normalizeBackendEventPayload(
+function normalizeBackendEventPayload(
   backendId: AgentBackendId,
   payload: AgentBackendEvent,
 ): AgentBackendEvent {

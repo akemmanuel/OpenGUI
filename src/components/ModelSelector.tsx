@@ -17,7 +17,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useAvailableBackendIds, useBackendCapabilities } from "@/hooks/use-agent-backend";
+import {
+  useAvailableBackendIds,
+  useBackendCapabilities,
+  useCurrentAgentBackendId,
+} from "@/hooks/use-agent-backend";
 import { useActions, useModelState, useSessionState } from "@/hooks/use-agent-state";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
@@ -111,18 +115,18 @@ export function ModelSelector() {
   const { providers, selectedModel } = useModelState();
   const { sessions, activeSessionId, draftSessionBackendId } = useSessionState();
   const availableBackendIds = useAvailableBackendIds();
+  const preferredBackendId = useCurrentAgentBackendId();
   const capabilities = useBackendCapabilities();
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const lockedBackendId = activeSession?._backendId ?? null;
-  const selectedBackendId = lockedBackendId ?? draftSessionBackendId;
+  const selectedBackendId = lockedBackendId ?? draftSessionBackendId ?? preferredBackendId;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [recentValues, setRecentValues] = useState<string[]>([]);
   const [favoriteValues, setFavoriteValues] = useState<Set<string>>(new Set());
   const [modelMaxAgeMonths, setModelMaxAgeMonths] = useState(() => getStoredModelMaxAgeMonths());
-
-  if (!capabilities?.models) return null;
+  const [storageHydrated, setStorageHydrated] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -134,6 +138,7 @@ export function ModelSelector() {
     if (Array.isArray(favArr)) {
       setFavoriteValues(new Set(favArr.filter((v): v is string => typeof v === "string")));
     }
+    setStorageHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -150,14 +155,14 @@ export function ModelSelector() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !storageHydrated) return;
     storageSetJSON(STORAGE_KEYS.RECENT_MODELS, recentValues.slice(0, MAX_RECENT_MODELS));
-  }, [recentValues]);
+  }, [recentValues, storageHydrated]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !storageHydrated) return;
     storageSetJSON(STORAGE_KEYS.FAVORITE_MODELS, [...favoriteValues]);
-  }, [favoriteValues]);
+  }, [favoriteValues, storageHydrated]);
 
   // Open via Ctrl+X M chord shortcut dispatched from App.tsx
   useEffect(() => {
@@ -313,7 +318,7 @@ export function ModelSelector() {
 
   const hasResults = filteredGroups.some((group) => group.models.length > 0);
 
-  if (providers.length === 0) return null;
+  if (!capabilities?.models || providers.length === 0) return null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

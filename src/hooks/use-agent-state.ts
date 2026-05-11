@@ -1,8 +1,5 @@
 export {
   AgentBackendProvider,
-  getChildSessionParts,
-  getWorktreeParentDir,
-  hasAnyConnection,
   LOCAL_WORKSPACE_ID,
   NOTIFICATIONS_ENABLED_KEY,
   resolveServerDefaultModel,
@@ -21,4 +18,4 @@ export type {
   Session,
 } from "./agent-state-types";
 
-export type { SessionColor, WorktreeMetadata } from "./agent-state-persistence";
+export type { SessionColor } from "./agent-state-persistence";

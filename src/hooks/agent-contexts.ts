@@ -19,17 +19,11 @@ import type {
 } from "@/hooks/agent-state-types";
 import type {
   ProjectMeta,
-  RecentProject,
   SessionColor,
   SessionMetaMap,
   WorktreeParentMap,
 } from "@/hooks/agent-state-persistence";
-import type {
-  ConnectionConfig,
-  ConnectionStatus,
-  SelectedModel,
-  Workspace,
-} from "@/types/electron";
+import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
 
 export interface SessionContextValue {
   sessions: Session[];
@@ -42,13 +36,10 @@ export interface SessionContextValue {
   pendingQuestions: Record<string, QuestionRequest>;
   draftSessionDirectory: string | null;
   draftSessionBackendId: AgentBackendId | null;
-  draftIsTemporary: boolean;
-  temporarySessions: Set<string>;
   namingSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
   sessionDrafts: Record<string, string>;
   sessionMeta: SessionMetaMap;
-  recentProjects: RecentProject[];
 }
 
 export interface MessagesContextValue {
@@ -56,9 +47,7 @@ export interface MessagesContextValue {
   turnRuns: Record<string, TurnRun>;
   childSessions: InternalAgentState["childSessions"];
   messageHistoryHasMore: boolean;
-  messageWindowHasNewer: boolean;
   isLoadingOlderMessages: boolean;
-  isLoadingNewerMessages: boolean;
 }
 
 export interface ModelContextValue {
@@ -89,7 +78,6 @@ export interface ConnectionContextValue {
   workspaceDirectory: string | null;
   defaultChatDirectory: string | null;
   workspaceServerUrl: string | null;
-  workspaceUsername: string | null;
   isLocalWorkspace: boolean;
   activeDirectory: string | null;
   bootState: InternalAgentState["bootState"];
@@ -102,13 +90,9 @@ export interface ConnectionContextValue {
 }
 
 export interface ActionsContextValue {
-  addProject: (config: ConnectionConfig, options?: { suppressError?: boolean }) => Promise<void>;
   removeProject: (directory: string) => Promise<void>;
-  disconnect: () => Promise<void>;
   selectSession: (id: string | null) => Promise<void>;
   loadOlderMessages: () => Promise<boolean>;
-  loadNewerMessages: () => Promise<boolean>;
-  createSession: (title?: string, directory?: string) => Promise<Session | null>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   sendPrompt: (text: string, images?: string[], mode?: QueueMode) => Promise<void>;
@@ -125,7 +109,6 @@ export interface ActionsContextValue {
   revertVariant: () => void;
   clearError: () => void;
   refreshProviders: () => Promise<void>;
-  refreshSessions: () => Promise<void>;
   getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
   removeFromQueue: (sessionId: string, promptId: string) => void;
   reorderQueue: (sessionId: string, fromIndex: number, toIndex: number) => void;
@@ -145,7 +128,6 @@ export interface ActionsContextValue {
   setDefaultChatDirectory: (directory: string | null) => void;
   setDraftDirectory: (directory: string) => void;
   setDraftBackend: (backendId: AgentBackendId) => void;
-  setDraftTemporary: (temporary: boolean) => void;
   revertToMessage: (messageID: string) => Promise<void>;
   unrevert: () => Promise<void>;
   forkFromMessage: (messageID: string) => Promise<void>;
@@ -156,7 +138,6 @@ export interface ActionsContextValue {
   setProjectPinned: (directory: string, pinned: boolean) => void;
   registerWorktree: (worktreeDir: string, parentDir: string, branch: string) => void;
   unregisterWorktree: (worktreeDir: string) => void;
-  touchWorktree: (worktreeDir: string) => void;
   clearWorktreeCleanup: () => void;
   createWorkspace: (input: {
     name: string;
@@ -171,7 +152,6 @@ export interface ActionsContextValue {
   removeWorkspace: (workspaceId: string) => Promise<void>;
   switchWorkspace: (workspaceId: string) => void;
   reorderWorkspaces: (fromIndex: number, toIndex: number) => void;
-  reorderProjects: (fromIndex: number, toIndex: number) => void;
   reorderVisibleProjects: (orderedDirectories: string[]) => void;
 }
 

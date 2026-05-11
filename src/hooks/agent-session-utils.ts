@@ -1,7 +1,7 @@
 import { normalizeProjectPath } from "@/lib/utils";
 import type { AgentBackendId } from "@/agents";
 import type { ProjectMetaMap } from "@/hooks/agent-state-persistence";
-import type { MessageEntry, Session } from "@/hooks/agent-state-types";
+import type { Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
 
 const PROJECT_KEY_SEPARATOR = "\u0000";
@@ -65,7 +65,7 @@ export function shouldAutoNameSession(session: Session | undefined | null) {
   return !title || title.toLowerCase() === "untitled";
 }
 
-export function getSessionSortTime(session: Session): number {
+function getSessionSortTime(session: Session): number {
   return session.time.updated ?? session.time.created ?? 0;
 }
 
@@ -83,55 +83,4 @@ export function isHiddenProject(
   directory: string,
 ): boolean {
   return projectMeta[makeProjectKey(workspaceId, directory)]?.hidden === true;
-}
-
-function extractMessageText(entry: MessageEntry): string {
-  const segments: string[] = [];
-  for (const part of entry.parts) {
-    if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
-      segments.push(part.text.trim());
-      continue;
-    }
-    if (part.type === "tool") {
-      const toolName = part.tool || "tool";
-      const status = part.state?.status || "completed";
-      segments.push(`[tool:${toolName} ${status}]`);
-    }
-  }
-  return segments.join("\n\n").trim();
-}
-
-export function buildSessionMigrationPrompt(input: {
-  entries: MessageEntry[];
-  sourceDirectory: string;
-  targetDirectory: string;
-  title?: string;
-}): string {
-  const transcript = input.entries
-    .map((entry) => {
-      const text = extractMessageText(entry);
-      if (!text) return null;
-      const role = entry.info.role === "assistant" ? "Assistant" : "User";
-      return `${role}:\n${text}`;
-    })
-    .filter((value): value is string => Boolean(value));
-  const MAX_MESSAGES = 12;
-  const selectedTranscript = transcript.slice(-MAX_MESSAGES);
-  const trimmedCount = transcript.length - selectedTranscript.length;
-  const transcriptBlock = selectedTranscript.join("\n\n---\n\n").slice(0, 12000);
-  const trimNotice =
-    trimmedCount > 0 ? `Earlier conversation omitted: ${trimmedCount} message(s).\n\n` : "";
-  return [
-    "INTERNAL_SESSION_MOVE_CONTEXT",
-    `This conversation was moved from \`${input.sourceDirectory}\` to \`${input.targetDirectory}\`.`,
-    "Work in the target directory from now on and treat the following transcript as prior context.",
-    "Do not ask the user to confirm the directory and do not mention this migration unless the user explicitly asks.",
-    "Do not perform a visible directory-check response for this migration step. Simply continue working in the new directory on the next real user message.",
-    input.title ? `Original title: ${input.title}` : null,
-    trimNotice ? trimNotice.trimEnd() : null,
-    "Transcript:",
-    transcriptBlock || "No prior transcript available.",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
 }

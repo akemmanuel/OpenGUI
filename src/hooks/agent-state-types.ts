@@ -11,7 +11,6 @@ import type {
 import type { AgentBackendId } from "@/agents";
 import type {
   ProjectMetaMap,
-  RecentProject,
   SessionMetaMap,
   WorktreeParentMap,
 } from "@/hooks/agent-state-persistence";
@@ -70,20 +69,14 @@ export interface InternalAgentState {
   activeSessionId: string | null;
   /** Messages for the active session */
   messages: MessageEntry[];
-  /** Newer active-session messages trimmed out of the current window */
-  messageForwardBuffer: MessageEntry[];
   /** Whether older messages exist before the loaded active-session window */
   messageHistoryHasMore: boolean;
   /** Opaque cursor for fetching the next page of older messages */
   messageHistoryCursor: string | null;
-  /** Whether newer messages exist after the loaded active-session window */
-  messageWindowHasNewer: boolean;
   /** Whether messages are being fetched for a newly selected session */
   isLoadingMessages: boolean;
   /** Whether older messages are currently being prepended to the active window */
   isLoadingOlderMessages: boolean;
-  /** Whether newer messages are currently being restored into the active window */
-  isLoadingNewerMessages: boolean;
   /** Whether a prompt response is in-flight */
   isBusy: boolean;
   /** Pending permission requests keyed by sessionID */
@@ -116,20 +109,12 @@ export interface InternalAgentState {
   commands: Command[];
   /** Per-session queued prompts (sent automatically when session becomes idle) */
   queuedPrompts: Record<string, QueuedPrompt[]>;
-  /** Recently opened projects */
-  recentProjects: RecentProject[];
-  /** User home directory used as fallback for chat-first mode. */
-  homeDirectory: string | null;
   /** Default working directory for chats started from the global chat entry. */
   defaultChatDirectory: string | null;
   /** Directory for a draft (not-yet-created) session. Null when no draft is active. */
   draftSessionDirectory: string | null;
   /** Backend chosen for draft/new session. */
   draftSessionBackendId: AgentBackendId | null;
-  /** Whether the current draft should create a temporary (non-persisted) session */
-  draftIsTemporary: boolean;
-  /** Set of session IDs marked as temporary (auto-deleted on navigate away) */
-  temporarySessions: Set<string>;
   /** Set of session IDs that are waiting for generated title */
   namingSessionIds: Set<string>;
   /** Set of session IDs that have unread content (finished generating while not active) */
@@ -200,5 +185,4 @@ export interface InternalAgentState {
 }
 
 export type AgentBackendState = InternalAgentState;
-export type OpenCodeState = InternalAgentState;
 export type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";

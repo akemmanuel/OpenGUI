@@ -1,23 +1,23 @@
 import { normalizeProjectPath } from "@/lib/utils";
 
-export interface SidebarPinMetaLike {
+interface SidebarPinMetaLike {
   pinnedAt?: string | null;
   assignedProjectDir?: string | null;
 }
 
-export interface SidebarPinSessionLike {
+interface SidebarPinSessionLike {
   id: string;
   directory: string;
   _projectDir?: string;
 }
 
-export interface SidebarWorktreeParentLike {
+interface SidebarWorktreeParentLike {
   parentDir: string;
 }
 
-export type SidebarProjectEntry<TSession> = [string, TSession[]];
+type SidebarProjectEntry<TSession> = [string, TSession[]];
 
-export type SidebarPinnedEntry<TSession> =
+type SidebarPinnedEntry<TSession> =
   | {
       kind: "project";
       directory: string;
@@ -31,7 +31,7 @@ export type SidebarPinnedEntry<TSession> =
       pinnedAt: string;
     };
 
-export interface SidebarPinPartitionResult<TSession> {
+interface SidebarPinPartitionResult<TSession> {
   pinnedEntries: SidebarPinnedEntry<TSession>[];
   projectEntries: Array<SidebarProjectEntry<TSession>>;
   projectSessionsByDirectory: Record<string, TSession[]>;

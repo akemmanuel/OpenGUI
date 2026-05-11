@@ -18,7 +18,7 @@ export const AGENT_BACKEND_LABELS: Record<AgentBackendId, string> = {
 
 export { createBackendIdCodec as createAgentIdCodec } from "./shared";
 
-export const AGENT_ID_CODECS = Object.fromEntries(
+const AGENT_ID_CODECS = Object.fromEntries(
   AGENT_BACKEND_IDS.map((backendId) => [backendId, createBackendIdCodec(backendId)]),
 ) as Record<AgentBackendId, ReturnType<typeof createBackendIdCodec>>;
 

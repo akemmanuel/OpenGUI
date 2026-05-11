@@ -2,13 +2,12 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   SessionManager,
@@ -52,26 +51,7 @@ const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
 // Bump when daemon import/runtime behavior changes. Existing healthy daemon gets reused
 // across app restarts; failed lazy ESM imports inside pi-ai stay poisoned in-process.
 const PI_DAEMON_VERSION = "2026-05-08-pi-message-id-reconcile-v1";
-const FRESH_PI_MODELS_TTL_MS = 60_000;
-const MAX_FRESH_PI_MODELS_CACHE_ENTRIES = 64;
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const freshPiModelsCache = new Map();
-
-function setFreshPiModelsCache(key, value) {
-  const now = Date.now();
-  for (const [cacheKey, cached] of freshPiModelsCache.entries()) {
-    if (!cached || now - cached.time >= FRESH_PI_MODELS_TTL_MS) {
-      freshPiModelsCache.delete(cacheKey);
-    }
-  }
-  if (freshPiModelsCache.has(key)) freshPiModelsCache.delete(key);
-  freshPiModelsCache.set(key, value);
-  while (freshPiModelsCache.size > MAX_FRESH_PI_MODELS_CACHE_ENTRIES) {
-    const oldestKey = freshPiModelsCache.keys().next().value;
-    if (oldestKey === undefined) break;
-    freshPiModelsCache.delete(oldestKey);
-  }
-}
 
 function normalizeDir(directory) {
   if (typeof directory !== "string") return "";
@@ -311,199 +291,6 @@ function normalizePiModel(model) {
     release_date: "",
     variants,
   };
-}
-
-function parsePiTokenCount(value) {
-  const text = String(value || "")
-    .trim()
-    .toUpperCase();
-  if (!text) return 0;
-  const match = text.match(/^(\d+(?:\.\d+)?)([KM])?$/);
-  if (!match) return Number.parseInt(text.replace(/\D/g, ""), 10) || 0;
-  const amount = Number.parseFloat(match[1]);
-  const unit = match[2];
-  if (unit === "M") return Math.round(amount * 1_000_000);
-  if (unit === "K") return Math.round(amount * 1_000);
-  return Math.round(amount);
-}
-
-function inferApiForProvider(provider, template) {
-  if (template?.api) return template.api;
-  if (provider.includes("anthropic")) return "anthropic-messages";
-  if (provider.includes("google") || provider.includes("gemini")) return "google-generative-ai";
-  if (provider.includes("codex")) return "openai-codex-responses";
-  if (provider.includes("azure")) return "azure-openai-responses";
-  if (provider.includes("openai")) return "openai-responses";
-  return "openai-completions";
-}
-
-function inferBaseUrlForProvider(provider, template) {
-  if (template?.baseUrl) return template.baseUrl;
-  if (provider.includes("anthropic")) return "https://api.anthropic.com";
-  if (provider.includes("google") || provider.includes("gemini"))
-    return "https://generativelanguage.googleapis.com/v1beta";
-  if (provider.includes("codex")) return "https://chatgpt.com/backend-api";
-  if (provider.includes("openai")) return "https://api.openai.com";
-  return "";
-}
-
-function parsePiListModelsTable(text, referenceModels = []) {
-  const referencesByProvider = new Map();
-  for (const model of referenceModels) {
-    if (!referencesByProvider.has(model.provider)) referencesByProvider.set(model.provider, model);
-  }
-  const models = [];
-  for (const rawLine of String(text || "").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("provider") || line.startsWith("─") || line.startsWith("-"))
-      continue;
-    const parts = line.split(/\s{2,}/).filter(Boolean);
-    if (parts.length < 6) continue;
-    const [provider, id, context, maxOut, thinking, images] = parts;
-    if (!provider || !id || provider === "provider") continue;
-    const template = referencesByProvider.get(provider);
-    models.push({
-      id,
-      name: id,
-      api: inferApiForProvider(provider, template),
-      provider,
-      baseUrl: inferBaseUrlForProvider(provider, template),
-      reasoning: thinking === "yes",
-      input: images === "yes" ? ["text", "image"] : ["text"],
-      cost: template?.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: parsePiTokenCount(context),
-      maxTokens: parsePiTokenCount(maxOut),
-      headers: template?.headers || {},
-      compat: template?.compat,
-    });
-  }
-  return models;
-}
-
-function mergeModels(primaryModels, discoveredModels) {
-  const byKey = new Map();
-  for (const model of primaryModels) byKey.set(`${model.provider}/${model.id}`, model);
-  for (const model of discoveredModels) {
-    const key = `${model.provider}/${model.id}`;
-    const existing = byKey.get(key);
-    byKey.set(
-      key,
-      existing
-        ? {
-            ...existing,
-            ...model,
-            thinkingLevelMap: model.thinkingLevelMap ?? existing.thinkingLevelMap,
-            compat: model.compat ?? existing.compat,
-            headers:
-              model.headers && Object.keys(model.headers).length > 0
-                ? model.headers
-                : existing.headers,
-          }
-        : model,
-    );
-  }
-  return Array.from(byKey.values());
-}
-
-function localPiCandidates() {
-  const candidates = [];
-  if (process.env.OPENGUI_PI_BINARY) candidates.push(process.env.OPENGUI_PI_BINARY);
-  candidates.push(join(homedir(), ".bun", "bin", process.platform === "win32" ? "pi.cmd" : "pi"));
-  candidates.push(join(homedir(), ".pi", "bin", process.platform === "win32" ? "pi.cmd" : "pi"));
-  candidates.push("pi");
-  return [...new Set(candidates)];
-}
-
-function localBunCandidates() {
-  const candidates = [];
-  if (process.env.OPENGUI_BUN_BINARY) candidates.push(process.env.OPENGUI_BUN_BINARY);
-  if (process.env.BUN) candidates.push(process.env.BUN);
-  candidates.push(join(homedir(), ".bun", "bin", process.platform === "win32" ? "bun.exe" : "bun"));
-  candidates.push("bun");
-  return [...new Set(candidates)];
-}
-
-async function resolvePiListModelsCommand(binary) {
-  const args = ["--list-models"];
-  if (!binary.includes("/") && !binary.includes("\\")) {
-    return { command: binary, args };
-  }
-  let resolved = binary;
-  try {
-    resolved = await realpath(binary);
-  } catch {
-    return { command: binary, args };
-  }
-  if (!resolved.endsWith(".js") && !resolved.endsWith(".mjs") && !resolved.endsWith(".cjs")) {
-    return { command: binary, args };
-  }
-  for (const bun of localBunCandidates()) {
-    try {
-      return { command: bun, args: [resolved, ...args] };
-    } catch {
-      // Try next Bun candidate.
-    }
-    break;
-  }
-  return { command: binary, args };
-}
-
-async function discoverLocalPiModels(cwd, referenceModels = []) {
-  const cacheKey = `${cwd || process.cwd()}:${referenceModels.length}`;
-  const cached = freshPiModelsCache.get(cacheKey);
-  if (cached && Date.now() - cached.time < FRESH_PI_MODELS_TTL_MS) return cached.models;
-  let lastError = null;
-  for (const binary of localPiCandidates()) {
-    try {
-      const pathParts = [
-        join(homedir(), ".bun", "bin"),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        process.env.PATH || "",
-      ].filter(Boolean);
-      const resolvedCommand = await resolvePiListModelsCommand(binary);
-      if (process.env.OPENGUI_PI_DEBUG) {
-        console.warn(
-          "Pi model discovery candidate:",
-          binary,
-          "->",
-          resolvedCommand.command,
-          resolvedCommand.args.join(" "),
-        );
-      }
-      const { stdout, stderr } = await execFile(resolvedCommand.command, resolvedCommand.args, {
-        cwd: cwd || process.cwd(),
-        env: {
-          ...process.env,
-          PATH: [...new Set(pathParts.join(":").split(":"))].join(":"),
-          PI_SKIP_VERSION_CHECK: "1",
-          PI_OFFLINE: "1",
-        },
-        maxBuffer: 8 * 1024 * 1024,
-        timeout: 15_000,
-      });
-      const models = parsePiListModelsTable(`${stdout}\n${stderr}`, referenceModels);
-      if (process.env.OPENGUI_PI_DEBUG) {
-        console.warn("Pi model discovery result:", binary, models.length);
-      }
-      if (models.length > 0) {
-        setFreshPiModelsCache(cacheKey, { time: Date.now(), models });
-        return models;
-      }
-    } catch (error) {
-      if (process.env.OPENGUI_PI_DEBUG) {
-        console.warn("Pi model discovery failed:", binary, error);
-      }
-      lastError = error;
-    }
-  }
-  if (lastError && process.env.OPENGUI_PI_DEBUG) {
-    console.warn("Failed to auto-discover local Pi models:", lastError);
-  }
-  setFreshPiModelsCache(cacheKey, { time: Date.now(), models: [] });
-  return [];
 }
 
 function buildProvidersData(models) {
@@ -1898,7 +1685,6 @@ export class PiBridgeManager {
     return sessions.find((session) => session.id === sessionId) || null;
   }
 
-  // legacy project-level session switch removed
   resolveRealMessageId(project, sessionId, messageId) {
     const state = this.getSyntheticState(project, sessionId);
     return state.syntheticToReal.get(messageId) || messageId;
@@ -2084,12 +1870,7 @@ export class PiBridgeManager {
     if (!selectedModel?.providerID || !selectedModel?.modelID) return;
     session.modelRegistry.refresh?.();
     const availableModels = session.modelRegistry.getAvailable();
-    const knownModels = session.modelRegistry.getAll();
-    const discoveredModels = await discoverLocalPiModels(
-      session.sessionManager.getCwd?.(),
-      knownModels,
-    );
-    const model = mergeModels(availableModels, discoveredModels).find(
+    const model = availableModels.find(
       (item) => item.provider === selectedModel.providerID && item.id === selectedModel.modelID,
     );
     if (!model) {
@@ -2308,9 +2089,7 @@ export class PiBridgeManager {
       }
       runtime.services.modelRegistry.refresh?.();
       const availableModels = runtime.services.modelRegistry.getAvailable();
-      const knownModels = runtime.services.modelRegistry.getAll();
-      const discoveredModels = await discoverLocalPiModels(project.directory, knownModels);
-      return buildProvidersData(mergeModels(availableModels, discoveredModels));
+      return buildProvidersData(availableModels);
     }
     const models = [];
     for (const project of this.projects.values()) {
@@ -2319,13 +2098,7 @@ export class PiBridgeManager {
       if (!runtime) continue;
       runtime.services.modelRegistry.refresh?.();
       const availableModels = runtime.services.modelRegistry.getAvailable();
-      const knownModels = runtime.services.modelRegistry.getAll();
-      models.push(
-        ...mergeModels(
-          availableModels,
-          await discoverLocalPiModels(project.directory, knownModels),
-        ),
-      );
+      models.push(...availableModels);
     }
     return buildProvidersData(models);
   }
@@ -2801,9 +2574,6 @@ class PiDaemonClient {
 
 export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
   const manager = new PiDaemonClient(getAllWindows, options);
-  void manager.ensureDaemon().catch((error) => {
-    console.error("Failed to start Pi daemon:", error);
-  });
 
   ipcMain.handle("pi:project:add", async (_event, config) => {
     try {
