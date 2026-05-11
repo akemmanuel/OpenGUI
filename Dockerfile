@@ -1,4 +1,4 @@
-FROM oven/bun:1.3-debian
+FROM node:24-slim
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
@@ -10,18 +10,24 @@ RUN apt-get update \
 		openssh-client \
 		procps \
 		ripgrep \
+		unzip \
 		util-linux \
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-ENV PATH=/app/node_modules/.bin:$PATH
+ENV PNPM_HOME=/pnpm
+ENV BUN_INSTALL=/root/.bun
+ENV PATH=/app/node_modules/.bin:$PNPM_HOME:$BUN_INSTALL/bin:$PATH
 
-COPY package.json bun.lock ./
-RUN bun install
+RUN corepack enable && corepack prepare pnpm@10.33.4 --activate
+RUN curl -fsSL https://bun.sh/install | bash
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN bunx vp build
+RUN vp build
 COPY docker/host-exec /usr/local/bin/opengui-host-exec
 COPY docker/entrypoint.sh /usr/local/bin/opengui-entrypoint
 RUN chmod +x /usr/local/bin/opengui-host-exec /usr/local/bin/opengui-entrypoint \
@@ -36,4 +42,4 @@ ENV OPENGUI_ALLOWED_ROOTS=/workspace
 EXPOSE 3000
 
 ENTRYPOINT ["/usr/local/bin/opengui-entrypoint"]
-CMD ["/usr/local/bin/bun", "server/web-server.ts"]
+CMD ["/root/.bun/bin/bun", "server/web-server.ts"]
