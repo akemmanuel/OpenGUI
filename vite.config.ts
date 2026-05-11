@@ -1,11 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { spawn, type ChildProcess } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
 const configDir = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const vpBin = path.join(path.dirname(require.resolve("vite-plus/package.json")), "bin", "vp");
 const webBackendPort = Number(process.env.OPENGUI_WEB_BACKEND_PORT || 3001);
 
 function openguiElectronBuild() {
@@ -16,7 +19,7 @@ function openguiElectronBuild() {
       await new Promise<void>((resolve, reject) => {
         const child = spawn(
           process.execPath,
-          ["node_modules/vite-plus/bin/vp.js", "build", "--config", "vite.electron.config.ts"],
+          [vpBin, "build", "--config", "vite.electron.config.ts"],
           {
             cwd: configDir,
             stdio: "inherit",
