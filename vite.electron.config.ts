@@ -23,10 +23,26 @@ const externals = new Set([
   ...Object.keys(pkg.dependencies ?? {}),
 ]);
 
+const bundledPackagePrefixes = [
+  "@earendil-works/pi-agent-core",
+  "@earendil-works/pi-ai",
+  "@earendil-works/pi-coding-agent",
+  "@earendil-works/pi-tui",
+];
+
+function packageIdFor(id: string) {
+  const [scopeOrName, packageName] = id.split("/");
+  return scopeOrName?.startsWith("@") ? `${scopeOrName}/${packageName}` : scopeOrName;
+}
+
+function isBundledPackage(id: string) {
+  return bundledPackagePrefixes.some((prefix) => id === prefix || id.startsWith(`${prefix}/`));
+}
+
 function isExternal(id: string) {
   if (id.startsWith("node:")) return true;
-  const [scopeOrName, packageName] = id.split("/");
-  const packageId = scopeOrName?.startsWith("@") ? `${scopeOrName}/${packageName}` : scopeOrName;
+  if (isBundledPackage(id)) return false;
+  const packageId = packageIdFor(id);
   return Boolean(packageId && externals.has(packageId));
 }
 
@@ -50,6 +66,9 @@ export default defineConfig({
       },
     },
   ],
+  ssr: {
+    noExternal: bundledPackagePrefixes,
+  },
   build: {
     emptyOutDir: true,
     minify: true,
