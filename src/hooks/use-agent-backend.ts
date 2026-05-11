@@ -3,18 +3,14 @@ import type { AgentBackendId } from "@/agents";
 import { AGENT_BACKEND_IDS, getAllAgentBackends, getCurrentAgentBackend } from "@/agents";
 import { useSessionState } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { onSettingsChange, storageGet, storageSet } from "@/lib/safe-storage";
+import { onSettingsChange, storageGet } from "@/lib/safe-storage";
 
-export function getStoredAgentBackendId(): AgentBackendId {
+function getStoredAgentBackendId(): AgentBackendId {
   const stored = storageGet(STORAGE_KEYS.AGENT_BACKEND);
   if (stored === "claude-code") return "claude-code";
   if (stored === "pi") return "pi";
   if (stored === "codex") return "codex";
   return "opencode";
-}
-
-export function setStoredAgentBackendId(backendId: AgentBackendId) {
-  storageSet(STORAGE_KEYS.AGENT_BACKEND, backendId);
 }
 
 export function useCurrentAgentBackendId() {
@@ -42,7 +38,7 @@ export function useCurrentAgentBackendId() {
   return backendId;
 }
 
-export function useAllAgentBackends() {
+function useAllAgentBackends() {
   return useMemo(() => {
     const all = getAllAgentBackends(window.electronAPI);
     return Object.fromEntries(
@@ -51,7 +47,7 @@ export function useAllAgentBackends() {
   }, []);
 }
 
-export function useActiveAgentBackendId() {
+function useActiveAgentBackendId() {
   const preferredBackendId = useCurrentAgentBackendId();
   const { sessions, activeSessionId, draftSessionBackendId } = useSessionState();
   const activeSession = sessions.find((session) => session.id === activeSessionId);

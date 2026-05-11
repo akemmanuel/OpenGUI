@@ -34,7 +34,7 @@ export function updateVariantSelections(
   return next;
 }
 
-export function getEnabledVariantKeys(model: Model | undefined): string[] {
+function getEnabledVariantKeys(model: Model | undefined): string[] {
   if (!model?.variants) return [];
   return Object.keys(model.variants).filter((key) => !model.variants?.[key]?.disabled);
 }

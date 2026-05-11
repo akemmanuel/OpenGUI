@@ -44,9 +44,6 @@ export const todoStatusConfig: Record<
   },
 };
 
-/** Ordered status keys for display (in-progress first for visibility). */
-export const STATUS_ORDER = ["in_progress", "pending", "completed", "cancelled"] as const;
-
 // ---------------------------------------------------------------------------
 // Extraction
 // ---------------------------------------------------------------------------

@@ -174,7 +174,16 @@ function ToolBody({
     case "terminal":
       return (
         <div className="pl-7 pt-1">
-          <TerminalOutput content={body.content} preRef={toolOutputRef} className="max-h-64" />
+          <TerminalOutput
+            content={body.content}
+            preRef={toolOutputRef}
+            className={cn(
+              "max-h-64",
+              presentation.tool.kind === "bash" &&
+                presentation.tool.status === "error" &&
+                "text-destructive",
+            )}
+          />
         </div>
       );
     case "apply-patch":
@@ -299,11 +308,12 @@ export function ToolPartView({
           taskContentRef={taskContentRef}
         />
       )}
-      {presentation.error && (
-        <div className="text-destructive pl-5 truncate" title={presentation.error}>
-          {presentation.error}
-        </div>
-      )}
+      {presentation.error &&
+        !(presentation.tool.kind === "bash" && presentation.bashOutputText?.trim()) && (
+          <div className="text-destructive pl-5 truncate" title={presentation.error}>
+            {presentation.error}
+          </div>
+        )}
       {hasSideContent && (
         <div className="pl-5 mt-0.5 space-y-1">
           {presentation.sideContent.images.length > 0 && (

@@ -1514,7 +1514,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           };
         }
       }
-      console.log(
+      console.info(
         `[opencode-bridge] Resolved binary: ${binary ?? "(not found)"} (platform: ${process.platform})`,
       );
       if (!binary) {
@@ -1528,7 +1528,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       // Spawn detached so the server survives app close.
       // Use piped stdio so we can capture logs on startup failure.
       const serverArgs = ["serve", "--port", String(LOCAL_SERVER_PORT)];
-      console.log(
+      console.info(
         `[opencode-bridge] Spawning: ${binary} ${serverArgs.join(" ")} (platform: ${process.platform})`,
       );
 
@@ -1570,7 +1570,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       });
 
       // Wait for the server to become healthy
-      console.log(
+      console.info(
         `[opencode-bridge] Waiting for server to become healthy (timeout: ${STARTUP_TIMEOUT / 1000}s)...`,
       );
       try {
@@ -1599,7 +1599,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
             child.stderr.removeAllListeners("data");
             child.stderr.destroy();
           }
-          console.log("[opencode-bridge] Server became healthy after launcher exited.");
+          console.info("[opencode-bridge] Server became healthy after launcher exited.");
           return { success: true, data: { alreadyRunning: false } };
         }
 
@@ -1641,7 +1641,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         child.stderr.destroy();
       }
 
-      console.log("[opencode-bridge] Server is healthy.");
+      console.info("[opencode-bridge] Server is healthy.");
       return { success: true, data: { alreadyRunning: false } };
     } catch (err) {
       return { success: false, error: err.message ?? String(err) };

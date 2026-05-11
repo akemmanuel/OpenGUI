@@ -16,7 +16,7 @@ import {
   type TaggedSession,
 } from "./shared";
 
-export interface ClaudeCodeBackendAdapter extends ClaudeCodeBridge, AgentBackendDescriptor {
+interface ClaudeCodeBackendAdapter extends ClaudeCodeBridge, AgentBackendDescriptor {
   native: ClaudeCodeBridge;
 }
 

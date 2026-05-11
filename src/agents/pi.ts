@@ -16,7 +16,7 @@ import {
   type TaggedSession,
 } from "./shared";
 
-export interface PiBackendAdapter extends PiBridge, AgentBackendDescriptor {
+interface PiBackendAdapter extends PiBridge, AgentBackendDescriptor {
   native: PiBridge;
 }
 

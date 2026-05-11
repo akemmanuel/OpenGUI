@@ -16,7 +16,7 @@ import {
   type TaggedSession,
 } from "./shared";
 
-export interface CodexBackendAdapter extends CodexBridge, AgentBackendDescriptor {
+interface CodexBackendAdapter extends CodexBridge, AgentBackendDescriptor {
   native: CodexBridge;
 }
 

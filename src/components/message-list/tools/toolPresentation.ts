@@ -26,7 +26,7 @@ export type ToolBody =
   | { type: "task"; taskInfo: TaskInfo }
   | null;
 
-export interface NormalizedTool {
+interface NormalizedTool {
   rawName: string;
   kind: ToolKind;
   variant: ToolVariant;
@@ -60,6 +60,10 @@ function getRawOutputText(state: ToolPart["state"]): string | null {
 function getBashMetadataOutput(state: ToolPart["state"]): string | null {
   if (!("metadata" in state) || !isRecord(state.metadata)) return null;
   return typeof state.metadata.output === "string" ? state.metadata.output : null;
+}
+
+function getErrorText(state: ToolPart["state"]): string | null {
+  return "error" in state && typeof state.error === "string" ? state.error : null;
 }
 
 function getToolTitle(part: ToolPart, kind: ToolKind, isRunning: boolean): string {
@@ -125,12 +129,13 @@ export function getToolPresentation(
 
   const rawOutputText = getRawOutputText(state);
   const outputText = rawOutputText?.trim() || null;
+  const errorText = getErrorText(state);
   const bashMetadataOutput = kind === "bash" ? getBashMetadataOutput(state) : null;
   const bashOutputText =
     kind === "bash"
       ? isRunning
         ? (bashMetadataOutput ?? rawOutputText)
-        : (rawOutputText ?? bashMetadataOutput)
+        : (rawOutputText ?? bashMetadataOutput ?? errorText)
       : null;
 
   const editFiles = kind === "edit" ? extractEditFiles(state) : [];
@@ -215,7 +220,7 @@ export function getToolPresentation(
     expandable: body !== null,
     body,
     sideContent: { todos, images },
-    error: state.status === "error" && state.error ? state.error : null,
+    error: state.status === "error" && errorText ? errorText : null,
     taskInfo,
     bashOutputText,
   };

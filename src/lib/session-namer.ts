@@ -45,7 +45,7 @@ function cleanTitle(input: string): string {
     .slice(0, 80);
 }
 
-export function fallbackSessionTitle(prompt: string): string {
+function fallbackSessionTitle(prompt: string): string {
   if (
     /^\s*https?:\/\/(?:www\.)?(youtube\.com|youtu\.be)\//i.test(prompt) &&
     /\bsummarize\b/i.test(prompt)

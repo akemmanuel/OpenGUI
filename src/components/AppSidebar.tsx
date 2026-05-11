@@ -152,7 +152,6 @@ export function AppSidebar({
     queuedPrompts,
     pendingQuestions,
     pendingPermissions,
-    temporarySessions,
     unreadSessionIds,
     sessionDrafts,
     sessionMeta,
@@ -278,10 +277,7 @@ export function AppSidebar({
     const rootSessions = sessions.filter((s) => {
       const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
       return (
-        !s.parentID &&
-        openDirectorySet.has(sessionDir) &&
-        !temporarySessions.has(s.id) &&
-        !sessionMeta[s.id]?.movedToSessionId
+        !s.parentID && openDirectorySet.has(sessionDir) && !sessionMeta[s.id]?.movedToSessionId
       );
     });
     const rootOpenDirectories = openDirectories.filter((dir) => !worktreeDirs.has(dir));
@@ -323,7 +319,6 @@ export function AppSidebar({
   }, [
     sessions,
     connections,
-    temporarySessions,
     worktreeParents,
     worktreeDirs,
     detachedProject,
@@ -338,12 +333,11 @@ export function AppSidebar({
         sessions.filter(
           (session) =>
             !session.parentID &&
-            !temporarySessions.has(session.id) &&
             !sessionMeta[session.id]?.movedToSessionId &&
             isChatSession(session),
         ),
       ),
-    [sessions, temporarySessions, isChatSession, sessionMeta, sortSessionsForSidebar],
+    [sessions, isChatSession, sessionMeta, sortSessionsForSidebar],
   );
   const filteredChatSessions = useMemo(() => {
     if (!hasActiveSearch) return chatSessions;

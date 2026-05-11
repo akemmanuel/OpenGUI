@@ -1,15 +1,13 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown } from "lucide-react";
 import {
   type ReactNode,
+  type WheelEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { MessageEntry } from "@/hooks/use-agent-state";
 import { NEAR_BOTTOM_PX } from "@/lib/constants";
@@ -56,7 +54,6 @@ export function VirtualMessageScroller({
   const loadInFlightRef = useRef(false);
   const programmaticScrollRef = useRef(false);
   const pinnedToBottomRef = useRef(true);
-  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const keys = useMemo(() => messages.map((message) => message.info.id), [messages]);
   const keyIndex = useMemo(() => {
@@ -114,7 +111,6 @@ export function VirtualMessageScroller({
   const scrollToLatest = useCallback(() => {
     if (messages.length === 0) return;
     pinnedToBottomRef.current = true;
-    setShowJumpToLatest(false);
     programmaticScrollRef.current = true;
     virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
     requestAnimationFrame(() => {
@@ -126,13 +122,25 @@ export function VirtualMessageScroller({
     });
   }, [messages.length, virtualizer]);
 
+  const detachFromBottom = useCallback((force = false) => {
+    const el = scrollRef.current;
+    if (!el || (!force && isNearBottom(el))) return;
+    pinnedToBottomRef.current = false;
+  }, []);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el || programmaticScrollRef.current) return;
     const nearBottom = isNearBottom(el);
     pinnedToBottomRef.current = nearBottom;
-    if (nearBottom) setShowJumpToLatest(false);
   }, []);
+
+  const handleWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (event.deltaY < 0) detachFromBottom(true);
+    },
+    [detachFromBottom],
+  );
 
   useLayoutEffect(() => {
     restoreAnchor();
@@ -147,7 +155,6 @@ export function VirtualMessageScroller({
       scrollToLatest();
       return;
     }
-    if (previousLastKey !== lastKey) setShowJumpToLatest(true);
   }, [keys, scrollToLatest]);
 
   useEffect(() => {
@@ -175,6 +182,8 @@ export function VirtualMessageScroller({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
+      onWheel={handleWheel}
+      onTouchMove={() => detachFromBottom(true)}
       className="relative flex-1 overflow-auto px-4 py-4"
     >
       <div className="max-w-[640px] mx-auto">
@@ -206,18 +215,6 @@ export function VirtualMessageScroller({
         </div>
         {trailingContent}
       </div>
-      {showJumpToLatest && (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={scrollToLatest}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg"
-        >
-          <ArrowDown className="size-3.5" />
-          Latest
-        </Button>
-      )}
     </div>
   );
 }

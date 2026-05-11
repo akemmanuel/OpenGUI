@@ -1,13 +1,33 @@
-// @ts-nocheck
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type {
+  ClaudeCodeBridge,
+  CodexBridge,
+  ElectronAPI,
+  InstallProgress,
+  OpenCodeBridge,
+  PiBridge,
+  SettingsBridgeChange,
+  AppUpdateState,
+} from "./src/types/electron";
 
-const invoke =
-  (channel) =>
-  (...args) =>
-    ipcRenderer.invoke(channel, ...args);
+type Listener<T = unknown> = (data: T) => void;
 
-function createBridgeApi(prefix, options = {}) {
-  const api = {
+type BridgeApiOptions = {
+  rendererReady?: boolean;
+  extraInvoke?: Record<string, string>;
+};
+
+type DynamicBridgeApi = Record<
+  string,
+  ((...args: never[]) => Promise<unknown>) | ((callback: Listener) => () => void)
+>;
+
+function invoke<T extends (...args: never[]) => Promise<unknown>>(channel: string): T {
+  return ((...args: never[]) => ipcRenderer.invoke(channel, ...args)) as T;
+}
+
+function createBridgeApi<T>(prefix: string, options: BridgeApiOptions = {}): T {
+  const api: DynamicBridgeApi = {
     addProject: invoke(`${prefix}:project:add`),
     removeProject: invoke(`${prefix}:project:remove`),
     disconnect: invoke(`${prefix}:disconnect`),
@@ -28,38 +48,42 @@ function createBridgeApi(prefix, options = {}) {
     sendCommand: invoke(`${prefix}:command:send`),
     summarizeSession: invoke(`${prefix}:session:summarize`),
     findFiles: invoke(`${prefix}:find:files`),
-    onEvent: (callback) => {
+    onEvent: (callback: Listener) => {
       if (options.rendererReady) ipcRenderer.send(`${prefix}:renderer-ready`);
-      const handler = (_event, data) => callback(data);
+      const handler = (_event: IpcRendererEvent, data: unknown) => callback(data);
       ipcRenderer.on(`${prefix}:bridge-event`, handler);
-      return () => ipcRenderer.removeListener(`${prefix}:bridge-event`, handler);
+      return () => {
+        ipcRenderer.removeListener(`${prefix}:bridge-event`, handler);
+      };
     },
   };
 
   for (const [name, channel] of Object.entries(options.extraInvoke ?? {})) {
-    api[name] = invoke(`${prefix}:${String(channel)}`);
+    api[name] = invoke(`${prefix}:${channel}`);
   }
 
-  return api;
+  return api as T;
 }
 
-contextBridge.exposeInMainWorld("electronAPI", {
+const electronAPI: ElectronAPI = {
   settings: {
     getAllSync: () => ipcRenderer.sendSync("settings:get-all-sync"),
-    getSync: (key) => ipcRenderer.sendSync("settings:get-sync", key),
-    setSync: (key, value) => ipcRenderer.sendSync("settings:set-sync", key, value),
-    removeSync: (key) => ipcRenderer.sendSync("settings:remove-sync", key),
-    mergeSync: (entries) => ipcRenderer.sendSync("settings:merge-sync", entries),
+    getSync: (key: string) => ipcRenderer.sendSync("settings:get-sync", key),
+    setSync: (key: string, value: string) => ipcRenderer.sendSync("settings:set-sync", key, value),
+    removeSync: (key: string) => ipcRenderer.sendSync("settings:remove-sync", key),
+    mergeSync: (entries: Record<string, string>) =>
+      ipcRenderer.sendSync("settings:merge-sync", entries),
     set: invoke("settings:set"),
     remove: invoke("settings:remove"),
-    onDidChange: (callback) => {
-      const handler = (_event, change) => callback(change);
+    onDidChange: (callback: Listener<SettingsBridgeChange>) => {
+      const handler = (_event: IpcRendererEvent, change: SettingsBridgeChange) => callback(change);
       ipcRenderer.on("settings:changed", handler);
-      return () => ipcRenderer.removeListener("settings:changed", handler);
+      return () => {
+        ipcRenderer.removeListener("settings:changed", handler);
+      };
     },
   },
 
-  // Window controls
   minimize: invoke("window:minimize"),
   maximize: invoke("window:maximize"),
   close: invoke("window:close"),
@@ -68,76 +92,66 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getSystemLocale: invoke("platform:locale"),
   detectBackends: invoke("platform:detectBackends"),
   isPackaged: invoke("app:isPackaged"),
-  onMaximizeChange: (callback) => {
-    const handler = (_event, isMaximized) => callback(isMaximized);
+  onMaximizeChange: (callback: Listener<boolean>) => {
+    const handler = (_event: IpcRendererEvent, isMaximized: boolean) => callback(isMaximized);
     ipcRenderer.on("window:maximizeChanged", handler);
-    return () => ipcRenderer.removeListener("window:maximizeChanged", handler);
+    return () => {
+      ipcRenderer.removeListener("window:maximizeChanged", handler);
+    };
   },
 
-  // Directory picker
   openDirectory: invoke("dialog:openDirectory"),
-
-  // Detach a project into its own window
   detachProject: invoke("window:detachProject"),
-
-  // Get the detached project directory from the URL query param (empty if not detached)
-  getDetachedProject: () => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("detach") || null;
-  },
+  getDetachedProject: () => new URLSearchParams(window.location.search).get("detach"),
   getDetachedProjects: invoke("window:getDetachedProjects"),
-  onDetachedProjectsChange: (callback) => {
-    const handler = (_event, detachedProjects) => callback(detachedProjects);
+  onDetachedProjectsChange: (callback: Listener<string[]>) => {
+    const handler = (_event: IpcRendererEvent, detachedProjects: string[]) =>
+      callback(detachedProjects);
     ipcRenderer.on("window:detachedProjectsChanged", handler);
-    return () => ipcRenderer.removeListener("window:detachedProjectsChanged", handler);
+    return () => {
+      ipcRenderer.removeListener("window:detachedProjectsChanged", handler);
+    };
   },
 
-  // Open a URL in the system browser
   openExternal: invoke("shell:openExternal"),
-
   updates: {
     getState: invoke("updates:getState"),
     check: invoke("updates:check"),
     download: invoke("updates:download"),
     install: invoke("updates:install"),
-    onStateChanged: (callback) => {
-      const handler = (_event, nextState) => callback(nextState);
+    onStateChanged: (callback: Listener<AppUpdateState>) => {
+      const handler = (_event: IpcRendererEvent, nextState: AppUpdateState) => callback(nextState);
       ipcRenderer.on("updates:state-changed", handler);
-      return () => ipcRenderer.removeListener("updates:state-changed", handler);
+      return () => {
+        ipcRenderer.removeListener("updates:state-changed", handler);
+      };
     },
   },
 
-  // Open a directory in the system file browser
   openInFileBrowser: invoke("shell:openInFileBrowser"),
-
-  // Open a terminal at a directory
   openInTerminal: invoke("shell:openInTerminal"),
-
-  // Home directory (for path abbreviation)
   getHomeDir: invoke("platform:homeDir"),
-
-  // Backend installer – runs allowlisted backend install and streams progress events
   installBackend: invoke("backend:install"),
-  onInstallProgress: (callback) => {
-    const handler = (_event, data) => callback(data);
+  onInstallProgress: (callback: Listener<InstallProgress>) => {
+    const handler = (_event: IpcRendererEvent, data: InstallProgress) => callback(data);
     ipcRenderer.on("backend:install-progress", handler);
-    return () => ipcRenderer.removeListener("backend:install-progress", handler);
+    return () => {
+      ipcRenderer.removeListener("backend:install-progress", handler);
+    };
   },
-
-  // Skills install progress events
-  onSkillsInstallProgress: (callback) => {
-    const handler = (_event, data) => callback(data);
+  onSkillsInstallProgress: (callback: Listener<InstallProgress>) => {
+    const handler = (_event: IpcRendererEvent, data: InstallProgress) => callback(data);
     ipcRenderer.on("opencode:skills:install-progress", handler);
-    return () => ipcRenderer.removeListener("opencode:skills:install-progress", handler);
+    return () => {
+      ipcRenderer.removeListener("opencode:skills:install-progress", handler);
+    };
   },
 
-  // Worktree setup helpers
   worktree: {
     detectSetup: invoke("worktree:detect-setup"),
     runSetup: invoke("worktree:run-setup"),
   },
 
-  // Git helpers
   git: {
     isRepo: invoke("git:is-repo"),
     listBranches: invoke("git:branch:list"),
@@ -150,10 +164,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getRemoteUrl: invoke("git:remote:url"),
   },
 
-  claudeCode: createBridgeApi("claude-code", { rendererReady: true }),
-  pi: createBridgeApi("pi"),
-  codex: createBridgeApi("codex"),
-  opencode: createBridgeApi("opencode", {
+  claudeCode: createBridgeApi<ClaudeCodeBridge>("claude-code", { rendererReady: true }),
+  pi: createBridgeApi<PiBridge>("pi"),
+  codex: createBridgeApi<CodexBridge>("codex"),
+  opencode: createBridgeApi<OpenCodeBridge>("opencode", {
     extraInvoke: {
       revertSession: "session:revert",
       unrevertSession: "session:unrevert",
@@ -176,7 +190,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
       startServer: "server:start",
       stopServer: "server:stop",
       getServerStatus: "server:status",
-      // Skills marketplace
       marketplaceList: "skills:marketplace:list",
       marketplaceSearch: "skills:marketplace:search",
       marketplaceDetail: "skills:marketplace:detail",
@@ -189,4 +202,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
       checkSkillsCli: "skills:check-cli",
     },
   }),
-});
+};
+
+contextBridge.exposeInMainWorld("electronAPI", electronAPI);

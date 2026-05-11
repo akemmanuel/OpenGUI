@@ -12,14 +12,14 @@ const ICONS_DIR = "src/components/provider-icons/svgs";
 const OUTPUT_DIR = "src/components/provider-icons";
 
 async function main() {
-  console.log(`Fetching provider list from ${MODELS_URL}/api.json ...`);
+  console.info(`Fetching provider list from ${MODELS_URL}/api.json ...`);
   const apiRes = await fetch(`${MODELS_URL}/api.json`);
   if (!apiRes.ok) {
     throw new Error(`Failed to fetch api.json: ${apiRes.status}`);
   }
   const api = (await apiRes.json()) as Record<string, unknown>;
   const providerIds = Object.keys(api);
-  console.log(`Found ${providerIds.length} providers`);
+  console.info(`Found ${providerIds.length} providers`);
 
   // Ensure output directories exist
   await Bun.write(`${ICONS_DIR}/.gitkeep`, "");
@@ -58,16 +58,16 @@ async function main() {
     }
   }
 
-  console.log(`Downloaded ${succeeded.length} icons, ${failed.length} failed`);
+  console.info(`Downloaded ${succeeded.length} icons, ${failed.length} failed`);
   if (failed.length > 0) {
-    console.log(`Failed: ${failed.join(", ")}`);
+    console.info(`Failed: ${failed.join(", ")}`);
   }
 
   // Sort for deterministic output
   succeeded.sort();
 
   // Generate sprite.svg
-  console.log("Generating sprite.svg ...");
+  console.info("Generating sprite.svg ...");
   const symbols: string[] = [];
 
   for (const id of succeeded) {
@@ -93,10 +93,10 @@ ${symbols.join("\n")}
 </svg>`;
 
   await Bun.write(`${OUTPUT_DIR}/sprite.svg`, sprite);
-  console.log(`Wrote sprite.svg with ${symbols.length} symbols`);
+  console.info(`Wrote sprite.svg with ${symbols.length} symbols`);
 
   // Generate types.ts
-  console.log("Generating types.ts ...");
+  console.info("Generating types.ts ...");
   const typesContent = `/**
  * Auto-generated provider icon names.
  * Do not edit manually - run \`bun scripts/fetch-provider-icons.ts\` to regenerate.
@@ -110,9 +110,9 @@ export type ProviderIconName = (typeof providerIconNames)[number];
 `;
 
   await Bun.write(`${OUTPUT_DIR}/types.ts`, typesContent);
-  console.log(`Wrote types.ts with ${succeeded.length} icon names`);
+  console.info(`Wrote types.ts with ${succeeded.length} icon names`);
 
-  console.log("Done!");
+  console.info("Done!");
 }
 
 main().catch((err) => {

@@ -405,4 +405,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`OpenGUI web running at ${server.url}`);
+console.info(`OpenGUI web running at ${server.url}`);

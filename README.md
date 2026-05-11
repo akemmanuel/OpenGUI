@@ -53,7 +53,7 @@ OpenGUI is for people who like coding agents but want stronger workflow than ter
 - **Prompt queue** that auto-dispatches when assistant becomes idle
 - **Model, backend, and agent selection** directly from chat workflow
 - **Slash commands** from prompt box
-- **Syntax highlighting + math rendering** with Shiki and KaTeX
+- **Syntax highlighting** with Shiki
 - **Dark/light theme** with system-aware toggle
 - **Desktop, web, and Docker deployment options**
 - **Cross-platform builds** for Linux, macOS, and Windows

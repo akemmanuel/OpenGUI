@@ -27,7 +27,7 @@ export type ToolVariant =
   | "browser"
   | "fetch";
 
-export type ToolStatus = ToolPart["state"]["status"];
+type ToolStatus = ToolPart["state"]["status"];
 
 const TOOL_ALIASES = {
   read: "read",

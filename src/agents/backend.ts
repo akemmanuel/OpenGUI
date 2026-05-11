@@ -54,7 +54,7 @@ export interface AgentBackendCapabilities {
   localServer: boolean;
 }
 
-export interface AgentBackendWorkspaceProfile {
+interface AgentBackendWorkspaceProfile {
   kind: "remote-server" | "local-cli";
   fields: {
     serverUrl: boolean;
@@ -64,11 +64,11 @@ export interface AgentBackendWorkspaceProfile {
   };
 }
 
-export interface AgentSessionStatus {
+interface AgentSessionStatus {
   type: string;
 }
 
-export interface AgentMessagePage {
+interface AgentMessagePage {
   messages: Array<{ info: Message; parts: Part[] }>;
   nextCursor: string | null;
 }
@@ -124,7 +124,7 @@ export type AgentBackendEvent =
   | { type: "question.cleared"; sessionID: string }
   | { type: "session.error"; error: string; sessionID?: string };
 
-export interface AgentRuntimeBackend {
+interface AgentRuntimeBackend {
   listSessions(target?: AgentBackendTarget): Promise<Session[]>;
   createSession(input?: {
     title?: string;
@@ -194,13 +194,13 @@ export interface AgentRuntimeBackend {
   subscribe(listener: (event: AgentBackendEvent) => void): () => void;
 }
 
-export interface AgentHostBackend {
+interface AgentHostBackend {
   addProject(config: ConnectionConfig): Promise<void>;
   removeProject(target: AgentBackendTarget): Promise<void>;
   disconnect(): Promise<void>;
 }
 
-export interface AgentPlatformBackend {
+interface AgentPlatformBackend {
   server?: {
     start(): Promise<{ alreadyRunning?: boolean }>;
     stop(): Promise<{ alreadyStopped?: boolean; pid?: number }>;

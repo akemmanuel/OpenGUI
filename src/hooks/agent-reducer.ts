@@ -17,17 +17,21 @@ import type {
 import {
   applyStreamingDeltaToPart,
   bufferNonActiveEvent,
+  createOptimisticUserMessage,
   createPlaceholderMessageEntry,
   createPlaceholderPart,
   getChildSessionId,
   limitMessageWindow,
   MAX_SESSION_BUFFER_CACHE,
+  mergeMessageSnapshot,
   mergeSnapshotPartWithExisting,
   normalizeMessageEntries,
+  removeMatchingOptimisticUserMessage,
   tagPartWithDeltaPositions,
   updateMessageArray,
 } from "@/hooks/agent-message-state";
 import {
+  getSessionBackendId,
   getSessionSelectedAgent,
   getSessionSelectedModel,
   getSessionSelectedVariant,
@@ -36,13 +40,11 @@ import {
   sortSessionsNewestFirst,
 } from "@/hooks/agent-session-utils";
 import {
-  getStoredDefaultChatDirectory,
   normalizeWorkspace,
   persistProjectMetaMap,
   persistSessionMetaMap,
   persistWorktreeParents,
   type ProjectMeta,
-  type RecentProject,
   type SessionMeta,
   type WorktreeParentMap,
 } from "@/hooks/agent-state-persistence";
@@ -117,10 +119,6 @@ type Action =
       payload: { fromIndex: number; toIndex: number };
     }
   | {
-      type: "REORDER_WORKSPACE_PROJECTS";
-      payload: { workspaceId: string; fromIndex: number; toIndex: number };
-    }
-  | {
       type: "REORDER_VISIBLE_WORKSPACE_PROJECTS";
       payload: { workspaceId: string; orderedDirectories: string[] };
     }
@@ -136,11 +134,14 @@ type Action =
       type: "REMOVE_PROJECT";
       payload: { projectKey: string; directory: string };
     }
-  | { type: "CLEAR_ALL_PROJECTS" }
-  | { type: "SET_SESSIONS"; payload: Session[] }
   | {
       type: "MERGE_PROJECT_SESSIONS";
-      payload: { projectKey: string; directory: string; sessions: Session[] };
+      payload: {
+        projectKey: string;
+        directory: string;
+        sessions: Session[];
+        backendIds?: AgentBackendId[];
+      };
     }
   | { type: "SET_ACTIVE_SESSION"; payload: string | null }
   | { type: "SET_SESSION_DRAFT"; payload: { key: string; text: string } }
@@ -154,8 +155,11 @@ type Action =
         mode?: "replace" | "prepend" | "append";
       };
     }
+  | {
+      type: "PROMPT_SUBMITTED";
+      payload: { id: string; sessionID: string; text: string; createdAt: number };
+    }
   | { type: "SET_LOADING_OLDER_MESSAGES"; payload: boolean }
-  | { type: "SET_LOADING_NEWER_MESSAGES"; payload: boolean }
   | { type: "SET_BUSY"; payload: boolean }
   | {
       type: "TURN_RUN_STARTED";
@@ -234,8 +238,6 @@ type Action =
       payload: { sessionID: string; promptID: string; text: string };
     }
   | { type: "QUEUE_CLEAR"; payload: { sessionID: string } }
-  | { type: "SET_RECENT_PROJECTS"; payload: RecentProject[] }
-  | { type: "SET_HOME_DIRECTORY"; payload: string | null }
   | { type: "SET_DEFAULT_CHAT_DIRECTORY"; payload: string | null }
   | {
       type: "START_DRAFT_SESSION";
@@ -244,9 +246,6 @@ type Action =
   | { type: "SET_DRAFT_DIRECTORY"; payload: string }
   | { type: "SET_DRAFT_BACKEND"; payload: AgentBackendId }
   | { type: "CLEAR_DRAFT_SESSION" }
-  | { type: "SET_DRAFT_TEMPORARY"; payload: boolean }
-  | { type: "MARK_SESSION_TEMPORARY"; payload: string }
-  | { type: "UNMARK_SESSION_TEMPORARY"; payload: string }
   | { type: "SET_SESSION_NAMING"; payload: { sessionId: string; naming: boolean } }
   | {
       type: "SET_SESSION_META";
@@ -261,7 +260,6 @@ type Action =
       payload: { worktreeDir: string; parentDir: string; branch: string };
     }
   | { type: "UNREGISTER_WORKTREE"; payload: string }
-  | { type: "TOUCH_WORKTREE"; payload: string }
   | {
       type: "SET_PENDING_WORKTREE_CLEANUP";
       payload: { worktreeDir: string; parentDir: string } | null;
@@ -285,6 +283,35 @@ type Action =
       type: "SESSION_REPLACED";
       payload: { oldId: string; newId: string; session: Session };
     };
+
+export function mergeProjectBackendSessions({
+  current,
+  workspaceId,
+  directory,
+  incoming,
+  backendIds,
+}: {
+  current: Session[];
+  workspaceId: string;
+  directory: string;
+  incoming: Session[];
+  backendIds?: AgentBackendId[];
+}) {
+  if (backendIds && backendIds.length === 0) return sortSessionsNewestFirst(current);
+  const backendScope = backendIds ? new Set(backendIds) : null;
+  const incomingIds = new Set(incoming.map((session) => session.id));
+  return sortSessionsNewestFirst([
+    ...current.filter((session) => {
+      if (incomingIds.has(session.id)) return false;
+      if (getSessionWorkspaceId(session) !== workspaceId) return true;
+      if ((session._projectDir ?? session.directory) !== directory) return true;
+      if (!backendScope) return false;
+      const backendId = getSessionBackendId(session);
+      return !backendId || !backendScope.has(backendId);
+    }),
+    ...incoming,
+  ]);
+}
 
 export function reducer(state: InternalAgentState, action: Action): InternalAgentState {
   switch (action.type) {
@@ -333,29 +360,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       if (!moved) return state;
       nextWorkspaces.splice(clampedTo, 0, moved);
       return { ...state, workspaces: nextWorkspaces };
-    }
-
-    case "REORDER_WORKSPACE_PROJECTS": {
-      const { workspaceId, fromIndex, toIndex } = action.payload;
-      let changed = false;
-      const nextWorkspaces = state.workspaces.map((workspace) => {
-        if (workspace.id !== workspaceId) return workspace;
-        const projects = workspace.projects ?? [];
-        if (projects.length <= 1) return workspace;
-        if (fromIndex < 0 || fromIndex >= projects.length) return workspace;
-        const clampedTo = Math.max(0, Math.min(toIndex, projects.length - 1));
-        if (clampedTo === fromIndex) return workspace;
-        const nextProjects = [...projects];
-        const [moved] = nextProjects.splice(fromIndex, 1);
-        if (!moved) return workspace;
-        nextProjects.splice(clampedTo, 0, moved);
-        changed = true;
-        return {
-          ...workspace,
-          projects: nextProjects,
-        };
-      });
-      return changed ? { ...state, workspaces: nextWorkspaces } : state;
     }
 
     case "REORDER_VISIBLE_WORKSPACE_PROJECTS": {
@@ -537,12 +541,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           ? {
               activeSessionId: null,
               messages: [],
-              messageForwardBuffer: [],
               messageHistoryHasMore: false,
               messageHistoryCursor: null,
-              messageWindowHasNewer: false,
               isLoadingOlderMessages: false,
-              isLoadingNewerMessages: false,
               isBusy: false,
             }
           : {}),
@@ -554,42 +555,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       };
     }
 
-    case "CLEAR_ALL_PROJECTS":
-      return {
-        ...state,
-        connections: {},
-        projectWorkspaceMap: {},
-        sessions: [],
-        activeSessionId: null,
-        messages: [],
-        messageForwardBuffer: [],
-        messageHistoryHasMore: false,
-        messageHistoryCursor: null,
-        messageWindowHasNewer: false,
-        isLoadingMessages: false,
-        isLoadingOlderMessages: false,
-        isLoadingNewerMessages: false,
-        isBusy: false,
-        pendingPermissions: {},
-        pendingQuestions: {},
-        busySessionIds: new Set(),
-        temporarySessions: new Set(),
-        namingSessionIds: new Set(),
-        childSessions: {},
-        trackedChildSessionIds: new Set(),
-        _pendingSnapshots: [],
-        _sessionBuffers: {},
-        afterPartPending: new Set(),
-        _afterPartTriggered: new Set(),
-        _deletedSessionIds: new Set(),
-        draftSessionDirectory: null,
-        draftSessionBackendId: null,
-        draftIsTemporary: false,
-      };
-
-    case "SET_SESSIONS":
-      return { ...state, sessions: sortSessionsNewestFirst(action.payload) };
-
     case "SET_BOOT_STATE": {
       return {
         ...state,
@@ -600,24 +565,17 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     }
 
     case "MERGE_PROJECT_SESSIONS": {
-      const { projectKey, directory, sessions } = action.payload;
+      const { projectKey, directory, sessions, backendIds } = action.payload;
       const { workspaceId } = parseProjectKey(projectKey);
-      const filtered = state.sessions.filter(
-        (s) =>
-          !(
-            getSessionWorkspaceId(s) === workspaceId && (s._projectDir ?? s.directory) === directory
-          ),
-      );
-      // Deduplicate by session ID: if the incoming batch contains a
-      // session that already exists under a *different* project
-      // directory (possible when directories share the same git repo /
-      // project_id on the server), keep the existing one and skip the
-      // duplicate from the new batch.
-      const existingIds = new Set(filtered.map((s) => s.id));
-      const deduped = sessions.filter((s) => !existingIds.has(s.id));
       return {
         ...state,
-        sessions: sortSessionsNewestFirst([...filtered, ...deduped]),
+        sessions: mergeProjectBackendSessions({
+          current: state.sessions,
+          workspaceId,
+          directory,
+          incoming: sessions,
+          backendIds,
+        }),
       };
     }
 
@@ -744,13 +702,10 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         selectedAgent: nextSelectedAgent,
         variantSelections: nextVariantSelections,
         messages: initialMessages,
-        messageForwardBuffer: [],
         messageHistoryHasMore: restoredHasMore,
         messageHistoryCursor: restoredCursor,
-        messageWindowHasNewer: false,
         isLoadingMessages: sid !== null && !isCompleteBuffer,
         isLoadingOlderMessages: false,
-        isLoadingNewerMessages: false,
         isBusy: sid ? state.busySessionIds.has(sid) : false,
         unreadSessionIds: nextUnread,
         // Selecting a real session clears any pending draft
@@ -809,42 +764,18 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         return {
           ...state,
           messages: limitMessageWindow(combinedMessages),
-          messageForwardBuffer: [],
           messageHistoryHasMore: false,
           messageHistoryCursor: null,
-          messageWindowHasNewer: false,
-          isLoadingNewerMessages: false,
         };
-      }
-
-      const existingByMsgId = new Map<string, MessageEntry>();
-      for (const message of state.messages) {
-        existingByMsgId.set(message.info.id, message);
-      }
-
-      if (normalizedMessages.length > 0) {
-        const serverLast = normalizedMessages[normalizedMessages.length - 1];
-        const serverLastCreated = serverLast?.info.time.created ?? 0;
-        const incomingIds = new Set(action.payload.messages.map((message) => message.info.id));
-        for (const [id, entry] of existingByMsgId) {
-          if (incomingIds.has(id)) continue;
-          const entryCreated = entry.info.time.created ?? 0;
-          if (entryCreated > serverLastCreated) {
-            normalizedMessages.push(entry);
-          }
-        }
       }
 
       let replayedState: InternalAgentState = {
         ...state,
-        messages: limitMessageWindow(normalizedMessages),
-        messageForwardBuffer: [],
+        messages: mergeMessageSnapshot(action.payload.messages, state.messages),
         messageHistoryHasMore: action.payload.hasMore,
         messageHistoryCursor: action.payload.nextCursor ?? null,
-        messageWindowHasNewer: false,
         isLoadingMessages: false,
         isLoadingOlderMessages: false,
-        isLoadingNewerMessages: false,
         _pendingSnapshots: [],
       };
       for (const event of state._pendingSnapshots) {
@@ -853,11 +784,23 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return replayedState;
     }
 
+    case "PROMPT_SUBMITTED": {
+      const message = createOptimisticUserMessage(action.payload);
+      if (message.info.sessionID !== state.activeSessionId) {
+        return bufferNonActiveEvent(state, message.info.sessionID, message.info.id, () => ({
+          info: message.info,
+          parts: Object.fromEntries(message.parts.map((part) => [part.id, part])),
+        }));
+      }
+      if (state.messages.some((entry) => entry.info.id === message.info.id)) return state;
+      return {
+        ...state,
+        messages: limitMessageWindow([...state.messages, message]),
+      };
+    }
+
     case "SET_LOADING_OLDER_MESSAGES":
       return { ...state, isLoadingOlderMessages: action.payload };
-
-    case "SET_LOADING_NEWER_MESSAGES":
-      return { ...state, isLoadingNewerMessages: action.payload };
 
     case "SET_BUSY":
       return { ...state, isBusy: action.payload };
@@ -1057,8 +1000,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
       const { [deletedId]: _deletedQueue, ...remainingQueues } = state.queuedPrompts;
       const { [deletedId]: _deletedBuffer, ...remainingBuffers } = state._sessionBuffers;
-      const nextTemp = new Set(state.temporarySessions);
-      nextTemp.delete(deletedId);
       const nextUnread = new Set(state.unreadSessionIds);
       nextUnread.delete(deletedId);
       const nextNaming = new Set(state.namingSessionIds);
@@ -1117,7 +1058,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         sessions: state.sessions.filter((s) => s.id !== deletedId),
         queuedPrompts: remainingQueues,
         _sessionBuffers: remainingBuffers,
-        temporarySessions: nextTemp,
         unreadSessionIds: nextUnread,
         namingSessionIds: nextNaming,
         sessionDrafts: nextDrafts,
@@ -1129,12 +1069,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           ? {
               activeSessionId: null,
               messages: [],
-              messageForwardBuffer: [],
               messageHistoryHasMore: false,
               messageHistoryCursor: null,
-              messageWindowHasNewer: false,
               isLoadingOlderMessages: false,
-              isLoadingNewerMessages: false,
               isBusy: false,
             }
           : {}),
@@ -1176,7 +1113,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         ...state,
         ...turnPatch,
         messages: appendedMessages,
-        messageForwardBuffer: [],
         // If limitMessageWindow trimmed messages, older history exists
         ...(didTrim ? { messageHistoryHasMore: true } : {}),
       };
@@ -1276,14 +1212,17 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         }
       }
 
-      const partUpdatedMessages = limitMessageWindow(updatedWindow.messages);
-      const partDidTrim = partUpdatedMessages.length < updatedWindow.messages.length;
+      const canonicalEntry = updatedWindow.messages.find((m) => m.info.id === part.messageID);
+      const dedupedMessages = canonicalEntry
+        ? removeMatchingOptimisticUserMessage(updatedWindow.messages, canonicalEntry)
+        : updatedWindow.messages;
+      const partUpdatedMessages = limitMessageWindow(dedupedMessages);
+      const partDidTrim = partUpdatedMessages.length < dedupedMessages.length;
       return {
         ...state,
         ...childTrackPatch,
         ...afterPartPatch,
         messages: partUpdatedMessages,
-        messageForwardBuffer: [],
         // If limitMessageWindow trimmed messages, older history exists
         ...(partDidTrim ? { messageHistoryHasMore: true } : {}),
       };
@@ -1327,7 +1266,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         messages: deltaMessages,
-        messageForwardBuffer: [],
         // If limitMessageWindow trimmed messages, older history exists
         ...(deltaDidTrim ? { messageHistoryHasMore: true } : {}),
       };
@@ -1387,7 +1325,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
             parts: m.parts.filter((p) => p.id !== partID),
           };
         }),
-        messageForwardBuffer: [],
       };
     }
 
@@ -1428,7 +1365,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         messages: state.messages.filter((m) => m.info.id !== messageID),
-        messageForwardBuffer: [],
       };
     }
 
@@ -1619,20 +1555,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return { ...state, _afterPartTriggered: next };
     }
 
-    case "SET_RECENT_PROJECTS":
-      return { ...state, recentProjects: action.payload };
-
-    case "SET_HOME_DIRECTORY": {
-      const defaultChatDirectory =
-        getStoredDefaultChatDirectory() ??
-        (action.payload ? normalizeProjectPath(action.payload) : null);
-      return {
-        ...state,
-        homeDirectory: action.payload,
-        defaultChatDirectory,
-      };
-    }
-
     case "SET_DEFAULT_CHAT_DIRECTORY":
       return { ...state, defaultChatDirectory: action.payload };
 
@@ -1643,13 +1565,10 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         draftSessionBackendId: action.payload.backendId,
         activeSessionId: null,
         messages: [],
-        messageForwardBuffer: [],
         messageHistoryHasMore: false,
         messageHistoryCursor: null,
-        messageWindowHasNewer: false,
         isLoadingMessages: false,
         isLoadingOlderMessages: false,
-        isLoadingNewerMessages: false,
         isBusy: false,
       };
 
@@ -1667,23 +1586,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         ...state,
         draftSessionDirectory: null,
         draftSessionBackendId: null,
-        draftIsTemporary: false,
       };
-
-    case "SET_DRAFT_TEMPORARY":
-      return { ...state, draftIsTemporary: action.payload };
-
-    case "MARK_SESSION_TEMPORARY": {
-      const next = new Set(state.temporarySessions);
-      next.add(action.payload);
-      return { ...state, temporarySessions: next };
-    }
-
-    case "UNMARK_SESSION_TEMPORARY": {
-      const next = new Set(state.temporarySessions);
-      next.delete(action.payload);
-      return { ...state, temporarySessions: next };
-    }
 
     case "SET_SESSION_META": {
       const { sessionId, meta } = action.payload;
@@ -1722,20 +1625,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     case "UNREGISTER_WORKTREE": {
       const next = { ...state.worktreeParents };
       delete next[action.payload];
-      persistWorktreeParents(next);
-      return { ...state, worktreeParents: next };
-    }
-
-    case "TOUCH_WORKTREE": {
-      const existing = state.worktreeParents[action.payload];
-      if (!existing) return state;
-      const next: WorktreeParentMap = {
-        ...state.worktreeParents,
-        [action.payload]: {
-          ...existing,
-          lastOpenedAt: new Date().toISOString(),
-        },
-      };
       persistWorktreeParents(next);
       return { ...state, worktreeParents: next };
     }

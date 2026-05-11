@@ -9,7 +9,7 @@
 // Server defaults
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_SERVER_PORT = 4096;
+const DEFAULT_SERVER_PORT = 4096;
 export const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,6 @@ export const STORAGE_KEYS = {
   SELECTED_MODEL: "opencode:selectedModel",
   SELECTED_AGENT: "opencode:selectedAgent",
   VARIANT_SELECTIONS: "opencode:variantSelections",
-  RECENT_PROJECTS: "opencode:recentProjects",
   UNREAD_SESSIONS: "opencode:unreadSessionIds",
   SESSION_DRAFTS: "opencode:sessionDrafts",
   SESSION_DRAFT_IMAGES: "opencode:sessionDraftImages",
@@ -54,12 +53,6 @@ export const STORAGE_KEYS = {
 // UI timing (ms)
 // ---------------------------------------------------------------------------
 
-/** Debounce delay before syntax-highlighting fires (ms). */
-export const HIGHLIGHT_DEBOUNCE_MS = 150;
-
-/** Duration the "Copied!" badge stays visible after a clipboard copy (ms). */
-export const COPY_FEEDBACK_MS = 2000;
-
 /** Delay before sending a prompt after a merge operation (ms). */
 export const POST_MERGE_DELAY_MS = 300;
 
@@ -71,9 +64,6 @@ export const MAX_TEXTAREA_HEIGHT_PX = 200;
 
 /** Number of sessions to show per "page" in the sidebar. */
 export const SESSION_PAGE_SIZE = 5;
-
-/** Maximum number of recent projects to remember. */
-export const MAX_RECENT_PROJECTS = 10;
 
 /** Maximum number of recent models to remember. */
 export const MAX_RECENT_MODELS = 8;

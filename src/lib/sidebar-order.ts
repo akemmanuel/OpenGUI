@@ -1,4 +1,4 @@
-export interface SidebarSortableSessionLike {
+interface SidebarSortableSessionLike {
   id: string;
   time: {
     created?: number;
@@ -6,7 +6,7 @@ export interface SidebarSortableSessionLike {
   };
 }
 
-export function getSidebarSessionSortTime(session: SidebarSortableSessionLike): number {
+function getSidebarSessionSortTime(session: SidebarSortableSessionLike): number {
   return session.time.updated ?? session.time.created ?? 0;
 }
 
