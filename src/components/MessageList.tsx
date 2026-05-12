@@ -5,10 +5,13 @@
 
 import type { Part, TextPart } from "@opencode-ai/sdk/v2/client";
 import { ShieldAlert, Undo2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuestionPanel } from "@/components/message-list/QuestionPanel";
 import { MessageBubble } from "@/components/message-list/MessageBubble";
-import { VirtualMessageScroller } from "@/components/message-list/VirtualMessageScroller";
+import {
+  type ScrollSnapshot,
+  VirtualMessageScroller,
+} from "@/components/message-list/VirtualMessageScroller";
 import type { TurnFooter } from "@/components/message-list/types";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -132,6 +135,14 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
 
   const [expandedUserMessages, setExpandedUserMessages] = useState<Set<string>>(() => new Set());
   const [expandedToolParts, setExpandedToolParts] = useState<Set<string>>(() => new Set());
+  const scrollSnapshotsRef = useRef(new Map<string, ScrollSnapshot>());
+
+  useEffect(() => {
+    const validSessionIds = new Set(sessions.map((session) => session.id));
+    for (const sessionId of scrollSnapshotsRef.current.keys()) {
+      if (!validSessionIds.has(sessionId)) scrollSnapshotsRef.current.delete(sessionId);
+    }
+  }, [sessions]);
 
   // ---- visible messages (filter out step-only / empty entries) ----
 
@@ -401,6 +412,8 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
 
   return (
     <VirtualMessageScroller
+      scrollKey={activeSessionId}
+      scrollSnapshotsRef={scrollSnapshotsRef}
       messages={visibleMessages}
       isBusy={isBusy}
       hasOlder={messageHistoryHasMore}
