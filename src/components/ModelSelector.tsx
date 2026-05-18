@@ -196,31 +196,36 @@ export function ModelSelector() {
 
     return providers
       .filter((provider) => Object.keys(provider.models).length > 0)
-      .map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        models: Object.entries(provider.models)
-          .filter(([key, model]) => {
-            const value = `${provider.id}/${key}`;
-            if (alwaysIncludeValues.has(value)) return true;
-            if (model.status === "deprecated") return false;
-            if (maxAgeMs === null) return true;
-            const timestamp = Date.parse(model.release_date);
-            // Keep models with no valid release date (safe fallback)
-            if (!Number.isFinite(timestamp)) return true;
-            return Math.abs(now - timestamp) < maxAgeMs;
-          })
-          .sort(([, a], [, b]) => a.name.localeCompare(b.name))
-          .map(([key, model]) => ({
-            value: `${provider.id}/${key}`,
-            providerID: provider.id,
-            modelID: key,
-            providerName: provider.name,
-            label: model.name,
-            reasoning: model.capabilities.reasoning,
-            search: normalize(`${provider.name} ${model.name} ${key}`),
-          })),
-      }))
+      .map((provider) => {
+        const modelEntries = Object.entries(provider.models);
+        const shouldApplyAgeFilter = modelEntries.length > 10;
+
+        return {
+          id: provider.id,
+          name: provider.name,
+          models: modelEntries
+            .filter(([key, model]) => {
+              const value = `${provider.id}/${key}`;
+              if (alwaysIncludeValues.has(value)) return true;
+              if (model.status === "deprecated") return false;
+              if (!shouldApplyAgeFilter || maxAgeMs === null) return true;
+              const timestamp = Date.parse(model.release_date);
+              // Keep models with no valid release date (safe fallback)
+              if (!Number.isFinite(timestamp)) return true;
+              return Math.abs(now - timestamp) < maxAgeMs;
+            })
+            .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+            .map(([key, model]) => ({
+              value: `${provider.id}/${key}`,
+              providerID: provider.id,
+              modelID: key,
+              providerName: provider.name,
+              label: model.name,
+              reasoning: model.capabilities.reasoning,
+              search: normalize(`${provider.name} ${model.name} ${key}`),
+            })),
+        };
+      })
       .filter((group) => group.models.length > 0);
   }, [providers, selectedModel, favoriteValues, modelMaxAgeMonths]);
 

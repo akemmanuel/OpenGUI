@@ -1,0 +1,155 @@
+diff --git a/src/components/AppSidebar.tsx b/src/components/AppSidebar.tsx
+index 0cbb4ba..2eff2b6 100644
+--- a/src/components/AppSidebar.tsx
++++ b/src/components/AppSidebar.tsx
+@@ -282,6 +282,7 @@ export function AppSidebar({
+     });
+     const rootOpenDirectories = openDirectories.filter((dir) => !worktreeDirs.has(dir));
+     const workspaceProjects = activeWorkspace?.projects ?? [];
++    const projectDirectorySet = new Set([...rootOpenDirectories, ...workspaceProjects]);
+     const orderedRootDirectories = detachedProject
+       ? rootOpenDirectories.filter((dir) => dir === detachedProject)
+       : [
+@@ -296,14 +297,13 @@ export function AppSidebar({
+       const assignedProjectDir = sessionMeta[s.id]?.assignedProjectDir
+         ? normalizeProjectPath(sessionMeta[s.id]?.assignedProjectDir ?? "")
+         : null;
+-      if (assignedProjectDir && rootOpenDirectories.includes(assignedProjectDir)) {
++      if (assignedProjectDir && projectDirectorySet.has(assignedProjectDir)) {
+         if (!groups.has(assignedProjectDir)) groups.set(assignedProjectDir, []);
+         groups.get(assignedProjectDir)?.push(s);
+         continue;
+       }
+-      if (isChatSession(s)) continue;
+       const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
+-      if (!openDirectorySet.has(sessionDir)) continue;
++      if (isChatSession(s) || !openDirectorySet.has(sessionDir)) continue;
+       // If session belongs to a worktree, group it under the parent project
+       const parentDir = worktreeParents[sessionDir]?.parentDir;
+       const groupDir = parentDir ?? sessionDir;
+@@ -763,9 +763,10 @@ export function AppSidebar({
+                     onTogglePin={() => setSessionPinned(session.id, !isPinned)}
+                     onSetColor={(color) => setSessionColor(session.id, color)}
+                     onSetTags={(newTags) => setSessionTags(session.id, newTags)}
+-                    onMoveToProject={(projectDirectory) =>
+-                      void moveSessionToProject(session.id, projectDirectory)
+-                    }
++                    onMoveToProject={(projectDirectory) => {
++                      revealSessionInProject(projectDirectory);
++                      void moveSessionToProject(session.id, projectDirectory);
++                    }}
+                     onRename={() => startEditing(session.id, session.title || "")}
+                     onDelete={() => deleteSession(session.id)}
+                   />
+diff --git a/src/hooks/agent-reducer.ts b/src/hooks/agent-reducer.ts
+index d0c9507..b1422fb 100644
+--- a/src/hooks/agent-reducer.ts
++++ b/src/hooks/agent-reducer.ts
+@@ -313,6 +313,11 @@ export function mergeProjectBackendSessions({
+   ]);
+ }
+ 
++function getAssignedProjectDir(sessionMeta: InternalAgentState["sessionMeta"], sessionId: string) {
++  const assigned = sessionMeta[sessionId]?.assignedProjectDir;
++  return assigned ? normalizeProjectPath(assigned) : null;
++}
++
+ export function reducer(state: InternalAgentState, action: Action): InternalAgentState {
+   switch (action.type) {
+     case "SET_WORKSPACES":
+@@ -573,7 +578,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
+           current: state.sessions,
+           workspaceId,
+           directory,
+-          incoming: sessions,
++          incoming: sessions.filter(
++            (session) => getAssignedProjectDir(state.sessionMeta, session.id) === null,
++          ),
+           backendIds,
+         }),
+       };
+@@ -874,6 +881,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
+       if (action.payload.parentID) return state;
+       // Ignore backend echoes for sessions that were optimistically deleted.
+       if (state._deletedSessionIds.has(action.payload.id)) return state;
++      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, action.payload.id);
++      const sessionDirectory = normalizeProjectPath(
++        (action.payload._projectDir ?? action.payload.directory) || "",
++      );
++      if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
+       return {
+         ...state,
+         sessions: sortSessionsNewestFirst([
+@@ -891,6 +903,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
+       // Without this guard the session flickers back into the sidebar
+       // between the optimistic removal and the server's session.deleted event.
+       if (state._deletedSessionIds.has(updated.id)) return state;
++      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, updated.id);
++      const sessionDirectory = normalizeProjectPath(
++        (updated._projectDir ?? updated.directory) || "",
++      );
++      if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
+       const exists = state.sessions.some((s) => s.id === updated.id);
+       // Update in-place without re-sorting to prevent the sidebar from
+       // jumping around while sessions receive streaming updates.
+diff --git a/src/hooks/use-agent-impl-core.tsx b/src/hooks/use-agent-impl-core.tsx
+index f52b0fc..11a9b46 100644
+--- a/src/hooks/use-agent-impl-core.tsx
++++ b/src/hooks/use-agent-impl-core.tsx
+@@ -1285,13 +1285,20 @@ function InternalAgentProvider({
+     () =>
+       state.sessions.filter((session) => {
+         if (!activeWorkspace) return false;
++        const assignedProjectDir = state.sessionMeta[session.id]?.assignedProjectDir;
++        if (
++          assignedProjectDir &&
++          activeWorkspaceProjectSet.has(normalizeProjectPath(assignedProjectDir))
++        ) {
++          return true;
++        }
+         if (getSessionWorkspaceId(session)) {
+           return getSessionWorkspaceId(session) === activeWorkspace.id;
+         }
+         const directory = session._projectDir ?? session.directory;
+         return activeWorkspaceProjectSet.has(directory);
+       }),
+-    [state.sessions, activeWorkspace, activeWorkspaceProjectSet],
++    [state.sessions, state.sessionMeta, activeWorkspace, activeWorkspaceProjectSet],
+   );
+ 
+   const workspaceDirectory = useMemo(() => {
+@@ -1769,7 +1776,7 @@ function InternalAgentProvider({
+     (sessionId: string, projectTarget?: { directory?: string; workspaceId?: string }) => {
+       const requestId = (sessionReconcileRequestRef.current[sessionId] ?? 0) + 1;
+       sessionReconcileRequestRef.current[sessionId] = requestId;
+-      const delays = [150, 450, 900, 1500];
++      const delays = [150, 450, 900, 1500, 3000, 5000, 8000, 13000, 21000, 34000, 55000];
+ 
+       void (async () => {
+         for (const delayMs of delays) {
+@@ -2877,6 +2884,12 @@ function InternalAgentProvider({
+             },
+           },
+         });
++        const movedSession: Session = {
++          ...sourceSession,
++          _projectDir: targetDirectory,
++          directory: targetDirectory,
++        };
++        dispatch({ type: "SESSION_UPDATED", payload: movedSession });
+         await selectSession(sessionId);
+       } catch (error) {
+         dispatch({
+diff --git a/vite.config.ts b/vite.config.ts
+index 0734e1c..2dc67bc 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -116,7 +116,7 @@ export default defineConfig({
+         cache: false,
+       },
+       start: {
+-        command: "NODE_ENV=production electron .",
++        command: "NODE_ENV=production electron . --no-sandbox",
+         cache: false,
+       },
+       "start:web": {

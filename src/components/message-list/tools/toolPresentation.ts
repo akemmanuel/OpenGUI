@@ -148,7 +148,6 @@ export function getToolPresentation(
   const command = kind === "bash" ? stringField(input, "command") : null;
   const globPattern = kind === "glob" ? stringField(input, "pattern") : null;
   const grepPattern = kind === "grep" ? stringField(input, "pattern") : null;
-  const readOutputText = kind === "read" ? rawOutputText : null;
   const writeContentText =
     kind === "write" ? (stringField(input, "content") ?? rawOutputText) : null;
   const filePath =
@@ -185,19 +184,15 @@ export function getToolPresentation(
       : null;
 
   const hasEditFileView = editFiles.length > 0;
-  const hasBashOutput = kind === "bash" && !!bashOutputText?.trim();
-  const hasTextOutput = hasBashOutput || !!outputText;
+  const genericOutputText =
+    kind === "bash" ? bashOutputText : kind === "write" ? writeContentText : rawOutputText;
   const body: ToolBody = hasEditFileView
     ? { type: "apply-patch", files: editFiles }
     : kind === "task" && taskInfo
       ? { type: "task", taskInfo }
-      : (kind === "bash" || kind === "grep") && hasTextOutput
-        ? { type: "terminal", content: (kind === "bash" ? bashOutputText : outputText) ?? "" }
-        : kind === "read" && readOutputText?.trim()
-          ? { type: "terminal", content: readOutputText }
-          : kind === "write" && writeContentText?.trim()
-            ? { type: "terminal", content: writeContentText }
-            : null;
+      : genericOutputText?.trim()
+        ? { type: "terminal", content: genericOutputText }
+        : null;
 
   return {
     tool: normalized,

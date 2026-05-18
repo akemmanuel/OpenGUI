@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { createSettingsStore as createSettingsStoreImpl } from "../settings-store.ts";
 import index from "../src/index.html";
+import { getBackendCapabilities } from "./services/capabilities.ts";
+import { findFilesInDirectory } from "./services/file-search.ts";
 import type { ServerWebSocket } from "bun";
 
 type Handler = (event: IpcEvent, ...args: unknown[]) => unknown;
@@ -352,21 +354,57 @@ function handleFetch(request: Request, server: Bun.Server<unknown>) {
   return new Response("Not found", { status: 404 });
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function rpcErrorCode(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  if (message.includes("not available") || message.includes("not found"))
+    return "BACKEND_UNAVAILABLE";
+  if (message.includes("auth") || message.includes("login")) return "AUTH_REQUIRED";
+  if (message.includes("permission") || message.includes("denied")) return "PERMISSION_DENIED";
+  if (message.includes("timeout") || message.includes("timed out")) return "BACKEND_TIMEOUT";
+  return "UNKNOWN";
+}
+
+function logRpc(channel: string, startedAt: number, ok: boolean, error?: unknown) {
+  const durationMs = Date.now() - startedAt;
+  const status = ok ? "ok=true" : `ok=false code=${rpcErrorCode(error)}`;
+  console.info(`[rpc] channel=${channel || "<missing>"} duration=${durationMs}ms ${status}`);
+}
+
+function jsonError(error: unknown, status = 500) {
+  const message = getErrorMessage(error);
+  return Response.json(
+    { ok: false, error: message, code: rpcErrorCode(error), recoverable: status < 500 },
+    { status },
+  );
+}
+
 const routes = {
+  "/api/capabilities": Response.json({ ok: true, value: getBackendCapabilities() }),
   "/api/rpc": {
     POST: async (request: Request) => {
+      const startedAt = Date.now();
+      let channel = "";
       await ready;
       try {
         const body = await request.json();
-        const channel = String(body?.channel ?? "");
+        channel = String(body?.channel ?? "");
         const args = Array.isArray(body?.args) ? body.args : [];
-        const value = await ipcMain.invoke(channel, { sender }, args);
+        const value =
+          channel === "files:find"
+            ? await findFilesInDirectory(
+                await resolveSafeDirectory(String(args[0] ?? "")),
+                String(args[1] ?? ""),
+              )
+            : await ipcMain.invoke(channel, { sender }, args);
+        logRpc(channel, startedAt, true);
         return Response.json({ ok: true, value });
       } catch (error) {
-        return Response.json(
-          { ok: false, error: error instanceof Error ? error.message : String(error) },
-          { status: 500 },
-        );
+        logRpc(channel, startedAt, false, error);
+        return jsonError(error);
       }
     },
   },

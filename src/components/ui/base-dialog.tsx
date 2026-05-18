@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 interface BaseDialogProps {
   open: boolean;
@@ -16,6 +17,9 @@ interface BaseDialogProps {
   children?: ReactNode;
   footer?: ReactNode;
   className?: string;
+  headerClassName?: string;
+  bodyClassName?: string;
+  footerClassName?: string;
 }
 
 export function BaseDialog({
@@ -26,16 +30,19 @@ export function BaseDialog({
   children,
   footer,
   className = "sm:max-w-md",
+  headerClassName,
+  bodyClassName,
+  footerClassName,
 }: BaseDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={className}>
-        <DialogHeader>
+        <DialogHeader className={headerClassName}>
           <DialogTitle>{title}</DialogTitle>
           {description != null && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        {children}
-        {footer != null && <DialogFooter>{footer}</DialogFooter>}
+        {children != null && <div className={cn("min-h-0", bodyClassName)}>{children}</div>}
+        {footer != null && <DialogFooter className={footerClassName}>{footer}</DialogFooter>}
       </DialogContent>
     </Dialog>
   );

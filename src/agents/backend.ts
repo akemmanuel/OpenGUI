@@ -1,21 +1,16 @@
 import type {
-  Agent,
-  Command,
   Message,
   McpLocalConfig,
   McpRemoteConfig,
   McpStatus,
   Part,
   PermissionRequest,
-  Provider,
-  QuestionAnswer,
   QuestionRequest,
   Session,
   Config as OpenCodeConfig,
 } from "@opencode-ai/sdk/v2/client";
 import type {
   AllProvidersData,
-  ConnectionConfig,
   ConnectionStatus,
   InstalledSkillInfo,
   MarketplaceAuditResponse,
@@ -68,11 +63,6 @@ interface AgentSessionStatus {
   type: string;
 }
 
-interface AgentMessagePage {
-  messages: Array<{ info: Message; parts: Part[] }>;
-  nextCursor: string | null;
-}
-
 export type AgentBackendEvent =
   | {
       type: "connection.status";
@@ -101,6 +91,13 @@ export type AgentBackendEvent =
       sessionId: string;
     }
   | { type: "message.updated"; message: Message }
+  | {
+      type: "message.replaced";
+      sessionID: string;
+      oldId: string;
+      message: Message;
+      parts: Part[];
+    }
   | { type: "message.part.updated"; part: Part }
   | {
       type: "message.part.delta";
@@ -125,7 +122,6 @@ export type AgentBackendEvent =
   | { type: "session.error"; error: string; sessionID?: string };
 
 interface AgentRuntimeBackend {
-  listSessions(target?: AgentBackendTarget): Promise<Session[]>;
   createSession(input?: {
     title?: string;
     directory?: string;
@@ -143,22 +139,6 @@ interface AgentRuntimeBackend {
   }): Promise<Session>;
   deleteSession(sessionId: string): Promise<boolean>;
   renameSession(sessionId: string, title: string): Promise<Session>;
-  listSessionStatuses(target?: AgentBackendTarget): Promise<Record<string, AgentSessionStatus>>;
-  getMessages(
-    sessionId: string,
-    options?: { limit?: number; before?: string } & AgentBackendTarget,
-  ): Promise<AgentMessagePage>;
-  prompt(input: {
-    sessionId: string;
-    text: string;
-    images?: string[];
-    model?: SelectedModel;
-    agent?: string;
-    variant?: string;
-    directory?: string;
-    workspaceId?: string;
-  }): Promise<void>;
-  abort(sessionId: string): Promise<void>;
   compactSession(
     sessionId: string,
     model?: SelectedModel,
@@ -167,12 +147,6 @@ interface AgentRuntimeBackend {
   forkSession(sessionId: string, messageID?: string): Promise<Session>;
   revertSession(sessionId: string, messageID: string, partID?: string): Promise<Session>;
   unrevertSession(sessionId: string): Promise<Session>;
-  listProviders(target?: AgentBackendTarget): Promise<{
-    providers: Provider[];
-    default: Record<string, string>;
-  }>;
-  listAgents(target?: AgentBackendTarget): Promise<Agent[]>;
-  listCommands(target?: AgentBackendTarget): Promise<Command[]>;
   sendCommand(input: {
     sessionId: string;
     command: string;
@@ -183,21 +157,6 @@ interface AgentRuntimeBackend {
     directory?: string;
     workspaceId?: string;
   }): Promise<void>;
-  respondPermission(
-    sessionId: string,
-    permissionId: string,
-    response: "once" | "always" | "reject",
-  ): Promise<void>;
-  replyQuestion(requestID: string, answers: QuestionAnswer[]): Promise<void>;
-  rejectQuestion(requestID: string): Promise<void>;
-  findFiles(target: AgentBackendTarget, query: string): Promise<string[]>;
-  subscribe(listener: (event: AgentBackendEvent) => void): () => void;
-}
-
-interface AgentHostBackend {
-  addProject(config: ConnectionConfig): Promise<void>;
-  removeProject(target: AgentBackendTarget): Promise<void>;
-  disconnect(): Promise<void>;
 }
 
 interface AgentPlatformBackend {
@@ -283,7 +242,6 @@ export interface AgentBackendDescriptor {
   label: string;
   workspace: AgentBackendWorkspaceProfile;
   capabilities: AgentBackendCapabilities;
-  host: AgentHostBackend;
   runtime: AgentRuntimeBackend;
   platform?: AgentPlatformBackend;
 }

@@ -59,6 +59,20 @@ import type { ConnectionStatus, ProvidersData, SelectedModel, Workspace } from "
 
 const MAX_DELETED_SESSION_IDS = 200;
 
+function getBackendSessionIdentity(session: Session) {
+  const backendId = getSessionBackendId(session);
+  if (!backendId) return session.id;
+  const marker = `${backendId}:`;
+  const rawId =
+    session._rawId ??
+    (session.id.startsWith(marker) ? session.id.slice(marker.length) : session.id);
+  return `${backendId}:${rawId}`;
+}
+
+function sameBackendSession(a: Session, b: Session) {
+  return getBackendSessionIdentity(a) === getBackendSessionIdentity(b);
+}
+
 function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Message) {
   if (msg.role !== "assistant") return null;
   const activeTurnId = state.activeTurnRunBySession[msg.sessionID];
@@ -199,6 +213,10 @@ type Action =
   | { type: "SESSION_UPDATED"; payload: Session }
   | { type: "SESSION_DELETED"; payload: string }
   | { type: "MESSAGE_UPDATED"; payload: Message }
+  | {
+      type: "MESSAGE_REPLACED";
+      payload: { sessionID: string; oldId: string; message: Message; parts: Part[] };
+    }
   | { type: "PART_UPDATED"; payload: { part: Part } }
   | {
       type: "PART_DELTA";
@@ -300,9 +318,21 @@ export function mergeProjectBackendSessions({
   if (backendIds && backendIds.length === 0) return sortSessionsNewestFirst(current);
   const backendScope = backendIds ? new Set(backendIds) : null;
   const incomingIds = new Set(incoming.map((session) => session.id));
+  const incomingBackendRawKeys = new Set(
+    incoming.flatMap((session) => {
+      const backendId = getSessionBackendId(session);
+      const rawId = session._rawId ?? session.id.replace(/^[^:]+:/, "");
+      return backendId ? [`${backendId}\0${rawId}`] : [];
+    }),
+  );
   return sortSessionsNewestFirst([
     ...current.filter((session) => {
       if (incomingIds.has(session.id)) return false;
+      const sessionBackendId = getSessionBackendId(session);
+      const sessionRawId = session._rawId ?? session.id.replace(/^[^:]+:/, "");
+      if (sessionBackendId && incomingBackendRawKeys.has(`${sessionBackendId}\0${sessionRawId}`)) {
+        return false;
+      }
       if (getSessionWorkspaceId(session) !== workspaceId) return true;
       if ((session._projectDir ?? session.directory) !== directory) return true;
       if (!backendScope) return false;
@@ -311,6 +341,11 @@ export function mergeProjectBackendSessions({
     }),
     ...incoming,
   ]);
+}
+
+function getAssignedProjectDir(sessionMeta: InternalAgentState["sessionMeta"], sessionId: string) {
+  const assigned = sessionMeta[sessionId]?.assignedProjectDir;
+  return assigned ? normalizeProjectPath(assigned) : null;
 }
 
 export function reducer(state: InternalAgentState, action: Action): InternalAgentState {
@@ -874,11 +909,23 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       if (action.payload.parentID) return state;
       // Ignore backend echoes for sessions that were optimistically deleted.
       if (state._deletedSessionIds.has(action.payload.id)) return state;
+      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, action.payload.id);
+      const sessionDirectory = normalizeProjectPath(
+        (action.payload._projectDir ?? action.payload.directory) || "",
+      );
+      if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
+      const previousActiveSession = state.activeSessionId
+        ? state.sessions.find((session) => session.id === state.activeSessionId)
+        : null;
+      const shouldCanonicalizeActive = previousActiveSession
+        ? sameBackendSession(previousActiveSession, action.payload)
+        : false;
       return {
         ...state,
+        activeSessionId: shouldCanonicalizeActive ? action.payload.id : state.activeSessionId,
         sessions: sortSessionsNewestFirst([
           action.payload,
-          ...state.sessions.filter((s) => s.id !== action.payload.id),
+          ...state.sessions.filter((s) => !sameBackendSession(s, action.payload)),
         ]),
       };
     }
@@ -891,13 +938,25 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       // Without this guard the session flickers back into the sidebar
       // between the optimistic removal and the server's session.deleted event.
       if (state._deletedSessionIds.has(updated.id)) return state;
-      const exists = state.sessions.some((s) => s.id === updated.id);
+      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, updated.id);
+      const sessionDirectory = normalizeProjectPath(
+        (updated._projectDir ?? updated.directory) || "",
+      );
+      if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
+      const exists = state.sessions.some((s) => sameBackendSession(s, updated));
+      const previousActiveSession = state.activeSessionId
+        ? state.sessions.find((session) => session.id === state.activeSessionId)
+        : null;
+      const shouldCanonicalizeActive = previousActiveSession
+        ? sameBackendSession(previousActiveSession, updated)
+        : false;
       // Update in-place without re-sorting to prevent the sidebar from
       // jumping around while sessions receive streaming updates.
       return {
         ...state,
+        activeSessionId: shouldCanonicalizeActive ? updated.id : state.activeSessionId,
         sessions: exists
-          ? state.sessions.map((s) => (s.id === updated.id ? updated : s))
+          ? state.sessions.map((s) => (sameBackendSession(s, updated) ? updated : s))
           : [updated, ...state.sessions],
       };
     }
@@ -1115,6 +1174,69 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         messages: appendedMessages,
         // If limitMessageWindow trimmed messages, older history exists
         ...(didTrim ? { messageHistoryHasMore: true } : {}),
+      };
+    }
+
+    case "MESSAGE_REPLACED": {
+      const { sessionID, oldId, message, parts } = action.payload;
+      const activeTurnId = state.activeTurnRunBySession[sessionID];
+      const activeTurn = activeTurnId ? state.turnRuns[activeTurnId] : undefined;
+      const turnPatch =
+        activeTurn?.assistantMessageID === oldId
+          ? {
+              turnRuns: {
+                ...state.turnRuns,
+                [activeTurn.id]: { ...activeTurn, assistantMessageID: message.id },
+              },
+            }
+          : {};
+      const replacement = { info: message, parts };
+      const replaceEntries = (entries: MessageEntry[]) => {
+        let replaced = false;
+        const next = entries
+          .filter((entry) => entry.info.id !== message.id)
+          .map((entry) => {
+            if (entry.info.id !== oldId) return entry;
+            replaced = true;
+            return replacement;
+          });
+        return replaced ? next : [...next, replacement];
+      };
+
+      if (sessionID === state.activeSessionId && state.isLoadingMessages) {
+        return {
+          ...state,
+          ...turnPatch,
+          _pendingSnapshots: [...state._pendingSnapshots, action],
+        };
+      }
+      if (sessionID !== state.activeSessionId) {
+        const sessionBuffer = state._sessionBuffers[sessionID];
+        if (!sessionBuffer) return { ...state, ...turnPatch };
+        const { [oldId]: _old, [message.id]: _existing, ...remaining } = sessionBuffer.messages;
+        return {
+          ...state,
+          ...turnPatch,
+          _sessionBuffers: {
+            ...state._sessionBuffers,
+            [sessionID]: {
+              ...sessionBuffer,
+              messages: {
+                ...remaining,
+                [message.id]: {
+                  info: message,
+                  parts: Object.fromEntries(parts.map((part) => [part.id, part])),
+                },
+              },
+            },
+          },
+        };
+      }
+
+      return {
+        ...state,
+        ...turnPatch,
+        messages: limitMessageWindow(replaceEntries(state.messages)),
       };
     }
 

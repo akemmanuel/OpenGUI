@@ -1,6 +1,31 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { areNotificationsEnabled } from "@/hooks/agent-state-persistence";
 import type { Session } from "@/hooks/agent-state-types";
+
+function getAppFocused() {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+function useAppFocused() {
+  const [focused, setFocused] = useState(getAppFocused);
+
+  useEffect(() => {
+    const update = () => setFocused(getAppFocused());
+
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+
+    return () => {
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+    };
+  }, []);
+
+  return focused;
+}
 
 export function useDesktopNotification(
   triggerMap: Record<string, unknown>,
@@ -9,17 +34,30 @@ export function useDesktopNotification(
   sessions: Session[],
   selectSession: (id: string) => void,
 ) {
+  const appFocused = useAppFocused();
   const prevKeysRef = useRef<Set<string>>(new Set());
   const notificationsRef = useRef<Notification[]>([]);
+
+  useEffect(() => {
+    return () => {
+      for (const notification of notificationsRef.current) {
+        notification.onclick = null;
+        notification.close();
+      }
+      notificationsRef.current = [];
+    };
+  }, []);
+
   useEffect(() => {
     const prevKeys = prevKeysRef.current;
     const nowKeys = new Set(Object.keys(triggerMap));
-    const newNotifications: Notification[] = [];
+    const createdNotifications: Notification[] = [];
 
     for (const sessionId of nowKeys) {
+      const shouldNotify = sessionId !== activeSessionId || !appFocused;
       if (
         !prevKeys.has(sessionId) &&
-        sessionId !== activeSessionId &&
+        shouldNotify &&
         areNotificationsEnabled() &&
         typeof Notification !== "undefined" &&
         Notification.permission === "granted"
@@ -34,23 +72,12 @@ export function useDesktopNotification(
             window.focus();
             selectSession(sessionId);
           };
-          newNotifications.push(notification);
+          createdNotifications.push(notification);
         }
       }
     }
 
     prevKeysRef.current = nowKeys;
-    notificationsRef.current = newNotifications;
-    const createdNotifications = newNotifications;
-
-    return () => {
-      for (const notification of createdNotifications) {
-        notification.onclick = null;
-        notification.close();
-      }
-      if (notificationsRef.current === createdNotifications) {
-        notificationsRef.current = [];
-      }
-    };
-  }, [triggerMap, title, activeSessionId, sessions, selectSession]);
+    notificationsRef.current.push(...createdNotifications);
+  }, [triggerMap, title, activeSessionId, sessions, selectSession, appFocused]);
 }

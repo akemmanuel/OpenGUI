@@ -1,3 +1,5 @@
+import "./build/suppress-node-deprecations.ts";
+
 import { builtinModules } from "node:module";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";

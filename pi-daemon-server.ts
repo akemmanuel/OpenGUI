@@ -23,7 +23,6 @@ const ALLOWED_METHODS = new Set([
   "abort",
   "sendCommand",
   "summarizeSession",
-  "findFiles",
 ]);
 
 function parseArg(name, fallback) {

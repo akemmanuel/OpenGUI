@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type MutableRefObject,
   type ReactNode,
   type WheelEvent,
   useCallback,
@@ -15,6 +16,16 @@ import { NEAR_BOTTOM_PX } from "@/lib/constants";
 const OVERSCAN_IDLE = 10;
 const OVERSCAN_BUSY = 14;
 const LOAD_OLDER_THRESHOLD_INDEX = 4;
+const RESTORE_RETRY_FRAMES = 3;
+
+export type ScrollSnapshot = {
+  anchorKey: string | null;
+  offsetFromViewportTop: number;
+  scrollTop: number;
+  distanceFromBottom: number;
+  pinnedToBottom: boolean;
+  updatedAt: number;
+};
 
 function estimateMessageSize(message: MessageEntry): number {
   if (message.info.role === "user") return 92;
@@ -30,7 +41,13 @@ function isNearBottom(element: HTMLElement) {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= NEAR_BOTTOM_PX;
 }
 
+function distanceFromBottom(element: HTMLElement) {
+  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
+}
+
 export function VirtualMessageScroller({
+  scrollKey,
+  scrollSnapshotsRef,
   messages,
   isBusy,
   hasOlder,
@@ -39,6 +56,8 @@ export function VirtualMessageScroller({
   renderMessage,
   trailingContent,
 }: {
+  scrollKey: string | null;
+  scrollSnapshotsRef: MutableRefObject<Map<string, ScrollSnapshot>>;
   messages: MessageEntry[];
   isBusy: boolean;
   hasOlder: boolean;
@@ -49,11 +68,13 @@ export function VirtualMessageScroller({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sizeCacheRef = useRef(new Map<string, number>());
-  const anchorRef = useRef<{ key: string; offsetFromViewportTop: number } | null>(null);
+  const paginationAnchorRef = useRef<{ key: string; offsetFromViewportTop: number } | null>(null);
   const lastMessageKeyRef = useRef<string | null>(null);
   const loadInFlightRef = useRef(false);
   const programmaticScrollRef = useRef(false);
   const pinnedToBottomRef = useRef(true);
+  const restoredScrollKeyRef = useRef<string | null>(null);
+  const snapshotFrameRef = useRef<number | null>(null);
 
   const keys = useMemo(() => messages.map((message) => message.info.id), [messages]);
   const keyIndex = useMemo(() => {
@@ -75,20 +96,56 @@ export function VirtualMessageScroller({
     useAnimationFrameWithResizeObserver: true,
   });
 
-  const captureAnchor = useCallback(() => {
+  const captureScrollSnapshot = useCallback(() => {
+    if (!scrollKey) return;
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+    const first = virtualizer.getVirtualItems()[0];
+    const pinnedToBottom = isNearBottom(scrollEl);
+    pinnedToBottomRef.current = pinnedToBottom;
+    scrollSnapshotsRef.current.set(scrollKey, {
+      anchorKey: first ? String(first.key) : null,
+      offsetFromViewportTop: first ? first.start - scrollEl.scrollTop : 0,
+      scrollTop: scrollEl.scrollTop,
+      distanceFromBottom: distanceFromBottom(scrollEl),
+      pinnedToBottom,
+      updatedAt: Date.now(),
+    });
+  }, [scrollKey, scrollSnapshotsRef, virtualizer]);
+
+  const scheduleScrollSnapshot = useCallback(() => {
+    if (snapshotFrameRef.current != null) return;
+    snapshotFrameRef.current = requestAnimationFrame(() => {
+      snapshotFrameRef.current = null;
+      captureScrollSnapshot();
+    });
+  }, [captureScrollSnapshot]);
+
+  const capturePaginationAnchor = useCallback(() => {
     const scrollEl = scrollRef.current;
     const first = virtualizer.getVirtualItems()[0];
     if (!scrollEl || !first) return;
-    const key = String(first.key);
-    anchorRef.current = {
-      key,
+    paginationAnchorRef.current = {
+      key: String(first.key),
       offsetFromViewportTop: first.start - scrollEl.scrollTop,
     };
   }, [virtualizer]);
 
-  const restoreAnchor = useCallback(() => {
+  const setProgrammaticScrollTop = useCallback((scrollTop: number) => {
     const scrollEl = scrollRef.current;
-    const anchor = anchorRef.current;
+    if (!scrollEl) return;
+    programmaticScrollRef.current = true;
+    scrollEl.scrollTop = Math.max(0, scrollTop);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        programmaticScrollRef.current = false;
+      });
+    });
+  }, []);
+
+  const restorePaginationAnchor = useCallback(() => {
+    const scrollEl = scrollRef.current;
+    const anchor = paginationAnchorRef.current;
     if (!scrollEl || !anchor) return false;
     const index = keyIndex.get(anchor.key);
     if (index == null) return false;
@@ -97,16 +154,12 @@ export function VirtualMessageScroller({
       const row = virtualizer.getVirtualItems().find((item) => String(item.key) === anchor.key);
       const nextStart = row?.start;
       if (typeof nextStart === "number") {
-        programmaticScrollRef.current = true;
-        scrollEl.scrollTop = Math.max(0, nextStart - anchor.offsetFromViewportTop);
-        requestAnimationFrame(() => {
-          programmaticScrollRef.current = false;
-        });
+        setProgrammaticScrollTop(nextStart - anchor.offsetFromViewportTop);
       }
     });
-    anchorRef.current = null;
+    paginationAnchorRef.current = null;
     return true;
-  }, [keyIndex, virtualizer]);
+  }, [keyIndex, setProgrammaticScrollTop, virtualizer]);
 
   const scrollToLatest = useCallback(() => {
     if (messages.length === 0) return;
@@ -118,9 +171,52 @@ export function VirtualMessageScroller({
       if (el) el.scrollTop = el.scrollHeight;
       requestAnimationFrame(() => {
         programmaticScrollRef.current = false;
+        captureScrollSnapshot();
       });
     });
-  }, [messages.length, virtualizer]);
+  }, [captureScrollSnapshot, messages.length, virtualizer]);
+
+  const restoreScrollSnapshot = useCallback(
+    (snapshot: ScrollSnapshot) => {
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return false;
+
+      if (snapshot.pinnedToBottom) {
+        scrollToLatest();
+        return true;
+      }
+
+      const index = snapshot.anchorKey ? keyIndex.get(snapshot.anchorKey) : undefined;
+      if (index != null && snapshot.anchorKey) {
+        virtualizer.scrollToIndex(index, { align: "start" });
+        let attempts = 0;
+        const applyAnchor = () => {
+          const row = virtualizer
+            .getVirtualItems()
+            .find((item) => String(item.key) === snapshot.anchorKey);
+          const nextStart = row?.start;
+          if (typeof nextStart === "number") {
+            setProgrammaticScrollTop(nextStart - snapshot.offsetFromViewportTop);
+            return;
+          }
+          attempts += 1;
+          if (attempts < RESTORE_RETRY_FRAMES) requestAnimationFrame(applyAnchor);
+          else setProgrammaticScrollTop(snapshot.scrollTop);
+        };
+        requestAnimationFrame(applyAnchor);
+        return true;
+      }
+
+      const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      const nextScrollTop = Math.min(
+        maxScrollTop,
+        Math.max(0, maxScrollTop - snapshot.distanceFromBottom),
+      );
+      setProgrammaticScrollTop(Number.isFinite(nextScrollTop) ? nextScrollTop : snapshot.scrollTop);
+      return true;
+    },
+    [keyIndex, scrollToLatest, setProgrammaticScrollTop, virtualizer],
+  );
 
   const detachFromBottom = useCallback((force = false) => {
     const el = scrollRef.current;
@@ -131,9 +227,9 @@ export function VirtualMessageScroller({
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el || programmaticScrollRef.current) return;
-    const nearBottom = isNearBottom(el);
-    pinnedToBottomRef.current = nearBottom;
-  }, []);
+    pinnedToBottomRef.current = isNearBottom(el);
+    scheduleScrollSnapshot();
+  }, [scheduleScrollSnapshot]);
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
@@ -143,19 +239,60 @@ export function VirtualMessageScroller({
   );
 
   useLayoutEffect(() => {
-    restoreAnchor();
-  }, [restoreAnchor, messages.length]);
+    restorePaginationAnchor();
+  }, [restorePaginationAnchor, messages.length]);
+
+  useLayoutEffect(() => {
+    if (!scrollKey || restoredScrollKeyRef.current === scrollKey) return;
+    if (messages.length === 0) return;
+
+    const snapshot = scrollSnapshotsRef.current.get(scrollKey);
+    if (snapshot) {
+      pinnedToBottomRef.current = snapshot.pinnedToBottom;
+      restoreScrollSnapshot(snapshot);
+    } else {
+      scrollToLatest();
+    }
+
+    lastMessageKeyRef.current = keys.at(-1) ?? null;
+    restoredScrollKeyRef.current = scrollKey;
+  }, [keys, messages.length, restoreScrollSnapshot, scrollKey, scrollSnapshotsRef, scrollToLatest]);
+
+  useEffect(() => {
+    const sessionId = scrollKey;
+    return () => {
+      if (snapshotFrameRef.current != null) {
+        cancelAnimationFrame(snapshotFrameRef.current);
+        snapshotFrameRef.current = null;
+      }
+      if (!sessionId) return;
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return;
+      const first = virtualizer.getVirtualItems()[0];
+      const pinnedToBottom = isNearBottom(scrollEl);
+      scrollSnapshotsRef.current.set(sessionId, {
+        anchorKey: first ? String(first.key) : null,
+        offsetFromViewportTop: first ? first.start - scrollEl.scrollTop : 0,
+        scrollTop: scrollEl.scrollTop,
+        distanceFromBottom: distanceFromBottom(scrollEl),
+        pinnedToBottom,
+        updatedAt: Date.now(),
+      });
+    };
+  }, [scrollKey]);
 
   useEffect(() => {
     const lastKey = keys.at(-1) ?? null;
     const previousLastKey = lastMessageKeyRef.current;
     lastMessageKeyRef.current = lastKey;
     if (!lastKey) return;
+    if (scrollKey && restoredScrollKeyRef.current !== scrollKey) return;
     if (previousLastKey === null || pinnedToBottomRef.current) {
       scrollToLatest();
       return;
     }
-  }, [keys, scrollToLatest]);
+    captureScrollSnapshot();
+  }, [captureScrollSnapshot, keys, scrollKey, scrollToLatest]);
 
   useEffect(() => {
     const firstIndex = virtualizer.getVirtualItems()[0]?.index;
@@ -170,11 +307,11 @@ export function VirtualMessageScroller({
     }
 
     loadInFlightRef.current = true;
-    captureAnchor();
+    capturePaginationAnchor();
     void loadOlder().finally(() => {
       loadInFlightRef.current = false;
     });
-  }, [captureAnchor, hasOlder, isLoadingOlder, loadOlder, virtualizer]);
+  }, [capturePaginationAnchor, hasOlder, isLoadingOlder, loadOlder, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
 

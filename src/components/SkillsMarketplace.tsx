@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronRight,
   ExternalLink,
   FolderInput,
   Globe,
@@ -560,11 +561,14 @@ export function SkillsMarketplace() {
         }}
         title={selectedSkill?.name || ""}
         description={selectedSkill ? `${selectedSkill.source}/${selectedSkill.slug}` : ""}
-        className="sm:max-w-2xl max-h-[80vh] overflow-y-auto"
+        className="sm:max-w-2xl max-h-[80vh] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden pr-3"
+        headerClassName="border-b pb-4 pr-8"
+        bodyClassName="overflow-y-auto pr-3"
+        footerClassName="border-t bg-background pt-4"
         footer={
           selectedSkill && (
-            <div className="flex w-full items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Star className="size-3" />
                 {selectedSkill.installs.toLocaleString()} {t("settings.marketplace.installsLabel")}
                 {selectedSkill.installUrl && (
@@ -579,7 +583,7 @@ export function SkillsMarketplace() {
                   </a>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 sm:justify-end">
                 {selectedInstallState.exact ? (
                   <>
                     <Button
@@ -635,15 +639,16 @@ export function SkillsMarketplace() {
           <div className="space-y-4">
             {/* SKILL.md content */}
             {detailData.files?.map((file) => (
-              <div key={file.path} className="space-y-1">
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <details key={file.path} className="group rounded-lg border bg-muted/30">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                  <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
                   <Terminal className="size-3" />
-                  {file.path}
-                </div>
-                <pre className="max-h-80 overflow-auto rounded-lg bg-muted p-3 text-xs leading-relaxed whitespace-pre-wrap break-words">
+                  <span className="flex-1 truncate">{file.path}</span>
+                </summary>
+                <pre className="max-h-80 overflow-auto border-t bg-muted p-3 text-xs leading-relaxed whitespace-pre-wrap break-words">
                   {file.contents}
                 </pre>
-              </div>
+              </details>
             ))}
 
             {/* Audit results */}

@@ -1,12 +1,15 @@
-// @ts-nocheck
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron/main";
+import { app, BrowserWindow, dialog, ipcMain } from "electron/main";
+import { shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createSettingsStore } from "./settings-store.js";
 import { setupUpdateManager } from "./main/update-manager.js";
 import { broadcastToAllWindows } from "./lib/window-broadcast.js";
+import { findFilesInDirectory } from "./server/services/file-search.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,24 +20,25 @@ const DEV_SERVER_URL = process.env.BUN_DEV_SERVER_URL || "http://localhost:3000"
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
 const settingsStore = createSettingsStore(app.getPath("userData"));
 
-let mainWindow = null;
+let mainWindow: BrowserWindow | null = null;
 
-function broadcastSettingsChange(key, value) {
+function broadcastSettingsChange(key: string, value: unknown) {
   broadcastToAllWindows("settings:changed", { key, value });
 }
 
-function parseCommand(command) {
+function parseCommand(command: unknown): string[] {
   if (typeof command !== "string") return [];
   const matches = command.match(/"[^"]*"|'[^']*'|\S+/g);
   if (!matches) return [];
   return matches.map((part) => part.replace(/^['"]|['"]$/g, ""));
 }
 
-function isGhostty(cmd) {
+function isGhostty(cmd: string | undefined) {
+  if (!cmd) return false;
   return cmd.trim().split(/\s+/)[0] === "ghostty";
 }
 
-function isCommandAvailable(cmd) {
+function isCommandAvailable(cmd: unknown) {
   if (typeof cmd !== "string" || cmd.length === 0) return false;
   try {
     execSync(process.platform === "win32" ? `where ${cmd}` : `which ${cmd}`, {
@@ -47,10 +51,79 @@ function isCommandAvailable(cmd) {
   }
 }
 
-function spawnCustomCommand(command, options = {}) {
+const BACKEND_CLI_DEFS = {
+  opencode: {
+    command: "opencode",
+    packageName: "opencode-ai",
+    knownPaths: () => [
+      path.join(
+        homedir(),
+        ".opencode",
+        "bin",
+        process.platform === "win32" ? "opencode.exe" : "opencode",
+      ),
+    ],
+  },
+  "claude-code": {
+    command: "claude",
+    packageName: "@anthropic-ai/claude-code",
+    knownPaths: () => [
+      path.join(
+        homedir(),
+        ".claude",
+        "local",
+        process.platform === "win32" ? "claude.exe" : "claude",
+      ),
+    ],
+  },
+  pi: {
+    command: "pi",
+    packageName: "@earendil-works/pi-coding-agent",
+    knownPaths: () => [],
+  },
+  codex: {
+    command: "codex",
+    packageName: "@openai/codex",
+    knownPaths: () => [],
+  },
+} satisfies Record<string, { command: string; packageName: string; knownPaths: () => string[] }>;
+
+type BackendCliId = keyof typeof BACKEND_CLI_DEFS;
+
+function isKnownBackendId(backendId: unknown): backendId is BackendCliId {
+  return typeof backendId === "string" && backendId in BACKEND_CLI_DEFS;
+}
+
+function isBackendAvailable(backendId: BackendCliId) {
+  const def = BACKEND_CLI_DEFS[backendId];
+  if (!def) return false;
+  if (isCommandAvailable(def.command)) return true;
+  return def.knownPaths().some((binaryPath) => existsSync(binaryPath));
+}
+
+function resolvePackageManager() {
+  const candidates = [
+    { command: "pnpm", argsFor: (packageName: string) => ["add", "-g", packageName] },
+    { command: "npm", argsFor: (packageName: string) => ["install", "-g", packageName] },
+    { command: "bun", argsFor: (packageName: string) => ["install", "-g", packageName] },
+  ];
+
+  return candidates.find((candidate) => isCommandAvailable(candidate.command));
+}
+
+function getBackendInstallCommand(backendId: unknown): [string, string[]] | null {
+  if (!isKnownBackendId(backendId)) return null;
+  const def = BACKEND_CLI_DEFS[backendId];
+  const packageManager = resolvePackageManager();
+  if (!packageManager) return null;
+  return [packageManager.command, packageManager.argsFor(def.packageName)];
+}
+
+function spawnCustomCommand(command: unknown, options: SpawnOptions = {}) {
   const parts = parseCommand(command);
   if (parts.length === 0) return false;
   const [cmd, ...args] = parts;
+  if (!cmd) return false;
   const child = spawn(cmd, args, options);
   child.on("error", () => {});
   child.unref();
@@ -80,7 +153,7 @@ function getDesktopTerminalCommand() {
   return null;
 }
 
-function getLinuxTerminalCandidates(dirPath) {
+function getLinuxTerminalCandidates(dirPath: string): string[][] {
   return [
     getDesktopTerminalCommand(),
     process.env.TERMINAL,
@@ -96,13 +169,16 @@ function getLinuxTerminalCandidates(dirPath) {
   ]
     .filter(Boolean)
     .map((candidate) => (Array.isArray(candidate) ? candidate : parseCommand(candidate)))
-    .filter((candidate) => candidate.length > 0);
+    .filter((candidate): candidate is string[] => Array.isArray(candidate) && candidate.length > 0);
 }
 
-function trySpawnCandidates(candidates, options) {
-  const tryNext = (index) => {
+function trySpawnCandidates(candidates: string[][], options: SpawnOptions) {
+  const tryNext = (index: number) => {
     if (index >= candidates.length) return;
-    const [cmd, ...args] = candidates[index];
+    const candidate = candidates[index];
+    if (!candidate) return;
+    const [cmd, ...args] = candidate;
+    if (!cmd) return;
     const child = spawn(cmd, args, options);
     child.on("error", () => tryNext(index + 1));
     child.unref();
@@ -110,16 +186,26 @@ function trySpawnCandidates(candidates, options) {
   tryNext(0);
 }
 
-function openLinuxTerminal(dirPath, spawnOpts) {
+function openLinuxTerminal(dirPath: string, spawnOpts: SpawnOptions) {
   trySpawnCandidates(getLinuxTerminalCandidates(dirPath), spawnOpts);
 }
 
 /** Check if a URL uses a web protocol (http/https). */
-function isWebUrl(url) {
+function isWebUrl(url: unknown) {
   return typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"));
 }
 
-function createBrowserWindow({ width, height, minWidth = 450, minHeight = 500 }) {
+function createBrowserWindow({
+  width,
+  height,
+  minWidth = 450,
+  minHeight = 500,
+}: {
+  width: number;
+  height: number;
+  minWidth?: number;
+  minHeight?: number;
+}) {
   const isMac = process.platform === "darwin";
 
   const win = new BrowserWindow({
@@ -140,7 +226,7 @@ function createBrowserWindow({ width, height, minWidth = 450, minHeight = 500 })
 
   // Intercept all external link navigations and open them in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isWebUrl(url)) shell.openExternal(url);
+    if (isWebUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
 
@@ -149,7 +235,7 @@ function createBrowserWindow({ width, height, minWidth = 450, minHeight = 500 })
     const isInternal = appOrigins.some((origin) => url.startsWith(origin));
     if (!isInternal) {
       event.preventDefault();
-      if (isWebUrl(url)) shell.openExternal(url);
+      if (isWebUrl(url)) void shell.openExternal(url);
     }
   });
 
@@ -165,21 +251,22 @@ function createBrowserWindow({ width, height, minWidth = 450, minHeight = 500 })
 }
 
 function createWindow() {
-  mainWindow = createBrowserWindow({ width: 1200, height: 800 });
+  const win = createBrowserWindow({ width: 1200, height: 800 });
+  mainWindow = win;
 
   if (isDev) {
-    void mainWindow.loadURL(DEV_SERVER_URL);
+    void win.loadURL(DEV_SERVER_URL);
   } else {
-    void mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    void win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
+  win.once("ready-to-show", () => {
+    win.show();
   });
 }
 
 /** Track detached project windows so we can detect duplicates and clean up. */
-const detachedWindows = new Map(); // projectDir -> BrowserWindow
+const detachedWindows = new Map<string, BrowserWindow>(); // projectDir -> BrowserWindow
 
 function getDetachedProjectDirectories() {
   return Array.from(detachedWindows.entries())
@@ -191,7 +278,7 @@ function broadcastDetachedProjects() {
   broadcastToAllWindows("window:detachedProjectsChanged", getDetachedProjectDirectories());
 }
 
-function createProjectWindow(projectDir) {
+function createProjectWindow(projectDir: string) {
   // Reuse existing detached window if one already exists for this project
   const existing = detachedWindows.get(projectDir);
   if (existing && !existing.isDestroyed()) {
@@ -323,44 +410,46 @@ ipcMain.handle("platform:homeDir", () => {
 
 ipcMain.handle("platform:detectBackends", () => {
   return {
-    opencode: isCommandAvailable("opencode"),
-    "claude-code": isCommandAvailable("claude"),
-    pi: isCommandAvailable("pi"),
-    codex: isCommandAvailable("codex"),
+    opencode: isBackendAvailable("opencode"),
+    "claude-code": isBackendAvailable("claude-code"),
+    pi: isBackendAvailable("pi"),
+    codex: isBackendAvailable("codex"),
   };
 });
 
 // Open a URL in the system browser (not in Electron)
 ipcMain.handle("shell:openExternal", (_event, url) => {
-  if (isWebUrl(url)) shell.openExternal(url);
+  if (isWebUrl(url)) void shell.openExternal(url);
 });
 
 // Open a directory in the system file browser
 ipcMain.handle("shell:openInFileBrowser", (_event, dirPath, command = "") => {
   if (typeof dirPath !== "string" || dirPath.length === 0) return;
-  const spawnOpts = { detached: true, stdio: "ignore", cwd: dirPath };
+  const spawnOpts: SpawnOptions = { detached: true, stdio: "ignore", cwd: dirPath };
   const parts = parseCommand(command);
   if (parts.length > 0) {
     const [cmd, ...args] = parts;
+    if (!cmd) return;
     const child = spawn(cmd, args.length > 0 ? args : [dirPath], spawnOpts);
     child.on("error", () => {
-      shell.openPath(dirPath);
+      void shell.openPath(dirPath);
     });
     child.unref();
     return;
   }
-  shell.openPath(dirPath);
+  void shell.openPath(dirPath);
 });
 
 // Open a terminal at a directory (cross-platform)
 ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
   if (typeof dirPath !== "string" || dirPath.length === 0) return;
   const platform = process.platform;
-  const spawnOpts = { detached: true, stdio: "ignore", cwd: dirPath };
+  const spawnOpts: SpawnOptions = { detached: true, stdio: "ignore", cwd: dirPath };
   // Custom terminal handling – special case for Ghostty
   if (command) {
     const parts = parseCommand(command);
     const [cmd, ...args] = parts;
+    if (!cmd) return;
     if (isGhostty(cmd)) {
       // Ghostty requires explicit --working-directory flag
       spawn(cmd, [...args, "--working-directory", dirPath], spawnOpts).unref();
@@ -382,29 +471,33 @@ ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
 
 ipcMain.handle("dialog:openDirectory", async (event) => {
   const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
-  const result = await dialog.showOpenDialog(ownerWindow, {
-    properties: ["openDirectory"],
-  });
+  const result = ownerWindow
+    ? await dialog.showOpenDialog(ownerWindow, {
+        properties: ["openDirectory"],
+      })
+    : await dialog.showOpenDialog({
+        properties: ["openDirectory"],
+      });
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
   return result.filePaths[0] ?? null;
 });
 
-const BACKEND_INSTALL_COMMANDS = {
-  opencode: ["bun", ["install", "-g", "opencode-ai"]],
-  "claude-code": ["bun", ["install", "-g", "@anthropic-ai/claude-code"]],
-  pi: ["bun", ["install", "-g", "@earendil-works/pi-coding-agent"]],
-  codex: ["bun", ["install", "-g", "@openai/codex"]],
-};
+ipcMain.handle("files:find", async (_event, directory, query) => {
+  return await findFilesInDirectory(directory, query);
+});
 
 // Install a known backend CLI tool. Renderer passes backend id, not shell text.
 // Streams stdout/stderr back to the renderer as "backend:install-progress" events.
 ipcMain.handle("backend:install", (event, backendId) => {
   return new Promise((resolve) => {
-    const installCommand = BACKEND_INSTALL_COMMANDS[backendId];
+    const installCommand = getBackendInstallCommand(backendId);
     if (!installCommand) {
-      resolve({ success: false, error: "Unknown backend id" });
+      resolve({
+        success: false,
+        error: "Unknown backend id or no supported package manager found",
+      });
       return;
     }
 
@@ -414,7 +507,7 @@ ipcMain.handle("backend:install", (event, backendId) => {
       shell: false,
     });
 
-    const sendChunk = (chunk, type) => {
+    const sendChunk = (chunk: unknown, type: "stdout" | "stderr") => {
       try {
         if (!event.sender.isDestroyed()) {
           event.sender.send("backend:install-progress", { chunk: String(chunk), type });
@@ -432,10 +525,9 @@ ipcMain.handle("backend:install", (event, backendId) => {
 });
 
 void app.whenReady().then(async () => {
-  createWindow();
-  setupUpdateManager();
-
-  // Load ESM backend bridges (SDKs are ESM-only)
+  // Load ESM backend bridges (SDKs are ESM-only) before creating windows.
+  // Renderer boot calls bridge IPC immediately; registering handlers after
+  // createWindow() races and can leave boot stuck at "Checking local server...".
   const bridges = [
     {
       name: "opencode",
@@ -468,6 +560,9 @@ void app.whenReady().then(async () => {
       console.error(`Failed to load ${bridge.name} bridge:`, err);
     }
   }
+
+  createWindow();
+  setupUpdateManager();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

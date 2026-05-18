@@ -105,8 +105,8 @@ const BACKENDS: BackendDef[] = [
       "Session management & MCP tools",
       "Runs as a local server on your machine",
     ],
-    requirement: "opencode CLI in PATH",
-    installCmd: "bun install -g opencode-ai",
+    requirement: "opencode CLI in PATH or ~/.opencode/bin/opencode",
+    installCmd: "npm install -g opencode-ai\npnpm add -g opencode-ai\nbun install -g opencode-ai",
     docsUrl: "https://opencode.ai",
     recommended: true,
     Icon: OpenCodeIcon,
@@ -121,8 +121,9 @@ const BACKENDS: BackendDef[] = [
       "Deep multi-file context understanding",
       "Official Anthropic agentic toolchain",
     ],
-    requirement: "claude CLI in PATH",
-    installCmd: "bun install -g @anthropic-ai/claude-code",
+    requirement: "claude CLI in PATH or ~/.claude/local/claude",
+    installCmd:
+      "npm install -g @anthropic-ai/claude-code\npnpm add -g @anthropic-ai/claude-code\nbun install -g @anthropic-ai/claude-code",
     envKey: "ANTHROPIC_API_KEY",
     docsUrl: "https://docs.anthropic.com/claude-code",
     Icon: ClaudeIcon,
@@ -138,7 +139,8 @@ const BACKENDS: BackendDef[] = [
       "No cloud dependency by default",
     ],
     requirement: "pi agent installed",
-    installCmd: "bun install -g @earendil-works/pi-coding-agent",
+    installCmd:
+      "npm install -g @earendil-works/pi-coding-agent\npnpm add -g @earendil-works/pi-coding-agent\nbun install -g @earendil-works/pi-coding-agent",
     docsUrl: "https://github.com/badlogic/pi",
     Icon: PiIcon,
   },
@@ -153,7 +155,8 @@ const BACKENDS: BackendDef[] = [
       "Seamless OpenAI ecosystem integration",
     ],
     requirement: "codex CLI in PATH",
-    installCmd: "bun install -g @openai/codex",
+    installCmd:
+      "npm install -g @openai/codex\npnpm add -g @openai/codex\nbun install -g @openai/codex",
     envKey: "OPENAI_API_KEY",
     docsUrl: "https://github.com/openai/codex",
     Icon: CodexIcon,
@@ -375,7 +378,7 @@ export function SetupWizard({ onComplete }: Props) {
                         <div className="mb-1 text-muted-foreground">
                           {t("setupWizard.installCommand")}
                         </div>
-                        <code className="block select-all rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
+                        <code className="block whitespace-pre-wrap select-all rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
                           {backend.installCmd}
                         </code>
                       </div>
