@@ -1,11 +1,9 @@
 // @ts-nocheck
-import { execFile as execFileCallback, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-
 import { existsSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
@@ -16,8 +14,6 @@ import {
   createAgentSessionServices,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-
-const execFile = promisify(execFileCallback);
 
 const DEFAULT_STATUS = {
   state: "idle",
@@ -50,7 +46,7 @@ const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
 const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
 // Bump when daemon import/runtime behavior changes. Existing healthy daemon gets reused
 // across app restarts; failed lazy ESM imports inside pi-ai stay poisoned in-process.
-const PI_DAEMON_VERSION = "2026-05-08-pi-message-id-reconcile-v1";
+const PI_DAEMON_VERSION = "2026-05-15-pi-streaming-replace-v1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function normalizeDir(directory) {
@@ -61,6 +57,16 @@ function normalizeDir(directory) {
 
 function makeProjectKey(workspaceId, directory) {
   return `${workspaceId ?? "local"}:${normalizeDir(directory)}`;
+}
+
+function toFrontendSessionId(id) {
+  const value = String(id || "");
+  return value.startsWith("pi:") ? value : `pi:${value}`;
+}
+
+function toRawSessionId(id) {
+  const value = String(id || "");
+  return value.startsWith("pi:") ? value.slice(3) : value;
 }
 
 function ok(data) {
@@ -98,8 +104,8 @@ function stringifyUnknown(value) {
   }
 }
 
-function makeSyntheticMessageId(sessionId, role, seq) {
-  return `pi:${sessionId}:${role}:${seq}`;
+function makeStreamingMessageId(sessionId, seq) {
+  return `pi:stream:${sessionId}:assistant:${seq}`;
 }
 
 function makeTextPartId(messageId, index) {
@@ -169,14 +175,17 @@ function makeSessionTitleFromText(text, title) {
 
 function normalizePiSession(info, target = {}) {
   const directory = normalizeDir(target.directory || info?.cwd || "");
+  const rawId = String(info.id || "");
   const rawFirstMessage =
     typeof info?.firstMessage === "string"
       ? info.firstMessage
       : stringifyUnknown(info?.firstMessage);
   const title = info?.name || rawFirstMessage || "Untitled";
   return {
-    id: info.id,
-    slug: info.id,
+    id: toFrontendSessionId(rawId),
+    slug: rawId,
+    _backendId: "pi",
+    _rawId: rawId,
     projectID: directory,
     workspaceID: target.workspaceId,
     directory,
@@ -644,7 +653,7 @@ function createCompactionAssistantBundle({
 }
 
 function buildTranscriptFromSessionManager(sessionManager, directory) {
-  const sessionId = sessionManager.getSessionId();
+  const sessionId = toFrontendSessionId(sessionManager.getSessionId());
   const entries = visibleUiBranchEntries(sessionManager);
   const bundles = [];
   const toolPartByCallId = new Map();
@@ -715,7 +724,8 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
 
     const message = entry.message;
     if (message.role === "user") {
-      const entryTimestamp = coerceTimestamp(message.timestamp);
+      const entryTimestamp =
+        new Date(entry.timestamp).getTime() || coerceTimestamp(message.timestamp);
       const bundle = createBundle(
         createUserInfo({
           sessionId,
@@ -737,7 +747,7 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
 
     if (message.role === "assistant") {
       currentModel = { provider: message.provider, modelId: message.model };
-      const completedAt = coerceTimestamp(message.timestamp);
+      const completedAt = new Date(entry.timestamp).getTime() || coerceTimestamp(message.timestamp);
       const startedAt =
         typeof lastTimelineTimestamp === "number" ? lastTimelineTimestamp : completedAt;
       const bundle = createBundle(
@@ -915,6 +925,7 @@ export class PiBridgeManager {
       reasoningTimesByContentIndex: new Map(),
       syntheticToReal: new Map(),
       pendingAssistantResolution: null,
+      pendingAssistantResolutions: [],
     };
   }
 
@@ -1174,6 +1185,15 @@ export class PiBridgeManager {
     this.closeOpenReasoning(state, endedAt, contentIndex);
   }
 
+  findLatestRealMessageId(sessionManager, role) {
+    const branch = sessionManager.getBranch();
+    for (let i = branch.length - 1; i >= 0; i--) {
+      const entry = branch[i];
+      if (entry.type === "message" && entry.message.role === role) return entry.id;
+    }
+    return null;
+  }
+
   findRealEntryId(sessionManager, role, timestamp, contentText) {
     const branch = sessionManager.getBranch();
     for (let i = branch.length - 1; i >= 0; i--) {
@@ -1201,35 +1221,62 @@ export class PiBridgeManager {
     return null;
   }
 
-  queueSyntheticResolution(project, session, role, syntheticId, timestamp, contentText) {
+  emitCanonicalTranscript(project, session) {
+    const state = this.getSyntheticState(project, session.sessionId);
+    const previous = project.sessionCaches.get(session.sessionId)?.messages ?? [];
+    const previousById = new Map(previous.map((bundle) => [bundle.info.id, bundle]));
+    const cache = buildTranscriptFromSessionManager(session.sessionManager, project.directory);
+    project.sessionCaches.set(session.sessionId, cache);
+
+    const pendingStreaming = (state.pendingAssistantResolutions || []).filter((pending) =>
+      previousById.has(pending.syntheticId),
+    );
+    const replacementIds = new Set();
+    const replacedSyntheticIds = new Set();
+    const newCanonicalAssistants = cache.messages.filter(
+      (bundle) => bundle.info.role === "assistant" && !previousById.has(bundle.info.id),
+    );
+    for (let i = 0; i < pendingStreaming.length && i < newCanonicalAssistants.length; i += 1) {
+      const pending = pendingStreaming[i];
+      const bundle = newCanonicalAssistants[i];
+      replacementIds.add(bundle.info.id);
+      replacedSyntheticIds.add(pending.syntheticId);
+      this.sendBackendEvent(project, {
+        type: "message.replaced",
+        sessionID: bundle.info.sessionID,
+        oldId: pending.syntheticId,
+        message: bundle.info,
+        parts: bundle.parts,
+      });
+    }
+    state.pendingAssistantResolutions = (state.pendingAssistantResolutions || []).filter(
+      (pending) => !replacedSyntheticIds.has(pending.syntheticId),
+    );
+
+    for (const bundle of cache.messages) {
+      if (replacementIds.has(bundle.info.id)) continue;
+      const oldBundle = previousById.get(bundle.info.id);
+      if (JSON.stringify(oldBundle?.info) !== JSON.stringify(bundle.info)) {
+        this.sendBackendEvent(project, { type: "message.updated", message: bundle.info });
+      }
+      const oldPartsById = new Map((oldBundle?.parts ?? []).map((part) => [part.id, part]));
+      for (const part of bundle.parts) {
+        if (JSON.stringify(oldPartsById.get(part.id)) !== JSON.stringify(part)) {
+          this.sendBackendEvent(project, { type: "message.part.updated", part });
+        }
+      }
+    }
+  }
+
+  emitRealMessage(project, session, role, timestamp, contentText) {
     setTimeout(() => {
       try {
         const realId = this.findRealEntryId(session.sessionManager, role, timestamp, contentText);
         if (!realId) return;
-        const state = project.syntheticStateBySessionId.get(session.sessionId);
-        if (!state) return;
-        state.syntheticToReal.set(syntheticId, realId);
-        if (role === "assistant" && state.currentAssistantMessageId === syntheticId) {
-          state.currentAssistantMessageId = realId;
-        }
-        if (role === "user" && state.currentUserMessageId === syntheticId) {
-          state.currentUserMessageId = realId;
-        }
-
-        // Pi streams with temporary IDs, then persists different real entry IDs.
-        // Renderer state keys messages/parts by ID, so leaving both ID worlds
-        // alive causes missing/duplicated turns after the canonical fetch wins a
-        // race. Rebuild from SessionManager, then replace the streamed synthetic
-        // message with the persisted real message immediately.
         const cache = buildTranscriptFromSessionManager(session.sessionManager, project.directory);
         project.sessionCaches.set(session.sessionId, cache);
         const realBundle = cache.messages.find((item) => item.info.id === realId);
         if (!realBundle) return;
-        this.sendBackendEvent(project, {
-          type: "message.removed",
-          sessionID: session.sessionId,
-          messageID: syntheticId,
-        });
         this.sendBackendEvent(project, { type: "message.updated", message: realBundle.info });
         for (const part of realBundle.parts) {
           this.sendBackendEvent(project, { type: "message.part.updated", part });
@@ -1245,14 +1292,7 @@ export class PiBridgeManager {
     const pending = state?.pendingAssistantResolution;
     if (!pending) return;
     state.pendingAssistantResolution = null;
-    this.queueSyntheticResolution(
-      project,
-      session,
-      "assistant",
-      pending.syntheticId,
-      pending.timestamp,
-      pending.contentText,
-    );
+    this.emitRealMessage(project, session, "assistant", pending.timestamp, pending.contentText);
   }
 
   findCurrentAssistantBundle(project, sessionId, state) {
@@ -1284,6 +1324,10 @@ export class PiBridgeManager {
     const state = this.getSyntheticState(project, sessionId);
     if (event.type === "turn_end") {
       this.flushPendingAssistantResolution(project, session);
+      this.emitCanonicalTranscript(project, session);
+      state.currentAssistantMessageId = null;
+      state.assistantStartedAt = null;
+      state.reasoningTimesByContentIndex = new Map();
       return;
     }
     if (event.type === "agent_start") {
@@ -1308,6 +1352,7 @@ export class PiBridgeManager {
 
     if (event.type === "agent_end") {
       this.flushPendingAssistantResolution(project, session);
+      this.emitCanonicalTranscript(project, session);
       project.busySessionIds.delete(sessionId);
       const normalized = await this.getSessionById(sessionId, {
         directory: project.directory,
@@ -1331,34 +1376,18 @@ export class PiBridgeManager {
     }
 
     if (event.type === "message_start") {
-      if (event.message.role === "user") {
-        const messageId = makeSyntheticMessageId(sessionId, "user", state.nextSeq++);
-        state.currentUserMessageId = messageId;
-        const bundle = createBundle(
-          createUserInfo({
-            sessionId,
-            messageId,
-            timestamp: coerceTimestamp(event.message.timestamp),
-            model: session.sessionManager.buildSessionContext().model,
-            directory: project.directory,
-          }),
-          buildUserParts(event.message.content, messageId),
-        );
-        for (const part of bundle.parts) part.sessionID = sessionId;
-        this.upsertBundle(project, sessionId, bundle);
-        this.sendBackendEvent(project, { type: "message.updated", message: bundle.info });
-        for (const part of bundle.parts) {
-          this.sendBackendEvent(project, { type: "message.part.updated", part });
-        }
-        return;
-      }
       if (event.message.role === "assistant") {
         this.flushPendingAssistantResolution(project, session);
-        const messageId = makeSyntheticMessageId(sessionId, "assistant", state.nextSeq++);
+        const messageId = makeStreamingMessageId(sessionId, state.nextSeq++);
         const startedAt = Date.now();
+        const parentID = this.findLatestRealMessageId(session.sessionManager, "user") || "";
         state.currentAssistantMessageId = messageId;
         state.assistantStartedAt = startedAt;
         state.reasoningTimesByContentIndex = new Map();
+        state.pendingAssistantResolutions = [
+          ...(state.pendingAssistantResolutions || []),
+          { syntheticId: messageId },
+        ];
         const bundle = createBundle(
           createAssistantInfo({
             sessionId,
@@ -1366,7 +1395,7 @@ export class PiBridgeManager {
             timestamp: coerceTimestamp(event.message.timestamp),
             message: event.message,
             directory: project.directory,
-            parentID: state.currentUserMessageId || "",
+            parentID,
             createdAt: startedAt,
           }),
           [],
@@ -1377,7 +1406,6 @@ export class PiBridgeManager {
         for (const part of bundle.parts) {
           this.sendBackendEvent(project, { type: "message.part.updated", part });
         }
-        return;
       }
       return;
     }
@@ -1529,15 +1557,10 @@ export class PiBridgeManager {
 
     if (event.type === "message_end") {
       if (event.message.role === "user") {
-        const messageId = state.currentUserMessageId;
-        if (!messageId) return;
-        const bundle = this.findBundle(project, sessionId, messageId);
-        if (!bundle) return;
-        this.queueSyntheticResolution(
+        this.emitRealMessage(
           project,
           session,
           "user",
-          messageId,
           coerceTimestamp(event.message.timestamp),
           typeof event.message.content === "string"
             ? event.message.content
@@ -1551,50 +1574,12 @@ export class PiBridgeManager {
         return;
       }
       if (event.message.role === "assistant") {
-        const messageId = state.currentAssistantMessageId;
-        if (!messageId) return;
-        const completedAt = Date.now();
-        this.closeOpenReasoning(state, completedAt);
-        const bundle = this.findBundle(project, sessionId, messageId);
-        if (!bundle) return;
-        bundle.info = createAssistantInfo({
-          sessionId,
-          messageId,
-          timestamp: coerceTimestamp(event.message.timestamp),
-          message: event.message,
-          directory: project.directory,
-          parentID: bundle.info.parentID,
-          createdAt: bundle.info.time.created,
-          completedAt,
-        });
-        syncAssistantParts(bundle, event.message, state.reasoningTimesByContentIndex);
-        this.upsertBundle(project, sessionId, bundle);
-        this.sendBackendEvent(project, { type: "message.updated", message: bundle.info });
-        for (const part of bundle.parts) {
-          this.sendBackendEvent(project, { type: "message.part.updated", part });
-        }
         if (event.message.stopReason === "error" && event.message.errorMessage) {
           this.sendBackendEvent(project, {
             type: "session.error",
             error: event.message.errorMessage,
             sessionID: sessionId,
           });
-        }
-        if (event.message.stopReason === "toolUse") {
-          state.pendingAssistantResolution = {
-            syntheticId: messageId,
-            timestamp: coerceTimestamp(event.message.timestamp),
-            contentText: "",
-          };
-        } else {
-          this.queueSyntheticResolution(
-            project,
-            session,
-            "assistant",
-            messageId,
-            coerceTimestamp(event.message.timestamp),
-            "",
-          );
         }
         state.assistantStartedAt = null;
         state.reasoningTimesByContentIndex = new Map();
@@ -1644,8 +1629,9 @@ export class PiBridgeManager {
   }
 
   async getSessionById(sessionId, target) {
+    const rawSessionId = toRawSessionId(sessionId);
     const project = target?.directory ? await this.ensureProject(target) : null;
-    const indexed = this.sessionIndex.get(sessionId);
+    const indexed = this.sessionIndex.get(rawSessionId);
     if (indexed?.path) {
       const manager = SessionManager.open(indexed.path, undefined, indexed.directory);
       const firstUserEntry = manager
@@ -1653,7 +1639,7 @@ export class PiBridgeManager {
         .find((entry) => entry.type === "message" && entry.message.role === "user");
       return normalizePiSession(
         {
-          id: sessionId,
+          id: rawSessionId,
           cwd: indexed.directory,
           name: manager.getSessionName(),
           created: new Date(manager.getHeader().timestamp),
@@ -1682,7 +1668,7 @@ export class PiBridgeManager {
       directory: project.directory,
       workspaceId: project.workspaceId,
     });
-    return sessions.find((session) => session.id === sessionId) || null;
+    return sessions.find((session) => toRawSessionId(session.id) === rawSessionId) || null;
   }
 
   resolveRealMessageId(project, sessionId, messageId) {
@@ -1891,40 +1877,42 @@ export class PiBridgeManager {
   }
 
   async deleteSession(sessionId, target) {
-    const indexed = this.sessionIndex.get(sessionId);
+    const rawSessionId = toRawSessionId(sessionId);
+    const indexed = this.sessionIndex.get(rawSessionId);
     const project = indexed
       ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
       : await this.ensureProject(target || {});
-    let info = this.sessionIndex.get(sessionId);
+    let info = this.sessionIndex.get(rawSessionId);
     if (!info) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
-      info = this.sessionIndex.get(sessionId);
+      info = this.sessionIndex.get(rawSessionId);
     }
     if (!info?.path) {
       throw new Error("Pi session not found");
     }
-    const liveContext = this.getLiveSessionContext(project, sessionId);
-    if (liveContext && project.busySessionIds.has(sessionId)) {
+    const liveContext = this.getLiveSessionContext(project, rawSessionId);
+    if (liveContext && project.busySessionIds.has(rawSessionId)) {
       throw new Error("Stop Pi session before deleting it.");
     }
     if (liveContext) {
-      await this.disposeLiveSessionContext(project, sessionId, { keepCache: false });
+      await this.disposeLiveSessionContext(project, rawSessionId, { keepCache: false });
     }
     await unlink(info.path);
-    this.sessionIndex.delete(sessionId);
-    project.sessionCaches.delete(sessionId);
-    project.syntheticStateBySessionId.delete(sessionId);
+    this.sessionIndex.delete(rawSessionId);
+    project.sessionCaches.delete(rawSessionId);
+    project.syntheticStateBySessionId.delete(rawSessionId);
     this.sendBackendEvent(project, {
       type: "session.deleted",
       directory: project.directory,
       workspaceId: project.workspaceId,
-      sessionId,
+      sessionId: rawSessionId,
     });
     return true;
   }
 
   async updateSession(sessionId, title, target) {
-    const live = this.findLiveSessionContext(sessionId);
+    const rawSessionId = toRawSessionId(sessionId);
+    const live = this.findLiveSessionContext(rawSessionId);
     if (live) {
       const { project, context } = live;
       context.runtime.session.setSessionName(title);
@@ -1932,7 +1920,7 @@ export class PiBridgeManager {
       const header = manager.getHeader();
       const sessionFile = context.runtime.session.sessionFile;
       if (sessionFile) {
-        this.sessionIndex.set(sessionId, {
+        this.sessionIndex.set(rawSessionId, {
           projectKey: project.key,
           path: sessionFile,
           directory: project.directory,
@@ -1941,7 +1929,7 @@ export class PiBridgeManager {
       }
       const session = normalizePiSession(
         {
-          id: sessionId,
+          id: rawSessionId,
           cwd: project.directory,
           name: title,
           created: header?.timestamp ? new Date(header.timestamp) : new Date(),
@@ -1959,14 +1947,14 @@ export class PiBridgeManager {
       return session;
     }
 
-    const indexed = this.sessionIndex.get(sessionId);
+    const indexed = this.sessionIndex.get(rawSessionId);
     const project = indexed
       ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
       : await this.ensureProject(target || {});
-    let info = this.sessionIndex.get(sessionId);
+    let info = this.sessionIndex.get(rawSessionId);
     if (!info) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
-      info = this.sessionIndex.get(sessionId);
+      info = this.sessionIndex.get(rawSessionId);
     }
     if (!info?.path) {
       throw new Error("Pi session not found");
@@ -1978,7 +1966,7 @@ export class PiBridgeManager {
     manager.appendSessionInfo(title);
     const session = normalizePiSession(
       {
-        id: sessionId,
+        id: rawSessionId,
         cwd: info.directory,
         name: title,
         created: new Date(manager.getHeader().timestamp),
@@ -2003,7 +1991,7 @@ export class PiBridgeManager {
       const statuses = {};
       for (const session of sessions) {
         statuses[session.id] = sessionStatus(
-          project.busySessionIds.has(session.id) ? "busy" : "idle",
+          project.busySessionIds.has(toRawSessionId(session.id)) ? "busy" : "idle",
         );
       }
       return statuses;
@@ -2016,7 +2004,7 @@ export class PiBridgeManager {
       });
       for (const session of sessions) {
         statuses[session.id] = sessionStatus(
-          project.busySessionIds.has(session.id) ? "busy" : "idle",
+          project.busySessionIds.has(toRawSessionId(session.id)) ? "busy" : "idle",
         );
       }
     }
@@ -2024,20 +2012,21 @@ export class PiBridgeManager {
   }
 
   async forkSession(sessionId, messageID, target) {
-    const indexed = this.sessionIndex.get(sessionId);
+    const rawSessionId = toRawSessionId(sessionId);
+    const indexed = this.sessionIndex.get(rawSessionId);
     const project = indexed
       ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
       : await this.ensureProject(target || {});
-    let info = this.sessionIndex.get(sessionId);
+    let info = this.sessionIndex.get(rawSessionId);
     if (!info) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
-      info = this.sessionIndex.get(sessionId);
+      info = this.sessionIndex.get(rawSessionId);
     }
     if (!info?.path) {
       throw new Error("Pi session not found");
     }
     const realMessageId = messageID
-      ? this.resolveRealMessageId(project, sessionId, messageID)
+      ? this.resolveRealMessageId(project, rawSessionId, messageID)
       : undefined;
     const sourceManager = SessionManager.open(info.path, undefined, info.directory);
     let targetLeafId = realMessageId ?? sourceManager.getLeafId();
@@ -2141,23 +2130,24 @@ export class PiBridgeManager {
   }
 
   async getMessages(sessionId, _options, target) {
-    const indexed = this.sessionIndex.get(sessionId);
+    const rawSessionId = toRawSessionId(sessionId);
+    const indexed = this.sessionIndex.get(rawSessionId);
     const project = indexed
       ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
       : await this.ensureProject(target || {});
-    const liveContext = this.getLiveSessionContext(project, sessionId);
+    const liveContext = this.getLiveSessionContext(project, rawSessionId);
     if (liveContext) {
-      const cache = this.getSessionCache(project, sessionId);
+      const cache = this.getSessionCache(project, rawSessionId);
       return {
         messages: cache.messages.map((bundle) => cloneBundle(bundle)),
         nextCursor: null,
       };
     }
-    await this.disposeIdleLiveSessionsExcept(project, [sessionId]);
+    await this.disposeIdleLiveSessionsExcept(project, [rawSessionId]);
     let info = indexed;
     if (!info) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
-      info = this.sessionIndex.get(sessionId);
+      info = this.sessionIndex.get(rawSessionId);
     }
     if (!info?.path) {
       throw new Error("Pi session not found");
@@ -2171,7 +2161,8 @@ export class PiBridgeManager {
   }
 
   async prompt(sessionId, text, images, model, _agent, variant, directory, workspaceId) {
-    const { project, session } = await this.ensureSessionContext(sessionId, {
+    const rawSessionId = toRawSessionId(sessionId);
+    const { project, session } = await this.ensureSessionContext(rawSessionId, {
       directory,
       workspaceId,
     });
@@ -2184,14 +2175,15 @@ export class PiBridgeManager {
   }
 
   async abort(sessionId) {
-    const indexed = this.sessionIndex.get(sessionId);
+    const rawSessionId = toRawSessionId(sessionId);
+    const indexed = this.sessionIndex.get(rawSessionId);
     const project = indexed
       ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
       : null;
     if (!project) {
       throw new Error("Pi session not found");
     }
-    const liveContext = this.getLiveSessionContext(project, sessionId);
+    const liveContext = this.getLiveSessionContext(project, rawSessionId);
     if (!liveContext) {
       throw new Error("Pi session not active");
     }
@@ -2199,7 +2191,8 @@ export class PiBridgeManager {
   }
 
   async summarizeSession(sessionId, model, directory, workspaceId) {
-    const { session } = await this.ensureSessionContext(sessionId, { directory, workspaceId });
+    const rawSessionId = toRawSessionId(sessionId);
+    const { session } = await this.ensureSessionContext(rawSessionId, { directory, workspaceId });
     if (model) {
       await this.applySelectedModel(session, model);
     }
@@ -2209,25 +2202,6 @@ export class PiBridgeManager {
   async sendCommand(sessionId, command, args, model, _agent, _variant, directory, workspaceId) {
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, undefined, undefined, directory, workspaceId);
-  }
-
-  async findFiles(directory, _workspaceId, query) {
-    const cwd = normalizeDir(directory);
-    if (!cwd) return [];
-    const q = String(query || "")
-      .trim()
-      .toLowerCase();
-    if (!q) return [];
-    try {
-      const { stdout } = await execFile("rg", ["--files"], { cwd, maxBuffer: 1024 * 1024 * 8 });
-      return stdout
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .filter((file) => file.toLowerCase().includes(q))
-        .slice(0, 200);
-    } catch {
-      return [];
-    }
   }
 }
 
@@ -2393,10 +2367,6 @@ class PiDaemonClient {
 
   async summarizeSession(sessionId, model, directory, workspaceId) {
     return await this.call("summarizeSession", [sessionId, model, directory, workspaceId]);
-  }
-
-  async findFiles(directory, workspaceId, query) {
-    return await this.call("findFiles", [directory, workspaceId, query]);
   }
 
   async call(method, args) {
@@ -2755,12 +2725,4 @@ export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
       }
     },
   );
-
-  ipcMain.handle("pi:find:files", async (_event, directory, workspaceId, query) => {
-    try {
-      return ok(await manager.findFiles(directory, workspaceId, query));
-    } catch (error) {
-      return fail(error);
-    }
-  });
 }

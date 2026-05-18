@@ -1,18 +1,5 @@
 import type { AgentBackendId } from "@/agents";
-import type {
-  Event as OpenCodeEvent,
-  Session,
-  Message,
-  Part,
-  Provider,
-  Agent,
-  Command,
-  QuestionAnswer,
-  McpLocalConfig,
-  McpRemoteConfig,
-  McpStatus,
-  Config as OpenCodeConfig,
-} from "@opencode-ai/sdk/v2/client";
+import type { Event as OpenCodeEvent, Provider } from "@opencode-ai/sdk/v2/client";
 
 // ---------------------------------------------------------------------------
 // Provider management types
@@ -69,11 +56,6 @@ export interface ConnectionConfig {
   directory?: string;
 }
 
-export interface ProjectTarget {
-  directory?: string;
-  workspaceId?: string;
-}
-
 export interface Workspace {
   id: string;
   name: string;
@@ -127,9 +109,6 @@ export interface IPCResult<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
-  /** Server process logs captured during startup (available on failure). */
-  logs?: string | null;
-  status?: ConnectionStatus;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,246 +123,6 @@ export interface SelectedModel {
 export interface ProvidersData {
   providers: Provider[];
   default: { [key: string]: string };
-}
-
-export interface MessagePageOptions {
-  limit?: number;
-  before?: string;
-}
-
-export interface OpenCodeBridge {
-  /** Start local backend server on port 4096 (detached, survives app close). */
-  startServer(): Promise<IPCResult<{ alreadyRunning?: boolean }>>;
-  /** Stop local backend server. */
-  stopServer(): Promise<IPCResult<{ alreadyStopped?: boolean; pid?: number }>>;
-  /** Check whether local backend server is running. */
-  getServerStatus(): Promise<IPCResult<{ running: boolean }>>;
-
-  /** Connect a project directory (additive - does not tear down other projects). */
-  addProject(config: ConnectionConfig): Promise<IPCResult>;
-  /** Disconnect a specific project by directory + workspace. */
-  removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
-  /** Disconnect ALL projects. */
-  disconnect(): Promise<IPCResult>;
-
-  listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
-  createSession(
-    title?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-  deleteSession(id: string): Promise<IPCResult<boolean>>;
-  updateSession(id: string, title: string): Promise<IPCResult<Session>>;
-  getSessionStatuses(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Record<string, { type: string }>>>;
-  /** Revert a session to a specific message, undoing changes after that point. */
-  revertSession(id: string, messageID: string, partID?: string): Promise<IPCResult<Session>>;
-  /** Restore all previously reverted messages in a session. */
-  unrevertSession(id: string): Promise<IPCResult<Session>>;
-  /** Fork a session at a specific message, creating a new session with messages up to that point. */
-  forkSession(id: string, messageID?: string): Promise<IPCResult<Session>>;
-
-  getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
-
-  /** List ALL providers (connected + disconnected) with connection status. */
-  listAllProviders(directory?: string, workspaceId?: string): Promise<IPCResult<AllProvidersData>>;
-  /** Get available auth methods per provider. */
-  getProviderAuthMethods(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Record<string, ProviderAuthMethod[]>>>;
-  /** Set auth credentials (API key or OAuth tokens) for a provider. */
-  connectProvider(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    providerID: string,
-    auth: ProviderAuth,
-  ): Promise<IPCResult>;
-  /** Remove auth credentials for a provider (disconnect it). */
-  disconnectProvider(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    providerID: string,
-  ): Promise<IPCResult>;
-  /** Start an OAuth authorization flow for a provider. */
-  oauthAuthorize(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    providerID: string,
-    method?: number,
-  ): Promise<IPCResult<ProviderOAuthAuthorization>>;
-  /** Complete an OAuth flow with an authorization code. */
-  oauthCallback(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    providerID: string,
-    method?: number,
-    code?: string,
-  ): Promise<IPCResult<boolean>>;
-  /** Dispose the current instance to force a refresh. */
-  disposeInstance(directory?: string, workspaceId?: string): Promise<IPCResult<boolean>>;
-
-  getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
-  getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
-  sendCommand(
-    sessionId: string,
-    command: string,
-    args: string,
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-  ): Promise<IPCResult>;
-  summarizeSession(sessionId: string, model?: SelectedModel): Promise<IPCResult>;
-
-  getMessages(
-    sessionId: string,
-    options?: MessagePageOptions,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<
-    IPCResult<{
-      messages: Array<{ info: Message; parts: Part[] }>;
-      nextCursor: string | null;
-    }>
-  >;
-  prompt(
-    sessionId: string,
-    text: string,
-    images?: string[],
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-  ): Promise<IPCResult>;
-  abort(sessionId: string): Promise<IPCResult>;
-
-  respondPermission(
-    sessionId: string,
-    permissionId: string,
-    response: "once" | "always" | "reject",
-  ): Promise<IPCResult>;
-
-  replyQuestion(requestID: string, answers: QuestionAnswer[]): Promise<IPCResult>;
-  rejectQuestion(requestID: string): Promise<IPCResult>;
-
-  // MCP
-  getMcpStatus(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Record<string, McpStatus>>>;
-  addMcp(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    name: string,
-    config: McpLocalConfig | McpRemoteConfig,
-  ): Promise<IPCResult<Record<string, McpStatus>>>;
-  connectMcp(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    name: string,
-  ): Promise<IPCResult>;
-  disconnectMcp(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    name: string,
-  ): Promise<IPCResult>;
-
-  // Config
-  getConfig(directory?: string, workspaceId?: string): Promise<IPCResult<OpenCodeConfig>>;
-  updateConfig(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    config: Partial<OpenCodeConfig>,
-  ): Promise<IPCResult<OpenCodeConfig>>;
-
-  // File search
-  findFiles(
-    directory: string | null,
-    workspaceId: string | undefined,
-    query: string,
-  ): Promise<IPCResult<string[]>>;
-
-  // Skills
-  getSkills(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<
-    IPCResult<
-      Array<{
-        name: string;
-        description: string;
-        location: string;
-        content: string;
-      }>
-    >
-  >;
-
-  /** Subscribe to native preload events (backend stream + connection status). Returns unsubscribe fn. */
-  onEvent(callback: (event: BridgeEvent) => void): () => void;
-
-  // -----------------------------------------------------------------------
-  // Skills Marketplace
-  // -----------------------------------------------------------------------
-
-  /** List skills from skills.sh leaderboard */
-  marketplaceList(
-    view?: string,
-    page?: number,
-    perPage?: number,
-    apiKey?: string,
-  ): Promise<IPCResult<MarketplaceListResponse>>;
-
-  /** Search skills on skills.sh */
-  marketplaceSearch(
-    query: string,
-    limit?: number,
-    apiKey?: string,
-  ): Promise<IPCResult<MarketplaceSearchResponse>>;
-
-  /** Get detailed info for a single skill */
-  marketplaceDetail(
-    source: string,
-    slug: string,
-    apiKey?: string,
-  ): Promise<IPCResult<MarketplaceDetailResponse>>;
-
-  /** Get security audit for a skill */
-  marketplaceAudit(
-    source: string,
-    slug: string,
-    apiKey?: string,
-  ): Promise<IPCResult<MarketplaceAuditResponse>>;
-
-  /** Get official curated skills */
-  marketplaceCurated(apiKey?: string): Promise<IPCResult<MarketplaceCuratedResponse>>;
-
-  /** Install a skill using `bunx skills add` */
-  installSkill(
-    source: string,
-    directory?: string,
-    globalScope?: boolean,
-  ): Promise<IPCResult<{ exitCode?: number }>>;
-
-  /** Remove an installed skill */
-  removeSkill(
-    skillName: string,
-    directory?: string,
-    globalScope?: boolean,
-  ): Promise<IPCResult<{ exitCode?: number }>>;
-
-  /** Update installed skills */
-  updateSkill(
-    skillName?: string,
-    directory?: string,
-    globalScope?: boolean,
-  ): Promise<IPCResult<{ exitCode?: number }>>;
-
-  /** List installed skills from filesystem */
-  listInstalledSkills(directory?: string): Promise<IPCResult<InstalledSkillInfo[]>>;
-
-  /** Check if `bunx skills` / `npx skills` is available */
-  checkSkillsCli(): Promise<IPCResult<{ available: boolean; command: string | null }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -492,277 +231,6 @@ export interface GitMergeResult {
   error?: string;
 }
 
-export interface ClaudeCodeBridge {
-  addProject(config: ConnectionConfig): Promise<IPCResult>;
-  removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
-  disconnect(): Promise<IPCResult>;
-
-  listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
-  deleteSession(
-    sessionId: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<boolean>>;
-  updateSession(
-    sessionId: string,
-    title: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-  getSessionStatuses(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Record<string, { type: string }>>>;
-  forkSession(
-    sessionId: string,
-    messageID?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-
-  getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
-  getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
-  getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
-  getMessages(
-    sessionId: string,
-    options?: MessagePageOptions,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<
-    IPCResult<{
-      messages: Array<{ info: Message; parts: Part[] }>;
-      nextCursor: string | null;
-    }>
-  >;
-  startSession(input: {
-    text: string;
-    images?: string[];
-    model?: SelectedModel;
-    agent?: string;
-    variant?: string;
-    title?: string;
-    directory?: string;
-    workspaceId?: string;
-  }): Promise<IPCResult<Session>>;
-  prompt(
-    sessionId: string,
-    text: string,
-    images?: string[],
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  abort(sessionId: string): Promise<IPCResult>;
-  respondPermission(
-    sessionId: string,
-    permissionId: string,
-    response: "once" | "always" | "reject",
-  ): Promise<IPCResult>;
-  sendCommand(
-    sessionId: string,
-    command: string,
-    args: string,
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  summarizeSession(
-    sessionId: string,
-    model?: SelectedModel,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  findFiles(
-    directory: string | null,
-    workspaceId: string | undefined,
-    query: string,
-  ): Promise<IPCResult<string[]>>;
-  onEvent(callback: (event: BridgeEvent) => void): () => void;
-}
-
-export interface PiBridge {
-  addProject(config: ConnectionConfig): Promise<IPCResult>;
-  removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
-  disconnect(): Promise<IPCResult>;
-
-  listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
-  createSession(
-    title?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-  deleteSession(
-    sessionId: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<boolean>>;
-  updateSession(
-    sessionId: string,
-    title: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-  getSessionStatuses(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Record<string, { type: string }>>>;
-  forkSession(
-    sessionId: string,
-    messageID?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-
-  getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
-  getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
-  getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
-  getMessages(
-    sessionId: string,
-    options?: MessagePageOptions,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<
-    IPCResult<{
-      messages: Array<{ info: Message; parts: Part[] }>;
-      nextCursor: string | null;
-    }>
-  >;
-  startSession(input: {
-    text: string;
-    images?: string[];
-    model?: SelectedModel;
-    agent?: string;
-    variant?: string;
-    title?: string;
-    directory?: string;
-    workspaceId?: string;
-  }): Promise<IPCResult<Session>>;
-  prompt(
-    sessionId: string,
-    text: string,
-    images?: string[],
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  abort(sessionId: string): Promise<IPCResult>;
-  sendCommand(
-    sessionId: string,
-    command: string,
-    args: string,
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  summarizeSession(
-    sessionId: string,
-    model?: SelectedModel,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  findFiles(
-    directory: string | null,
-    workspaceId: string | undefined,
-    query: string,
-  ): Promise<IPCResult<string[]>>;
-  onEvent(callback: (event: BridgeEvent) => void): () => void;
-}
-
-export interface CodexBridge {
-  addProject(config: ConnectionConfig): Promise<IPCResult>;
-  removeProject(directory: string, workspaceId?: string): Promise<IPCResult>;
-  disconnect(): Promise<IPCResult>;
-
-  listSessions(directory?: string, workspaceId?: string): Promise<IPCResult<Session[]>>;
-  createSession(
-    title?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-  deleteSession(
-    sessionId: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<boolean>>;
-  updateSession(
-    sessionId: string,
-    title: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Session>>;
-  getSessionStatuses(
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult<Record<string, { type: string }>>>;
-  getProviders(directory?: string, workspaceId?: string): Promise<IPCResult<ProvidersData>>;
-  getAgents(directory?: string, workspaceId?: string): Promise<IPCResult<Agent[]>>;
-  getCommands(directory?: string, workspaceId?: string): Promise<IPCResult<Command[]>>;
-  getMessages(
-    sessionId: string,
-    options?: MessagePageOptions,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<
-    IPCResult<{
-      messages: Array<{ info: Message; parts: Part[] }>;
-      nextCursor: string | null;
-    }>
-  >;
-  startSession(input: {
-    text: string;
-    images?: string[];
-    model?: SelectedModel;
-    agent?: string;
-    variant?: string;
-    title?: string;
-    directory?: string;
-    workspaceId?: string;
-  }): Promise<IPCResult<Session>>;
-  prompt(
-    sessionId: string,
-    text: string,
-    images?: string[],
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  abort(sessionId: string): Promise<IPCResult>;
-  sendCommand(
-    sessionId: string,
-    command: string,
-    args: string,
-    model?: SelectedModel,
-    agent?: string,
-    variant?: string,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  summarizeSession(
-    sessionId: string,
-    model?: SelectedModel,
-    directory?: string,
-    workspaceId?: string,
-  ): Promise<IPCResult>;
-  findFiles(
-    directory: string | null,
-    workspaceId: string | undefined,
-    query: string,
-  ): Promise<IPCResult<string[]>>;
-  onEvent(callback: (event: BridgeEvent) => void): () => void;
-}
-
-export type NativeAgentBridge = OpenCodeBridge;
-
 export interface GitBridge {
   isRepo(directory: string): Promise<IPCResult<boolean>>;
   listBranches(directory: string): Promise<IPCResult<string[]>>;
@@ -863,7 +331,13 @@ export interface InstallResult {
   error?: string;
 }
 
+export interface OpenGuiBridge {
+  invoke: <T = unknown>(channel: string, args?: unknown[]) => Promise<T>;
+  onBackendEvent: (callback: (message: { channel: string; data: unknown }) => void) => () => void;
+}
+
 export interface ElectronAPI {
+  openGui?: OpenGuiBridge;
   settings: SettingsBridge;
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
@@ -913,14 +387,11 @@ export interface ElectronAPI {
 
   git?: GitBridge;
   worktree?: WorktreeBridge;
-  opencode: OpenCodeBridge;
-  claudeCode?: ClaudeCodeBridge;
-  pi?: PiBridge;
-  codex?: CodexBridge;
 }
 
 declare global {
   interface Window {
     electronAPI?: ElectronAPI;
+    __openGuiTransport?: "electron" | "http";
   }
 }

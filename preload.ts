@@ -1,71 +1,39 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
-  ClaudeCodeBridge,
-  CodexBridge,
+  AppUpdateState,
   ElectronAPI,
   InstallProgress,
-  OpenCodeBridge,
-  PiBridge,
   SettingsBridgeChange,
-  AppUpdateState,
 } from "./src/types/electron";
 
 type Listener<T = unknown> = (data: T) => void;
-
-type BridgeApiOptions = {
-  rendererReady?: boolean;
-  extraInvoke?: Record<string, string>;
-};
-
-type DynamicBridgeApi = Record<
-  string,
-  ((...args: never[]) => Promise<unknown>) | ((callback: Listener) => () => void)
->;
 
 function invoke<T extends (...args: never[]) => Promise<unknown>>(channel: string): T {
   return ((...args: never[]) => ipcRenderer.invoke(channel, ...args)) as T;
 }
 
-function createBridgeApi<T>(prefix: string, options: BridgeApiOptions = {}): T {
-  const api: DynamicBridgeApi = {
-    addProject: invoke(`${prefix}:project:add`),
-    removeProject: invoke(`${prefix}:project:remove`),
-    disconnect: invoke(`${prefix}:disconnect`),
-    listSessions: invoke(`${prefix}:session:list`),
-    createSession: invoke(`${prefix}:session:create`),
-    deleteSession: invoke(`${prefix}:session:delete`),
-    updateSession: invoke(`${prefix}:session:update`),
-    getSessionStatuses: invoke(`${prefix}:session:statuses`),
-    forkSession: invoke(`${prefix}:session:fork`),
-    getProviders: invoke(`${prefix}:providers`),
-    getAgents: invoke(`${prefix}:agents`),
-    getCommands: invoke(`${prefix}:commands`),
-    getMessages: invoke(`${prefix}:messages`),
-    startSession: invoke(`${prefix}:session:start`),
-    prompt: invoke(`${prefix}:prompt`),
-    abort: invoke(`${prefix}:abort`),
-    respondPermission: invoke(`${prefix}:permission`),
-    sendCommand: invoke(`${prefix}:command:send`),
-    summarizeSession: invoke(`${prefix}:session:summarize`),
-    findFiles: invoke(`${prefix}:find:files`),
-    onEvent: (callback: Listener) => {
-      if (options.rendererReady) ipcRenderer.send(`${prefix}:renderer-ready`);
-      const handler = (_event: IpcRendererEvent, data: unknown) => callback(data);
-      ipcRenderer.on(`${prefix}:bridge-event`, handler);
-      return () => {
-        ipcRenderer.removeListener(`${prefix}:bridge-event`, handler);
-      };
-    },
-  };
-
-  for (const [name, channel] of Object.entries(options.extraInvoke ?? {})) {
-    api[name] = invoke(`${prefix}:${channel}`);
-  }
-
-  return api as T;
-}
+const BACKEND_EVENT_CHANNELS = [
+  "opencode:bridge-event",
+  "claude-code:bridge-event",
+  "pi:bridge-event",
+  "codex:bridge-event",
+] as const;
 
 const electronAPI: ElectronAPI = {
+  openGui: {
+    invoke: (channel, args = []) => ipcRenderer.invoke(channel, ...args),
+    onBackendEvent: (callback) => {
+      const handlers = BACKEND_EVENT_CHANNELS.map((channel) => {
+        const handler = (_event: IpcRendererEvent, data: unknown) => callback({ channel, data });
+        ipcRenderer.on(channel, handler);
+        if (channel === "claude-code:bridge-event") ipcRenderer.send("claude-code:renderer-ready");
+        return { channel, handler };
+      });
+      return () => {
+        for (const { channel, handler } of handlers) ipcRenderer.removeListener(channel, handler);
+      };
+    },
+  },
   settings: {
     getAllSync: () => ipcRenderer.sendSync("settings:get-all-sync"),
     getSync: (key: string) => ipcRenderer.sendSync("settings:get-sync", key),
@@ -163,45 +131,6 @@ const electronAPI: ElectronAPI = {
     mergeAbort: invoke("git:merge:abort"),
     getRemoteUrl: invoke("git:remote:url"),
   },
-
-  claudeCode: createBridgeApi<ClaudeCodeBridge>("claude-code", { rendererReady: true }),
-  pi: createBridgeApi<PiBridge>("pi"),
-  codex: createBridgeApi<CodexBridge>("codex"),
-  opencode: createBridgeApi<OpenCodeBridge>("opencode", {
-    extraInvoke: {
-      revertSession: "session:revert",
-      unrevertSession: "session:unrevert",
-      listAllProviders: "provider:list",
-      getProviderAuthMethods: "provider:auth-methods",
-      connectProvider: "provider:connect",
-      disconnectProvider: "provider:disconnect",
-      oauthAuthorize: "provider:oauth:authorize",
-      oauthCallback: "provider:oauth:callback",
-      disposeInstance: "instance:dispose",
-      replyQuestion: "question:reply",
-      rejectQuestion: "question:reject",
-      getMcpStatus: "mcp:status",
-      addMcp: "mcp:add",
-      connectMcp: "mcp:connect",
-      disconnectMcp: "mcp:disconnect",
-      getConfig: "config:get",
-      updateConfig: "config:update",
-      getSkills: "skills",
-      startServer: "server:start",
-      stopServer: "server:stop",
-      getServerStatus: "server:status",
-      marketplaceList: "skills:marketplace:list",
-      marketplaceSearch: "skills:marketplace:search",
-      marketplaceDetail: "skills:marketplace:detail",
-      marketplaceAudit: "skills:marketplace:audit",
-      marketplaceCurated: "skills:marketplace:curated",
-      installSkill: "skills:install",
-      removeSkill: "skills:remove",
-      updateSkill: "skills:update",
-      listInstalledSkills: "skills:list-installed",
-      checkSkillsCli: "skills:check-cli",
-    },
-  }),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

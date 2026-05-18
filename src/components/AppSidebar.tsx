@@ -282,6 +282,7 @@ export function AppSidebar({
     });
     const rootOpenDirectories = openDirectories.filter((dir) => !worktreeDirs.has(dir));
     const workspaceProjects = activeWorkspace?.projects ?? [];
+    const projectDirectorySet = new Set([...rootOpenDirectories, ...workspaceProjects]);
     const orderedRootDirectories = detachedProject
       ? rootOpenDirectories.filter((dir) => dir === detachedProject)
       : [
@@ -296,14 +297,13 @@ export function AppSidebar({
       const assignedProjectDir = sessionMeta[s.id]?.assignedProjectDir
         ? normalizeProjectPath(sessionMeta[s.id]?.assignedProjectDir ?? "")
         : null;
-      if (assignedProjectDir && rootOpenDirectories.includes(assignedProjectDir)) {
+      if (assignedProjectDir && projectDirectorySet.has(assignedProjectDir)) {
         if (!groups.has(assignedProjectDir)) groups.set(assignedProjectDir, []);
         groups.get(assignedProjectDir)?.push(s);
         continue;
       }
-      if (isChatSession(s)) continue;
       const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
-      if (!openDirectorySet.has(sessionDir)) continue;
+      if (isChatSession(s) || !openDirectorySet.has(sessionDir)) continue;
       // If session belongs to a worktree, group it under the parent project
       const parentDir = worktreeParents[sessionDir]?.parentDir;
       const groupDir = parentDir ?? sessionDir;
@@ -550,7 +550,7 @@ export function AppSidebar({
     },
     [reorderVisibleProjects, sortableProjectDirectories],
   );
-  const projectLabel = detachedProject ? getProjectName(detachedProject) : t("sidebar.projects");
+  const projectLabel = t("sidebar.projects");
 
   useEffect(() => {
     const focusSidebarSearch = () => {
@@ -763,9 +763,10 @@ export function AppSidebar({
                     onTogglePin={() => setSessionPinned(session.id, !isPinned)}
                     onSetColor={(color) => setSessionColor(session.id, color)}
                     onSetTags={(newTags) => setSessionTags(session.id, newTags)}
-                    onMoveToProject={(projectDirectory) =>
-                      void moveSessionToProject(session.id, projectDirectory)
-                    }
+                    onMoveToProject={(projectDirectory) => {
+                      revealSessionInProject(projectDirectory);
+                      void moveSessionToProject(session.id, projectDirectory);
+                    }}
                     onRename={() => startEditing(session.id, session.title || "")}
                     onDelete={() => deleteSession(session.id)}
                   />
@@ -1216,63 +1217,61 @@ export function AppSidebar({
           </SidebarGroup>
         )}
         {/* Project groups */}
-        {projectGroups.size > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
-              {projectLabel}
-              {!detachedProject && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleAddProject();
-                  }}
-                  className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              )}
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              {filteredProjectEntries.length === 0 ? (
-                hasActiveSearch && pinnedEntries.length === 0 ? (
-                  <div className="px-2 py-3 text-sm text-muted-foreground">
-                    {t("sidebar.noMatches", { query: searchQuery.trim() })}
-                  </div>
-                ) : pinnedEntries.length > 0 ? (
-                  <div className="px-2 py-3 text-sm text-muted-foreground">
-                    {t("sidebar.allProjectsPinned")}
-                  </div>
-                ) : null
-              ) : canReorderProjects ? (
-                <DndContext
-                  sensors={dndSensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleProjectDragEnd}
-                >
-                  <SortableContext
-                    items={sortableProjectDirectories}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {filteredProjectEntries.map(([directory, dirSessions]) => (
-                      <SortableProjectFrame key={directory} directory={directory}>
-                        {({ dragHandleProps }) =>
-                          renderProjectEntry(directory, dirSessions, {
-                            canDrag: true,
-                            dragHandleProps,
-                          })
-                        }
-                      </SortableProjectFrame>
-                    ))}
-                  </SortableContext>
-                </DndContext>
+        <SidebarGroup>
+          <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
+            {projectLabel}
+            <button
+              type="button"
+              onClick={() => {
+                void handleAddProject();
+              }}
+              className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            {filteredProjectEntries.length === 0 ? (
+              hasActiveSearch && pinnedEntries.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-muted-foreground">
+                  {t("sidebar.noMatches", { query: searchQuery.trim() })}
+                </div>
+              ) : pinnedEntries.length > 0 ? (
+                <div className="px-2 py-3 text-sm text-muted-foreground">
+                  {t("sidebar.allProjectsPinned")}
+                </div>
               ) : (
-                filteredProjectEntries.map(([directory, dirSessions]) =>
-                  renderProjectEntry(directory, dirSessions),
-                )
-              )}
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+                <div className="px-2 py-3 text-sm text-muted-foreground">No projects yet</div>
+              )
+            ) : canReorderProjects ? (
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleProjectDragEnd}
+              >
+                <SortableContext
+                  items={sortableProjectDirectories}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {filteredProjectEntries.map(([directory, dirSessions]) => (
+                    <SortableProjectFrame key={directory} directory={directory}>
+                      {({ dragHandleProps }) =>
+                        renderProjectEntry(directory, dirSessions, {
+                          canDrag: true,
+                          dragHandleProps,
+                        })
+                      }
+                    </SortableProjectFrame>
+                  ))}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              filteredProjectEntries.map(([directory, dirSessions]) =>
+                renderProjectEntry(directory, dirSessions),
+              )
+            )}
+          </SidebarGroupContent>
+        </SidebarGroup>
 
         {projectPopover && sidebarState === "collapsed" && (
           <div
@@ -1427,37 +1426,6 @@ export function AppSidebar({
             </div>
           </div>
         )}
-
-        {/* Empty state when no projects at all */}
-        {projectGroups.size === 0 &&
-          (detachedProject || filteredChatSessions.length === 0) &&
-          !hasActiveSearch && (
-            <div className="px-4 py-8 text-center text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-              {detachedProject ? (
-                <>
-                  <p>Project not connected</p>
-                  <p className="mt-1 truncate">{abbreviatePath(detachedProject, homeDir)}</p>
-                </>
-              ) : (
-                <>
-                  <p>No projects connected</p>
-                  <p className="mt-1">
-                    Add a project to {activeWorkspace?.name ?? "this workspace"}.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleAddProject();
-                    }}
-                    className="mt-3 inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs text-foreground"
-                  >
-                    <CirclePlus className="size-4 shrink-0" />
-                    <span>{isLocalWorkspace ? "Open folder" : "Open remote path"}</span>
-                  </button>
-                </>
-              )}
-            </div>
-          )}
       </SidebarContent>
 
       {!detachedProject && (

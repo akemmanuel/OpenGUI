@@ -33,6 +33,31 @@ const DEFAULT_STATUS = {
 };
 
 const MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
+const CLAUDE_CODE_SESSION_PREFIX = "claude-code:";
+
+function toFrontendSessionId(id) {
+  const raw = String(id || "");
+  return raw.startsWith(CLAUDE_CODE_SESSION_PREFIX) ? raw : `${CLAUDE_CODE_SESSION_PREFIX}${raw}`;
+}
+
+function toRawSessionId(id) {
+  const raw = String(id || "");
+  return raw.startsWith(CLAUDE_CODE_SESSION_PREFIX)
+    ? raw.slice(CLAUDE_CODE_SESSION_PREFIX.length)
+    : raw;
+}
+
+function tagMessageEntrySession(entry) {
+  const sessionID = toFrontendSessionId(entry?.info?.sessionID);
+  return {
+    ...entry,
+    info: { ...entry.info, sessionID },
+    parts: (entry.parts ?? []).map((part) =>
+      part && "sessionID" in part ? { ...part, sessionID } : part,
+    ),
+  };
+}
+
 const EFFORT_VARIANTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const FALLBACK_SUPPORTED_MODELS = [
   {
@@ -283,9 +308,13 @@ function makeSessionTitle(text, title) {
 
 function makeSessionFromInfo(info, target = {}, fallbackTitle) {
   const directory = normalizeDir(target.directory || info?.cwd || process.cwd());
+  const rawId = toRawSessionId(info?.sessionId);
+  const id = toFrontendSessionId(rawId);
   return {
-    id: info?.sessionId,
-    slug: info?.sessionId,
+    id,
+    slug: id,
+    _backendId: "claude-code",
+    _rawId: rawId,
     projectID: directory,
     workspaceID: target.workspaceId,
     directory,
@@ -756,28 +785,6 @@ async function listClaudeCommands(directory) {
   return commands.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function findFilesRecursive(directory, queryText, results, maxResults = 200) {
-  if (!directory || results.length >= maxResults) return;
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (results.length >= maxResults) return;
-    if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "dist") {
-      continue;
-    }
-    const fullPath = join(directory, entry.name);
-    if (entry.isDirectory()) {
-      await findFilesRecursive(fullPath, queryText, results, maxResults);
-      continue;
-    }
-    if (fullPath.toLowerCase().includes(queryText)) results.push(fullPath);
-  }
-}
-
 function sanitizePermissionUpdates(suggestions) {
   if (!Array.isArray(suggestions)) return [];
   const validDestinations = new Set([
@@ -848,8 +855,12 @@ class ClaudeCodeBridgeManager {
 
   cleanupPendingTempSession(tempSessionId) {
     if (!tempSessionId) return;
+    const rawId = toRawSessionId(tempSessionId);
+    this.pendingTempSessions.delete(rawId);
     this.pendingTempSessions.delete(tempSessionId);
+    this.sessionTargets.delete(rawId);
     this.sessionTargets.delete(tempSessionId);
+    this.activeQueries.delete(rawId);
     this.activeQueries.delete(tempSessionId);
   }
 
@@ -921,6 +932,7 @@ class ClaudeCodeBridgeManager {
   }
 
   resolveTarget(directory, workspaceId, sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const normalized = normalizeDir(directory);
     if (normalized) return { directory: normalized, workspaceId };
     if (sessionId && this.sessionTargets.has(sessionId)) {
@@ -1039,6 +1051,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async getMessages(sessionId, options, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     this.sessionTargets.set(sessionId, target);
 
@@ -1053,14 +1066,14 @@ class ClaudeCodeBridgeManager {
         pendingTemp.promptText,
         mapClaudeModelId(pendingTemp.model?.modelID),
       );
-      return { messages: [synthetic], nextCursor: null };
+      return { messages: [tagMessageEntrySession(synthetic)], nextCursor: null };
     }
 
     const history = await getSessionMessages(sessionId, {
       dir: target.directory,
       includeSystemMessages: false,
     });
-    const mapped = mapHistoryEntries(history, target);
+    const mapped = mapHistoryEntries(history, target).map(tagMessageEntrySession);
     const limit = Math.max(1, options?.limit ?? 100);
     const before = options?.before ?? null;
     if (mapped.length === 0) return { messages: [], nextCursor: null };
@@ -1083,12 +1096,13 @@ class ClaudeCodeBridgeManager {
       if ((entry.workspaceId ?? undefined) !== (target.workspaceId ?? undefined)) {
         continue;
       }
-      statuses[sessionId] = { type: "busy" };
+      statuses[toFrontendSessionId(sessionId)] = { type: "busy" };
     }
     return statuses;
   }
 
   async renameSession(sessionId, title, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     await renameSession(sessionId, title, { dir: target.directory });
     const info = await getSessionInfo(sessionId, { dir: target.directory });
@@ -1100,6 +1114,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async deleteSession(sessionId, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     await deleteSession(sessionId, { dir: target.directory });
     if (this.activeQueries.has(sessionId)) {
@@ -1121,6 +1136,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async forkSession(sessionId, messageID, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     const result = await forkSession(sessionId, {
       dir: target.directory,
@@ -1197,6 +1213,7 @@ class ClaudeCodeBridgeManager {
   }
 
   emitSessionStatus(sessionId, type) {
+    sessionId = toRawSessionId(sessionId);
     this.emit({
       type: "claude-code:event",
       payload: {
@@ -1208,6 +1225,7 @@ class ClaudeCodeBridgeManager {
   }
 
   ensureActiveQuery(sessionId, queryHandle, target) {
+    sessionId = toRawSessionId(sessionId);
     let entry = this.activeQueries.get(sessionId);
     if (!entry) {
       entry = {
@@ -1225,6 +1243,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async refreshSessionInfo(sessionId, target, fallbackTitle) {
+    sessionId = toRawSessionId(sessionId);
     try {
       const info = await getSessionInfo(sessionId, { dir: target.directory });
       if (!info) return;
@@ -1638,6 +1657,7 @@ class ClaudeCodeBridgeManager {
   }
 
   startQuery({ sessionId, text, title, directory, workspaceId, model, variant }) {
+    sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     const modelInfo = this.lookupModelInfo(
       model?.modelID,
@@ -1779,6 +1799,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async prompt(sessionId, text, _images, model, _agent, variant, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     void this.startQuery({
       sessionId,
       text,
@@ -1791,6 +1812,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async abort(sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
     entry?.query?.close?.();
     this.activeQueries.delete(sessionId);
@@ -1800,6 +1822,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async respondPermission(sessionId, permissionId, response) {
+    sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
     const pending = entry?.pendingPermissions.get(permissionId);
     if (!pending) return true;
@@ -1825,12 +1848,14 @@ class ClaudeCodeBridgeManager {
   }
 
   async sendCommand(sessionId, command, args, model, _agent, variant, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, undefined, variant, directory, workspaceId);
     return true;
   }
 
   async summarizeSession(sessionId, model, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     await this.sendCommand(
       sessionId,
       "compact",
@@ -1857,38 +1882,20 @@ class ClaudeCodeBridgeManager {
     const target = this.resolveTarget(directory, workspaceId);
     return await listClaudeCommands(target.directory);
   }
-
-  async findFiles(directory, workspaceId, queryText) {
-    const target = this.resolveTarget(directory, workspaceId);
-    const results = [];
-    await findFilesRecursive(target.directory, String(queryText ?? "").toLowerCase(), results);
-    return results;
-  }
 }
 
-export function setupClaudeCodeBridge(ipcMain, _getWindows) {
-  const listeners = new Map();
+export function setupClaudeCodeBridge(ipcMain, getWindows) {
   const emit = (data) => {
-    for (const [senderId, sender] of listeners) {
-      if (sender.isDestroyed()) {
-        listeners.delete(senderId);
-        continue;
-      }
+    for (const win of getWindows()) {
+      if (!win || win.isDestroyed?.()) continue;
       try {
-        sender.send("claude-code:bridge-event", data);
+        win.webContents.send("claude-code:bridge-event", data);
       } catch {
-        listeners.delete(senderId);
+        // Window may have closed between enumeration and send.
       }
     }
   };
   const manager = new ClaudeCodeBridgeManager(emit);
-
-  ipcMain.on("claude-code:renderer-ready", (event) => {
-    listeners.set(event.sender.id, event.sender);
-    event.sender.once("destroyed", () => {
-      listeners.delete(event.sender.id);
-    });
-  });
 
   ipcMain.handle("claude-code:project:add", async (_event, config) => {
     try {
@@ -2078,12 +2085,4 @@ export function setupClaudeCodeBridge(ipcMain, _getWindows) {
       }
     },
   );
-
-  ipcMain.handle("claude-code:find:files", async (_event, directory, workspaceId, queryText) => {
-    try {
-      return ok(await manager.findFiles(directory, workspaceId, queryText));
-    } catch (error) {
-      return fail(error);
-    }
-  });
 }

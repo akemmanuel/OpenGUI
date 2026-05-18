@@ -1,5 +1,5 @@
 import { normalizeProjectPath } from "@/lib/utils";
-import type { AgentBackendId } from "@/agents";
+import { getAgentBackendIdFromSessionId, type AgentBackendId } from "@/agents";
 import type { ProjectMetaMap } from "@/hooks/agent-state-persistence";
 import type { Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
@@ -41,7 +41,7 @@ export function getSessionProjectTarget(session: Session | undefined | null) {
 }
 
 export function getSessionBackendId(session: Session | undefined | null): AgentBackendId | null {
-  return session?._backendId ?? null;
+  return session?._backendId ?? getAgentBackendIdFromSessionId(session?.id) ?? null;
 }
 
 export function getSessionSelectedModel(session: Session | undefined | null): SelectedModel | null {

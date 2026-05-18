@@ -27,7 +27,7 @@ export function requireSuccess<T>(result: BridgeResult<T>, fallback: string): T 
 export function createBackendIdCodec(prefix: AgentBackendId) {
   const marker = `${prefix}:`;
   return {
-    compose: (rawId: string) => `${marker}${rawId}`,
+    compose: (rawId: string) => (rawId.startsWith(marker) ? rawId : `${marker}${rawId}`),
     decompose: (sessionId: string) =>
       sessionId.startsWith(marker) ? sessionId.slice(marker.length) : sessionId,
     matches: (sessionId: string | null | undefined) => Boolean(sessionId?.startsWith(marker)),
@@ -142,6 +142,13 @@ function normalizeBackendEventPayload(
       return {
         ...payload,
         message: normalizeMessageSessionId(backendId, payload.message),
+      };
+    case "message.replaced":
+      return {
+        ...payload,
+        sessionID: codec.compose(payload.sessionID),
+        message: normalizeMessageSessionId(backendId, payload.message),
+        parts: payload.parts.map((part) => normalizePartSessionId(backendId, part)),
       };
     case "message.part.updated":
       return {

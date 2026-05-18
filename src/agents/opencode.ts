@@ -1,25 +1,15 @@
-import type { Event as OpenCodeEvent, QuestionAnswer } from "@opencode-ai/sdk/v2/client";
-import type { NativeBackendEvent, NativeAgentBridge, OpenCodeBridge } from "@/types/electron";
-import type {
-  AgentBackendCapabilities,
-  AgentBackendDescriptor,
-  AgentBackendEvent,
-} from "./backend";
+import type { Event as OpenCodeEvent } from "@opencode-ai/sdk/v2/client";
+import type { NativeBackendEvent } from "@/types/electron";
+import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend";
 import {
   createBackendIdCodec,
-  getTarget,
   normalizeMessageSessionId,
   normalizePartSessionId,
-  requireSuccess,
   tagBackendSession,
   type TaggedSession,
 } from "./shared";
 
-interface OpenCodeBackendAdapter extends OpenCodeBridge, AgentBackendDescriptor {
-  native: OpenCodeBridge;
-}
-
-const OPENCODE_CAPABILITIES: AgentBackendCapabilities = {
+export const OPENCODE_CAPABILITIES: AgentBackendCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: true,
@@ -39,7 +29,7 @@ const OPENCODE_CAPABILITIES: AgentBackendCapabilities = {
   localServer: true,
 };
 
-const OPENCODE_WORKSPACE = {
+export const OPENCODE_WORKSPACE = {
   kind: "remote-server",
   fields: {
     serverUrl: true,
@@ -49,8 +39,7 @@ const OPENCODE_WORKSPACE = {
   },
 } as const;
 
-const { compose: toCompositeSessionId, decompose: toRawSessionId } =
-  createBackendIdCodec("opencode");
+const { compose: toCompositeSessionId } = createBackendIdCodec("opencode");
 
 function tagSession(
   session: TaggedSession,
@@ -59,7 +48,7 @@ function tagSession(
   return tagBackendSession("opencode", session, event);
 }
 
-function normalizeOpenCodeEvent(event: NativeBackendEvent): AgentBackendEvent | null {
+export function normalizeOpenCodeEvent(event: NativeBackendEvent): AgentBackendEvent | null {
   if (event.type === "connection:status") {
     return {
       type: "connection.status",
@@ -132,6 +121,12 @@ function normalizeOpenCodeEvent(event: NativeBackendEvent): AgentBackendEvent | 
         sessionID: toCompositeSessionId(oc.properties.sessionID),
         status: oc.properties.status,
       };
+    case "session.idle":
+      return {
+        type: "session.status",
+        sessionID: toCompositeSessionId(oc.properties.sessionID),
+        status: { type: "idle" },
+      };
     case "permission.asked":
       return {
         type: "permission.requested",
@@ -181,379 +176,4 @@ function normalizeOpenCodeEvent(event: NativeBackendEvent): AgentBackendEvent | 
     default:
       return null;
   }
-}
-
-export function createOpenCodeBackend(
-  bridge?: NativeAgentBridge,
-): OpenCodeBackendAdapter | undefined {
-  if (!bridge) return undefined;
-
-  const adapter: OpenCodeBackendAdapter = {
-    ...bridge,
-    id: "opencode",
-    label: "OpenCode",
-    workspace: OPENCODE_WORKSPACE,
-    capabilities: OPENCODE_CAPABILITIES,
-    native: bridge,
-    host: {
-      addProject: async (config) => {
-        requireSuccess(await bridge.addProject(config), "Failed to add project");
-      },
-      removeProject: async (target) => {
-        requireSuccess(
-          await bridge.removeProject(target.directory ?? "", target.workspaceId),
-          "Failed to remove project",
-        );
-      },
-      disconnect: async () => {
-        requireSuccess(await bridge.disconnect(), "Failed to disconnect");
-      },
-    },
-    runtime: {
-      listSessions: async (target) => {
-        const { directory, workspaceId } = getTarget(target);
-        const sessions = requireSuccess(
-          await bridge.listSessions(directory, workspaceId),
-          "Failed to list sessions",
-        );
-        return sessions.map((session) =>
-          tagSession(session, {
-            directory: directory ?? session.directory ?? "",
-            workspaceId,
-          }),
-        );
-      },
-      createSession: async (input) => {
-        const session = requireSuccess(
-          await bridge.createSession(input?.title, input?.directory, input?.workspaceId),
-          "Failed to create session",
-        );
-        return tagSession(session, {
-          directory: input?.directory ?? session.directory ?? "",
-          workspaceId: input?.workspaceId,
-        });
-      },
-      startSession: async (input) => {
-        const session = tagSession(
-          requireSuccess(
-            await bridge.createSession(input.title, input.directory, input.workspaceId),
-            "Failed to create session",
-          ),
-          {
-            directory: input.directory ?? "",
-            workspaceId: input.workspaceId,
-          },
-        );
-        requireSuccess(
-          await bridge.prompt(
-            session._rawId ?? toRawSessionId(session.id),
-            input.text,
-            input.images,
-            input.model,
-            input.agent,
-            input.variant,
-          ),
-          "Failed to start session",
-        );
-        return session;
-      },
-      deleteSession: async (sessionId) => {
-        return requireSuccess(
-          await bridge.deleteSession(toRawSessionId(sessionId)),
-          "Failed to delete session",
-        );
-      },
-      renameSession: async (sessionId, title) => {
-        return requireSuccess(
-          await bridge.updateSession(toRawSessionId(sessionId), title),
-          "Failed to rename session",
-        );
-      },
-      listSessionStatuses: async (target) => {
-        const { directory, workspaceId } = getTarget(target);
-        const statuses = requireSuccess(
-          await bridge.getSessionStatuses(directory, workspaceId),
-          "Failed to list session statuses",
-        );
-        return Object.fromEntries(
-          Object.entries(statuses).map(([sessionId, status]) => [
-            toCompositeSessionId(sessionId),
-            status,
-          ]),
-        );
-      },
-      getMessages: async (sessionId, options) => {
-        const { directory, workspaceId } = getTarget(options);
-        const page = requireSuccess(
-          await bridge.getMessages(toRawSessionId(sessionId), options, directory, workspaceId),
-          "Failed to get messages",
-        );
-        return {
-          ...page,
-          messages: page.messages.map((entry) => ({
-            info: normalizeMessageSessionId("opencode", entry.info),
-            parts: entry.parts.map((part) => normalizePartSessionId("opencode", part)),
-          })),
-        };
-      },
-      prompt: async ({ sessionId, text, images, model, agent, variant }) => {
-        requireSuccess(
-          await bridge.prompt(toRawSessionId(sessionId), text, images, model, agent, variant),
-          "Failed to send prompt",
-        );
-      },
-      abort: async (sessionId) => {
-        requireSuccess(await bridge.abort(toRawSessionId(sessionId)), "Failed to abort session");
-      },
-      compactSession: async (sessionId, model) => {
-        requireSuccess(
-          await bridge.summarizeSession(toRawSessionId(sessionId), model),
-          "Failed to compact session",
-        );
-      },
-      forkSession: async (sessionId, messageID) => {
-        const session = requireSuccess(
-          await bridge.forkSession(toRawSessionId(sessionId), messageID),
-          "Failed to fork session",
-        );
-        return tagSession(session, {
-          directory: session.directory ?? "",
-        });
-      },
-      revertSession: async (sessionId, messageID, partID) => {
-        const session = requireSuccess(
-          await bridge.revertSession(toRawSessionId(sessionId), messageID, partID),
-          "Failed to revert session",
-        );
-        return tagSession(session, {
-          directory: session.directory ?? "",
-        });
-      },
-      unrevertSession: async (sessionId) => {
-        const session = requireSuccess(
-          await bridge.unrevertSession(toRawSessionId(sessionId)),
-          "Failed to unrevert session",
-        );
-        return tagSession(session, {
-          directory: session.directory ?? "",
-        });
-      },
-      listProviders: async (target) => {
-        const { directory, workspaceId } = getTarget(target);
-        return requireSuccess(
-          await bridge.getProviders(directory, workspaceId),
-          "Failed to list providers",
-        );
-      },
-      listAgents: async (target) => {
-        const { directory, workspaceId } = getTarget(target);
-        return requireSuccess(
-          await bridge.getAgents(directory, workspaceId),
-          "Failed to list agents",
-        );
-      },
-      listCommands: async (target) => {
-        const { directory, workspaceId } = getTarget(target);
-        return requireSuccess(
-          await bridge.getCommands(directory, workspaceId),
-          "Failed to list commands",
-        );
-      },
-      sendCommand: async ({ sessionId, command, args, model, agent, variant }) => {
-        requireSuccess(
-          await bridge.sendCommand(toRawSessionId(sessionId), command, args, model, agent, variant),
-          "Failed to send command",
-        );
-      },
-      respondPermission: async (sessionId, permissionId, response) => {
-        requireSuccess(
-          await bridge.respondPermission(toRawSessionId(sessionId), permissionId, response),
-          "Failed to respond to permission request",
-        );
-      },
-      replyQuestion: async (requestID: string, answers: QuestionAnswer[]) => {
-        requireSuccess(
-          await bridge.replyQuestion(requestID, answers),
-          "Failed to reply to question",
-        );
-      },
-      rejectQuestion: async (requestID: string) => {
-        requireSuccess(await bridge.rejectQuestion(requestID), "Failed to reject question");
-      },
-      findFiles: async (target, query) => {
-        const { directory, workspaceId } = getTarget(target);
-        return requireSuccess(
-          await bridge.findFiles(directory ?? null, workspaceId, query),
-          "Failed to find files",
-        );
-      },
-      subscribe: (listener) =>
-        bridge.onEvent((event) => {
-          const normalized = normalizeOpenCodeEvent(event);
-          if (normalized) listener(normalized);
-        }),
-    },
-    platform: {
-      server: {
-        start: async () => requireSuccess(await bridge.startServer(), "Failed to start server"),
-        stop: async () => requireSuccess(await bridge.stopServer(), "Failed to stop server"),
-        status: async () =>
-          requireSuccess(await bridge.getServerStatus(), "Failed to get server status"),
-      },
-      providers: {
-        listAll: async (target) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.listAllProviders(directory, workspaceId),
-            "Failed to list providers",
-          );
-        },
-        getAuthMethods: async (target) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.getProviderAuthMethods(directory, workspaceId),
-            "Failed to get provider auth methods",
-          );
-        },
-        connect: async (target, providerID, auth) => {
-          const { directory, workspaceId } = getTarget(target);
-          requireSuccess(
-            await bridge.connectProvider(directory, workspaceId, providerID, auth),
-            "Failed to connect provider",
-          );
-        },
-        disconnect: async (target, providerID) => {
-          const { directory, workspaceId } = getTarget(target);
-          requireSuccess(
-            await bridge.disconnectProvider(directory, workspaceId, providerID),
-            "Failed to disconnect provider",
-          );
-        },
-        oauthAuthorize: async (target, providerID, method) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.oauthAuthorize(directory, workspaceId, providerID, method),
-            "Failed to authorize provider",
-          );
-        },
-        oauthCallback: async (target, providerID, method, code) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.oauthCallback(directory, workspaceId, providerID, method, code),
-            "Failed to complete provider auth",
-          );
-        },
-        dispose: async (target) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.disposeInstance(directory, workspaceId),
-            "Failed to dispose provider instance",
-          );
-        },
-      },
-      mcp: {
-        status: async (target) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.getMcpStatus(directory, workspaceId),
-            "Failed to get MCP status",
-          );
-        },
-        add: async (target, name, config) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.addMcp(directory, workspaceId, name, config),
-            "Failed to add MCP server",
-          );
-        },
-        connect: async (target, name) => {
-          const { directory, workspaceId } = getTarget(target);
-          requireSuccess(
-            await bridge.connectMcp(directory, workspaceId, name),
-            "Failed to connect MCP server",
-          );
-        },
-        disconnect: async (target, name) => {
-          const { directory, workspaceId } = getTarget(target);
-          requireSuccess(
-            await bridge.disconnectMcp(directory, workspaceId, name),
-            "Failed to disconnect MCP server",
-          );
-        },
-      },
-      skills: {
-        list: async (target) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.getSkills(directory, workspaceId),
-            "Failed to get skills",
-          );
-        },
-        marketplace: {
-          list: async (view, page, perPage, apiKey) =>
-            requireSuccess(
-              await bridge.marketplaceList(view, page, perPage, apiKey),
-              "Failed to list marketplace",
-            ),
-          search: async (query, limit, apiKey) =>
-            requireSuccess(
-              await bridge.marketplaceSearch(query, limit, apiKey),
-              "Failed to search marketplace",
-            ),
-          detail: async (source, slug, apiKey) =>
-            requireSuccess(
-              await bridge.marketplaceDetail(source, slug, apiKey),
-              "Failed to get skill detail",
-            ),
-          audit: async (source, slug, apiKey) =>
-            requireSuccess(
-              await bridge.marketplaceAudit(source, slug, apiKey),
-              "Failed to get skill audit",
-            ),
-          curated: async (apiKey) =>
-            requireSuccess(await bridge.marketplaceCurated(apiKey), "Failed to get curated skills"),
-        },
-        install: async (source, directory, globalScope) =>
-          requireSuccess(
-            await bridge.installSkill(source, directory, globalScope),
-            "Failed to install skill",
-          ),
-        remove: async (skillName, directory, globalScope) =>
-          requireSuccess(
-            await bridge.removeSkill(skillName, directory, globalScope),
-            "Failed to remove skill",
-          ),
-        update: async (skillName, directory, globalScope) =>
-          requireSuccess(
-            await bridge.updateSkill(skillName, directory, globalScope),
-            "Failed to update skill",
-          ),
-        listInstalled: async (directory) =>
-          requireSuccess(
-            await bridge.listInstalledSkills(directory),
-            "Failed to list installed skills",
-          ),
-        checkCli: async () =>
-          requireSuccess(await bridge.checkSkillsCli(), "Failed to check skills CLI"),
-      },
-      config: {
-        get: async (target) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.getConfig(directory, workspaceId),
-            "Failed to get config",
-          );
-        },
-        update: async (target, config) => {
-          const { directory, workspaceId } = getTarget(target);
-          return requireSuccess(
-            await bridge.updateConfig(directory, workspaceId, config),
-            "Failed to update config",
-          );
-        },
-      },
-    },
-  };
-
-  return adapter;
 }

@@ -143,6 +143,10 @@ export interface InternalAgentState {
   /** Snapshot events queued while messages are loading for the active session */
   _pendingSnapshots: Array<
     | { type: "MESSAGE_UPDATED"; payload: Message }
+    | {
+        type: "MESSAGE_REPLACED";
+        payload: { sessionID: string; oldId: string; message: Message; parts: Part[] };
+      }
     | { type: "PART_UPDATED"; payload: { part: Part } }
     | {
         type: "PART_DELTA";

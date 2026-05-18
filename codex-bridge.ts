@@ -1,14 +1,11 @@
 // @ts-nocheck
-import { execFile as execFileCallback, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, normalize } from "node:path";
 import { createInterface } from "node:readline";
-import { promisify } from "node:util";
 import { Codex } from "@openai/codex-sdk";
-
-const execFile = promisify(execFileCallback);
 
 const DEFAULT_STATUS = {
   state: "idle",
@@ -23,6 +20,17 @@ const DEFAULT_MODEL_ID = "gpt-5.4";
 const DEFAULT_PROVIDER_ID = "openai";
 const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 const CODEX_PROVIDER_CACHE_TTL_MS = 60_000;
+const CODEX_SESSION_PREFIX = "codex:";
+
+function toFrontendSessionId(id) {
+  const raw = String(id || "");
+  return raw.startsWith(CODEX_SESSION_PREFIX) ? raw : `${CODEX_SESSION_PREFIX}${raw}`;
+}
+
+function toRawSessionId(id) {
+  const raw = String(id || "");
+  return raw.startsWith(CODEX_SESSION_PREFIX) ? raw.slice(CODEX_SESSION_PREFIX.length) : raw;
+}
 
 const STATIC_CODEX_MODEL_SPECS = [
   {
@@ -435,9 +443,13 @@ function normalizeCodexAppServerThread(thread, workspaceId) {
   const updatedAt = codexTimestampToMs(thread?.updatedAt ?? thread?.createdAt);
   const directory = normalizeDir(thread?.cwd) || "";
   const title = firstLine(thread?.name || thread?.preview || "").slice(0, 80) || "Untitled";
+  const rawId = toRawSessionId(thread.id);
+  const id = toFrontendSessionId(rawId);
   return {
-    id: thread.id,
-    slug: thread.id,
+    id,
+    slug: id,
+    _backendId: "codex",
+    _rawId: rawId,
     projectID: directory,
     workspaceID: workspaceId,
     directory,
@@ -547,7 +559,7 @@ function normalizeAppServerItem(item, existing = {}) {
 }
 
 function buildMessagesFromCodexAppServerThread(thread) {
-  const sessionId = thread.id;
+  const sessionId = toFrontendSessionId(thread.id);
   const directory = normalizeDir(thread.cwd) || "";
   const modelId = thread.model || thread.modelId || DEFAULT_MODEL_ID;
   const messages = [];
@@ -1337,6 +1349,7 @@ class CodexBridgeManager {
   }
 
   clearSessionMemory(sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     this.liveSessions.delete(sessionId);
     this.liveSessions.delete(realId);
@@ -1368,6 +1381,7 @@ class CodexBridgeManager {
   }
 
   async loadTranscript(sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     if (this.transcriptCache.has(realId)) {
       return this.transcriptCache.get(realId);
@@ -1388,6 +1402,7 @@ class CodexBridgeManager {
 
   async persistTranscript(sessionId, messages) {
     await this.storageReady;
+    sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     const payload = { messages };
     this.transcriptCache.set(realId, payload);
@@ -1395,7 +1410,7 @@ class CodexBridgeManager {
   }
 
   resolveSessionId(sessionId) {
-    let current = sessionId;
+    let current = toRawSessionId(sessionId);
     while (this.aliases.has(current)) {
       current = this.aliases.get(current);
     }
@@ -1403,6 +1418,7 @@ class CodexBridgeManager {
   }
 
   getLiveSession(sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const direct = this.liveSessions.get(sessionId);
     if (direct) return direct;
     const resolved = this.resolveSessionId(sessionId);
@@ -1410,9 +1426,13 @@ class CodexBridgeManager {
   }
 
   buildSession({ id, directory, workspaceId, title, createdAt, updatedAt, modelId, variant }) {
+    const rawId = toRawSessionId(id);
+    const frontendId = toFrontendSessionId(rawId);
     return {
-      id,
-      slug: id,
+      id: frontendId,
+      slug: frontendId,
+      _backendId: "codex",
+      _rawId: rawId,
       projectID: directory,
       workspaceID: workspaceId,
       directory,
@@ -1530,10 +1550,11 @@ class CodexBridgeManager {
     const byId = new Map();
     try {
       for (const session of await listCodexAppServerSessions({ directory, workspaceId })) {
+        const rawId = session._rawId ?? toRawSessionId(session.id);
         byId.set(session.id, session);
-        if (!this.sessionIndex.has(session.id)) {
-          this.sessionIndex.set(session.id, {
-            id: session.id,
+        if (!this.sessionIndex.has(rawId)) {
+          this.sessionIndex.set(rawId, {
+            id: rawId,
             directory: session.directory,
             workspaceId: session.workspaceID,
             title: session.title,
@@ -1575,7 +1596,7 @@ class CodexBridgeManager {
   async createSession(input = {}) {
     const project = this.ensureKnownProject(input.directory, input.workspaceId);
     const now = Date.now();
-    const tempId = `codex:temp:${randomUUID()}`;
+    const tempId = `temp:${randomUUID()}`;
     const session = this.buildSession({
       id: tempId,
       directory: project.directory,
@@ -1633,6 +1654,7 @@ class CodexBridgeManager {
   }
 
   async deleteSession(sessionId, _target = {}) {
+    sessionId = toRawSessionId(sessionId);
     await this.storageReady;
     const live = this.getLiveSession(sessionId);
     if (live?.running) {
@@ -1670,6 +1692,7 @@ class CodexBridgeManager {
   }
 
   async updateSession(sessionId, title, _target = {}) {
+    sessionId = toRawSessionId(sessionId);
     const trimmed = String(title ?? "").trim();
     if (!trimmed) throw new Error("Session title cannot be empty");
     const live = this.getLiveSession(sessionId);
@@ -1742,6 +1765,7 @@ class CodexBridgeManager {
   }
 
   async getMessages(sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const live = this.getLiveSession(sessionId);
     if (live) {
       return {
@@ -1772,6 +1796,7 @@ class CodexBridgeManager {
   }
 
   async ensureLiveSessionForPrompt(sessionId, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const live = this.getLiveSession(sessionId);
     if (live) return live;
     const realId = this.resolveSessionId(sessionId);
@@ -1892,8 +1917,10 @@ class CodexBridgeManager {
   }
 
   async handleThreadStarted(state, threadId) {
+    threadId = toRawSessionId(threadId);
     if (!threadId || state.threadId === threadId) return;
     const oldId = state.session.id;
+    const oldRawId = toRawSessionId(oldId);
     state.threadId = threadId;
     state.sessionId = threadId;
     state.session = this.buildSession({
@@ -1905,7 +1932,8 @@ class CodexBridgeManager {
       updatedAt: Date.now(),
     });
     renameSessionInMessages(state.messages, oldId, threadId);
-    this.aliases.set(oldId, threadId);
+    this.aliases.set(oldRawId, threadId);
+    this.liveSessions.delete(oldRawId);
     this.liveSessions.delete(oldId);
     this.liveSessions.set(threadId, state);
     await this.syncRealSessionRecord(state, false);
@@ -2367,6 +2395,7 @@ class CodexBridgeManager {
   }
 
   async prompt(sessionId, text, images, model, _agent, variant, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const state = await this.ensureLiveSessionForPrompt(sessionId, directory, workspaceId);
     if (state.running) {
       throw new Error("Codex session already running");
@@ -2393,17 +2422,20 @@ class CodexBridgeManager {
   }
 
   async abort(sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const state = this.getLiveSession(sessionId);
     state?.abortController?.abort();
     return true;
   }
 
   async sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, agent, variant, directory, workspaceId);
   }
 
   async summarizeSession(sessionId, model, directory, workspaceId) {
+    sessionId = toRawSessionId(sessionId);
     await this.prompt(
       sessionId,
       "/compact",
@@ -2414,28 +2446,6 @@ class CodexBridgeManager {
       directory,
       workspaceId,
     );
-  }
-
-  async findFiles(directory, _workspaceId, query) {
-    const cwd = normalizeDir(directory);
-    if (!cwd) return [];
-    const q = String(query || "")
-      .trim()
-      .toLowerCase();
-    if (!q) return [];
-    try {
-      const { stdout } = await execFile("rg", ["--files"], {
-        cwd,
-        maxBuffer: 1024 * 1024 * 8,
-      });
-      return stdout
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .filter((file) => file.toLowerCase().includes(q))
-        .slice(0, 200);
-    } catch {
-      return [];
-    }
   }
 }
 
@@ -2613,12 +2623,4 @@ export function setupCodexBridge(ipcMain, getAllWindows, options = {}) {
       }
     },
   );
-
-  ipcMain.handle("codex:find:files", async (_event, directory, workspaceId, query) => {
-    try {
-      return ok(await manager.findFiles(directory, workspaceId, query));
-    } catch (error) {
-      return fail(error);
-    }
-  });
 }

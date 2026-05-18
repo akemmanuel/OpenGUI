@@ -28,6 +28,7 @@ import {
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { POST_MERGE_DELAY_MS, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
+import { OpenGuiClientProvider } from "@/protocol/provider";
 import {
   buildPRUrl,
   computeTokenTotal,
@@ -590,11 +591,13 @@ export function App() {
   );
 
   return (
-    <AgentBackendProvider detachedProject={detachedProject}>
-      <SidebarProvider className="!h-dvh">
-        <AppContent detachedProject={detachedProject} />
-        {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
-      </SidebarProvider>
-    </AgentBackendProvider>
+    <OpenGuiClientProvider>
+      <AgentBackendProvider detachedProject={detachedProject}>
+        <SidebarProvider className="!h-dvh">
+          <AppContent detachedProject={detachedProject} />
+          {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
+        </SidebarProvider>
+      </AgentBackendProvider>
+    </OpenGuiClientProvider>
   );
 }

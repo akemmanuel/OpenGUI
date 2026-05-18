@@ -511,9 +511,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       onDismiss: () => setShowSlash(false),
     });
 
+    const submittingRef = React.useRef(false);
+
     const handleSubmit = async () => {
+      if (submittingRef.current) return;
       if (isDisabled) return;
       if (!hasValue) return;
+      submittingRef.current = true;
 
       // Intercept slash commands
       if (capabilities?.commands && value.startsWith("/")) {
@@ -524,28 +528,36 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
         const cmd = commands.find((c) => c.name === commandName);
         if (cmd) {
-          await sendCommand(commandName, args);
-          if (currentDraftKey) clearSessionDraft(currentDraftKey);
-          setValue("");
-          setImagePreviews([]);
-          setShowSlash(false);
-          resetHistory();
+          try {
+            await sendCommand(commandName, args);
+            if (currentDraftKey) clearSessionDraft(currentDraftKey);
+            setValue("");
+            setImagePreviews([]);
+            setShowSlash(false);
+            resetHistory();
+          } finally {
+            submittingRef.current = false;
+          }
           return;
         }
       }
 
-      const images = imagePreviews.length > 0 ? imagePreviews : undefined;
-      await onSubmit?.(value, images, isLoading ? queueMode : undefined);
-      if (currentDraftKey) {
-        clearSessionDraft(currentDraftKey);
-        const next = { ...sessionDraftImagesRef.current };
-        delete next[currentDraftKey];
-        sessionDraftImagesRef.current = next;
-        persistSessionDraftImages(next);
+      try {
+        const images = imagePreviews.length > 0 ? imagePreviews : undefined;
+        await onSubmit?.(value, images, isLoading ? queueMode : undefined);
+        if (currentDraftKey) {
+          clearSessionDraft(currentDraftKey);
+          const next = { ...sessionDraftImagesRef.current };
+          delete next[currentDraftKey];
+          sessionDraftImagesRef.current = next;
+          persistSessionDraftImages(next);
+        }
+        setValue("");
+        setImagePreviews([]);
+        resetHistory();
+      } finally {
+        submittingRef.current = false;
       }
-      setValue("");
-      setImagePreviews([]);
-      resetHistory();
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

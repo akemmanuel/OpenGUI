@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentBackendId } from "@/agents";
-import { AGENT_BACKEND_IDS, getAllAgentBackends, getCurrentAgentBackend } from "@/agents";
+import { AGENT_BACKEND_IDS } from "@/agents";
 import { useSessionState } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/safe-storage";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 function getStoredAgentBackendId(): AgentBackendId {
   const stored = storageGet(STORAGE_KEYS.AGENT_BACKEND);
@@ -39,12 +40,13 @@ export function useCurrentAgentBackendId() {
 }
 
 function useAllAgentBackends() {
+  const openGuiClient = useOpenGuiClient();
   return useMemo(() => {
-    const all = getAllAgentBackends(window.electronAPI);
+    const all = openGuiClient.agentBackends.list();
     return Object.fromEntries(
       all.map((backend) => [backend.id as AgentBackendId, backend]),
     ) as Record<AgentBackendId, NonNullable<(typeof all)[number]>>;
-  }, []);
+  }, [openGuiClient]);
 }
 
 function useActiveAgentBackendId() {
@@ -60,9 +62,8 @@ export function useAgentBackend(backendId?: AgentBackendId) {
   const allBackends = useAllAgentBackends();
   const activeBackendId = useActiveAgentBackendId();
   const resolvedBackendId = backendId ?? activeBackendId;
-  return (
-    allBackends[resolvedBackendId] ?? getCurrentAgentBackend(window.electronAPI, resolvedBackendId)
-  );
+  const openGuiClient = useOpenGuiClient();
+  return allBackends[resolvedBackendId] ?? openGuiClient.agentBackends.get(resolvedBackendId);
 }
 
 export function useAvailableBackendIds() {

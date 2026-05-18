@@ -166,6 +166,43 @@ function waitForHealthy(timeoutMs = STARTUP_TIMEOUT) {
 const BACKOFF_STEPS = [500, 1000, 2000, 5000]; // ms – fast first attempt
 const HEALTH_INTERVAL = 30_000; // ms
 const SSE_STALE_THRESHOLD = 45_000; // ms – restart SSE if no event for this long
+const OPENCODE_SESSION_PREFIX = "opencode:";
+
+function toFrontendSessionId(id) {
+  const raw = String(id || "");
+  return raw.startsWith(OPENCODE_SESSION_PREFIX) ? raw : `${OPENCODE_SESSION_PREFIX}${raw}`;
+}
+
+function toRawSessionId(id) {
+  const raw = String(id || "");
+  return raw.startsWith(OPENCODE_SESSION_PREFIX) ? raw.slice(OPENCODE_SESSION_PREFIX.length) : raw;
+}
+
+function tagOpenCodeSession(session, dir, workspaceId) {
+  if (!session) return session;
+  const rawId = toRawSessionId(session.id);
+  const id = toFrontendSessionId(rawId);
+  return {
+    ...session,
+    id,
+    slug: session.slug ? toFrontendSessionId(session.slug) : id,
+    _backendId: "opencode",
+    _rawId: rawId,
+    _projectDir: dir ?? session._projectDir ?? session.directory,
+    _workspaceId: workspaceId ?? session._workspaceId,
+  };
+}
+
+function tagOpenCodeMessageEntry(entry) {
+  const sessionID = toFrontendSessionId(entry?.info?.sessionID);
+  return {
+    ...entry,
+    info: { ...entry.info, sessionID },
+    parts: (entry.parts ?? []).map((part) =>
+      part && "sessionID" in part ? { ...part, sessionID } : part,
+    ),
+  };
+}
 
 // Keep-alive agents to prevent idle TCP connections from being dropped.
 // Setting keepAlive + very long timeouts prevents OS/proxy idle-timeout kills.
@@ -547,14 +584,6 @@ class OpenCodeConnection {
     return res.data ?? [];
   }
 
-  // - File search ----------------------------------------------------------
-
-  async findFiles(query) {
-    this._requireClient();
-    const res = await this._client.find.files({ query });
-    return res.data ?? [];
-  }
-
   // - internal -------------------------------------------------------------
 
   _requireClient() {
@@ -627,21 +656,18 @@ class OpenCodeConnection {
     this._abortController = abortController;
 
     try {
-      const events = await this._client.event.subscribe(
-        {},
-        {
-          signal: abortController.signal,
-          // Disable SDK-level retry - we handle reconnection at the app level
-          // with our own backoff. Without this, the SDK silently retries with
-          // exponential backoff (3s/6s/12s/24s/30s) and the app has no
-          // visibility into the disconnect.
-          sseMaxRetryAttempts: 1,
-          onSseError: (err) => {
-            if (abortController.signal.aborted) return;
-            console.warn("[OpenCodeConnection] SDK SSE error:", err);
-          },
+      const events = await this._client.global.event({
+        signal: abortController.signal,
+        // Disable SDK-level retry - we handle reconnection at the app level
+        // with our own backoff. Without this, the SDK silently retries with
+        // exponential backoff (3s/6s/12s/24s/30s) and the app has no
+        // visibility into the disconnect.
+        sseMaxRetryAttempts: 1,
+        onSseError: (err) => {
+          if (abortController.signal.aborted) return;
+          console.warn("[OpenCodeConnection] SDK SSE error:", err);
         },
-      );
+      });
 
       const stream = events.stream ?? events;
       for await (const event of stream) {
@@ -661,13 +687,11 @@ class OpenCodeConnection {
         this._reconnectAttempt = 0;
       }
 
-      // Newer OpenCode servers can close the project-scoped /event stream
-      // cleanly after sending the initial server.connected event. Treat a
-      // clean EOF as non-fatal; otherwise every open project enters a tight
-      // reconnect/log loop while the connection itself remains healthy.
+      // Global stream should stay open. If it ends, reconnect; otherwise prompts
+      // still work but renderer loses streaming/status events.
       if (!abortController.signal.aborted && this._streamGeneration === streamGeneration) {
         if (this._abortController === abortController) this._abortController = null;
-        this._setStatus({ state: "connected", error: null });
+        this._scheduleReconnect(lifecycle, new Error("OpenCode global event stream ended"));
       }
     } catch (err) {
       if (
@@ -847,20 +871,34 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (windowState.connections.get(projectKey) !== conn) return;
       if (event?.type === "opencode:event") {
         const payload = event.payload;
+        const props = payload?.properties ?? {};
+        const rawSessionId = toRawSessionId(
+          props.sessionID ?? props.info?.id ?? props.part?.sessionID ?? "",
+        );
+        if (rawSessionId) {
+          const mappedProjectKey = windowState.sessionDirectoryMap.get(rawSessionId);
+          if (mappedProjectKey && mappedProjectKey !== projectKey) return;
+          if (!mappedProjectKey) {
+            const eventDir = normalize(props.info?.directory ?? props.info?.path?.cwd ?? "");
+            if (eventDir && eventDir !== normalize(directory)) return;
+          }
+        } else if (payload?.type !== "server.connected" && payload?.type !== "sync") {
+          return;
+        }
         if (payload?.type === "question.asked") {
-          const questionId = payload?.properties?.id;
+          const questionId = props?.id;
           if (questionId) {
             windowState.questionDirectoryMap.set(questionId, projectKey);
           }
         }
         if (payload?.type === "question.replied" || payload?.type === "question.rejected") {
-          const requestID = payload?.properties?.requestID;
+          const requestID = props?.requestID;
           if (requestID) windowState.questionDirectoryMap.delete(requestID);
         }
         if (payload?.type === "session.created" || payload?.type === "session.updated") {
-          const info = payload?.properties?.info;
+          const info = props?.info;
           if (info?.id) {
-            windowState.sessionDirectoryMap.set(info.id, projectKey);
+            windowState.sessionDirectoryMap.set(toRawSessionId(info.id), projectKey);
           }
         }
       }
@@ -887,6 +925,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   /** Find which connection owns a session by looking up the cache. */
   function getConnectionForSession(windowState, sessionId) {
+    sessionId = toRawSessionId(sessionId);
     const projectKey = windowState.sessionDirectoryMap.get(sessionId);
     if (projectKey) {
       const conn = windowState.connections.get(projectKey);
@@ -929,6 +968,19 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     return null;
   }
 
+  async function ensureConnectionForDirectory(windowState, sender, directory, workspaceId) {
+    const existing = getConnectionForDirectory(windowState, directory, workspaceId);
+    if (existing) return existing;
+    if (typeof directory !== "string" || !directory.trim()) return null;
+
+    const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
+    const config = normalizeServerConfig({ ...baseConfig, directory });
+    const conn = createConnection(windowState, sender, directory, workspaceId);
+    await conn.connect(config);
+    windowState.serverConfig = config;
+    return conn;
+  }
+
   // --- IPC handler factories (DRY helpers to eliminate boilerplate) ---
 
   /**
@@ -940,7 +992,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     ipcMain.handle(channel, async (event, directory, workspaceId, ...args) => {
       try {
         const windowState = getWindowState(event.sender);
-        const conn = getConnectionForDirectory(windowState, directory, workspaceId);
+        const conn = await ensureConnectionForDirectory(
+          windowState,
+          event.sender,
+          directory,
+          workspaceId,
+        );
         if (!conn) return { success: false, error: "No connection available" };
         const data = await fn(conn, ...args);
         return data === undefined ? { success: true } : { success: true, data };
@@ -962,7 +1019,8 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         const windowState = getWindowState(event.sender);
         const conn = getConnectionForSession(windowState, sessionId);
         if (!conn) return { success: false, error: "Session connection not found" };
-        const data = await fn(conn, sessionId, ...args);
+        const rawSessionId = toRawSessionId(sessionId);
+        const data = await fn(conn, rawSessionId, ...args);
         return data === undefined ? { success: true } : { success: true, data };
       } catch (err) {
         return { success: false, error: err.message };
@@ -1251,17 +1309,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   /** Tag sessions with their directory and cache the mappings. */
   async function listAndCacheSessions(conn, dir, workspaceId) {
-    const sessions = (await conn.listSessions()).map((s) => ({
-      ...s,
-      _projectDir: dir,
-      _workspaceId: workspaceId,
-    }));
-    return sessions;
+    return (await conn.listSessions()).map((s) => tagOpenCodeSession(s, dir, workspaceId));
   }
 
   function cacheSessions(windowState, sessions, projectKey) {
     for (const s of sessions) {
-      windowState.sessionDirectoryMap.set(s.id, projectKey);
+      windowState.sessionDirectoryMap.set(toRawSessionId(s._rawId ?? s.id), projectKey);
     }
   }
 
@@ -1269,8 +1322,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     try {
       const windowState = getWindowState(event.sender);
       if (directory) {
-        const conn = getConnectionForDirectory(windowState, directory, workspaceId);
-        if (!conn) return { success: false, error: "Project not connected" };
+        const conn = await ensureConnectionForDirectory(
+          windowState,
+          event.sender,
+          directory,
+          workspaceId,
+        );
+        if (!conn) return { success: false, error: "No connection available" };
         const projectKey = makeProjectKey(workspaceId, directory);
         const sessions = await listAndCacheSessions(conn, directory, workspaceId);
         cacheSessions(windowState, sessions, projectKey);
@@ -1301,17 +1359,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     try {
       const windowState = getWindowState(event.sender);
       const conn = directory
-        ? getConnectionForDirectory(windowState, directory, workspaceId)
+        ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
         : getAnyConnection(windowState, workspaceId);
       if (!conn) return { success: false, error: "No connection available" };
       const session = await conn.createSession(title);
-      if (session) {
-        const dir = directory || conn.getDirectory();
-        if (dir) {
-          windowState.sessionDirectoryMap.set(session.id, makeProjectKey(workspaceId, dir));
-        }
+      const dir = directory || conn.getDirectory();
+      const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
+      if (session && dir) {
+        windowState.sessionDirectoryMap.set(session.id, makeProjectKey(workspaceId, dir));
       }
-      return { success: true, data: session };
+      return { success: true, data: taggedSession };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -1324,15 +1381,18 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (!conn) {
         return { success: false, error: "Session connection not found" };
       }
-      const result = await conn.deleteSession(id);
-      windowState.sessionDirectoryMap.delete(id);
+      const rawId = toRawSessionId(id);
+      const result = await conn.deleteSession(rawId);
+      windowState.sessionDirectoryMap.delete(rawId);
       return { success: true, data: result };
     } catch (err) {
       return { success: false, error: err.message };
     }
   });
 
-  handleSessionOp("opencode:session:update", (conn, id, title) => conn.updateSession(id, title));
+  handleSessionOp("opencode:session:update", async (conn, id, title) =>
+    tagOpenCodeSession(await conn.updateSession(id, title), conn.getDirectory()),
+  );
 
   ipcMain.handle("opencode:session:statuses", async (event, directory, workspaceId) => {
     try {
@@ -1342,30 +1402,38 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         : getAnyConnection(windowState, workspaceId);
       if (!conn) return { success: false, error: "No connection available" };
       const statuses = await conn.getSessionStatuses();
-      return { success: true, data: statuses };
+      return {
+        success: true,
+        data: Object.fromEntries(
+          Object.entries(statuses ?? {}).map(([id, status]) => [toFrontendSessionId(id), status]),
+        ),
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }
   });
 
-  handleSessionOp("opencode:session:revert", (conn, id, messageID, partID) =>
-    conn.revertSession(id, messageID, partID),
+  handleSessionOp("opencode:session:revert", async (conn, id, messageID, partID) =>
+    tagOpenCodeSession(await conn.revertSession(id, messageID, partID), conn.getDirectory()),
   );
-  handleSessionOp("opencode:session:unrevert", (conn, id) => conn.unrevertSession(id));
+  handleSessionOp("opencode:session:unrevert", async (conn, id) =>
+    tagOpenCodeSession(await conn.unrevertSession(id), conn.getDirectory()),
+  );
 
   ipcMain.handle("opencode:session:fork", async (event, id, messageID) => {
     try {
       const windowState = getWindowState(event.sender);
       const conn = getConnectionForSession(windowState, id);
       if (!conn) return { success: false, error: "Session connection not found" };
-      const result = await conn.forkSession(id, messageID);
+      const result = await conn.forkSession(toRawSessionId(id), messageID);
+      const taggedResult = tagOpenCodeSession(result, conn.getDirectory());
       // Register the new forked session in the directory map so future
       // operations can find the correct connection.
       if (result?.id) {
         const dir = [...windowState.connections.entries()].find(([, c]) => c === conn)?.[0];
         if (dir) windowState.sessionDirectoryMap.set(result.id, dir);
       }
-      return { success: true, data: result };
+      return { success: true, data: taggedResult };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -1402,17 +1470,22 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   ipcMain.handle("opencode:messages", async (event, sessionId, options, directory, workspaceId) => {
     try {
       const windowState = getWindowState(event.sender);
-      let conn = getConnectionForSession(windowState, sessionId);
+      const rawSessionId = toRawSessionId(sessionId);
+      let conn = getConnectionForSession(windowState, rawSessionId);
       if (!conn && directory) {
         conn = getConnectionForDirectory(windowState, directory, workspaceId);
         if (conn) {
-          windowState.sessionDirectoryMap.set(sessionId, makeProjectKey(workspaceId, directory));
+          windowState.sessionDirectoryMap.set(rawSessionId, makeProjectKey(workspaceId, directory));
         }
       }
       if (!conn) {
         return { success: false, error: "Session connection not found" };
       }
-      return { success: true, data: await conn.getMessages(sessionId, options) };
+      const data = await conn.getMessages(rawSessionId, options);
+      return {
+        success: true,
+        data: { ...data, messages: (data.messages ?? []).map(tagOpenCodeMessageEntry) },
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -1445,6 +1518,34 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   handleSessionOp("opencode:session:summarize", (conn, sessionId, model) =>
     conn.summarizeSession(sessionId, model),
   );
+
+  ipcMain.handle("opencode:session:start", async (event, input = {}) => {
+    try {
+      const windowState = getWindowState(event.sender);
+      const directory = input.directory;
+      const workspaceId = input.workspaceId;
+      const conn = directory
+        ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
+        : getAnyConnection(windowState, workspaceId);
+      if (!conn) return { success: false, error: "No connection available" };
+      const session = await conn.createSession(input.title);
+      const dir = directory || conn.getDirectory();
+      if (session?.id && dir) {
+        windowState.sessionDirectoryMap.set(session.id, makeProjectKey(workspaceId, dir));
+      }
+      await conn.promptAsync(
+        session.id,
+        input.text ?? "",
+        input.images,
+        input.model,
+        input.agent,
+        input.variant,
+      );
+      return { success: true, data: tagOpenCodeSession(session, dir, workspaceId) };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
   handleQuestionOp("opencode:question:reject", (conn, requestID) => conn.rejectQuestion(requestID));
 
   // --- MCP operations (directory-aware) ---
@@ -1475,21 +1576,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   // --- Skills operations (directory-aware) ---
 
   handleDirectoryOp("opencode:skills", (conn) => conn.getSkills());
-
-  // --- File search (directory-specific) ---
-
-  ipcMain.handle("opencode:find:files", async (event, directory, workspaceId, query) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const conn = getConnectionForDirectory(windowState, directory, workspaceId);
-      if (!conn) return { success: false, error: "No connection available" };
-
-      const data = await conn.findFiles(query);
-      return { success: true, data };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
 
   // --- Local server management ---
 

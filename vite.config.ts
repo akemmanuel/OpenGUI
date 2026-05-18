@@ -1,3 +1,5 @@
+import "./build/suppress-node-deprecations.ts";
+
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -116,7 +118,7 @@ export default defineConfig({
         cache: false,
       },
       start: {
-        command: "NODE_ENV=production electron .",
+        command: "NODE_ENV=production electron . --no-sandbox",
         cache: false,
       },
       "start:web": {

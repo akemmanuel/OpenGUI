@@ -1,8 +1,3 @@
-import type { ElectronAPI } from "@/types/electron";
-import { createClaudeCodeBackend } from "./claude-code";
-import { createCodexBackend } from "./codex";
-import { createOpenCodeBackend } from "./opencode";
-import { createPiBackend } from "./pi";
 import { createBackendIdCodec } from "./shared";
 
 export type AgentBackendId = "opencode" | "claude-code" | "pi" | "codex";
@@ -27,29 +22,5 @@ export function getAgentBackendIdFromSessionId(
 ): AgentBackendId | null {
   return (
     AGENT_BACKEND_IDS.find((backendId) => AGENT_ID_CODECS[backendId].matches(sessionId)) ?? null
-  );
-}
-
-export function getCurrentAgentBackend(
-  electronAPI?: ElectronAPI,
-  backendId: AgentBackendId = "opencode",
-) {
-  if (backendId === "claude-code") {
-    return createClaudeCodeBackend(electronAPI?.claudeCode);
-  }
-  if (backendId === "pi") {
-    return createPiBackend(electronAPI?.pi);
-  }
-  if (backendId === "codex") {
-    return createCodexBackend(electronAPI?.codex);
-  }
-  return createOpenCodeBackend(electronAPI?.opencode);
-}
-
-export function getAllAgentBackends(electronAPI?: ElectronAPI) {
-  return AGENT_BACKEND_IDS.map((backendId) =>
-    getCurrentAgentBackend(electronAPI, backendId),
-  ).filter((backend): backend is NonNullable<ReturnType<typeof getCurrentAgentBackend>> =>
-    Boolean(backend),
   );
 }
