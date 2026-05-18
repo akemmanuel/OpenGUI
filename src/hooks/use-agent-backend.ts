@@ -49,19 +49,17 @@ function useAllAgentBackends() {
   }, [openGuiClient]);
 }
 
-function useActiveAgentBackendId() {
+function useResourceAgentBackendId() {
   const preferredBackendId = useCurrentAgentBackendId();
   const { sessions, activeSessionId, draftSessionBackendId } = useSessionState();
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  if (activeSession?._backendId) return activeSession._backendId;
-  if (draftSessionBackendId) return draftSessionBackendId;
-  return preferredBackendId;
+  return activeSession?._backendId ?? draftSessionBackendId ?? preferredBackendId;
 }
 
 export function useAgentBackend(backendId?: AgentBackendId) {
   const allBackends = useAllAgentBackends();
-  const activeBackendId = useActiveAgentBackendId();
-  const resolvedBackendId = backendId ?? activeBackendId;
+  const resourceBackendId = useResourceAgentBackendId();
+  const resolvedBackendId = backendId ?? resourceBackendId;
   const openGuiClient = useOpenGuiClient();
   return allBackends[resolvedBackendId] ?? openGuiClient.agentBackends.get(resolvedBackendId);
 }

@@ -1,7 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron/main";
-import { shell } from "electron";
+import type { BrowserWindow as BrowserWindowType } from "electron";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const { app, BrowserWindow, dialog, ipcMain, shell } =
+  require("electron") as typeof import("electron");
 import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
@@ -20,7 +24,7 @@ const DEV_SERVER_URL = process.env.BUN_DEV_SERVER_URL || "http://localhost:3000"
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
 const settingsStore = createSettingsStore(app.getPath("userData"));
 
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: BrowserWindowType | null = null;
 
 function broadcastSettingsChange(key: string, value: unknown) {
   broadcastToAllWindows("settings:changed", { key, value });
@@ -266,7 +270,7 @@ function createWindow() {
 }
 
 /** Track detached project windows so we can detect duplicates and clean up. */
-const detachedWindows = new Map<string, BrowserWindow>(); // projectDir -> BrowserWindow
+const detachedWindows = new Map<string, BrowserWindowType>(); // projectDir -> BrowserWindow
 
 function getDetachedProjectDirectories() {
   return Array.from(detachedWindows.entries())

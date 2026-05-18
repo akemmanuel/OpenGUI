@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { app, ipcMain } from "electron";
 import { createRequire } from "node:module";
-import { broadcastToAllWindows } from "../lib/window-broadcast.js";
 
 const require = createRequire(import.meta.url);
+const { app, ipcMain } = require("electron");
+import { broadcastToAllWindows } from "../lib/window-broadcast.js";
 
 let autoUpdater = null;
 

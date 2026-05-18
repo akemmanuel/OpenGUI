@@ -233,16 +233,17 @@ export function AppSidebar({
       ),
     [activeWorkspace?.projects, projectMeta],
   );
-  const isChatSession = useCallback(
-    (session: (typeof sessions)[number]) => {
-      const meta = sessionMeta[session.id];
-      if (meta?.movedToSessionId) return false;
-      if (meta?.assignedProjectDir) return false;
-      if (meta?.originMode === "chat") return true;
-      const directory = normalizeProjectPath(session._projectDir ?? session.directory);
-      return Boolean(directory && projectMeta[directory]?.hidden);
+  const isDefaultChatDirectory = useCallback(
+    (directory?: string | null) => {
+      const normalizedDirectory = normalizeProjectPath(directory ?? "");
+      const normalizedDefaultChatDirectory = normalizeProjectPath(defaultChatDirectory ?? "");
+      return Boolean(
+        normalizedDirectory &&
+        normalizedDefaultChatDirectory &&
+        normalizedDirectory === normalizedDefaultChatDirectory,
+      );
     },
-    [projectMeta, sessionMeta],
+    [defaultChatDirectory],
   );
 
   const sortSessionsForSidebar = useCallback(
@@ -270,8 +271,13 @@ export function AppSidebar({
   // of `session.directory` so that sessions are grouped correctly even when the
   // server stores a slightly different path (symlinks, trailing slashes, etc.).
   const projectGroups = useMemo(() => {
+    const visibleProjectDirectorySet = new Set(
+      (detachedProject ? [detachedProject] : availableProjectDirectories).map((dir) =>
+        normalizeProjectPath(dir),
+      ),
+    );
     const openDirectories = Object.keys(connections).filter((dir) =>
-      detachedProject ? dir === detachedProject : true,
+      visibleProjectDirectorySet.has(normalizeProjectPath(dir)),
     );
     const openDirectorySet = new Set(openDirectories.map((dir) => normalizeProjectPath(dir)));
     const rootSessions = sessions.filter((s) => {
@@ -303,7 +309,7 @@ export function AppSidebar({
         continue;
       }
       const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
-      if (isChatSession(s) || !openDirectorySet.has(sessionDir)) continue;
+      if (!openDirectorySet.has(sessionDir)) continue;
       // If session belongs to a worktree, group it under the parent project
       const parentDir = worktreeParents[sessionDir]?.parentDir;
       const groupDir = parentDir ?? sessionDir;
@@ -323,8 +329,8 @@ export function AppSidebar({
     worktreeDirs,
     detachedProject,
     activeWorkspace,
+    availableProjectDirectories,
     sessionMeta,
-    isChatSession,
     sortSessionsForSidebar,
   ]);
   const chatSessions = useMemo(
@@ -334,10 +340,10 @@ export function AppSidebar({
           (session) =>
             !session.parentID &&
             !sessionMeta[session.id]?.movedToSessionId &&
-            isChatSession(session),
+            isDefaultChatDirectory(session._projectDir ?? session.directory),
         ),
       ),
-    [sessions, isChatSession, sessionMeta, sortSessionsForSidebar],
+    [sessions, isDefaultChatDirectory, sessionMeta, sortSessionsForSidebar],
   );
   const filteredChatSessions = useMemo(() => {
     if (!hasActiveSearch) return chatSessions;

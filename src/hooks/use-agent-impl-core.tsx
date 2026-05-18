@@ -358,11 +358,19 @@ function InternalAgentProvider({
   const activeSession = state.activeSessionId
     ? (state.sessions.find((session) => session.id === state.activeSessionId) ?? null)
     : null;
-  const activeBackendId =
-    getSessionBackendId(activeSession) ?? state.draftSessionBackendId ?? preferredBackendId;
-  const bridge = backendsById[activeBackendId] ?? openGuiClient.agentBackends.get(activeBackendId);
-  const workspaceProfile = bridge?.workspace;
-  const runtime = bridge?.runtime;
+  const activeSessionBackendId = getSessionBackendId(activeSession);
+  const creationBackendId = state.draftSessionBackendId ?? preferredBackendId;
+  const resourceBackendId = activeSessionBackendId ?? creationBackendId;
+  const discoveryBackendIds = useMemo(
+    () => allBackends.map((backend) => backend.id as AgentBackendId),
+    [allBackends],
+  );
+  const resourceBridge =
+    backendsById[resourceBackendId] ?? openGuiClient.agentBackends.get(resourceBackendId);
+  const creationBridge =
+    backendsById[creationBackendId] ?? openGuiClient.agentBackends.get(creationBackendId);
+  const workspaceProfile = resourceBridge?.workspace;
+  const runtime = resourceBridge?.runtime;
   const expectedDirectoriesRef = useRef<Set<string>>(new Set());
   const forcedSessionTitlesRef = useRef<Map<string, string>>(new Map());
   const pendingTitlePersistenceRef = useRef<Map<string, string>>(new Map());
@@ -833,7 +841,12 @@ function InternalAgentProvider({
   const addProject = useCallback(
     async (
       config: ConnectionConfig,
-      options?: { suppressError?: boolean; hidden?: boolean; backendIds?: AgentBackendId[] },
+      options?: {
+        suppressError?: boolean;
+        hidden?: boolean;
+        transient?: boolean;
+        backendIds?: AgentBackendId[];
+      },
     ) => {
       if (allBackends.length === 0 || !config.directory) return;
       const workspaceId =
@@ -864,7 +877,9 @@ function InternalAgentProvider({
           },
         },
       });
-      const targetBackendIds = options?.backendIds?.length ? options.backendIds : [activeBackendId];
+      const targetBackendIds = options?.backendIds?.length
+        ? options.backendIds
+        : discoveryBackendIds;
       if (targetBackendIds.length === 0) return;
 
       const connectResult = await openGuiClient.agentBackends.connectProject({
@@ -933,7 +948,7 @@ function InternalAgentProvider({
       const workspaceDirectory = isWorktree
         ? worktreeParentMap[config.directory]?.parentDir
         : config.directory;
-      if (workspaceDirectory && !options?.hidden) {
+      if (workspaceDirectory && !options?.hidden && !options?.transient) {
         dispatch({
           type: "ADD_WORKSPACE_PROJECT",
           payload: {
@@ -945,16 +960,24 @@ function InternalAgentProvider({
           },
         });
       }
-      if (workspaceDirectory && !options?.hidden && workspaceId === LOCAL_WORKSPACE_ID) {
+      if (
+        workspaceDirectory &&
+        !options?.hidden &&
+        !options?.transient &&
+        workspaceId === LOCAL_WORKSPACE_ID
+      ) {
         storageSet(STORAGE_KEYS.SERVER_URL, config.baseUrl);
         storageSetOrRemove(STORAGE_KEYS.USERNAME, config.username);
       }
     },
-    [activeBackendId, allBackends, openGuiClient],
+    [allBackends, discoveryBackendIds, openGuiClient],
   );
 
   const ensureDirectoryConnection = useCallback(
-    async (directory: string, options?: { hidden?: boolean }) => {
+    async (
+      directory: string,
+      options?: { hidden?: boolean; transient?: boolean; backendIds?: AgentBackendId[] },
+    ) => {
       const normalizedDirectory = normalizeProjectPath(directory);
       if (!normalizedDirectory) return;
       const workspace =
@@ -964,7 +987,12 @@ function InternalAgentProvider({
       const workspaceId = workspace.id;
       const projectKey = makeProjectKey(workspaceId, normalizedDirectory);
       const status = stateRef.current.connections[projectKey];
-      if (status?.state === "connected" || status?.state === "connecting") return;
+      if (
+        !options?.backendIds?.length &&
+        (status?.state === "connected" || status?.state === "connecting")
+      ) {
+        return;
+      }
       await addProject(
         {
           workspaceId,
@@ -973,7 +1001,12 @@ function InternalAgentProvider({
           username: workspace.username,
           password: workspace.password,
         },
-        { suppressError: true, hidden: options?.hidden },
+        {
+          suppressError: true,
+          hidden: options?.hidden,
+          transient: options?.transient,
+          backendIds: options?.backendIds,
+        },
       );
     },
     [addProject],
@@ -982,8 +1015,11 @@ function InternalAgentProvider({
   const ensureDefaultChatConnection = useCallback(async () => {
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
     if (!defaultChatDirectory || detachedProject) return;
-    await ensureDirectoryConnection(defaultChatDirectory, { hidden: true });
-  }, [detachedProject, ensureDirectoryConnection]);
+    await ensureDirectoryConnection(defaultChatDirectory, {
+      transient: true,
+      backendIds: allBackends.map((backend) => backend.id as AgentBackendId),
+    });
+  }, [allBackends, detachedProject, ensureDirectoryConnection]);
 
   const removeProject = useCallback(
     async (directory: string) => {
@@ -1200,10 +1236,15 @@ function InternalAgentProvider({
   }, [allBackends, addProject, backendsById, detachedProject, preferredBackendId]);
 
   useEffect(() => {
-    if (!bridge || detachedProject) return;
+    if (allBackends.length === 0 || detachedProject) return;
     if (!state.defaultChatDirectory) return;
     void ensureDefaultChatConnection();
-  }, [bridge, detachedProject, ensureDefaultChatConnection, state.defaultChatDirectory]);
+  }, [
+    allBackends.length,
+    detachedProject,
+    ensureDefaultChatConnection,
+    state.defaultChatDirectory,
+  ]);
 
   useEffect(() => {
     if (detachedProject) return;
@@ -1261,10 +1302,13 @@ function InternalAgentProvider({
       Object.fromEntries(
         Object.entries(activeWorkspaceConnections).filter(([projectKey]) => {
           const { workspaceId, directory } = parseProjectKey(projectKey);
-          return !isHiddenProject(state.projectMeta, workspaceId, directory);
+          return (
+            activeWorkspace?.projects.includes(directory) &&
+            !isHiddenProject(state.projectMeta, workspaceId, directory)
+          );
         }),
       ),
-    [activeWorkspaceConnections, state.projectMeta],
+    [activeWorkspaceConnections, activeWorkspace?.projects, state.projectMeta],
   );
 
   const visibleActiveWorkspaceProjectSet = useMemo(() => {
@@ -1364,7 +1408,7 @@ function InternalAgentProvider({
     getSessionBackendId(activeResourceSession) ?? state.draftSessionBackendId ?? preferredBackendId;
 
   useEffect(() => {
-    if (!bridge || !activeResourceDirectory) return;
+    if (!resourceBridge || !activeResourceDirectory) return;
     const activeProjectKey = makeProjectKey(activeWorkspace?.id, activeResourceDirectory);
     if (!(activeProjectKey in state.connections)) return;
     if (
@@ -1375,7 +1419,7 @@ function InternalAgentProvider({
       return;
     void loadServerResources(activeResourceBackendId, activeResourceDirectory, activeWorkspace?.id);
   }, [
-    bridge,
+    resourceBridge,
     activeResourceBackendId,
     activeResourceDirectory,
     activeWorkspace?.id,
@@ -1601,7 +1645,7 @@ function InternalAgentProvider({
         childHydrationVersionRef.current[childSid] = nextVersion;
         const backendId = options?.sessionId
           ? (getAgentBackendIdFromSessionId(options.sessionId) ?? undefined)
-          : activeBackendId;
+          : undefined;
         openGuiClient.sessions
           .getMessages({
             sessionId: childSid,
@@ -1641,7 +1685,7 @@ function InternalAgentProvider({
           });
       }
     },
-    [activeBackendId, openGuiClient],
+    [openGuiClient],
   );
 
   const selectSession = useCallback(
@@ -1845,9 +1889,7 @@ function InternalAgentProvider({
         preferredBackendId;
       try {
         if (directory) {
-          await ensureDirectoryConnection(directory, {
-            hidden: isChatDirectory(directory),
-          });
+          await ensureDirectoryConnection(directory);
         }
         const session = await openGuiClient.sessions.create({
           backendId: targetBackendId,
@@ -2104,7 +2146,6 @@ function InternalAgentProvider({
     },
     [
       openGuiClient,
-      activeBackendId,
       state.selectedModel,
       state.selectedAgent,
       state.variantSelections,
@@ -2142,16 +2183,14 @@ function InternalAgentProvider({
 
   const sendPrompt = useCallback(
     async (text: string, images?: string[], mode?: QueueMode) => {
-      if (!runtime) return;
       const effectiveMode = mode ?? "queue";
       const draftDirectory = stateRef.current.draftSessionDirectory;
-      if (!stateRef.current.activeSessionId && draftDirectory && runtime.startSession) {
+      const creationRuntime = creationBridge?.runtime;
+      if (!stateRef.current.activeSessionId && draftDirectory && creationRuntime?.startSession) {
         if (draftCreatingRef.current) return;
         draftCreatingRef.current = true;
         try {
-          await ensureDirectoryConnection(draftDirectory, {
-            hidden: isChatDirectory(draftDirectory),
-          });
+          await ensureDirectoryConnection(draftDirectory);
           const pendingTitle = "Untitled";
           dispatch({ type: "SET_BUSY", payload: true });
           const model = selectedModelRef.current ?? undefined;
@@ -2163,13 +2202,13 @@ function InternalAgentProvider({
             selectedAgentRef.current,
           );
           const startedAt = Date.now();
-          const session = await runtime.startSession({
+          const session = await creationRuntime.startSession({
             text,
             images,
             model,
             agent,
             variant,
-            title: activeBackendId === "claude-code" ? undefined : pendingTitle,
+            title: creationBackendId === "claude-code" ? undefined : pendingTitle,
             directory: draftDirectory,
             workspaceId: stateRef.current.activeWorkspaceId,
           });
@@ -2297,9 +2336,9 @@ function InternalAgentProvider({
       await dispatchPromptDirect(sessionId, prepareDirectoryChangePrompt(sessionId, text), images);
     },
     [
-      runtime,
+      creationBridge,
+      creationBackendId,
       openGuiClient,
-      activeBackendId,
       dispatchPromptDirect,
       prepareDirectoryChangePrompt,
       ensureSessionFromDraft,
@@ -2333,27 +2372,25 @@ function InternalAgentProvider({
 
   const sendCommand = useCallback(
     async (command: string, args: string) => {
-      if (!runtime) return;
       const commandText = `/${command}${args ? ` ${args}` : ""}`;
+      const creationRuntime = creationBridge?.runtime;
       if (
         !stateRef.current.activeSessionId &&
         stateRef.current.draftSessionDirectory &&
-        runtime.startSession
+        creationRuntime?.startSession
       ) {
         if (draftCreatingRef.current) return;
         draftCreatingRef.current = true;
         try {
-          await ensureDirectoryConnection(stateRef.current.draftSessionDirectory, {
-            hidden: isChatDirectory(stateRef.current.draftSessionDirectory),
-          });
+          await ensureDirectoryConnection(stateRef.current.draftSessionDirectory);
           const pendingTitle = "Untitled";
           dispatch({ type: "SET_BUSY", payload: true });
-          const session = await runtime.startSession({
+          const session = await creationRuntime.startSession({
             text: commandText,
             model: state.selectedModel ?? undefined,
             agent: state.selectedAgent ?? undefined,
             variant: currentVariant,
-            title: activeBackendId === "claude-code" ? undefined : pendingTitle,
+            title: creationBackendId === "claude-code" ? undefined : pendingTitle,
             directory: stateRef.current.draftSessionDirectory,
             workspaceId: stateRef.current.activeWorkspaceId,
           });
@@ -2408,6 +2445,8 @@ function InternalAgentProvider({
         });
       }
 
+      const commandRuntime = runtime;
+      if (!commandRuntime) return;
       dispatch({ type: "SET_BUSY", payload: true });
       try {
         const model = state.selectedModel ?? undefined;
@@ -2416,7 +2455,7 @@ function InternalAgentProvider({
         const projectTarget = getSessionProjectTarget(
           stateRef.current.sessions.find((session) => session.id === sessionId),
         );
-        await runtime.sendCommand({
+        await commandRuntime.sendCommand({
           sessionId,
           command,
           args,
@@ -2434,8 +2473,9 @@ function InternalAgentProvider({
       }
     },
     [
-      bridge,
-      activeBackendId,
+      creationBridge,
+      creationBackendId,
+      runtime,
       state.selectedModel,
       state.selectedAgent,
       currentVariant,
@@ -2611,7 +2651,7 @@ function InternalAgentProvider({
         await openGuiClient.sessions.replyQuestion({
           requestId: pending.id,
           answers,
-          backendId: activeBackendId,
+          backendId: activeSessionBackendId ?? undefined,
         });
       } catch (error) {
         dispatch({
@@ -2620,7 +2660,7 @@ function InternalAgentProvider({
         });
       }
     },
-    [activeBackendId, openGuiClient, state.pendingQuestions, state.activeSessionId],
+    [activeSessionBackendId, openGuiClient, state.pendingQuestions, state.activeSessionId],
   );
 
   const rejectQuestion = useCallback(async () => {
@@ -2630,7 +2670,7 @@ function InternalAgentProvider({
     try {
       await openGuiClient.sessions.rejectQuestion({
         requestId: pending.id,
-        backendId: activeBackendId,
+        backendId: activeSessionBackendId ?? undefined,
       });
     } catch (error) {
       dispatch({
@@ -2638,7 +2678,7 @@ function InternalAgentProvider({
         payload: error instanceof Error ? error.message : "Failed to dismiss question",
       });
     }
-  }, [activeBackendId, openGuiClient, state.pendingQuestions, state.activeSessionId]);
+  }, [activeSessionBackendId, openGuiClient, state.pendingQuestions, state.activeSessionId]);
 
   const setDefaultChatDirectory = useCallback((directory: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
@@ -2669,7 +2709,7 @@ function InternalAgentProvider({
   const startNewChat = useCallback(async () => {
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
     if (!defaultChatDirectory) return;
-    await ensureDirectoryConnection(defaultChatDirectory, { hidden: true });
+    await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
     startDraftSession(defaultChatDirectory);
   }, [ensureDirectoryConnection, startDraftSession]);
 

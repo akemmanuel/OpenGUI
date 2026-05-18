@@ -1,5 +1,8 @@
 // @ts-nocheck
-import { BrowserWindow } from "electron/main";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { BrowserWindow } = require("electron");
 
 function broadcastToAllWindows(channel, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
