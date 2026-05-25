@@ -143,7 +143,6 @@ function validate(
   if (!baseUrl.trim()) return "Base URL is required";
   if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://"))
     return "Base URL must start with http:// or https://";
-  if (models.length === 0) return "At least one model is required";
   for (const m of models) {
     if (!m.id.trim()) return "All model IDs must be filled in";
     if (!m.name.trim()) return "All model names must be filled in";
@@ -353,7 +352,7 @@ export function DialogCustomProvider({
         firstPlaceholder="model-id"
         secondPlaceholder="Display Name"
         firstClassName="font-mono"
-        minEntries={1}
+        minEntries={0}
         onAdd={addModel}
         onRemove={removeModel}
         onUpdate={(idx, field, value) => updateModel(idx, field === "first" ? "id" : "name", value)}
