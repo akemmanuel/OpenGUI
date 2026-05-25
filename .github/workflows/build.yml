@@ -148,15 +148,18 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      - name: Normalize update manifest filename
+        run: |
+          if ls release/latest-mac-*.yml >/dev/null 2>&1; then
+            cp release/latest-mac-*.yml release/latest-mac.yml
+          fi
+          ls -la release/latest-mac*.yml
+
       - name: Upload mac ${{ matrix.arch }} artifacts
         uses: actions/upload-artifact@v7
         with:
           name: mac-release-${{ matrix.arch }}
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/*.blockmap
-            release/latest-mac.yml
+          path: release/*
           archive: false
           retention-days: 30
 
@@ -333,6 +336,17 @@ jobs:
         with:
           name: windows-nsis
           path: artifacts/windows-nsis
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== linux-deb ==="
+          ls -la artifacts/linux-deb/ 2>/dev/null || echo "(empty)"
+          echo "=== mac-release ==="
+          ls -la artifacts/mac-release/ 2>/dev/null || echo "(empty)"
+          echo "=== mac-release-arm64 ==="
+          ls -la artifacts/mac-release-arm64/ 2>/dev/null || echo "(empty)"
+          echo "=== windows-nsis ==="
+          ls -la artifacts/windows-nsis/ 2>/dev/null || echo "(empty)"
 
       - name: Merge mac update manifests
         run: |
