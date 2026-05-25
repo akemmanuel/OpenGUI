@@ -49,8 +49,6 @@ export function DialogSelectProvider({
     const pop: Provider[] = [];
     const oth: Provider[] = [];
     for (const p of providers) {
-      // Skip already connected
-      if (connectedIds.has(p.id)) continue;
       // Filter by search
       if (
         lowerSearch &&
@@ -113,7 +111,12 @@ export function DialogSelectProvider({
               Popular
             </h4>
             {popular.map((p) => (
-              <ProviderRow key={p.id} provider={p} connected={false} onSelect={onSelect} />
+              <ProviderRow
+                key={p.id}
+                provider={p}
+                connected={connectedIds.has(p.id)}
+                onSelect={onSelect}
+              />
             ))}
           </section>
         )}
@@ -125,7 +128,12 @@ export function DialogSelectProvider({
               Other
             </h4>
             {other.map((p) => (
-              <ProviderRow key={p.id} provider={p} connected={false} onSelect={onSelect} />
+              <ProviderRow
+                key={p.id}
+                provider={p}
+                connected={connectedIds.has(p.id)}
+                onSelect={onSelect}
+              />
             ))}
           </section>
         )}
