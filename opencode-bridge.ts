@@ -390,16 +390,13 @@ class OpenCodeConnection {
 
   async setProviderAuth(providerID, auth) {
     this._requireClient();
-    const res = await this._client.auth.set({ path: { id: providerID }, body: auth });
+    const res = await this._client.auth.set({ providerID, auth });
     return res.data;
   }
 
   async removeProviderAuth(providerID) {
     this._requireClient();
-    const res = await this._client.auth._client.delete({
-      path: { id: providerID },
-      url: "/auth/{id}",
-    });
+    const res = await this._client.auth.remove({ providerID });
     return res.data;
   }
 

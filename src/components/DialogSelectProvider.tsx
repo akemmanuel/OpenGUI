@@ -67,7 +67,7 @@ export function DialogSelectProvider({
     pop.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
     oth.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
     return { popular: pop, other: oth };
-  }, [providers, connectedIds, lowerSearch]);
+  }, [providers, lowerSearch]);
 
   return (
     <div className="space-y-3">
