@@ -141,12 +141,14 @@ export function SettingsProviders() {
     );
   }
 
-  const connectedSet = new Set(allProviders.connected);
-  const connectedProviders = allProviders.all.filter((p) => connectedSet.has(p.id));
+  const providerList = Array.isArray(allProviders.all) ? allProviders.all : [];
+  const connectedIds = Array.isArray(allProviders.connected) ? allProviders.connected : [];
+  const connectedSet = new Set(connectedIds);
+  const connectedProviders = providerList.filter((p) => connectedSet.has(p.id));
   const popularNotConnected = POPULAR_PROVIDER_IDS.filter((id) => !connectedSet.has(id));
   // For popular providers that aren't in the `all` list (not yet fetched from server),
   // create a minimal entry
-  const allById = new Map(allProviders.all.map((p) => [p.id, p]));
+  const allById = new Map(providerList.map((p) => [p.id, p]));
 
   // If a connect dialog is open, show it instead
   if (connectProviderID) {
@@ -179,7 +181,7 @@ export function SettingsProviders() {
   if (showSelectAll) {
     return (
       <DialogSelectProvider
-        providers={allProviders.all}
+        providers={providerList}
         connectedIds={connectedSet}
         onSelect={(id: string) => {
           setShowSelectAll(false);

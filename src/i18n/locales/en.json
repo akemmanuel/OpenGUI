@@ -16,7 +16,8 @@
       "providers": "Providers",
       "skills": "Skills",
       "marketplace": "Marketplace",
-      "tools": "Tools"
+      "tools": "Tools",
+      "plugins": "Plugins"
     },
     "general": {
       "agentBackend": "Agent backend",
@@ -56,11 +57,11 @@
       "sdkSkills": "Agent SDK",
       "installedSkills": "Filesystem",
       "cliAvailable": "CLI available",
-      "cliUnavailable": "Install Node.js or Bun to use marketplace"
+      "cliUnavailable": "Install Node.js or Bun to use Discover"
     },
     "marketplace": {
-      "title": "Skills Marketplace",
-      "searchPlaceholder": "Search skills…",
+      "title": "Discover Plugins",
+      "searchPlaceholder": "Search plugins…",
       "all": "All",
       "trending": "Trending",
       "hot": "Hot",
@@ -73,23 +74,37 @@
       "installsLabel": "installs",
       "details": "Details",
       "audit": "Security",
-      "noResults": "No skills found",
-      "loading": "Loading skills…",
-      "error": "Failed to load skills",
+      "noResults": "No plugins found",
+      "loading": "Loading plugins…",
+      "error": "Failed to load plugins",
       "retry": "Retry",
       "projectScope": "Project",
       "globalScope": "Global",
       "installScope": "Install scope",
-      "installScopeHelp": "Project installs skills into .agents/skills/ in the current project directory. Global installs into ~/.agents/skills/.",
+      "installScopeHelp": "Project installs plugins into .agents/skills/ in the current project directory. Global installs into ~/.agents/skills/.",
       "source": "Source",
       "skillFile": "File",
-      "installSuccess": "Skill installed successfully",
+      "installSuccess": "Plugin installed successfully",
       "installFailed": "Installation failed",
-      "confirmRemove": "Remove skill \"{{name}}\"?",
-      "confirmRemoveDesc": "This will uninstall the skill from your agents.",
-      "confirmUpdate": "Update skill \"{{name}}\"?",
+      "confirmRemove": "Remove plugin \"{{name}}\"?",
+      "confirmRemoveDesc": "This will uninstall the plugin from your agents.",
+      "confirmUpdate": "Update plugin \"{{name}}\"?",
       "confirmUpdateDesc": "This will fetch the latest version from the source.",
-      "sku": "skill"
+      "sku": "plugin"
+    },
+    "plugins": {
+      "installed": "Installed",
+      "discover": "Discover",
+      "project": "Project",
+      "global": "Global",
+      "published": "Published",
+      "custom": "Custom",
+      "noPlugins": "No plugins installed.",
+      "emptyScope": "No plugins in this scope.",
+      "pluginGroups": "Plugin Groups",
+      "general": "General",
+      "capabilityCount": "{{count}} capabilities",
+      "updateGroup": "Update group"
     }
   },
   "sidebar": {

@@ -15,8 +15,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { Agent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
-import { basename, join, normalize, sep } from "node:path";
+import { basename, join, normalize } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
+import { OpencodeProjectRegistry } from "./src/protocol/opencode-project-registry";
 
 // ---------------------------------------------------------------------------
 // Local server management
@@ -806,9 +807,7 @@ class OpenCodeConnection {
 
 export function setupOpenCodeBridge(ipcMain, _getWindows) {
   /** @type {Map<number, {
-   *   connections: Map<string, OpenCodeConnection>,
-   *   sessionDirectoryMap: Map<string, string>,
-   *   questionDirectoryMap: Map<string, string>,
+   *   projectRegistry: OpencodeProjectRegistry<OpenCodeConnection>,
    *   serverConfig: { baseUrl: string, username?: string, password?: string } | null,
    * }>} */
   const windowStates = new Map();
@@ -818,16 +817,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     let state = windowStates.get(key);
     if (state) return state;
     state = {
-      connections: new Map(),
-      sessionDirectoryMap: new Map(),
-      questionDirectoryMap: new Map(),
+      projectRegistry: new OpencodeProjectRegistry(),
       serverConfig: null,
     };
     windowStates.set(key, state);
     sender.once("destroyed", () => {
       const current = windowStates.get(key);
       if (!current) return;
-      for (const conn of current.connections.values()) {
+      for (const conn of current.projectRegistry.values()) {
         conn.teardown();
       }
       windowStates.delete(key);
@@ -861,14 +858,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
   }
 
-  function makeProjectKey(workspaceId, directory) {
-    return `${workspaceId?.trim() || ""}\0${normalize(directory.trim())}`;
+  function makeProjectKey(windowState, workspaceId, directory) {
+    return windowState.projectRegistry.createProjectKey(workspaceId, directory);
   }
 
   function createConnection(windowState, sender, directory, workspaceId) {
-    const projectKey = makeProjectKey(workspaceId, directory);
     const conn = new OpenCodeConnection((event) => {
-      if (windowState.connections.get(projectKey) !== conn) return;
+      if (windowState.projectRegistry.getConnection(projectKey) !== conn) return;
       if (event?.type === "opencode:event") {
         const payload = event.payload;
         const props = payload?.properties ?? {};
@@ -876,7 +872,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           props.sessionID ?? props.info?.id ?? props.part?.sessionID ?? "",
         );
         if (rawSessionId) {
-          const mappedProjectKey = windowState.sessionDirectoryMap.get(rawSessionId);
+          const mappedProjectKey = windowState.projectRegistry.getSessionProjectKey(rawSessionId);
           if (mappedProjectKey && mappedProjectKey !== projectKey) return;
           if (!mappedProjectKey) {
             const eventDir = normalize(props.info?.directory ?? props.info?.path?.cwd ?? "");
@@ -886,91 +882,79 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           return;
         }
         if (payload?.type === "question.asked") {
-          const questionId = props?.id;
-          if (questionId) {
-            windowState.questionDirectoryMap.set(questionId, projectKey);
-          }
+          windowState.projectRegistry.rememberQuestion(projectKey, props?.id);
         }
         if (payload?.type === "question.replied" || payload?.type === "question.rejected") {
-          const requestID = props?.requestID;
-          if (requestID) windowState.questionDirectoryMap.delete(requestID);
+          windowState.projectRegistry.deleteQuestion(props?.requestID);
         }
         if (payload?.type === "session.created" || payload?.type === "session.updated") {
           const info = props?.info;
           if (info?.id) {
-            windowState.sessionDirectoryMap.set(toRawSessionId(info.id), projectKey);
+            windowState.projectRegistry.rememberSession(projectKey, toRawSessionId(info.id));
           }
         }
       }
       sendEvent(sender, { ...event, directory, workspaceId });
     });
-    windowState.connections.set(projectKey, conn);
+    const { projectKey } = windowState.projectRegistry.setConnection(
+      { directory, workspaceId },
+      conn,
+    );
     return conn;
-  }
-
-  function getWorkspaceIdFromProjectKey(projectKey) {
-    return projectKey.split("\0", 1)[0] ?? "";
   }
 
   function getConnectedConnections(windowState, workspaceId) {
     const requestedWorkspaceId = workspaceId?.trim() || "";
-    return [...windowState.connections.entries()]
+    return [...windowState.projectRegistry.entries()]
       .filter(([projectKey, conn]) => {
         if (conn.getStatus().state !== "connected") return false;
         if (!requestedWorkspaceId) return true;
-        return getWorkspaceIdFromProjectKey(projectKey) === requestedWorkspaceId;
+        return (
+          windowState.projectRegistry.getWorkspaceIdFromProjectKey(projectKey) ===
+          requestedWorkspaceId
+        );
       })
-      .map(([, conn]) => conn);
+      .map(([projectKey, connection]) => ({ projectKey, connection }));
   }
 
   /** Find which connection owns a session by looking up the cache. */
-  function getConnectionForSession(windowState, sessionId) {
-    sessionId = toRawSessionId(sessionId);
-    const projectKey = windowState.sessionDirectoryMap.get(sessionId);
-    if (projectKey) {
-      const conn = windowState.connections.get(projectKey);
-      if (conn) return conn;
-    }
+  function getConnectionEntryForSession(windowState, sessionId) {
+    const mapped = windowState.projectRegistry.getMappedSessionConnectionEntry(
+      toRawSessionId(sessionId),
+    );
+    if (mapped) return mapped;
     const connected = getConnectedConnections(windowState);
     return connected.length === 1 ? connected[0] : null;
   }
 
+  function getConnectionForSession(windowState, sessionId) {
+    return getConnectionEntryForSession(windowState, sessionId)?.connection ?? null;
+  }
+
   /** Get any connected connection, optionally scoped to one workspace. */
-  function getAnyConnection(windowState, workspaceId) {
+  function getAnyConnectionEntry(windowState, workspaceId) {
     return getConnectedConnections(windowState, workspaceId)[0] ?? null;
   }
 
+  function getAnyConnection(windowState, workspaceId) {
+    return getAnyConnectionEntry(windowState, workspaceId)?.connection ?? null;
+  }
+
   /** Resolve a connection for a specific project directory + workspace. */
-  function getConnectionForDirectory(windowState, directory, workspaceId) {
+  function getConnectionEntryForDirectory(windowState, directory, workspaceId) {
     if (typeof directory !== "string" || !directory.trim()) {
-      return getAnyConnection(windowState, workspaceId);
+      return getAnyConnectionEntry(windowState, workspaceId);
     }
+    return windowState.projectRegistry.getExactConnectionEntry({ directory, workspaceId });
+  }
 
-    const projectKey = makeProjectKey(workspaceId, directory);
-    const exact = windowState.connections.get(projectKey);
-    if (exact) return exact;
-
-    const requestedWorkspaceId = workspaceId?.trim() || "";
-    const requested = normalize(directory.trim());
-    for (const [key, conn] of windowState.connections) {
-      if (getWorkspaceIdFromProjectKey(key) !== requestedWorkspaceId) continue;
-      const [, dir = ""] = key.split("\0");
-      const normalizedDir = normalize(dir);
-      if (normalizedDir === requested) return conn;
-      if (
-        requested.startsWith(normalizedDir) &&
-        (requested.length === normalizedDir.length || requested[normalizedDir.length] === sep)
-      ) {
-        return conn;
-      }
-    }
-
-    return null;
+  function getConnectionForDirectory(windowState, directory, workspaceId) {
+    return getConnectionEntryForDirectory(windowState, directory, workspaceId)?.connection ?? null;
   }
 
   async function ensureConnectionForDirectory(windowState, sender, directory, workspaceId) {
-    const existing = getConnectionForDirectory(windowState, directory, workspaceId);
-    if (existing) return existing;
+    const existing = getConnectionEntryForDirectory(windowState, directory, workspaceId);
+    if (existing) return existing.connection;
     if (typeof directory !== "string" || !directory.trim()) return null;
 
     const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
@@ -1042,21 +1026,18 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           return { success: false, error: "Question requestID is required" };
         }
 
-        const mappedDirectory = windowState.questionDirectoryMap.get(requestID);
-        if (mappedDirectory) {
-          const mappedConn = windowState.connections.get(mappedDirectory);
-          if (mappedConn) {
-            const data = await fn(mappedConn, requestID, ...args);
-            windowState.questionDirectoryMap.delete(requestID);
-            return data === undefined ? { success: true } : { success: true, data };
-          }
-          windowState.questionDirectoryMap.delete(requestID);
+        const mappedEntry = windowState.projectRegistry.getMappedQuestionConnectionEntry(requestID);
+        if (mappedEntry) {
+          const data = await fn(mappedEntry.connection, requestID, ...args);
+          windowState.projectRegistry.deleteQuestion(requestID);
+          return data === undefined ? { success: true } : { success: true, data };
         }
+        windowState.projectRegistry.deleteQuestion(requestID);
 
-        const conn = getAnyConnection(windowState);
-        if (conn && getConnectedConnections(windowState).length === 1) {
-          const data = await fn(conn, requestID, ...args);
-          windowState.questionDirectoryMap.delete(requestID);
+        const entry = getAnyConnectionEntry(windowState);
+        if (entry && getConnectedConnections(windowState).length === 1) {
+          const data = await fn(entry.connection, requestID, ...args);
+          windowState.projectRegistry.deleteQuestion(requestID);
           return data === undefined ? { success: true } : { success: true, data };
         }
 
@@ -1251,20 +1232,20 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       return { success: false, error: "Directory is required" };
     }
     const normalizedConfig = normalizeServerConfig(config);
-    const projectKey = makeProjectKey(config.workspaceId, directory);
+    const projectKey = makeProjectKey(windowState, config.workspaceId, directory);
     try {
-      const existing = windowState.connections.get(projectKey);
+      const existing = windowState.projectRegistry.deleteConnection(projectKey);
       if (existing) {
         existing.teardown();
-        windowState.connections.delete(projectKey);
       }
       const conn = createConnection(windowState, event.sender, directory, config.workspaceId);
       await conn.connect(normalizedConfig);
       windowState.serverConfig = normalizedConfig;
       return { success: true, status: conn.getStatus() };
     } catch (err) {
-      if (windowState.connections.get(projectKey)) {
-        windowState.connections.delete(projectKey);
+      const failed = windowState.projectRegistry.deleteConnection(projectKey);
+      if (failed) {
+        failed.teardown();
       }
       return { success: false, error: err.message ?? String(err) };
     }
@@ -1275,19 +1256,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (typeof directory !== "string" || !directory.trim()) {
       return { success: false, error: "Directory is required" };
     }
-    const projectKey = makeProjectKey(workspaceId, directory);
-    const conn = windowState.connections.get(projectKey);
-    if (conn) {
-      conn.teardown();
-      windowState.connections.delete(projectKey);
-      for (const [sid, key] of windowState.sessionDirectoryMap) {
-        if (key === projectKey) windowState.sessionDirectoryMap.delete(sid);
-      }
-      for (const [requestID, key] of windowState.questionDirectoryMap) {
-        if (key === projectKey) windowState.questionDirectoryMap.delete(requestID);
-      }
+    const projectKey = makeProjectKey(windowState, workspaceId, directory);
+    const { connection } = windowState.projectRegistry.removeProject(projectKey);
+    if (connection) {
+      connection.teardown();
     }
-    if (windowState.connections.size === 0) {
+    if (windowState.projectRegistry.size === 0) {
       windowState.serverConfig = null;
     }
     return { success: true };
@@ -1295,12 +1269,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   ipcMain.handle("opencode:disconnect", (event) => {
     const windowState = getWindowState(event.sender);
-    for (const conn of windowState.connections.values()) {
+    for (const conn of windowState.projectRegistry.values()) {
       conn.teardown();
     }
-    windowState.connections.clear();
-    windowState.sessionDirectoryMap.clear();
-    windowState.questionDirectoryMap.clear();
+    windowState.projectRegistry.clear();
     windowState.serverConfig = null;
     return { success: true };
   });
@@ -1313,9 +1285,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   }
 
   function cacheSessions(windowState, sessions, projectKey) {
-    for (const s of sessions) {
-      windowState.sessionDirectoryMap.set(toRawSessionId(s._rawId ?? s.id), projectKey);
-    }
+    windowState.projectRegistry.rememberSessions(projectKey, sessions);
   }
 
   ipcMain.handle("opencode:session:list", async (event, directory, workspaceId) => {
@@ -1329,7 +1299,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           workspaceId,
         );
         if (!conn) return { success: false, error: "No connection available" };
-        const projectKey = makeProjectKey(workspaceId, directory);
+        const projectKey = makeProjectKey(windowState, workspaceId, directory);
         const sessions = await listAndCacheSessions(conn, directory, workspaceId);
         cacheSessions(windowState, sessions, projectKey);
         return {
@@ -1339,10 +1309,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       }
       // List sessions from ALL projects
       const allSessions = [];
-      for (const [projectKey, conn] of windowState.connections) {
+      for (const [projectKey, conn] of windowState.projectRegistry.entries()) {
         try {
-          const [currentWorkspaceId = "", dir = ""] = projectKey.split("\0");
-          const sessions = await listAndCacheSessions(conn, dir, currentWorkspaceId || undefined);
+          const currentWorkspaceId =
+            windowState.projectRegistry.getWorkspaceIdFromProjectKey(projectKey) || undefined;
+          const dir = conn.getDirectory() ?? "";
+          const sessions = await listAndCacheSessions(conn, dir, currentWorkspaceId);
           cacheSessions(windowState, sessions, projectKey);
           allSessions.push(...sessions);
         } catch {
@@ -1366,7 +1338,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const dir = directory || conn.getDirectory();
       const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
       if (session && dir) {
-        windowState.sessionDirectoryMap.set(session.id, makeProjectKey(workspaceId, dir));
+        windowState.projectRegistry.rememberSession(
+          makeProjectKey(windowState, workspaceId, dir),
+          session.id,
+        );
       }
       return { success: true, data: taggedSession };
     } catch (err) {
@@ -1383,7 +1358,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       }
       const rawId = toRawSessionId(id);
       const result = await conn.deleteSession(rawId);
-      windowState.sessionDirectoryMap.delete(rawId);
+      windowState.projectRegistry.deleteSession(rawId);
       return { success: true, data: result };
     } catch (err) {
       return { success: false, error: err.message };
@@ -1423,15 +1398,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   ipcMain.handle("opencode:session:fork", async (event, id, messageID) => {
     try {
       const windowState = getWindowState(event.sender);
-      const conn = getConnectionForSession(windowState, id);
-      if (!conn) return { success: false, error: "Session connection not found" };
-      const result = await conn.forkSession(toRawSessionId(id), messageID);
-      const taggedResult = tagOpenCodeSession(result, conn.getDirectory());
+      const entry = getConnectionEntryForSession(windowState, id);
+      if (!entry) return { success: false, error: "Session connection not found" };
+      const result = await entry.connection.forkSession(toRawSessionId(id), messageID);
+      const taggedResult = tagOpenCodeSession(result, entry.connection.getDirectory());
       // Register the new forked session in the directory map so future
       // operations can find the correct connection.
       if (result?.id) {
-        const dir = [...windowState.connections.entries()].find(([, c]) => c === conn)?.[0];
-        if (dir) windowState.sessionDirectoryMap.set(result.id, dir);
+        windowState.projectRegistry.rememberSession(entry.projectKey, result.id);
       }
       return { success: true, data: taggedResult };
     } catch (err) {
@@ -1475,7 +1449,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (!conn && directory) {
         conn = getConnectionForDirectory(windowState, directory, workspaceId);
         if (conn) {
-          windowState.sessionDirectoryMap.set(rawSessionId, makeProjectKey(workspaceId, directory));
+          windowState.projectRegistry.rememberSession(
+            makeProjectKey(windowState, workspaceId, directory),
+            rawSessionId,
+          );
         }
       }
       if (!conn) {
@@ -1531,7 +1508,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const session = await conn.createSession(input.title);
       const dir = directory || conn.getDirectory();
       if (session?.id && dir) {
-        windowState.sessionDirectoryMap.set(session.id, makeProjectKey(workspaceId, dir));
+        windowState.projectRegistry.rememberSession(
+          makeProjectKey(windowState, workspaceId, dir),
+          session.id,
+        );
       }
       await conn.promptAsync(
         session.id,
@@ -2338,6 +2318,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           content,
           source,
           remoteKey: source ? `${source}@${slug}` : undefined,
+          pluginName: lockEntry.pluginName,
           sourceType: lockEntry.sourceType,
           sourceUrl: lockEntry.sourceUrl,
           skillPath: lockEntry.skillPath,
@@ -2351,16 +2332,21 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   ipcMain.handle("opencode:skills:list-installed", async (_event, directory) => {
     try {
-      const projectLock = directory
+      const globalSkillsDir = join(homedir(), ".agents", "skills");
+      const projectSkillsDir = directory ? join(directory, ".agents", "skills") : null;
+      const shouldScanProject =
+        projectSkillsDir !== null && normalize(projectSkillsDir) !== normalize(globalSkillsDir);
+      const projectLock = shouldScanProject
         ? await readSkillsLock(join(directory, "skills-lock.json"))
         : {};
       const globalLock = await readSkillsLock(join(homedir(), ".agents", ".skill-lock.json"));
       const projectSkills = (
-        await scanSkillsDir(directory ? join(directory, ".agents", "skills") : null, projectLock)
+        await scanSkillsDir(shouldScanProject ? projectSkillsDir : null, projectLock)
       ).map((skill) => ({ ...skill, scope: "project" }));
-      const globalSkills = (
-        await scanSkillsDir(join(homedir(), ".agents", "skills"), globalLock)
-      ).map((skill) => ({ ...skill, scope: "global" }));
+      const globalSkills = (await scanSkillsDir(globalSkillsDir, globalLock)).map((skill) => ({
+        ...skill,
+        scope: "global",
+      }));
       const all = [...projectSkills, ...globalSkills];
       const seen = new Set();
       const deduped = [];

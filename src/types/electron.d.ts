@@ -206,6 +206,7 @@ export interface InstalledSkillInfo {
   source?: string;
   remoteKey?: string;
   scope?: "project" | "global";
+  pluginName?: string;
   sourceType?: string;
   sourceUrl?: string;
   skillPath?: string;

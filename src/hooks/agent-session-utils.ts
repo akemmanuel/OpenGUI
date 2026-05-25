@@ -31,7 +31,12 @@ export function getSessionWorkspaceId(session: Session | undefined | null) {
   return session._workspaceId ?? null;
 }
 
-export function getSessionProjectTarget(session: Session | undefined | null) {
+export type ProjectTarget = {
+  directory?: string;
+  workspaceId?: string;
+};
+
+export function getSessionProjectTarget(session: Session | undefined | null): ProjectTarget | null {
   const directory = getSessionDirectory(session);
   if (!directory) return null;
   return {

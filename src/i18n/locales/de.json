@@ -15,7 +15,8 @@
       "providers": "Anbieter",
       "skills": "Skills",
       "marketplace": "Marketplace",
-      "tools": "Werkzeuge"
+      "tools": "Werkzeuge",
+      "plugins": "Plugins"
     },
     "general": {
       "agentBackend": "Agent-Backend",
@@ -55,11 +56,11 @@
       "sdkSkills": "Agent SDK",
       "installedSkills": "Dateisystem",
       "cliAvailable": "CLI verfügbar",
-      "cliUnavailable": "Installiere Node.js oder Bun, um den Marketplace zu nutzen"
+      "cliUnavailable": "Installiere Node.js oder Bun, um Discover zu nutzen"
     },
     "marketplace": {
-      "title": "Skill-Marketplace",
-      "searchPlaceholder": "Skills durchsuchen…",
+      "title": "Plugins entdecken",
+      "searchPlaceholder": "Plugins durchsuchen…",
       "all": "Alle",
       "trending": "Trending",
       "hot": "Heiß",
@@ -72,23 +73,37 @@
       "installsLabel": "Installationen",
       "details": "Details",
       "audit": "Sicherheit",
-      "noResults": "Keine Skills gefunden",
-      "loading": "Lade Skills…",
-      "error": "Fehler beim Laden der Skills",
+      "noResults": "Keine Plugins gefunden",
+      "loading": "Lade Plugins…",
+      "error": "Fehler beim Laden der Plugins",
       "retry": "Erneut versuchen",
       "projectScope": "Projekt",
       "globalScope": "Global",
       "installScope": "Installationsbereich",
-      "installScopeHelp": "Projektinstallation installiert Skills in .agents/skills/ im aktuellen Projektverzeichnis. Global installiert in ~/.agents/skills/.",
+      "installScopeHelp": "Projektinstallation installiert Plugins in .agents/skills/ im aktuellen Projektverzeichnis. Global installiert in ~/.agents/skills/.",
       "source": "Quelle",
       "skillFile": "Datei",
-      "installSuccess": "Skill erfolgreich installiert",
+      "installSuccess": "Plugin erfolgreich installiert",
       "installFailed": "Installation fehlgeschlagen",
-      "confirmRemove": "Skill \"{{name}}\" entfernen?",
-      "confirmRemoveDesc": "Dies deinstalliert den Skill von deinen Agenten.",
-      "confirmUpdate": "Skill \"{{name}}\" aktualisieren?",
+      "confirmRemove": "Plugin \"{{name}}\" entfernen?",
+      "confirmRemoveDesc": "Dies deinstalliert das Plugin von deinen Agenten.",
+      "confirmUpdate": "Plugin \"{{name}}\" aktualisieren?",
       "confirmUpdateDesc": "Dies holt die neueste Version von der Quelle.",
-      "sku": "skill"
+      "sku": "plugin"
+    },
+    "plugins": {
+      "installed": "Installiert",
+      "discover": "Entdecken",
+      "project": "Projekt",
+      "global": "Global",
+      "published": "Veröffentlicht",
+      "custom": "Eigene",
+      "noPlugins": "Keine Plugins installiert.",
+      "emptyScope": "Keine Plugins in diesem Bereich.",
+      "pluginGroups": "Plugin-Gruppen",
+      "general": "Allgemein",
+      "capabilityCount": "{{count}} Funktionen",
+      "updateGroup": "Gruppe aktualisieren"
     }
   },
   "sidebar": {

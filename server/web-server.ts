@@ -158,6 +158,67 @@ async function chooseDirectory() {
   return null;
 }
 
+function isCommandAvailable(command: string) {
+  try {
+    const probe = process.platform === "win32" ? ["where", command] : ["which", command];
+    const result = Bun.spawnSync(probe, { stdout: "ignore", stderr: "ignore" });
+    return result.success;
+  } catch {
+    return false;
+  }
+}
+
+const BACKEND_CLI_DEFS = {
+  opencode: {
+    command: "opencode",
+    packageName: "opencode-ai",
+    knownPaths: () => [
+      join(
+        homedir(),
+        ".opencode",
+        "bin",
+        process.platform === "win32" ? "opencode.exe" : "opencode",
+      ),
+      process.platform === "win32" ? "" : "/usr/local/bin/opencode",
+    ],
+  },
+  "claude-code": {
+    command: "claude",
+    packageName: "@anthropic-ai/claude-code",
+    knownPaths: () => [
+      join(homedir(), ".claude", "local", process.platform === "win32" ? "claude.exe" : "claude"),
+    ],
+  },
+  pi: { command: "pi", packageName: "@earendil-works/pi-coding-agent", knownPaths: () => [] },
+  codex: { command: "codex", packageName: "@openai/codex", knownPaths: () => [] },
+} as const;
+
+type BackendCliId = keyof typeof BACKEND_CLI_DEFS;
+
+function isBackendCliId(value: unknown): value is BackendCliId {
+  return typeof value === "string" && value in BACKEND_CLI_DEFS;
+}
+
+function isBackendAvailable(backendId: BackendCliId) {
+  const def = BACKEND_CLI_DEFS[backendId];
+  return (
+    isCommandAvailable(def.command) ||
+    def.knownPaths().some((binaryPath) => !!binaryPath && existsSync(binaryPath))
+  );
+}
+
+function getBackendInstallCommand(backendId: unknown): [string, string[]] | null {
+  if (!isBackendCliId(backendId)) return null;
+  const packageName = BACKEND_CLI_DEFS[backendId].packageName;
+  const managers = [
+    { command: "pnpm", args: ["add", "-g", packageName] },
+    { command: "npm", args: ["install", "-g", packageName] },
+    { command: "bun", args: ["install", "-g", packageName] },
+  ];
+  const manager = managers.find((candidate) => isCommandAvailable(candidate.command));
+  return manager ? [manager.command, manager.args] : null;
+}
+
 function openTerminal(dirPath: string, command = "") {
   if (!existsSync(dirPath)) return;
   const parts = parseCommand(command);
@@ -221,6 +282,44 @@ async function setupHandlers(
   ipcMain.handle("window:getDetachedProjects", () => []);
   ipcMain.handle("platform:get", () => process.platform);
   ipcMain.handle("platform:homeDir", () => homedir());
+  ipcMain.handle("platform:detectBackends", () => ({
+    opencode: isBackendAvailable("opencode"),
+    "claude-code": isBackendAvailable("claude-code"),
+    pi: isBackendAvailable("pi"),
+    codex: isBackendAvailable("codex"),
+  }));
+  ipcMain.handle("backend:install", async (event, backendId) => {
+    const installCommand = getBackendInstallCommand(backendId);
+    if (!installCommand) {
+      return { success: false, error: "Unknown backend id or no supported package manager found" };
+    }
+    const [command, args] = installCommand;
+    const child = Bun.spawn([command, ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+    });
+    const sendStream = async (
+      stream: ReadableStream<Uint8Array> | null,
+      type: "stdout" | "stderr",
+    ) => {
+      if (!stream) return;
+      for await (const chunk of stream) {
+        event.sender.send("backend:install-progress", {
+          chunk: new TextDecoder().decode(chunk),
+          type,
+        });
+      }
+    };
+    await Promise.all([sendStream(child.stdout, "stdout"), sendStream(child.stderr, "stderr")]);
+    const exitCode = await child.exited;
+    return { success: exitCode === 0, exitCode };
+  });
+  ipcMain.handle(
+    "platform:locale",
+    () => Intl.DateTimeFormat().resolvedOptions().locale || "en-US",
+  );
+  ipcMain.handle("app:isPackaged", () => false);
   ipcMain.handle("dialog:openDirectory", () => chooseDirectory());
   ipcMain.handle("shell:openExternal", (_event, url) =>
     openExternal(typeof url === "string" ? url : ""),
@@ -368,6 +467,23 @@ function rpcErrorCode(error: unknown) {
   return "UNKNOWN";
 }
 
+function normalizeRpcArgs(channel: string, args: unknown[]) {
+  // OpenCode resource RPCs are directory-aware. In web mode the app can ask for
+  // models/providers before a project is selected; without a directory the bridge
+  // returns "No connection available", so the model selector stays hidden.
+  if (
+    (channel === "opencode:providers" ||
+      channel === "opencode:agents" ||
+      channel === "opencode:commands" ||
+      channel === "opencode:provider:list" ||
+      channel === "opencode:provider:auth-methods") &&
+    (typeof args[0] !== "string" || !args[0].trim())
+  ) {
+    return [allowedRoots[0] || homedir(), args[1], ...args.slice(2)];
+  }
+  return args;
+}
+
 function logRpc(channel: string, startedAt: number, ok: boolean, error?: unknown) {
   const durationMs = Date.now() - startedAt;
   const status = ok ? "ok=true" : `ok=false code=${rpcErrorCode(error)}`;
@@ -392,7 +508,8 @@ const routes = {
       try {
         const body = await request.json();
         channel = String(body?.channel ?? "");
-        const args = Array.isArray(body?.args) ? body.args : [];
+        const rawArgs = Array.isArray(body?.args) ? body.args : [];
+        const args = normalizeRpcArgs(channel, rawArgs);
         const value =
           channel === "files:find"
             ? await findFilesInDirectory(

@@ -49,6 +49,7 @@ import {
   getSessionDraftKey,
   persistSessionDraftImages,
 } from "@/lib/session-drafts";
+import { shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps extends Omit<
@@ -950,7 +951,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                   </PopoverContent>
                 </Popover>
               )}
-              {(isLoading && !hasValue) || isCompactingInProgress ? (
+              {shouldShowStopButton({ isLoading, isCompactingInProgress }) ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

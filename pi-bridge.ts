@@ -333,6 +333,12 @@ function sessionStatus(type) {
   return { type };
 }
 
+function getSessionActivityType(session) {
+  if (session?.isCompacting) return "busy";
+  if (session?.isStreaming) return "busy";
+  return "idle";
+}
+
 function openGuiError(errorMessage) {
   return {
     name: "PiError",
@@ -916,6 +922,25 @@ export class PiBridgeManager {
     project.runtime = firstContext?.runtime || null;
   }
 
+  syncLiveSessionStatus(project, session, { emitEvent = true } = {}) {
+    const sessionId = session.sessionId;
+    const nextType = getSessionActivityType(session);
+    const wasBusy = project.busySessionIds.has(sessionId);
+    const isBusy = nextType === "busy";
+    if (isBusy) {
+      project.busySessionIds.add(sessionId);
+    } else {
+      project.busySessionIds.delete(sessionId);
+    }
+    if (!emitEvent || wasBusy === isBusy) return nextType;
+    this.sendBackendEvent(project, {
+      type: "session.status",
+      sessionID: sessionId,
+      status: sessionStatus(nextType),
+    });
+    return nextType;
+  }
+
   makeSyntheticState() {
     return {
       nextSeq: 0,
@@ -966,6 +991,7 @@ export class PiBridgeManager {
         });
       });
     });
+    this.syncLiveSessionStatus(project, session);
     this.syncProjectRuntime(project);
     return context;
   }
@@ -1331,16 +1357,17 @@ export class PiBridgeManager {
       return;
     }
     if (event.type === "agent_start") {
-      project.busySessionIds.add(sessionId);
-      this.sendBackendEvent(project, {
-        type: "session.status",
-        sessionID: sessionId,
-        status: sessionStatus("busy"),
-      });
+      this.syncLiveSessionStatus(project, session);
+      return;
+    }
+
+    if (event.type === "compaction_start") {
+      this.syncLiveSessionStatus(project, session);
       return;
     }
 
     if (event.type === "compaction_end") {
+      this.syncLiveSessionStatus(project, session);
       if (event.result) {
         project.sessionCaches.set(
           sessionId,
@@ -1353,7 +1380,7 @@ export class PiBridgeManager {
     if (event.type === "agent_end") {
       this.flushPendingAssistantResolution(project, session);
       this.emitCanonicalTranscript(project, session);
-      project.busySessionIds.delete(sessionId);
+      this.syncLiveSessionStatus(project, session);
       const normalized = await this.getSessionById(sessionId, {
         directory: project.directory,
         workspaceId: project.workspaceId,
@@ -1366,11 +1393,6 @@ export class PiBridgeManager {
           session: normalized,
         });
       }
-      this.sendBackendEvent(project, {
-        type: "session.status",
-        sessionID: sessionId,
-        status: sessionStatus("idle"),
-      });
       await this.disposeLiveSessionContext(project, sessionId, { keepCache: true });
       return;
     }
@@ -1805,12 +1827,17 @@ export class PiBridgeManager {
       sessionID: sessionId,
     });
     if (project.busySessionIds.has(sessionId)) {
-      project.busySessionIds.delete(sessionId);
-      this.sendBackendEvent(project, {
-        type: "session.status",
-        sessionID: sessionId,
-        status: sessionStatus("idle"),
-      });
+      const liveContext = this.getLiveSessionContext(project, sessionId);
+      if (liveContext) {
+        this.syncLiveSessionStatus(project, liveContext.runtime.session);
+      } else {
+        project.busySessionIds.delete(sessionId);
+        this.sendBackendEvent(project, {
+          type: "session.status",
+          sessionID: sessionId,
+          status: sessionStatus("idle"),
+        });
+      }
     }
   }
 
@@ -1990,8 +2017,17 @@ export class PiBridgeManager {
       const sessions = await this.listSessions(target);
       const statuses = {};
       for (const session of sessions) {
+        const rawSessionId = toRawSessionId(session.id);
+        const liveContext = this.getLiveSessionContext(project, rawSessionId);
+        if (liveContext) {
+          this.syncLiveSessionStatus(project, liveContext.runtime.session, { emitEvent: false });
+        }
         statuses[session.id] = sessionStatus(
-          project.busySessionIds.has(toRawSessionId(session.id)) ? "busy" : "idle",
+          liveContext
+            ? getSessionActivityType(liveContext.runtime.session)
+            : project.busySessionIds.has(rawSessionId)
+              ? "busy"
+              : "idle",
         );
       }
       return statuses;
@@ -2003,8 +2039,17 @@ export class PiBridgeManager {
         workspaceId: project.workspaceId,
       });
       for (const session of sessions) {
+        const rawSessionId = toRawSessionId(session.id);
+        const liveContext = this.getLiveSessionContext(project, rawSessionId);
+        if (liveContext) {
+          this.syncLiveSessionStatus(project, liveContext.runtime.session, { emitEvent: false });
+        }
         statuses[session.id] = sessionStatus(
-          project.busySessionIds.has(toRawSessionId(session.id)) ? "busy" : "idle",
+          liveContext
+            ? getSessionActivityType(liveContext.runtime.session)
+            : project.busySessionIds.has(rawSessionId)
+              ? "busy"
+              : "idle",
         );
       }
     }

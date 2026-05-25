@@ -121,6 +121,24 @@ function unwrapIpcResult<T>(result: IPCResult<T>, fallback: string): T {
   return result.data as T;
 }
 
+function unwrapBridgeResult<T>(result: T | IPCResult<T>, fallback: string): T {
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    typeof (result as IPCResult<T>).success === "boolean"
+  ) {
+    return unwrapIpcResult(result as IPCResult<T>, fallback);
+  }
+  return result as T;
+}
+
+function normalizeSkillList<T>(value: T[] | Record<string, T> | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return Object.values(value);
+  return [];
+}
+
 function appendTarget(target?: AgentBackendTarget, ...args: unknown[]) {
   return [...targetArgs(target), ...args];
 }
@@ -154,23 +172,61 @@ function createOpenCodePlatform(
       disconnect: (target, name) => op("mcp:disconnect", appendTarget(target, name)),
     },
     skills: {
-      list: (target) => op("skills", targetArgs(target)),
+      list: async (target) =>
+        normalizeSkillList(
+          unwrapBridgeResult(await op("skills", targetArgs(target)), "Failed to list skills"),
+        ),
       marketplace: {
-        list: (view, page, perPage, apiKey) =>
-          op("skills:marketplace:list", [view, page, perPage, apiKey]),
-        search: (query, limit, apiKey) => op("skills:marketplace:search", [query, limit, apiKey]),
-        detail: (source, slug, apiKey) => op("skills:marketplace:detail", [source, slug, apiKey]),
-        audit: (source, slug, apiKey) => op("skills:marketplace:audit", [source, slug, apiKey]),
-        curated: (apiKey) => op("skills:marketplace:curated", [apiKey]),
+        list: async (view, page, perPage, apiKey) =>
+          unwrapBridgeResult(
+            await op("skills:marketplace:list", [view, page, perPage, apiKey]),
+            "Failed to list marketplace skills",
+          ),
+        search: async (query, limit, apiKey) =>
+          unwrapBridgeResult(
+            await op("skills:marketplace:search", [query, limit, apiKey]),
+            "Failed to search marketplace skills",
+          ),
+        detail: async (source, slug, apiKey) =>
+          unwrapBridgeResult(
+            await op("skills:marketplace:detail", [source, slug, apiKey]),
+            "Failed to load marketplace skill",
+          ),
+        audit: async (source, slug, apiKey) =>
+          unwrapBridgeResult(
+            await op("skills:marketplace:audit", [source, slug, apiKey]),
+            "Failed to audit marketplace skill",
+          ),
+        curated: async (apiKey) =>
+          unwrapBridgeResult(
+            await op("skills:marketplace:curated", [apiKey]),
+            "Failed to load curated marketplace skills",
+          ),
       },
-      install: (source, directory, globalScope) =>
-        op("skills:install", [source, directory, globalScope]),
-      remove: (skillName, directory, globalScope) =>
-        op("skills:remove", [skillName, directory, globalScope]),
-      update: (skillName, directory, globalScope) =>
-        op("skills:update", [skillName, directory, globalScope]),
-      listInstalled: (directory) => op("skills:list-installed", [directory]),
-      checkCli: () => op("skills:check-cli"),
+      install: async (source, directory, globalScope) =>
+        unwrapBridgeResult(
+          await op("skills:install", [source, directory, globalScope]),
+          "Failed to install skill",
+        ),
+      remove: async (skillName, directory, globalScope) =>
+        unwrapBridgeResult(
+          await op("skills:remove", [skillName, directory, globalScope]),
+          "Failed to remove skill",
+        ),
+      update: async (skillName, directory, globalScope) =>
+        unwrapBridgeResult(
+          await op("skills:update", [skillName, directory, globalScope]),
+          "Failed to update skill",
+        ),
+      listInstalled: async (directory) =>
+        normalizeSkillList(
+          unwrapBridgeResult(
+            await op("skills:list-installed", [directory]),
+            "Failed to list installed skills",
+          ),
+        ),
+      checkCli: async () =>
+        unwrapBridgeResult(await op("skills:check-cli"), "Failed to check skills CLI"),
     },
     config: {
       get: (target) => op("config:get", targetArgs(target)),
@@ -424,7 +480,30 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             })),
           };
         }
-        return { connectedBackendIds: targetBackends, errors: [] };
+
+        const results = await Promise.all(
+          targetBackends.map(async (backendId) => {
+            try {
+              await backendRpc(backendId, "project:add", [config]);
+              return { backendId, success: true as const };
+            } catch (error) {
+              return {
+                backendId,
+                success: false as const,
+                error: error instanceof Error ? error.message : "Project connection failed",
+              };
+            }
+          }),
+        );
+
+        return {
+          connectedBackendIds: results.flatMap((result) =>
+            result.success ? [result.backendId] : [],
+          ),
+          errors: results.flatMap((result) =>
+            result.success ? [] : [{ backendId: result.backendId, error: result.error }],
+          ),
+        };
       },
       disconnectProject: async ({ target, backendIds }) => {
         await Promise.all(

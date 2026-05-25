@@ -19,7 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useAgentBackend, useCurrentAgentBackendId } from "@/hooks/use-agent-backend";
+import { useSkillsPlatform } from "@/hooks/use-skills-platform";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -265,9 +265,8 @@ function InstallFlowDialog({
 
 export function SkillsMarketplace() {
   const { t } = useTranslation();
-  const backendId = useCurrentAgentBackendId();
-  const backend = useAgentBackend(backendId);
-  const marketplaceApi = backend?.platform?.skills?.marketplace;
+  const skillsApi = useSkillsPlatform();
+  const marketplaceApi = skillsApi?.marketplace;
   const { activeDirectory } = useConnectionState();
 
   const [query, setQuery] = useState("");
@@ -332,7 +331,7 @@ export function SkillsMarketplace() {
         setSkills(res.data);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load skills");
+      setError(err instanceof Error ? err.message : "Failed to load plugins");
     } finally {
       setLoading(false);
     }
@@ -340,13 +339,12 @@ export function SkillsMarketplace() {
 
   // Fetch installed skills
   const fetchInstalled = useCallback(async () => {
-    if (!backend?.platform?.skills) return;
+    if (!skillsApi) return;
     try {
-      const installed: InstalledSkillInfo[] =
-        await backend.platform.skills.listInstalled(scopedDirectory);
+      const installed: InstalledSkillInfo[] = await skillsApi.listInstalled(scopedDirectory);
       setInstalledSkills(installed);
     } catch {}
-  }, [backend, scopedDirectory]);
+  }, [skillsApi, scopedDirectory]);
 
   // Initial load
   useEffect(() => {
@@ -421,38 +419,35 @@ export function SkillsMarketplace() {
 
   const handleUpdate = useCallback(
     async (installed: InstalledSkillInfo) => {
-      const skillsApi = backend?.platform?.skills;
       if (!skillsApi) return;
       const key = installed.remoteKey || installed.location;
       await runSkillAction(key, async () => {
         await skillsApi.update(installed.name, scopedDirectory, installed.scope === "global");
       });
     },
-    [backend, scopedDirectory, runSkillAction],
+    [skillsApi, scopedDirectory, runSkillAction],
   );
 
   const handleRemove = useCallback(
     async (installed: InstalledSkillInfo) => {
-      const skillsApi = backend?.platform?.skills;
       if (!skillsApi) return;
       const key = installed.remoteKey || installed.location;
       await runSkillAction(key, async () => {
         await skillsApi.remove(installed.name, scopedDirectory, installed.scope === "global");
       });
     },
-    [backend, scopedDirectory, runSkillAction],
+    [skillsApi, scopedDirectory, runSkillAction],
   );
 
   const confirmInstall = useCallback(
     async (source: string, globalScope: boolean) => {
-      const skillsApi = backend?.platform?.skills;
       if (!skillsApi || !installSkill) return;
       const key = remoteKeyForSkill(installSkill);
       await runSkillAction(key, async () => {
         await skillsApi.install(source, scopedDirectory, globalScope);
       });
     },
-    [backend, scopedDirectory, runSkillAction, installSkill],
+    [skillsApi, scopedDirectory, runSkillAction, installSkill],
   );
 
   const selectedInstallState = selectedSkill ? getInstallState(selectedSkill) : {};
@@ -509,7 +504,7 @@ export function SkillsMarketplace() {
         </div>
       )}
 
-      {/* Skill cards grid */}
+      {/* Plugin cards grid */}
       {loading && skills.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">

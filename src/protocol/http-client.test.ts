@@ -90,4 +90,75 @@ describe("createHttpOpenGuiClient", () => {
       name: "Remote",
     });
   });
+
+  test("connectProject attaches each requested backend through project:add", async () => {
+    const calls: Array<{ channel: string; args: unknown[] }> = [];
+    const client = createHttpOpenGuiClient({
+      rpcImpl: async <T>(channel: string, args: unknown[] = []) => {
+        calls.push({ channel, args });
+        return { success: true, data: true } as T;
+      },
+    });
+
+    const result = await client.agentBackends.connectProject({
+      config: {
+        workspaceId: "local",
+        baseUrl: "http://127.0.0.1:4096",
+        directory: "/repo",
+      },
+      backendIds: ["opencode", "pi"],
+    });
+
+    expect(result).toEqual({
+      connectedBackendIds: ["opencode", "pi"],
+      errors: [],
+    });
+    expect(calls).toEqual([
+      {
+        channel: "opencode:project:add",
+        args: [
+          {
+            workspaceId: "local",
+            baseUrl: "http://127.0.0.1:4096",
+            directory: "/repo",
+          },
+        ],
+      },
+      {
+        channel: "pi:project:add",
+        args: [
+          {
+            workspaceId: "local",
+            baseUrl: "http://127.0.0.1:4096",
+            directory: "/repo",
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("connectProject reports per-backend attachment failures", async () => {
+    const client = createHttpOpenGuiClient({
+      rpcImpl: async <T>(channel: string) => {
+        if (channel === "opencode:project:add") {
+          return { success: true, data: true } as T;
+        }
+        return { success: false, error: "Pi attach failed" } as T;
+      },
+    });
+
+    const result = await client.agentBackends.connectProject({
+      config: {
+        workspaceId: "local",
+        baseUrl: "http://127.0.0.1:4096",
+        directory: "/repo",
+      },
+      backendIds: ["opencode", "pi"],
+    });
+
+    expect(result).toEqual({
+      connectedBackendIds: ["opencode"],
+      errors: [{ backendId: "pi", error: "Pi attach failed" }],
+    });
+  });
 });

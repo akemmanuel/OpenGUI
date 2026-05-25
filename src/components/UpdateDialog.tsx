@@ -35,7 +35,6 @@ export function UpdateDialog({ update }: UpdateDialogProps) {
   const {
     updateAvailable,
     releaseUrl,
-    releaseNotes,
     status,
     canDismiss,
     dismiss,
@@ -47,7 +46,6 @@ export function UpdateDialog({ update }: UpdateDialogProps) {
 
   const open = updateAvailable || status === "downloaded" || status === "error";
   const description = buildDescription(update);
-  const notesPreview = releaseNotes?.trim().slice(0, 280) ?? null;
 
   const handlePrimary = () => {
     if (status === "downloaded") {
@@ -111,13 +109,6 @@ export function UpdateDialog({ update }: UpdateDialogProps) {
           </Button>
         </>
       }
-    >
-      {notesPreview && (
-        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
-          {notesPreview}
-          {releaseNotes && releaseNotes.length > notesPreview.length ? "…" : ""}
-        </div>
-      )}
-    </BaseDialog>
+    />
   );
 }
