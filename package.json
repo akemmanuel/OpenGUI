@@ -67,7 +67,9 @@
     "appId": "com.opengui.app",
     "productName": "OpenGUI",
     "compression": "maximum",
-    "asar": true,
+    "asar": {
+      "smartUnpack": true
+    },
     "linux": {
       "target": "deb",
       "icon": "assets/icon.png",
@@ -78,6 +80,8 @@
         "dmg",
         "zip"
       ],
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
+      "compression": "normal",
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
@@ -85,7 +89,8 @@
       "identity": null
     },
     "dmg": {
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "writeUpdateInfo": false
     },
     "win": {
       "target": "nsis",
