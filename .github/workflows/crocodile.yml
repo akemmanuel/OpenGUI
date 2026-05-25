@@ -31,7 +31,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          model: opencode/minimax-m2.5-free
+          model: opencode/deepseek-v4-flash-free
           use_github_token: true
           prompt: |
             Review this pull request:
