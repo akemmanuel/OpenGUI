@@ -10,11 +10,11 @@ jobs:
     outputs:
       dist-cache-key: ${{ steps.cache-dist.outputs.cache-key }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -36,7 +36,7 @@ jobs:
 
       - name: Cache dist
         id: cache-dist
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@v4
         with:
           path: |
             dist
@@ -47,11 +47,11 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -60,7 +60,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Restore dist
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@v4
         with:
           path: |
             dist
@@ -75,7 +75,7 @@ jobs:
         run: pnpm exec electron-builder --linux deb --publish never
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: linux-deb
           path: release/*.deb
@@ -89,17 +89,17 @@ jobs:
       fail-fast: false
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
       - name: Cache Electron binaries
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/electron
@@ -110,7 +110,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Restore dist
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@v4
         with:
           path: |
             dist
@@ -124,7 +124,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload mac ${{ matrix.arch }} artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: mac-release-${{ matrix.arch }}
           path: |
@@ -138,11 +138,11 @@ jobs:
     needs: preflight
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -151,7 +151,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Restore dist
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@v4
         with:
           path: |
             dist
@@ -193,7 +193,7 @@ jobs:
           }
 
       - name: Upload Windows updater artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
           path: |
@@ -210,7 +210,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -259,11 +259,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -272,25 +272,25 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download linux artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: linux-deb
           path: artifacts/linux-deb
 
       - name: Download mac x64 artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: mac-release-x64
           path: artifacts/mac-release
 
       - name: Download mac arm64 artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: mac-release-arm64
           path: artifacts/mac-release-arm64
 
       - name: Download windows artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: windows-nsis
           path: artifacts/windows-nsis

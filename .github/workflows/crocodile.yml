@@ -17,7 +17,7 @@ jobs:
       # Runs only for same-repo or trusted contributors. Fork PRs from outsiders may not
       # have enough token permissions for automatic review comments.
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
