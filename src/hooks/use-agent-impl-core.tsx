@@ -77,6 +77,7 @@ import {
   getStoredWorkspaces,
   persistUnreadSessionIds,
   persistWorkspaces,
+  persistWorktreeParents,
   type SessionColor,
 } from "@/hooks/agent-state-persistence";
 import {
@@ -2511,6 +2512,16 @@ function InternalAgentProvider({
     const normalizedWorktreeDir = normalizeProjectPath(worktreeDir);
     const normalizedParentDir = normalizeProjectPath(parentDir);
     if (!normalizedWorktreeDir || !normalizedParentDir) return;
+    const now = new Date().toISOString();
+    persistWorktreeParents({
+      ...stateRef.current.worktreeParents,
+      [normalizedWorktreeDir]: {
+        parentDir: normalizedParentDir,
+        branch,
+        createdAt: stateRef.current.worktreeParents[normalizedWorktreeDir]?.createdAt ?? now,
+        lastOpenedAt: now,
+      },
+    });
     dispatch({
       type: "REGISTER_WORKTREE",
       payload: {
@@ -2524,6 +2535,9 @@ function InternalAgentProvider({
   const unregisterWorktree = useCallback((worktreeDir: string) => {
     const normalizedWorktreeDir = normalizeProjectPath(worktreeDir);
     if (!normalizedWorktreeDir) return;
+    const next = { ...stateRef.current.worktreeParents };
+    delete next[normalizedWorktreeDir];
+    persistWorktreeParents(next);
     dispatch({ type: "UNREGISTER_WORKTREE", payload: normalizedWorktreeDir });
   }, []);
 

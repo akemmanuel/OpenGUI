@@ -29,6 +29,7 @@ import { useUpdateCheck } from "@/hooks/use-update-check";
 import { POST_MERGE_DELAY_MS, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
 import { OpenGuiClientProvider } from "@/protocol/provider";
+import { getDirectoryPlacementInfo, getWorktreePlacementMeta } from "@/lib/worktree-placement";
 import {
   buildPRUrl,
   computeTokenTotal,
@@ -193,13 +194,13 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
   const activeSessionDirectory =
     activeSession?._projectDir ?? activeSession?.directory ?? draftSessionDirectory ?? null;
   const activeWorktreeInfo = useMemo(() => {
-    if (!activeSessionDirectory) return null;
-    const meta = worktreeParents[activeSessionDirectory];
-    if (!meta) return null;
+    const placement = getDirectoryPlacementInfo(activeSessionDirectory, worktreeParents);
+    if (!placement?.isKnownWorktree) return null;
     return {
-      mainDir: meta.parentDir,
-      branch: meta.branch,
-      worktreePath: activeSessionDirectory,
+      mainDir: placement.rootDirectory,
+      branch:
+        getWorktreePlacementMeta(activeSessionDirectory, worktreeParents)?.branch ?? "unknown",
+      worktreePath: placement.executionDirectory,
     };
   }, [activeSessionDirectory, worktreeParents]);
 

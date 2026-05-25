@@ -24,22 +24,24 @@ import {
 } from "@/hooks/use-agent-backend";
 import { useActions, useModelState, useSessionState } from "@/hooks/use-agent-state";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
+import {
+  filterModelSearchCandidates,
+  findExactModelReferenceMatch,
+  normalizeModelQuery,
+  type ModelSearchCandidate,
+} from "@/lib/model-search";
 import { storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
 
-type ModelOption = {
-  value: string;
-  providerID: string;
-  modelID: string;
-  providerName: string;
-  label: string;
+type ModelOption = ModelSearchCandidate & {
   reasoning: boolean;
-  search: string;
 };
 
-function normalize(text: string) {
-  return text.trim().toLowerCase();
-}
+type ModelGroup = {
+  id: string;
+  name: string;
+  models: ModelOption[];
+};
 
 function getStoredModelMaxAgeMonths(): number {
   const raw = storageGet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS);
@@ -50,27 +52,52 @@ function getStoredModelMaxAgeMonths(): number {
   return parsed;
 }
 
+function groupModelsByProvider(models: ModelOption[]): ModelGroup[] {
+  const grouped = new Map<string, ModelGroup>();
+  for (const model of models) {
+    const existing = grouped.get(model.providerID);
+    if (existing) {
+      existing.models.push(model);
+      continue;
+    }
+    grouped.set(model.providerID, {
+      id: model.providerID,
+      name: model.providerName,
+      models: [model],
+    });
+  }
+  return [...grouped.values()];
+}
+
 function ModelRow({
   model,
-  isSelected,
+  isCurrent,
+  isActive,
   isFavorite,
   onSelect,
   onToggleFavorite,
+  onMouseEnter,
   showProvider,
 }: {
   model: ModelOption;
-  isSelected: boolean;
+  isCurrent: boolean;
+  isActive: boolean;
   isFavorite: boolean;
   onSelect: (model: ModelOption) => void;
   onToggleFavorite: (value: string) => void;
+  onMouseEnter: (value: string) => void;
   showProvider?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "hover:bg-accent hover:text-accent-foreground group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
-        isSelected && "bg-accent/60 text-foreground",
+        "group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
+        isActive
+          ? "bg-accent text-accent-foreground"
+          : "hover:bg-accent hover:text-accent-foreground",
+        isCurrent && !isActive && "bg-accent/60 text-foreground",
       )}
+      onMouseEnter={() => onMouseEnter(model.value)}
     >
       <button
         type="button"
@@ -90,7 +117,7 @@ function ModelRow({
         {model.reasoning && <Lightbulb className="size-3 shrink-0 text-amber-500" />}
       </button>
       <span className="flex shrink-0 items-center gap-1">
-        {isSelected && <Check className="size-3.5 text-primary" />}
+        {isCurrent && <Check className="size-3.5 text-primary" />}
         <button
           type="button"
           onClick={(e) => {
@@ -127,6 +154,7 @@ export function ModelSelector() {
   const [favoriteValues, setFavoriteValues] = useState<Set<string>>(new Set());
   const [modelMaxAgeMonths, setModelMaxAgeMonths] = useState(() => getStoredModelMaxAgeMonths());
   const [storageHydrated, setStorageHydrated] = useState(false);
+  const [activeValue, setActiveValue] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -164,17 +192,14 @@ export function ModelSelector() {
     storageSetJSON(STORAGE_KEYS.FAVORITE_MODELS, [...favoriteValues]);
   }, [favoriteValues, storageHydrated]);
 
-  // Open via Ctrl+X M chord shortcut dispatched from App.tsx
   useEffect(() => {
     const handler = () => setOpen(true);
     window.addEventListener("open-model-selector", handler);
     return () => window.removeEventListener("open-model-selector", handler);
   }, []);
 
-  // Focus and select all text in the search input whenever the dialog opens
   useEffect(() => {
     if (!open) return;
-    // Use a microtask delay so the dialog has time to render and mount the input
     const frame = requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -210,7 +235,6 @@ export function ModelSelector() {
               if (model.status === "deprecated") return false;
               if (!shouldApplyAgeFilter || maxAgeMs === null) return true;
               const timestamp = Date.parse(model.release_date);
-              // Keep models with no valid release date (safe fallback)
               if (!Number.isFinite(timestamp)) return true;
               return Math.abs(now - timestamp) < maxAgeMs;
             })
@@ -222,7 +246,6 @@ export function ModelSelector() {
               providerName: provider.name,
               label: model.name,
               reasoning: model.capabilities.reasoning,
-              search: normalize(`${provider.name} ${model.name} ${key}`),
             })),
         };
       })
@@ -240,7 +263,7 @@ export function ModelSelector() {
     [allModels, currentValue],
   );
 
-  const normalizedQuery = normalize(query);
+  const normalizedQuery = normalizeModelQuery(query);
 
   const favoriteModels = useMemo(() => {
     const byValue = new Map(allModels.map((model) => [model.value, model]));
@@ -259,34 +282,60 @@ export function ModelSelector() {
       .slice(0, MAX_RECENT_MODELS);
   }, [allModels, currentValue, recentValues, favoriteValues]);
 
-  // Models shown in favorites or recents should not appear in provider groups
   const excludedFromGroups = useMemo(() => {
     const set = new Set<string>();
-    for (const m of favoriteModels) set.add(m.value);
-    for (const m of recentModels) set.add(m.value);
+    for (const model of favoriteModels) set.add(model.value);
+    for (const model of recentModels) set.add(model.value);
     return set;
   }, [favoriteModels, recentModels]);
 
-  const filteredGroups = useMemo(() => {
-    const base = normalizedQuery
-      ? groups
-      : groups.map((group) => ({
+  const browseGroups = useMemo(
+    () =>
+      groups
+        .map((group) => ({
           ...group,
           models: group.models.filter((model) => !excludedFromGroups.has(model.value)),
-        }));
-    const filtered = normalizedQuery
-      ? base.map((group) => ({
-          ...group,
-          models: group.models.filter((model) => model.search.includes(normalizedQuery)),
         }))
-      : base;
-    return filtered.filter((group) => group.models.length > 0);
-  }, [groups, normalizedQuery, excludedFromGroups]);
+        .filter((group) => group.models.length > 0),
+    [groups, excludedFromGroups],
+  );
 
-  const firstMatch = useMemo(() => {
-    if (!normalizedQuery) return null;
-    return filteredGroups[0]?.models[0] ?? null;
-  }, [filteredGroups, normalizedQuery]);
+  const searchMatches = useMemo(
+    () => (normalizedQuery ? filterModelSearchCandidates(allModels, normalizedQuery) : []),
+    [allModels, normalizedQuery],
+  );
+
+  const filteredGroups = useMemo(
+    () => (normalizedQuery ? groupModelsByProvider(searchMatches) : browseGroups),
+    [browseGroups, normalizedQuery, searchMatches],
+  );
+
+  const visibleModels = useMemo(() => {
+    if (normalizedQuery) {
+      return searchMatches;
+    }
+    return [...favoriteModels, ...recentModels, ...browseGroups.flatMap((group) => group.models)];
+  }, [browseGroups, favoriteModels, normalizedQuery, recentModels, searchMatches]);
+
+  const activeModel = useMemo(
+    () =>
+      activeValue ? (visibleModels.find((model) => model.value === activeValue) ?? null) : null,
+    [activeValue, visibleModels],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    if (visibleModels.length === 0) {
+      setActiveValue(null);
+      return;
+    }
+    setActiveValue((current) => {
+      if (current && visibleModels.some((model) => model.value === current)) {
+        return current;
+      }
+      return visibleModels[0]?.value ?? null;
+    });
+  }, [open, visibleModels]);
 
   const toggleFavorite = (value: string) => {
     setFavoriteValues((prev) => {
@@ -300,24 +349,66 @@ export function ModelSelector() {
     });
   };
 
+  const closeSelector = () => {
+    setOpen(false);
+    setQuery("");
+    setActiveValue(null);
+  };
+
   const selectModel = (model: ModelOption) => {
     setModel({ providerID: model.providerID, modelID: model.modelID });
     setRecentValues((previous) => {
       const next = [model.value, ...previous.filter((v) => v !== model.value)];
       return next.slice(0, MAX_RECENT_MODELS);
     });
-    setOpen(false);
+    closeSelector();
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) setQuery("");
+    if (!nextOpen) {
+      closeSelector();
+      return;
+    }
+    setOpen(true);
+  };
+
+  const moveActive = (direction: -1 | 1) => {
+    if (visibleModels.length === 0) return;
+    const currentIndex = activeValue
+      ? visibleModels.findIndex((model) => model.value === activeValue)
+      : -1;
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (startIndex + direction + visibleModels.length) % visibleModels.length;
+    setActiveValue(visibleModels[nextIndex]?.value ?? null);
   };
 
   const handleInputKeyDown: KeyboardEventHandler<HTMLInputElement> = (event) => {
-    if (event.key === "Enter" && firstMatch) {
+    if (event.key === "ArrowDown") {
       event.preventDefault();
-      selectModel(firstMatch);
+      moveActive(1);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActive(-1);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      const exactMatch = normalizedQuery
+        ? findExactModelReferenceMatch(query, allModels)
+        : undefined;
+      const target = exactMatch ?? activeModel;
+      if (!target) return;
+      event.preventDefault();
+      selectModel(target);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSelector();
     }
   };
 
@@ -406,10 +497,12 @@ export function ModelSelector() {
                 <ModelRow
                   key={`fav-${model.value}`}
                   model={model}
-                  isSelected={model.value === currentValue}
+                  isCurrent={model.value === currentValue}
+                  isActive={model.value === activeValue}
                   isFavorite={true}
                   onSelect={selectModel}
                   onToggleFavorite={toggleFavorite}
+                  onMouseEnter={setActiveValue}
                   showProvider
                 />
               ))}
@@ -425,10 +518,12 @@ export function ModelSelector() {
                 <ModelRow
                   key={`recent-${model.value}`}
                   model={model}
-                  isSelected={model.value === currentValue}
+                  isCurrent={model.value === currentValue}
+                  isActive={model.value === activeValue}
                   isFavorite={favoriteValues.has(model.value)}
                   onSelect={selectModel}
                   onToggleFavorite={toggleFavorite}
+                  onMouseEnter={setActiveValue}
                   showProvider
                 />
               ))}
@@ -446,10 +541,13 @@ export function ModelSelector() {
                   <ModelRow
                     key={model.value}
                     model={model}
-                    isSelected={model.value === currentValue}
+                    isCurrent={model.value === currentValue}
+                    isActive={model.value === activeValue}
                     isFavorite={favoriteValues.has(model.value)}
                     onSelect={selectModel}
                     onToggleFavorite={toggleFavorite}
+                    onMouseEnter={setActiveValue}
+                    showProvider={Boolean(normalizedQuery)}
                   />
                 ))}
               </div>

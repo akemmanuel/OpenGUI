@@ -68,6 +68,13 @@ import {
 } from "@/lib/sidebar-collapsed";
 import { partitionSidebarPins } from "@/lib/sidebar-pins";
 import {
+  getSessionExecutionDirectory,
+  getSessionPlacementInfo,
+  getWorktreeLabel,
+  shouldHideTopLevelProjectDirectory,
+  shouldShowSessionInProjectList,
+} from "@/lib/worktree-placement";
+import {
   abbreviatePath,
   buildPRUrl,
   getProjectName,
@@ -266,55 +273,73 @@ export function AppSidebar({
     [sessionMeta],
   );
 
-  // Group root sessions by project directory, merging worktree sessions under parent.
-  // Uses `_projectDir` (set by the bridge from the connection directory) instead
-  // of `session.directory` so that sessions are grouped correctly even when the
-  // server stores a slightly different path (symlinks, trailing slashes, etc.).
+  // Group root sessions by project directory, resolving worktree placement before
+  // filtering visibility so sessions in hidden worktree connections still appear
+  // under their visible Workspace root project.
   const projectGroups = useMemo(() => {
     const visibleProjectDirectorySet = new Set(
-      (detachedProject ? [detachedProject] : availableProjectDirectories).map((dir) =>
-        normalizeProjectPath(dir),
-      ),
+      (detachedProject ? [detachedProject] : availableProjectDirectories)
+        .map((dir) => normalizeProjectPath(dir))
+        .filter(Boolean),
     );
-    const openDirectories = Object.keys(connections).filter((dir) =>
-      visibleProjectDirectorySet.has(normalizeProjectPath(dir)),
+    const openDirectories = Object.keys(connections)
+      .map((dir) => normalizeProjectPath(dir))
+      .filter((dir): dir is string => Boolean(dir) && visibleProjectDirectorySet.has(dir));
+    const rootOpenDirectories = openDirectories.filter(
+      (dir) => !shouldHideTopLevelProjectDirectory(dir, worktreeParents),
     );
-    const openDirectorySet = new Set(openDirectories.map((dir) => normalizeProjectPath(dir)));
-    const rootSessions = sessions.filter((s) => {
-      const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
-      return (
-        !s.parentID && openDirectorySet.has(sessionDir) && !sessionMeta[s.id]?.movedToSessionId
-      );
-    });
-    const rootOpenDirectories = openDirectories.filter((dir) => !worktreeDirs.has(dir));
-    const workspaceProjects = activeWorkspace?.projects ?? [];
-    const projectDirectorySet = new Set([...rootOpenDirectories, ...workspaceProjects]);
+    const workspaceProjects = (activeWorkspace?.projects ?? [])
+      .map((dir) => normalizeProjectPath(dir))
+      .filter(Boolean);
+    const projectDirectorySet = new Set([
+      ...rootOpenDirectories,
+      ...workspaceProjects,
+      ...visibleProjectDirectorySet,
+    ]);
+    const normalizedDetachedProject = normalizeProjectPath(detachedProject ?? "");
     const orderedRootDirectories = detachedProject
-      ? rootOpenDirectories.filter((dir) => dir === detachedProject)
+      ? rootOpenDirectories.filter((dir) => dir === normalizedDetachedProject)
       : [
           ...workspaceProjects.filter((dir) => rootOpenDirectories.includes(dir)),
           ...rootOpenDirectories.filter((dir) => !workspaceProjects.includes(dir)),
         ];
-    const groups = new Map<string, typeof rootSessions>();
+    const groups = new Map<string, typeof sessions>();
     for (const dir of orderedRootDirectories) {
       groups.set(dir, []);
     }
-    for (const s of rootSessions) {
-      const assignedProjectDir = sessionMeta[s.id]?.assignedProjectDir
-        ? normalizeProjectPath(sessionMeta[s.id]?.assignedProjectDir ?? "")
-        : null;
-      if (assignedProjectDir && projectDirectorySet.has(assignedProjectDir)) {
-        if (!groups.has(assignedProjectDir)) groups.set(assignedProjectDir, []);
-        groups.get(assignedProjectDir)?.push(s);
+    for (const session of sessions) {
+      if (session.parentID || sessionMeta[session.id]?.movedToSessionId) continue;
+      const assignedProjectDir = normalizeProjectPath(
+        sessionMeta[session.id]?.assignedProjectDir ?? "",
+      );
+      const effectiveAssignedProjectDir =
+        assignedProjectDir && projectDirectorySet.has(assignedProjectDir)
+          ? assignedProjectDir
+          : null;
+      if (
+        !shouldShowSessionInProjectList(session, {
+          worktreeParents,
+          visibleProjectDirectories: visibleProjectDirectorySet,
+          assignedProjectDir: effectiveAssignedProjectDir,
+        })
+      ) {
         continue;
       }
-      const sessionDir = normalizeProjectPath(s._projectDir ?? s.directory);
-      if (!openDirectorySet.has(sessionDir)) continue;
-      // If session belongs to a worktree, group it under the parent project
-      const parentDir = worktreeParents[sessionDir]?.parentDir;
-      const groupDir = parentDir ?? sessionDir;
-      if (!groups.has(groupDir)) groups.set(groupDir, []);
-      groups.get(groupDir)?.push(s);
+      const placement = getSessionPlacementInfo(
+        session,
+        worktreeParents,
+        effectiveAssignedProjectDir,
+      );
+      if (!placement) continue;
+      if (
+        normalizedDetachedProject &&
+        placement.displayDirectory !== normalizedDetachedProject &&
+        placement.executionDirectory !== normalizedDetachedProject
+      ) {
+        continue;
+      }
+      if (!groups.has(placement.displayDirectory)) groups.set(placement.displayDirectory, []);
+      groups.get(placement.displayDirectory)?.push(session);
     }
     return new Map(
       Array.from(groups, ([directory, dirSessions]) => [
@@ -326,7 +351,6 @@ export function AppSidebar({
     sessions,
     connections,
     worktreeParents,
-    worktreeDirs,
     detachedProject,
     activeWorkspace,
     availableProjectDirectories,
@@ -606,7 +630,7 @@ export function AppSidebar({
     });
   }, []);
 
-  const renderSessionRow = (session: (typeof sessions)[number], directory: string) => {
+  const renderSessionRow = (session: (typeof sessions)[number], _directory: string) => {
     const isActive = session.id === activeSessionId;
     const isBusy = busySessionIds.has(session.id);
     const isUnread = unreadSessionIds.has(session.id);
@@ -622,10 +646,26 @@ export function AppSidebar({
     const tags = meta?.tags ?? [];
     const isPinned = !!meta?.pinnedAt;
     const isNaming = namingSessionIds.has(session.id);
-    const isWorktreeSession =
-      session.directory !== directory &&
-      worktreeParents[session.directory]?.parentDir === directory;
-    const worktreeBranch = isWorktreeSession ? getProjectName(session.directory) : null;
+    const placement = getSessionPlacementInfo(
+      session,
+      worktreeParents,
+      meta?.assignedProjectDir ?? null,
+    );
+    const isWorktreeSession = placement?.isKnownWorktree ?? false;
+    const knownWorktree = placement?.rootDirectory
+      ? (knownWorktrees[placement.rootDirectory] ?? []).find(
+          (worktree) => normalizeProjectPath(worktree.path) === placement.executionDirectory,
+        )
+      : null;
+    const worktreeBranch =
+      placement && isWorktreeSession
+        ? getWorktreeLabel({
+            path: placement.executionDirectory,
+            branch: knownWorktree?.branch ?? worktreeParents[placement.executionDirectory]?.branch,
+            detached: knownWorktree?.detached,
+            rootDirectory: placement.rootDirectory,
+          })
+        : null;
     return (
       <SessionContextMenu
         key={session.id}
@@ -1183,8 +1223,11 @@ export function AppSidebar({
                   {visibleChatSessions.map((session) =>
                     renderSessionRow(
                       session,
-                      sessionMeta[session.id]?.assignedProjectDir ??
-                        normalizeProjectPath(session._projectDir ?? session.directory),
+                      getSessionPlacementInfo(
+                        session,
+                        worktreeParents,
+                        sessionMeta[session.id]?.assignedProjectDir ?? null,
+                      )?.displayDirectory ?? getSessionExecutionDirectory(session),
                     ),
                   )}
                   {hasMoreChats && (

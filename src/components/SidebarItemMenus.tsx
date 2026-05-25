@@ -22,6 +22,7 @@ import { ContextMenu } from "radix-ui";
 import type { SessionColor } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
+import { compareWorktreesByLabel, getWorktreeLabel } from "@/lib/worktree-placement";
 import { formatTimeAgo, getProjectName } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
@@ -282,7 +283,9 @@ export function ProjectMenuContent({
   onOpenWorktreePr,
   onRemoveWorktree,
 }: ProjectMenuContentProps) {
-  const extraWorktrees = worktrees.filter((worktree) => worktree.path !== directory);
+  const extraWorktrees = [...worktrees]
+    .filter((worktree) => worktree.path !== directory)
+    .sort((left, right) => compareWorktreesByLabel(left, right, directory));
 
   if (kind === "dropdown") {
     return (
@@ -371,7 +374,7 @@ export function ProjectMenuContent({
                         <DropdownMenuSubTrigger>
                           <div className="flex flex-col truncate">
                             <span className="truncate">
-                              {worktree.branch ?? getProjectName(worktree.path)}
+                              {getWorktreeLabel({ ...worktree, rootDirectory: directory })}
                             </span>
                             {worktreeMeta && (
                               <span className="text-[10px] text-muted-foreground">
@@ -525,7 +528,7 @@ export function ProjectMenuContent({
                         <ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
                           <div className="flex flex-col truncate">
                             <span className="truncate">
-                              {worktree.branch ?? getProjectName(worktree.path)}
+                              {getWorktreeLabel({ ...worktree, rootDirectory: directory })}
                             </span>
                             {worktreeMeta && (
                               <span className="text-[10px] text-muted-foreground">

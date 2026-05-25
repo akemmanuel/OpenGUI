@@ -1,3 +1,8 @@
+import {
+  getSessionPlacementInfo,
+  type WorktreePlacementMap,
+  type WorktreePlacementSessionLike,
+} from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
 
 interface SidebarPinMetaLike {
@@ -5,14 +10,8 @@ interface SidebarPinMetaLike {
   assignedProjectDir?: string | null;
 }
 
-interface SidebarPinSessionLike {
+interface SidebarPinSessionLike extends WorktreePlacementSessionLike {
   id: string;
-  directory: string;
-  _projectDir?: string;
-}
-
-interface SidebarWorktreeParentLike {
-  parentDir: string;
 }
 
 type SidebarProjectEntry<TSession> = [string, TSession[]];
@@ -43,10 +42,12 @@ function getPinnedAt(meta?: SidebarPinMetaLike): string | null {
 
 export function getSidebarSessionProjectDirectory<TSession extends SidebarPinSessionLike>(
   session: TSession,
-  worktreeParents: Record<string, SidebarWorktreeParentLike | undefined>,
+  worktreeParents: WorktreePlacementMap,
 ): string {
-  const sessionDirectory = normalizeProjectPath(session._projectDir ?? session.directory);
-  return normalizeProjectPath(worktreeParents[sessionDirectory]?.parentDir ?? sessionDirectory);
+  return (
+    getSessionPlacementInfo(session, worktreeParents)?.displayDirectory ??
+    normalizeProjectPath(session._projectDir ?? session.directory)
+  );
 }
 
 export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
@@ -58,7 +59,7 @@ export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
   projectEntries: Array<SidebarProjectEntry<TSession>>;
   sessionMeta: Record<string, SidebarPinMetaLike | undefined>;
   projectMeta: Record<string, SidebarPinMetaLike | undefined>;
-  worktreeParents: Record<string, SidebarWorktreeParentLike | undefined>;
+  worktreeParents: WorktreePlacementMap;
 }): SidebarPinPartitionResult<TSession> {
   const pinnedProjectDirectories = new Set<string>();
   const pinnedEntries: SidebarPinnedEntry<TSession>[] = [];

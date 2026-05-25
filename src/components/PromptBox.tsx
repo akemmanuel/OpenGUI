@@ -50,7 +50,14 @@ import {
   persistSessionDraftImages,
 } from "@/lib/session-drafts";
 import { shouldShowStopButton } from "@/lib/session-controls";
-import { cn, getPrimaryAgents } from "@/lib/utils";
+import {
+  compareWorktreesByLabel,
+  getWorktreeLabel,
+  getWorkspaceRootProjectDirectory,
+  isRootWorktreePath,
+} from "@/lib/worktree-placement";
+import { cn, getPrimaryAgents, normalizeProjectPath } from "@/lib/utils";
+import type { GitWorktree } from "@/types/electron";
 
 interface PromptBoxProps extends Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
@@ -101,7 +108,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
     const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<string | null>(null);
     const [setupWorktreePath, setSetupWorktreePath] = React.useState<string | null>(null);
-    const [currentProjectBranch, setCurrentProjectBranch] = React.useState("Branch");
+    const [discoveredWorktrees, setDiscoveredWorktrees] = React.useState<GitWorktree[]>([]);
+    const [worktreeDiscoveryState, setWorktreeDiscoveryState] = React.useState<
+      "hidden" | "ready" | "error"
+    >("hidden");
 
     const [isCompacting, setIsCompacting] = React.useState(false);
 
@@ -144,11 +154,22 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const syncingImageDraftRef = React.useRef(false);
     const sessionDraftsRef = React.useRef(sessionDrafts);
     const sessionDraftImagesRef = React.useRef(getSessionDraftImages());
+    const activeSession = React.useMemo(
+      () => sessions.find((session) => session.id === activeSessionId) ?? null,
+      [sessions, activeSessionId],
+    );
+    const selectedWorktreeDirectory = React.useMemo(
+      () =>
+        normalizeProjectPath(
+          activeSession?._projectDir ?? activeSession?.directory ?? draftSessionDirectory ?? "",
+        ) || null,
+      [activeSession, draftSessionDirectory],
+    );
     const projectDir = React.useMemo(() => {
-      if (!draftSessionDirectory) return null;
-      const worktreeMeta = worktreeParents[draftSessionDirectory];
-      return worktreeMeta ? worktreeMeta.parentDir : draftSessionDirectory;
-    }, [draftSessionDirectory, worktreeParents]);
+      if (!selectedWorktreeDirectory) return null;
+      return getWorkspaceRootProjectDirectory(selectedWorktreeDirectory, worktreeParents);
+    }, [selectedWorktreeDirectory, worktreeParents]);
+    const isDraftWorktreeSelection = !activeSessionId && Boolean(draftSessionDirectory);
 
     // Slash command popover state
     const [showSlash, setShowSlash] = React.useState(false);
@@ -208,7 +229,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
     React.useEffect(() => {
       if (!projectDir || !isLocalWorkspace) {
-        setCurrentProjectBranch("Branch");
+        setDiscoveredWorktrees([]);
+        setWorktreeDiscoveryState("hidden");
         return;
       }
 
@@ -216,19 +238,96 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       const git = window.electronAPI?.git;
 
       if (!git) {
-        setCurrentProjectBranch("Branch");
+        setDiscoveredWorktrees([]);
+        setWorktreeDiscoveryState("hidden");
         return;
       }
 
-      void git.currentBranch(projectDir).then((result) => {
-        if (cancelled) return;
-        setCurrentProjectBranch(result.success && result.data ? result.data : "Branch");
-      });
+      void Promise.all([git.isRepo(projectDir), git.listWorktrees(projectDir)])
+        .then(([repoResult, worktreeResult]) => {
+          if (cancelled) return;
+          if (!repoResult.success || repoResult.data !== true) {
+            setDiscoveredWorktrees([]);
+            setWorktreeDiscoveryState("hidden");
+            return;
+          }
+          if (!worktreeResult.success || !worktreeResult.data) {
+            setDiscoveredWorktrees([]);
+            setWorktreeDiscoveryState("error");
+            return;
+          }
+          const normalizedWorktrees = worktreeResult.data.map((worktree) => ({
+            ...worktree,
+            path: normalizeProjectPath(worktree.path),
+          }));
+          for (const worktree of normalizedWorktrees) {
+            if (worktree.path === projectDir || worktreeParents[worktree.path]) continue;
+            registerWorktree(worktree.path, projectDir, worktree.branch ?? "unknown");
+          }
+          setDiscoveredWorktrees(normalizedWorktrees);
+          setWorktreeDiscoveryState("ready");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setDiscoveredWorktrees([]);
+          setWorktreeDiscoveryState("error");
+        });
 
       return () => {
         cancelled = true;
       };
-    }, [projectDir, isLocalWorkspace]);
+    }, [projectDir, isLocalWorkspace, registerWorktree, worktreeParents]);
+
+    const worktreeOptions = React.useMemo(() => {
+      if (worktreeDiscoveryState !== "ready" || !projectDir) return [];
+      const byPath = new Map<string, GitWorktree>();
+      for (const worktree of discoveredWorktrees) {
+        const normalizedPath = normalizeProjectPath(worktree.path);
+        if (!normalizedPath) continue;
+        byPath.set(normalizedPath, {
+          ...worktree,
+          path: normalizedPath,
+        });
+      }
+      if (selectedWorktreeDirectory && !byPath.has(selectedWorktreeDirectory)) {
+        byPath.set(selectedWorktreeDirectory, {
+          path: selectedWorktreeDirectory,
+          branch: worktreeParents[selectedWorktreeDirectory]?.branch,
+        });
+      }
+      if (!Array.from(byPath.keys()).some((path) => isRootWorktreePath(path, projectDir))) {
+        byPath.set(projectDir, {
+          path: projectDir,
+          branch: worktreeParents[projectDir]?.branch,
+        });
+      }
+      return Array.from(byPath.values())
+        .sort((left, right) => {
+          const leftIsRoot = isRootWorktreePath(left.path, projectDir);
+          const rightIsRoot = isRootWorktreePath(right.path, projectDir);
+          if (leftIsRoot !== rightIsRoot) return leftIsRoot ? -1 : 1;
+          return compareWorktreesByLabel(left, right, projectDir);
+        })
+        .map((worktree) => ({
+          ...worktree,
+          isRoot: isRootWorktreePath(worktree.path, projectDir),
+          label: getWorktreeLabel({ ...worktree, rootDirectory: projectDir }),
+        }));
+    }, [
+      discoveredWorktrees,
+      projectDir,
+      selectedWorktreeDirectory,
+      worktreeDiscoveryState,
+      worktreeParents,
+    ]);
+
+    const selectedWorktreeOption = React.useMemo(
+      () => worktreeOptions.find((option) => option.path === selectedWorktreeDirectory) ?? null,
+      [worktreeOptions, selectedWorktreeDirectory],
+    );
+
+    const shouldShowWorktreeSelector =
+      Boolean(projectDir) && isLocalWorkspace && worktreeDiscoveryState === "ready";
 
     React.useEffect(() => {
       syncingDraftRef.current = true;
@@ -760,69 +859,84 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             <AgentSelector />
             <VariantSelector />
 
-            {(() => {
-              // Only show in blank (draft) sessions - never in sessions that have messages
-              if (!draftSessionDirectory || messages.length > 0 || !isLocalWorkspace) return null;
-
-              if (!projectDir) return null;
-
-              // Collect ALL worktrees that belong to this project
-              const worktrees = Object.entries(worktreeParents)
-                .filter(([, meta]) => meta.parentDir === projectDir)
-                .map(([dir, meta]) => ({
-                  dir,
-                  branch: meta.branch,
-                  isMain: false,
-                }));
-
-              const options: Array<{
-                dir: string;
-                branch: string;
-                isMain: boolean;
-              }> = [{ dir: projectDir, branch: currentProjectBranch, isMain: true }, ...worktrees];
-
-              return (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="!h-7 w-auto max-w-[180px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0"
-                    >
-                      <GitBranch className="size-3.5 shrink-0" />
-                      <span className="truncate">
-                        {options.find((opt) => opt.dir === draftSessionDirectory)?.branch ||
-                          "Branch"}
-                      </span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-80 w-48">
-                    {options.map((opt) => (
+            {shouldShowWorktreeSelector && selectedWorktreeOption && (
+              <div className="flex min-w-0 items-center gap-1">
+                {isDraftWorktreeSelection ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="!h-7 w-auto max-w-[220px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0"
+                      >
+                        <GitBranch className="size-3.5 shrink-0" />
+                        <span className="truncate">{selectedWorktreeOption.label}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-80 w-56">
+                      {worktreeOptions.map((option) => (
+                        <DropdownMenuItem
+                          key={option.path}
+                          onClick={() => {
+                            if (option.path !== projectDir && !worktreeParents[option.path]) {
+                              registerWorktree(
+                                option.path,
+                                projectDir!,
+                                option.branch ?? "unknown",
+                              );
+                            }
+                            setDraftDirectory(option.path);
+                          }}
+                          className="text-xs"
+                        >
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <span className="truncate">{option.label}</span>
+                          </span>
+                          {option.path === selectedWorktreeDirectory && (
+                            <Check className="ml-auto size-3 shrink-0" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        key={opt.dir}
-                        onClick={() => setDraftDirectory(opt.dir)}
+                        onClick={() => setWorktreeDialogDir(projectDir)}
                         className="text-xs"
                       >
-                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                          <span className="truncate">{opt.branch}</span>
-                        </span>
-                        {opt.dir === draftSessionDirectory && (
-                          <Check className="ml-auto size-3 shrink-0" />
-                        )}
+                        <Plus className="size-3.5" />
+                        <span>New worktree</span>
                       </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => setWorktreeDialogDir(projectDir)}
-                      className="text-xs"
-                    >
-                      <Plus className="size-3.5" />
-                      <span>New worktree</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              );
-            })()}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : selectedWorktreeOption.isRoot ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <GitBranch className="size-3.5 shrink-0" />
+                        <span className="truncate">{selectedWorktreeOption.label}</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Current branch of the root worktree.</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <GitBranch className="size-3.5 shrink-0" />
+                    <span className="truncate">{selectedWorktreeOption.label}</span>
+                  </Button>
+                )}
+              </div>
+            )}
 
             {isLoading && (
               <Tooltip>

@@ -1,9 +1,12 @@
 import {
   createLocalWorkspace,
-  getWorkspaceRootDirectory,
   LOCAL_WORKSPACE_ID,
   type WorktreeParentMap,
 } from "@/hooks/agent-state-persistence";
+import {
+  getWorkspaceRootProjectDirectory,
+  listRelatedWorktreeDirectories,
+} from "@/lib/worktree-placement";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 import type { ConnectionStatus, Workspace } from "@/types/electron";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
@@ -53,10 +56,8 @@ export function createWorkspaceProjectConnectionPlan({
   connectedDirectories?: Iterable<string>;
 }) {
   const normalizedDirectory = normalizeProjectPath(directory);
-  const rootDirectory = getWorkspaceRootDirectory(normalizedDirectory, worktreeParents);
-  const relatedWorktrees = Object.entries(worktreeParents)
-    .filter(([, meta]) => meta.parentDir === rootDirectory)
-    .map(([worktreeDir]) => worktreeDir);
+  const rootDirectory = getWorkspaceRootProjectDirectory(normalizedDirectory, worktreeParents);
+  const relatedWorktrees = listRelatedWorktreeDirectories(rootDirectory, worktreeParents);
   const desiredDirectories = uniqueOrdered([rootDirectory, ...relatedWorktrees]);
   const connectedSet = new Set(connectedDirectories);
 
@@ -80,15 +81,10 @@ export function createProjectRemovalPlan({
   directory: string;
   worktreeParents: WorktreeParentMap;
 }) {
-  const workspaceDirectory = getWorkspaceRootDirectory(directory, worktreeParents);
+  const workspaceDirectory = getWorkspaceRootProjectDirectory(directory, worktreeParents);
   const directoriesToRemove =
     workspaceDirectory === directory
-      ? [
-          workspaceDirectory,
-          ...Object.entries(worktreeParents)
-            .filter(([, meta]) => meta.parentDir === workspaceDirectory)
-            .map(([worktreeDir]) => worktreeDir),
-        ]
+      ? [workspaceDirectory, ...listRelatedWorktreeDirectories(workspaceDirectory, worktreeParents)]
       : [directory];
 
   return {

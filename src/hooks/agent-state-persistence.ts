@@ -1,5 +1,6 @@
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import { persistOrRemoveJSON, storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
+import { getWorkspaceRootProjectDirectory } from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
 import type { SelectedModel, Workspace } from "@/types/electron";
 
@@ -160,10 +161,7 @@ export function getWorkspaceRootDirectory(
   directory: string,
   worktreeParents: WorktreeParentMap,
 ): string {
-  const normalizedDirectory = normalizeProjectPath(directory);
-  return normalizeProjectPath(
-    worktreeParents[normalizedDirectory]?.parentDir ?? normalizedDirectory,
-  );
+  return getWorkspaceRootProjectDirectory(directory, worktreeParents);
 }
 
 export function createLocalWorkspace(): Workspace {

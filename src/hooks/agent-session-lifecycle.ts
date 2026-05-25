@@ -2,6 +2,7 @@ import type { AgentBackendId } from "@/agents";
 import type { WorktreeParentMap } from "@/hooks/agent-state-persistence";
 import { getSessionBackendId } from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
+import { getDirectoryPlacementInfo } from "@/lib/worktree-placement";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 
 const FORK_TITLE_RE = /^#(\d+)\s+(.+)$/;
@@ -126,7 +127,7 @@ export function createSessionDeletionPlan({
   const deletedDirectory = normalizeProjectPath(
     (deletedSession?._projectDir ?? deletedSession?.directory) || "",
   );
-  const worktreeMeta = deletedDirectory ? worktreeParents[deletedDirectory] : undefined;
+  const worktreePlacement = getDirectoryPlacementInfo(deletedDirectory, worktreeParents);
   const remainingSessions = deletedDirectory
     ? sessions.filter(
         (session) =>
@@ -141,10 +142,10 @@ export function createSessionDeletionPlan({
     backendId,
     nextSessionId,
     pendingWorktreeCleanup:
-      deletedDirectory && worktreeMeta && remainingSessions.length === 0
+      deletedDirectory && worktreePlacement?.isKnownWorktree && remainingSessions.length === 0
         ? {
             worktreeDir: deletedDirectory,
-            parentDir: worktreeMeta.parentDir,
+            parentDir: worktreePlacement.rootDirectory,
           }
         : null,
   } as const;

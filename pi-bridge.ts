@@ -922,9 +922,7 @@ export class PiBridgeManager {
     project.runtime = firstContext?.runtime || null;
   }
 
-  syncLiveSessionStatus(project, session, { emitEvent = true } = {}) {
-    const sessionId = session.sessionId;
-    const nextType = getSessionActivityType(session);
+  setSessionActivity(project, sessionId, nextType, { emitEvent = true } = {}) {
     const wasBusy = project.busySessionIds.has(sessionId);
     const isBusy = nextType === "busy";
     if (isBusy) {
@@ -939,6 +937,15 @@ export class PiBridgeManager {
       status: sessionStatus(nextType),
     });
     return nextType;
+  }
+
+  syncLiveSessionStatus(project, session, options = {}) {
+    return this.setSessionActivity(
+      project,
+      session.sessionId,
+      getSessionActivityType(session),
+      options,
+    );
   }
 
   makeSyntheticState() {
@@ -1380,11 +1387,12 @@ export class PiBridgeManager {
     if (event.type === "agent_end") {
       this.flushPendingAssistantResolution(project, session);
       this.emitCanonicalTranscript(project, session);
-      this.syncLiveSessionStatus(project, session);
-      const normalized = await this.getSessionById(sessionId, {
-        directory: project.directory,
-        workspaceId: project.workspaceId,
-      });
+      // Pi keeps session.isStreaming=true until awaited agent_end listeners finish.
+      // Since this bridge is itself such a listener, deriving status from
+      // session.isStreaming here leaves the frontend stuck busy forever.
+      this.setSessionActivity(project, sessionId, "idle");
+      await this.disposeLiveSessionContext(project, sessionId, { keepCache: true });
+      const normalized = await this.getSessionById(sessionId);
       if (normalized) {
         this.sendBackendEvent(project, {
           type: "session.updated",
@@ -1393,7 +1401,6 @@ export class PiBridgeManager {
           session: normalized,
         });
       }
-      await this.disposeLiveSessionContext(project, sessionId, { keepCache: true });
       return;
     }
 
