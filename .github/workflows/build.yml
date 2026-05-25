@@ -7,8 +7,6 @@ on:
 jobs:
   preflight:
     runs-on: ubuntu-latest
-    outputs:
-      dist-cache-key: ${{ steps.cache-dist.outputs.cache-key }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,15 +32,6 @@ jobs:
       - name: Run unit tests
         run: pnpm exec vp test
 
-      - name: Cache dist
-        id: cache-dist
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            dist
-            dist-electron
-          key: dist-${{ github.sha }}
-
   build-linux:
     needs: preflight
     runs-on: ubuntu-latest
@@ -59,14 +48,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore dist
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            dist
-            dist-electron
-          key: dist-${{ github.sha }}
-          fail-on-cache-miss: true
+      - name: Build frontend
+        run: pnpm exec vp build
 
       - name: Build Docker image
         run: docker build -t opengui:web .
@@ -109,14 +92,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore dist
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            dist
-            dist-electron
-          key: dist-${{ github.sha }}
-          fail-on-cache-miss: true
+      - name: Build frontend
+        run: pnpm exec vp build
 
       - name: Package mac ${{ matrix.arch }}
         run: pnpm exec electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
@@ -150,14 +127,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore dist
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            dist
-            dist-electron
-          key: dist-${{ github.sha }}
-          fail-on-cache-miss: true
+      - name: Build frontend
+        run: pnpm exec vp build
 
       - name: Package .exe (NSIS)
         run: pnpm exec electron-builder --win nsis --publish never
