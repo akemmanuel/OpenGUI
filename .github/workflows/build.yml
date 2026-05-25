@@ -5,8 +5,10 @@ on:
     tags: ["v*"]
 
 jobs:
-  build-linux:
+  preflight:
     runs-on: ubuntu-latest
+    outputs:
+      dist-cache-key: ${{ steps.cache-dist.outputs.cache-key }}
     steps:
       - uses: actions/checkout@v6
 
@@ -32,6 +34,40 @@ jobs:
       - name: Run unit tests
         run: pnpm exec vp test
 
+      - name: Cache dist
+        id: cache-dist
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            dist
+            dist-electron
+          key: dist-${{ github.sha }}
+
+  build-linux:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore dist
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            dist
+            dist-electron
+          key: dist-${{ github.sha }}
+          fail-on-cache-miss: true
+
       - name: Build Docker image
         run: docker build -t opengui:web .
 
@@ -46,7 +82,12 @@ jobs:
           retention-days: 30
 
   build-mac:
-    runs-on: macos-15-intel
+    needs: preflight
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+      fail-fast: false
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
 
@@ -57,27 +98,35 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Cache Electron binaries
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-cache-mac-${{ matrix.arch }}-${{ hashFiles('package.json') }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm exec vp lint
+      - name: Restore dist
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            dist
+            dist-electron
+          key: dist-${{ github.sha }}
+          fail-on-cache-miss: true
 
-      - name: Check
-        run: pnpm exec vp check
-
-      - name: Build frontend
-        run: pnpm exec vp build
-
-      - name: Package mac artifacts
-        run: pnpm exec electron-builder --mac dmg zip --x64 --arm64 --publish never
+      - name: Package mac ${{ matrix.arch }}
+        run: pnpm exec electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Upload mac artifacts
+      - name: Upload mac ${{ matrix.arch }} artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: mac-release
+          name: mac-release-${{ matrix.arch }}
           path: |
             release/*.dmg
             release/*.zip
@@ -86,6 +135,7 @@ jobs:
           retention-days: 30
 
   build-windows:
+    needs: preflight
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -100,14 +150,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm exec vp lint
-
-      - name: Check
-        run: pnpm exec vp check
-
-      - name: Build frontend
-        run: pnpm exec vp build
+      - name: Restore dist
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            dist
+            dist-electron
+          key: dist-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Package .exe (NSIS)
         run: pnpm exec electron-builder --win nsis --publish never
@@ -209,23 +259,48 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Download linux artifact
         uses: actions/download-artifact@v6
         with:
           name: linux-deb
           path: artifacts/linux-deb
 
-      - name: Download mac artifact
+      - name: Download mac x64 artifacts
         uses: actions/download-artifact@v6
         with:
-          name: mac-release
+          name: mac-release-x64
           path: artifacts/mac-release
+
+      - name: Download mac arm64 artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: mac-release-arm64
+          path: artifacts/mac-release-arm64
 
       - name: Download windows artifact
         uses: actions/download-artifact@v6
         with:
           name: windows-nsis
           path: artifacts/windows-nsis
+
+      - name: Merge mac update manifests
+        run: |
+          node scripts/merge-latest-mac.mjs \
+            --x64-dir artifacts/mac-release \
+            --arm64-dir artifacts/mac-release-arm64 \
+            --out-dir artifacts/mac-release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
