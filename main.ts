@@ -556,14 +556,41 @@ void app.whenReady().then(async () => {
     },
   ];
 
+  const bridgeControls = new Map<string, { restart?: () => Promise<unknown> }>();
   for (const bridge of bridges) {
     try {
       const mod = await import(bridge.path);
-      mod[bridge.setupName](ipcMain, () => BrowserWindow.getAllWindows(), bridge.options);
+      const control = mod[bridge.setupName](
+        ipcMain,
+        () => BrowserWindow.getAllWindows(),
+        bridge.options,
+      );
+      if (control) bridgeControls.set(bridge.name, control);
     } catch (err) {
       console.error(`Failed to load ${bridge.name} bridge:`, err);
     }
   }
+
+  ipcMain.handle("agent-backends:restart", async () => {
+    const results: Record<string, { success: boolean; error?: string }> = {};
+    for (const bridge of bridges) {
+      const control = bridgeControls.get(bridge.name);
+      if (!control?.restart) {
+        results[bridge.name] = { success: false, error: "Restart not available" };
+        continue;
+      }
+      try {
+        await control.restart();
+        results[bridge.name] = { success: true };
+      } catch (error) {
+        results[bridge.name] = {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    return { success: true, data: results };
+  });
 
   createWindow();
   setupUpdateManager();

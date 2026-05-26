@@ -78,6 +78,7 @@ export interface OpenGuiClient {
     list(): AgentBackendDescriptor[];
     get(backendId?: AgentBackendId): AgentBackendDescriptor | undefined;
     subscribe(listener: (event: AgentBackendEvent) => void): () => void;
+    restart(): Promise<Record<AgentBackendId, { success: boolean; error?: string }>>;
     loadResources(input: {
       backendId: AgentBackendId;
       target?: AgentBackendTarget;

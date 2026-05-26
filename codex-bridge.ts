@@ -2450,7 +2450,7 @@ class CodexBridgeManager {
 }
 
 export function setupCodexBridge(ipcMain, getAllWindows, options = {}) {
-  const manager = new CodexBridgeManager(getAllWindows, options);
+  let manager = new CodexBridgeManager(getAllWindows, options);
 
   ipcMain.handle("codex:project:add", async (_event, config) => {
     try {
@@ -2623,4 +2623,12 @@ export function setupCodexBridge(ipcMain, getAllWindows, options = {}) {
       }
     },
   );
+
+  return {
+    async restart() {
+      manager.disconnect();
+      manager = new CodexBridgeManager(getAllWindows, options);
+      return true;
+    },
+  };
 }

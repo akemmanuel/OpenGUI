@@ -1895,7 +1895,7 @@ export function setupClaudeCodeBridge(ipcMain, getWindows) {
       }
     }
   };
-  const manager = new ClaudeCodeBridgeManager(emit);
+  let manager = new ClaudeCodeBridgeManager(emit);
 
   ipcMain.handle("claude-code:project:add", async (_event, config) => {
     try {
@@ -2085,4 +2085,12 @@ export function setupClaudeCodeBridge(ipcMain, getWindows) {
       }
     },
   );
+
+  return {
+    async restart() {
+      manager.disconnect();
+      manager = new ClaudeCodeBridgeManager(emit);
+      return true;
+    },
+  };
 }

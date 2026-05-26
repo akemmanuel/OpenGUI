@@ -146,30 +146,71 @@ function appendTarget(target?: AgentBackendTarget, ...args: unknown[]) {
 function createOpenCodePlatform(
   op: <T>(suffix: string, args?: unknown[]) => Promise<T>,
 ): AgentBackendDescriptor["platform"] {
+  const platformOp = async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
+    unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
+
   return {
     server: {
-      start: () => op("server:start"),
-      stop: () => op("server:stop"),
-      status: () => op("server:status"),
+      start: () => platformOp("server:start", "Failed to start server"),
+      stop: () => platformOp("server:stop", "Failed to stop server"),
+      status: () => platformOp("server:status", "Failed to get server status"),
     },
     providers: {
-      listAll: (target) => op("provider:list", targetArgs(target)),
-      getAuthMethods: (target) => op("provider:auth-methods", targetArgs(target)),
+      listAll: (target) =>
+        platformOp("provider:list", "Failed to list providers", targetArgs(target)),
+      getAuthMethods: (target) =>
+        platformOp(
+          "provider:auth-methods",
+          "Failed to load provider auth methods",
+          targetArgs(target),
+        ),
       connect: (target, providerID, auth) =>
-        op("provider:connect", appendTarget(target, providerID, auth)),
+        platformOp(
+          "provider:connect",
+          `Failed to connect provider: ${providerID}`,
+          appendTarget(target, providerID, auth),
+        ),
       disconnect: (target, providerID) =>
-        op("provider:disconnect", appendTarget(target, providerID)),
+        platformOp(
+          "provider:disconnect",
+          `Failed to disconnect provider: ${providerID}`,
+          appendTarget(target, providerID),
+        ),
       oauthAuthorize: (target, providerID, method) =>
-        op("provider:oauth:authorize", appendTarget(target, providerID, method)),
+        platformOp(
+          "provider:oauth:authorize",
+          `Failed to start OAuth for provider: ${providerID}`,
+          appendTarget(target, providerID, method),
+        ),
       oauthCallback: (target, providerID, method, code) =>
-        op("provider:oauth:callback", appendTarget(target, providerID, method, code)),
-      dispose: (target) => op("instance:dispose", targetArgs(target)),
+        platformOp(
+          "provider:oauth:callback",
+          `Failed to complete OAuth for provider: ${providerID}`,
+          appendTarget(target, providerID, method, code),
+        ),
+      dispose: (target) =>
+        platformOp("instance:dispose", "Failed to dispose provider instance", targetArgs(target)),
     },
     mcp: {
-      status: (target) => op("mcp:status", targetArgs(target)),
-      add: (target, name, config) => op("mcp:add", appendTarget(target, name, config)),
-      connect: (target, name) => op("mcp:connect", appendTarget(target, name)),
-      disconnect: (target, name) => op("mcp:disconnect", appendTarget(target, name)),
+      status: (target) => platformOp("mcp:status", "Failed to load MCP status", targetArgs(target)),
+      add: (target, name, config) =>
+        platformOp(
+          "mcp:add",
+          `Failed to add MCP server: ${name}`,
+          appendTarget(target, name, config),
+        ),
+      connect: (target, name) =>
+        platformOp(
+          "mcp:connect",
+          `Failed to connect MCP server: ${name}`,
+          appendTarget(target, name),
+        ),
+      disconnect: (target, name) =>
+        platformOp(
+          "mcp:disconnect",
+          `Failed to disconnect MCP server: ${name}`,
+          appendTarget(target, name),
+        ),
     },
     skills: {
       list: async (target) =>
@@ -229,8 +270,55 @@ function createOpenCodePlatform(
         unwrapBridgeResult(await op("skills:check-cli"), "Failed to check skills CLI"),
     },
     config: {
-      get: (target) => op("config:get", targetArgs(target)),
-      update: (target, config) => op("config:update", appendTarget(target, config)),
+      get: (target) => platformOp("config:get", "Failed to load config", targetArgs(target)),
+      update: (target, config) =>
+        platformOp("config:update", "Failed to update config", appendTarget(target, config)),
+    },
+  };
+}
+
+function createPiPlatform(
+  op: <T>(suffix: string, args?: unknown[]) => Promise<T>,
+): AgentBackendDescriptor["platform"] {
+  const platformOp = async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
+    unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
+
+  return {
+    providers: {
+      listAll: (target) =>
+        platformOp("provider:list", "Failed to list providers", targetArgs(target)),
+      getAuthMethods: (target) =>
+        platformOp(
+          "provider:auth-methods",
+          "Failed to load provider auth methods",
+          targetArgs(target),
+        ),
+      connect: (target, providerID, auth) =>
+        platformOp(
+          "provider:connect",
+          `Failed to connect provider: ${providerID}`,
+          appendTarget(target, providerID, auth),
+        ),
+      disconnect: (target, providerID) =>
+        platformOp(
+          "provider:disconnect",
+          `Failed to disconnect provider: ${providerID}`,
+          appendTarget(target, providerID),
+        ),
+      oauthAuthorize: (target, providerID, method) =>
+        platformOp(
+          "provider:oauth:authorize",
+          `Failed to start OAuth for provider: ${providerID}`,
+          appendTarget(target, providerID, method),
+        ),
+      oauthCallback: (target, providerID, method, code) =>
+        platformOp(
+          "provider:oauth:callback",
+          `Failed to complete OAuth for provider: ${providerID}`,
+          appendTarget(target, providerID, method, code),
+        ),
+      dispose: (target) =>
+        platformOp("instance:dispose", "Failed to dispose provider instance", targetArgs(target)),
     },
   };
 }
@@ -269,8 +357,14 @@ function createWebBackendDescriptor(
         input.workspaceId,
       ]),
   };
-  const op = <T>(suffix: string, args: unknown[] = []) => rpcCall<T>(`opencode:${suffix}`, args);
-  const platform = backendId === "opencode" ? createOpenCodePlatform(op) : undefined;
+  const op = <T>(suffix: string, args: unknown[] = []) =>
+    rpcCall<T>(`${backendId}:${suffix}`, args);
+  const platform =
+    backendId === "opencode"
+      ? createOpenCodePlatform(op)
+      : backendId === "pi"
+        ? createPiPlatform(op)
+        : undefined;
 
   return {
     id: backendId,
@@ -460,6 +554,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           ws?.close();
         };
       },
+      restart: async () =>
+        unwrapIpcResult(
+          await rpcCall<IPCResult<Record<AgentBackendId, { success: boolean; error?: string }>>>(
+            "agent-backends:restart",
+            [],
+          ),
+          "Failed to restart agent backends",
+        ),
       loadResources: async ({ backendId, target }) => {
         const args = targetArgs(target);
         const [providersData, agentsData, commandsData] = await Promise.all([

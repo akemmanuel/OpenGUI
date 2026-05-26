@@ -41,9 +41,9 @@
       "hideOldModels": "Alte Modelle ausblenden",
       "months": "Monate",
       "hideOldModelsHelp": "Ausgewählte und favorisierte Modelle bleiben immer sichtbar. Modelle ohne gültiges Veröffentlichungsdatum bleiben ebenfalls sichtbar.",
-      "restartServer": "Server neu starten",
-      "restartServerTitle": "Server neu starten?",
-      "restartServerDescription": "Dadurch wird der Server neu gestartet. Alle offenen Sitzungen werden beendet und müssen danach neu verbunden werden."
+      "restartServer": "Agent-Backends neu starten",
+      "restartServerTitle": "Agent-Backends neu starten?",
+      "restartServerDescription": "Dadurch werden OpenCode, Pi, Claude Code und Codex hart neu gestartet. Laufende Vorgänge können unterbrochen werden; Projektverbindungen werden automatisch wiederhergestellt."
     },
     "skills": {
       "installed": "Installierte Skills",

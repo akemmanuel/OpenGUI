@@ -6,8 +6,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { findEnvKeys, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import {
+  AuthStorage,
   SessionManager,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
@@ -327,6 +329,47 @@ function buildProvidersData(models) {
     providers: Array.from(providers.values()),
     default: defaults,
   };
+}
+
+function buildAllProvidersData(modelRegistry) {
+  modelRegistry.refresh?.();
+  const { providers, default: defaults } = buildProvidersData(modelRegistry.getAll());
+  const authStorage = modelRegistry.authStorage;
+  const connected = [];
+  const authKindByProvider = {};
+  for (const provider of providers) {
+    provider.name =
+      modelRegistry.getProviderDisplayName?.(provider.id) || provider.name || provider.id;
+    const authStatus = modelRegistry.getProviderAuthStatus?.(provider.id) || { configured: false };
+    const storedAuth = authStorage.get?.(provider.id);
+    if (authStorage.hasAuth?.(provider.id)) {
+      connected.push(provider.id);
+    }
+    if (authStatus?.source === "environment") {
+      provider.source = "env";
+      authKindByProvider[provider.id] = "env";
+    } else if (authStatus?.source === "fallback") {
+      provider.source = "custom";
+      authKindByProvider[provider.id] = "custom";
+    } else if (storedAuth?.type === "oauth") {
+      provider.source = "subscription";
+      authKindByProvider[provider.id] = "subscription";
+    } else if (storedAuth?.type === "api_key" || authStatus?.source === "stored") {
+      provider.source = "api";
+      authKindByProvider[provider.id] = "api";
+    } else if (
+      authStatus?.source === "models_json_key" ||
+      authStatus?.source === "models_json_command"
+    ) {
+      provider.source = "custom";
+      authKindByProvider[provider.id] = "custom";
+    } else {
+      provider.source = "config";
+      authKindByProvider[provider.id] = "config";
+    }
+    provider.env = findEnvKeys(provider.id) ?? provider.env ?? [];
+  }
+  return { all: providers, default: defaults, connected, authKindByProvider };
 }
 
 function sessionStatus(type) {
@@ -840,6 +883,7 @@ export class PiBridgeManager {
     this.projects = new Map();
     this.projectInitPromises = new Map();
     this.sessionIndex = new Map();
+    this.pendingOAuth = new Map();
   }
 
   sendNativeEvent(event) {
@@ -1812,6 +1856,7 @@ export class PiBridgeManager {
       workspaceId: project.workspaceId,
       session,
     });
+    this.setSessionActivity(project, sessionRef.sessionId, "busy");
     void this.dispatchSessionPrompt(project, sessionRef, input.text, input.images).catch(() => {});
     return session;
   }
@@ -2120,6 +2165,25 @@ export class PiBridgeManager {
     return session;
   }
 
+  getAuthStorage() {
+    return AuthStorage.create(join(this.agentDir, "auth.json"));
+  }
+
+  async reloadProviderState() {
+    for (const project of this.projects.values()) {
+      const runtime =
+        project.runtime || project.liveSessionContexts.values().next().value?.runtime || null;
+      if (!runtime?.services?.modelRegistry) continue;
+      runtime.services.modelRegistry.authStorage?.reload?.();
+      runtime.services.modelRegistry.refresh?.();
+    }
+    return true;
+  }
+
+  getOAuthFlowKey(target, providerID) {
+    return `${makeProjectKey(target?.workspaceId, target?.directory)}:${providerID}`;
+  }
+
   async getProviders(target) {
     if (target?.directory) {
       const project = await this.ensureProject(target);
@@ -2142,6 +2206,148 @@ export class PiBridgeManager {
       models.push(...availableModels);
     }
     return buildProvidersData(models);
+  }
+
+  async listAllProviders(target) {
+    const project = await this.ensureProject(target);
+    const runtime =
+      project.runtime || project.liveSessionContexts.values().next().value?.runtime || null;
+    if (!runtime?.services?.modelRegistry) {
+      throw new Error("Pi project runtime not ready");
+    }
+    return buildAllProvidersData(runtime.services.modelRegistry);
+  }
+
+  async getProviderAuthMethods(_target) {
+    const methods = {};
+    for (const provider of this.getAuthStorage().getOAuthProviders()) {
+      methods[provider.id] = [
+        {
+          type: "oauth",
+          label: provider.name,
+        },
+      ];
+    }
+    return methods;
+  }
+
+  async connectProvider(target, providerID, auth) {
+    const authStorage = this.getAuthStorage();
+    if (auth?.type === "api") {
+      authStorage.set(providerID, { type: "api_key", key: auth.key });
+      await this.reloadProviderState();
+      return true;
+    }
+    throw new Error(`Unsupported Pi provider auth type: ${auth?.type || "unknown"}`);
+  }
+
+  async disconnectProvider(_target, providerID) {
+    const authStorage = this.getAuthStorage();
+    authStorage.remove(providerID);
+    await this.reloadProviderState();
+    return true;
+  }
+
+  async oauthAuthorize(target, providerID) {
+    const provider = getOAuthProvider(providerID);
+    if (!provider) {
+      throw new Error(`Pi OAuth provider not found: ${providerID}`);
+    }
+    const flowKey = this.getOAuthFlowKey(target, providerID);
+    const existing = this.pendingOAuth.get(flowKey);
+    if (existing?.authorization) {
+      return existing.authorization;
+    }
+
+    let resolveManualCode;
+    let rejectManualCode;
+    const manualCodePromise = new Promise((resolve, reject) => {
+      resolveManualCode = resolve;
+      rejectManualCode = reject;
+    });
+
+    const flow = {
+      done: false,
+      error: null,
+      authorization: null,
+      resolveManualCode,
+      rejectManualCode,
+      promise: null,
+    };
+    this.pendingOAuth.set(flowKey, flow);
+
+    flow.promise = this.getAuthStorage()
+      .login(providerID, {
+        onAuth: (info) => {
+          flow.authorization = {
+            url: typeof info === "string" ? info : info.url,
+            method: provider.usesCallbackServer ? "code" : "auto",
+            instructions:
+              (typeof info === "string" ? "" : info.instructions) ||
+              (provider.usesCallbackServer
+                ? "Complete login in your browser, then paste the final redirect URL or authorization code here."
+                : "Complete login in your browser to continue."),
+          };
+        },
+        onPrompt: async () => {
+          if (!flow.authorization) return "";
+          return String(await manualCodePromise);
+        },
+        onManualCodeInput: provider.usesCallbackServer
+          ? async () => String(await manualCodePromise)
+          : undefined,
+      })
+      .then(async () => {
+        flow.done = true;
+        await this.reloadProviderState();
+        return true;
+      })
+      .catch((error) => {
+        flow.error = error instanceof Error ? error : new Error(String(error));
+        throw flow.error;
+      });
+
+    const startedAt = Date.now();
+    while (!flow.authorization && !flow.error && Date.now() - startedAt < 15_000) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (flow.error) throw flow.error;
+    if (!flow.authorization) {
+      throw new Error(`Pi OAuth authorization did not start for ${providerID}`);
+    }
+    return flow.authorization;
+  }
+
+  async oauthCallback(target, providerID, _method, code) {
+    const flowKey = this.getOAuthFlowKey(target, providerID);
+    const flow = this.pendingOAuth.get(flowKey);
+    if (!flow) {
+      throw new Error(`No Pi OAuth flow pending for ${providerID}`);
+    }
+    if (code && flow.resolveManualCode) {
+      flow.resolveManualCode(code);
+      flow.resolveManualCode = null;
+      flow.rejectManualCode = null;
+    }
+    if (flow.done) {
+      this.pendingOAuth.delete(flowKey);
+      return true;
+    }
+    if (flow.error) {
+      this.pendingOAuth.delete(flowKey);
+      throw flow.error;
+    }
+    if (code) {
+      await flow.promise;
+      this.pendingOAuth.delete(flowKey);
+      return true;
+    }
+    return false;
+  }
+
+  async disposeProviderInstance() {
+    await this.reloadProviderState();
+    return true;
   }
 
   async getAgents() {
@@ -2343,6 +2549,18 @@ class PiDaemonClient {
     return true;
   }
 
+  async restart() {
+    const existing = this.info ?? (await readDaemonInfo(this.infoPath));
+    this.stopEvents();
+    this.startPromise = null;
+    await this.stopDaemon(existing);
+    await this.waitForDaemonStopped(existing);
+    this.info = null;
+    this.info = await this.startDaemon(existing);
+    this.startEvents();
+    return true;
+  }
+
   async listSessions(target) {
     return await this.call("listSessions", [target]);
   }
@@ -2369,6 +2587,34 @@ class PiDaemonClient {
 
   async getProviders(target) {
     return await this.call("getProviders", [target]);
+  }
+
+  async listAllProviders(target) {
+    return await this.call("listAllProviders", [target]);
+  }
+
+  async getProviderAuthMethods(target) {
+    return await this.call("getProviderAuthMethods", [target]);
+  }
+
+  async connectProvider(target, providerID, auth) {
+    return await this.call("connectProvider", [target, providerID, auth]);
+  }
+
+  async disconnectProvider(target, providerID) {
+    return await this.call("disconnectProvider", [target, providerID]);
+  }
+
+  async oauthAuthorize(target, providerID, method) {
+    return await this.call("oauthAuthorize", [target, providerID, method]);
+  }
+
+  async oauthCallback(target, providerID, method, code) {
+    return await this.call("oauthCallback", [target, providerID, method, code]);
+  }
+
+  async disposeProviderInstance(target) {
+    return await this.call("disposeProviderInstance", [target]);
   }
 
   async getAgents() {
@@ -2471,16 +2717,27 @@ class PiDaemonClient {
     }
   }
 
-  async startDaemon() {
-    const existing = await readDaemonInfo(this.infoPath);
-    const existingHealth = await this.getHealth(existing);
-    if (existingHealth?.success && existingHealth?.data?.daemonVersion === PI_DAEMON_VERSION)
-      return existing;
-    if (existingHealth?.success) await this.stopDaemon(existing);
+  async waitForDaemonStopped(info) {
+    if (!info?.baseUrl || !info?.token) return;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 3_000) {
+      if (!(await this.getHealth(info))) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 
-    const port = Number(await findFreePort());
+  async startDaemon(preferredInfo = null) {
+    if (!preferredInfo) {
+      const existing = await readDaemonInfo(this.infoPath);
+      const existingHealth = await this.getHealth(existing);
+      if (existingHealth?.success && existingHealth?.data?.daemonVersion === PI_DAEMON_VERSION)
+        return existing;
+      if (existingHealth?.success) await this.stopDaemon(existing);
+    }
+
+    const port = Number(preferredInfo?.port || (await findFreePort()));
     if (!port) throw new Error("Could not allocate Pi daemon port");
-    const token = randomUUID();
+    const token = preferredInfo?.token || randomUUID();
     const baseUrl = `http://127.0.0.1:${port}`;
     const daemonPath = join(__dirname, "pi-daemon-server.js");
     if (!(await fileExists(daemonPath)))
@@ -2683,6 +2940,73 @@ export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
     }
   });
 
+  ipcMain.handle("pi:provider:list", async (_event, directory, workspaceId) => {
+    try {
+      return ok(await manager.listAllProviders({ directory, workspaceId }));
+    } catch (error) {
+      return fail(error);
+    }
+  });
+
+  ipcMain.handle("pi:provider:auth-methods", async (_event, directory, workspaceId) => {
+    try {
+      return ok(await manager.getProviderAuthMethods({ directory, workspaceId }));
+    } catch (error) {
+      return fail(error);
+    }
+  });
+
+  ipcMain.handle(
+    "pi:provider:connect",
+    async (_event, directory, workspaceId, providerID, auth) => {
+      try {
+        return ok(await manager.connectProvider({ directory, workspaceId }, providerID, auth));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  ipcMain.handle("pi:provider:disconnect", async (_event, directory, workspaceId, providerID) => {
+    try {
+      return ok(await manager.disconnectProvider({ directory, workspaceId }, providerID));
+    } catch (error) {
+      return fail(error);
+    }
+  });
+
+  ipcMain.handle(
+    "pi:provider:oauth:authorize",
+    async (_event, directory, workspaceId, providerID, method) => {
+      try {
+        return ok(await manager.oauthAuthorize({ directory, workspaceId }, providerID, method));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "pi:provider:oauth:callback",
+    async (_event, directory, workspaceId, providerID, method, code) => {
+      try {
+        return ok(
+          await manager.oauthCallback({ directory, workspaceId }, providerID, method, code),
+        );
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  ipcMain.handle("pi:instance:dispose", async (_event, directory, workspaceId) => {
+    try {
+      return ok(await manager.disposeProviderInstance({ directory, workspaceId }));
+    } catch (error) {
+      return fail(error);
+    }
+  });
+
   ipcMain.handle("pi:agents", async () => {
     try {
       return ok(await manager.getAgents());
@@ -2777,4 +3101,8 @@ export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
       }
     },
   );
+
+  return {
+    restart: () => manager.restart(),
+  };
 }

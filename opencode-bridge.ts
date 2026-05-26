@@ -15,7 +15,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { Agent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
-import { basename, join, normalize } from "node:path";
+import { basename, dirname, join, normalize, resolve } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { OpencodeProjectRegistry } from "./src/protocol/opencode-project-registry";
 
@@ -28,6 +28,66 @@ const LOCAL_SERVER_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}`;
 const STARTUP_POLL_INTERVAL = 500; // ms
 const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
 const DETACHED_LAUNCH_GRACE_TIMEOUT = 10_000; // ms
+const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json");
+const OPENCODE_CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json");
+
+async function readJsonIfExists(path) {
+  try {
+    return JSON.parse(await readFile(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+async function getOpenCodeConfigPaths(directory) {
+  const paths = [];
+  if (directory) {
+    let current = resolve(directory);
+    while (true) {
+      paths.push(join(current, "opencode.json"));
+      const parent = dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  paths.push(join(homedir(), "opencode.json"));
+  paths.push(OPENCODE_CONFIG_PATH);
+  return Array.from(new Set(paths));
+}
+
+async function getOpenCodeProviderAuthKinds(directory, providers, connected) {
+  const authKindByProvider = {};
+  const connectedSet = new Set(Array.isArray(connected) ? connected : []);
+  for (const provider of providers || []) {
+    if (provider?.source === "env") authKindByProvider[provider.id] = "env";
+  }
+
+  const authData = (await readJsonIfExists(OPENCODE_AUTH_PATH)) || {};
+  for (const [providerID, auth] of Object.entries(authData)) {
+    if (!connectedSet.has(providerID)) continue;
+    if (auth?.type === "oauth") authKindByProvider[providerID] = "subscription";
+    else if (auth?.type === "api" || auth?.type === "wellknown")
+      authKindByProvider[providerID] = "api";
+  }
+
+  for (const path of await getOpenCodeConfigPaths(directory)) {
+    const config = await readJsonIfExists(path);
+    const providerConfig = config?.provider;
+    if (!providerConfig || typeof providerConfig !== "object") continue;
+    for (const [providerID, entry] of Object.entries(providerConfig)) {
+      if (!connectedSet.has(providerID) || authKindByProvider[providerID]) continue;
+      const options = entry?.options;
+      const hasLiteralApiKey =
+        typeof options?.apiKey === "string" && options.apiKey.trim().length > 0;
+      const hasConfiguredEnv = Array.isArray(entry?.env) && entry.env.length > 0;
+      if (hasLiteralApiKey) authKindByProvider[providerID] = "api";
+      else if (hasConfiguredEnv) authKindByProvider[providerID] = "env";
+      else authKindByProvider[providerID] = "config";
+    }
+  }
+
+  return authKindByProvider;
+}
 
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {
@@ -233,7 +293,7 @@ function stripMessagePayloadBloat(messages) {
   return messages;
 }
 
-class OpenCodeConnection {
+export class OpenCodeConnection {
   constructor(emit) {
     this._emit = emit;
     this._lifecycle = 0;
@@ -379,7 +439,15 @@ class OpenCodeConnection {
   async listAllProviders() {
     this._requireClient();
     const res = await this._client.provider.list();
-    return res.data ?? { all: [], default: {}, connected: [] };
+    const data = res.data ?? { all: [], default: {}, connected: [] };
+    return {
+      ...data,
+      authKindByProvider: await getOpenCodeProviderAuthKinds(
+        this.getDirectory(),
+        data.all,
+        data.connected,
+      ),
+    };
   }
 
   async getProviderAuthMethods() {
@@ -798,6 +866,174 @@ class OpenCodeConnection {
     this._reconnectAttempt = 0;
     this._client = null;
     this._config = null;
+  }
+}
+
+async function startLocalOpenCodeServer() {
+  try {
+    const binary = resolveOpencodeBinary();
+
+    // If already running, check version matches the local binary
+    const health = await fetchLocalHealth();
+    if (health.healthy) {
+      const serverVer = health.version;
+      const binaryVer = binary ? getBinaryVersion(binary) : null;
+      if (!serverVer || !binaryVer || serverVer === binaryVer) {
+        return { success: true, data: { alreadyRunning: true } };
+      }
+      // Version mismatch - kill the old server and respawn below
+      const killed = await killServerProcess();
+      if (!killed) {
+        return {
+          success: false,
+          error: `A stale OpenCode server is already running on port ${LOCAL_SERVER_PORT} with version ${serverVer}, but it could not be stopped so version ${binaryVer} can start. Please stop the existing server and try again.`,
+        };
+      }
+    }
+    console.info(
+      `[opencode-bridge] Resolved binary: ${binary ?? "(not found)"} (platform: ${process.platform})`,
+    );
+    if (!binary) {
+      return {
+        success: false,
+        error:
+          "Could not find the opencode binary. Make sure it is installed at ~/.opencode/bin/opencode or available on your PATH.",
+      };
+    }
+
+    // Spawn detached so the server survives app close.
+    // Use piped stdio so we can capture logs on startup failure.
+    const serverArgs = ["serve", "--port", String(LOCAL_SERVER_PORT)];
+    console.info(
+      `[opencode-bridge] Spawning: ${binary} ${serverArgs.join(" ")} (platform: ${process.platform})`,
+    );
+
+    const MAX_LOG_BYTES = 8192;
+    let logBuffer = "";
+    let earlyExitCode = null;
+
+    const appendLog = (chunk) => {
+      if (logBuffer.length < MAX_LOG_BYTES) {
+        logBuffer += chunk.toString().slice(0, MAX_LOG_BYTES - logBuffer.length);
+      }
+    };
+
+    // .cmd files on Windows require shell:true for spawn() to execute them
+    const needsShell = process.platform === "win32" && binary.toLowerCase().endsWith(".cmd");
+    const child = spawn(binary, serverArgs, {
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      shell: needsShell,
+      env: { ...process.env },
+    });
+
+    if (child.stdout) child.stdout.on("data", appendLog);
+    if (child.stderr) child.stderr.on("data", appendLog);
+
+    child.on("close", (code) => {
+      earlyExitCode = code;
+    });
+
+    child.unref();
+
+    // If spawn itself errors (e.g. ENOENT)
+    let spawnError = null;
+    child.on("error", (err) => {
+      spawnError = err;
+      console.error("[opencode-bridge] Failed to spawn opencode server:", err);
+    });
+
+    // Wait for the server to become healthy
+    console.info(
+      `[opencode-bridge] Waiting for server to become healthy (timeout: ${STARTUP_TIMEOUT / 1000}s)...`,
+    );
+    try {
+      await waitForHealthy();
+    } catch (healthErr) {
+      // Some opencode builds daemonize successfully but still let the
+      // launcher exit non-zero after printing a misleading startup error.
+      if (
+        earlyExitCode !== null &&
+        earlyExitCode !== 0 &&
+        /Failed to start server on port/i.test(logBuffer)
+      ) {
+        try {
+          await waitForHealthy(DETACHED_LAUNCH_GRACE_TIMEOUT);
+        } catch {
+          // Fall through to the normal error path below.
+        }
+      }
+
+      if ((await fetchLocalHealth()).healthy) {
+        if (child.stdout) {
+          child.stdout.removeAllListeners("data");
+          child.stdout.destroy();
+        }
+        if (child.stderr) {
+          child.stderr.removeAllListeners("data");
+          child.stderr.destroy();
+        }
+        console.info("[opencode-bridge] Server became healthy after launcher exited.");
+        return { success: true, data: { alreadyRunning: false } };
+      }
+
+      // Detach the stdio streams before returning the error
+      if (child.stdout) {
+        child.stdout.removeAllListeners("data");
+        child.stdout.destroy();
+      }
+      if (child.stderr) {
+        child.stderr.removeAllListeners("data");
+        child.stderr.destroy();
+      }
+
+      let errorMsg = healthErr.message ?? String(healthErr);
+      if (spawnError) {
+        errorMsg = `Spawn error: ${spawnError.message}`;
+      } else if (earlyExitCode !== null && earlyExitCode !== 0) {
+        errorMsg = `Server process exited with code ${Number(earlyExitCode)}`;
+      }
+      return {
+        success: false,
+        error: errorMsg,
+        logs: logBuffer || null,
+      };
+    }
+
+    // Server is healthy - detach the stdio streams so the process
+    // can survive app close without keeping pipes open.
+    if (child.stdout) {
+      child.stdout.removeAllListeners("data");
+      child.stdout.destroy();
+    }
+    if (child.stderr) {
+      child.stderr.removeAllListeners("data");
+      child.stderr.destroy();
+    }
+
+    console.info("[opencode-bridge] Server is healthy.");
+    return { success: true, data: { alreadyRunning: false } };
+  } catch (err) {
+    return { success: false, error: err.message ?? String(err) };
+  }
+}
+
+async function stopLocalOpenCodeServer() {
+  try {
+    if (!(await fetchLocalHealth()).healthy) {
+      return { success: true, data: { alreadyStopped: true } };
+    }
+    const killed = await killServerProcess();
+    if (!killed) {
+      return {
+        success: false,
+        error: "Server process could not be stopped",
+      };
+    }
+    return { success: true, data: {} };
+  } catch (err) {
+    return { success: false, error: err.message ?? String(err) };
   }
 }
 
@@ -1559,178 +1795,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   // --- Local server management ---
 
-  ipcMain.handle("opencode:server:start", async () => {
-    try {
-      const binary = resolveOpencodeBinary();
+  ipcMain.handle("opencode:server:start", startLocalOpenCodeServer);
 
-      // If already running, check version matches the local binary
-      const health = await fetchLocalHealth();
-      if (health.healthy) {
-        const serverVer = health.version;
-        const binaryVer = binary ? getBinaryVersion(binary) : null;
-        if (!serverVer || !binaryVer || serverVer === binaryVer) {
-          return { success: true, data: { alreadyRunning: true } };
-        }
-        // Version mismatch - kill the old server and respawn below
-        const killed = await killServerProcess();
-        if (!killed) {
-          return {
-            success: false,
-            error: `A stale OpenCode server is already running on port ${LOCAL_SERVER_PORT} with version ${serverVer}, but it could not be stopped so version ${binaryVer} can start. Please stop the existing server and try again.`,
-          };
-        }
-      }
-      console.info(
-        `[opencode-bridge] Resolved binary: ${binary ?? "(not found)"} (platform: ${process.platform})`,
-      );
-      if (!binary) {
-        return {
-          success: false,
-          error:
-            "Could not find the opencode binary. Make sure it is installed at ~/.opencode/bin/opencode or available on your PATH.",
-        };
-      }
-
-      // Spawn detached so the server survives app close.
-      // Use piped stdio so we can capture logs on startup failure.
-      const serverArgs = ["serve", "--port", String(LOCAL_SERVER_PORT)];
-      console.info(
-        `[opencode-bridge] Spawning: ${binary} ${serverArgs.join(" ")} (platform: ${process.platform})`,
-      );
-
-      const MAX_LOG_BYTES = 8192;
-      let logBuffer = "";
-      /** @type {number | null} */
-      let earlyExitCode = null;
-
-      const appendLog = (chunk) => {
-        if (logBuffer.length < MAX_LOG_BYTES) {
-          logBuffer += chunk.toString().slice(0, MAX_LOG_BYTES - logBuffer.length);
-        }
-      };
-
-      // .cmd files on Windows require shell:true for spawn() to execute them
-      const needsShell = process.platform === "win32" && binary.toLowerCase().endsWith(".cmd");
-      const child = spawn(binary, serverArgs, {
-        detached: process.platform !== "win32",
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-        shell: needsShell,
-        env: { ...process.env },
-      });
-
-      if (child.stdout) child.stdout.on("data", appendLog);
-      if (child.stderr) child.stderr.on("data", appendLog);
-
-      child.on("close", (code) => {
-        earlyExitCode = code;
-      });
-
-      child.unref();
-
-      // If spawn itself errors (e.g. ENOENT)
-      let spawnError = null;
-      child.on("error", (err) => {
-        spawnError = err;
-        console.error("[opencode-bridge] Failed to spawn opencode server:", err);
-      });
-
-      // Wait for the server to become healthy
-      console.info(
-        `[opencode-bridge] Waiting for server to become healthy (timeout: ${STARTUP_TIMEOUT / 1000}s)...`,
-      );
-      try {
-        await waitForHealthy();
-      } catch (healthErr) {
-        // Some opencode builds daemonize successfully but still let the
-        // launcher exit non-zero after printing a misleading startup error.
-        if (
-          earlyExitCode !== null &&
-          earlyExitCode !== 0 &&
-          /Failed to start server on port/i.test(logBuffer)
-        ) {
-          try {
-            await waitForHealthy(DETACHED_LAUNCH_GRACE_TIMEOUT);
-          } catch {
-            // Fall through to the normal error path below.
-          }
-        }
-
-        if ((await fetchLocalHealth()).healthy) {
-          if (child.stdout) {
-            child.stdout.removeAllListeners("data");
-            child.stdout.destroy();
-          }
-          if (child.stderr) {
-            child.stderr.removeAllListeners("data");
-            child.stderr.destroy();
-          }
-          console.info("[opencode-bridge] Server became healthy after launcher exited.");
-          return { success: true, data: { alreadyRunning: false } };
-        }
-
-        // Detach the stdio streams before returning the error
-        if (child.stdout) {
-          child.stdout.removeAllListeners("data");
-          child.stdout.destroy();
-        }
-        if (child.stderr) {
-          child.stderr.removeAllListeners("data");
-          child.stderr.destroy();
-        }
-
-        let errorMsg = healthErr.message ?? String(healthErr);
-        if (spawnError) {
-          errorMsg = `Spawn error: ${spawnError.message}`;
-        } else if (earlyExitCode !== null && earlyExitCode !== 0) {
-          // Non-zero exit means the server actually crashed.
-          // Exit code 0 is normal when the binary daemonizes (spawns a
-          // background server and the launcher exits cleanly), so we
-          // keep the health-check timeout message instead.
-          errorMsg = `Server process exited with code ${Number(earlyExitCode)}`;
-        }
-        return {
-          success: false,
-          error: errorMsg,
-          logs: logBuffer || null,
-        };
-      }
-
-      // Server is healthy - detach the stdio streams so the process
-      // can survive app close without keeping pipes open.
-      if (child.stdout) {
-        child.stdout.removeAllListeners("data");
-        child.stdout.destroy();
-      }
-      if (child.stderr) {
-        child.stderr.removeAllListeners("data");
-        child.stderr.destroy();
-      }
-
-      console.info("[opencode-bridge] Server is healthy.");
-      return { success: true, data: { alreadyRunning: false } };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
-  });
-
-  ipcMain.handle("opencode:server:stop", async () => {
-    try {
-      if (!(await fetchLocalHealth()).healthy) {
-        return { success: true, data: { alreadyStopped: true } };
-      }
-      const killed = await killServerProcess();
-      if (!killed) {
-        return {
-          success: false,
-          error: "Server process could not be stopped",
-        };
-      }
-      return { success: true, data: {} };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
-  });
+  ipcMain.handle("opencode:server:stop", stopLocalOpenCodeServer);
 
   ipcMain.handle("opencode:server:status", async () => {
     try {
@@ -2361,4 +2428,17 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       return { success: false, error: err.message };
     }
   });
+  return {
+    async restart() {
+      for (const state of windowStates.values()) {
+        for (const conn of state.projectRegistry.values()) conn.teardown();
+        state.projectRegistry.clear();
+      }
+      const stopped = await stopLocalOpenCodeServer();
+      if (!stopped.success) throw new Error(stopped.error || "Failed to stop OpenCode server");
+      const started = await startLocalOpenCodeServer();
+      if (!started.success) throw new Error(started.error || "Failed to start OpenCode server");
+      return true;
+    },
+  };
 }

@@ -965,6 +965,45 @@ function InternalAgentProvider({
     [addProject, discoveryBackendIds],
   );
 
+  const restartAgentBackends = useCallback(async () => {
+    const snapshot = Object.keys(stateRef.current.connections).map((projectKey) => {
+      const { workspaceId, directory } = parseProjectKey(projectKey);
+      const workspace =
+        stateRef.current.workspaces.find((candidate) => candidate.id === workspaceId) ??
+        resolveConnectionWorkspace(stateRef.current.workspaces, workspaceId);
+      return { projectKey, workspace, directory };
+    });
+
+    dispatch({ type: "SET_ERROR", payload: null });
+    const restartResults = await openGuiClient.agentBackends.restart();
+    const failedRestarts = Object.entries(restartResults).filter(([, result]) => !result.success);
+    if (failedRestarts.length > 0) {
+      const message = failedRestarts
+        .map(([backendId, result]) => `${backendId}: ${result.error || "restart failed"}`)
+        .join("; ");
+      dispatch({ type: "SET_ERROR", payload: message });
+      throw new Error(message);
+    }
+    projectHydrationRef.current = {};
+
+    await Promise.allSettled(
+      snapshot.map(async ({ projectKey, workspace, directory }) => {
+        dispatch({
+          type: "SET_PROJECT_CONNECTION",
+          payload: {
+            projectKey,
+            status: createProjectConnectionStatus("connecting", workspace.serverUrl),
+          },
+        });
+        await addProject(createWorkspaceConnectionConfig({ workspace, directory }), {
+          suppressError: true,
+          hidden: stateRef.current.projectMeta[projectKey]?.hidden === true,
+          backendIds: discoveryBackendIds,
+        });
+      }),
+    );
+  }, [addProject, discoveryBackendIds, openGuiClient]);
+
   const ensureDefaultChatConnection = useCallback(async () => {
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
     if (!defaultChatDirectory || detachedProject) return;
@@ -2825,6 +2864,7 @@ function InternalAgentProvider({
       revertVariant: doRevertVariant,
       clearError,
       refreshProviders,
+      restartAgentBackends,
       getQueuedPrompts,
       removeFromQueue,
       reorderQueue,
@@ -2876,6 +2916,7 @@ function InternalAgentProvider({
       doRevertVariant,
       clearError,
       refreshProviders,
+      restartAgentBackends,
       getQueuedPrompts,
       removeFromQueue,
       reorderQueue,

@@ -150,23 +150,19 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
 
 function GeneralSettings() {
   const { t } = useTranslation();
-  const backendId = useCurrentAgentBackendId();
-  const backend = useAgentBackend(backendId);
-  const serverApi = backend?.platform?.server;
+  const { restartAgentBackends } = useActions();
   const [restarting, setRestarting] = useState(false);
 
   const handleRestart = useCallback(async () => {
-    if (!serverApi) return;
     setRestarting(true);
     try {
-      await serverApi.stop();
-      await new Promise((r) => setTimeout(r, 1000));
-      await serverApi.start();
-      await new Promise((r) => setTimeout(r, 2000));
+      await restartAgentBackends();
+    } catch (error) {
+      console.error("Failed to restart agent backends", error);
     } finally {
       setRestarting(false);
     }
-  }, [serverApi]);
+  }, [restartAgentBackends]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -177,32 +173,30 @@ function GeneralSettings() {
       <TerminalSetting />
       <ModelAgeFilterSetting />
       <NotificationsToggle />
-      {serverApi && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm" className="mt-2" disabled={restarting}>
-              {restarting ? (
-                <Spinner className="size-3.5 mr-2" />
-              ) : (
-                <RotateCcw className="size-3.5 mr-2" />
-              )}
-              {t("settings.general.restartServer")}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("settings.general.restartServerTitle")}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t("settings.general.restartServerDescription")}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleRestart}>{t("common.restart")}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm" className="mt-2" disabled={restarting}>
+            {restarting ? (
+              <Spinner className="size-3.5 mr-2" />
+            ) : (
+              <RotateCcw className="size-3.5 mr-2" />
+            )}
+            {t("settings.general.restartServer")}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("settings.general.restartServerTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("settings.general.restartServerDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRestart}>{t("common.restart")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="flex items-center justify-between gap-3 pt-3 border-t">
         <span className="text-xs text-muted-foreground">{t("common.version")}</span>
         <span className="text-xs text-muted-foreground font-mono">{packageJson.version}</span>

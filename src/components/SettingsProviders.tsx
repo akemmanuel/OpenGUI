@@ -39,14 +39,21 @@ function SourceBadge({ source }: { source: string }) {
       </Badge>
     );
   }
-  if (source === "env" || source === "api" || source === "config") {
+  if (source === "env" || source === "api" || source === "config" || source === "subscription") {
     return (
       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-        {source === "api" ? "api key" : source}
+        {source === "api" ? "api key" : source === "subscription" ? "subscription" : source}
       </Badge>
     );
   }
   return null;
+}
+
+function getProviderBadgeSource(
+  allProviders: AllProvidersData,
+  provider: { id: string; source: string },
+): string {
+  return allProviders.authKindByProvider?.[provider.id] ?? provider.source;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,9 +101,9 @@ export function SettingsProviders() {
     [openGuiClient],
   );
 
-  // Wait for auth methods to be loaded for this provider
-  const isAuthLoading =
-    loading || (!connectProviderID ? false : authMethods[connectProviderID] === undefined);
+  // Missing auth-method entries are valid; backends may return a sparse map and
+  // rely on the client to fall back to manual API-key auth.
+  const isAuthLoading = loading;
 
   const refresh = useCallback(
     async (showSpinner = false) => {
@@ -338,7 +345,7 @@ export function SettingsProviders() {
                             <span className="text-sm font-medium truncate">
                               {provider.name || provider.id}
                             </span>
-                            <SourceBadge source={provider.source} />
+                            <SourceBadge source={getProviderBadgeSource(allProviders, provider)} />
                           </div>
                         </div>
                         {isEnv ? (
@@ -482,7 +489,7 @@ export function SettingsProviders() {
               backendId={backendId}
               providerID={connectProviderID}
               providerName={connectProvider?.name ?? connectProviderID}
-              authMethods={authMethods[connectProviderID] ?? []}
+              authMethods={authMethods[connectProviderID] ?? [{ type: "api", label: "API key" }]}
               loading={isAuthLoading}
               onConnected={handleConnected}
               onBack={() => setConnectProviderID(null)}

@@ -112,6 +112,10 @@ _Avoid_: default to Discover
 A configured external capability exposed through MCP. Tools are managed separately from Plugins even though both can extend agent behaviour.
 _Avoid_: Plugin
 
+**Agent backend restart**:
+A user-requested recovery action that hard-restarts all local agent backend runtimes managed by OpenGUI, not just the currently selected backend. It stops background agent processes such as the Pi daemon before starting them again.
+_Avoid_: server restart, selected backend restart, soft reconnect
+
 ## Example dialogue
 
 **Dev**: If the user picks a project but has not sent anything yet, do we already have a session?

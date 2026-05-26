@@ -42,9 +42,9 @@
       "hideOldModels": "Hide old models",
       "months": "months",
       "hideOldModelsHelp": "Selected and favorite models always stay visible. Models without a valid release date also stay visible.",
-      "restartServer": "Restart Server",
-      "restartServerTitle": "Restart Server?",
-      "restartServerDescription": "This will restart the server. All open sessions will be stopped and you will need to reconnect."
+      "restartServer": "Restart Agent Backends",
+      "restartServerTitle": "Restart Agent Backends?",
+      "restartServerDescription": "This will hard-restart OpenCode, Pi, Claude Code, and Codex. Running turns may be interrupted; project connections will be restored automatically."
     },
     "skills": {
       "installed": "Installed Skills",

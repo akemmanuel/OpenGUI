@@ -32,6 +32,7 @@ export interface AllProvidersData {
   all: Provider[];
   default: { [key: string]: string };
   connected: string[];
+  authKindByProvider?: Record<string, "env" | "api" | "subscription" | "config" | "custom">;
 }
 
 // ---------------------------------------------------------------------------

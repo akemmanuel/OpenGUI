@@ -15,7 +15,7 @@ export const PI_CAPABILITIES: AgentBackendCapabilities = {
   revert: false,
   permissions: false,
   questions: false,
-  providerAuth: false,
+  providerAuth: true,
   mcp: false,
   skills: false,
   config: false,

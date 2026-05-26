@@ -729,6 +729,10 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
             }
           : workspace,
       );
+      const activeTurnId = sid ? state.activeTurnRunBySession[sid] : undefined;
+      const hasRunningTurn = Boolean(
+        activeTurnId && state.turnRuns[activeTurnId]?.status === "running",
+      );
       return {
         ...state,
         workspaces: nextWorkspaces,
@@ -741,7 +745,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         messageHistoryCursor: restoredCursor,
         isLoadingMessages: sid !== null && !isCompleteBuffer,
         isLoadingOlderMessages: false,
-        isBusy: sid ? state.busySessionIds.has(sid) : false,
+        isBusy: sid ? state.busySessionIds.has(sid) || hasRunningTurn : false,
         unreadSessionIds: nextUnread,
         // Selecting a real session clears any pending draft
         draftSessionDirectory: sid ? null : state.draftSessionDirectory,

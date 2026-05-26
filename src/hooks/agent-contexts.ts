@@ -109,6 +109,7 @@ export interface ActionsContextValue {
   revertVariant: () => void;
   clearError: () => void;
   refreshProviders: () => Promise<void>;
+  restartAgentBackends: () => Promise<void>;
   getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
   removeFromQueue: (sessionId: string, promptId: string) => void;
   reorderQueue: (sessionId: string, fromIndex: number, toIndex: number) => void;

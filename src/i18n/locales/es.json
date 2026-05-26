@@ -41,9 +41,9 @@
       "hideOldModels": "Ocultar modelos antiguos",
       "months": "meses",
       "hideOldModelsHelp": "Los modelos seleccionados y favoritos siempre siguen visibles. Los modelos sin una fecha de lanzamiento válida también siguen visibles.",
-      "restartServer": "Reiniciar servidor",
-      "restartServerTitle": "¿Reiniciar servidor?",
-      "restartServerDescription": "Esto reiniciará el servidor. Todas las sesiones abiertas se detendrán y tendrás que volver a conectarte."
+      "restartServer": "Reiniciar backends de agente",
+      "restartServerTitle": "¿Reiniciar backends de agente?",
+      "restartServerDescription": "Esto reiniciará OpenCode, Pi, Claude Code y Codex. Los turnos en ejecución pueden interrumpirse; las conexiones de proyecto se restaurarán automáticamente."
     },
     "skills": {
       "installed": "Skills instalados",

@@ -52,11 +52,28 @@ export function DialogConnectProvider({
   const providersApi = backend?.platform?.providers;
   const { activeWorkspaceId } = useConnectionState();
 
-  // If only one method, auto-select it
-  const [selectedMethod, setSelectedMethod] = useState<"api" | "oauth" | null>(() => {
-    if (authMethods.length === 1 && authMethods[0]) return authMethods[0].type;
+  // Track the exact selected auth-method index so the frontend continues the
+  // same backend auth flow it started.
+  const [selectedMethodIndex, setSelectedMethodIndex] = useState<number | null>(() => {
+    if (authMethods.length === 1 && authMethods[0]) return 0;
     return null;
   });
+
+  const selectedMethod =
+    selectedMethodIndex !== null && authMethods[selectedMethodIndex]
+      ? authMethods[selectedMethodIndex].type
+      : null;
+
+  useEffect(() => {
+    const soleMethod = authMethods.length === 1 ? authMethods[0] : undefined;
+    if (soleMethod) {
+      setSelectedMethodIndex((current) => (current === null ? 0 : current));
+      return;
+    }
+    setSelectedMethodIndex((current) =>
+      current !== null && authMethods[current] ? current : null,
+    );
+  }, [authMethods]);
 
   // API key flow
   const [apiKey, setApiKey] = useState("");
@@ -71,6 +88,16 @@ export function DialogConnectProvider({
   const pollingRef = useRef(false);
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setSelectedMethodIndex(authMethods.length === 1 && authMethods[0] ? 0 : null);
+    setOauthData(null);
+    setOauthCode("");
+    setError(null);
+    setSuccess(false);
+    pollingRef.current = false;
+    setOauthPolling(false);
+  }, [providerID]);
 
   // Clear pending timers on unmount
   useEffect(() => {
@@ -156,6 +183,10 @@ export function DialogConnectProvider({
       if (!providersApi) return;
       setConnecting(true);
       setError(null);
+      setOauthData(null);
+      setOauthCode("");
+      pollingRef.current = false;
+      setOauthPolling(false);
       try {
         const auth = await providersApi.oauthAuthorize(
           { directory, workspaceId: activeWorkspaceId },
@@ -187,7 +218,7 @@ export function DialogConnectProvider({
       const done = await providersApi.oauthCallback(
         target,
         providerID,
-        undefined,
+        selectedMethodIndex ?? undefined,
         oauthCode.trim(),
       );
       if (done) {
@@ -202,7 +233,15 @@ export function DialogConnectProvider({
     } finally {
       setConnecting(false);
     }
-  }, [providersApi, directory, activeWorkspaceId, providerID, oauthCode, scheduleConnected]);
+  }, [
+    providersApi,
+    directory,
+    activeWorkspaceId,
+    providerID,
+    oauthCode,
+    scheduleConnected,
+    selectedMethodIndex,
+  ]);
 
   // Clean up polling on unmount
   useEffect(() => {
@@ -214,10 +253,9 @@ export function DialogConnectProvider({
   // Auto-start OAuth if that's the only method
   useEffect(() => {
     if (selectedMethod === "oauth" && !oauthData && authMethods.length === 1) {
-      const idx = authMethods.findIndex((m) => m.type === "oauth");
-      void startOAuth(idx >= 0 ? idx : undefined);
+      void startOAuth(selectedMethodIndex ?? 0);
     }
-  }, [selectedMethod, oauthData, authMethods, startOAuth]);
+  }, [selectedMethod, oauthData, authMethods.length, startOAuth, selectedMethodIndex]);
 
   // Success state
   if (success) {
@@ -265,7 +303,7 @@ export function DialogConnectProvider({
               type="button"
               className="w-full flex items-center gap-3 rounded-lg border p-3 bg-card hover:bg-accent transition-colors text-left"
               onClick={() => {
-                setSelectedMethod(method.type);
+                setSelectedMethodIndex(idx);
                 if (method.type === "oauth") {
                   void startOAuth(idx);
                 }
@@ -318,7 +356,7 @@ export function DialogConnectProvider({
             <button
               type="button"
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setSelectedMethod(null)}
+              onClick={() => setSelectedMethodIndex(null)}
             >
               Use a different method
             </button>
@@ -400,7 +438,7 @@ export function DialogConnectProvider({
                 pollingRef.current = false;
                 setOauthPolling(false);
                 setOauthData(null);
-                setSelectedMethod(null);
+                setSelectedMethodIndex(null);
               }}
             >
               Use a different method

@@ -364,11 +364,33 @@ async function setupHandlers(
     import("../codex-bridge.ts"),
   ]);
 
-  setupOpenCodeBridge(ipcMain, getAllWindows);
-  setupClaudeCodeBridge(ipcMain, getAllWindows);
+  const bridgeControls = new Map<string, { restart?: () => Promise<unknown> }>();
+  bridgeControls.set("opencode", setupOpenCodeBridge(ipcMain, getAllWindows));
+  bridgeControls.set("claude-code", setupClaudeCodeBridge(ipcMain, getAllWindows));
   ipcMain.send("claude-code:renderer-ready", { sender });
-  setupPiBridge(ipcMain, getAllWindows, { userData });
-  setupCodexBridge(ipcMain, getAllWindows, { userData });
+  bridgeControls.set("pi", setupPiBridge(ipcMain, getAllWindows, { userData }));
+  bridgeControls.set("codex", setupCodexBridge(ipcMain, getAllWindows, { userData }));
+
+  ipcMain.handle("agent-backends:restart", async () => {
+    const results: Record<string, { success: boolean; error?: string }> = {};
+    for (const backendId of ["opencode", "claude-code", "pi", "codex"]) {
+      const control = bridgeControls.get(backendId);
+      if (!control?.restart) {
+        results[backendId] = { success: false, error: "Restart not available" };
+        continue;
+      }
+      try {
+        await control.restart();
+        results[backendId] = { success: true };
+      } catch (error) {
+        results[backendId] = {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    return { success: true, data: results };
+  });
 
   return { sender };
 }
@@ -513,8 +535,8 @@ const routes = {
         const value =
           channel === "files:find"
             ? await findFilesInDirectory(
-                await resolveSafeDirectory(String(args[0] ?? "")),
-                String(args[1] ?? ""),
+                await resolveSafeDirectory(typeof args[0] === "string" ? args[0] : ""),
+                typeof args[1] === "string" ? args[1] : "",
               )
             : await ipcMain.invoke(channel, { sender }, args);
         logRpc(channel, startedAt, true);
