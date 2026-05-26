@@ -48,10 +48,7 @@ function merge() {
   const arm64 = readManifest(arm64Dir);
 
   const releaseDate = new Date(
-    Math.max(
-      new Date(x64.releaseDate ?? 0).getTime(),
-      new Date(arm64.releaseDate ?? 0).getTime(),
-    ),
+    Math.max(new Date(x64.releaseDate ?? 0).getTime(), new Date(arm64.releaseDate ?? 0).getTime()),
   ).toISOString();
 
   const merged = {
