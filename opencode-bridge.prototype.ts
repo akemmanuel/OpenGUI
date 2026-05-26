@@ -9,7 +9,7 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output, env } from "node:process";
-import { OpenCodeConnection } from "./dist-electron/opencode-bridge.js";
+import { OpenCodeConnection } from "./opencode-bridge.ts";
 import { DEFAULT_SERVER_URL } from "./src/lib/constants.ts";
 import { createInitialState, reducePrototypeState } from "./opencode-bridge.prototype.logic.ts";
 
@@ -78,7 +78,7 @@ const refresh = async () => {
   state = reducePrototypeState(state, {
     type: "refreshed",
     providers: {
-      all: providers.all.map((provider) => ({ id: provider.id })),
+      all: providers.all.map((provider: { id: string }) => ({ id: provider.id })),
       connected: providers.connected,
     },
     authMethods,

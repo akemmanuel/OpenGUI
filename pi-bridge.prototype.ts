@@ -93,7 +93,7 @@ const refresh = async () => {
   state = reducePrototypeState(state, {
     type: "refreshed",
     providers: {
-      all: providers.all.map((provider) => ({ id: provider.id })),
+      all: providers.all.map((provider: { id: string }) => ({ id: provider.id })),
       connected: providers.connected,
     },
     authMethods,
