@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
 
@@ -23,22 +23,35 @@ function parseArgs() {
 }
 
 function readManifest(dir) {
-  const p = join(dir, "latest-mac.yml");
-  if (!existsSync(p)) {
-    console.error(`Manifest not found: ${p}`);
-    process.exit(1);
+  const candidates = ["latest-mac.yml", "latest-mac-arm64.yml", "latest-mac-x64.yml"];
+  for (const name of candidates) {
+    const p = join(dir, name);
+    if (existsSync(p)) {
+      console.log(`  found manifest: ${p}`);
+      return yaml.load(readFileSync(p, "utf8"));
+    }
   }
-  return yaml.load(readFileSync(p, "utf8"));
+  console.error(`Manifest not found in ${dir}`);
+  console.error(`  dir exists: ${existsSync(dir)}`);
+  if (existsSync(dir)) {
+    console.error(`  contents: ${readdirSync(dir).join(", ")}`);
+  }
+  process.exit(1);
 }
 
 function merge() {
   const { x64Dir, arm64Dir, outDir } = parseArgs();
 
+  console.log(`Reading x64 manifest from: ${x64Dir}`);
   const x64 = readManifest(x64Dir);
+  console.log(`Reading arm64 manifest from: ${arm64Dir}`);
   const arm64 = readManifest(arm64Dir);
 
   const releaseDate = new Date(
-    Math.max(new Date(x64.releaseDate ?? 0).getTime(), new Date(arm64.releaseDate ?? 0).getTime()),
+    Math.max(
+      new Date(x64.releaseDate ?? 0).getTime(),
+      new Date(arm64.releaseDate ?? 0).getTime(),
+    ),
   ).toISOString();
 
   const merged = {
@@ -59,4 +72,9 @@ function merge() {
   console.log(`  total: ${merged.files.length}`);
 }
 
-merge();
+try {
+  merge();
+} catch (err) {
+  console.error("Merge failed:", err.message);
+  process.exit(1);
+}
