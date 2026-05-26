@@ -39,7 +39,6 @@ jobs:
           path: |
             dist
             dist-electron
-          archive: false
           retention-days: 1
 
   build-linux:
@@ -99,7 +98,6 @@ jobs:
         with:
           name: linux-deb
           path: release/*.deb
-          archive: false
           retention-days: 30
 
   build-mac:
@@ -160,7 +158,6 @@ jobs:
         with:
           name: mac-release-${{ matrix.arch }}
           path: release/*
-          archive: false
           retention-days: 30
 
   build-windows:
@@ -241,7 +238,6 @@ jobs:
             release/*.exe
             release/*.blockmap
             release/latest.yml
-          archive: false
           retention-days: 30
 
   publish-docker:
