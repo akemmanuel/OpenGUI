@@ -1025,11 +1025,14 @@ function InternalAgentProvider({
       for (const dir of directoriesToRemove) {
         const projectKey = makeProjectKey(workspaceId, dir);
         const removedSessionIds = stateRef.current.sessions
-          .filter(
-            (session) =>
-              getSessionWorkspaceId(session) === workspaceId &&
-              (session._projectDir ?? session.directory) === dir,
-          )
+          .filter((session) => {
+            if (getSessionWorkspaceId(session) !== workspaceId) return false;
+            const sessionDir = session._projectDir ?? session.directory;
+            if (sessionDir !== dir) return false;
+            const meta = stateRef.current.sessionMeta[session.id];
+            if (meta?.assignedProjectDir && meta.assignedProjectDir !== dir) return false;
+            return true;
+          })
           .map((session) => session.id);
         cleanupSessionRefs(removedSessionIds);
         expectedDirectoriesRef.current.delete(projectKey);

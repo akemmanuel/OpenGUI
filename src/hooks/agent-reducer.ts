@@ -455,11 +455,14 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       const { workspaceId } = parseProjectKey(projectKey);
       const removedSessionIds = new Set(
         state.sessions
-          .filter(
-            (s) =>
-              getSessionWorkspaceId(s) === workspaceId &&
-              (s._projectDir ?? s.directory) === directory,
-          )
+          .filter((s) => {
+            if (getSessionWorkspaceId(s) !== workspaceId) return false;
+            const sessionDir = s._projectDir ?? s.directory;
+            if (sessionDir !== directory) return false;
+            const meta = state.sessionMeta[s.id];
+            if (meta?.assignedProjectDir && meta.assignedProjectDir !== directory) return false;
+            return true;
+          })
           .map((s) => s.id),
       );
       const nextWorkspaces = state.workspaces.map((workspace) =>
@@ -533,16 +536,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         delete nextProjectMeta[projectKey];
         persistProjectMetaMap(nextProjectMeta);
       }
-      const nextSessionMeta = { ...state.sessionMeta };
-      let didPruneSessionMeta = false;
-      for (const sessionId of removedSessionIds) {
-        if (!(sessionId in nextSessionMeta)) continue;
-        delete nextSessionMeta[sessionId];
-        didPruneSessionMeta = true;
-      }
-      if (didPruneSessionMeta) {
-        persistSessionMetaMap(nextSessionMeta);
-      }
 
       const nextNaming = new Set(state.namingSessionIds);
       for (const sessionId of removedSessionIds) {
@@ -552,17 +545,17 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         workspaces: nextWorkspaces,
-        sessionMeta: nextSessionMeta,
         projectMeta: nextProjectMeta,
         connections: rest,
         projectWorkspaceMap: restProjectWorkspaceMap,
-        sessions: state.sessions.filter(
-          (s) =>
-            !(
-              getSessionWorkspaceId(s) === workspaceId &&
-              (s._projectDir ?? s.directory) === directory
-            ),
-        ),
+        sessions: state.sessions.filter((s) => {
+          if (getSessionWorkspaceId(s) !== workspaceId) return true;
+          const sessionDir = s._projectDir ?? s.directory;
+          if (sessionDir !== directory) return true;
+          const meta = state.sessionMeta[s.id];
+          if (meta?.assignedProjectDir && meta.assignedProjectDir !== directory) return true;
+          return false;
+        }),
         busySessionIds: nextBusy,
         namingSessionIds: nextNaming,
         unreadSessionIds: nextUnread,

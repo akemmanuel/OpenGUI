@@ -393,10 +393,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     }, [value]);
 
     React.useEffect(() => {
-      if (autoFocus) {
+      if (autoFocus && !props.disabled) {
         internalTextareaRef.current?.focus();
       }
-    }, [autoFocus]);
+    }, [autoFocus, activeSessionId, props.disabled]);
 
     const appendImages = React.useCallback(
       async (files: FileList | File[]) => {

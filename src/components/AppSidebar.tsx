@@ -109,7 +109,7 @@ function SortableProjectFrame({ directory, children }: SortableProjectFrameProps
     <div
       ref={setNodeRef}
       style={{
-        transform: CSS.Transform.toString(transform),
+        transform: transform ? CSS.Translate.toString(transform) : undefined,
         transition,
       }}
       className={isDragging ? "relative z-10 opacity-60" : undefined}

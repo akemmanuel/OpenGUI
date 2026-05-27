@@ -21,8 +21,16 @@ The moment OpenGUI turns local intent into a backend operation such as `startSes
 _Avoid_: enqueue, draft
 
 **Project connection**:
-A local attachment between a workspace and one or more project directories that OpenGUI keeps hydrated across agent backends. It is how OpenGUI knows which sessions belong under which project in the UI.
-_Avoid_: mount, project binding
+A local attachment between a workspace and one or more project directories that OpenGUI keeps hydrated across agent backends. It is how OpenGUI knows which sessions belong under which project in the UI. Removing a project connection detaches the directory from the sidebar but does not delete files or session data.
+_Avoid_: mount, project binding, project deletion
+
+**Remove project connection**:
+The sidebar action that detaches a directory from the workspace. It removes the project entry from the sidebar visually and disconnects the backend from that directory. It must not delete sessions, session metadata (color, tags, pinning), or any files on disk. Sessions that were displayed under that project survive: moved sessions stay assigned to their target project; unaffiliated sessions may become orphans.
+_Avoid_: Remove project, delete project, clean up sessions
+
+**Session project assignment**:
+A session's effective display project, determined by `assignedProjectDir` in sessionMeta when set (the target of a move), falling back to `_projectDir` or the session's `directory`. Moving a session only changes `assignedProjectDir`; the original `_projectDir` is preserved.
+_Avoid_: session relocation, reparenting
 
 **Project connection registry**:
 The backend-local registry that keeps exact Project connections, backend session routing, and question routing aligned for one backend window. It prevents Project-scoped operations from silently reusing a different Project connection.
