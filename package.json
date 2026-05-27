@@ -16,6 +16,7 @@
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
+    "prepare": "vp config",
     "prototype:pi-bridge": "node --experimental-strip-types ./pi-bridge.prototype.ts",
     "prototype:opencode-bridge": "node --experimental-strip-types ./opencode-bridge.prototype.ts"
   },
