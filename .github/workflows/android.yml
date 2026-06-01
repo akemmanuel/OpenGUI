@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -36,12 +39,23 @@ jobs:
       - name: Sync Capacitor Android
         run: pnpm exec cap sync android
 
-      - name: Build debug APK
-        run: cd android && ./gradlew assembleDebug
+      - name: Build release APK
+        run: cd android && ./gradlew assembleRelease
 
-      - name: Upload debug APK
+      - name: Rename release APK
+        run: |
+          mkdir -p release-android
+          cp android/app/build/outputs/apk/release/*.apk "release-android/OpenGUI-${GITHUB_REF_NAME}-android-release.apk"
+
+      - name: Upload release APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: opengui-android-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: opengui-android-release-apk
+          path: release-android/*.apk
           retention-days: 30
+
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-android/*.apk
