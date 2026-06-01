@@ -1,6 +1,6 @@
 {
   "name": "opengui",
-  "version": "0.5.17",
+  "version": "0.5.18",
   "private": false,
   "description": "OpenGUI - Desktop and web command center for coding agents",
   "homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -81,6 +81,7 @@
     "asarUnpack": [
       "dist-electron/backend.js",
       "dist-electron/backend.js.map",
+      "dist-electron/package.json",
       "dist-electron/pi-daemon-server.js",
       "dist-electron/pi-daemon-server.js.map"
     ],

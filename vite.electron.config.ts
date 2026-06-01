@@ -1,5 +1,6 @@
 import "./build/suppress-node-deprecations.ts";
 
+import { copyFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
@@ -49,6 +50,8 @@ export default defineConfig({
       name: "opengui-electron-artifacts",
       apply: "build",
       async closeBundle() {
+        await copyFile("package.json", "dist-electron/package.json");
+
         await buildWithEsbuild({
           entryPoints: ["preload.ts"],
           outfile: "dist-electron/preload.cjs",
