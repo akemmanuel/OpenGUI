@@ -18,6 +18,9 @@ android {
     }
     buildTypes {
         release {
+            // CI publishes a directly installable APK. Use the generated debug keystore
+            // until a Play/App signing key is configured through GitHub secrets.
+            signingConfig signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
