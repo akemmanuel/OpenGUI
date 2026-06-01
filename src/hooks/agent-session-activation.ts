@@ -172,11 +172,19 @@ export function useAgentSessionActivation({
         return;
       }
 
-      const { messages, hasMore, nextCursor } = await fetchMessagePage(
-        id,
-        undefined,
-        projectTarget ?? undefined,
-      );
+      let page: Awaited<ReturnType<typeof fetchMessagePage>>;
+      try {
+        page = await fetchMessagePage(id, undefined, projectTarget ?? undefined);
+      } catch {
+        if (requestId !== selectSessionRequestRef.current) return;
+        dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+        dispatch({
+          type: "SET_MESSAGES",
+          payload: { messages: [], hasMore: false, nextCursor: null },
+        });
+        return;
+      }
+      const { messages, hasMore, nextCursor } = page;
       if (requestId !== selectSessionRequestRef.current) return;
       dispatch({
         type: "SET_MESSAGES",

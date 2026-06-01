@@ -1,0 +1,317 @@
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { BackendServiceContext } from "./services/index.ts";
+
+interface IpcSender {
+  send(channel: string, data: unknown): void;
+}
+
+interface IpcEvent {
+  sender: IpcSender;
+}
+
+type Handler = (event: IpcEvent, ...args: unknown[]) => unknown;
+
+interface IpcHandlerRegistry {
+  handle(channel: string, handler: Handler): void;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseCommand(command: string) {
+  const matches = command.match(/"[^"]*"|'[^']*'|\S+/g);
+  if (!matches) return [];
+  return matches.map((part) => part.replace(/^["']|["']$/g, ""));
+}
+
+function spawnDetached(command: string, args: string[], cwd?: string) {
+  const child = spawn(command, args, {
+    cwd,
+    stdio: "ignore",
+    detached: true,
+  });
+  child.unref();
+}
+
+function isWebUrl(url: unknown) {
+  return typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"));
+}
+
+function openExternal(url: string) {
+  if (!isWebUrl(url)) return;
+  if (process.platform === "darwin") spawnDetached("open", [url]);
+  else if (process.platform === "win32") spawnDetached("cmd.exe", ["/c", "start", "", url]);
+  else spawnDetached("xdg-open", [url]);
+}
+
+function openPath(path: string) {
+  if (process.platform === "darwin") spawnDetached("open", [path]);
+  else if (process.platform === "win32") spawnDetached("explorer.exe", [path]);
+  else spawnDetached("xdg-open", [path]);
+}
+
+async function runPicker(command: string[]) {
+  const [file, ...args] = command;
+  if (!file) return null;
+
+  let proc;
+  try {
+    proc = spawn(file, args, { stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return null;
+  }
+
+  const stdoutChunks: Buffer[] = [];
+  proc.stdout?.on("data", (chunk) => {
+    stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  });
+
+  const timeout = setTimeout(() => proc.kill(), 120_000);
+  try {
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      proc.once("error", reject);
+      proc.once("exit", (code) => resolve(code));
+    });
+    if (exitCode !== 0) return null;
+    return Buffer.concat(stdoutChunks).toString("utf8").trim() || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function chooseDirectory() {
+  if (process.platform === "darwin") {
+    return await runPicker([
+      "osascript",
+      "-e",
+      'POSIX path of (choose folder with prompt "Open project folder")',
+    ]);
+  }
+
+  if (process.platform === "win32") {
+    const script = [
+      "Add-Type -AssemblyName System.Windows.Forms",
+      "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+      "$dialog.Description = 'Open project folder'",
+      "if ($dialog.ShowDialog() -eq 'OK') { $dialog.SelectedPath }",
+    ].join("; ");
+    return await runPicker(["powershell.exe", "-NoProfile", "-Command", script]);
+  }
+
+  for (const picker of [
+    ["zenity", "--file-selection", "--directory", "--title=Open project folder"],
+    ["kdialog", "--getexistingdirectory", homedir(), "Open project folder"],
+    ["yad", "--file-selection", "--directory", "--title=Open project folder"],
+  ]) {
+    const directory = await runPicker(picker);
+    if (directory) return directory;
+  }
+
+  return null;
+}
+
+function isCommandAvailable(command: string) {
+  try {
+    const probe = process.platform === "win32" ? ["where", command] : ["which", command];
+    const [file, ...args] = probe;
+    if (!file) return false;
+    return spawnSync(file, args, { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
+const HARNESS_CLI_DEFS = {
+  opencode: {
+    command: "opencode",
+    packageName: "opencode-ai",
+    knownPaths: () => [
+      join(
+        homedir(),
+        ".opencode",
+        "bin",
+        process.platform === "win32" ? "opencode.exe" : "opencode",
+      ),
+      process.platform === "win32" ? "" : "/usr/local/bin/opencode",
+    ],
+  },
+  "claude-code": {
+    command: "claude",
+    packageName: "@anthropic-ai/claude-code",
+    knownPaths: () => [
+      join(homedir(), ".claude", "local", process.platform === "win32" ? "claude.exe" : "claude"),
+    ],
+  },
+  pi: { command: "pi", packageName: "@earendil-works/pi-coding-agent", knownPaths: () => [] },
+  codex: { command: "codex", packageName: "@openai/codex", knownPaths: () => [] },
+} as const;
+
+type HarnessCliId = keyof typeof HARNESS_CLI_DEFS;
+
+function isHarnessCliId(value: unknown): value is HarnessCliId {
+  return typeof value === "string" && value in HARNESS_CLI_DEFS;
+}
+
+function isHarnessAvailable(harnessId: HarnessCliId) {
+  const def = HARNESS_CLI_DEFS[harnessId];
+  return (
+    isCommandAvailable(def.command) ||
+    def.knownPaths().some((binaryPath) => !!binaryPath && existsSync(binaryPath))
+  );
+}
+
+function getHarnessInstallCommand(harnessId: unknown): [string, string[]] | null {
+  if (!isHarnessCliId(harnessId)) return null;
+  const packageName = HARNESS_CLI_DEFS[harnessId].packageName;
+  const managers = [
+    { command: "pnpm", args: ["add", "-g", packageName] },
+    { command: "npm", args: ["install", "-g", packageName] },
+  ];
+  const manager = managers.find((candidate) => isCommandAvailable(candidate.command));
+  return manager ? [manager.command, manager.args] : null;
+}
+
+function openTerminal(dirPath: string, command = "") {
+  if (!existsSync(dirPath)) return;
+  const parts = parseCommand(command);
+  if (parts.length > 0) {
+    const [cmd, ...args] = parts;
+    if (!cmd) return;
+    spawnDetached(cmd, args, dirPath);
+    return;
+  }
+  if (process.platform === "darwin") spawnDetached("open", ["-a", "Terminal", dirPath]);
+  else if (process.platform === "win32")
+    spawnDetached("cmd.exe", ["/c", "start", "cmd.exe", "/k", `cd /d "${dirPath}"`]);
+  else spawnDetached(process.env.TERMINAL || "x-terminal-emulator", [], dirPath);
+}
+
+export function registerShellIpcHandlers(input: {
+  ipcMain: IpcHandlerRegistry;
+  broadcast: (channel: string, data: unknown) => void;
+  services: BackendServiceContext;
+}) {
+  const { ipcMain, broadcast, services } = input;
+  const emitSettingsChange = (key: string, value: unknown) =>
+    broadcast("settings:changed", { key, value });
+
+  ipcMain.handle("settings:get-all", () => services.storage.getAllSettings());
+  ipcMain.handle("settings:get", (_event, key) =>
+    typeof key === "string" ? services.storage.getSetting(key) : null,
+  );
+  ipcMain.handle("settings:set", async (_event, key, value) => {
+    if (typeof key !== "string" || typeof value !== "string") return false;
+    const success = await services.storage.setSetting(key, value);
+    if (success) emitSettingsChange(key, value);
+    return success;
+  });
+  ipcMain.handle("settings:remove", async (_event, key) => {
+    if (typeof key !== "string") return false;
+    const success = await services.storage.removeSetting(key);
+    if (success) emitSettingsChange(key, null);
+    return success;
+  });
+  ipcMain.handle("settings:merge", async (_event, entries) => {
+    if (!isPlainObject(entries)) return false;
+    const normalizedEntries = Object.fromEntries(
+      Object.entries(entries).filter(
+        (entry): entry is [string, string] =>
+          typeof entry[0] === "string" && typeof entry[1] === "string",
+      ),
+    );
+    const success = await services.storage.mergeSettings(normalizedEntries);
+    if (success) {
+      for (const [key, value] of Object.entries(normalizedEntries)) emitSettingsChange(key, value);
+    }
+    return success;
+  });
+
+  ipcMain.handle("window:minimize", () => undefined);
+  ipcMain.handle("window:maximize", () => undefined);
+  ipcMain.handle("window:close", () => undefined);
+  ipcMain.handle("window:isMaximized", () => false);
+  ipcMain.handle("window:detachProject", () => undefined);
+  ipcMain.handle("window:getDetachedProjects", () => []);
+  ipcMain.handle("platform:get", () => process.platform);
+  ipcMain.handle("platform:homeDir", () => homedir());
+  ipcMain.handle("platform:detectBackends", () => ({
+    opencode: isHarnessAvailable("opencode"),
+    "claude-code": isHarnessAvailable("claude-code"),
+    pi: isHarnessAvailable("pi"),
+    codex: isHarnessAvailable("codex"),
+  }));
+  ipcMain.handle("backend:install", async (event, backendId) => {
+    const installCommand = getHarnessInstallCommand(backendId);
+    if (!installCommand) {
+      return { success: false, error: "Unknown backend id or no supported package manager found" };
+    }
+    const [command, args] = installCommand;
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const sendStream = async (stream: NodeJS.ReadableStream | null, type: "stdout" | "stderr") => {
+      if (!stream) return;
+      for await (const chunk of stream) {
+        event.sender.send("backend:install-progress", {
+          chunk: Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk),
+          type,
+        });
+      }
+    };
+    await Promise.all([sendStream(child.stdout, "stdout"), sendStream(child.stderr, "stderr")]);
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code) => resolve(code));
+    });
+    return { success: exitCode === 0, exitCode };
+  });
+  ipcMain.handle(
+    "platform:locale",
+    () => Intl.DateTimeFormat().resolvedOptions().locale || "en-US",
+  );
+  ipcMain.handle("app:isPackaged", () => false);
+  ipcMain.handle("dialog:openDirectory", () => chooseDirectory());
+  ipcMain.handle("shell:openExternal", (_event, url) =>
+    openExternal(typeof url === "string" ? url : ""),
+  );
+  ipcMain.handle("shell:openInFileBrowser", (_event, dirPath, command = "") => {
+    const dir = typeof dirPath === "string" ? dirPath : "";
+    if (!dir) return;
+    if (typeof command === "string" && command) {
+      const parts = parseCommand(command);
+      if (parts.length > 0) {
+        const [cmd, ...args] = parts;
+        if (!cmd) return;
+        spawnDetached(cmd, args.length > 0 ? args : [dir], dir);
+        return;
+      }
+    }
+    openPath(dir);
+  });
+  ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") =>
+    openTerminal(
+      typeof dirPath === "string" ? dirPath : "",
+      typeof command === "string" ? command : "",
+    ),
+  );
+
+  ipcMain.handle("agent-backends:restart", async () => {
+    const results: Record<string, { success: boolean; error?: string }> = {};
+    for (const backendId of services.harnesses.getManagedHarnessIds()) {
+      try {
+        await services.harnesses.restartHarness(backendId);
+        results[backendId] = { success: true };
+      } catch (error) {
+        results[backendId] = {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    return { success: true, data: results };
+  });
+}

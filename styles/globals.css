@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../node_modules/@wooorm/starry-night/style/both.css";
-@source "../node_modules/streamdown/dist/*.js";
 
 @font-face {
   font-family: "OpenGUITerminal";
@@ -308,12 +307,34 @@
   }
 
   /* Tables */
+  & .markdown-table-scroll {
+    @apply my-3 max-w-full overflow-x-auto rounded-lg border border-border/80;
+    -webkit-overflow-scrolling: touch;
+  }
+  & .markdown-table-scroll:focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
   & table {
     @apply w-full border-collapse;
   }
+  & .markdown-table-scroll table {
+    @apply my-0 min-w-max border-separate border-spacing-0;
+  }
   & th,
   & td {
-    @apply border border-border px-3 py-2 text-left;
+    @apply border border-border px-3 py-2 text-left align-top;
+  }
+  & .markdown-table-scroll th,
+  & .markdown-table-scroll td {
+    @apply border-0 border-r border-b border-border;
+    min-width: 8rem;
+  }
+  & .markdown-table-scroll th:last-child,
+  & .markdown-table-scroll td:last-child {
+    @apply border-r-0;
+  }
+  & .markdown-table-scroll tr:last-child td {
+    @apply border-b-0;
   }
   & th {
     @apply bg-muted font-semibold;
@@ -322,8 +343,16 @@
     @apply bg-muted/30;
   }
   & td {
-    word-break: break-word;
-    overflow-wrap: break-word;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 640px) {
+    & .markdown-table-scroll th,
+    & .markdown-table-scroll td {
+      @apply px-2 py-1.5 text-xs;
+      min-width: 6rem;
+    }
   }
 
   /* Inline code – styled via MarkdownRenderer component classes */

@@ -1,23 +1,35 @@
-import {
-  createLocalWorkspace,
-  LOCAL_WORKSPACE_ID,
-  type WorktreeParentMap,
-} from "@/hooks/agent-state-persistence";
+import { createLocalWorkspace, type WorktreeParentMap } from "@/hooks/agent-state-persistence";
 import {
   getWorkspaceRootProjectDirectory,
   listRelatedWorktreeDirectories,
 } from "@/lib/worktree-placement";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
-import type { ConnectionStatus, Workspace } from "@/types/electron";
+import type {
+  ConnectionConfig,
+  ConnectionKind,
+  ConnectionStatus,
+  Workspace,
+} from "@/types/electron";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 import { normalizeProjectPath } from "@/lib/utils";
 
-interface ProjectConfig {
+type ProjectConfig = ConnectionConfig & {
   workspaceId: string;
   baseUrl: string;
   directory: string;
-  username?: string;
-  password?: string;
+};
+
+export interface ProjectConnectionDescriptor {
+  workspaceId: string;
+  directory: string;
+  projectKey: string;
+  config: ProjectConfig;
+  target: {
+    directory: string;
+    workspaceId: string;
+    baseUrl?: string;
+    authToken?: string;
+  };
 }
 
 function uniqueOrdered(values: string[]): string[] {
@@ -27,9 +39,11 @@ function uniqueOrdered(values: string[]): string[] {
 export function createProjectConnectionStatus(
   state: ConnectionStatus["state"],
   serverUrl: string,
+  kind: ConnectionKind = "project",
 ): ConnectionStatus {
   return {
     state,
+    kind,
     serverUrl,
     serverVersion: null,
     error: null,
@@ -103,7 +117,7 @@ export function buildBootstrapProjectConfigs({
   worktreeParents: WorktreeParentMap;
 }) {
   const bootWorkspaces = workspaces.map((workspace) =>
-    workspace.id === LOCAL_WORKSPACE_ID && detachedProject
+    workspace.isLocal && detachedProject
       ? { ...workspace, projects: [detachedProject] }
       : workspace,
   );
@@ -139,6 +153,7 @@ export function buildBootstrapProjectConfigs({
           directory,
           username: workspace.username,
           password: workspace.password,
+          authToken: workspace.authToken,
         });
       }
     }
@@ -153,13 +168,44 @@ export function createWorkspaceConnectionConfig({
 }: {
   workspace: Workspace;
   directory: string;
-}) {
+}): ConnectionConfig {
   return {
     workspaceId: workspace.id,
     baseUrl: workspace.serverUrl ?? DEFAULT_SERVER_URL,
     directory,
     username: workspace.username,
     password: workspace.password,
+    authToken: workspace.authToken,
+  };
+}
+
+export function createProjectConnectionDescriptor({
+  config,
+  workspaceId = config.workspaceId,
+}: {
+  config: ConnectionConfig;
+  workspaceId?: string;
+}): ProjectConnectionDescriptor {
+  const directory = normalizeProjectPath(config.directory ?? "");
+  const resolvedWorkspaceId = workspaceId || config.workspaceId || "";
+  const resolvedConfig: ProjectConfig = {
+    ...config,
+    workspaceId: resolvedWorkspaceId,
+    baseUrl: config.baseUrl,
+    directory,
+  };
+
+  return {
+    workspaceId: resolvedWorkspaceId,
+    directory,
+    projectKey: makeProjectKey(resolvedWorkspaceId, directory),
+    config: resolvedConfig,
+    target: {
+      directory,
+      workspaceId: resolvedWorkspaceId,
+      baseUrl: resolvedConfig.baseUrl,
+      authToken: resolvedConfig.authToken,
+    },
   };
 }
 
@@ -168,8 +214,22 @@ export function shouldPersistWorkspaceProject(options?: { hidden?: boolean; tran
 }
 
 export function shouldPersistLocalConnectionSettings(
-  workspaceId: string,
+  workspaceOrIsLocal: boolean | string,
   options?: { hidden?: boolean; transient?: boolean },
 ) {
-  return workspaceId === LOCAL_WORKSPACE_ID && shouldPersistWorkspaceProject(options);
+  const isLocalWorkspace =
+    typeof workspaceOrIsLocal === "boolean" ? workspaceOrIsLocal : workspaceOrIsLocal === "local";
+  return isLocalWorkspace && shouldPersistWorkspaceProject(options);
+}
+
+export function shouldSnapshotProjectConnectionForRestart({
+  status,
+  workspace,
+  directory,
+}: {
+  status: ConnectionStatus;
+  workspace: Workspace;
+  directory: string;
+}) {
+  return status.kind !== "chat-infra" && workspace.projects.includes(directory);
 }

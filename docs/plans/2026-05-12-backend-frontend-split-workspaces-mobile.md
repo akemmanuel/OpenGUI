@@ -1,131 +1,130 @@
 # OpenGUI backend/frontend split, unified workspaces, remote hosting, mobile readiness
 
-Date: 2026-05-12
+Date: 2026-05-12 (updated 2026-05-27)
 
 ## Summary
 
-OpenGUI should become a client/server product:
+OpenGUI becomes a client/server product with one backend and multiple shells.
 
-- **Backend** owns agent runtimes, projects, workspaces, sessions, events, settings that affect runtime, git/worktree operations, filesystem access, prompt queue execution, and provider/model state.
-- **Frontend** owns rendering, navigation, UI preferences, local form drafts, and connection profile selection.
-- **Desktop app** is a frontend shell that can either launch a local backend sidecar or connect to a remote backend.
-- **Web app** is the same frontend served by a backend or static host.
-- **Mobile app** later becomes another frontend that talks to the same backend API over HTTPS/WebSocket.
+- **OpenGUI Backend** owns Harness adapters, workspaces, projects, sessions, prompt queues, events, filesystem/git operations, and settings that affect execution. The only stateful layer. Deployable as Desktop sidecar, Docker container, or standalone server.
+- **OpenGUI Frontend** is the React UI layer. Stateless; renders chat, navigation, settings. Talks only to one OpenGUI Backend via `OpenGuiClient`. Same codebase runs in Desktop Shell, Web Shell, and Mobile Shell.
+- **Shell** is the platform-specific scaffold that bootstraps the Frontend. Three variants:
+  - **Desktop Shell** (Electron main+preload): window controls, native file picker, updater, OS notifications, backend sidecar lifecycle.
+  - **Web Shell** (browser): minimal -- no backend spawning, no native file dialog. Backend connection is same-origin or user-configured URL.
+  - **Mobile Shell** (Capacitor JS): native file picker, push notifications, secure token storage. Never spawns a Backend, never opens a file browser or terminal.
+- **Harness** is a coding-agent runtime (OpenCode, Claude Code, Codex, Pi) managed by the OpenGUI Backend. The Frontend never speaks to a Harness directly.
+- **Harness Adapter** is the integration code translating Backend operations into Harness SDK calls.
 
-Core rule: no agent SDK, CLI, filesystem, git, worktree, or runtime state should live in frontend code after migration. Frontends talk to one OpenGUI backend protocol.
+Core rule: no Harness SDK, CLI, filesystem, git, worktree, or runtime state should live in Frontend code. Frontends talk to one OpenGUI Backend protocol.
+
+### Headless Backend (resolved)
+
+There is no separate "headless backend". The OpenGUI Backend is one binary. Only the deployment mode differs:
+
+| Mode               | Host               | Auth           | Use Case                            |
+| ------------------ | ------------------ | -------------- | ----------------------------------- |
+| Managed Sidecar    | `127.0.0.1:random` | Random token   | Desktop default                     |
+| Standalone (LAN)   | `0.0.0.0:PORT`     | Token/password | Dev, manual Docker                  |
+| Docker (VPS)       | `0.0.0.0:PORT`     | Required       | Remote hosting behind reverse proxy |
+| Web (mit Frontend) | `0.0.0.0:PORT`     | Required       | Serves Frontend assets + API        |
+
+Desktop Shell manages the sidecar lifecycle (spawn, health-check, shut down). All other modes start the Backend independently.
 
 ## Goals
 
-1. Split codebase into backend and frontend boundaries without breaking current desktop/web flows.
-2. Let desktop app run a local backend when wanted.
-3. Let desktop/web/mobile connect to hosted backend later.
-4. Make OpenGUI workspaces universal across OpenCode, Claude Code, Codex, and Pi.
-5. Make session/project identity stable without relying only on absolute paths.
-6. Keep current OpenCode remote-server flow, but treat it as one backend adapter detail, not app architecture.
-7. Prepare for mobile by making all APIs async, authenticated, paginated, resumable, and payload-conscious.
+1. Split monolithic codebase into Backend and Frontend boundaries without breaking current desktop/web flows.
+2. Let Desktop Shell run a local Backend sidecar or connect to a remote Backend.
+3. Let Mobile Shell connect to remote/LAN Backend; never spawn a Backend locally.
+4. Make OpenGUI workspaces universal across all Harnesses (OpenCode, Claude Code, Codex, Pi).
+5. Make session/project identity stable using server-issued IDs, not absolute paths.
+6. Keep current OpenCode remote-server flow as one Harness adapter detail.
+7. Prepare for mobile: all APIs async, authenticated, paginated, resumable, payload-conscious.
 
-## Non-goals for first split
+## Non-goals
 
-- Real-time collaboration/multiple users editing same session.
-- Phone-local agent execution.
-- Automatic project file sync between desktop and remote backend.
+- Real-time collaboration / multi-user sessions.
+- Phone-local Harness execution.
+- Automatic project file sync between desktop and remote Backend.
 - Cloud-hosted OpenGUI SaaS account system.
-- Replacing all bridge internals in one big rewrite.
+- Replacing all Harness adapter internals in one rewrite.
 
-## Current state
-
-OpenGUI already has pieces of this shape:
-
-- `server/web-server.ts` runs a Bun server for browser mode.
-- `src/lib/web-electron-api.ts` shims Electron preload calls through `/api/rpc` and `/api/events`.
-- `preload.ts` exposes the same app API through Electron IPC.
-- `opencode-bridge.ts`, `claude-code-bridge.ts`, `codex-bridge.ts`, and `pi-bridge.ts` host agent runtime logic.
-- `src/agents/backend.ts` defines a useful adapter-like interface.
-- Workspace IDs already appear in bridge calls, but semantics differ by backend and are still mostly frontend/UI driven.
-
-Main issue: backend behavior is hidden behind Electron-shaped IPC. Browser mode fakes IPC instead of exposing a real product protocol. Frontend still thinks it talks to `window.electronAPI`.
-
-## Target architecture
+## Architecture overview
 
 ```txt
-OpenGUI Frontends
-  ├─ Desktop app (Electron shell)
-  ├─ Web app (browser)
-  └─ Mobile app later (iOS/Android)
+OpenGUI Frontends                Shells
+  ├─ Desktop UI  ←→ Desktop Shell  (Electron: window, updater, sidecar)
+  ├─ Web UI      ←→ Web Shell      (browser: same-origin / URL)
+  └─ Mobile UI   ←→ Mobile Shell   (Capacitor: native picker, push, no backend)
         │
-        │ HTTPS + WebSocket/SSE
+        │ HTTPS + WebSocket/SSE  (always via OpenGuiClient)
         ▼
-OpenGUI Backend API
-  ├─ Auth/session/token layer
+OpenGUI Backend
+  ├─ Auth / tokens
   ├─ Workspace service
   ├─ Project service
   ├─ Session/message service
   ├─ Event bus
-  ├─ Prompt queue/runtime coordinator
-  ├─ Git/worktree/filesystem service
-  ├─ Settings/provider/model service
-  └─ Agent adapter registry
+  ├─ Prompt queue / runtime coordinator
+  ├─ Git / worktree / filesystem service
+  ├─ Settings / provider / model service
+  └─ Harness adapter registry
         ├─ OpenCode adapter
         ├─ Claude Code adapter
         ├─ Codex adapter
         └─ Pi adapter
+
+Harnesses (coding-agent CLIs/SDKs)
+  OpenCode, Claude Code, Codex, Pi
 ```
 
-Backend is product core. Frontends are replaceable clients.
+One Backend binary. Three Shells sharing one React Frontend.
 
-## Proposed repository layout
+## Repository layout
 
-Migration can happen gradually. Final-ish shape:
+Migration is gradual. Target layout:
 
 ```txt
 apps/
-  desktop/            Electron main/preload/shell, backend supervisor
-  frontend/           React app, browser-safe, no runtime/agent logic
-  backend/            Bun HTTP/WebSocket server
+  backend/            Node.js HTTP/WS server, Harness adapters, services
+  frontend/           React app + protocol client (shell-agnostic)
+  desktop/            Electron main/preload + sidecar supervisor
+  mobile/             Capacitor JS scaffold
 
 packages/
-  protocol/           shared request/response/event schemas + client
-  core/               workspace/project/session orchestration
-  agents/             common adapter contract
-    opencode/
-    claude-code/
-    codex/
-    pi/
-  desktop-bridge/     window controls, updater, native picker only
+  protocol/           Shared request/response/event schemas, OpenGuiClient
+  backend-core/       Workspace/project/session orchestration (may stay in apps/backend)
 ```
 
-Short-term shape can stay flatter:
+Short-term (while migrating):
 
 ```txt
-server/               real backend server + services
-src/                  frontend + shared types until extracted
-*.bridge.ts           adapters, moved later
+server/               Backend services + routes + adapters
+src/                  Frontend React + protocol client
+main.ts               Electron main (Desktop Shell)
+preload.ts            Electron preload (Desktop Shell)
+main/                 Desktop Shell helpers (update-manager, etc.)
 ```
 
 Do not block split on package reshuffle. First create protocol boundary, then move files.
 
 ## Runtime modes
 
-### 1. Desktop-managed local backend
-
-Default desktop mode.
+### 1. Desktop Shell + Managed Sidecar (default)
 
 ```txt
-OpenGUI Desktop
-  ├─ starts backend sidecar on 127.0.0.1:<random-port>
+Desktop Shell (Electron)
+  ├─ starts Backend on 127.0.0.1:<random-port>
   ├─ creates random auth token
   ├─ waits for /api/health
-  └─ loads frontend with backend URL/token
+  └─ loads Frontend with Backend URL + token
 
 OpenGUI Backend
-  ├─ bound to localhost
-  ├─ has local project filesystem access
-  └─ runs local OpenCode/Claude/Codex/Pi runtimes
+  ├─ bound to 127.0.0.1
+  ├─ local filesystem access
+  └─ runs local Harnesses (OpenCode, Claude, Codex, Pi)
 ```
 
-Use random available port by default. Avoid fixed ports except optional override.
-
-Desktop stores profile:
+Desktop Shell stores BackendProfile:
 
 ```ts
 interface BackendProfile {
@@ -142,49 +141,54 @@ interface BackendProfile {
 }
 ```
 
-### 2. Local external backend
+### 2. Desktop/Web + Local External Backend
 
-User starts backend manually, desktop/browser connects to it.
+User starts Backend manually or via Docker. Frontend connects to configured URL.
 
-Useful for dev, Docker, custom process managers.
+### 3. Remote Backend (Desktop, Web, or Mobile)
 
-### 3. Remote backend
+Backend runs on server. All three Shells connect over HTTPS/WSS.
 
-Backend runs on server, desktop/web/mobile connect over HTTPS/WSS.
+Important: Backend operates on its own paths. A VPS Backend edits files on the VPS, not the user's laptop. Remote mode is remote control, not local-file UI.
 
-Important rule: backend operates on backend-local paths. A VPS backend edits files on VPS, not user laptop. Desktop remote mode is a remote control UI, not direct local-file UI.
+### 4. Mobile Shell -> Remote Backend
 
-### 4. Future mobile backend access
+Mobile Shell never starts a Backend. It connects to a remote or LAN Backend.
 
-Mobile only connects to remote or LAN/Tailscale backend. Mobile does not run agent CLIs.
+Mobile Shell responsibilities:
+
+- Native file picker (for adding projects to a remote Backend)
+- Push notifications
+- Secure token storage
+- No terminal, no file browser, no Backend spawning
 
 ## Backend protocol principles
 
-1. **Typed and versioned**: clients discover protocol version and backend capabilities.
+1. **Typed and versioned**: clients discover protocol version and Backend capabilities.
 2. **HTTP for commands/query**: predictable request/response APIs.
 3. **WebSocket or SSE for events**: one resumable event stream per client.
 4. **Server-issued IDs**: no path-only keys in client state.
-5. **Idempotent where needed**: reconnecting frontend can safely resync.
+5. **Idempotent where needed**: reconnecting Frontend can safely resync.
 6. **Pagination everywhere**: sessions, messages, files, logs.
-7. **Capability-driven UI**: backend reports features by agent, project, workspace, and platform.
+7. **Capability-driven UI**: Backend reports features by Harness, project, workspace, and platform.
 8. **Transport-agnostic client**: React code calls `OpenGuiClient`, not `window.electronAPI`.
 
-## API skeleton
+## API skeleton (unchanged from previous plan)
 
 Base:
 
-```txt
+```
 GET  /api/health
 GET  /api/version
 GET  /api/capabilities
-POST /api/auth/login                optional for remote; token bootstrap for local sidecar
+POST /api/auth/login
 POST /api/auth/refresh
 POST /api/auth/logout
 ```
 
 Workspaces:
 
-```txt
+```
 GET    /api/workspaces
 POST   /api/workspaces
 GET    /api/workspaces/:workspaceId
@@ -194,7 +198,7 @@ DELETE /api/workspaces/:workspaceId
 
 Projects:
 
-```txt
+```
 GET    /api/workspaces/:workspaceId/projects
 POST   /api/workspaces/:workspaceId/projects
 GET    /api/projects/:projectId
@@ -207,8 +211,8 @@ GET    /api/projects/:projectId/status
 
 Sessions:
 
-```txt
-GET    /api/sessions?workspaceId=&projectId=&agentBackendId=&cursor=&limit=
+```
+GET    /api/sessions?workspaceId=&projectId=&harnessId=&cursor=&limit=
 POST   /api/sessions
 GET    /api/sessions/:sessionId
 PATCH  /api/sessions/:sessionId
@@ -221,7 +225,7 @@ POST   /api/sessions/:sessionId/unrevert
 
 Messages and prompting:
 
-```txt
+```
 GET  /api/sessions/:sessionId/messages?cursor=&limit=&direction=older|newer
 POST /api/sessions/:sessionId/prompt
 POST /api/sessions/:sessionId/command
@@ -231,21 +235,21 @@ POST /api/questions/:questionId/reply
 POST /api/questions/:questionId/reject
 ```
 
-Providers/models/agents:
+Harnesses (formerly /api/agent-backends):
 
-```txt
-GET  /api/agent-backends
-GET  /api/projects/:projectId/providers?agentBackendId=
-GET  /api/projects/:projectId/models?agentBackendId=
-GET  /api/projects/:projectId/agents?agentBackendId=
-GET  /api/projects/:projectId/commands?agentBackendId=
+```
+GET  /api/harnesses
+GET  /api/projects/:projectId/providers?harnessId=
+GET  /api/projects/:projectId/models?harnessId=
+GET  /api/projects/:projectId/agents?harnessId=
+GET  /api/projects/:projectId/commands?harnessId=
 POST /api/projects/:projectId/providers/:providerId/connect
 POST /api/projects/:projectId/providers/:providerId/disconnect
 ```
 
 Filesystem/git/worktrees:
 
-```txt
+```
 GET  /api/fs/roots
 GET  /api/fs/list?path=&cursor=&limit=
 GET  /api/fs/search?projectId=&query=&limit=
@@ -260,15 +264,13 @@ POST /api/git/merge/abort
 
 Events:
 
-```txt
+```
 GET /api/events?cursor=<lastEventId>
 ```
 
-Use WebSocket or SSE. SSE is simpler for server-to-client event stream. WebSocket is better if mobile needs bidirectional heartbeat/control later. Either way, event envelope should be same.
+Protocol transport decision: **WebSocket first**, with fallback to SSE. The existing WebSocket event transport in `web-server.ts` already works; lean into it.
 
 ## Protocol package
-
-Create shared protocol types and a client facade.
 
 ```ts
 interface OpenGuiClient {
@@ -291,15 +293,12 @@ interface OpenGuiClient {
 
 Implementations:
 
-- `HttpOpenGuiClient`: real backend API.
-- `ElectronCompatOpenGuiClient`: temporary adapter over `window.electronAPI` while migrating.
-- Later `MobileOpenGuiClient`: likely same HTTP client with platform storage/auth integration.
+- `HttpOpenGuiClient`: real Backend API (used by Web and Mobile Shells, and Desktop Shell in remote mode)
+- `ElectronCompatOpenGuiClient`: temporary adapter over `window.electronAPI` during migration (Desktop Shell only, phased out)
 
 Frontend hooks depend only on `OpenGuiClient`.
 
 ## Universal workspace model
-
-OpenGUI Workspace is app-level, independent from any agent-specific workspace concept.
 
 ```ts
 interface Workspace {
@@ -308,12 +307,10 @@ interface Workspace {
   createdAt: string;
   updatedAt: string;
   defaultProjectId?: string;
-  defaultAgentBackendId?: AgentBackendId;
+  defaultHarnessId?: HarnessId;
   settings: WorkspaceSettings;
 }
-```
 
-```ts
 interface Project {
   id: string;
   workspaceId: string;
@@ -324,13 +321,11 @@ interface Project {
   git?: ProjectGitInfo;
   createdAt: string;
   updatedAt: string;
-  agentBackends: ProjectAgentBackendConfig[];
+  harnesses: ProjectHarnessConfig[];
 }
-```
 
-```ts
-interface ProjectAgentBackendConfig {
-  agentBackendId: AgentBackendId;
+interface ProjectHarnessConfig {
+  harnessId: HarnessId;
   enabled: boolean;
   connectionMode: "local-cli" | "remote-server" | "managed-server";
   remoteUrl?: string;
@@ -338,17 +333,13 @@ interface ProjectAgentBackendConfig {
   defaultModel?: SelectedModel;
   defaultAgent?: string;
 }
-```
 
-Session identity:
-
-```ts
 interface SessionRecord {
   id: string; // OpenGUI canonical ID
-  rawId: string; // native agent session ID
+  rawId: string; // native Harness session ID
   workspaceId: string;
   projectId: string;
-  agentBackendId: AgentBackendId;
+  harnessId: HarnessId;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -357,72 +348,30 @@ interface SessionRecord {
 }
 ```
 
-Canonical session key:
+Canonical session key: `workspaceId + projectId + harnessId + rawId`
 
-```txt
-workspaceId + projectId + agentBackendId + rawId
-```
-
-Never key sessions only by `rawId` or `directory`.
-
-## Agent workspace semantics
-
-Each adapter maps OpenGUI scope to native agent scope.
+## Harness adapter contract
 
 ```ts
-interface AgentScope {
-  workspaceId: string;
-  projectId: string;
-  projectPath: string;
-  agentBackendId: AgentBackendId;
-}
-```
-
-OpenCode:
-
-- Keep OpenGUI workspace ID as UI/core scope.
-- Only send OpenCode workspace headers if explicitly needed and known safe.
-- Existing comment in `opencode-bridge.ts` warns that sending OpenCode workspace header can hide sessions. Preserve that behavior until explicit OpenCode workspace support is designed.
-
-Claude Code:
-
-- Store/list sessions scoped through OpenGUI workspace/project.
-- If Claude native session store lacks workspace support, backend maintains mapping metadata.
-
-Codex:
-
-- Same as Claude: native session ID plus OpenGUI mapping.
-- Existing code already carries `workspaceId`; make backend own and validate it.
-
-Pi:
-
-- Same universal adapter scope.
-- Ensure session/message/project mapping works even if Pi native runtime has no workspace concept.
-
-## Agent adapter contract
-
-Move bridges toward this shape:
-
-```ts
-interface AgentAdapter {
-  id: AgentBackendId;
+interface HarnessAdapter {
+  id: HarnessId;
   label: string;
-  capabilities: AgentBackendCapabilities;
+  capabilities: HarnessCapabilities;
 
-  connectProject(scope: AgentScope, config: ProjectAgentBackendConfig): Promise<void>;
-  disconnectProject(scope: AgentScope): Promise<void>;
-  getProjectStatus(scope: AgentScope): Promise<ConnectionStatus>;
+  connectProject(scope: HarnessScope, config: ProjectHarnessConfig): Promise<void>;
+  disconnectProject(scope: HarnessScope): Promise<void>;
+  getProjectStatus(scope: HarnessScope): Promise<ConnectionStatus>;
 
-  listSessions(scope: AgentScope, input: ListSessionsInput): Promise<ListSessionsResult>;
-  createSession(scope: AgentScope, input: CreateSessionInput): Promise<SessionRecord>;
-  updateSession(scope: AgentScope, input: UpdateSessionInput): Promise<SessionRecord>;
-  deleteSession(scope: AgentScope, sessionId: string): Promise<boolean>;
+  listSessions(scope: HarnessScope, input: ListSessionsInput): Promise<ListSessionsResult>;
+  createSession(scope: HarnessScope, input: CreateSessionInput): Promise<SessionRecord>;
+  updateSession(scope: HarnessScope, input: UpdateSessionInput): Promise<SessionRecord>;
+  deleteSession(scope: HarnessScope, sessionId: string): Promise<boolean>;
 
-  getMessages(scope: AgentScope, input: GetMessagesInput): Promise<MessagePage>;
-  prompt(scope: AgentScope, input: PromptInput): Promise<void>;
-  abort(scope: AgentScope, sessionId: string): Promise<void>;
+  getMessages(scope: HarnessScope, input: GetMessagesInput): Promise<MessagePage>;
+  prompt(scope: HarnessScope, input: PromptInput): Promise<void>;
+  abort(scope: HarnessScope, sessionId: string): Promise<void>;
 
-  subscribe(listener: (event: AgentAdapterEvent) => void): () => void;
+  subscribe(listener: (event: HarnessAdapterEvent) => void): () => void;
 }
 ```
 
@@ -430,53 +379,20 @@ Backend core translates adapter events into OpenGUI events with canonical IDs.
 
 ## Event model
 
-Use one envelope:
-
 ```ts
 interface OpenGuiEventEnvelope<T = OpenGuiEvent> {
-  id: string; // monotonic event ID or ULID
+  id: string;
   type: T["type"];
   createdAt: string;
   workspaceId?: string;
   projectId?: string;
   sessionId?: string;
-  agentBackendId?: AgentBackendId;
+  harnessId?: HarnessId;
   payload: T;
 }
 ```
 
-Event examples:
-
-```ts
-type OpenGuiEvent =
-  | { type: "workspace.created"; workspace: Workspace }
-  | { type: "workspace.updated"; workspace: Workspace }
-  | { type: "workspace.deleted"; workspaceId: string }
-  | { type: "project.created"; project: Project }
-  | { type: "project.updated"; project: Project }
-  | { type: "project.deleted"; projectId: string }
-  | { type: "project.connection.status"; status: ConnectionStatus }
-  | { type: "session.created"; session: SessionRecord }
-  | { type: "session.updated"; session: SessionRecord }
-  | { type: "session.deleted"; sessionId: string }
-  | { type: "session.status"; sessionId: string; status: SessionStatus }
-  | { type: "message.snapshot"; sessionId: string; messages: MessageEntry[]; cursor: string | null }
-  | { type: "message.updated"; sessionId: string; message: Message }
-  | { type: "message.part.updated"; sessionId: string; part: Part }
-  | {
-      type: "message.part.delta";
-      sessionId: string;
-      messageId: string;
-      partId: string;
-      field: string;
-      delta: string;
-    }
-  | { type: "permission.requested"; sessionId: string; request: PermissionRequest }
-  | { type: "permission.cleared"; sessionId: string }
-  | { type: "question.requested"; sessionId: string; request: QuestionRequest }
-  | { type: "question.cleared"; sessionId: string }
-  | { type: "runtime.error"; sessionId?: string; error: string };
-```
+Event types (canonical, unchanged from previous plan).
 
 For mobile and flaky networks:
 
@@ -486,211 +402,139 @@ For mobile and flaky networks:
 
 ## Prompt queue ownership
 
-Move prompt queue execution to backend.
+Moved to Backend. Reasons:
 
-Why:
-
-- Desktop can close while backend keeps running.
+- Desktop can close while Backend keeps running.
 - Mobile/web clients can observe same queue.
-- Multiple frontends connected to same backend see consistent busy/queued state.
+- Multiple Frontends connected to same Backend see consistent busy/queued state.
 
-Backend stores queue records:
-
-```ts
-interface PromptQueueItem {
-  id: string;
-  workspaceId: string;
-  projectId: string;
-  sessionId: string;
-  agentBackendId: AgentBackendId;
-  text: string;
-  attachments: AttachmentRef[];
-  mode: "next" | "after-part";
-  status: "queued" | "dispatching" | "sent" | "failed" | "cancelled";
-  createdAt: string;
-}
-```
-
-Frontend may keep unsent textarea drafts locally, but queued prompts belong to backend.
+Frontend may keep unsent textarea drafts locally, but queued prompts belong to Backend.
 
 ## Settings ownership
 
-Split settings into classes.
-
 Backend settings:
 
-- workspaces/projects
-- allowed roots
-- provider credentials refs
-- agent backend config
-- model defaults
+- Workspaces/projects
+- Allowed roots
+- Provider credentials refs
+- Harness config
+- Model defaults
 - MCP config
-- skills config
-- prompt queues
-- session metadata shared across clients
+- Skills config
+- Prompt queues
+- Session metadata shared across clients
 
 Frontend-local settings:
 
-- theme
-- sidebar width/collapse
-- language
-- density
-- local draft text
-- currently selected backend profile
-- mobile notification preferences
+- Theme
+- Sidebar width/collapse
+- Language
+- Density
+- Local draft text
+- Currently selected Backend profile
+- Mobile notification preferences
 
-Shared UI metadata with backend sync:
+Shared UI metadata (with Backend sync):
 
-- pins
-- colors/tags
-- last active session per workspace
-- project order
+- Pins
+- Colors/tags
+- Last active session per workspace
+- Project order
 
-## Filesystem and allowed roots
+## Shell responsibilities after split
 
-Backend must enforce filesystem boundaries.
-
-```ts
-interface AllowedRoot {
-  id: string;
-  path: string;
-  label: string;
-  writable: boolean;
-}
-```
-
-Rules:
-
-- Every project path must live under an allowed root unless local desktop user explicitly grants it.
-- Remote backend default should require configured `OPENGUI_ALLOWED_ROOTS`.
-- Resolve symlinks with `realpath` before access checks.
-- Never trust frontend paths.
-- Return display labels and project IDs to clients; avoid making UI depend on absolute path identity.
-
-Mobile impact: mobile file picker is backend file picker. Phone does not browse its local filesystem for projects.
-
-## Desktop shell responsibilities after split
+### Desktop Shell (Electron)
 
 Keep in Electron:
 
-- window controls
-- updater
-- native open external
-- native folder picker as convenience for local backend only
-- backend sidecar process lifecycle
-- secure token injection into renderer
-- OS notifications if needed
+- Window controls (frame, min, max, close)
+- Updater (`electron-updater`)
+- Native `shell.openExternal`
+- Native folder picker (`dialog.showOpenDialog`)
+- Backend sidecar process lifecycle (spawn, health-check, stop)
+- Secure token injection into renderer
+- OS notifications
 
-Move out of Electron:
+Move out of Electron (into Backend):
 
-- agent bridges
-- session state
-- prompt queue
-- provider/model runtime state
-- git/worktree ops
-- filesystem server browsing
+- Harness adapters (opencode-bridge, claude-code-bridge, etc.)
+- Session state
+- Prompt queue
+- Provider/model runtime state
+- Git/worktree ops
+- Filesystem server browsing
 
-Desktop launch flow:
+Desktop Shell launch flow:
 
 ```txt
-1. Read selected backend profile.
+1. Read selected BackendProfile.
 2. If profile is local-managed:
-   a. spawn backend sidecar with OPENGUI_AUTH_TOKEN and OPENGUI_ALLOWED_ROOTS
-   b. wait for /api/health
-   c. restart or show error if failed
-3. Load frontend.
-4. Provide backend profile/token to frontend through preload or secure initial config.
-5. On app exit, stop sidecar if user configured "stop with app"; otherwise leave running.
+   a. Spawn Backend sidecar with OPENGUI_AUTH_TOKEN and OPENGUI_ALLOWED_ROOTS
+   b. Wait for /api/health
+   c. Restart or show error if failed
+3. Load Frontend (React).
+4. Provide Backend URL/token to Frontend through preload.
+5. On exit, stop sidecar if user configured "stop with app".
 ```
+
+### Web Shell (browser)
+
+- No Backend spawning
+- No native file dialog (use Backend's file API)
+- Backend connection via configured URL or same-origin proxy
+- Only window.open / location.href for external navigation
+
+### Mobile Shell (Capacitor)
+
+- No Backend spawning
+- No terminal opening
+- No local file browser (use Backend's fs API)
+- Native folder picker only as helper for remote Backend project config
+- Push notification registration
+- Secure token storage (Capacitor Preferences / Keychain)
+- Platform-specific status bar, safe areas, keyboard handling
 
 ## Auth and security
 
-Remote backend is powerful. It can edit files, run commands through agents, access provider credentials, and expose project contents.
-
-Minimum security before remote-hosting docs:
-
-- Auth required unless explicitly disabled for dev.
+- Auth required unless explicitly disabled for development.
 - Local sidecar bound to `127.0.0.1` by default.
 - Local sidecar uses random high-entropy token.
-- Remote backend refuses to start without auth secret or explicit `OPENGUI_INSECURE_NO_AUTH=1`.
+- Remote Backend refuses to start without auth secret or explicit `OPENGUI_INSECURE_NO_AUTH=1`.
 - CORS allowlist, default same-origin only.
 - HTTPS expected behind reverse proxy.
 - WebSocket/SSE requires auth.
-- Allowed roots enforced for every path API and every agent project.
+- Allowed roots enforced for every path API and every Harness project.
 - Secrets redacted in logs/events.
-- Provider tokens stored in backend secure store where possible.
+- Provider tokens stored in Backend secure store where possible.
 - Audit log for destructive project/git/provider operations.
 
-Future multi-user model can add users/roles, but single-owner token auth is enough for first remote-ready backend.
+## Deployment
 
-## Mobile compatibility
+### Docker / Web
 
-This plan is mobile-compatible if these rules hold:
+One container running the Backend that also serves compiled Frontend assets. See existing `Dockerfile` and `docker-compose.yml`.
 
-1. Frontend core never imports Electron APIs.
-2. Frontend core talks only to `OpenGuiClient`.
-3. API supports HTTPS/WSS, auth, pagination, and reconnection.
-4. Backend owns all agent/runtime/filesystem state.
-5. Workspaces/projects/sessions use server-issued IDs.
-6. Large message data is paged and trimmed.
-7. Attachments use upload/download endpoints, not browser-only file assumptions.
-8. Events are resumable or can force resource refetch.
-9. Capability endpoint lets mobile hide desktop-only actions.
+The Web Shell is just a browser pointing at the server URL.
 
-Mobile app shape:
+### Capacitor Mobile
 
-```txt
-iOS/Android OpenGUI
-  ├─ stores backend profile/token in secure OS storage
-  ├─ connects to remote/local-network backend
-  ├─ subscribes to events
-  ├─ sends prompts/approvals
-  ├─ receives push notifications later
-  └─ never runs coding agent CLIs directly
-```
+Mobile Shell wraps the same Frontend build. The Capacitor app is a WebView pointing at the compiled Frontend, plus platform plugins.
 
-Mobile-specific future endpoints/hooks:
-
-```txt
-POST /api/devices/register
-POST /api/devices/unregister
-POST /api/notifications/test
-PATCH /api/users/me/notification-settings
-```
-
-Push notifications should be optional and event-driven:
-
-- session completed
-- permission requested
-- question requested
-- queue item failed
-- backend disconnected from project
+The Backend is always remote -- either on LAN (Tailscale, home server) or a public VPS.
 
 ## Data storage
 
-Backend needs persistent store. Start simple, but design for migration.
+Backend needs persistent store.
 
-Option A: JSON files in user data dir
+Option A: JSON files in user data dir (current) -- ok for single-user local, fragile for event replay.
+Option B: SQLite -- recommended target.
 
-- easiest migration from current settings store
-- ok for single user/local desktop
-- fragile for concurrent frontends and event replay
+Key tables:
 
-Option B: SQLite
-
-- recommended target
-- good for sessions metadata, workspaces, project maps, prompt queue, event log
-- easy backup/export
-- works local and server
-
-Recommended: introduce storage interface first, use JSON for initial migration if needed, then SQLite before remote docs become serious.
-
-Key tables later:
-
-```txt
+```
 workspaces
 projects
-project_agent_backends
+project_harnesses
 sessions
 session_mappings
 message_cache
@@ -698,232 +542,221 @@ prompt_queue
 settings
 secrets_metadata
 events
-backend_profiles (desktop-local only)
+backend_profiles (Desktop Shell only, not in Backend)
 ```
 
-Secrets should not be plain rows if platform secure storage is available. For server, support env-provided secret encryption key.
+Recommended: storage interface now, SQLite before remote hardening.
 
 ## Migration plan
 
-### Phase 0: Write and accept design
+### Phase 0: Glossary and architecture freeze (COMPLETE)
 
-- Keep current behavior.
-- Agree on boundaries, IDs, and runtime modes.
-- Decide protocol transport: HTTP + SSE first, or HTTP + WebSocket first.
+- CONTEXT.md updated with Harness, Shell, OpenGUI Backend, OpenGUI Frontend.
+- Architecture decisions recorded in this document.
+- NEXT: Create ADR for the Harness terminology change.
 
-### Phase 1: Introduce protocol client in frontend
+### Phase 1: Protocol boundary in Frontend
 
-Create `OpenGuiClient` and make frontend hooks call it instead of `window.electronAPI` directly.
+Goal: All Frontend code calls `OpenGuiClient`, not `window.electronAPI`.
 
-Tasks:
+Status: `OpenGuiClient` interface exists. `ElectronCompatOpenGuiClient` exists. Partial hook migration done.
 
-- Add `src/protocol` or `packages/protocol` types.
-- Wrap existing Electron API in `ElectronCompatOpenGuiClient`.
-- Wrap existing web `/api/rpc` in temporary `RpcCompatOpenGuiClient` if needed.
-- Refactor hooks/services gradually.
+Remaining tasks:
 
-Success:
+- Audit all hooks and services for direct `window.electronAPI` references.
+- Replace with `OpenGuiClient` calls.
+- Add missing methods to `OpenGuiClient` (git, worktree, backend:install, file find).
+- Remove `window.electronAPI` type references from shared types.
+- Remove `__openGuiTransport` hacks.
 
-- Most app code no longer references `window.electronAPI` except desktop shell features and client bootstrap.
+Success: Frontend is transport-agnostic. Desktop Shell can swap transport without code changes.
 
-### Phase 2: Create backend service layer behind existing server
+### Phase 2: Backend service layer
 
-Refactor `server/web-server.ts` so fake IPC is not the app core.
-
-Tasks:
-
-- Add workspace service.
-- Add project service.
-- Add session service.
-- Add event bus.
-- Add adapter registry.
-- Let old IPC handlers call services temporarily.
-
-Success:
-
-- Same UI works.
-- Backend services can be called without Electron-shaped event objects.
-
-### Phase 3: Add real HTTP routes beside `/api/rpc`
+Goal: Backend has real services, not FakeIPC.
 
 Tasks:
 
-- Implement `/api/health`, `/api/capabilities`, workspace/project/session/message routes.
+- Create `server/services/` with WorkspaceService, ProjectService, SessionService, EventBus.
+- Move workspace logic from frontend settings store to Backend services.
+- Create Harness adapter registry.
+- Let old IPC handlers (in main.ts and web-server.ts) call the same services.
+- Add `StorageService` interface (JSON local for now).
+
+Success: Same UI works. Services can be called without Electron-shaped event objects.
+
+### Phase 3: Real HTTP routes
+
+Goal: `/api/*` routes replace `/api/rpc` fake IPC.
+
+Tasks:
+
+- Implement `/api/health`, `/api/capabilities`, `/api/harnesses`.
+- Implement workspace/project/session/message routes.
 - Implement event stream with canonical events.
-- Add typed HTTP client.
-- Switch frontend to HTTP client in web mode.
+- Add typed `HttpOpenGuiClient`.
+- Switch Web Shell to `HttpOpenGuiClient`.
+- Remove `/api/rpc` handler.
 
-Success:
+Success: Browser mode uses real Backend API. Desktop Shell still uses Electron IPC compat.
 
-- Browser mode no longer depends on fake IPC for core agent operations.
+### Phase 4: Desktop Sidecar
 
-### Phase 4: Desktop sidecar mode
+Goal: Desktop Shell spawns Backend as separate process. Renderer uses HTTP.
 
 Tasks:
 
-- Build backend as separate entrypoint.
-- Electron main spawns backend process in local-managed mode.
-- Preload gives frontend backend URL/token, not giant agent API.
-- Keep native shell/window APIs separate.
+- Build Backend as separate entrypoint (`apps/backend/server.ts` or `server/entry.ts`).
+- Electron main spawns Backend process in local-managed mode.
+- Preload gives Frontend Backend URL/token, not giant agent IPC.
+- Keep native Shell APIs (window, dialog, updater) separate in preload.
+- Add `desktop:openDirectory` and `desktop:openExternal` to `OpenGuiClient` interface.
 
 Success:
 
-- Desktop renderer uses same HTTP client as browser.
-- Agent bridges run in backend process, not Electron main.
+- Desktop renderer uses `HttpOpenGuiClient` like web.
+- Harness adapters run in Backend process, not Electron main.
+- Existing bridges moved to Backend codebase.
 
-### Phase 5: Universal workspace/project/session persistence
+### Phase 5: Universal workspace/session persistence
+
+Goal: Backend owns all workspace/project/session state.
 
 Tasks:
 
 - Introduce server-issued workspace/project/session IDs.
 - Migrate existing workspace state from frontend settings.
-- Map native session IDs to canonical `SessionRecord`.
-- Make all backends respect `AgentScope`.
-- Move prompt queues to backend.
+- Map native Harness session IDs to canonical `SessionRecord`.
+- Make all Harnesses respect `HarnessScope`.
+- Move prompt queues to Backend.
+- Add `StorageService` SQLite implementation.
 
-Success:
-
-- Claude Code, Codex, Pi, and OpenCode all show workspaces/projects consistently.
-- Same remote backend can be controlled by browser and desktop simultaneously.
+Success: All Harnesses show workspaces/projects consistently. Same remote Backend can be controlled by multiple Frontends simultaneously.
 
 ### Phase 6: Remote hardening
 
+Goal: Backend is safe to expose on a network.
+
 Tasks:
 
-- Add auth middleware.
+- Add auth middleware (token validation).
 - Add allowed root enforcement everywhere.
 - Add CORS policy.
-- Add token management UI.
-- Add Docker/server docs.
-- Add Apache/Nginx reverse proxy docs.
+- Add token management UI in settings.
+- Add Docker and reverse proxy docs.
 - Add audit/security warnings.
 
-Success:
+Success: User can host Backend on a server and connect from desktop/web safely.
 
-- User can host backend on a server and connect from desktop/web safely enough for single-owner use.
+### Phase 7: Mobile Shell
 
-### Phase 7: Mobile-ready polish
+Goal: Capacitor app connects to any remote Backend.
 
 Tasks:
 
-- Ensure pagination for all heavy endpoints.
-- Add event replay or resync protocol.
-- Add attachment upload API.
-- Add capability flags for mobile UI.
-- Add push notification registration hooks.
-- Extract frontend state logic so React Native/mobile can reuse protocol and maybe core reducers.
+- Build Capacitor scaffold (iOS + Android).
+- Wire `OpenGuiClient` with Capacitor HTTP plugin.
+- Add platform-specific Shell: push notifications, secure storage, native picker.
+- Add capability flags for mobile UI (no terminal, no local backend, no file browser).
+- Add device registration endpoints (`POST /api/devices/register`).
+- Strip desktop-only UI elements behind capability query.
 
-Success:
+Success: Mobile app exists and can control a remote Backend.
 
-- Mobile app can be built without backend redesign.
+### Phase 8: Repo restructure
+
+Goal: Target monorepo layout.
+
+Tasks:
+
+- Move Backend code to `apps/backend/`.
+- Move Frontend code to `apps/frontend/`.
+- Move Desktop Shell code to `apps/desktop/`.
+- Move Mobile Shell code to `apps/mobile/`.
+- Extract `packages/protocol/` from `src/protocol/`.
+- Update build configs (package.json, tsconfig, vite configs, electron-builder config).
+- Update CI/CD pipelines.
+
+Success: Clean monorepo with clear boundaries.
 
 ## Testing strategy
 
 Unit tests:
 
-- protocol schema validation
-- workspace/project/session ID mapping
-- path allowlist checks
-- event normalization
-- adapter scope mapping
-- prompt queue dispatch rules
+- Protocol schema validation
+- Workspace/project/session ID mapping
+- Path allowlist checks
+- Event normalization
+- Harness scope mapping
+- Prompt queue dispatch rules
 
 Integration tests:
 
-- start backend, create workspace/project, create session, send prompt mock, receive events
-- reconnect event stream with cursor
-- remote auth rejects missing token
-- path traversal and symlink escape blocked
-- two frontends see same session/queue state
+- Start Backend, create workspace/project, create session, send prompt, receive events
+- Reconnect event stream with cursor
+- Remote auth rejects missing token
+- Path traversal and symlink escape blocked
+- Two Frontends see same session/queue state
 
-Desktop tests/manual checks:
+Desktop tests/manual:
 
-- local-managed backend starts/stops
-- backend crash shows recovery UI
-- remote profile connects
-- native folder picker adds project to local backend
+- Local-managed Backend starts/stops
+- Backend crash shows recovery UI
+- Remote profile connects
+- Native folder picker adds project to local Backend
 
-Migration tests:
+Mobile tests:
 
-- existing settings/workspaces migrate once
-- old sessions still appear under generated project/workspace records
+- Capacitor app connects to Backend
+- Push notification registration
+- Event stream over HTTPS
+- Token refresh on reconnect
 
 ## Compatibility with existing OpenCode server mode
 
-Keep OpenCode remote server support as an adapter connection mode:
+Keep OpenCode remote server support as a Harness connection mode:
 
 ```ts
 connectionMode: "remote-server";
 remoteUrl: "http://...";
 ```
 
-But OpenGUI backend remains the client-facing backend. Flow:
+Flow: Frontend -> OpenGUI Backend -> OpenCode remote server
 
-```txt
-Frontend -> OpenGUI Backend -> OpenCode remote server
-```
-
-Do not expose OpenCode server directly as OpenGUI backend. It lacks OpenGUI workspace/project/session metadata, Claude/Codex/Pi support, prompt queues, and unified events.
+Do not expose OpenCode server directly as OpenGUI Backend.
 
 ## Risks
 
 1. **Big-bang rewrite risk**: avoid by introducing protocol client first and keeping compat adapters.
 2. **Identity bugs**: solve with canonical IDs and explicit native ID mappings.
 3. **Remote security risk**: do not document public hosting until auth + allowed roots are done.
-4. **Event mismatch across agents**: normalize adapter events in backend core, not frontend.
+4. **Event mismatch across Harnesses**: normalize adapter events in Backend core, not Frontend.
 5. **Mobile payload size**: paginate messages early and strip heavy tool payloads.
-6. **Local sidecar packaging**: ensure backend entrypoint and dependencies are included in Electron build.
+6. **Sidecar packaging**: ensure Backend entrypoint and dependencies are in Electron build.
 7. **Path confusion**: always label paths as backend-local in UI when connected remotely.
+8. **Mobile Shell scope creep**: Mobile Shell must NEVER spawn a Backend, open a terminal, or browse local files. Enforce via capability flags.
 
-## Open decisions
+## Open decisions (resolved)
 
-1. Use SSE or WebSocket for first real event stream?
-   - SSE simpler and robust for server-to-client.
-   - WebSocket better for bidirectional mobile heartbeats and future collaboration.
-   - Recommendation: WebSocket if current web event transport already works well; otherwise SSE with same event envelope.
+1. **Transport**: WebSocket first (already works in web-server.ts). Same event envelope.
+2. **Storage**: Start with JSON. Add storage interface now. SQLite before Phase 6.
+3. **Stop Backend on Desktop exit**: User setting. Default: stop with app.
+4. **Backend serves Frontend assets**: Yes for Docker/Web. Keep Frontend static-hostable.
+5. **Multi-user**: No. Single-owner token auth. Design auth middleware for future extension.
+6. **Capacitor vs React Native**: Capacitor. Lets Mobile Shell use the same compiled React build.
+7. **No headless Backend product**: The Backend IS the headless Backend. One binary.
 
-2. JSON store first or SQLite now?
-   - Recommendation: storage interface now, SQLite before remote hardening completes.
+## First implementation checklist (updated)
 
-3. Stop local backend when desktop exits?
-   - Recommendation: user setting. Default stop with app for normal users, keep running for advanced users.
-
-4. Should backend serve frontend assets in production?
-   - Recommendation: yes for simple web/Docker deployment, but keep frontend build static-hostable.
-
-5. Should remote backend support multiple users now?
-   - Recommendation: no. Single-owner token auth first. Design auth middleware so multi-user can be added later.
-
-## First implementation checklist
-
-- [x] Add `OpenGuiClient` interface and provider in frontend.
-- [x] Add `ElectronCompatOpenGuiClient` over current `window.electronAPI`.
-- [~] Replace direct agent bridge use in hooks with client methods. Started with backend discovery, resource loading, project connect/disconnect, project session listing/statuses, event subscription, directory picker, message loading, prompt dispatch, abort, permissions, questions, file search, and rename.
-- [~] Add backend service folders: workspaces, projects, sessions, events, adapters. Workspace service started.
-- [ ] Add canonical `Workspace`, `Project`, `SessionRecord`, `AgentScope` types.
-- [~] Add real `/api/health`, `/api/capabilities`, `/api/workspaces` routes. Capabilities + workspace CRUD started; health already existed.
-- [~] Add typed HTTP client for backend protocol. `HttpOpenGuiClient` started with capabilities + workspace CRUD.
-- [ ] Add auth/token middleware skeleton, disabled only in dev/local compat.
-- [ ] Add desktop backend profile model.
-- [ ] Add local sidecar launch spike.
+- [x] `OpenGuiClient` interface and provider in Frontend.
+- [x] `ElectronCompatOpenGuiClient` over current `window.electronAPI`.
+- [ ] Complete `OpenGuiClient` hook migration (audit and convert all remaining direct electronAPI calls).
+- [ ] Add `server/services/` with workspace, project, session services.
+- [ ] Add canonical `Workspace`, `Project`, `SessionRecord`, `HarnessScope` types.
+- [ ] Rename `AgentBackendId` → `HarnessId`, `agent-backends` → `harnesses` in API and types.
+- [ ] Add real `/api/harnesses`, `/api/workspaces/*`, `/api/projects/*`, `/api/sessions/*` routes.
+- [ ] Add auth/token middleware skeleton.
+- [ ] Add Desktop Shell BackendProfile model.
+- [ ] Add local sidecar launch in Desktop Shell.
 - [ ] Add migration for existing frontend workspace settings.
-
-## Desired end state
-
-```txt
-Same React UI code can run as:
-
-Desktop local:
-  Electron frontend -> localhost OpenGUI backend -> local agents/files
-
-Desktop remote:
-  Electron frontend -> remote OpenGUI backend -> remote agents/files
-
-Browser:
-  Browser frontend -> OpenGUI backend -> agents/files
-
-Mobile:
-  Native/mobile frontend -> OpenGUI backend -> agents/files
-```
-
-OpenGUI workspaces become universal product concepts. Agent-native workspace/session details stay inside adapters. Backend is the stable contract. Frontends become thin clients.
+- [ ] Add Capacitor scaffold (Phase 7 prep).

@@ -1,13 +1,13 @@
 import type { Event as OpenCodeEvent } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend";
+import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend.ts";
 import {
   createBackendIdCodec,
   normalizeMessageSessionId,
   normalizePartSessionId,
   tagBackendSession,
   type TaggedSession,
-} from "./shared";
+} from "./shared.ts";
 
 export const OPENCODE_CAPABILITIES: AgentBackendCapabilities = {
   sessions: true,

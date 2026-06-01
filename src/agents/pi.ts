@@ -1,6 +1,6 @@
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend";
-import { normalizeTaggedBackendEvent } from "./shared";
+import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend.ts";
+import { normalizeTaggedBackendEvent } from "./shared.ts";
 
 export const PI_CAPABILITIES: AgentBackendCapabilities = {
   sessions: true,

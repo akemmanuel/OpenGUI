@@ -84,9 +84,10 @@ describe("createSessionDeletionPlan", () => {
       },
     });
 
-    expect(plan).toEqual({
+    expect(plan).toMatchObject({
       type: "delete",
       backendId: "claude-code",
+      deletedSession: expect.objectContaining({ id: "session-2" }),
       nextSessionId: "session-3",
       pendingWorktreeCleanup: {
         worktreeDir: "/repo/feature-a",
@@ -221,7 +222,14 @@ describe("deleteLifecycleSession", () => {
     expect(cleaned).toEqual([["session-2"]]);
     expect(actions).toContainEqual({ type: "SESSION_DELETED", payload: "session-2" });
     expect(selected).toEqual(["session-1"]);
-    expect(deleted).toEqual([{ sessionId: "session-2", backendId: "claude-code" }]);
+    expect(deleted).toEqual([
+      {
+        sessionId: "session-2",
+        backendId: "claude-code",
+        target: { directory: "/repo", workspaceId: undefined },
+        confirmQueue: false,
+      },
+    ]);
   });
 });
 

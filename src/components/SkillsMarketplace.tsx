@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { BaseDialog } from "@/components/ui/base-dialog";
+import { useDesktopShell } from "@/shell/provider";
 import type {
   InstalledSkillInfo,
   MarketplaceAuditResponse,
@@ -268,6 +269,7 @@ export function SkillsMarketplace() {
   const skillsApi = useSkillsPlatform();
   const marketplaceApi = skillsApi?.marketplace;
   const { activeDirectory } = useConnectionState();
+  const shell = useDesktopShell();
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -291,13 +293,11 @@ export function SkillsMarketplace() {
 
   // Listen for install progress events
   useEffect(() => {
-    const api = window.electronAPI;
-    if (!api?.onSkillsInstallProgress) return;
-    const unsub = api.onSkillsInstallProgress((data: { chunk: string; type: string }) => {
+    const unsub = shell.skills.onInstallProgress((data: { chunk: string; type: string }) => {
       setProgressLines((prev) => [...prev, `[${data.type}] ${data.chunk}`]);
     });
     return unsub;
-  }, []);
+  }, [shell]);
 
   // Auto-scroll progress
   useEffect(() => {

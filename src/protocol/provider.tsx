@@ -1,6 +1,6 @@
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import type { OpenGuiClient } from "@/protocol/client";
-import { createHttpOpenGuiClient } from "@/protocol/http-client";
+import { getOpenGuiClient } from "@/runtime/clients";
 
 const OpenGuiClientContext = createContext<OpenGuiClient | null>(null);
 
@@ -11,20 +11,8 @@ export function OpenGuiClientProvider({
   children: ReactNode;
   client?: OpenGuiClient;
 }) {
-  const defaultClient = useMemo(() => {
-    if (window.__openGuiTransport === "http") return createHttpOpenGuiClient();
-    if (window.electronAPI?.openGui) {
-      return createHttpOpenGuiClient({
-        rpcImpl: window.electronAPI.openGui.invoke,
-        subscribeBackendEvents: window.electronAPI.openGui.onBackendEvent,
-        openDirectory: window.electronAPI.openDirectory,
-        localCapabilities: true,
-      });
-    }
-    return createHttpOpenGuiClient({ localCapabilities: true });
-  }, []);
   return (
-    <OpenGuiClientContext.Provider value={client ?? defaultClient}>
+    <OpenGuiClientContext.Provider value={client ?? getOpenGuiClient()}>
       {children}
     </OpenGuiClientContext.Provider>
   );

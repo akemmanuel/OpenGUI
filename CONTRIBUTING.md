@@ -4,13 +4,13 @@ Thanks for your interest in contributing to OpenGUI. This guide covers what you 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) v1.2+ runtime
-- [pnpm](https://pnpm.io/) 10+
+- [Node.js](https://nodejs.org/) 24+
+- [pnpm](https://pnpm.io/) 11+
 - [Vite+](https://github.com/mariozechner/vite-plus) (`vp`) available via project dependencies
 - At least one supported backend available locally (OpenCode CLI, Claude Code, Codex, or Pi)
 - Git
 
-Tooling convention: Bun runs the app/server code, pnpm owns dependency installation and lockfile changes, and Vite+ (`vp`) is the command surface for development, checks, tests, builds, and project tasks.
+Tooling convention: Node.js runs the app/server code, pnpm owns dependency installation and lockfile changes, and Vite+ (`vp`) is the command surface for development, checks, tests, builds, and project tasks.
 
 ## Setup
 
@@ -84,7 +84,7 @@ opencode-bridge.ts   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
 claude-code-bridge.ts IPC bridge to Claude Code SDK
 codex-bridge.ts      IPC bridge to Codex SDK
 pi-bridge.ts         IPC bridge to Pi runtime
-server/web-server.ts  Bun runtime backend for browser mode (RPC, events, server FS browser)
+server/web-server.ts  Node.js backend for browser mode (RPC, events, server FS browser)
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point

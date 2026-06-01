@@ -41,6 +41,7 @@ export async function startDraftSessionAgentSend({
   runtime,
   backendId,
   workspaceId,
+  baseUrl,
   directory,
   text,
   images,
@@ -50,6 +51,7 @@ export async function startDraftSessionAgentSend({
   runtime: AgentBackendDescriptor["runtime"];
   backendId: string;
   workspaceId?: string;
+  baseUrl?: string;
   directory: string;
   text: string;
   images?: string[];
@@ -69,6 +71,7 @@ export async function startDraftSessionAgentSend({
     title: backendId === "claude-code" ? undefined : title,
     directory,
     workspaceId,
+    baseUrl,
   });
 }
 
@@ -79,6 +82,8 @@ export async function sendPromptToAgent({
   text,
   images,
   selection,
+  activeWorkspaceId,
+  getWorkspaceBaseUrl,
 }: {
   sessions: OpenGuiClient["sessions"];
   session: Session | null | undefined;
@@ -86,8 +91,14 @@ export async function sendPromptToAgent({
   text: string;
   images?: string[];
   selection: AgentSendSelection;
+  activeWorkspaceId?: string;
+  getWorkspaceBaseUrl?: (workspaceId?: string | null) => string | undefined;
 }): Promise<{ projectTarget?: AgentBackendTarget }> {
-  const projectTarget = getSessionProjectTarget(session) ?? undefined;
+  const rawProjectTarget = getSessionProjectTarget(session) ?? undefined;
+  const workspaceId = rawProjectTarget?.workspaceId ?? activeWorkspaceId;
+  const baseUrl = getWorkspaceBaseUrl?.(workspaceId);
+  const projectTarget =
+    baseUrl || workspaceId ? { ...rawProjectTarget, workspaceId, baseUrl } : rawProjectTarget;
   const backendId = getSessionBackendId(session) ?? undefined;
 
   await sessions.prompt({

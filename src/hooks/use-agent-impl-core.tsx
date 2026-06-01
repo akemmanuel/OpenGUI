@@ -20,27 +20,20 @@ import {
   useRef,
   useState,
 } from "react";
-import { type AgentBackendId } from "@/agents";
-import type { AgentBackendEvent } from "@/agents/backend";
-import {
-  resolveAgentSendSelection,
-  sendCommandToAgent,
-  sendPromptToAgent,
-  startDraftSessionAgentSend,
-} from "@/hooks/agent-send";
-import {
-  createDraftSessionSendState,
-  createPromptSendState,
-  nextNamingRequestId,
-} from "@/hooks/agent-send-state";
+import { getAgentBackendIdFromSessionId, type AgentBackendId } from "@/agents";
+import { createLocalIntentOrchestrator } from "@/hooks/agent-local-intent";
+import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
 import { handleAgentBackendEvent } from "@/hooks/agent-backend-events";
 import {
-  applyQueueDispatchDecision,
-  dispatchNextQueuedPrompt,
+  isCanonicalSessionNotification,
+  isQueueEvent,
+  toAgentBackendEvent,
+  type BackendEventEnvelope,
+} from "@/hooks/backend-event-normalization";
+import {
   processAfterPartQueueTriggers,
   processBusyToIdleTransitions,
-  sendQueuedPromptNow as sendQueuedPromptNowFromQueue,
 } from "@/hooks/agent-queue-dispatch";
 import {
   createLifecycleSession,
@@ -49,15 +42,12 @@ import {
   forkLifecycleSession,
   refreshLifecycleSession,
 } from "@/hooks/agent-session-lifecycle";
-import { decidePromptDispatch } from "@/hooks/agent-prompt-routing";
 import {
   createWorkspaceLifecyclePlan,
   createWorkspaceSelectionSyncPlan,
   createWorkspaceSwitchPlan,
   createWorkspaceUpdatePlan,
-  removeLifecycleWorkspace,
 } from "@/hooks/agent-workspace-lifecycle";
-import { decideSessionEntry, type SessionEntryDecision } from "@/hooks/agent-session-entry";
 import {
   updateVariantSelections,
   useVariant,
@@ -66,15 +56,16 @@ import {
 } from "@/hooks/use-agent-variant-core";
 import {
   getActiveWorkspaceId,
+  getLegacyStoredDefaultChatDirectory,
   getProjectMetaMap,
   getSessionMetaMap,
-  getStoredDefaultChatDirectory,
   getUnreadSessionIds,
+  getWorkspaceDefaultChatDirectory,
   getWorkspaceRootDirectory,
   getWorktreeParents,
+  initializeBackendWorkspaceState,
   isLocalServer,
   LOCAL_WORKSPACE_ID,
-  getStoredWorkspaces,
   persistUnreadSessionIds,
   persistWorkspaces,
   persistWorktreeParents,
@@ -82,6 +73,7 @@ import {
 } from "@/hooks/agent-state-persistence";
 import {
   buildBootstrapProjectConfigs,
+  createProjectConnectionDescriptor,
   createProjectConnectionStatus,
   createProjectRemovalPlan,
   createWorkspaceConnectionConfig,
@@ -89,9 +81,9 @@ import {
   resolveConnectionWorkspace,
   shouldPersistLocalConnectionSettings,
   shouldPersistWorkspaceProject,
+  shouldSnapshotProjectConnectionForRestart,
 } from "@/hooks/agent-project-connection";
 import {
-  buildBootstrapHydrationTasks,
   getPendingProjectHydrationBackendIds,
   hasProjectHydrationInFlight,
   runWithConcurrency,
@@ -119,12 +111,8 @@ import {
 } from "@/hooks/agent-session-utils";
 import { reducer } from "@/hooks/agent-reducer";
 import { useDesktopNotification } from "@/hooks/agent-notifications";
-import type {
-  InternalAgentState,
-  MessageEntry,
-  QueueMode,
-  Session,
-} from "@/hooks/agent-state-types";
+import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
+import type { InternalAgentState, MessageEntry, Session } from "@/hooks/agent-state-types";
 import {
   ActionsContext,
   type ActionsContextValue,
@@ -152,13 +140,9 @@ import {
   storageSetJSON,
   storageSetOrRemove,
 } from "@/lib/safe-storage";
+import { createHttpOpenGuiClient } from "@/protocol/http-client";
 import { useOpenGuiClient } from "@/protocol/provider";
-import {
-  getQueuedPrompts,
-  getSessionDrafts,
-  persistQueuedPrompts,
-  persistSessionDrafts,
-} from "@/lib/session-drafts";
+import { getSessionDrafts, persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 import type {
@@ -219,8 +203,6 @@ function selectedVariantsEqual(a: string | null | undefined, b: string | null | 
   return (a ?? null) === (b ?? null);
 }
 
-const PROJECT_BOOTSTRAP_HYDRATION_CONCURRENCY = 8;
-
 function resolveAvailableModel({
   providers,
   providerDefaults,
@@ -265,7 +247,7 @@ function resolveAvailableAgent({
 // State
 // ---------------------------------------------------------------------------
 
-const initialWorkspaces = getStoredWorkspaces();
+const initialWorkspaces: Workspace[] = [];
 
 const initialState: InternalAgentState = {
   workspaces: initialWorkspaces,
@@ -294,8 +276,8 @@ const initialState: InternalAgentState = {
   selectedAgent: null,
   variantSelections: {},
   commands: [],
-  queuedPrompts: getQueuedPrompts(),
-  defaultChatDirectory: getStoredDefaultChatDirectory(),
+  queuedPrompts: {},
+  defaultChatDirectory: null,
   draftSessionDirectory: null,
   draftSessionBackendId: null,
   namingSessionIds: new Set(),
@@ -328,6 +310,8 @@ function InternalAgentProvider({
   detachedProject?: string;
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [workspaceStateReady, setWorkspaceStateReady] = useState(false);
+  const shellWorkspacePolicy = useMemo(() => getShellWorkspacePolicy(), []);
   const [preferredBackendId, setPreferredBackendId] = useState<AgentBackendId>(() => {
     const stored = storageGet(STORAGE_KEYS.AGENT_BACKEND);
     if (stored === "claude-code") return "claude-code";
@@ -368,14 +352,8 @@ function InternalAgentProvider({
   const namingRequestIdsRef = useRef<Map<string, number>>(new Map());
 
   // Keep refs so selectSession can read current values without stale closures
-  const agentsRef = useRef(state.agents);
-  agentsRef.current = state.agents;
-  const variantSelectionsRef = useRef(state.variantSelections);
-  variantSelectionsRef.current = state.variantSelections;
   const selectedModelRef = useRef(state.selectedModel);
   selectedModelRef.current = state.selectedModel;
-  const selectedAgentRef = useRef(state.selectedAgent);
-  selectedAgentRef.current = state.selectedAgent;
   const selectSessionRequestRef = useRef(0);
   const childHydrationVersionRef = useRef<Record<string, number>>({});
   const sessionReconcileRequestRef = useRef<Record<string, number>>({});
@@ -406,6 +384,7 @@ function InternalAgentProvider({
   const loadedResourceProjectKeyRef = useRef<string | null>(null);
   const loadedResourceBackendIdRef = useRef<AgentBackendId | null>(null);
   const resourceLoadRequestRef = useRef(0);
+  const resourceLoadInFlightKeyRef = useRef<string | null>(null);
   const projectHydrationRef = useRef<Record<string, ProjectHydrationState>>({});
   const updateProjectHydration = useCallback(
     (
@@ -440,11 +419,92 @@ function InternalAgentProvider({
     });
   }, []);
 
+  const workspaceBootstrapRef = useRef(false);
+  useEffect(() => {
+    if (workspaceBootstrapRef.current) return;
+    workspaceBootstrapRef.current = true;
+    let cancelled = false;
+
+    void initializeBackendWorkspaceState(openGuiClient)
+      .then((workspaces) => {
+        if (cancelled) return;
+        dispatch({ type: "SET_WORKSPACES", payload: workspaces });
+        const activeWorkspaceId = getActiveWorkspaceId(workspaces);
+        dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: activeWorkspaceId });
+        const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+        const legacyDefaultChatDirectory = getLegacyStoredDefaultChatDirectory();
+        dispatch({
+          type: "SET_ACTIVE_SESSION",
+          payload: activeWorkspace?.lastActiveSessionId ?? null,
+        });
+        dispatch({
+          type: "SET_DEFAULT_CHAT_DIRECTORY",
+          payload: getWorkspaceDefaultChatDirectory(activeWorkspace) ?? legacyDefaultChatDirectory,
+        });
+        setWorkspaceStateReady(true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        dispatch({
+          type: "SET_ERROR",
+          payload: getErrorMessage(error) || "Failed to load workspaces",
+        });
+        setWorkspaceStateReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openGuiClient]);
+
+  const reloadWorkspaceState = useCallback(
+    async (preferredWorkspaceId?: string | null) => {
+      const workspaces = await initializeBackendWorkspaceState(openGuiClient);
+      dispatch({ type: "SET_WORKSPACES", payload: workspaces });
+      const nextActiveWorkspaceId =
+        preferredWorkspaceId &&
+        workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
+          ? preferredWorkspaceId
+          : getActiveWorkspaceId(workspaces);
+      const nextActiveWorkspace =
+        workspaces.find((workspace) => workspace.id === nextActiveWorkspaceId) ??
+        workspaces[0] ??
+        null;
+      dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: nextActiveWorkspaceId });
+      dispatch({
+        type: "SET_DEFAULT_CHAT_DIRECTORY",
+        payload: getWorkspaceDefaultChatDirectory(nextActiveWorkspace),
+      });
+      return {
+        workspaces,
+        activeWorkspace: nextActiveWorkspace,
+      };
+    },
+    [openGuiClient],
+  );
+
   // --- Backend event handler ---
   const handleBackendEvent = useCallback(
-    (event: AgentBackendEvent) => {
+    (event: BackendEventEnvelope) => {
+      if (isQueueEvent(event)) {
+        if (Array.isArray(event.entries)) {
+          dispatch({
+            type: "SET_SESSION_QUEUE",
+            payload: { sessionID: event.sessionId, prompts: event.entries },
+          });
+        } else if (event.type === "queue.cleared") {
+          dispatch({ type: "QUEUE_CLEAR", payload: { sessionID: event.sessionId } });
+        }
+        return;
+      }
+      if (isCanonicalSessionNotification(event)) {
+        // Canonical backend session events are notifications, not a reason to resync every
+        // Project/Harness scope. Runtime bridge events carry directory/session payloads and
+        // are handled below. Explicit refresh/open/send paths do any needed reconciliation.
+        return;
+      }
       handleAgentBackendEvent({
-        event,
+        event: toAgentBackendEvent(event),
         expectedProjectKeys: expectedDirectoriesRef.current,
         tracking: {
           forcedTitles: forcedSessionTitlesRef.current,
@@ -457,23 +517,43 @@ function InternalAgentProvider({
         dispatch,
       });
     },
-    [cleanupSessionRefs, openGuiClient],
+    [cleanupSessionRefs, openGuiClient, reloadWorkspaceState],
   );
 
-  // Subscribe to backend events.
-  // Use ref guard to prevent duplicate subscriptions that can occur
-  // when React StrictMode double-mounts effects, which would cause every
-  // streaming delta to be dispatched twice and produce garbled/doubled text.
-  const subscribedRef = useRef(false);
+  const remoteWorkspaceEventSources = useMemo(() => {
+    const unique = new Map<string, { baseUrl: string; authToken?: string }>();
+    for (const workspace of state.workspaces) {
+      if (workspace.isLocal || !workspace.serverUrl.trim()) continue;
+      const baseUrl = workspace.serverUrl.trim().replace(/\/+$/, "");
+      const key = `${baseUrl}\u0000${workspace.authToken ?? ""}`;
+      unique.set(key, { baseUrl, authToken: workspace.authToken });
+    }
+    return [...unique.values()];
+  }, [state.workspaces]);
+
+  // Subscribe to backend events for the local/default Backend and every remote
+  // Workspace Backend. HTTP calls can target a remote Workspace, so the SSE
+  // stream that marks turns idle must target the same remote Backend too.
   useEffect(() => {
-    if (allBackends.length === 0 || subscribedRef.current) return;
-    subscribedRef.current = true;
-    const unsubscribe = openGuiClient.agentBackends.subscribe(handleBackendEvent);
+    if (allBackends.length === 0) return;
+    const unsubscribers = [openGuiClient.agentBackends.subscribe(handleBackendEvent)];
+    for (const remote of remoteWorkspaceEventSources) {
+      unsubscribers.push(
+        createHttpOpenGuiClient({
+          baseUrl: remote.baseUrl,
+          token: remote.authToken,
+        }).agentBackends.subscribe(handleBackendEvent),
+      );
+    }
     return () => {
-      unsubscribe();
-      subscribedRef.current = false;
+      for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [allBackends, handleBackendEvent, openGuiClient]);
+  }, [allBackends.length, handleBackendEvent, openGuiClient, remoteWorkspaceEventSources]);
+
+  useEffect(() => {
+    if (!workspaceStateReady) return;
+    persistWorkspaces(state.workspaces);
+  }, [state.workspaces, workspaceStateReady]);
 
   // Persist selectedModel to localStorage whenever it changes (covers
   // both explicit setModel calls and implicit updates from the reducer,
@@ -489,10 +569,6 @@ function InternalAgentProvider({
       storageRemove(STORAGE_KEYS.SELECTED_MODEL);
     }
   }, [state.selectedModel]);
-
-  useEffect(() => {
-    persistWorkspaces(state.workspaces);
-  }, [state.workspaces]);
 
   useEffect(() => {
     const activeId = state.activeWorkspaceId;
@@ -521,10 +597,6 @@ function InternalAgentProvider({
   useEffect(() => {
     persistSessionDrafts(state.sessionDrafts);
   }, [state.sessionDrafts]);
-
-  useEffect(() => {
-    persistQueuedPrompts(state.queuedPrompts);
-  }, [state.queuedPrompts]);
 
   // Request notification permission on startup
   useEffect(() => {
@@ -586,9 +658,19 @@ function InternalAgentProvider({
 
   const loadServerResources = useCallback(
     async (backendId: AgentBackendId, directory?: string | null, workspaceId?: string | null) => {
-      const requestId = ++resourceLoadRequestRef.current;
       const targetDirectory = directory?.trim() || undefined;
       const targetWorkspaceId = workspaceId?.trim() || undefined;
+      const projectKey = targetDirectory ? makeProjectKey(targetWorkspaceId, targetDirectory) : "";
+      const loadKey = `${backendId}\u0000${projectKey}`;
+      if (
+        resourceLoadInFlightKeyRef.current === loadKey ||
+        (loadedResourceBackendIdRef.current === backendId &&
+          loadedResourceProjectKeyRef.current === (targetDirectory ? projectKey : null))
+      ) {
+        return;
+      }
+      resourceLoadInFlightKeyRef.current = loadKey;
+      const requestId = ++resourceLoadRequestRef.current;
       try {
         const { providersData, agentsData, commandsData } =
           await openGuiClient.agentBackends.loadResources({
@@ -601,9 +683,7 @@ function InternalAgentProvider({
 
         if (requestId !== resourceLoadRequestRef.current) return;
 
-        loadedResourceProjectKeyRef.current = targetDirectory
-          ? makeProjectKey(targetWorkspaceId, targetDirectory)
-          : null;
+        loadedResourceProjectKeyRef.current = targetDirectory ? projectKey : null;
         loadedResourceBackendIdRef.current = backendId;
         dispatch({ type: "SET_PROVIDERS", payload: providersData });
 
@@ -686,6 +766,10 @@ function InternalAgentProvider({
           type: "SET_ERROR",
           payload: getErrorMessage(error),
         });
+      } finally {
+        if (resourceLoadInFlightKeyRef.current === loadKey) {
+          resourceLoadInFlightKeyRef.current = null;
+        }
       }
     },
     [openGuiClient],
@@ -698,17 +782,20 @@ function InternalAgentProvider({
       projectKey,
       backendId,
       suppressError,
+      connectionKind,
     }: {
       config: ConnectionConfig;
       workspaceId: string;
       projectKey: string;
       backendId: AgentBackendId;
       suppressError?: boolean;
+      connectionKind?: ConnectionStatus["kind"];
     }) => {
+      const connection = createProjectConnectionDescriptor({ config, workspaceId });
       updateProjectHydration(projectKey, (current) => startProjectHydration(current, [backendId]));
       try {
         const connectResult = await openGuiClient.agentBackends.connectProject({
-          config: { ...config, workspaceId },
+          config: connection.config,
           backendIds: [backendId],
         });
         if (connectResult.connectedBackendIds.length === 0) {
@@ -725,35 +812,48 @@ function InternalAgentProvider({
           type: "SET_PROJECT_CONNECTION",
           payload: {
             projectKey,
-            status: createProjectConnectionStatus("connected", config.baseUrl),
+            status: createProjectConnectionStatus(
+              "connected",
+              connection.config.baseUrl,
+              connectionKind ?? "project",
+            ),
           },
         });
 
         const sessionResults = await openGuiClient.agentBackends.listProjectSessions({
           backendIds: [backendId],
-          target: {
-            directory: config.directory,
-            workspaceId,
-          },
+          target: connection.target,
         });
         const sessions = sessionResults[0]?.sessions ?? [];
         dispatch({
           type: "MERGE_PROJECT_SESSIONS",
           payload: {
             projectKey,
-            directory: config.directory ?? "",
+            directory: connection.directory,
             sessions,
             backendIds: [backendId],
           },
         });
 
         try {
+          const queuedPromptsBySession = await openGuiClient.sessions.queue.listProject({
+            backendId,
+            target: connection.target,
+          });
+          for (const [sessionId, prompts] of Object.entries(queuedPromptsBySession)) {
+            dispatch({
+              type: "SET_SESSION_QUEUE",
+              payload: { sessionID: sessionId, prompts },
+            });
+          }
+        } catch {
+          /* queue load best effort */
+        }
+
+        try {
           const statuses = await openGuiClient.agentBackends.listProjectSessionStatuses({
             backendIds: [backendId],
-            target: {
-              directory: config.directory,
-              workspaceId,
-            },
+            target: connection.target,
           });
           dispatch({
             type: "INIT_BUSY_SESSIONS",
@@ -798,14 +898,22 @@ function InternalAgentProvider({
       if (allBackends.length === 0 || !config.directory) return;
       const workspaceId =
         config.workspaceId ?? stateRef.current.activeWorkspaceId ?? LOCAL_WORKSPACE_ID;
-      const projectKey = makeProjectKey(workspaceId, config.directory);
+      const connection = createProjectConnectionDescriptor({ config, workspaceId });
+      const projectKey = connection.projectKey;
+      const workspace =
+        stateRef.current.workspaces.find((candidate) => candidate.id === connection.workspaceId) ??
+        resolveConnectionWorkspace(stateRef.current.workspaces, connection.workspaceId);
+      const connectionKind: ConnectionStatus["kind"] =
+        options?.transient === true && !workspace.projects.includes(connection.directory)
+          ? "chat-infra"
+          : "project";
       dispatch({
         type: "SET_PROJECT_META",
         payload: { projectKey, meta: { hidden: options?.hidden === true } },
       });
       dispatch({
         type: "ASSIGN_PROJECT_WORKSPACE",
-        payload: { projectKey, workspaceId },
+        payload: { projectKey, workspaceId: connection.workspaceId },
       });
       expectedDirectoriesRef.current.add(projectKey);
       if (!options?.suppressError) {
@@ -815,7 +923,11 @@ function InternalAgentProvider({
         type: "SET_PROJECT_CONNECTION",
         payload: {
           projectKey,
-          status: createProjectConnectionStatus("connecting", config.baseUrl),
+          status: createProjectConnectionStatus(
+            "connecting",
+            connection.config.baseUrl,
+            connectionKind,
+          ),
         },
       });
       const currentHydration = projectHydrationRef.current[projectKey];
@@ -837,11 +949,12 @@ function InternalAgentProvider({
         targetBackendIds.map(
           async (backendId) =>
             await hydrateProjectBackend({
-              config,
-              workspaceId,
+              config: connection.config,
+              workspaceId: connection.workspaceId,
               projectKey,
               backendId,
               suppressError: options?.suppressError,
+              connectionKind,
             }),
         ),
       );
@@ -859,10 +972,43 @@ function InternalAgentProvider({
         targetBackendIds.length === discoveryBackendIds.length
       ) {
         expectedDirectoriesRef.current.delete(projectKey);
+        const firstError = failedHydrations[0]?.error || "Connection failed";
+        const isMissingDirectoryError =
+          firstError.includes("ENOENT") ||
+          firstError.includes("Path outside OPENGUI_ALLOWED_ROOTS");
+
+        if (isMissingDirectoryError) {
+          const normalizedDirectory = connection.directory;
+          const normalizedDefaultChatDirectory = normalizeProjectPath(
+            stateRef.current.defaultChatDirectory ?? "",
+          );
+
+          if (
+            normalizedDirectory &&
+            normalizedDefaultChatDirectory &&
+            normalizedDirectory === normalizedDefaultChatDirectory
+          ) {
+            setDefaultChatDirectory(null);
+            if (stateRef.current.draftSessionDirectory === normalizedDirectory) {
+              dispatch({ type: "CLEAR_DRAFT_SESSION" });
+            }
+          }
+
+          if (workspace.projects.includes(connection.directory) && options?.transient !== true) {
+            dispatch({
+              type: "REMOVE_PROJECT",
+              payload: { projectKey, directory: connection.directory },
+            });
+            // Removing a Project connection is frontend-local presentation state.
+            // Do not delete the backend Project or its shared Sessions when a path
+            // temporarily fails to resolve.
+          }
+        }
+
         if (!options?.suppressError) {
           dispatch({
             type: "SET_ERROR",
-            payload: failedHydrations[0]?.error || "Connection failed",
+            payload: firstError,
           });
         }
         return;
@@ -870,25 +1016,25 @@ function InternalAgentProvider({
 
       const worktreeParentMap = getWorktreeParents();
       const connectionPlan = createWorkspaceProjectConnectionPlan({
-        directory: config.directory,
-        workspaceId,
+        directory: connection.directory,
+        workspaceId: connection.workspaceId,
         worktreeParents: worktreeParentMap,
       });
       if (connectionPlan.workspaceProjectDirectory && shouldPersistWorkspaceProject(options)) {
         dispatch({
           type: "ADD_WORKSPACE_PROJECT",
           payload: {
-            workspaceId,
+            workspaceId: connection.workspaceId,
             directory: connectionPlan.workspaceProjectDirectory,
-            serverUrl: config.baseUrl,
-            username: config.username,
-            password: config.password,
+            serverUrl: connection.config.baseUrl,
+            username: connection.config.username,
+            password: connection.config.password,
           },
         });
       }
-      if (shouldPersistLocalConnectionSettings(workspaceId, options)) {
-        storageSet(STORAGE_KEYS.SERVER_URL, config.baseUrl);
-        storageSetOrRemove(STORAGE_KEYS.USERNAME, config.username);
+      if (shouldPersistLocalConnectionSettings(workspace.isLocal, options)) {
+        storageSet(STORAGE_KEYS.SERVER_URL, connection.config.baseUrl);
+        storageSetOrRemove(STORAGE_KEYS.USERNAME, connection.config.username);
       }
     },
     [allBackends, discoveryBackendIds, hydrateProjectBackend],
@@ -966,13 +1112,17 @@ function InternalAgentProvider({
   );
 
   const restartAgentBackends = useCallback(async () => {
-    const snapshot = Object.keys(stateRef.current.connections).map((projectKey) => {
-      const { workspaceId, directory } = parseProjectKey(projectKey);
-      const workspace =
-        stateRef.current.workspaces.find((candidate) => candidate.id === workspaceId) ??
-        resolveConnectionWorkspace(stateRef.current.workspaces, workspaceId);
-      return { projectKey, workspace, directory };
-    });
+    const snapshot = Object.entries(stateRef.current.connections)
+      .map(([projectKey, status]) => {
+        const { workspaceId, directory } = parseProjectKey(projectKey);
+        const workspace =
+          stateRef.current.workspaces.find((candidate) => candidate.id === workspaceId) ??
+          resolveConnectionWorkspace(stateRef.current.workspaces, workspaceId);
+        return { projectKey, workspace, directory, status };
+      })
+      .filter(({ status, workspace, directory }) =>
+        shouldSnapshotProjectConnectionForRestart({ status, workspace, directory }),
+      );
 
     dispatch({ type: "SET_ERROR", payload: null });
     const restartResults = await openGuiClient.agentBackends.restart();
@@ -988,11 +1138,16 @@ function InternalAgentProvider({
 
     await Promise.allSettled(
       snapshot.map(async ({ projectKey, workspace, directory }) => {
+        const connectionKind = stateRef.current.connections[projectKey]?.kind ?? "project";
         dispatch({
           type: "SET_PROJECT_CONNECTION",
           payload: {
             projectKey,
-            status: createProjectConnectionStatus("connecting", workspace.serverUrl),
+            status: createProjectConnectionStatus(
+              "connecting",
+              workspace.serverUrl,
+              connectionKind,
+            ),
           },
         });
         await addProject(createWorkspaceConnectionConfig({ workspace, directory }), {
@@ -1002,7 +1157,12 @@ function InternalAgentProvider({
         });
       }),
     );
-  }, [addProject, discoveryBackendIds, openGuiClient]);
+
+    const defaultChatDirectory = stateRef.current.defaultChatDirectory;
+    if (defaultChatDirectory && !detachedProject) {
+      await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
+    }
+  }, [addProject, detachedProject, discoveryBackendIds, ensureDirectoryConnection, openGuiClient]);
 
   const ensureDefaultChatConnection = useCallback(async () => {
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
@@ -1024,16 +1184,21 @@ function InternalAgentProvider({
 
       for (const dir of directoriesToRemove) {
         const projectKey = makeProjectKey(workspaceId, dir);
-        const removedSessionIds = stateRef.current.sessions
-          .filter((session) => {
-            if (getSessionWorkspaceId(session) !== workspaceId) return false;
-            const sessionDir = session._projectDir ?? session.directory;
-            if (sessionDir !== dir) return false;
-            const meta = stateRef.current.sessionMeta[session.id];
-            if (meta?.assignedProjectDir && meta.assignedProjectDir !== dir) return false;
-            return true;
-          })
-          .map((session) => session.id);
+        const isExplicitWorkspaceProject = stateRef.current.workspaces.some(
+          (workspace) => workspace.id === workspaceId && workspace.projects.includes(dir),
+        );
+        const removedSessionIds = isExplicitWorkspaceProject
+          ? stateRef.current.sessions
+              .filter((session) => {
+                if (getSessionWorkspaceId(session) !== workspaceId) return false;
+                const sessionDir = session._projectDir ?? session.directory;
+                if (sessionDir !== dir) return false;
+                const meta = stateRef.current.sessionMeta[session.id];
+                if (meta?.assignedProjectDir && meta.assignedProjectDir !== dir) return false;
+                return true;
+              })
+              .map((session) => session.id)
+          : [];
         cleanupSessionRefs(removedSessionIds);
         expectedDirectoriesRef.current.delete(projectKey);
         clearProjectHydration(projectKey);
@@ -1046,9 +1211,27 @@ function InternalAgentProvider({
         });
       }
 
-      // If the active session belongs to this project, clear it
+      const workspace = stateRef.current.workspaces.find((item) => item.id === workspaceId);
+      if (workspace) {
+        const hiddenProjects = new Set(
+          ((workspace.settings?.hiddenProjects as string[] | undefined) ?? []).filter(Boolean),
+        );
+        for (const dir of directoriesToRemove) hiddenProjects.add(dir);
+        void openGuiClient.workspaces.update(workspaceId, {
+          settings: {
+            ...workspace.settings,
+            hiddenProjects: [...hiddenProjects],
+          },
+        });
+      }
+
+      // If the active session belongs to an explicitly removed project, clear it
       const activeSession = state.sessions.find((s) => s.id === state.activeSessionId);
+      const removedExplicitProject = stateRef.current.workspaces.some(
+        (workspace) => workspace.id === workspaceId && workspace.projects.includes(directory),
+      );
       if (
+        removedExplicitProject &&
         (activeSession?._projectDir ?? activeSession?.directory) === directory &&
         getSessionWorkspaceId(activeSession) === workspaceId
       ) {
@@ -1065,10 +1248,62 @@ function InternalAgentProvider({
     ],
   );
 
+  const loadSessionIndex = useCallback(
+    async (
+      projects: Array<{
+        workspaceId: string;
+        directory: string;
+        baseUrl?: string;
+        authToken?: string;
+      }>,
+      harnessIds: AgentBackendId[] = discoveryBackendIds,
+    ) => {
+      const uniqueProjects = Array.from(
+        new Map(
+          projects
+            .map((project) => ({
+              workspaceId: project.workspaceId,
+              directory: normalizeProjectPath(project.directory),
+              baseUrl: project.baseUrl,
+              authToken: project.authToken,
+            }))
+            .filter((project) => project.directory)
+            .map((project) => [makeProjectKey(project.workspaceId, project.directory), project]),
+        ).values(),
+      );
+      if (uniqueProjects.length === 0 || harnessIds.length === 0) return;
+
+      await runWithConcurrency(uniqueProjects, 4, async (project) => {
+        const results = await openGuiClient.agentBackends.listProjectSessions({
+          backendIds: harnessIds,
+          target: {
+            directory: project.directory,
+            workspaceId: project.workspaceId,
+            baseUrl: project.baseUrl,
+            authToken: project.authToken,
+          },
+        });
+
+        for (const item of results) {
+          dispatch({
+            type: "MERGE_PROJECT_SESSIONS",
+            payload: {
+              projectKey: makeProjectKey(project.workspaceId, project.directory),
+              directory: project.directory,
+              sessions: item.sessions,
+              backendIds: [item.backendId],
+            },
+          });
+        }
+      });
+    },
+    [discoveryBackendIds, openGuiClient],
+  );
+
   // --- Startup bootstrap: ensure local server, then auto-connect open projects ---
   const startupAttempted = useRef(false);
   useEffect(() => {
-    if (startupAttempted.current) return;
+    if (!workspaceStateReady || startupAttempted.current) return;
     startupAttempted.current = true;
     let cancelled = false;
 
@@ -1076,7 +1311,10 @@ function InternalAgentProvider({
       const localServerBackend =
         allBackends.find((backend) => backend.capabilities.localServer) ?? null;
       const localServerPlatform = localServerBackend?.platform;
-      const shouldEnsureLocalServer = Boolean(localServerBackend) && isLocalServer();
+      const shouldEnsureLocalServer =
+        shellWorkspacePolicy.localWorkspaceMode === "desktop-local" &&
+        Boolean(localServerBackend) &&
+        isLocalServer();
       if (shouldEnsureLocalServer) {
         dispatch({
           type: "SET_BOOT_STATE",
@@ -1148,29 +1386,31 @@ function InternalAgentProvider({
         if (cancelled) return;
         dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
 
-        const startupBackendId = backendsById[preferredBackendId]
-          ? preferredBackendId
-          : ((allBackends[0]?.id ?? "opencode") as AgentBackendId);
+        for (const item of allProjectConfigs) {
+          const projectKey = makeProjectKey(item.workspaceId, item.directory);
+          dispatch({
+            type: "SET_PROJECT_META",
+            payload: { projectKey, meta: { hidden: false } },
+          });
+          dispatch({
+            type: "ASSIGN_PROJECT_WORKSPACE",
+            payload: { projectKey, workspaceId: item.workspaceId },
+          });
+          dispatch({
+            type: "SET_PROJECT_CONNECTION",
+            payload: {
+              projectKey,
+              status: createProjectConnectionStatus("connected", item.baseUrl, "project"),
+            },
+          });
+          updateProjectHydration(projectKey, (current) =>
+            settleProjectHydration(current, { completedBackendIds: discoveryBackendIds }),
+          );
+        }
 
-        // Hydrate saved Project connections as independent project/backend tasks.
-        // This keeps one slow backend from starving all other backends or projects.
-        const hydrationTasks = buildBootstrapHydrationTasks({
-          items: allProjectConfigs,
-          backendIds: discoveryBackendIds,
-          preferredBackendId: startupBackendId,
+        void loadSessionIndex(allProjectConfigs, discoveryBackendIds).catch(() => {
+          /* startup session index is best effort */
         });
-
-        void runWithConcurrency(
-          hydrationTasks,
-          PROJECT_BOOTSTRAP_HYDRATION_CONCURRENCY,
-          async ({ item, backendId }) => {
-            if (cancelled) return;
-            await addProject(item, {
-              suppressError: true,
-              backendIds: [backendId],
-            });
-          },
-        );
       } catch {
         /* ignore localStorage errors */
         if (!cancelled) dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
@@ -1184,11 +1424,12 @@ function InternalAgentProvider({
     };
   }, [
     allBackends,
-    addProject,
-    backendsById,
     detachedProject,
     discoveryBackendIds,
-    preferredBackendId,
+    loadSessionIndex,
+    updateProjectHydration,
+    workspaceStateReady,
+    shellWorkspacePolicy.localWorkspaceMode,
   ]);
 
   useEffect(() => {
@@ -1407,6 +1648,7 @@ function InternalAgentProvider({
       const normalizedUrl = url.replace(/\/+$/, "");
       const username = usernameOverride ?? workspace.username ?? undefined;
       const password = passwordOverride ?? workspace.password ?? undefined;
+      const authToken = workspace.authToken ?? undefined;
       const workspaceId = workspace.id;
       const localServerApi = backendsById[preferredBackendId]?.platform?.server;
       if (
@@ -1443,8 +1685,17 @@ function InternalAgentProvider({
               directory: dir,
               username: username || undefined,
               password: password || undefined,
+              authToken,
             }),
           ),
+        );
+        await loadSessionIndex(
+          connectionPlan.desiredDirectories.map((dir) => ({
+            workspaceId,
+            directory: dir,
+            baseUrl: url,
+            authToken,
+          })),
         );
         return;
       }
@@ -1459,6 +1710,7 @@ function InternalAgentProvider({
         directory: targetWorkspace,
         username: username || undefined,
         password: password || undefined,
+        authToken,
       });
 
       await Promise.allSettled(
@@ -1471,15 +1723,16 @@ function InternalAgentProvider({
               directory: worktreeDir,
               username: username || undefined,
               password: password || undefined,
+              authToken,
             }),
           ),
       );
-      if (shouldPersistLocalConnectionSettings(workspaceId)) {
+      if (shouldPersistLocalConnectionSettings(workspace.isLocal)) {
         storageSetOrRemove(STORAGE_KEYS.USERNAME, username);
         storageSet(STORAGE_KEYS.SERVER_URL, url);
       }
     },
-    [addProject, backendsById, preferredBackendId, connectedDirectorySet],
+    [addProject, backendsById, preferredBackendId, connectedDirectorySet, loadSessionIndex],
   );
 
   // Single ref to avoid stale closures and prevent unnecessary callback recreation
@@ -1490,8 +1743,11 @@ function InternalAgentProvider({
     (sessionId: string, title: string) => {
       const trimmed = title.trim();
       if (!trimmed) return;
-      forcedSessionTitlesRef.current.set(sessionId, trimmed);
-      const current = stateRef.current.sessions.find((session) => session.id === sessionId);
+      const canonicalSessionId = resolveCurrentSessionId(sessionId);
+      forcedSessionTitlesRef.current.set(canonicalSessionId, trimmed);
+      const current = stateRef.current.sessions.find(
+        (session) => session.id === canonicalSessionId || session.id === sessionId,
+      );
       if (current && current.title !== trimmed) {
         dispatch({
           type: "SESSION_UPDATED",
@@ -1499,7 +1755,22 @@ function InternalAgentProvider({
         });
       }
       openGuiClient.sessions
-        .rename({ sessionId, title: trimmed })
+        .rename({
+          sessionId: canonicalSessionId,
+          title: trimmed,
+          backendId:
+            getSessionBackendId(current) ?? getAgentBackendIdFromSessionId(sessionId) ?? undefined,
+          target: (() => {
+            const target = getSessionProjectTarget(current);
+            const workspaceId = target?.workspaceId ?? stateRef.current.activeWorkspaceId;
+            const workspace = workspaceId
+              ? stateRef.current.workspaces.find((item) => item.id === workspaceId)
+              : null;
+            return workspace && !workspace.isLocal
+              ? { ...target, workspaceId, baseUrl: workspace.serverUrl }
+              : (target ?? undefined);
+          })(),
+        })
         .then(() => {
           pendingTitlePersistenceRef.current.delete(sessionId);
         })
@@ -1542,12 +1813,21 @@ function InternalAgentProvider({
       options?: { before?: string; limit?: number },
       projectTarget?: { directory?: string; workspaceId?: string },
     ) => {
+      const session = stateRef.current.sessions.find((candidate) => candidate.id === sessionId);
+      const workspaceId =
+        projectTarget?.workspaceId ?? session?._workspaceId ?? stateRef.current.activeWorkspaceId;
+      const workspace = stateRef.current.workspaces.find(
+        (candidate) => candidate.id === workspaceId,
+      );
       return await fetchSessionMessagePage({
         sessionsClient: openGuiClient.sessions,
         sessions: stateRef.current.sessions,
         sessionId,
         options,
-        projectTarget,
+        projectTarget:
+          workspace && !workspace.isLocal
+            ? { ...projectTarget, baseUrl: workspace.serverUrl, workspaceId }
+            : projectTarget,
       });
     },
     [openGuiClient],
@@ -1619,6 +1899,9 @@ function InternalAgentProvider({
           sessions: stateRef.current.sessions,
           activeSessionId: stateRef.current.activeSessionId,
           activeWorkspaceId: stateRef.current.activeWorkspaceId,
+          activeWorkspaceServerUrl: stateRef.current.workspaces.find(
+            (workspace) => workspace.id === stateRef.current.activeWorkspaceId,
+          )?.serverUrl,
         },
         preferredBackendId,
         ensureDirectoryConnection,
@@ -1633,6 +1916,13 @@ function InternalAgentProvider({
 
   const deleteSession = useCallback(
     async (id: string) => {
+      const queuedCount = stateRef.current.queuedPrompts[id]?.length ?? 0;
+      const confirmQueue =
+        queuedCount === 0 ||
+        window.confirm(
+          `Delete this shared Session and its ${queuedCount} queued prompt${queuedCount === 1 ? "" : "s"}?`,
+        );
+      if (!confirmQueue) return;
       await deleteLifecycleSession({
         sessionId: id,
         state: {
@@ -1641,6 +1931,7 @@ function InternalAgentProvider({
           busySessionIds: stateRef.current.busySessionIds,
           worktreeParents: stateRef.current.worktreeParents,
         },
+        confirmQueue: queuedCount > 0,
         cleanupSessionRefs,
         selectSession,
         sessionsClient: openGuiClient.sessions,
@@ -1670,6 +1961,7 @@ function InternalAgentProvider({
           sessionId: id,
           title: plan.trimmedTitle,
           backendId: getSessionBackendId(plan.currentSession) ?? undefined,
+          target: getSessionProjectTarget(plan.currentSession) ?? undefined,
         })
         .catch(() => {
           /* best-effort rename – backend events will reconcile */
@@ -1683,50 +1975,6 @@ function InternalAgentProvider({
 
   // Lock to prevent double session creation from draft
   const draftCreatingRef = useRef(false);
-
-  const resolveSessionEntry = useCallback(
-    async (decision: SessionEntryDecision): Promise<string | null> => {
-      switch (decision.type) {
-        case "use-active-session":
-          return decision.sessionId;
-        case "create-session-from-draft": {
-          if (draftCreatingRef.current) return null;
-          draftCreatingRef.current = true;
-          try {
-            const newSession = await createSession(undefined, decision.directory);
-            if (!newSession) return null;
-            dispatch({ type: "CLEAR_DRAFT_SESSION" });
-            return newSession.id;
-          } finally {
-            draftCreatingRef.current = false;
-          }
-        }
-        case "missing-session":
-          dispatch({
-            type: "SET_ERROR",
-            payload: "Select or create a session first.",
-          });
-          return null;
-        case "start-draft-session":
-          return null;
-      }
-    },
-    [createSession],
-  );
-
-  /**
-   * Ensure a session exists, creating one from a draft if needed.
-   * Returns the session ID or null if no session is available.
-   */
-  const ensureSessionFromDraft = useCallback(async (): Promise<string | null> => {
-    return await resolveSessionEntry(
-      decideSessionEntry({
-        activeSessionId: stateRef.current.activeSessionId,
-        draftDirectory: stateRef.current.draftSessionDirectory,
-        canStartSession: false,
-      }),
-    );
-  }, [resolveSessionEntry]);
 
   const requestSessionAutoName = useCallback(
     ({
@@ -1751,296 +1999,46 @@ function InternalAgentProvider({
     [applyGeneratedSessionTitle],
   );
 
-  const startDraftSessionSend = useCallback(
-    async ({
-      text,
-      images,
-      model,
-      agent,
-      variant,
-      nameSourceText,
-      errorMessage,
-      trackTurnRun = false,
-    }: {
-      text: string;
-      images?: string[];
-      model?: SelectedModel;
-      agent?: string;
-      variant?: string;
-      nameSourceText: string;
-      errorMessage: string;
-      trackTurnRun?: boolean;
-    }): Promise<string | null> => {
-      const creationRuntime = creationBridge?.runtime;
-      const draftDirectory = stateRef.current.draftSessionDirectory;
-      if (!creationRuntime?.startSession || !draftDirectory) return null;
-      if (draftCreatingRef.current) return null;
-      draftCreatingRef.current = true;
-      try {
-        await ensureDirectoryConnection(draftDirectory, {
-          backendIds: [creationBackendId],
-        });
-        const pendingTitle = "Untitled";
-        dispatch({ type: "SET_BUSY", payload: true });
-        const startedAt = Date.now();
-        const session = await startDraftSessionAgentSend({
-          runtime: creationRuntime,
-          backendId: creationBackendId,
-          workspaceId: stateRef.current.activeWorkspaceId,
-          directory: draftDirectory,
-          text,
-          images,
-          selection: { model, agent, variant },
-          title: pendingTitle,
-        });
-        const draftSendState = createDraftSessionSendState({
-          session,
-          selection: { model, agent, variant },
-          title: pendingTitle,
-          trackTurnRun,
-          isChatDirectory: isChatDirectory(draftDirectory),
-          startedAt,
-        });
-        dispatch({ type: "SESSION_CREATED", payload: draftSendState.titledSession });
-        if (draftSendState.turnRun) {
-          dispatch({
-            type: "TURN_RUN_STARTED",
-            payload: draftSendState.turnRun,
-          });
-        }
-        requestSessionAutoName({
-          sessionId: session.id,
-          sourceText: nameSourceText,
-          session: draftSendState.titledSession,
-          force: true,
-        });
-        if (draftSendState.sessionMeta) {
-          dispatch({
-            type: "SET_SESSION_META",
-            payload: {
-              sessionId: session.id,
-              meta: draftSendState.sessionMeta,
-            },
-          });
-        }
-        dispatch({ type: "CLEAR_DRAFT_SESSION" });
-        await selectSession(session.id, { session: draftSendState.titledSession });
-        scheduleSessionMessageReconcile(session.id, {
-          directory: session.directory,
-          workspaceId: stateRef.current.activeWorkspaceId,
-        });
-        return session.id;
-      } catch (error) {
-        dispatch({ type: "SET_ERROR", payload: getErrorMessage(error) || errorMessage });
-        dispatch({ type: "SET_BUSY", payload: false });
-        return null;
-      } finally {
-        draftCreatingRef.current = false;
-      }
-    },
+  const localIntent = useMemo(
+    () =>
+      createLocalIntentOrchestrator({
+        getState: () => stateRef.current,
+        getCreationBackendId: () => creationBackendId,
+        getCreationRuntime: () => creationBridge?.runtime,
+        getResourceRuntime: () => runtime,
+        getCurrentVariant: () => currentVariant,
+        getWorkspaceBaseUrl: (workspaceId) => {
+          const workspace = stateRef.current.workspaces.find((item) => item.id === workspaceId);
+          return workspace && !workspace.isLocal ? workspace.serverUrl : undefined;
+        },
+        sessionsClient: openGuiClient.sessions,
+        ensureDirectoryConnection,
+        createSession,
+        selectSession,
+        scheduleSessionMessageReconcile,
+        requestSessionAutoName,
+        isChatDirectory,
+        dispatch: (action) => dispatch(action as never),
+        dispatchingSessionIds: dispatchingRef.current,
+        draftCreatingRef,
+      }),
     [
-      creationBridge,
+      createSession,
       creationBackendId,
+      creationBridge,
+      currentVariant,
       ensureDirectoryConnection,
       isChatDirectory,
+      openGuiClient,
       requestSessionAutoName,
+      runtime,
+      scheduleSessionMessageReconcile,
       selectSession,
-      scheduleSessionMessageReconcile,
     ],
   );
 
-  const prepareDirectoryChangePrompt = useCallback((sessionId: string, text: string) => {
-    const meta = stateRef.current.sessionMeta[sessionId];
-    const targetDirectory = meta?.assignedProjectDir
-      ? normalizeProjectPath(meta.assignedProjectDir)
-      : null;
-    if (!meta?.pendingDirectoryChangeNotice || !targetDirectory) return text;
-    const session = stateRef.current.sessions.find((item) => item.id === sessionId);
-    const sourceDirectory = normalizeProjectPath(
-      meta.assignedProjectSourceDir ?? session?._projectDir ?? session?.directory ?? "",
-    );
-    const notice = [
-      "<SYSTEM-APPEND>",
-      `OpenGUI has reassigned this conversation from project \`${sourceDirectory || "unknown"}\` to project \`${targetDirectory}\`.`,
-      "Important: the native backend session may still have its original working directory.",
-      `From now on, treat \`${targetDirectory}\` as the intended project root.`,
-      `When using tools, file paths, search commands, shell commands, or edits, explicitly target \`${targetDirectory}\` unless the user asks otherwise.`,
-      "Do not assume relative paths resolve against the intended project root; use absolute paths when needed.",
-      "Do not mention this implementation detail to the user unless it becomes relevant to explain tool behavior.",
-      "</SYSTEM-APPEND>",
-    ].join("\n");
-    dispatch({
-      type: "SET_SESSION_META",
-      payload: {
-        sessionId,
-        meta: {
-          pendingDirectoryChangeNotice: false,
-          hideSystemAppendBlocks: true,
-        },
-      },
-    });
-    return `${notice}\n\n${text}`;
-  }, []);
-
-  /** Internal: send a prompt directly to the server (no queue check).
-   *  Optional overrides allow queued prompts to use the model/agent/variant
-   *  that was active at enqueue time rather than the current selection. */
-  const dispatchPromptDirect = useCallback(
-    async (
-      sessionId: string,
-      text: string,
-      images?: string[],
-      overrideModel?: SelectedModel,
-      overrideAgent?: string,
-      overrideVariant?: string,
-    ) => {
-      dispatch({ type: "SET_BUSY", payload: true });
-
-      const selection = resolveAgentSendSelection(
-        {
-          selectedModel: state.selectedModel,
-          selectedAgent: state.selectedAgent,
-          variantSelections: state.variantSelections,
-          agents: state.agents,
-        },
-        {
-          model: overrideModel,
-          agent: overrideAgent,
-          variant: overrideVariant,
-        },
-      );
-      const promptSendState = createPromptSendState({
-        sessionId,
-        text,
-        selection,
-      });
-      dispatch({
-        type: "TURN_RUN_STARTED",
-        payload: promptSendState.turnRun,
-      });
-      dispatch({
-        type: "PROMPT_SUBMITTED",
-        payload: promptSendState.promptSubmitted,
-      });
-
-      try {
-        const currentSession = stateRef.current.sessions.find(
-          (session) => session.id === sessionId,
-        );
-        const { projectTarget } = await sendPromptToAgent({
-          sessions: openGuiClient.sessions,
-          session: currentSession,
-          sessionId,
-          text,
-          images,
-          selection,
-        });
-        scheduleSessionMessageReconcile(sessionId, projectTarget);
-      } catch {
-        // Prompt failures for existing sessions should render in the
-        // session transcript, not in the global app banner.
-        dispatch({ type: "SET_BUSY", payload: false });
-      }
-    },
-    [
-      openGuiClient,
-      state.selectedModel,
-      state.selectedAgent,
-      state.variantSelections,
-      state.agents,
-      scheduleSessionMessageReconcile,
-    ],
-  );
-
-  /** Dispatch the next queued prompt for a session (if any). */
-  const dispatchNextQueued = useCallback(
-    async (sessionId: string) => {
-      await dispatchNextQueuedPrompt({
-        sessionId,
-        queue: stateRef.current.queuedPrompts[sessionId],
-        dispatchingSessionIds: dispatchingRef.current,
-        preparePromptText: prepareDirectoryChangePrompt,
-        dispatchPromptDirect,
-        dispatch,
-      });
-    },
-    [dispatchPromptDirect, prepareDirectoryChangePrompt],
-  );
-
-  const sendPrompt = useCallback(
-    async (text: string, images?: string[], mode?: QueueMode) => {
-      const effectiveMode = mode ?? "queue";
-      const canStartSession = typeof creationBridge?.runtime?.startSession === "function";
-      const sessionEntry = decideSessionEntry({
-        activeSessionId: stateRef.current.activeSessionId,
-        draftDirectory: stateRef.current.draftSessionDirectory,
-        canStartSession,
-      });
-      if (sessionEntry.type === "start-draft-session") {
-        const selection = resolveAgentSendSelection({
-          selectedModel: selectedModelRef.current,
-          selectedAgent: selectedAgentRef.current,
-          variantSelections: variantSelectionsRef.current,
-          agents: agentsRef.current,
-        });
-        await startDraftSessionSend({
-          text,
-          images,
-          model: selection.model,
-          agent: selection.agent,
-          variant: selection.variant,
-          nameSourceText: text,
-          errorMessage: "Prompt failed",
-          trackTurnRun: true,
-        });
-        return;
-      }
-
-      const sessionId = await resolveSessionEntry(sessionEntry);
-      if (!sessionId) return;
-
-      const currentSession = stateRef.current.sessions.find((session) => session.id === sessionId);
-      requestSessionAutoName({
-        sessionId,
-        sourceText: text,
-        session: currentSession,
-      });
-
-      const promptDecision = decidePromptDispatch({
-        isBusy: stateRef.current.busySessionIds.has(sessionId),
-        text,
-        images,
-        mode: effectiveMode,
-        selectedModel: selectedModelRef.current,
-        selectedAgent: selectedAgentRef.current,
-        variantSelections: variantSelectionsRef.current,
-        agents: agentsRef.current,
-      });
-
-      if (
-        await applyQueueDispatchDecision({
-          sessionId,
-          decision: promptDecision,
-          existingQueueLength: stateRef.current.queuedPrompts[sessionId]?.length ?? 0,
-          abortSession: (input) => openGuiClient.sessions.abort(input),
-          dispatch,
-        })
-      ) {
-        return;
-      }
-
-      await dispatchPromptDirect(sessionId, prepareDirectoryChangePrompt(sessionId, text), images);
-    },
-    [
-      creationBridge,
-      openGuiClient,
-      dispatchPromptDirect,
-      prepareDirectoryChangePrompt,
-      requestSessionAutoName,
-      resolveSessionEntry,
-      startDraftSessionSend,
-    ],
-  );
+  const { sendPrompt, sendCommand, dispatchNextQueued, sendQueuedNow, ensureSessionFromDraft } =
+    localIntent;
 
   const findFiles = useCallback(
     async (directory: string | null, query: string): Promise<string[]> => {
@@ -2060,80 +2058,6 @@ function InternalAgentProvider({
       }
     },
     [openGuiClient, runtime],
-  );
-
-  const sendCommand = useCallback(
-    async (command: string, args: string) => {
-      const commandText = `/${command}${args ? ` ${args}` : ""}`;
-      const canStartSession = typeof creationBridge?.runtime?.startSession === "function";
-      const sessionEntry = decideSessionEntry({
-        activeSessionId: stateRef.current.activeSessionId,
-        draftDirectory: stateRef.current.draftSessionDirectory,
-        canStartSession,
-      });
-      if (sessionEntry.type === "start-draft-session") {
-        const selection = resolveAgentSendSelection({
-          selectedModel: state.selectedModel,
-          selectedAgent: state.selectedAgent,
-          variantSelections: state.variantSelections,
-          agents: state.agents,
-        });
-        await startDraftSessionSend({
-          text: commandText,
-          model: selection.model,
-          agent: selection.agent,
-          variant: selection.variant,
-          nameSourceText: commandText,
-          errorMessage: "Command failed",
-        });
-        return;
-      }
-      const sessionId = await resolveSessionEntry(sessionEntry);
-      if (!sessionId) return;
-
-      const currentSession = stateRef.current.sessions.find((session) => session.id === sessionId);
-      requestSessionAutoName({
-        sessionId,
-        sourceText: commandText,
-        session: currentSession,
-      });
-
-      const commandRuntime = runtime;
-      if (!commandRuntime) return;
-      dispatch({ type: "SET_BUSY", payload: true });
-      try {
-        const currentSession = stateRef.current.sessions.find(
-          (session) => session.id === sessionId,
-        );
-        const { projectTarget } = await sendCommandToAgent({
-          runtime: commandRuntime,
-          session: currentSession,
-          sessionId,
-          command,
-          args,
-          selection: {
-            model: state.selectedModel ?? undefined,
-            agent: state.selectedAgent ?? undefined,
-            variant: currentVariant,
-          },
-        });
-        scheduleSessionMessageReconcile(sessionId, projectTarget);
-      } catch {
-        // Command failures for existing sessions should render in the
-        // session transcript, not in the global app banner.
-        dispatch({ type: "SET_BUSY", payload: false });
-      }
-    },
-    [
-      creationBridge,
-      runtime,
-      state.selectedModel,
-      state.selectedAgent,
-      currentVariant,
-      requestSessionAutoName,
-      resolveSessionEntry,
-      startDraftSessionSend,
-    ],
   );
 
   const summarizeSession = useCallback(async () => {
@@ -2199,16 +2123,22 @@ function InternalAgentProvider({
   const [justIdledMap, setJustIdledMap] = useState<Record<string, true>>({});
   useEffect(() => {
     const nowBusy = state.busySessionIds;
-    setJustIdledMap(
-      processBusyToIdleTransitions({
-        previousBusySessionIds: prevBusyRef.current,
-        currentBusySessionIds: nowBusy,
-        activeSessionId: stateRef.current.activeSessionId,
-        sessions: stateRef.current.sessions,
-        dispatchNextQueued,
-        refreshSessionMessages: refreshActiveSessionMessages,
-      }),
-    );
+    const next = processBusyToIdleTransitions({
+      previousBusySessionIds: prevBusyRef.current,
+      currentBusySessionIds: nowBusy,
+      activeSessionId: stateRef.current.activeSessionId,
+      sessions: stateRef.current.sessions,
+      dispatchNextQueued,
+      refreshSessionMessages: refreshActiveSessionMessages,
+    });
+    setJustIdledMap((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length === nextKeys.length && nextKeys.every((key) => prev[key])) {
+        return prev;
+      }
+      return next;
+    });
     prevBusyRef.current = new Set(nowBusy);
   }, [state.busySessionIds, dispatchNextQueued, refreshActiveSessionMessages]);
 
@@ -2220,10 +2150,17 @@ function InternalAgentProvider({
     if (state._afterPartTriggered.size === 0) return;
     processAfterPartQueueTriggers({
       sessionIds: state._afterPartTriggered,
-      abortSession: (input) => openGuiClient.sessions.abort(input),
+      abortSession: (input) => {
+        const session = state.sessions.find((item) => item.id === input.sessionId);
+        return openGuiClient.sessions.abort({
+          ...input,
+          backendId: getSessionBackendId(session) ?? undefined,
+          target: getSessionProjectTarget(session) ?? undefined,
+        });
+      },
       dispatch,
     });
-  }, [openGuiClient, state._afterPartTriggered]);
+  }, [openGuiClient, state._afterPartTriggered, state.sessions]);
 
   // Desktop notifications for newly-idle sessions
   useDesktopNotification(
@@ -2254,12 +2191,32 @@ function InternalAgentProvider({
 
   const abortSession = useCallback(async () => {
     if (!state.activeSessionId) return;
-    const activeSession = state.sessions.find((session) => session.id === state.activeSessionId);
+    const sessionId = resolveCurrentSessionId(state.activeSessionId);
+    const activeSession = state.sessions.find(
+      (session) => session.id === sessionId || session.id === state.activeSessionId,
+    );
+    const target = getSessionProjectTarget(activeSession) ?? undefined;
+    const workspaceId = target?.workspaceId ?? state.activeWorkspaceId;
+    const workspace = state.workspaces.find((item) => item.id === workspaceId);
     await openGuiClient.sessions.abort({
-      sessionId: state.activeSessionId,
-      backendId: getSessionBackendId(activeSession) ?? undefined,
+      sessionId,
+      backendId:
+        getSessionBackendId(activeSession) ??
+        getAgentBackendIdFromSessionId(state.activeSessionId) ??
+        undefined,
+      target:
+        workspace && !workspace.isLocal
+          ? { ...target, workspaceId, baseUrl: workspace.serverUrl }
+          : target,
     });
-  }, [openGuiClient, state.activeSessionId, state.sessions]);
+  }, [
+    openGuiClient,
+    resolveCurrentSessionId,
+    state.activeSessionId,
+    state.activeWorkspaceId,
+    state.sessions,
+    state.workspaces,
+  ]);
 
   const respondPermission = useCallback(
     async (response: "once" | "always" | "reject") => {
@@ -2270,13 +2227,21 @@ function InternalAgentProvider({
         sessionId: state.activeSessionId,
         permissionId: pending.id,
         response,
+        backendId:
+          getSessionBackendId(
+            state.sessions.find((session) => session.id === state.activeSessionId),
+          ) ?? undefined,
+        target:
+          getSessionProjectTarget(
+            state.sessions.find((session) => session.id === state.activeSessionId),
+          ) ?? undefined,
       });
       dispatch({
         type: "SET_PERMISSION",
         payload: { sessionID: state.activeSessionId, clear: true },
       });
     },
-    [openGuiClient, state.pendingPermissions, state.activeSessionId],
+    [openGuiClient, state.pendingPermissions, state.activeSessionId, state.sessions],
   );
 
   const replyQuestion = useCallback(
@@ -2319,11 +2284,20 @@ function InternalAgentProvider({
 
   const setDefaultChatDirectory = useCallback((directory: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
-    if (normalizedDirectory) {
-      storageSet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY, normalizedDirectory);
-    } else {
-      storageRemove(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
-    }
+    storageRemove(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
+    const workspaceId = stateRef.current.activeWorkspaceId;
+    const nextWorkspaces = stateRef.current.workspaces.map((workspace) =>
+      workspace.id === workspaceId
+        ? {
+            ...workspace,
+            settings: {
+              ...workspace.settings,
+              defaultChatDirectory: normalizedDirectory,
+            },
+          }
+        : workspace,
+    );
+    dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
     dispatch({
       type: "SET_DEFAULT_CHAT_DIRECTORY",
       payload: normalizedDirectory,
@@ -2382,40 +2356,59 @@ function InternalAgentProvider({
     [state.queuedPrompts],
   );
 
-  const removeFromQueue = useCallback((sessionId: string, promptId: string) => {
-    dispatch({
-      type: "QUEUE_REMOVE",
-      payload: { sessionID: sessionId, promptID: promptId },
-    });
-  }, []);
-
-  const reorderQueue = useCallback((sessionId: string, fromIndex: number, toIndex: number) => {
-    dispatch({
-      type: "QUEUE_REORDER",
-      payload: { sessionID: sessionId, fromIndex, toIndex },
-    });
-  }, []);
-
-  const updateQueuedPrompt = useCallback((sessionId: string, promptId: string, text: string) => {
-    dispatch({
-      type: "QUEUE_UPDATE",
-      payload: { sessionID: sessionId, promptID: promptId, text },
-    });
-  }, []);
-
-  const sendQueuedNow = useCallback(
-    async (sessionId: string, promptId: string) => {
-      await sendQueuedPromptNowFromQueue({
-        sessionId,
-        promptId,
-        queue: state.queuedPrompts[sessionId] ?? [],
-        isBusy: stateRef.current.busySessionIds.has(sessionId),
-        abortSession: (input) => openGuiClient.sessions.abort(input),
-        dispatchPromptDirect,
-        dispatch,
-      });
+  const applyQueueSnapshot = useCallback(
+    (sessionId: string, prompts: (typeof state.queuedPrompts)[string]) => {
+      dispatch({ type: "SET_SESSION_QUEUE", payload: { sessionID: sessionId, prompts } });
     },
-    [state.queuedPrompts, openGuiClient, dispatchPromptDirect],
+    [],
+  );
+
+  const removeFromQueue = useCallback(
+    (sessionId: string, promptId: string) => {
+      void openGuiClient.sessions.queue
+        .remove({ sessionId, entryId: promptId })
+        .then((prompts) => applyQueueSnapshot(sessionId, prompts))
+        .catch((error) => {
+          dispatch({
+            type: "SET_ERROR",
+            payload: getErrorMessage(error) || "Failed to remove queued prompt",
+          });
+        });
+    },
+    [applyQueueSnapshot, openGuiClient],
+  );
+
+  const reorderQueue = useCallback(
+    (sessionId: string, fromIndex: number, toIndex: number) => {
+      const existing = stateRef.current.queuedPrompts[sessionId] ?? [];
+      const entryId = existing[fromIndex]?.id;
+      if (!entryId) return;
+      void openGuiClient.sessions.queue
+        .reorder({ sessionId, entryId, index: toIndex })
+        .then((prompts) => applyQueueSnapshot(sessionId, prompts))
+        .catch((error) => {
+          dispatch({
+            type: "SET_ERROR",
+            payload: getErrorMessage(error) || "Failed to reorder queue",
+          });
+        });
+    },
+    [applyQueueSnapshot, openGuiClient],
+  );
+
+  const updateQueuedPrompt = useCallback(
+    (sessionId: string, promptId: string, text: string) => {
+      void openGuiClient.sessions.queue
+        .update({ sessionId, entryId: promptId, text })
+        .then((prompts) => applyQueueSnapshot(sessionId, prompts))
+        .catch((error) => {
+          dispatch({
+            type: "SET_ERROR",
+            payload: getErrorMessage(error) || "Failed to update queued prompt",
+          });
+        });
+    },
+    [applyQueueSnapshot, openGuiClient],
   );
 
   const setSessionDraft = useCallback((key: string, text: string) => {
@@ -2431,7 +2424,14 @@ function InternalAgentProvider({
       if (!runtime || !state.activeSessionId) return;
       // Abort if session is busy before reverting
       if (state.busySessionIds.has(state.activeSessionId)) {
-        await openGuiClient.sessions.abort({ sessionId: state.activeSessionId });
+        const activeSession = state.sessions.find(
+          (session) => session.id === state.activeSessionId,
+        );
+        await openGuiClient.sessions.abort({
+          sessionId: state.activeSessionId,
+          backendId: getSessionBackendId(activeSession) ?? undefined,
+          target: getSessionProjectTarget(activeSession) ?? undefined,
+        });
       }
       await refreshLifecycleSession({
         sessionId: state.activeSessionId,
@@ -2441,7 +2441,14 @@ function InternalAgentProvider({
         errorMessage: "Failed to revert session",
       });
     },
-    [runtime, fetchMessagePage, openGuiClient, state.activeSessionId, state.busySessionIds],
+    [
+      runtime,
+      fetchMessagePage,
+      openGuiClient,
+      state.activeSessionId,
+      state.busySessionIds,
+      state.sessions,
+    ],
   );
 
   const unrevert = useCallback(async () => {
@@ -2588,34 +2595,29 @@ function InternalAgentProvider({
   }, []);
 
   const createWorkspace = useCallback(
-    (input: { name: string; serverUrl: string; username?: string; password?: string }) => {
+    (input: { name: string; serverUrl: string; authToken?: string }) => {
       const plan = createWorkspaceLifecyclePlan({
         workspaces: stateRef.current.workspaces,
         input,
       });
-      dispatch({
-        type: "SET_WORKSPACES",
-        payload: plan.nextWorkspaces,
-      });
+      dispatch({ type: "SET_WORKSPACES", payload: plan.nextWorkspaces });
       dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: plan.nextActiveWorkspaceId });
       dispatch({ type: "SET_ACTIVE_SESSION", payload: plan.nextActiveSessionId });
+      dispatch({ type: "SET_DEFAULT_CHAT_DIRECTORY", payload: null });
     },
     [],
   );
 
   const updateWorkspace = useCallback(
-    (
-      workspaceId: string,
-      input: Partial<Pick<Workspace, "name" | "serverUrl" | "username" | "password">>,
-    ) => {
-      dispatch({
-        type: "SET_WORKSPACES",
-        payload: createWorkspaceUpdatePlan({
-          workspaces: stateRef.current.workspaces,
-          workspaceId,
-          input,
-        }),
+    (workspaceId: string, input: Partial<Pick<Workspace, "name" | "serverUrl" | "authToken">>) => {
+      const current = stateRef.current.workspaces.find((workspace) => workspace.id === workspaceId);
+      if (!current) return;
+      const nextWorkspaces = createWorkspaceUpdatePlan({
+        workspaces: stateRef.current.workspaces,
+        workspaceId,
+        input,
       });
+      dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
     },
     [],
   );
@@ -2626,7 +2628,14 @@ function InternalAgentProvider({
         workspaces: stateRef.current.workspaces,
         workspaceId,
       });
+      const nextWorkspace = stateRef.current.workspaces.find(
+        (workspace) => workspace.id === plan.nextActiveWorkspaceId,
+      );
       dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: plan.nextActiveWorkspaceId });
+      dispatch({
+        type: "SET_DEFAULT_CHAT_DIRECTORY",
+        payload: getWorkspaceDefaultChatDirectory(nextWorkspace),
+      });
       void selectSession(plan.nextActiveSessionId);
     },
     [selectSession],
@@ -2634,25 +2643,42 @@ function InternalAgentProvider({
 
   const removeWorkspace = useCallback(
     async (workspaceId: string) => {
-      await removeLifecycleWorkspace({
-        workspaceId,
-        state: {
-          workspaces: stateRef.current.workspaces,
-          activeWorkspaceId: stateRef.current.activeWorkspaceId,
-          hasBackends: allBackends.length > 0,
-        },
-        disconnectProject: (input) => openGuiClient.agentBackends.disconnectProject(input),
-        selectSession,
-        dispatch,
+      const current = stateRef.current.workspaces.find((workspace) => workspace.id === workspaceId);
+      if (!current) return;
+      const remaining = stateRef.current.workspaces.filter(
+        (workspace) => workspace.id !== workspaceId,
+      );
+      dispatch({ type: "SET_WORKSPACES", payload: remaining });
+      const nextActiveWorkspaceId =
+        stateRef.current.activeWorkspaceId === workspaceId
+          ? (remaining[0]?.id ?? "")
+          : stateRef.current.activeWorkspaceId;
+      const nextActiveWorkspace = remaining.find(
+        (workspace) => workspace.id === nextActiveWorkspaceId,
+      );
+      dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: nextActiveWorkspaceId });
+      dispatch({
+        type: "SET_DEFAULT_CHAT_DIRECTORY",
+        payload: getWorkspaceDefaultChatDirectory(nextActiveWorkspace),
       });
+      await selectSession(
+        remaining.find((workspace) => workspace.id === nextActiveWorkspaceId)
+          ?.lastActiveSessionId ?? null,
+      );
     },
-    [allBackends, openGuiClient, selectSession],
+    [selectSession],
   );
 
   const reorderWorkspaces = useCallback((fromIndex: number, toIndex: number) => {
+    const next = [...stateRef.current.workspaces];
+    if (fromIndex < 0 || fromIndex >= next.length) return;
+    const clampedTo = Math.max(0, Math.min(toIndex, next.length - 1));
+    const [moved] = next.splice(fromIndex, 1);
+    if (!moved) return;
+    next.splice(clampedTo, 0, moved);
     dispatch({
       type: "REORDER_WORKSPACES",
-      payload: { fromIndex, toIndex },
+      payload: { fromIndex, toIndex: clampedTo },
     });
   }, []);
 
@@ -2663,6 +2689,8 @@ function InternalAgentProvider({
       type: "REORDER_VISIBLE_WORKSPACE_PROJECTS",
       payload: { workspaceId, orderedDirectories },
     });
+    const workspace = stateRef.current.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) return;
   }, []);
 
   // ----- Split context values (memoised per domain) -----
@@ -2762,6 +2790,7 @@ function InternalAgentProvider({
       workspaces: state.workspaces,
       activeWorkspace,
       activeWorkspaceId: state.activeWorkspaceId,
+      supportsMultipleWorkspaces: shellWorkspacePolicy.supportsMultipleWorkspaces,
       workspaceStatuses: Object.fromEntries(
         state.workspaces.map((workspace) => {
           const workspaceSessions = state.sessions.filter((session) => {
@@ -2824,6 +2853,7 @@ function InternalAgentProvider({
       state.workspaces,
       activeWorkspace,
       state.activeWorkspaceId,
+      shellWorkspacePolicy.supportsMultipleWorkspaces,
       state.sessions,
       state.connections,
       state.projectWorkspaceMap,

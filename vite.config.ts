@@ -60,7 +60,7 @@ function openguiWebBackend() {
         return;
       }
 
-      backend = spawn("bun", ["server/web-server.ts"], {
+      backend = spawn(process.execPath, ["--experimental-strip-types", "server/web-server.ts"], {
         cwd: process.cwd(),
         stdio: "inherit",
         env: {
@@ -110,7 +110,7 @@ export default defineConfig({
   run: {
     tasks: {
       dev: {
-        command: "bun dev.ts",
+        command: "node --experimental-strip-types dev.ts",
         cache: false,
       },
       "dev:web": {
@@ -118,15 +118,20 @@ export default defineConfig({
         cache: false,
       },
       start: {
-        command: "NODE_ENV=production electron . --no-sandbox",
+        command: "NODE_ENV=production pnpm exec electron . --no-sandbox",
         cache: false,
       },
       "start:web": {
-        command: "HOST=0.0.0.0 NODE_ENV=production bun server/web-server.ts",
+        command:
+          "HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
         cache: false,
       },
       "dist:linux": {
-        command: "vp build && electron-builder --linux deb",
+        command: "vp build && electron-builder --linux deb AppImage",
+        cache: false,
+      },
+      "dist:linux:appimage": {
+        command: "vp build && electron-builder --linux AppImage",
         cache: false,
       },
       "dist:mac": {
@@ -143,6 +148,23 @@ export default defineConfig({
       },
       "dist:win:portable": {
         command: "vp build && electron-builder --win portable",
+        cache: false,
+      },
+      "mobile:sync": {
+        command: "vp build && cap sync android",
+        cache: false,
+      },
+      "mobile:open": {
+        command: "cap open android",
+        cache: false,
+      },
+      "mobile:build:debug": {
+        command: "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleDebug'",
+        cache: false,
+      },
+      "mobile:build:release": {
+        command:
+          "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleRelease'",
         cache: false,
       },
     },

@@ -10,8 +10,10 @@ import { App } from "./App";
 import { applyStoredAppearance } from "./hooks/use-theme";
 import { initI18n } from "./i18n";
 import { installWebElectronAPI } from "./lib/web-electron-api";
+import { initializeRuntimeClients } from "./runtime/clients";
 
 installWebElectronAPI();
+initializeRuntimeClients();
 applyStoredAppearance();
 
 const elem = document.getElementById("root");

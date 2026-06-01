@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAsyncDialogOperation, useDialogError } from "@/hooks/use-dialog-state";
 import { getProjectName } from "@/lib/utils";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 interface WorktreeSetupDialogProps {
   open: boolean;
@@ -19,6 +20,7 @@ export function WorktreeSetupDialog({
   onOpenChange,
   worktreePath,
 }: WorktreeSetupDialogProps) {
+  const client = useOpenGuiClient();
   const [step, setStep] = useState<SetupStep>("detecting");
   const [command, setCommand] = useState("");
   const [detectedFile, setDetectedFile] = useState("");
@@ -44,8 +46,8 @@ export function WorktreeSetupDialog({
     setCommand("");
     setDetectedFile("");
 
-    window.electronAPI?.worktree
-      ?.detectSetup(worktreePath)
+    client.worktree
+      .detectSetup(worktreePath)
       .then((result) => {
         if (cancelled) return;
         if (result.detected && result.command) {
@@ -64,7 +66,7 @@ export function WorktreeSetupDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, worktreePath, onOpenChange, clearError]);
+  }, [client, open, worktreePath, onOpenChange, clearError]);
 
   const { execute: handleRun } = useAsyncDialogOperation(
     useCallback(async () => {
@@ -72,20 +74,15 @@ export function WorktreeSetupDialog({
       setStep("running");
       clearError();
       try {
-        const result = await window.electronAPI?.worktree?.runSetup(worktreePath, command.trim());
-        if (result?.success) {
-          setStep("done");
-          // Auto-close after a brief pause
-          autoCloseTimerRef.current = setTimeout(() => onOpenChange(false), 1200);
-        } else {
-          setError(result?.error ?? "Setup command failed");
-          setStep("error");
-        }
+        await client.worktree.runSetup(worktreePath, command.trim());
+        setStep("done");
+        // Auto-close after a brief pause
+        autoCloseTimerRef.current = setTimeout(() => onOpenChange(false), 1200);
       } catch (err) {
         setUnknownError(err, "Setup command failed");
         setStep("error");
       }
-    }, [command, worktreePath, onOpenChange, clearError, setError, setUnknownError]),
+    }, [client, command, worktreePath, onOpenChange, clearError, setError, setUnknownError]),
   );
 
   const handleSkip = useCallback(() => {
@@ -144,7 +141,7 @@ export function WorktreeSetupDialog({
               id="setup-command"
               value={command}
               readOnly
-              placeholder="bun install"
+              placeholder="pnpm install"
               className="font-mono text-sm"
             />
           </div>

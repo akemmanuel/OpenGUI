@@ -16,6 +16,7 @@ interface SessionsMessagesClient {
       before?: string;
       directory?: string;
       workspaceId?: string;
+      baseUrl?: string;
     };
   }): Promise<{
     messages?: MessageEntry[];
@@ -66,6 +67,7 @@ export async function fetchSessionMessagePage({
       before: options?.before,
       directory: resolvedTarget?.directory,
       workspaceId: resolvedTarget?.workspaceId,
+      baseUrl: resolvedTarget?.baseUrl,
     },
   });
   const messages = data?.messages ?? [];

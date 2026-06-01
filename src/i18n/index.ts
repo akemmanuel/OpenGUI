@@ -2,6 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/safe-storage";
+import { getDesktopShellClient } from "@/runtime/clients";
 import de from "./locales/de.json";
 import en from "./locales/en.json";
 import es from "./locales/es.json";
@@ -30,7 +31,7 @@ export async function detectSystemLanguage(): Promise<SupportedLanguage> {
   let detectedLanguage: string | null = null;
   if (typeof window !== "undefined") {
     try {
-      const locale = await window.electronAPI?.getSystemLocale?.();
+      const locale = await getDesktopShellClient().platform.getSystemLocale();
       detectedLanguage = locale ?? null;
     } catch {
       detectedLanguage = null;

@@ -92,12 +92,12 @@ Backend requirements depend on what you use:
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) v1.2+ runtime
-- [pnpm](https://pnpm.io/) 10+ package manager
+- [Node.js](https://nodejs.org/) 24+
+- [pnpm](https://pnpm.io/) 11+ package manager
 - At least one supported backend configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
 - [Electron](https://www.electronjs.org/) installed through project dependencies
 
-OpenGUI uses Bun as the runtime for the Electron/web backend, pnpm for dependency management, and Vite+ (`vp`) as the development/build/check task runner.
+OpenGUI uses Node.js as the runtime for the Electron/web backend, pnpm for dependency management, and Vite+ (`vp`) as the development/build/check task runner.
 
 Install dependencies:
 
@@ -182,7 +182,7 @@ opencode-bridge.ts    IPC bridge to OpenCode SDK
 claude-code-bridge.ts IPC bridge to Claude Code SDK
 codex-bridge.ts       IPC bridge to Codex SDK
 pi-bridge.ts          IPC bridge to Pi runtime
-server/web-server.ts  Bun runtime backend for browser mode (RPC, events, server FS browser)
+server/web-server.ts  Node.js backend for browser mode (RPC, events, server FS browser)
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point + web Electron shim install

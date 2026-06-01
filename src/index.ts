@@ -1,20 +1,22 @@
-import { serve } from "bun";
-import index from "./index.html";
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const server = serve({
-  port: 3000,
-  routes: {
-    // Serve index.html for all unmatched routes.
-    "/*": index,
-  },
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const port = Number(process.env.PORT || 3000);
 
-  development: process.env.NODE_ENV !== "production" && {
-    // Enable browser hot reloading in development
-    hmr: true,
-
-    // Echo console logs from the browser to the server
-    console: true,
-  },
+const server = createServer(async (_request, response) => {
+  try {
+    const html = await readFile(path.join(__dirname, "index.html"));
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(html);
+  } catch (error) {
+    response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    response.end(error instanceof Error ? error.message : String(error));
+  }
 });
 
-console.info(`Server running at ${server.url}`);
+server.listen(port, "127.0.0.1", () => {
+  console.info(`Server running at http://127.0.0.1:${port}`);
+});

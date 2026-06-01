@@ -1,8 +1,18 @@
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
-import { normalizeProjectPath } from "@/lib/utils";
-import type { AgentBackendEvent, AgentBackendTarget } from "./backend";
-import type { AgentBackendId } from "./index";
+import type { AgentBackendEvent, AgentBackendTarget } from "./backend.ts";
+import type { AgentBackendId } from "./index.ts";
+
+function normalizeProjectPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^[/\\]+$/.test(trimmed)) return trimmed[0] ?? trimmed;
+  const windowsDriveRoot = trimmed.match(/^([A-Za-z]:)([/\\]+)$/);
+  if (windowsDriveRoot) {
+    return `${windowsDriveRoot[1]}${trimmed.includes("\\") ? "\\" : "/"}`;
+  }
+  return trimmed.replace(/[/\\]+$/, "");
+}
 
 type BridgeResult<T> =
   | { success: true; data?: T }

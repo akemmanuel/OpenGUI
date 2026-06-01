@@ -1,7 +1,8 @@
 allowBuilds:
   "@google/genai": true
-  bun: true
+  electron: true
   electron-winstaller: true
   esbuild: true
   koffi: false
   protobufjs: true
+  sharp: true

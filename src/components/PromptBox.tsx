@@ -27,10 +27,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { VariantSelector } from "@/components/VariantSelector";
 import { WorktreeDialog } from "@/components/WorktreeDialog";
 import { WorktreeSetupDialog } from "@/components/WorktreeSetupDialog";
+import { useOpenGuiClient } from "@/protocol/provider";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import { useListKeyboardNavigation } from "@/hooks/use-list-keyboard-navigation";
 import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigation";
@@ -150,6 +150,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     }, [isLoading, messages]);
 
     const { activeWorkspaceId, worktreeParents, isLocalWorkspace } = useConnectionState();
+    const worktreeParentsRef = React.useRef(worktreeParents);
+    const registerWorktreeRef = React.useRef(registerWorktree);
     const syncingDraftRef = React.useRef(false);
     const syncingImageDraftRef = React.useRef(false);
     const sessionDraftsRef = React.useRef(sessionDrafts);
@@ -228,6 +230,16 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     }, [sessionDrafts]);
 
     React.useEffect(() => {
+      worktreeParentsRef.current = worktreeParents;
+    }, [worktreeParents]);
+
+    React.useEffect(() => {
+      registerWorktreeRef.current = registerWorktree;
+    }, [registerWorktree]);
+
+    const client = useOpenGuiClient();
+
+    React.useEffect(() => {
       if (!projectDir || !isLocalWorkspace) {
         setDiscoveredWorktrees([]);
         setWorktreeDiscoveryState("hidden");
@@ -235,34 +247,22 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       }
 
       let cancelled = false;
-      const git = window.electronAPI?.git;
 
-      if (!git) {
-        setDiscoveredWorktrees([]);
-        setWorktreeDiscoveryState("hidden");
-        return;
-      }
-
-      void Promise.all([git.isRepo(projectDir), git.listWorktrees(projectDir)])
-        .then(([repoResult, worktreeResult]) => {
+      void Promise.all([client.git.isRepo(projectDir), client.git.listWorktrees(projectDir)])
+        .then(([isRepo, worktrees]) => {
           if (cancelled) return;
-          if (!repoResult.success || repoResult.data !== true) {
+          if (!isRepo) {
             setDiscoveredWorktrees([]);
             setWorktreeDiscoveryState("hidden");
             return;
           }
-          if (!worktreeResult.success || !worktreeResult.data) {
-            setDiscoveredWorktrees([]);
-            setWorktreeDiscoveryState("error");
-            return;
-          }
-          const normalizedWorktrees = worktreeResult.data.map((worktree) => ({
+          const normalizedWorktrees = worktrees.map((worktree) => ({
             ...worktree,
             path: normalizeProjectPath(worktree.path),
           }));
           for (const worktree of normalizedWorktrees) {
-            if (worktree.path === projectDir || worktreeParents[worktree.path]) continue;
-            registerWorktree(worktree.path, projectDir, worktree.branch ?? "unknown");
+            if (worktree.path === projectDir || worktreeParentsRef.current[worktree.path]) continue;
+            registerWorktreeRef.current(worktree.path, projectDir, worktree.branch ?? "unknown");
           }
           setDiscoveredWorktrees(normalizedWorktrees);
           setWorktreeDiscoveryState("ready");
@@ -276,7 +276,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       return () => {
         cancelled = true;
       };
-    }, [projectDir, isLocalWorkspace, registerWorktree, worktreeParents]);
+    }, [client, projectDir, isLocalWorkspace]);
 
     const worktreeOptions = React.useMemo(() => {
       if (worktreeDiscoveryState !== "ready" || !projectDir) return [];
@@ -810,309 +810,276 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         />
 
         <div className="flex min-w-0 items-center gap-1 px-1.5 pb-2">
-          <TooltipProvider delayDuration={100}>
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                title="Add"
+                disabled={isDisabled}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Plus />
+                <span className="sr-only">Add</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start">
+              {capabilities?.images && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <Paperclip className="size-4" />
+                  Add file
+                </DropdownMenuItem>
+              )}
+              {canManageMcp && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMcpDialogOpen(true);
+                  }}
+                >
+                  <Wrench className="size-4" />
+                  MCPs
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <ModelSelector />
+          <AgentSelector />
+          <VariantSelector />
+
+          {shouldShowWorktreeSelector && selectedWorktreeOption && (
+            <div className="flex min-w-0 items-center gap-1">
+              {isDraftWorktreeSelection ? (
+                <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      type="button"
                       variant="ghost"
-                      size="icon-sm"
-                      disabled={isDisabled}
-                      onClick={(e) => e.stopPropagation()}
+                      size="sm"
+                      className="!h-7 w-auto max-w-[220px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0"
                     >
-                      <Plus />
-                      <span className="sr-only">Add</span>
+                      <GitBranch className="size-3.5 shrink-0" />
+                      <span className="truncate">{selectedWorktreeOption.label}</span>
                     </Button>
                   </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Add</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent side="top" align="start">
-                {capabilities?.images && (
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <Paperclip className="size-4" />
-                    Add file
-                  </DropdownMenuItem>
-                )}
-                {canManageMcp && (
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setMcpDialogOpen(true);
-                    }}
-                  >
-                    <Wrench className="size-4" />
-                    MCPs
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <ModelSelector />
-            <AgentSelector />
-            <VariantSelector />
-
-            {shouldShowWorktreeSelector && selectedWorktreeOption && (
-              <div className="flex min-w-0 items-center gap-1">
-                {isDraftWorktreeSelection ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="!h-7 w-auto max-w-[220px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0"
-                      >
-                        <GitBranch className="size-3.5 shrink-0" />
-                        <span className="truncate">{selectedWorktreeOption.label}</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-80 w-56">
-                      {worktreeOptions.map((option) => (
-                        <DropdownMenuItem
-                          key={option.path}
-                          onClick={() => {
-                            if (option.path !== projectDir && !worktreeParents[option.path]) {
-                              registerWorktree(
-                                option.path,
-                                projectDir!,
-                                option.branch ?? "unknown",
-                              );
-                            }
-                            setDraftDirectory(option.path);
-                          }}
-                          className="text-xs"
-                        >
-                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                            <span className="truncate">{option.label}</span>
-                          </span>
-                          {option.path === selectedWorktreeDirectory && (
-                            <Check className="ml-auto size-3 shrink-0" />
-                          )}
-                        </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
+                  <DropdownMenuContent align="start" className="max-h-80 w-56">
+                    {worktreeOptions.map((option) => (
                       <DropdownMenuItem
-                        onClick={() => setWorktreeDialogDir(projectDir)}
+                        key={option.path}
+                        onClick={() => {
+                          if (option.path !== projectDir && !worktreeParents[option.path]) {
+                            registerWorktree(option.path, projectDir!, option.branch ?? "unknown");
+                          }
+                          setDraftDirectory(option.path);
+                        }}
                         className="text-xs"
                       >
-                        <Plus className="size-3.5" />
-                        <span>New worktree</span>
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="truncate">{option.label}</span>
+                        </span>
+                        {option.path === selectedWorktreeDirectory && (
+                          <Check className="ml-auto size-3 shrink-0" />
+                        )}
                       </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : selectedWorktreeOption.isRoot ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <GitBranch className="size-3.5 shrink-0" />
-                        <span className="truncate">{selectedWorktreeOption.label}</span>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Current branch of the root worktree.</TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <GitBranch className="size-3.5 shrink-0" />
-                    <span className="truncate">{selectedWorktreeOption.label}</span>
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {isLoading && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onQueueModeChange(queueMode === "queue" ? "after-part" : "queue");
-                    }}
-                  >
-                    {queueMode === "after-part" ? (
-                      <ListEnd className="size-3.5 shrink-0" />
-                    ) : (
-                      <ListEnd className="size-3.5 shrink-0" />
-                    )}
-                    <span className="truncate max-w-[100px]">
-                      {queueMode === "after-part" ? "Steer" : "Queue"}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {queueMode === "after-part"
-                    ? "Steer: wait for current part to finish, then send (Ctrl/Cmd+D to toggle)"
-                    : "Queue: wait for full response, then send (Ctrl/Cmd+D to toggle)"}
-                </TooltipContent>
-              </Tooltip>
-            )}
-
-            <div className="ml-auto flex items-center gap-1.5">
-              {capabilities?.compact && contextPercent != null && contextPercent >= 0 && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <div className="flex">
-                      <button
-                        type="button"
-                        className={cn(
-                          "flex items-center gap-1 text-[11px] tabular-nums select-none cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors",
-                          (isCompacting || isCompactingInProgress) && "animate-pulse",
-                          contextPercent >= 90
-                            ? "text-destructive hover:text-destructive"
-                            : contextPercent >= 70
-                              ? "text-amber-500 hover:text-amber-600"
-                              : "text-muted-foreground/70 hover:text-foreground",
-                        )}
-                      >
-                        {isCompacting || isCompactingInProgress ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 20 20"
-                            className="shrink-0 -rotate-90"
-                            aria-hidden="true"
-                          >
-                            <circle
-                              cx="10"
-                              cy="10"
-                              r="8"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                              opacity="0.2"
-                            />
-                            <circle
-                              cx="10"
-                              cy="10"
-                              r="8"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                              strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
-                            />
-                          </svg>
-                        )}
-                        {isCompacting || isCompactingInProgress
-                          ? "Compacting"
-                          : contextPercent === 0
-                            ? "0%"
-                            : contextPercent < 1
-                              ? "<1%"
-                              : `${contextPercent}%`}
-                      </button>
-                    </div>
-                  </PopoverTrigger>
-                  <PopoverContent side="top" align="center" className="w-48 p-3 text-xs z-50">
-                    <div className="font-semibold mb-2">Context window</div>
-                    {contextTokens != null && contextLimit != null ? (
-                      <div className="text-muted-foreground mb-1">
-                        {contextTokens.toLocaleString()} / {contextLimit.toLocaleString()} tokens
-                      </div>
-                    ) : contextTokens != null ? (
-                      <div className="text-muted-foreground mb-1">
-                        {contextTokens.toLocaleString()} tokens
-                      </div>
-                    ) : null}
-                    {contextCost != null && contextCost > 0 && (
-                      <div className="text-muted-foreground mb-2">
-                        Cost: $
-                        {contextCost < 0.01 ? contextCost.toFixed(6) : contextCost.toFixed(4)}
-                      </div>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="w-full mt-2 gap-2"
-                      disabled={isLoading || isDisabled || isCompactingInProgress}
-                      onClick={async () => {
-                        setIsCompacting(true);
-                        try {
-                          await summarizeSession();
-                        } finally {
-                          setIsCompacting(false);
-                        }
-                      }}
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setWorktreeDialogDir(projectDir)}
+                      className="text-xs"
                     >
-                      <Minimize2 className="size-3" />
-                      Compact
-                    </Button>
-                  </PopoverContent>
-                </Popover>
-              )}
-              {shouldShowStopButton({ isLoading, isCompactingInProgress }) ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="default"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStop?.();
-                      }}
-                    >
-                      <Square className="size-3.5 fill-current" />
-                      <span className="sr-only">Stop generating</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Stop</TooltipContent>
-                </Tooltip>
+                      <Plus className="size-3.5" />
+                      <span>New worktree</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : selectedWorktreeOption.isRoot ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title="Current branch of the root worktree."
+                  className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <GitBranch className="size-3.5 shrink-0" />
+                  <span className="truncate">{selectedWorktreeOption.label}</span>
+                </Button>
               ) : (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="default"
-                      disabled={isDisabled || !hasValue}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleSubmit();
-                      }}
-                    >
-                      <ArrowUp />
-                      <span className="sr-only">
-                        {isLoading
-                          ? queueMode === "after-part"
-                            ? "Steer"
-                            : "Queue message"
-                          : "Send message"}
-                      </span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {isLoading ? (queueMode === "after-part" ? "Steer" : "Queue") : "Send"}
-                  </TooltipContent>
-                </Tooltip>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <GitBranch className="size-3.5 shrink-0" />
+                  <span className="truncate">{selectedWorktreeOption.label}</span>
+                </Button>
               )}
             </div>
-          </TooltipProvider>
+          )}
+
+          {isLoading && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              title={
+                queueMode === "after-part"
+                  ? "Steer: wait for current part to finish, then send (Ctrl/Cmd+D to toggle)"
+                  : "Queue: wait for full response, then send (Ctrl/Cmd+D to toggle)"
+              }
+              className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                onQueueModeChange(queueMode === "queue" ? "after-part" : "queue");
+              }}
+            >
+              <ListEnd className="size-3.5 shrink-0" />
+              <span className="truncate max-w-[100px]">
+                {queueMode === "after-part" ? "Steer" : "Queue"}
+              </span>
+            </Button>
+          )}
+
+          <div className="ml-auto flex items-center gap-1.5">
+            {capabilities?.compact && contextPercent != null && contextPercent >= 0 && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <div className="flex">
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1 text-[11px] tabular-nums select-none cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors",
+                        (isCompacting || isCompactingInProgress) && "animate-pulse",
+                        contextPercent >= 90
+                          ? "text-destructive hover:text-destructive"
+                          : contextPercent >= 70
+                            ? "text-amber-500 hover:text-amber-600"
+                            : "text-muted-foreground/70 hover:text-foreground",
+                      )}
+                    >
+                      {isCompacting || isCompactingInProgress ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 20 20"
+                          className="shrink-0 -rotate-90"
+                          aria-hidden="true"
+                        >
+                          <circle
+                            cx="10"
+                            cy="10"
+                            r="8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            opacity="0.2"
+                          />
+                          <circle
+                            cx="10"
+                            cy="10"
+                            r="8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
+                          />
+                        </svg>
+                      )}
+                      {isCompacting || isCompactingInProgress
+                        ? "Compacting"
+                        : contextPercent === 0
+                          ? "0%"
+                          : contextPercent < 1
+                            ? "<1%"
+                            : `${contextPercent}%`}
+                    </button>
+                  </div>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="center" className="w-48 p-3 text-xs z-50">
+                  <div className="font-semibold mb-2">Context window</div>
+                  {contextTokens != null && contextLimit != null ? (
+                    <div className="text-muted-foreground mb-1">
+                      {contextTokens.toLocaleString()} / {contextLimit.toLocaleString()} tokens
+                    </div>
+                  ) : contextTokens != null ? (
+                    <div className="text-muted-foreground mb-1">
+                      {contextTokens.toLocaleString()} tokens
+                    </div>
+                  ) : null}
+                  {contextCost != null && contextCost > 0 && (
+                    <div className="text-muted-foreground mb-2">
+                      Cost: ${contextCost < 0.01 ? contextCost.toFixed(6) : contextCost.toFixed(4)}
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2 gap-2"
+                    disabled={isLoading || isDisabled || isCompactingInProgress}
+                    onClick={async () => {
+                      setIsCompacting(true);
+                      try {
+                        await summarizeSession();
+                      } finally {
+                        setIsCompacting(false);
+                      }
+                    }}
+                  >
+                    <Minimize2 className="size-3" />
+                    Compact
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            )}
+            {shouldShowStopButton({ isLoading, isCompactingInProgress }) ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="default"
+                title="Stop"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStop?.();
+                }}
+              >
+                <Square className="size-3.5 fill-current" />
+                <span className="sr-only">Stop generating</span>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="default"
+                title={isLoading ? (queueMode === "after-part" ? "Steer" : "Queue") : "Send"}
+                disabled={isDisabled || !hasValue}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleSubmit();
+                }}
+              >
+                <ArrowUp />
+                <span className="sr-only">
+                  {isLoading
+                    ? queueMode === "after-part"
+                      ? "Steer"
+                      : "Queue message"
+                    : "Send message"}
+                </span>
+              </Button>
+            )}
+          </div>
         </div>
       </section>
     );

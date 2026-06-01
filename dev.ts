@@ -1,22 +1,32 @@
 /**
  * Dev script - replaces concurrently + wait-on.
- * Starts the Bun dev server, waits for it to be ready, then launches Electron.
+ * Starts the Vite+ dev server, waits for it to be ready, then launches Electron.
  * Kills both processes on exit.
  */
 
+import { spawn, spawnSync } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
+
 const host = "127.0.0.1";
-const port = Number(Bun.env.OPENGUI_VITE_PORT || 5173);
+const port = Number(process.env.OPENGUI_VITE_PORT || 5173);
+const backendPort = Number(process.env.OPENGUI_WEB_BACKEND_PORT || 3001);
 const url = `http://${host}:${port}`;
+const backendUrl = `http://${host}:${backendPort}`;
 
-const build = Bun.spawnSync(["bun", "scripts/build-electron.ts"], {
-  stdio: ["inherit", "inherit", "inherit"],
-});
+const build = spawnSync(
+  process.execPath,
+  ["--experimental-strip-types", "scripts/build-electron.ts"],
+  {
+    stdio: "inherit",
+    env: process.env,
+  },
+);
 
-if (!build.success) process.exit(build.exitCode);
+if (build.status !== 0) process.exit(build.status ?? 1);
 
-const server = Bun.spawn(["vp", "dev", "--host", host, "--port", String(port)], {
-  stdio: ["inherit", "inherit", "inherit"],
-  env: { ...Bun.env, OPENGUI_SKIP_WEB_BACKEND: "1" },
+const server = spawn("vp", ["dev", "--host", host, "--port", String(port)], {
+  stdio: "inherit",
+  env: process.env,
 });
 
 const maxAttempts = 60;
@@ -24,6 +34,7 @@ const maxAttempts = 60;
 for (let i = 0; i < maxAttempts; i++) {
   try {
     await fetch(url);
+    await fetch(`${backendUrl}/api/health`);
     break;
   } catch {
     if (i === maxAttempts - 1) {
@@ -31,16 +42,29 @@ for (let i = 0; i < maxAttempts; i++) {
       server.kill();
       process.exit(1);
     }
-    await Bun.sleep(1000);
+    await sleep(1000);
   }
 }
 
-const electron = Bun.spawn(["electron", "."], {
-  stdio: ["inherit", "inherit", "inherit"],
-  env: { ...Bun.env, BUN_DEV_SERVER_URL: url },
+const electronEnv = { ...process.env };
+delete electronEnv.ELECTRON_RUN_AS_NODE;
+
+const electron = spawn("pnpm", ["exec", "electron", ".", "--enable-logging=stderr"], {
+  stdio: "inherit",
+  env: {
+    ...electronEnv,
+    OPENGUI_DEV_SERVER_URL: url,
+    OPENGUI_BACKEND_MODE: "local-external",
+    OPENGUI_BACKEND_URL: backendUrl,
+    ELECTRON_ENABLE_LOGGING: "1",
+    ELECTRON_ENABLE_STACK_DUMPING: "1",
+  },
 });
 
-// When Electron closes, kill the server and exit
-const exitCode = await electron.exited;
+const exitCode = await new Promise<number>((resolve, reject) => {
+  electron.once("error", reject);
+  electron.once("exit", (code) => resolve(code ?? 0));
+});
+
 server.kill();
 process.exit(exitCode);

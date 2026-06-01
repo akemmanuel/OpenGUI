@@ -5,7 +5,7 @@ import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { findEnvKeys, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import {
@@ -206,6 +206,156 @@ function extractPiThinkingVariant(entry) {
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 }
 
+function getPiSessionDir(cwd, agentDir = getAgentDir()) {
+  const safePath = `--${cwd.replace(/^[\\/]/, "").replace(/[\\/:]/g, "-")}--`;
+  return join(agentDir, "sessions", safePath);
+}
+
+function extractPiListTextContent(message) {
+  const content = message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block) => block?.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join(" ");
+}
+
+function piListEntryTimestamp(entry, message) {
+  const messageTimestamp = message?.timestamp;
+  if (typeof messageTimestamp === "number" && Number.isFinite(messageTimestamp)) {
+    return messageTimestamp;
+  }
+  if (typeof entry?.timestamp === "string") {
+    const timestamp = Date.parse(entry.timestamp);
+    if (!Number.isNaN(timestamp)) return timestamp;
+  }
+  return null;
+}
+
+async function buildFastPiSessionInfo(filePath, stats) {
+  try {
+    const content = await readFile(filePath, "utf8");
+    let header = null;
+    let messageCount = 0;
+    let firstMessage = "";
+    let name;
+    let lastActivityTime;
+
+    for (const line of content.split("\n")) {
+      if (!line.trim()) continue;
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      if (!header) {
+        if (entry.type !== "session" || typeof entry.id !== "string") return null;
+        header = entry;
+        continue;
+      }
+
+      if (entry.type === "session_info") {
+        name = entry.name?.trim() || undefined;
+        continue;
+      }
+
+      if (entry.type !== "message") continue;
+      messageCount++;
+      const message = entry.message;
+      if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
+
+      const timestamp = piListEntryTimestamp(entry, message);
+      if (typeof timestamp === "number") {
+        lastActivityTime = Math.max(lastActivityTime ?? 0, timestamp);
+      }
+
+      if (!firstMessage && message.role === "user") {
+        firstMessage = extractPiListTextContent(message);
+      }
+    }
+
+    if (!header) return null;
+    const headerTime = typeof header.timestamp === "string" ? Date.parse(header.timestamp) : NaN;
+    const created = !Number.isNaN(headerTime) ? new Date(headerTime) : stats.birthtime;
+    const modified =
+      typeof lastActivityTime === "number" && lastActivityTime > 0
+        ? new Date(lastActivityTime)
+        : !Number.isNaN(headerTime)
+          ? new Date(headerTime)
+          : stats.mtime;
+
+    return {
+      path: filePath,
+      id: header.id,
+      cwd: typeof header.cwd === "string" ? header.cwd : "",
+      name,
+      parentSessionPath: header.parentSession,
+      created,
+      modified,
+      messageCount,
+      firstMessage: firstMessage || "(no messages)",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function listFastPiSessionInfos(directory, agentDir, cache, directoryCache) {
+  const sessionDir = getPiSessionDir(directory, agentDir);
+  if (!existsSync(sessionDir)) return [];
+  let entries;
+  try {
+    entries = await readdir(sessionDir);
+  } catch {
+    return [];
+  }
+
+  const files = entries
+    .filter((entry) => entry.endsWith(".jsonl"))
+    .map((entry) => join(sessionDir, entry));
+  const fileStats = await Promise.all(
+    files.map(async (filePath) => {
+      try {
+        return { filePath, stats: await stat(filePath) };
+      } catch {
+        cache.delete(filePath);
+        return null;
+      }
+    }),
+  );
+  const liveStats = fileStats.filter(Boolean);
+  const signature = liveStats
+    .map(({ filePath, stats }) => `${filePath}:${stats.size}:${stats.mtimeMs}`)
+    .join("\n");
+  const cachedDirectory = directoryCache.get(sessionDir);
+  if (cachedDirectory?.signature === signature) return cachedDirectory.infos;
+
+  const infos = await Promise.all(
+    liveStats.map(async ({ filePath, stats }) => {
+      const cached = cache.get(filePath);
+      if (cached && cached.size === stats.size && Math.abs(cached.mtimeMs - stats.mtimeMs) < 1000) {
+        return cached.info;
+      }
+      const info = await buildFastPiSessionInfo(filePath, stats);
+      if (info) cache.set(filePath, { size: stats.size, mtimeMs: stats.mtimeMs, info });
+      else cache.delete(filePath);
+      return info;
+    }),
+  );
+  const liveFiles = new Set(files);
+  for (const filePath of cache.keys()) {
+    if (filePath.startsWith(`${sessionDir}/`) && !liveFiles.has(filePath)) cache.delete(filePath);
+  }
+  const sortedInfos = infos
+    .filter(Boolean)
+    .sort((a, b) => (b.modified?.getTime?.() ?? 0) - (a.modified?.getTime?.() ?? 0));
+  directoryCache.set(sessionDir, { signature, infos: sortedInfos });
+  return sortedInfos;
+}
+
 function inferPiSessionModelFromManager(manager) {
   const context = manager.buildSessionContext?.();
   if (context?.model?.provider && context.model.modelId) {
@@ -236,15 +386,6 @@ function inferPiSessionModelFromManager(manager) {
   }
   if (!currentModel) return null;
   return { ...currentModel, ...(currentVariant ? { variant: currentVariant } : {}) };
-}
-
-function inferPiSessionModel(info, directory) {
-  if (!info?.path) return null;
-  try {
-    return inferPiSessionModelFromManager(SessionManager.open(info.path, undefined, directory));
-  } catch {
-    return null;
-  }
 }
 
 function normalizePiModel(model) {
@@ -399,6 +540,7 @@ function createUserInfo({ sessionId, messageId, timestamp, model, directory }) {
     model: {
       providerID: model?.provider ?? "pi",
       modelID: model?.modelId ?? "default",
+      ...(model?.variant ? { variant: model.variant } : {}),
     },
     system: directory || undefined,
   };
@@ -430,6 +572,7 @@ function createAssistantInfo({
     parentID: parentID || "",
     modelID: message?.model || "",
     providerID: message?.provider || "pi",
+    ...(message?.variant ? { variant: message.variant } : {}),
     mode: "pi",
     agent: "pi",
     path: {
@@ -457,15 +600,17 @@ function visibleUiBranchEntries(sessionManager) {
   for (const entry of branch) {
     if (entry.type === "compaction") latestCompaction = entry;
   }
-  if (!latestCompaction) return branch;
+  if (!latestCompaction) return { entries: branch, seedEntries: [] };
   const compactionIdx = branch.findIndex((entry) => entry.id === latestCompaction.id);
-  if (compactionIdx < 0) return branch;
+  if (compactionIdx < 0) return { entries: branch, seedEntries: [] };
   const visible = [];
   let foundFirstKept = false;
+  let visibleStartIdx = compactionIdx;
   for (let i = 0; i < compactionIdx; i++) {
     const entry = branch[i];
     if (entry.id === latestCompaction.firstKeptEntryId) {
       foundFirstKept = true;
+      visibleStartIdx = i;
     }
     if (foundFirstKept) visible.push(entry);
   }
@@ -473,7 +618,7 @@ function visibleUiBranchEntries(sessionManager) {
   for (let i = compactionIdx + 1; i < branch.length; i++) {
     visible.push(branch[i]);
   }
-  return visible;
+  return { entries: visible, seedEntries: branch.slice(0, visibleStartIdx) };
 }
 
 function createBundle(info, parts = []) {
@@ -703,19 +848,52 @@ function createCompactionAssistantBundle({
 
 function buildTranscriptFromSessionManager(sessionManager, directory) {
   const sessionId = toFrontendSessionId(sessionManager.getSessionId());
-  const entries = visibleUiBranchEntries(sessionManager);
+  const { entries, seedEntries } = visibleUiBranchEntries(sessionManager);
   const bundles = [];
   const toolPartByCallId = new Map();
   let lastUserMessageId = "";
   let currentModel = null;
+  let currentThinkingLevel;
   let lastTimelineTimestamp = null;
+
+  for (const entry of seedEntries) {
+    if (entry.type === "model_change") {
+      currentModel = {
+        provider: entry.provider,
+        modelId: entry.modelId,
+        ...(currentThinkingLevel ? { variant: currentThinkingLevel } : {}),
+      };
+      continue;
+    }
+    if (entry.type === "thinking_level_change") {
+      currentThinkingLevel = extractPiThinkingVariant(entry) ?? currentThinkingLevel;
+      if (currentModel) currentModel = { ...currentModel, variant: currentThinkingLevel };
+      continue;
+    }
+    if (entry.type === "message" && entry.message?.role === "assistant") {
+      currentModel = {
+        provider: entry.message.provider,
+        modelId: entry.message.model,
+        ...(currentThinkingLevel ? { variant: currentThinkingLevel } : {}),
+      };
+    }
+  }
 
   for (const entry of entries) {
     if (entry.type === "model_change") {
-      currentModel = { provider: entry.provider, modelId: entry.modelId };
+      currentModel = {
+        provider: entry.provider,
+        modelId: entry.modelId,
+        ...(currentThinkingLevel ? { variant: currentThinkingLevel } : {}),
+      };
       continue;
     }
-    if (entry.type === "thinking_level_change" || entry.type === "label") {
+    if (entry.type === "thinking_level_change") {
+      currentThinkingLevel = extractPiThinkingVariant(entry) ?? currentThinkingLevel;
+      if (currentModel) currentModel = { ...currentModel, variant: currentThinkingLevel };
+      continue;
+    }
+    if (entry.type === "label") {
       continue;
     }
     if (entry.type === "compaction") {
@@ -795,7 +973,11 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
     }
 
     if (message.role === "assistant") {
-      currentModel = { provider: message.provider, modelId: message.model };
+      currentModel = {
+        provider: message.provider,
+        modelId: message.model,
+        ...(currentThinkingLevel ? { variant: currentThinkingLevel } : {}),
+      };
       const completedAt = new Date(entry.timestamp).getTime() || coerceTimestamp(message.timestamp);
       const startedAt =
         typeof lastTimelineTimestamp === "number" ? lastTimelineTimestamp : completedAt;
@@ -804,7 +986,10 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
           sessionId,
           messageId: entry.id,
           timestamp: completedAt,
-          message,
+          message: {
+            ...message,
+            ...(currentThinkingLevel ? { variant: currentThinkingLevel } : {}),
+          },
           directory,
           parentID: lastUserMessageId,
           createdAt: startedAt,
@@ -883,6 +1068,8 @@ export class PiBridgeManager {
     this.projects = new Map();
     this.projectInitPromises = new Map();
     this.sessionIndex = new Map();
+    this.sessionInfoCache = new Map();
+    this.directorySessionInfoCache = new Map();
     this.pendingOAuth = new Map();
   }
 
@@ -1661,10 +1848,38 @@ export class PiBridgeManager {
     }
   }
 
+  getListProject(target = {}) {
+    const directory = normalizeDir(target.directory);
+    if (!directory) throw new Error("Directory required for Pi backend");
+    const workspaceId = target.workspaceId;
+    const key = makeProjectKey(workspaceId, directory);
+    const existing = this.projects.get(key);
+    if (existing) return existing;
+    return {
+      key,
+      directory,
+      workspaceId,
+      busySessionIds: new Set(),
+      sessionCaches: new Map(),
+      syntheticStateBySessionId: new Map(),
+      liveSessionContexts: new Map(),
+      sessionContextInitPromises: new Map(),
+      runtime: null,
+      sessionUnsubscribe: null,
+      currentSessionId: null,
+      currentSessionFile: null,
+    };
+  }
+
   async listSessions(target) {
     if (target?.directory) {
-      const project = await this.ensureProject(target);
-      const infos = await SessionManager.list(project.directory);
+      const project = this.getListProject(target);
+      const infos = await listFastPiSessionInfos(
+        project.directory,
+        this.agentDir,
+        this.sessionInfoCache,
+        this.directorySessionInfoCache,
+      );
       for (const info of infos) {
         this.sessionIndex.set(info.id, {
           projectKey: project.key,
@@ -1673,16 +1888,16 @@ export class PiBridgeManager {
           workspaceId: project.workspaceId,
         });
       }
-      return infos.map((info) =>
-        normalizePiSession(
-          { ...info, model: inferPiSessionModel(info, project.directory) },
-          project,
-        ),
-      );
+      return infos.map((info) => normalizePiSession(info, project));
     }
     const sessions = [];
     for (const project of this.projects.values()) {
-      const infos = await SessionManager.list(project.directory);
+      const infos = await listFastPiSessionInfos(
+        project.directory,
+        this.agentDir,
+        this.sessionInfoCache,
+        this.directorySessionInfoCache,
+      );
       for (const info of infos) {
         this.sessionIndex.set(info.id, {
           projectKey: project.key,
@@ -1690,12 +1905,7 @@ export class PiBridgeManager {
           directory: project.directory,
           workspaceId: project.workspaceId,
         });
-        sessions.push(
-          normalizePiSession(
-            { ...info, model: inferPiSessionModel(info, project.directory) },
-            project,
-          ),
-        );
+        sessions.push(normalizePiSession(info, project));
       }
     }
     return sessions.sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
@@ -2429,7 +2639,7 @@ export class PiBridgeManager {
     }
     this.applySelectedVariant(session, variant);
     await this.dispatchSessionPrompt(project, session, text, images);
-    return project;
+    return true;
   }
 
   async abort(sessionId) {
@@ -2459,21 +2669,21 @@ export class PiBridgeManager {
 
   async sendCommand(sessionId, command, args, model, _agent, _variant, directory, workspaceId) {
     const text = `/${command}${args ? ` ${args}` : ""}`;
-    await this.prompt(sessionId, text, [], model, undefined, undefined, directory, workspaceId);
+    return await this.prompt(
+      sessionId,
+      text,
+      [],
+      model,
+      undefined,
+      undefined,
+      directory,
+      workspaceId,
+    );
   }
 }
 
 function daemonInfoPath(userData) {
   return join(userData || process.cwd(), "pi-daemon.json");
-}
-
-async function fileExists(path) {
-  try {
-    await readFile(path, "utf8");
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function findFreePort() {
@@ -2739,9 +2949,15 @@ class PiDaemonClient {
     if (!port) throw new Error("Could not allocate Pi daemon port");
     const token = preferredInfo?.token || randomUUID();
     const baseUrl = `http://127.0.0.1:${port}`;
-    const daemonPath = join(__dirname, "pi-daemon-server.js");
-    if (!(await fileExists(daemonPath)))
-      throw new Error(`Pi daemon script not found: ${daemonPath}`);
+    const daemonPathCandidates = [
+      join(__dirname, "pi-daemon-server.js"),
+      join(process.cwd(), "dist-electron", "pi-daemon-server.js"),
+      join(process.cwd(), "pi-daemon-server.js"),
+    ];
+    const daemonPath = daemonPathCandidates.find((candidate) => existsSync(candidate));
+    if (!daemonPath) {
+      throw new Error(`Pi daemon script not found. Tried: ${daemonPathCandidates.join(", ")}`);
+    }
 
     let logs = "";
     const appendLog = (chunk) => {

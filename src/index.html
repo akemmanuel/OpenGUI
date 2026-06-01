@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob: http: https:; font-src 'self' data:; connect-src 'self' http: https:; media-src 'self' blob:; object-src 'none'; base-uri 'none';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob: http: https:; font-src 'self' data:; connect-src 'self' http: https: ws: wss:; media-src 'self' blob:; object-src 'none'; base-uri 'none';"
     />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <title>OpenGUI</title>
@@ -54,13 +54,12 @@
   <body>
     <script>
       try {
-        const settings = window.electronAPI?.settings;
-        let t = settings?.getSync("theme") ?? null;
+        let t = localStorage.getItem("theme");
         if (!t) {
-          const legacy = localStorage.getItem("theme");
-          if (legacy === "dark" || legacy === "light") {
+          const legacy = localStorage.getItem("opengui:web:settings:theme");
+          if (legacy === "dark" || legacy === "light" || legacy === "system") {
             t = legacy;
-            settings?.setSync("theme", legacy);
+            localStorage.setItem("theme", legacy);
           }
         }
         document.documentElement.classList.toggle("dark", t ? t === "dark" : true);

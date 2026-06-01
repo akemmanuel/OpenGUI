@@ -22,6 +22,8 @@ import { Button } from "@/components/ui/button";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/safe-storage";
 import { detectSystemLanguage } from "@/i18n";
+import { useOpenGuiClient } from "@/protocol/provider";
+import { useDesktopShell } from "@/shell/provider";
 import type { BackendDetectionResult } from "@/types/electron";
 
 // ---------------------------------------------------------------------------
@@ -106,7 +108,7 @@ const BACKENDS: BackendDef[] = [
       "Runs as a local server on your machine",
     ],
     requirement: "opencode CLI in PATH or ~/.opencode/bin/opencode",
-    installCmd: "npm install -g opencode-ai\npnpm add -g opencode-ai\nbun install -g opencode-ai",
+    installCmd: "npm install -g opencode-ai\npnpm add -g opencode-ai",
     docsUrl: "https://opencode.ai",
     recommended: true,
     Icon: OpenCodeIcon,
@@ -122,8 +124,7 @@ const BACKENDS: BackendDef[] = [
       "Official Anthropic agentic toolchain",
     ],
     requirement: "claude CLI in PATH or ~/.claude/local/claude",
-    installCmd:
-      "npm install -g @anthropic-ai/claude-code\npnpm add -g @anthropic-ai/claude-code\nbun install -g @anthropic-ai/claude-code",
+    installCmd: "npm install -g @anthropic-ai/claude-code\npnpm add -g @anthropic-ai/claude-code",
     envKey: "ANTHROPIC_API_KEY",
     docsUrl: "https://docs.anthropic.com/claude-code",
     Icon: ClaudeIcon,
@@ -140,7 +141,7 @@ const BACKENDS: BackendDef[] = [
     ],
     requirement: "pi agent installed",
     installCmd:
-      "npm install -g @earendil-works/pi-coding-agent\npnpm add -g @earendil-works/pi-coding-agent\nbun install -g @earendil-works/pi-coding-agent",
+      "npm install -g @earendil-works/pi-coding-agent\npnpm add -g @earendil-works/pi-coding-agent",
     docsUrl: "https://github.com/badlogic/pi",
     Icon: PiIcon,
   },
@@ -155,8 +156,7 @@ const BACKENDS: BackendDef[] = [
       "Seamless OpenAI ecosystem integration",
     ],
     requirement: "codex CLI in PATH",
-    installCmd:
-      "npm install -g @openai/codex\npnpm add -g @openai/codex\nbun install -g @openai/codex",
+    installCmd: "npm install -g @openai/codex\npnpm add -g @openai/codex",
     envKey: "OPENAI_API_KEY",
     docsUrl: "https://github.com/openai/codex",
     Icon: CodexIcon,
@@ -182,6 +182,8 @@ const EMPTY_BACKEND_STATUS: BackendDetectionResult = {
 
 export function SetupWizard({ onComplete }: Props) {
   const { t, i18n } = useTranslation();
+  const client = useOpenGuiClient();
+  const shell = useDesktopShell();
   const [step, setStep] = useState<Step>("backends");
   const [folder, setFolder] = useState("");
   const [backendStatus, setBackendStatus] = useState<BackendDetectionResult>(EMPTY_BACKEND_STATUS);
@@ -200,7 +202,8 @@ export function SetupWizard({ onComplete }: Props) {
   }, [installLogs]);
 
   async function refreshBackendStatus() {
-    const result = (await window.electronAPI?.detectBackends?.()) ?? EMPTY_BACKEND_STATUS;
+    const result =
+      (await client.runtime.detectBackends().catch(() => null)) ?? EMPTY_BACKEND_STATUS;
     setBackendStatus(result);
   }
 
@@ -208,7 +211,7 @@ export function SetupWizard({ onComplete }: Props) {
     setInstallStates((prev) => ({ ...prev, [backend.id]: "installing" }));
     setInstallLogs((prev) => ({ ...prev, [backend.id]: "" }));
 
-    const cleanup = window.electronAPI?.onInstallProgress?.((progress) => {
+    const cleanup = shell.backends.onInstallProgress((progress) => {
       setInstallLogs((prev) => ({
         ...prev,
         [backend.id]: (prev[backend.id] ?? "") + progress.chunk,
@@ -216,7 +219,7 @@ export function SetupWizard({ onComplete }: Props) {
     });
 
     try {
-      const result = await window.electronAPI?.installBackend?.(backend.id);
+      const result = await client.runtime.installBackend(backend.id);
       await refreshBackendStatus();
       setInstallStates((prev) => ({
         ...prev,
@@ -247,7 +250,8 @@ export function SetupWizard({ onComplete }: Props) {
 
     void (async () => {
       try {
-        const result = (await window.electronAPI?.detectBackends?.()) ?? EMPTY_BACKEND_STATUS;
+        const result =
+          (await client.runtime.detectBackends().catch(() => null)) ?? EMPTY_BACKEND_STATUS;
         if (!cancelled) setBackendStatus(result);
       } catch {
         if (!cancelled) setBackendStatus(EMPTY_BACKEND_STATUS);
@@ -259,7 +263,7 @@ export function SetupWizard({ onComplete }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [i18n]);
+  }, [client, i18n]);
 
   function handleComplete() {
     if (folder.trim()) {
@@ -276,7 +280,7 @@ export function SetupWizard({ onComplete }: Props) {
 
   async function handleBrowse() {
     try {
-      const nextDirectory = await window.electronAPI?.openDirectory?.();
+      const nextDirectory = await shell.dialog.openDirectory();
       if (!nextDirectory) return;
       setFolder(nextDirectory);
     } catch {
@@ -288,205 +292,213 @@ export function SetupWizard({ onComplete }: Props) {
   const stepIndex = step === "backends" ? 0 : 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md">
-      <div className="w-full max-w-[720px] px-5">
-        <div className="mb-5 text-center">
-          <div className="text-xs text-muted-foreground mb-2">{stepIndex + 1} / 2</div>
-          <h1 className="text-xl font-semibold tracking-tight mb-1.5">{t("setupWizard.title")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {step === "backends"
-              ? t("setupWizard.backendStatusSubtitle")
-              : t("setupWizard.folderSubtitle")}
-          </p>
-        </div>
-
-        <div className="flex justify-center gap-1.5 mb-5">
-          {[0, 1].map((idx) => (
-            <div
-              key={idx}
-              className={[
-                "h-1.5 rounded-full transition-all duration-300",
-                idx === stepIndex
-                  ? "w-8 bg-foreground"
-                  : idx < stepIndex
-                    ? "w-4 bg-foreground/60"
-                    : "w-4 bg-muted",
-              ].join(" ")}
-            />
-          ))}
-        </div>
-
-        {step === "backends" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm">
-              <span className="text-muted-foreground">
-                {isDetectingBackends
-                  ? t("setupWizard.detectingBackends")
-                  : t("setupWizard.detectedBackends", { count: installedCount })}
-              </span>
-              {isDetectingBackends && (
-                <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {BACKENDS.map((backend) => {
-                const installed = backendStatus[backend.id];
-                const installState = installStates[backend.id] ?? "idle";
-                const log = installLogs[backend.id];
-                const Icon = backend.Icon;
-
-                return (
-                  <div key={backend.id} className="rounded-xl border bg-card p-4 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-                        <Icon className="size-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <h2 className="font-medium leading-none">{backend.label}</h2>
-                          <span
-                            className={[
-                              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              installed
-                                ? "bg-emerald-500/10 text-emerald-600"
-                                : "bg-amber-500/10 text-amber-600",
-                            ].join(" ")}
-                          >
-                            {installed ? (
-                              <Check className="size-3" />
-                            ) : (
-                              <XCircle className="size-3" />
-                            )}
-                            {installed ? t("setupWizard.installed") : t("setupWizard.notInstalled")}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">{backend.tagline}</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 space-y-2 text-xs">
-                      <div>
-                        <div className="mb-1 text-muted-foreground">
-                          {t("setupWizard.requiredCommand")}
-                        </div>
-                        <code className="block rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
-                          {backend.requirement}
-                        </code>
-                      </div>
-                      <div>
-                        <div className="mb-1 text-muted-foreground">
-                          {t("setupWizard.installCommand")}
-                        </div>
-                        <code className="block whitespace-pre-wrap select-all rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
-                          {backend.installCmd}
-                        </code>
-                      </div>
-                    </div>
-
-                    {log && (
-                      <pre
-                        ref={(el) => {
-                          logRefs.current[backend.id] = el;
-                        }}
-                        className="mt-3 max-h-24 overflow-auto rounded-md bg-black/90 p-2 text-[10px] text-white"
-                      >
-                        {log}
-                      </pre>
-                    )}
-
-                    <div className="mt-3 flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant={installed ? "outline" : "default"}
-                        size="sm"
-                        disabled={installState === "installing"}
-                        onClick={() => void handleInstall(backend)}
-                        className="h-8 text-xs"
-                      >
-                        {installState === "installing" ? (
-                          <LoaderCircle className="mr-1.5 size-3 animate-spin" />
-                        ) : (
-                          <Download className="mr-1.5 size-3" />
-                        )}
-                        {installed ? t("setupWizard.reinstallCli") : t("setupWizard.installCli")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.electronAPI?.openExternal?.(backend.docsUrl)}
-                        className="h-8 text-xs"
-                      >
-                        {t("setupWizard.docs")}
-                        <ExternalLink className="ml-1.5 size-3" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {step === "folder" && (
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                <Folder className="size-5 text-muted-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">{t("setupWizard.folderTitle")}</div>
-                <p className="mt-1 text-sm text-muted-foreground">{t("setupWizard.folderHelp")}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-              <input
-                value={folder}
-                onChange={(event) => setFolder(event.target.value)}
-                placeholder="~/Projects"
-                className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-              />
-              <Button type="button" variant="outline" onClick={handleBrowse}>
-                <Folder className="mr-1.5 size-4" />
-                {t("common.browse")}
-              </Button>
-            </div>
-
-            <p className="mt-3 text-xs text-muted-foreground">
-              {t("setupWizard.folderEmptyHint")}{" "}
-              <span className="font-medium">{t("setupWizard.settingsGeneral")}</span>.
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-background/90 backdrop-blur-md">
+      <div className="flex min-h-full items-start justify-center px-5 py-6 sm:items-center sm:py-10">
+        <div className="w-full max-w-[720px]">
+          <div className="mb-5 text-center">
+            <div className="text-xs text-muted-foreground mb-2">{stepIndex + 1} / 2</div>
+            <h1 className="text-xl font-semibold tracking-tight mb-1.5">
+              {t("setupWizard.title")}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {step === "backends"
+                ? t("setupWizard.backendStatusSubtitle")
+                : t("setupWizard.folderSubtitle")}
             </p>
           </div>
-        )}
 
-        <div className="mt-5 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleSkip}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {t("setupWizard.skipSetup")}
-          </button>
+          <div className="flex justify-center gap-1.5 mb-5">
+            {[0, 1].map((idx) => (
+              <div
+                key={idx}
+                className={[
+                  "h-1.5 rounded-full transition-all duration-300",
+                  idx === stepIndex
+                    ? "w-8 bg-foreground"
+                    : idx < stepIndex
+                      ? "w-4 bg-foreground/60"
+                      : "w-4 bg-muted",
+                ].join(" ")}
+              />
+            ))}
+          </div>
 
-          <div className="flex items-center gap-2">
-            {step === "folder" && (
-              <Button variant="outline" size="sm" onClick={() => setStep("backends")}>
-                {t("common.back")}
-              </Button>
-            )}
-            {step === "backends" ? (
-              <Button size="sm" onClick={() => setStep("folder")}>
-                {t("setupWizard.continue")}
-                <ArrowRight className="ml-1.5 size-3.5" />
-              </Button>
-            ) : (
-              <Button size="sm" onClick={handleComplete}>
-                {t("setupWizard.launch")}
-                <ArrowRight className="ml-1.5 size-3.5" />
-              </Button>
-            )}
+          {step === "backends" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm">
+                <span className="text-muted-foreground">
+                  {isDetectingBackends
+                    ? t("setupWizard.detectingBackends")
+                    : t("setupWizard.detectedBackends", { count: installedCount })}
+                </span>
+                {isDetectingBackends && (
+                  <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {BACKENDS.map((backend) => {
+                  const installed = backendStatus[backend.id];
+                  const installState = installStates[backend.id] ?? "idle";
+                  const log = installLogs[backend.id];
+                  const Icon = backend.Icon;
+
+                  return (
+                    <div key={backend.id} className="rounded-xl border bg-card p-4 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+                          <Icon className="size-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h2 className="font-medium leading-none">{backend.label}</h2>
+                            <span
+                              className={[
+                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                installed
+                                  ? "bg-emerald-500/10 text-emerald-600"
+                                  : "bg-amber-500/10 text-amber-600",
+                              ].join(" ")}
+                            >
+                              {installed ? (
+                                <Check className="size-3" />
+                              ) : (
+                                <XCircle className="size-3" />
+                              )}
+                              {installed
+                                ? t("setupWizard.installed")
+                                : t("setupWizard.notInstalled")}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{backend.tagline}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-2 text-xs">
+                        <div>
+                          <div className="mb-1 text-muted-foreground">
+                            {t("setupWizard.requiredCommand")}
+                          </div>
+                          <code className="block rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
+                            {backend.requirement}
+                          </code>
+                        </div>
+                        <div>
+                          <div className="mb-1 text-muted-foreground">
+                            {t("setupWizard.installCommand")}
+                          </div>
+                          <code className="block whitespace-pre-wrap select-all rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
+                            {backend.installCmd}
+                          </code>
+                        </div>
+                      </div>
+
+                      {log && (
+                        <pre
+                          ref={(el) => {
+                            logRefs.current[backend.id] = el;
+                          }}
+                          className="mt-3 max-h-24 overflow-auto rounded-md bg-black/90 p-2 text-[10px] text-white"
+                        >
+                          {log}
+                        </pre>
+                      )}
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant={installed ? "outline" : "default"}
+                          size="sm"
+                          disabled={installState === "installing"}
+                          onClick={() => void handleInstall(backend)}
+                          className="h-8 text-xs"
+                        >
+                          {installState === "installing" ? (
+                            <LoaderCircle className="mr-1.5 size-3 animate-spin" />
+                          ) : (
+                            <Download className="mr-1.5 size-3" />
+                          )}
+                          {installed ? t("setupWizard.reinstallCli") : t("setupWizard.installCli")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => shell.navigation.openExternal(backend.docsUrl)}
+                          className="h-8 text-xs"
+                        >
+                          {t("setupWizard.docs")}
+                          <ExternalLink className="ml-1.5 size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {step === "folder" && (
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+                  <Folder className="size-5 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{t("setupWizard.folderTitle")}</div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t("setupWizard.folderHelp")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <input
+                  value={folder}
+                  onChange={(event) => setFolder(event.target.value)}
+                  placeholder="~/Projects"
+                  className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+                <Button type="button" variant="outline" onClick={handleBrowse}>
+                  <Folder className="mr-1.5 size-4" />
+                  {t("common.browse")}
+                </Button>
+              </div>
+
+              <p className="mt-3 text-xs text-muted-foreground">
+                {t("setupWizard.folderEmptyHint")}{" "}
+                <span className="font-medium">{t("setupWizard.settingsGeneral")}</span>.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={handleSkip}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {t("setupWizard.skipSetup")}
+            </button>
+
+            <div className="flex items-center gap-2">
+              {step === "folder" && (
+                <Button variant="outline" size="sm" onClick={() => setStep("backends")}>
+                  {t("common.back")}
+                </Button>
+              )}
+              {step === "backends" ? (
+                <Button size="sm" onClick={() => setStep("folder")}>
+                  {t("setupWizard.continue")}
+                  <ArrowRight className="ml-1.5 size-3.5" />
+                </Button>
+              ) : (
+                <Button size="sm" onClick={handleComplete}>
+                  {t("setupWizard.launch")}
+                  <ArrowRight className="ml-1.5 size-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

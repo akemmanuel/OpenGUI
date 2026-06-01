@@ -12,6 +12,7 @@ import type { SpawnOptions } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createSettingsStore } from "./settings-store.js";
 import { setupUpdateManager } from "./main/update-manager.js";
+import { createBackendSidecarController } from "./main/backend-sidecar.js";
 import { broadcastToAllWindows } from "./lib/window-broadcast.js";
 import { findFilesInDirectory } from "./server/services/file-search.js";
 
@@ -20,9 +21,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.setName("OpenGUI");
 app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));
 
-const DEV_SERVER_URL = process.env.BUN_DEV_SERVER_URL || "http://localhost:3000";
+const DEV_SERVER_URL = process.env.OPENGUI_DEV_SERVER_URL || "http://localhost:3000";
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
 const settingsStore = createSettingsStore(app.getPath("userData"));
+const backendSidecar = createBackendSidecarController({
+  app,
+  settingsStore,
+  isDev,
+  devServerUrl: DEV_SERVER_URL,
+  onStatusChange: (status) => {
+    broadcastToAllWindows("backend:status-changed", status);
+  },
+});
 
 let mainWindow: BrowserWindowType | null = null;
 
@@ -109,7 +119,6 @@ function resolvePackageManager() {
   const candidates = [
     { command: "pnpm", argsFor: (packageName: string) => ["add", "-g", packageName] },
     { command: "npm", argsFor: (packageName: string) => ["install", "-g", packageName] },
-    { command: "bun", argsFor: (packageName: string) => ["install", "-g", packageName] },
   ];
 
   return candidates.find((candidate) => isCommandAvailable(candidate.command));
@@ -365,6 +374,25 @@ ipcMain.handle("settings:remove", (_event, key) => {
   return success;
 });
 
+ipcMain.on("backend:get-config-sync", (event) => {
+  const config = backendSidecar.getConfig();
+  event.returnValue = {
+    kind: "electron",
+    backendUrl: config?.url ?? null,
+    backendToken: config?.token ?? null,
+    backendStatus: backendSidecar.getStatus(),
+  };
+});
+
+ipcMain.handle("backend:restart-managed", async () => {
+  const config = await backendSidecar.restart();
+  return {
+    url: config.url,
+    token: config.token,
+    status: backendSidecar.getStatus(),
+  };
+});
+
 ipcMain.handle("window:minimize", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
@@ -529,68 +557,14 @@ ipcMain.handle("backend:install", (event, backendId) => {
 });
 
 void app.whenReady().then(async () => {
-  // Load ESM backend bridges (SDKs are ESM-only) before creating windows.
-  // Renderer boot calls bridge IPC immediately; registering handlers after
-  // createWindow() races and can leave boot stuck at "Checking local server...".
-  const bridges = [
-    {
-      name: "opencode",
-      path: "./opencode-bridge.js",
-      setupName: "setupOpenCodeBridge",
-    },
-    {
-      name: "claude-code",
-      path: "./claude-code-bridge.js",
-      setupName: "setupClaudeCodeBridge",
-    },
-    {
-      name: "pi",
-      path: "./pi-bridge.js",
-      setupName: "setupPiBridge",
-      options: { userData: app.getPath("userData") },
-    },
-    {
-      name: "codex",
-      path: "./codex-bridge.js",
-      setupName: "setupCodexBridge",
-    },
-  ];
-
-  const bridgeControls = new Map<string, { restart?: () => Promise<unknown> }>();
-  for (const bridge of bridges) {
-    try {
-      const mod = await import(bridge.path);
-      const control = mod[bridge.setupName](
-        ipcMain,
-        () => BrowserWindow.getAllWindows(),
-        bridge.options,
-      );
-      if (control) bridgeControls.set(bridge.name, control);
-    } catch (err) {
-      console.error(`Failed to load ${bridge.name} bridge:`, err);
-    }
+  try {
+    await backendSidecar.start();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    dialog.showErrorBox("OpenGUI backend failed to start", message);
+    app.quit();
+    return;
   }
-
-  ipcMain.handle("agent-backends:restart", async () => {
-    const results: Record<string, { success: boolean; error?: string }> = {};
-    for (const bridge of bridges) {
-      const control = bridgeControls.get(bridge.name);
-      if (!control?.restart) {
-        results[bridge.name] = { success: false, error: "Restart not available" };
-        continue;
-      }
-      try {
-        await control.restart();
-        results[bridge.name] = { success: true };
-      } catch (error) {
-        results[bridge.name] = {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-    }
-    return { success: true, data: results };
-  });
 
   createWindow();
   setupUpdateManager();
@@ -600,6 +574,10 @@ void app.whenReady().then(async () => {
       createWindow();
     }
   });
+});
+
+app.on("before-quit", () => {
+  void backendSidecar.stop();
 });
 
 app.on("window-all-closed", () => {

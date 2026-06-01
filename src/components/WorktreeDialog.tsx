@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useAsyncDialogOperation, useDialogError } from "@/hooks/use-dialog-state";
 import { getProjectName, normalizeProjectPath } from "@/lib/utils";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 interface WorktreeDialogProps {
   open: boolean;
@@ -40,6 +41,7 @@ export function WorktreeDialog({
   defaultBranch = "",
   onCreated,
 }: WorktreeDialogProps) {
+  const client = useOpenGuiClient();
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const { error, setError, clearError, setUnknownError } = useDialogError();
@@ -79,15 +81,10 @@ export function WorktreeDialog({
       setExistingBranch(defaultBranch);
     }
 
-    window.electronAPI?.git
-      ?.listBranches(directory)
-      .then((res) => {
-        if (cancelled) return;
-        if (res.success && res.data) {
-          setBranches(res.data);
-        } else {
-          setError(res.error ?? "Failed to list branches");
-        }
+    client.git
+      .listBranches(directory)
+      .then((nextBranches) => {
+        if (!cancelled) setBranches(nextBranches);
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);
@@ -98,7 +95,7 @@ export function WorktreeDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, directory, defaultBranch, defaultMode, clearError, setError]);
+  }, [client, open, directory, defaultBranch, defaultMode, clearError, setError]);
 
   const { loading: creating, execute: handleCreate } = useAsyncDialogOperation(
     useCallback(async () => {
@@ -106,22 +103,19 @@ export function WorktreeDialog({
       if (!effectiveBranch || !normalizedWorktreePath) return;
       clearError();
       try {
-        const res = await window.electronAPI?.git?.addWorktree(
+        await client.git.addWorktree(
           directory,
           normalizedWorktreePath,
           effectiveBranch,
           mode === "new",
         );
-        if (res?.success) {
-          onCreated(normalizedWorktreePath, effectiveBranch);
-          onOpenChange(false);
-        } else {
-          setError(res?.error ?? "Failed to create worktree");
-        }
+        onCreated(normalizedWorktreePath, effectiveBranch);
+        onOpenChange(false);
       } catch (err) {
         setUnknownError(err, "Failed to create worktree");
       }
     }, [
+      client,
       effectiveBranch,
       worktreePath,
       directory,

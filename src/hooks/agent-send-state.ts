@@ -1,6 +1,7 @@
 import type { SessionMeta } from "@/hooks/agent-state-persistence";
 import type { Session, TurnRun } from "@/hooks/agent-state-types";
 import type { AgentSendSelection } from "@/hooks/agent-send";
+import { createUuid } from "@/lib/utils";
 
 export interface PromptSendState {
   turnRun: TurnRun;
@@ -16,7 +17,7 @@ export function createTurnRunStart({
   sessionId,
   selection,
   startedAt = Date.now(),
-  turnId = crypto.randomUUID(),
+  turnId = createUuid(),
 }: {
   sessionId: string;
   selection: AgentSendSelection;
@@ -39,7 +40,7 @@ export function createPromptSendState({
   text,
   selection,
   startedAt = Date.now(),
-  turnId = crypto.randomUUID(),
+  turnId = createUuid(),
 }: {
   sessionId: string;
   text: string;
@@ -71,7 +72,7 @@ export function createDraftSessionSendState({
   trackTurnRun = false,
   isChatDirectory = false,
   startedAt = Date.now(),
-  turnId = crypto.randomUUID(),
+  turnId = createUuid(),
 }: {
   session: Session;
   selection: AgentSendSelection;

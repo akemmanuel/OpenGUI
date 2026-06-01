@@ -8,11 +8,6 @@ import pkg from "./package.json" with { type: "json" };
 const entries = {
   main: "main.ts",
   preload: "preload.ts",
-  "opencode-bridge": "opencode-bridge.ts",
-  "claude-code-bridge": "claude-code-bridge.ts",
-  "codex-bridge": "codex-bridge.ts",
-  "pi-bridge": "pi-bridge.ts",
-  "pi-daemon-server": "pi-daemon-server.ts",
   "settings-store": "settings-store.ts",
   "main/update-manager": "main/update-manager.ts",
   "lib/window-broadcast": "lib/window-broadcast.ts",
@@ -51,7 +46,7 @@ function isExternal(id: string) {
 export default defineConfig({
   plugins: [
     {
-      name: "opengui-preload-cjs",
+      name: "opengui-electron-artifacts",
       apply: "build",
       async closeBundle() {
         await buildWithEsbuild({
@@ -64,6 +59,36 @@ export default defineConfig({
           sourcemap: true,
           minify: true,
           external: ["electron"],
+        });
+
+        await buildWithEsbuild({
+          entryPoints: ["server/web-server.ts"],
+          outfile: "dist-electron/backend.js",
+          bundle: true,
+          platform: "node",
+          format: "esm",
+          target: "node20",
+          sourcemap: true,
+          minify: true,
+          external: ["electron"],
+          banner: {
+            js: "import { createRequire as __openguiCreateRequire } from 'node:module'; const require = __openguiCreateRequire(import.meta.url);",
+          },
+        });
+
+        await buildWithEsbuild({
+          entryPoints: ["pi-daemon-server.ts"],
+          outfile: "dist-electron/pi-daemon-server.js",
+          bundle: true,
+          platform: "node",
+          format: "esm",
+          target: "node20",
+          sourcemap: true,
+          minify: true,
+          external: ["electron"],
+          banner: {
+            js: "import { createRequire as __openguiCreateRequire } from 'node:module'; const require = __openguiCreateRequire(import.meta.url);",
+          },
         });
       },
     },

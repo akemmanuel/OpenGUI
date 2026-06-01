@@ -28,7 +28,9 @@ import {
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { POST_MERGE_DELAY_MS, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
-import { OpenGuiClientProvider } from "@/protocol/provider";
+import { OpenGuiClientProvider, useOpenGuiClient } from "@/protocol/provider";
+import { getDesktopShellClient } from "@/runtime/clients";
+import { DesktopShellProvider } from "@/shell/provider";
 import { getDirectoryPlacementInfo, getWorktreePlacementMeta } from "@/lib/worktree-placement";
 import {
   buildPRUrl,
@@ -139,6 +141,7 @@ function useContextInfo({
 }
 
 function AppContent({ detachedProject }: { detachedProject?: string }) {
+  const client = useOpenGuiClient();
   const lastEscapeAtRef = useRef(0);
   const [queueMode, setQueueMode] = useState<QueueMode>("queue");
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
@@ -335,20 +338,23 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    const git = window.electronAPI?.git;
     const mainDir = activeWorktreeInfo?.mainDir;
-    if (!git || !mainDir) {
+    if (!mainDir) {
       setActiveWorktreeRemoteUrl(null);
       return;
     }
-    void git.getRemoteUrl(mainDir).then((res) => {
-      if (cancelled) return;
-      setActiveWorktreeRemoteUrl(res.success && res.data ? (res.data ?? "") : null);
-    });
+    void client.git
+      .getRemoteUrl(mainDir)
+      .then((remoteUrl) => {
+        if (!cancelled) setActiveWorktreeRemoteUrl(remoteUrl || null);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveWorktreeRemoteUrl(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, [activeWorktreeInfo?.mainDir]);
+  }, [activeWorktreeInfo?.mainDir, client]);
 
   const contextInfo = useContextInfo({
     activeSessionId,
@@ -551,16 +557,15 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
           if (deleteWt) {
             unregisterWorktree(mergeInfo.worktreePath);
             await removeProject(mergeInfo.worktreePath);
-            await window.electronAPI?.git?.removeWorktree(
-              mergeInfo.mainDir,
-              mergeInfo.worktreePath,
-            );
+            await client.git.removeWorktree(mergeInfo.mainDir, mergeInfo.worktreePath);
           }
           if (activeWorktreeInfo?.mainDir === mergeInfo.mainDir) {
-            const remoteRes = await window.electronAPI?.git?.getRemoteUrl(mergeInfo.mainDir);
-            setActiveWorktreeRemoteUrl(
-              remoteRes?.success && remoteRes.data ? (remoteRes.data ?? "") : null,
-            );
+            try {
+              const remoteUrl = await client.git.getRemoteUrl(mergeInfo.mainDir);
+              setActiveWorktreeRemoteUrl(remoteUrl || null);
+            } catch {
+              setActiveWorktreeRemoteUrl(null);
+            }
           }
         }}
         onFixWithAI={(conflicts) => {
@@ -585,20 +590,22 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 }
 
 export function App() {
-  const detachedProject = window.electronAPI?.getDetachedProject() ?? undefined;
+  const detachedProject = getDesktopShellClient().detachedProjects.getCurrent() ?? undefined;
 
   const [showWizard, setShowWizard] = useState(
     () => storageGet(STORAGE_KEYS.SETUP_COMPLETE) !== "true",
   );
 
   return (
-    <OpenGuiClientProvider>
-      <AgentBackendProvider detachedProject={detachedProject}>
-        <SidebarProvider className="!h-dvh">
-          <AppContent detachedProject={detachedProject} />
-          {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
-        </SidebarProvider>
-      </AgentBackendProvider>
-    </OpenGuiClientProvider>
+    <DesktopShellProvider>
+      <OpenGuiClientProvider>
+        <AgentBackendProvider detachedProject={detachedProject}>
+          <SidebarProvider className="!h-dvh">
+            <AppContent detachedProject={detachedProject} />
+            {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
+          </SidebarProvider>
+        </AgentBackendProvider>
+      </OpenGuiClientProvider>
+    </DesktopShellProvider>
   );
 }

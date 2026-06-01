@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getErrorMessage, getProjectName } from "@/lib/utils";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 type MergeState =
   | { step: "confirm" }
@@ -39,6 +40,7 @@ export function MergeDialog({
   onMerged,
   onFixWithAI,
 }: MergeDialogProps) {
+  const client = useOpenGuiClient();
   const [mergeState, setMergeState] = useState<MergeState>({ step: "confirm" });
   const [deleteWorktree, setDeleteWorktree] = useState(false);
 
@@ -58,13 +60,8 @@ export function MergeDialog({
 
   const handleMerge = useCallback(async () => {
     setMergeState({ step: "merging" });
-    const git = window.electronAPI?.git;
-    if (!git) {
-      setMergeState({ step: "error", message: "Git bridge not available" });
-      return;
-    }
     try {
-      const res = await git.merge(mainDirectory, branch);
+      const res = await client.git.merge(mainDirectory, branch);
       if (res.success) {
         setMergeState({ step: "success" });
         onMerged(deleteWorktree);
@@ -82,12 +79,12 @@ export function MergeDialog({
         message: getErrorMessage(err, "Merge failed"),
       });
     }
-  }, [mainDirectory, branch, deleteWorktree, onMerged]);
+  }, [branch, client, deleteWorktree, mainDirectory, onMerged]);
 
   const handleAbort = useCallback(async () => {
-    await window.electronAPI?.git?.mergeAbort(mainDirectory);
+    await client.git.mergeAbort(mainDirectory);
     handleClose(false);
-  }, [mainDirectory, handleClose]);
+  }, [client, handleClose, mainDirectory]);
 
   const handleFixWithAI = useCallback(() => {
     if (mergeState.step === "conflicts") {

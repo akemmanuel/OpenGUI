@@ -34,6 +34,7 @@ export function getSessionWorkspaceId(session: Session | undefined | null) {
 export type ProjectTarget = {
   directory?: string;
   workspaceId?: string;
+  baseUrl?: string;
 };
 
 export function getSessionProjectTarget(session: Session | undefined | null): ProjectTarget | null {

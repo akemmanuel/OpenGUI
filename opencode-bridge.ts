@@ -17,7 +17,127 @@ import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
 import { basename, dirname, join, normalize, resolve } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
-import { OpencodeProjectRegistry } from "./src/protocol/opencode-project-registry";
+
+class OpencodeProjectRegistry {
+  connections = new Map();
+  sessionProjectKeys = new Map();
+  questionProjectKeys = new Map();
+
+  createProjectKey(_workspaceId, directory) {
+    return normalize(String(directory || "").trim());
+  }
+
+  getWorkspaceIdFromProjectKey(_projectKey) {
+    return "";
+  }
+
+  setConnection(target, connection) {
+    const projectKey = this.createProjectKey(null, target.directory);
+    this.connections.set(projectKey, connection);
+    return { projectKey, connection };
+  }
+
+  getConnection(projectKey) {
+    return this.connections.get(projectKey) ?? null;
+  }
+
+  deleteConnection(projectKey) {
+    const connection = this.connections.get(projectKey) ?? null;
+    if (connection) this.connections.delete(projectKey);
+    return connection;
+  }
+
+  getExactConnectionEntry(target) {
+    if (typeof target.directory !== "string" || !target.directory.trim()) return null;
+    const projectKey = this.createProjectKey(null, target.directory);
+    const connection = this.connections.get(projectKey);
+    return connection ? { projectKey, connection } : null;
+  }
+
+  getSessionProjectKey(sessionId) {
+    const key = String(sessionId ?? "").trim();
+    return key ? (this.sessionProjectKeys.get(key) ?? null) : null;
+  }
+
+  getQuestionProjectKey(requestId) {
+    const key = String(requestId ?? "").trim();
+    return key ? (this.questionProjectKeys.get(key) ?? null) : null;
+  }
+
+  getMappedSessionConnectionEntry(sessionId) {
+    const projectKey = this.getSessionProjectKey(sessionId);
+    if (!projectKey) return null;
+    const connection = this.connections.get(projectKey);
+    return connection ? { projectKey, connection } : null;
+  }
+
+  getMappedQuestionConnectionEntry(requestId) {
+    const projectKey = this.getQuestionProjectKey(requestId);
+    if (!projectKey) return null;
+    const connection = this.connections.get(projectKey);
+    return connection ? { projectKey, connection } : null;
+  }
+
+  rememberSession(projectKey, sessionId) {
+    const key = String(sessionId ?? "").trim();
+    if (key) this.sessionProjectKeys.set(key, projectKey);
+  }
+
+  rememberSessions(projectKey, sessions) {
+    for (const session of sessions)
+      this.rememberSession(projectKey, session?._rawId ?? session?.id);
+  }
+
+  deleteSession(sessionId) {
+    const key = String(sessionId ?? "").trim();
+    if (key) this.sessionProjectKeys.delete(key);
+  }
+
+  rememberQuestion(projectKey, requestId) {
+    const key = String(requestId ?? "").trim();
+    if (key) this.questionProjectKeys.set(key, projectKey);
+  }
+
+  deleteQuestion(requestId) {
+    const key = String(requestId ?? "").trim();
+    if (key) this.questionProjectKeys.delete(key);
+  }
+
+  removeProject(projectKey) {
+    const connection = this.deleteConnection(projectKey);
+    const removedSessionIds = [];
+    for (const [sessionId, candidateProjectKey] of this.sessionProjectKeys) {
+      if (candidateProjectKey !== projectKey) continue;
+      removedSessionIds.push(sessionId);
+      this.sessionProjectKeys.delete(sessionId);
+    }
+    const removedQuestionIds = [];
+    for (const [requestId, candidateProjectKey] of this.questionProjectKeys) {
+      if (candidateProjectKey !== projectKey) continue;
+      removedQuestionIds.push(requestId);
+      this.questionProjectKeys.delete(requestId);
+    }
+    return { connection, removedSessionIds, removedQuestionIds };
+  }
+
+  entries() {
+    return this.connections.entries();
+  }
+
+  values() {
+    return this.connections.values();
+  }
+
+  clear() {
+    this.connections.clear();
+    this.sessionProjectKeys.clear();
+    this.questionProjectKeys.clear();
+  }
+
+  get size() {
+    return this.connections.size;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Local server management
@@ -1287,20 +1407,8 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     });
   }
 
-  const WINDOWS_SHELL_COMMANDS = new Set(["bun", "npm", "pnpm", "yarn", "pip"]);
+  const WINDOWS_SHELL_COMMANDS = new Set(["npm", "pnpm", "yarn", "pip"]);
   const WORKTREE_SETUP_CHECKS = [
-    {
-      file: "bun.lockb",
-      command: "bun install",
-      executable: "bun",
-      args: ["install"],
-    },
-    {
-      file: "bun.lock",
-      command: "bun install",
-      executable: "bun",
-      args: ["install"],
-    },
     {
       file: "pnpm-lock.yaml",
       command: "pnpm install",
@@ -1321,8 +1429,8 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     },
     {
       file: "package.json",
-      command: "bun install",
-      executable: "bun",
+      command: "npm install",
+      executable: "npm",
       args: ["install"],
     },
     {
@@ -2166,15 +2274,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   function getSkillsCli() {
     try {
-      execSync("bunx skills --version", { stdio: "ignore", timeout: 10_000 });
-      return "bunx";
+      execSync("npx skills --version", { stdio: "ignore", timeout: 10_000 });
+      return "npx";
     } catch {
-      try {
-        execSync("npx skills --version", { stdio: "ignore", timeout: 10_000 });
-        return "npx";
-      } catch {
-        return null;
-      }
+      return null;
     }
   }
 
@@ -2225,7 +2328,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (!cli)
         return {
           success: false,
-          error: "Neither bunx nor npx found. Install Node.js or Bun first.",
+          error: "npx not found. Install Node.js first.",
         };
       return await spawnSkillsInstall(event, cli, source, directory, !!globalScope);
     } catch (err) {
@@ -2236,7 +2339,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   ipcMain.handle("opencode:skills:remove", async (event, skillName, directory, globalScope) => {
     try {
       const cli = getSkillsCli();
-      if (!cli) return { success: false, error: "Neither bunx nor npx found." };
+      if (!cli) return { success: false, error: "npx not found." };
       const args = ["skills", "rm", skillName, "-y"];
       if (globalScope) args.push("-g");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
@@ -2276,7 +2379,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   ipcMain.handle("opencode:skills:update", async (event, skillName, directory, globalScope) => {
     try {
       const cli = getSkillsCli();
-      if (!cli) return { success: false, error: "Neither bunx nor npx found." };
+      if (!cli) return { success: false, error: "npx not found." };
       const args = ["skills", "update"];
       if (skillName && skillName !== "*") args.push(skillName);
       if (globalScope) args.push("-g");

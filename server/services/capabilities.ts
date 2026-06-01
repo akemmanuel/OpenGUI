@@ -1,16 +1,17 @@
-import { AGENT_BACKEND_IDS } from "../../src/agents/index.ts";
+import { HARNESS_IDS } from "../../src/agents/index.ts";
+import type { OpenGuiCapabilities } from "../../src/protocol/client.ts";
 
-export function getBackendCapabilities() {
+export function getBackendCapabilities(): OpenGuiCapabilities {
   return {
     protocolVersion: 1,
     server: {
       workspaces: false,
-      projects: false,
-      sessions: false,
-      events: "websocket" as const,
+      projects: true,
+      sessions: true,
+      events: "sse",
       auth: false,
       allowedRoots: true,
     },
-    agentBackends: AGENT_BACKEND_IDS,
+    agentBackends: HARNESS_IDS,
   };
 }

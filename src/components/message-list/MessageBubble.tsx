@@ -56,7 +56,7 @@ export const MessageBubble = memo(function MessageBubble({
           "min-w-0 group relative",
           isUser
             ? "bg-foreground/10 rounded-2xl px-4 py-2 max-w-[85%]"
-            : "flex-1 flex flex-col gap-1",
+            : "flex-1 flex flex-col gap-0",
         )}
       >
         {isUser && (onFork || onRevert) && (

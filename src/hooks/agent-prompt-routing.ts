@@ -3,6 +3,7 @@ import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import { resolveVariant } from "@/hooks/use-agent-variant-core";
 import type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";
 import type { SelectedModel } from "@/types/electron";
+import { createUuid } from "@/lib/utils";
 
 interface PromptSelectionSnapshot {
   selectedModel: SelectedModel | null;
@@ -28,7 +29,7 @@ export function createQueuedPromptSnapshot({
   variantSelections,
   agents,
   now = Date.now(),
-  id = crypto.randomUUID(),
+  id = createUuid(),
 }: CreateQueuedPromptSnapshotInput): QueuedPrompt {
   return {
     id,

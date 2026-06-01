@@ -28,7 +28,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useAgentBackend, useCurrentAgentBackendId } from "@/hooks/use-agent-backend";
+
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useDesktopShell } from "@/shell/provider";
 import { Label } from "@/components/ui/label";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 
@@ -139,42 +140,35 @@ function WorkspaceDialog({
   initial: {
     name: string;
     serverUrl: string;
-    username: string;
-    password: string;
+    authToken: string;
     isLocal: boolean;
   };
-  onSubmit: (data: {
-    name: string;
-    serverUrl: string;
-    username?: string;
-    password?: string;
-  }) => void;
+  onSubmit: (data: { name: string; serverUrl: string; authToken?: string }) => void;
   onRemove?: () => void;
 }) {
   const [name, setName] = useState(initial.name);
   const [serverUrl, setServerUrl] = useState(initial.serverUrl);
-  const [username, setUsername] = useState(initial.username);
-  const [password, setPassword] = useState(initial.password);
+  const [authToken, setAuthToken] = useState(initial.authToken);
 
   // Reset form when dialog opens with new initial values
   useEffect(() => {
     if (open) {
       setName(initial.name);
       setServerUrl(initial.serverUrl);
-      setUsername(initial.username);
-      setPassword(initial.password);
+      setAuthToken(initial.authToken);
     }
-  }, [open, initial.name, initial.serverUrl, initial.username, initial.password]);
+  }, [open, initial.name, initial.serverUrl, initial.authToken]);
 
-  const canSubmit = name.trim().length > 0 && (initial.isLocal || serverUrl.trim().length > 0);
+  const showServerUrlField = mode === "add";
+  const canSubmit = name.trim().length > 0 && (mode === "edit" || serverUrl.trim().length > 0);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     onSubmit({
       name: name.trim(),
-      serverUrl: serverUrl.trim(),
-      username: username.trim() || undefined,
-      password: password.trim() || undefined,
+      // Workspace Backend URL is immutable after creation. Edits may rename and re-auth only.
+      serverUrl: mode === "edit" ? initial.serverUrl : serverUrl.trim(),
+      authToken: authToken.trim() || undefined,
     });
     onOpenChange(false);
   };
@@ -186,8 +180,8 @@ function WorkspaceDialog({
           <DialogTitle>{mode === "add" ? "Add workspace" : "Edit workspace"}</DialogTitle>
           <DialogDescription>
             {mode === "add"
-              ? "Connect to a remote agent server as a new workspace."
-              : "Update this workspace's connection settings."}
+              ? "Connect to an OpenGUI Backend as a new workspace."
+              : "Rename this workspace or update its access token. Create a new workspace to use a different Backend URL."}
           </DialogDescription>
         </DialogHeader>
 
@@ -206,9 +200,9 @@ function WorkspaceDialog({
             />
           </div>
 
-          {(mode === "add" || !initial.isLocal) && (
+          {showServerUrlField ? (
             <div className="space-y-2">
-              <Label htmlFor="ws-url">Server URL</Label>
+              <Label htmlFor="ws-url">Backend URL</Label>
               <Input
                 id="ws-url"
                 value={serverUrl}
@@ -220,33 +214,25 @@ function WorkspaceDialog({
                 }}
               />
             </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Backend URL</Label>
+              <div className="border-input bg-muted/40 text-muted-foreground rounded-md border px-3 py-2 font-mono text-sm">
+                {initial.serverUrl}
+              </div>
+            </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="ws-username">
-              Username <span className="text-muted-foreground font-normal">(optional)</span>
+            <Label htmlFor="ws-token">
+              Access token <span className="text-muted-foreground font-normal">(optional)</span>
             </Label>
             <Input
-              id="ws-username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="username"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
-              }}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="ws-password">
-              Password <span className="text-muted-foreground font-normal">(optional)</span>
-            </Label>
-            <Input
-              id="ws-password"
+              id="ws-token"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="********"
+              value={authToken}
+              onChange={(e) => setAuthToken(e.target.value)}
+              placeholder="Paste OPENGUI_AUTH_TOKEN"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
               }}
@@ -291,11 +277,10 @@ function WorkspaceDialog({
 export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => void }) {
   const { createWorkspace, removeWorkspace, switchWorkspace, updateWorkspace, reorderWorkspaces } =
     useActions();
-  const preferredBackendId = useCurrentAgentBackendId();
-  const backend = useAgentBackend(preferredBackendId);
-  const workspaceProfile = backend?.workspace;
-  const canManageWorkspaces = workspaceProfile?.kind !== "local-cli";
-  const { activeWorkspaceId, workspaceStatuses, workspaces } = useConnectionState();
+  const { activeWorkspaceId, supportsMultipleWorkspaces, workspaceStatuses, workspaces } =
+    useConnectionState();
+  const canManageWorkspaces = supportsMultipleWorkspaces;
+  const showWorkspaceTabs = supportsMultipleWorkspaces && workspaces.length > 0;
   const [isMaximized, setIsMaximized] = useState(false);
   const [platform, setPlatform] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | null>(null);
@@ -328,21 +313,20 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
     [reorderWorkspaces, workspaceIds],
   );
 
-  useEffect(() => {
-    const api = window.electronAPI;
-    if (!api) return;
+  const shell = useDesktopShell();
 
-    api
+  useEffect(() => {
+    shell.platform
       .getPlatform()
       .then(setPlatform)
       .catch(() => {});
-    api
+    shell.window
       .isMaximized()
       .then(setIsMaximized)
       .catch(() => {});
-    const unsubscribe = api.onMaximizeChange(setIsMaximized);
+    const unsubscribe = shell.window.onMaximizeChange(setIsMaximized);
     return () => unsubscribe();
-  }, []);
+  }, [shell]);
 
   const editingWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
@@ -361,21 +345,19 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
       ? {
           name: editingWorkspace.name,
           serverUrl: editingWorkspace.serverUrl,
-          username: editingWorkspace.username ?? "",
-          password: editingWorkspace.password ?? "",
+          authToken: editingWorkspace.authToken ?? "",
           isLocal: editingWorkspace.isLocal,
         }
       : {
           name: "",
           serverUrl: "https://",
-          username: "",
-          password: "",
+          authToken: "",
           isLocal: false,
         };
 
   const handleDoubleClick = () => {
     if (isWebRuntime) return;
-    void window.electronAPI?.maximize();
+    void shell.window.maximize();
   };
 
   return (
@@ -413,55 +395,57 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
             onWheel={handleTabsWheel}
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none"
           >
-            <DndContext
-              sensors={workspaceDndSensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleWorkspaceDragEnd}
-            >
-              <SortableContext items={workspaceIds} strategy={horizontalListSortingStrategy}>
-                {workspaces.map((workspace) => {
-                  const status = workspaceStatuses[workspace.id];
-                  const active = workspace.id === activeWorkspaceId;
-                  return (
-                    <SortableWorkspaceTab key={workspace.id} id={workspace.id}>
-                      {({ dragProps, isDragging }) => (
-                        <button
-                          type="button"
-                          {...dragProps}
-                          onClick={() => switchWorkspace(workspace.id)}
-                          onDoubleClick={(event) => {
-                            event.stopPropagation();
-                            switchWorkspace(workspace.id);
-                            if (canManageWorkspaces) {
-                              setDialogMode("edit");
-                            }
-                          }}
-                          className={`flex h-7 cursor-grab items-center gap-2 rounded-md border px-3 text-xs transition-colors whitespace-nowrap active:cursor-grabbing ${
-                            isDragging ? "opacity-60 " : ""
-                          }${
-                            active
-                              ? "border-border bg-background text-foreground"
-                              : "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
-                          }`}
-                        >
-                          <span className="truncate max-w-[120px]">{workspace.name}</span>
-                          {status?.busy ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : status?.error ? (
-                            <AlertCircle className="size-3 text-destructive" />
-                          ) : status?.needsAttention ? (
-                            <span className="size-2 rounded-full bg-amber-500" />
-                          ) : status?.connected ? (
-                            <span className="size-2 rounded-full bg-emerald-500" />
-                          ) : null}
-                        </button>
-                      )}
-                    </SortableWorkspaceTab>
-                  );
-                })}
-              </SortableContext>
-            </DndContext>
-            {canManageWorkspaces && (
+            {showWorkspaceTabs && (
+              <DndContext
+                sensors={workspaceDndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleWorkspaceDragEnd}
+              >
+                <SortableContext items={workspaceIds} strategy={horizontalListSortingStrategy}>
+                  {workspaces.map((workspace) => {
+                    const status = workspaceStatuses[workspace.id];
+                    const active = workspace.id === activeWorkspaceId;
+                    return (
+                      <SortableWorkspaceTab key={workspace.id} id={workspace.id}>
+                        {({ dragProps, isDragging }) => (
+                          <button
+                            type="button"
+                            {...dragProps}
+                            onClick={() => switchWorkspace(workspace.id)}
+                            onDoubleClick={(event) => {
+                              event.stopPropagation();
+                              switchWorkspace(workspace.id);
+                              if (canManageWorkspaces) {
+                                setDialogMode("edit");
+                              }
+                            }}
+                            className={`flex h-7 cursor-grab items-center gap-2 rounded-md border px-3 text-xs transition-colors whitespace-nowrap active:cursor-grabbing ${
+                              isDragging ? "opacity-60 " : ""
+                            }${
+                              active
+                                ? "border-border bg-background text-foreground"
+                                : "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
+                            }`}
+                          >
+                            <span className="truncate max-w-[120px]">{workspace.name}</span>
+                            {status?.busy ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : status?.error ? (
+                              <AlertCircle className="size-3 text-destructive" />
+                            ) : status?.needsAttention ? (
+                              <span className="size-2 rounded-full bg-amber-500" />
+                            ) : status?.connected ? (
+                              <span className="size-2 rounded-full bg-emerald-500" />
+                            ) : null}
+                          </button>
+                        )}
+                      </SortableWorkspaceTab>
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
+            )}
+            {showWorkspaceTabs && canManageWorkspaces && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -485,19 +469,19 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
               <div className="flex items-center gap-2">
                 <WindowButton
                   icon={<Plus className="size-2" strokeWidth={2.75} />}
-                  onClick={() => window.electronAPI?.maximize()}
+                  onClick={() => shell.window.maximize()}
                   kind="mac"
                   macTone="maximize"
                 />
                 <WindowButton
                   icon={<Minus className="size-2" strokeWidth={2.75} />}
-                  onClick={() => window.electronAPI?.minimize()}
+                  onClick={() => shell.window.minimize()}
                   kind="mac"
                   macTone="minimize"
                 />
                 <WindowButton
                   icon={<X className="size-2" strokeWidth={2.75} />}
-                  onClick={() => window.electronAPI?.close()}
+                  onClick={() => shell.window.close()}
                   isClose
                   kind="mac"
                   macTone="close"
@@ -507,17 +491,17 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
               <div className="flex items-center">
                 <WindowButton
                   icon={<Minus className="size-4" />}
-                  onClick={() => window.electronAPI?.minimize()}
+                  onClick={() => shell.window.minimize()}
                 />
                 <WindowButton
                   icon={
                     isMaximized ? <Minimize className="size-4" /> : <Square className="size-4" />
                   }
-                  onClick={() => window.electronAPI?.maximize()}
+                  onClick={() => shell.window.maximize()}
                 />
                 <WindowButton
                   icon={<X className="size-4" />}
-                  onClick={() => window.electronAPI?.close()}
+                  onClick={() => shell.window.close()}
                   isClose
                 />
               </div>

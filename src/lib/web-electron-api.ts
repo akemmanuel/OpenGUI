@@ -1,4 +1,5 @@
 import type { AgentBackendId } from "@/agents";
+import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import type { ElectronAPI, InstallProgress } from "@/types/electron";
 
 type Listener = (data: unknown) => void;
@@ -20,10 +21,17 @@ function on(channel: string, callback: Listener) {
   return () => set?.delete(callback);
 }
 
+function getConfiguredBackendToken() {
+  return getShellWorkspacePolicy().configuredWebWorkspace?.authToken;
+}
+
 async function invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
+  const headers = new Headers({ "content-type": "application/json" });
+  const token = getConfiguredBackendToken();
+  if (token) headers.set("authorization", `Bearer ${token}`);
   const response = await fetch("/api/rpc", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify({ channel, args }),
   });
   const body = await response.json().catch(() => null);
@@ -73,13 +81,16 @@ function mergeSettingsSync(entries: Record<string, string>) {
 }
 
 function subscribeEvents() {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   let closed = false;
   let retry: number | undefined;
+  let stream: EventSource | undefined;
 
   const connect = () => {
-    const ws = new WebSocket(`${protocol}//${location.host}/api/events`);
-    ws.onmessage = (event) => {
+    const url = new URL(`${location.protocol}//${location.host}/api/events`);
+    const token = getConfiguredBackendToken();
+    if (token) url.searchParams.set("token", token);
+    stream = new EventSource(url.toString());
+    stream.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         if (message?.channel) emit(message.channel, message.data);
@@ -87,7 +98,8 @@ function subscribeEvents() {
         console.error("Bad web event", error);
       }
     };
-    ws.onclose = () => {
+    stream.onerror = () => {
+      stream?.close();
       if (closed) return;
       retry = window.setTimeout(connect, 1000);
     };
@@ -97,20 +109,28 @@ function subscribeEvents() {
   return () => {
     closed = true;
     if (retry) window.clearTimeout(retry);
+    stream?.close();
   };
 }
 
-export function installWebElectronAPI() {
-  if (window.electronAPI) {
-    window.__openGuiTransport = "electron";
-    return;
-  }
-  if (location.protocol === "file:") return;
+function isCapacitorNativeRuntime() {
+  const capacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })
+    .Capacitor;
+  return capacitor?.isNativePlatform?.() === true;
+}
 
-  window.__openGuiTransport = "http";
+export function installWebElectronAPI() {
+  if (window.electronAPI) return;
+  if (location.protocol === "file:") return;
+  if (isCapacitorNativeRuntime()) return;
+
   subscribeEvents();
 
   const api = {
+    kind: "web",
+    backendUrl: null,
+    backendToken: null,
+    backendStatus: "running",
     settings: {
       getAllSync: getAllSettingsSync,
       getSync: settingsGetSync,

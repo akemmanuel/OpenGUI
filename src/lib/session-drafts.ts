@@ -15,7 +15,6 @@ export type QueuedPrompt = {
   variant?: string;
   mode: QueueMode;
 };
-type QueuedPromptsMap = Record<string, QueuedPrompt[]>;
 
 export function getSessionDraftKey(input: {
   sessionId?: string | null;
@@ -69,13 +68,4 @@ export function getSessionDraftImages(): SessionDraftImagesMap {
 export function persistSessionDraftImages(images: SessionDraftImagesMap): void {
   const pruned = pruneSessionDraftImages(images);
   persistOrRemoveJSON(STORAGE_KEYS.SESSION_DRAFT_IMAGES, pruned, Object.keys(pruned).length === 0);
-}
-
-export function getQueuedPrompts(): QueuedPromptsMap {
-  return storageParsed<QueuedPromptsMap>(STORAGE_KEYS.QUEUED_PROMPTS) ?? {};
-}
-
-export function persistQueuedPrompts(queue: QueuedPromptsMap): void {
-  const hasItems = Object.values(queue).some((arr) => arr.length > 0);
-  persistOrRemoveJSON(STORAGE_KEYS.QUEUED_PROMPTS, queue, !hasItems);
 }

@@ -2,58 +2,228 @@
 
 OpenGUI is a command center for long-running coding-agent work across projects and backends. The core distinctions here are about where user intent lives locally versus when it is actually sent into a backend session.
 
+## Architecture
+
+OpenGUI is split into three layers:
+
+- **OpenGUI Backend** -- Node.js HTTP/WS server owning all Harness runtimes, project access, sessions, events, filesystem/git operations, prompt queues, and settings that affect agent execution. It does not define the Workspace primitive. Deployable as a Desktop sidecar, Docker container, or standalone server.
+- **OpenGUI Frontend** -- React UI rendering navigation, chat, and settings, and owning presentation state such as Workspaces, Project connections, Draft sessions, Queued prompts, and Session placement. Talks only to an OpenGUI Backend via `OpenGuiClient`. Runs identically in Desktop, Web, and Mobile.
+- **Shell** -- Platform-specific scaffold that bootstraps the Frontend. Three variants:
+  - **Desktop Shell** (Electron main+preload): window controls, native file picker, updater, OS notifications, backend sidecar lifecycle.
+  - **Web Shell** (browser): minimal -- no backend spawning, no native file dialog. Backend connection is same-origin or user-configured URL.
+  - **Mobile Shell** (Capacitor JS): native file picker, push notifications, secure token storage. Never spawns a backend or opens a terminal.
+
+**Harness**:
+A backend-wide coding-agent runtime (OpenCode, Claude Code, Codex, Pi) that OpenGUI Backend manages. Harness availability is not Project-specific. Harnesses are hosted inside the Backend process via adapters (`opencode-bridge.ts`, `claude-code-bridge.ts`, etc.). The Frontend never speaks to a Harness directly.
+_Avoid_: Agent backend, agent runtime (in product UI), bridge, provider
+
+**Harness Adapter**:
+The local integration code that translates OpenGUI Backend operations into Harness SDK calls. One adapter per Harness type.
+_Avoid_: Bridge, provider glue, agent SDK glue
+
+**Harness Scope**:
+The project+path/session tuple that scopes a Harness operation inside an OpenGUI Backend. Frontend Workspaces may choose and route that scope, but they are not part of it.
+_Avoid_: Agent session context (vague), cwd (too narrow), workspace-scoped harness
+
+**OpenGUI Backend**:
+The Node.js server process that owns execution state and backend-facing resources: Harness Adapters, Sessions, Harness Sessions, project access, streaming events, filesystem/git operations, and settings that affect agent execution. It does not define Workspaces, accept Workspace IDs as domain identity, own Project connections, Draft sessions, or Session presentation assignment. Runs as Desktop sidecar, standalone server, or inside Docker. It may run API-only or serve a Hosted Frontend in addition to its API.
+_Avoid_: server, headless backend, daemon
+
+**Frontend Host**:
+The deployment surface that serves static OpenGUI Frontend assets for the Web Shell. It may be the same process/container as an OpenGUI Backend or a separate static host configured to connect to an OpenGUI Backend.
+_Avoid_: web backend, frontend backend, bundled app server
+
+**API-only Backend**:
+An OpenGUI Backend deployment that serves only backend APIs and no Web Shell assets. Desktop Shell, Mobile Shell, and a separately hosted Web Shell may connect to it; non-API browser routes return not found.
+_Avoid_: headless backend, backend without app
+
+**Standalone Web Frontend**:
+A Web Shell deployment where static OpenGUI Frontend assets are hosted separately from the OpenGUI Backend and configured with a target backend URL. It requires the target OpenGUI Backend to allow the frontend origin.
+_Avoid_: extra web workspace, frontend-only backend
+
+**Combined Backend + Frontend**:
+A convenience deployment where one process or container serves both the OpenGUI Backend API and the static OpenGUI Frontend assets. Web Shell uses the same origin by default in this mode.
+_Avoid_: monolith, web backend
+
+**OpenGUI Frontend**:
+The React UI layer and primary presentation layer. It owns frontend-local Workspaces, Project connections, Draft sessions, Queued prompts, and Session presentation, and talks only to one OpenGUI Backend via `OpenGuiClient` at a time.
+_Avoid_: renderer, stateless client
+
+**Desktop Shell**:
+The Electron main+preload process. Owns window controls (frame, minimize, maximize, close), native file picker, updater, OS notifications, backend sidecar lifecycle. Does NOT own agent logic, session state, prompt queues, or git operations.
+_Avoid_: Desktop app, main process
+
+**Web Shell**:
+The browser environment. No native desktop APIs. Backend connection is same-origin or user-configured URL. Cannot spawn a backend or open a terminal.
+_Avoid_: Web app (vague), browser mode
+
+**Mobile Shell**:
+Capacitor JS scaffold for iOS/Android. Provides native file picker, push notifications, secure token storage, but never spawns a Backend or opens a terminal. Connects only to a remote or LAN Backend.
+_Avoid_: Mobile app, phone client
+
+**Provider credentials**:
+Backend-owned credentials or references needed for Harness execution, such as API keys, OAuth tokens, or CLI-authenticated provider state. The Frontend may collect or configure them, but execution uses credentials available to the OpenGUI Backend.
+_Avoid_: frontend secret, local browser credential
+
+**Backend access token**:
+A bearer token used by a Frontend or Shell to authenticate to an OpenGUI Backend API, matching the Backend's configured `OPENGUI_AUTH_TOKEN`. It is Workspace connection material, not a provider credential and not a username/password login.
+_Avoid_: workspace password, backend password, provider token
+
 ## Language
 
+**Workspace**:
+A durable, frontend-local connection-and-organization boundary containing an immutable OpenGUI Backend URL, editable auth material, plus the Projects, Sessions, and defaults the app presents together. A Workspace may have no Project connections and still show backend health, Harness availability, and settings. Many Workspaces may point to the same OpenGUI Backend, and the same backend-owned Session may appear in different Frontends' Workspaces, but within one Frontend presentation a Session belongs to one Workspace at a time. Deleting a Workspace deletes only saved connection material and frontend presentation state. A Workspace is never a backend primitive: backend APIs, storage records, and Harness scopes must not require a Workspace ID. Some Shells may start with no Workspace at all until the user connects to an OpenGUI Backend.
+_Avoid_: backend workspace, backend profile, server tab, repo group, OpenCode server
+
+**Local Workspace**:
+The built-in, non-removable frontend Workspace for the Shell's default OpenGUI Backend connection. Desktop has one Local Workspace for its default local Backend sidecar; Web has one Local Workspace for the OpenGUI Backend that served the frontend. Mobile has no Local Workspace because it cannot spawn or assume a phone-local OpenGUI Backend.
+_Avoid_: mobile local workspace, localhost workspace, device workspace
+
+**Additional Workspace**:
+A user-created Workspace pointing at an explicitly configured OpenGUI Backend URL. Desktop and Mobile may have unlimited Additional Workspaces; Web Shell never has Additional Workspaces because its backend target is deployment-owned rather than user-managed.
+_Avoid_: non-local workspace, extra local workspace, server tab
+
+**Configured Web Workspace**:
+The single, non-removable Workspace used by a Standalone Web Frontend. Its OpenGUI Backend URL and display name come from Frontend Host configuration such as container environment variables, not from user-editable frontend Workspace state; if no name is configured, the UI falls back to the backend hostname and then OpenGUI.
+_Avoid_: web additional workspace, browser-selected backend, stored web workspace
+
+**Workspace Chrome**:
+UI controls for viewing, switching, creating, editing, reordering, or removing Workspaces. Shells with a single non-removable Workspace may hide Workspace Chrome even though a Workspace exists internally.
+_Avoid_: workspace itself, project sidebar
+
+**Multi-Workspace Shell**:
+A Shell that allows users to create, save, switch, and remove Additional Workspaces. Desktop and Mobile are Multi-Workspace Shells; Web is not.
+_Avoid_: workspace count, multi-server backend
+
+**Workspace Tabs**:
+The tab-strip and plus-button form of Workspace Chrome. Workspace Tabs are shown only when the Shell has at least one Workspace and is a Multi-Workspace Shell; hide them when there is no Workspace or when the Shell does not support multiple Workspaces.
+_Avoid_: workspace chrome in general, project tabs
+
+**No Workspace**:
+A frontend state where the Shell has no saved Workspace and therefore no active OpenGUI Backend connection. Mobile starts here on first launch and offers Connect to OpenGUI Backend as the primary action, which creates an Additional Workspace. Desktop and Web normally do not enter this state because each has a Local Workspace.
+_Avoid_: disconnected workspace, empty local workspace
+
+**Model selection**:
+Frontend-local composition state choosing the model, agent, and variant for future sends. A sent or Queued prompt snapshots model selection as execution intent, but changing the current selection does not rewrite existing prompts.
+_Avoid_: shared session setting, backend default
+
+**Default chat directory**:
+A Workspace-local Project path used when starting a new Draft session without choosing a specific Project first. Each Workspace has its own Default chat directory because project paths are meaningful only for that Workspace's OpenGUI Backend connection.
+_Avoid_: global chat directory, app default project
+
+**Project**:
+A Workspace-scoped, Frontend-owned work target rooted at a concrete directory that the app presents in navigation and uses to request Sessions. A Project belongs to exactly one Frontend Workspace presentation and is not a backend-owned domain object. The Frontend may resolve a Project path against the active OpenGUI Backend when it needs backend-owned Sessions or execution, but backend Project records are implementation details and must not define Workspace Project membership.
+_Avoid_: repo, repository root, backend project, global app project
+
+**Session**:
+The backend-owned canonical conversation record OpenGUI presents for work performed against one Project through one Harness. A Session is identified by its own canonical session ID, is shared across Frontends connected to the same OpenGUI Backend for that Project and Harness, appears to any Frontend currently presenting that Project, can outlive temporary Harness unavailability, and does not switch Harnesses after creation.
+_Avoid_: thread only, draft, chat row
+
+**Harness Session**:
+The harness-native conversation or thread that backs an OpenGUI Session inside one Harness. A Harness Session is runtime state, not the canonical app-level conversation identity.
+_Avoid_: Session, canonical session, workspace session
+
+**Session transcript**:
+The shared message history for a Session, sourced from the backing Harness Session through the OpenGUI Backend. Frontends may render or filter it locally but do not mutate canonical transcript content.
+_Avoid_: frontend transcript, local message history
+
+**Session status**:
+The backend-owned execution state of a Session, such as idle, running, or error, derived from Harness state and backend orchestration. Frontends display Session status but do not own it.
+_Avoid_: frontend busy state, local status
+
+**Live Session stream**:
+The shared, backend-originated status and output stream for a running Session. Any connected Frontend that opens or lists that Session can see its current progress live, even if another Frontend started it.
+_Avoid_: join stream, private run, owner-only output
+
+**Shared Session control**:
+Any connected Frontend may act on a shared Session, including interrupting it, sending a follow-up, or managing its shared queue. Shared Sessions have no single owner in the product model.
+_Avoid_: session owner, locked session, creator-only control
+
+**Interrupt Session**:
+A shared control action that stops the current running work in a Session. It does not clear the shared queue by default and is distinct from queuing a prompt and from deleting the Session.
+_Avoid_: send, delete, implicit busy follow-up
+
+**Backend arbitration**:
+When multiple Frontends act on the same shared Session at nearly the same time, the OpenGUI Backend decides by arrival order and emits the resulting Session state as the source of truth for all connected Frontends. If concurrent follow-up sends race on an idle Session, the first accepted one becomes the immediate Agent send and later ones become Queued prompts once the Session is busy.
+_Avoid_: client-side race resolution, per-frontend session truth
+
+**Session title**:
+The canonical name of a Session as defined by its Harness. OpenGUI may request a rename, but the Harness is the only source of truth for the title.
+_Avoid_: local title override, frontend-only title, frontend title
+
 **Draft session**:
-A local-only conversation target selected before a backend session exists. It carries the intended project and backend, but nothing has been sent into the agent yet.
+A frontend-local, durable, Workspace-local conversation intent for one specific Project selected before any Harness Session exists. It carries an intended Harness that may still change before first send, and its first Agent send creates a new shared Session. If its Project connection is errored or intended Harness is unavailable, the draft may remain stored but is not sendable until resolved.
 _Avoid_: unsent session, pending chat
 
 **Queued prompt**:
-A local-only prompt stored by OpenGUI to be sent later into an existing backend session. A queued prompt belongs to a session, but it is not yet part of that session's backend transcript.
-_Avoid_: pending message, buffered turn
+A backend-owned, shared Session-level prompt stored in the one shared queue for an existing shared Session. A Queued prompt captures model/agent/variant intent when queued, cannot exist for a Draft session, is visible across connected Frontends, follows shared backend queue order, and is the default result of a normal follow-up sent while the Session is busy. It remains queued during temporary Harness unavailability and is not yet part of the Session transcript until dispatch.
+_Avoid_: pending message, buffered turn, frontend-only queue item
+
+**After-part prompt**:
+A Queued prompt mode that waits until all currently running tools finish, then interrupts the Session and dispatches the prompt. It is for steering immediately after the current tool part completes, not for ordinary queueing.
+_Avoid_: normal queue item, immediate send, generic interrupt
 
 **Queue dispatch**:
-The local orchestration that turns a Queued prompt into an Agent send when a session becomes idle, when the user sends one immediately, or when an after-part trigger fires.
-_Avoid_: queue flush, auto-send side effect
+The backend orchestration that turns a Queued prompt into an Agent send when a Session becomes idle, when dispatch is requested immediately, or when an after-part trigger fires. Frontends may request dispatch, but only the backend performs it.
+_Avoid_: queue flush, frontend-only auto-send side effect
 
 **Agent send**:
-The moment OpenGUI turns local intent into a backend operation such as `startSession`, `prompt`, or `sendCommand`. Draft sessions and queued prompts exist before an agent send; backend transcript state exists after it.
+The moment OpenGUI turns local intent into a Harness operation such as `startSession`, `prompt`, or `sendCommand`. Draft sessions and queued prompts exist before an agent send; Harness transcript state exists after it.
 _Avoid_: enqueue, draft
 
-**Project connection**:
-A local attachment between a workspace and one or more project directories that OpenGUI keeps hydrated across agent backends. It is how OpenGUI knows which sessions belong under which project in the UI. Removing a project connection detaches the directory from the sidebar but does not delete files or session data.
-_Avoid_: mount, project binding, project deletion
+**Local intent orchestration**:
+The frontend-local orchestration around Draft sessions and send requests before they become shared backend actions. It coordinates with Queue dispatch, Project connection, and Session lifecycle rules.
 
-**Remove project connection**:
-The sidebar action that detaches a directory from the workspace. It removes the project entry from the sidebar visually and disconnects the backend from that directory. It must not delete sessions, session metadata (color, tags, pinning), or any files on disk. Sessions that were displayed under that project survive: moved sessions stay assigned to their target project; unaffiliated sessions may become orphans.
-_Avoid_: Remove project, delete project, clean up sessions
+**Project connection**:
+The act or state of making a Workspace-scoped Frontend Project available for backend-backed operations such as Session listing or Agent send. It is frontend presentation/execution-readiness state, not a backend domain object. A failed Project connection leaves the Frontend Project visible in the sidebar with an error instead of deleting it.
+_Avoid_: mount, backend project binding, project deletion
+
+**Remove Project**:
+The sidebar action that removes a Workspace-scoped Frontend Project from that Workspace presentation. It must not delete files on disk or backend-owned Sessions. Sessions that were displayed under that Project survive in backend state and may become invisible in that Workspace until the Project is added again.
+_Avoid_: delete project files, delete sessions, backend project deletion
 
 **Session project assignment**:
-A session's effective display project, determined by `assignedProjectDir` in sessionMeta when set (the target of a move), falling back to `_projectDir` or the session's `directory`. Moving a session only changes `assignedProjectDir`; the original `_projectDir` is preserved.
-_Avoid_: session relocation, reparenting
+A frontend-local Session's singular effective display Project in one Frontend presentation, determined by `assignedProjectDir` in sessionMeta when set (the target of a move), falling back to `_projectDir` or the Session's directory. Moving a Session changes presentation only, must target a Project already connected in that Frontend Workspace, and does not retarget the underlying execution scope.
+_Avoid_: session relocation, reparenting, retargeting, multi-home session
 
-**Project connection registry**:
-The backend-local registry that keeps exact Project connections, backend session routing, and question routing aligned for one backend window. It prevents Project-scoped operations from silently reusing a different Project connection.
-_Avoid_: loose connection cache, directory fallback map
+**Session presentation metadata**:
+Frontend-local display state for a Session, such as pinning, color, tags, sidebar ordering, and Session project assignment. It does not change shared Session identity, transcript, title, or execution scope.
+_Avoid_: shared session metadata, backend session metadata
+
+**Execution Project**:
+The concrete Project directory a Harness Session actually runs against. Execution Project is part of execution scope, while Session project assignment is presentation, and it does not change after Session creation.
+_Avoid_: display project, assigned project, moved project
+
+**Orphan Session**:
+A Session that still exists in OpenGUI but is no longer attached to any currently connected Project in the active Workspace presentation. It keeps its identity, transcript, and metadata, and an already-open or directly opened view may remain temporarily without Project attachment, but it lacks a visible Project home until reattached or reassigned.
+_Avoid_: deleted session, lost chat, missing transcript
 
 **Workspace root project**:
 The primary project directory for a repository when related worktrees are present. Worktree directories expand from a Workspace root project but do not replace it.
 _Avoid_: canonical path, main worktree
+
+**Delete Session**:
+A backend-owned destructive action that removes a shared Session itself and makes it disappear for every connected Frontend. If shared Queued prompts exist, OpenGUI should require confirmation but still allow deletion. OpenGUI has no separate local-only session removal concept.
+_Avoid_: hide session, dismiss session, remove from my view
+
+**Clear Session Queue**:
+A backend-owned action that removes all Queued prompts for one shared Session without deleting the Session itself.
+_Avoid_: interrupt session, delete session
 
 **Session lifecycle**:
 The local orchestration for creating, renaming, deleting, reverting, unreverting, and forking sessions. It coordinates UI state and transcript refresh around backend session mutations after a session already exists or is being created.
 _Avoid_: chat CRUD, transcript actions
 
 **Session title reconciliation**:
-The local orchestration that preserves a user-forced or generated session title across backend session replacement, retries persistence when needed, and keeps local naming requests aligned with the current session ID.
-_Avoid_: rename patching, title fixup
+The local orchestration that keeps the displayed Session title aligned with the Harness title across Harness Session replacement and rename requests. The Harness remains the only source of truth for the title.
+_Avoid_: local title override, rename patching, title fixup
 
 **Workspace lifecycle**:
-The local orchestration for creating, updating, switching, and removing workspaces, including how the active session and project connections follow those workspace changes.
-_Avoid_: workspace CRUD, tabs logic
+The frontend-local orchestration for creating, renaming, reauthenticating, switching, and removing Workspaces, including Project re-resolution when auth changes. A Workspace's OpenGUI Backend URL is not editable after creation; a different URL means creating a different Workspace.
+_Avoid_: backend profile lifecycle, workspace CRUD, tabs logic, edit backend URL
 
 **Plugin**:
-A user-facing add-on that extends an agent with additional behaviour or knowledge. In the product interface, prefer Plugin over Skill because users understand plugins as installable functionality.
+A backend/project/global agent configuration package that extends an agent with additional behaviour or knowledge. In the product interface, prefer Plugin over Skill because users understand plugins as installable functionality.
 _Avoid_: Skill, extension, add-on
 
 **Installed Plugin**:
@@ -77,8 +247,8 @@ A refresh of a Published Plugin from its recorded external source. Update availa
 _Avoid_: Marketplace reinstall
 
 **Plugin Source of Truth**:
-Installed Plugin identity, scope, and origin come from the local skills lockfiles, not from catalog search results. The catalog is for discovery, not for deciding what is installed.
-_Avoid_: infer installed state from marketplace results
+Installed Plugin identity, scope, and origin come from backend/project/global agent configuration such as local skills lockfiles, not from Frontend Workspace state or catalog search results. The catalog is for discovery, not for deciding what is installed.
+_Avoid_: infer installed state from marketplace results, workspace plugin state
 
 **Plugin Group**:
 A Plugin made of multiple related capabilities installed from an explicit recorded plugin package. Grouping is based on recorded plugin metadata, not inferred from a shared source repository.
@@ -117,12 +287,21 @@ The Plugins settings tab opens to Installed Plugins by default because settings 
 _Avoid_: default to Discover
 
 **Tool**:
-A configured external capability exposed through MCP. Tools are managed separately from Plugins even though both can extend agent behaviour.
-_Avoid_: Plugin
+A backend-owned external capability exposed through MCP. Tools are managed separately from Plugins even though both can extend agent behaviour.
+_Avoid_: Plugin, frontend tool
 
-**Agent backend restart**:
-A user-requested recovery action that hard-restarts all local agent backend runtimes managed by OpenGUI, not just the currently selected backend. It stops background agent processes such as the Pi daemon before starting them again.
+**Harness restart**:
+A user-requested recovery action that hard-restarts all Harness processes managed by OpenGUI, not just the currently selected Harness. It stops background agent processes such as the Pi daemon before starting them again.
 _Avoid_: server restart, selected backend restart, soft reconnect
+
+## Flagged ambiguities
+
+**Backend Workspace**:
+Resolved as invalid terminology. Any backend service, API route, storage table, or Session identity using `workspaceId` is describing either frontend **Workspace** state, a Workspace-scoped frontend **Project**, **Session presentation metadata**, or execution scope in the wrong layer.
+
+**Backend Project record**:
+An internal backend lookup or persistence record that maps a concrete directory to backend-owned Sessions and execution scope. It is not the product **Project**, does not own Workspace membership, and should not drive frontend navigation.
+_Avoid_: Project in product language, Workspace Project
 
 ## Example dialogue
 

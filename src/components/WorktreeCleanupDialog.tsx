@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { getProjectName } from "@/lib/utils";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 export function WorktreeCleanupDialog() {
+  const client = useOpenGuiClient();
   const { pendingWorktreeCleanup, worktreeParents } = useConnectionState();
   const { unregisterWorktree, removeProject, clearWorktreeCleanup } = useActions();
 
@@ -32,13 +34,14 @@ export function WorktreeCleanupDialog() {
 
       // Optionally remove the git worktree from disk
       if (deleteFromDisk) {
-        await window.electronAPI?.git?.removeWorktree(parentDir, worktreeDir);
+        await client.git.removeWorktree(parentDir, worktreeDir);
       }
     } finally {
       setRemoving(false);
       clearWorktreeCleanup();
     }
   }, [
+    client,
     worktreeDir,
     parentDir,
     deleteFromDisk,

@@ -4,12 +4,15 @@
  * 2. A combined sprite.svg with all icons as <symbol> elements
  * 3. A types.ts file with all valid icon names
  *
- * Usage: bun scripts/fetch-provider-icons.ts
+ * Usage: vp node scripts/fetch-provider-icons.ts
  */
 
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 const MODELS_URL = process.env.OPENCODE_MODELS_URL || "https://models.dev";
-const ICONS_DIR = "src/components/provider-icons/svgs";
-const OUTPUT_DIR = "src/components/provider-icons";
+const ICONS_DIR = path.join("src", "components", "provider-icons", "svgs");
+const OUTPUT_DIR = path.join("src", "components", "provider-icons");
 
 async function main() {
   console.info(`Fetching provider list from ${MODELS_URL}/api.json ...`);
@@ -22,7 +25,8 @@ async function main() {
   console.info(`Found ${providerIds.length} providers`);
 
   // Ensure output directories exist
-  await Bun.write(`${ICONS_DIR}/.gitkeep`, "");
+  await mkdir(ICONS_DIR, { recursive: true });
+  await writeFile(path.join(ICONS_DIR, ".gitkeep"), "");
 
   const succeeded: string[] = [];
   const failed: string[] = [];
@@ -43,7 +47,7 @@ async function main() {
         if (!svg.includes("<svg")) {
           throw new Error(`Invalid SVG for ${id}`);
         }
-        await Bun.write(`${ICONS_DIR}/${id}.svg`, svg);
+        await writeFile(path.join(ICONS_DIR, `${id}.svg`), svg);
         return id;
       }),
     );
@@ -71,7 +75,7 @@ async function main() {
   const symbols: string[] = [];
 
   for (const id of succeeded) {
-    const svgContent = await Bun.file(`${ICONS_DIR}/${id}.svg`).text();
+    const svgContent = await readFile(path.join(ICONS_DIR, `${id}.svg`), "utf8");
 
     // Extract the viewBox from the SVG, default to "0 0 40 40"
     const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/);
@@ -92,14 +96,14 @@ ${symbols.join("\n")}
 </defs>
 </svg>`;
 
-  await Bun.write(`${OUTPUT_DIR}/sprite.svg`, sprite);
+  await writeFile(path.join(OUTPUT_DIR, "sprite.svg"), sprite);
   console.info(`Wrote sprite.svg with ${symbols.length} symbols`);
 
   // Generate types.ts
   console.info("Generating types.ts ...");
   const typesContent = `/**
  * Auto-generated provider icon names.
- * Do not edit manually - run \`bun scripts/fetch-provider-icons.ts\` to regenerate.
+ * Do not edit manually - run \`vp node scripts/fetch-provider-icons.ts\` to regenerate.
  */
 
 export const providerIconNames = [
@@ -109,7 +113,7 @@ ${succeeded.map((id) => `  "${id}",`).join("\n")}
 export type ProviderIconName = (typeof providerIconNames)[number];
 `;
 
-  await Bun.write(`${OUTPUT_DIR}/types.ts`, typesContent);
+  await writeFile(path.join(OUTPUT_DIR, "types.ts"), typesContent);
   console.info(`Wrote types.ts with ${succeeded.length} icon names`);
 
   console.info("Done!");

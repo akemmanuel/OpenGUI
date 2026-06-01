@@ -1,13 +1,10 @@
-import type { SettingsBridge, SettingsBridgeChange } from "@/types/electron";
+import type { SettingsBridgeChange } from "@/types/electron";
+import { getSettingsBridge } from "@/runtime/settings";
+
 const SETTINGS_CHANGED_EVENT = "opengui:settings-changed";
 
 type SettingsCache = Record<string, string>;
 type SettingsChangeDetail = { key: string; value: string | null };
-
-function getElectronSettingsBridge(): SettingsBridge | null {
-  if (typeof window === "undefined") return null;
-  return window.electronAPI?.settings ?? null;
-}
 
 function safeLocalStorageGet(key: string): string | null {
   try {
@@ -33,8 +30,8 @@ function safeLocalStorageRemove(key: string): void {
   }
 }
 
-let electronSettingsCache: SettingsCache | null = null;
-let electronSettingsSubscribed = false;
+let settingsCache: SettingsCache | null = null;
+let settingsSubscribed = false;
 
 function dispatchSettingsChangeEvent(
   key: string,
@@ -61,26 +58,38 @@ function dispatchSettingsChangeEvent(
   );
 }
 
-function initElectronSettingsCache(): SettingsCache | null {
-  const bridge = getElectronSettingsBridge();
-  if (!bridge) return null;
-  if (electronSettingsCache === null) {
-    electronSettingsCache = bridge.getAllSync();
+function mirrorSettingsToLocalStorage(entries: SettingsCache) {
+  for (const [key, value] of Object.entries(entries)) {
+    safeLocalStorageSet(key, value);
   }
-  if (!electronSettingsSubscribed) {
-    electronSettingsSubscribed = true;
+}
+
+function initSettingsCache(): SettingsCache | null {
+  const bridge = getSettingsBridge();
+  if (!bridge) return null;
+
+  if (settingsCache === null) {
+    settingsCache = bridge.getAllSync();
+    mirrorSettingsToLocalStorage(settingsCache);
+  }
+
+  if (!settingsSubscribed) {
+    settingsSubscribed = true;
     bridge.onDidChange(({ key, value }: SettingsBridgeChange) => {
-      const oldValue = electronSettingsCache?.[key] ?? null;
+      const oldValue = settingsCache?.[key] ?? null;
       if (value === null) {
-        if (electronSettingsCache) delete electronSettingsCache[key];
+        if (settingsCache) delete settingsCache[key];
+        safeLocalStorageRemove(key);
       } else {
-        electronSettingsCache ??= {};
-        electronSettingsCache[key] = value;
+        settingsCache ??= {};
+        settingsCache[key] = value;
+        safeLocalStorageSet(key, value);
       }
       dispatchSettingsChangeEvent(key, value, oldValue);
     });
   }
-  return electronSettingsCache;
+
+  return settingsCache;
 }
 
 export function onSettingsChange(callback: (change: SettingsChangeDetail) => void): () => void {
@@ -95,7 +104,7 @@ export function onSettingsChange(callback: (change: SettingsChangeDetail) => voi
 
 /** Read raw string from persistent app settings. Returns `null` if missing or on error. */
 export function storageGet(key: string): string | null {
-  const cache = initElectronSettingsCache();
+  const cache = initSettingsCache();
   if (cache) {
     return cache[key] ?? null;
   }
@@ -104,29 +113,35 @@ export function storageGet(key: string): string | null {
 
 /** Write raw string to persistent app settings. Silently ignores errors. */
 export function storageSet(key: string, value: string): void {
-  const bridge = getElectronSettingsBridge();
-  const cache = initElectronSettingsCache();
-  if (bridge && cache) {
-    cache[key] = value;
+  const bridge = getSettingsBridge();
+  const cache = initSettingsCache();
+  const oldValue = cache?.[key] ?? safeLocalStorageGet(key);
+
+  safeLocalStorageSet(key, value);
+  if (cache) cache[key] = value;
+
+  if (bridge) {
     void bridge.set(key, value);
     return;
   }
-  const oldValue = safeLocalStorageGet(key);
-  safeLocalStorageSet(key, value);
+
   dispatchSettingsChangeEvent(key, value, oldValue);
 }
 
 /** Remove key from persistent app settings. Silently ignores errors. */
 export function storageRemove(key: string): void {
-  const bridge = getElectronSettingsBridge();
-  const cache = initElectronSettingsCache();
-  if (bridge && cache) {
-    delete cache[key];
+  const bridge = getSettingsBridge();
+  const cache = initSettingsCache();
+  const oldValue = cache?.[key] ?? safeLocalStorageGet(key);
+
+  safeLocalStorageRemove(key);
+  if (cache) delete cache[key];
+
+  if (bridge) {
     void bridge.remove(key);
     return;
   }
-  const oldValue = safeLocalStorageGet(key);
-  safeLocalStorageRemove(key);
+
   dispatchSettingsChangeEvent(key, null, oldValue);
 }
 

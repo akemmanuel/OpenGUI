@@ -1,39 +1,29 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   AppUpdateState,
+  DesktopBackendStatus,
   ElectronAPI,
-  InstallProgress,
   SettingsBridgeChange,
 } from "./src/types/electron";
 
 type Listener<T = unknown> = (data: T) => void;
 
+type BackendConfigSync = Pick<
+  ElectronAPI,
+  "kind" | "backendUrl" | "backendToken" | "backendStatus"
+>;
+
 function invoke<T extends (...args: never[]) => Promise<unknown>>(channel: string): T {
   return ((...args: never[]) => ipcRenderer.invoke(channel, ...args)) as T;
 }
 
-const BACKEND_EVENT_CHANNELS = [
-  "opencode:bridge-event",
-  "claude-code:bridge-event",
-  "pi:bridge-event",
-  "codex:bridge-event",
-] as const;
+const backendConfig = ipcRenderer.sendSync("backend:get-config-sync") as BackendConfigSync;
 
 const electronAPI: ElectronAPI = {
-  openGui: {
-    invoke: (channel, args = []) => ipcRenderer.invoke(channel, ...args),
-    onBackendEvent: (callback) => {
-      const handlers = BACKEND_EVENT_CHANNELS.map((channel) => {
-        const handler = (_event: IpcRendererEvent, data: unknown) => callback({ channel, data });
-        ipcRenderer.on(channel, handler);
-        if (channel === "claude-code:bridge-event") ipcRenderer.send("claude-code:renderer-ready");
-        return { channel, handler };
-      });
-      return () => {
-        for (const { channel, handler } of handlers) ipcRenderer.removeListener(channel, handler);
-      };
-    },
-  },
+  kind: backendConfig.kind ?? "electron",
+  backendUrl: backendConfig.backendUrl ?? null,
+  backendToken: backendConfig.backendToken ?? null,
+  backendStatus: backendConfig.backendStatus ?? "stopped",
   settings: {
     getAllSync: () => ipcRenderer.sendSync("settings:get-all-sync"),
     getSync: (key: string) => ipcRenderer.sendSync("settings:get-sync", key),
@@ -58,13 +48,20 @@ const electronAPI: ElectronAPI = {
   isMaximized: invoke("window:isMaximized"),
   getPlatform: invoke("platform:get"),
   getSystemLocale: invoke("platform:locale"),
-  detectBackends: invoke("platform:detectBackends"),
   isPackaged: invoke("app:isPackaged"),
+  restartBackend: invoke("backend:restart-managed"),
   onMaximizeChange: (callback: Listener<boolean>) => {
     const handler = (_event: IpcRendererEvent, isMaximized: boolean) => callback(isMaximized);
     ipcRenderer.on("window:maximizeChanged", handler);
     return () => {
       ipcRenderer.removeListener("window:maximizeChanged", handler);
+    };
+  },
+  onBackendStatusChange: (callback: Listener<DesktopBackendStatus>) => {
+    const handler = (_event: IpcRendererEvent, status: DesktopBackendStatus) => callback(status);
+    ipcRenderer.on("backend:status-changed", handler);
+    return () => {
+      ipcRenderer.removeListener("backend:status-changed", handler);
     };
   },
 
@@ -98,39 +95,6 @@ const electronAPI: ElectronAPI = {
 
   openInFileBrowser: invoke("shell:openInFileBrowser"),
   openInTerminal: invoke("shell:openInTerminal"),
-  getHomeDir: invoke("platform:homeDir"),
-  installBackend: invoke("backend:install"),
-  onInstallProgress: (callback: Listener<InstallProgress>) => {
-    const handler = (_event: IpcRendererEvent, data: InstallProgress) => callback(data);
-    ipcRenderer.on("backend:install-progress", handler);
-    return () => {
-      ipcRenderer.removeListener("backend:install-progress", handler);
-    };
-  },
-  onSkillsInstallProgress: (callback: Listener<InstallProgress>) => {
-    const handler = (_event: IpcRendererEvent, data: InstallProgress) => callback(data);
-    ipcRenderer.on("opencode:skills:install-progress", handler);
-    return () => {
-      ipcRenderer.removeListener("opencode:skills:install-progress", handler);
-    };
-  },
-
-  worktree: {
-    detectSetup: invoke("worktree:detect-setup"),
-    runSetup: invoke("worktree:run-setup"),
-  },
-
-  git: {
-    isRepo: invoke("git:is-repo"),
-    listBranches: invoke("git:branch:list"),
-    currentBranch: invoke("git:current-branch"),
-    listWorktrees: invoke("git:worktree:list"),
-    addWorktree: invoke("git:worktree:add"),
-    removeWorktree: invoke("git:worktree:remove"),
-    merge: invoke("git:merge"),
-    mergeAbort: invoke("git:merge:abort"),
-    getRemoteUrl: invoke("git:remote:url"),
-  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

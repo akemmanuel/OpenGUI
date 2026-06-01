@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 import { normalizeProjectPath } from "@/lib/utils";
+import { useDesktopShell } from "@/shell/provider";
 
 interface OpenProjectPathDialogDetail {
   resolve: (value: string | null) => void;
@@ -37,8 +38,25 @@ function getPromptMessage(isLocalWorkspace: boolean) {
   return "This window is connected to a remote server, so choose a project by entering the path on that server.";
 }
 
+function isLoopbackServerUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function resolveBrowserApiBaseUrl(workspaceServerUrl: string | null | undefined) {
+  if (!isWebRuntime()) return workspaceServerUrl ?? DEFAULT_SERVER_URL;
+  if (!workspaceServerUrl || isLoopbackServerUrl(workspaceServerUrl)) return window.location.origin;
+  return workspaceServerUrl;
+}
+
 export function ProjectPathDialog() {
-  const { isLocalWorkspace, workspaceServerUrl, workspaceDirectory } = useConnectionState();
+  const { activeWorkspace, isLocalWorkspace, workspaceServerUrl, workspaceDirectory } =
+    useConnectionState();
+  const shell = useDesktopShell();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [showServerBrowser, setShowServerBrowser] = useState(false);
@@ -80,7 +98,12 @@ export function ProjectPathDialog() {
     try {
       const params = new URLSearchParams();
       if (path) params.set("path", path);
-      const response = await fetch(`/api/fs/list?${params.toString()}`);
+      const baseUrl = resolveBrowserApiBaseUrl(workspaceServerUrl);
+      const headers = new Headers();
+      if (activeWorkspace?.authToken) {
+        headers.set("authorization", `Bearer ${activeWorkspace.authToken}`);
+      }
+      const response = await fetch(`${baseUrl}/api/fs/list?${params.toString()}`, { headers });
       const body = await response.json();
       if (!response.ok || !body?.ok)
         throw new Error(body?.error || "Failed to list server folders");
@@ -154,23 +177,21 @@ export function ProjectPathDialog() {
                 }
               }}
             />
-            {isLocalWorkspace && window.electronAPI?.openDirectory && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={async () => {
-                  if (webRuntime) {
-                    openServerBrowser();
-                    return;
-                  }
-                  const nextPath = await window.electronAPI?.openDirectory();
-                  if (nextPath) setValue(nextPath);
-                }}
-              >
-                <FolderOpen className="size-4" />
-                {webRuntime ? "Browse server" : "Browse"}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={async () => {
+                if (webRuntime || !isLocalWorkspace) {
+                  openServerBrowser();
+                  return;
+                }
+                const nextPath = await shell.dialog.openDirectory();
+                if (nextPath) setValue(nextPath);
+              }}
+            >
+              <FolderOpen className="size-4" />
+              {webRuntime || !isLocalWorkspace ? "Browse server" : "Browse"}
+            </Button>
           </div>
           {showServerBrowser && (
             <div className="rounded-lg border bg-muted/20 p-2">

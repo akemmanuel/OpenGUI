@@ -1,4 +1,4 @@
-/** Polyfill localStorage for Bun's test runner (non-browser env). */
+/** Polyfill localStorage for the test runner (non-browser env). */
 export function polyfillLocalStorage() {
   if (typeof globalThis.localStorage === "undefined") {
     const store = new Map<string, string>();

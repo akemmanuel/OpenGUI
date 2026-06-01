@@ -2,6 +2,7 @@ import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { AgentBackendId } from "@/agents";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
 import { mergeProjectBackendSessions, reducer } from "./agent-reducer";
+import { createProjectConnectionStatus } from "./agent-project-connection";
 
 function session(id: string, backendId: AgentBackendId, directory = "/repo", updated = 1): Session {
   return {
@@ -131,5 +132,66 @@ describe("mergeProjectBackendSessions", () => {
     } as Parameters<typeof reducer>[1]);
 
     expect(selected.isBusy).toBe(true);
+  });
+
+  test("preserves chat-infra connection kind across backend status updates", () => {
+    const next = reducer(
+      baseState({
+        connections: {
+          "workspace-1\u0000/home/emmanuel": createProjectConnectionStatus(
+            "connected",
+            "http://localhost:4096",
+            "chat-infra",
+          ),
+        },
+      }),
+      {
+        type: "SET_PROJECT_CONNECTION",
+        payload: {
+          projectKey: "workspace-1\u0000/home/emmanuel",
+          status: {
+            state: "reconnecting",
+            serverUrl: "http://localhost:4096",
+            serverVersion: null,
+            error: null,
+            lastEventAt: 2,
+          },
+        },
+      } as Parameters<typeof reducer>[1],
+    );
+
+    expect(next.connections["workspace-1\u0000/home/emmanuel"]?.kind).toBe("chat-infra");
+  });
+
+  test("does not delete sessions when removing a non-workspace infrastructure connection", () => {
+    const state = baseState({
+      workspaces: [
+        {
+          id: "workspace-1",
+          name: "Workspace",
+          serverUrl: "http://localhost:4096",
+          isLocal: false,
+          projects: [],
+        },
+      ],
+      sessions: [session("chat-1", "opencode", "/home/emmanuel")],
+      connections: {
+        "workspace-1\u0000/home/emmanuel": createProjectConnectionStatus(
+          "connected",
+          "http://localhost:4096",
+          "chat-infra",
+        ),
+      },
+    });
+
+    const next = reducer(state, {
+      type: "REMOVE_PROJECT",
+      payload: {
+        projectKey: "workspace-1\u0000/home/emmanuel",
+        directory: "/home/emmanuel",
+      },
+    } as Parameters<typeof reducer>[1]);
+
+    expect(next.sessions.map((item) => item.id)).toEqual(["chat-1"]);
   });
 });

@@ -56,7 +56,7 @@
       "sdkSkills": "SDK del agente",
       "installedSkills": "Sistema de archivos",
       "cliAvailable": "CLI disponible",
-      "cliUnavailable": "Instala Node.js o Bun para usar Discover"
+      "cliUnavailable": "Instala Node.js para usar Discover"
     },
     "marketplace": {
       "title": "Descubrir plugins",

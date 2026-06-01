@@ -943,7 +943,6 @@ function buildCodexPath(source) {
   const home = source?.HOME || homedir();
   const candidates = [
     join(home, ".local", "share", "pnpm"),
-    join(home, ".bun", "bin"),
     join(home, ".local", "bin"),
     join(home, ".npm-global", "bin"),
     "/usr/local/bin",

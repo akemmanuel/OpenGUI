@@ -9,7 +9,7 @@ import {
 } from "../safe-storage";
 import { polyfillLocalStorage } from "./setup";
 
-// Polyfill localStorage for Bun's test runner (which runs in a non-browser env)
+// Polyfill localStorage for the test runner (which runs in a non-browser env)
 beforeAll(() => {
   polyfillLocalStorage();
 });

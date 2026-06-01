@@ -47,6 +47,12 @@ src/components/provider-icons/svgs/
 # Local benchmark/debug output
 .tmp-bench-claude/
 
+# Throwaway investigation artifacts
+changes.patch
+*.prototype.ts
+*.prototype.logic.ts
+*.prototype.NOTES.md
+
 # Local agent/tool state
 .claude/
 .pi/

@@ -306,8 +306,12 @@ function makeSessionTitle(text, title) {
   return firstLine.slice(0, 80) || "Untitled";
 }
 
+function getSessionDirectory(info, target = {}) {
+  return normalizeDir(info?.cwd || target.directory || process.cwd());
+}
+
 function makeSessionFromInfo(info, target = {}, fallbackTitle) {
-  const directory = normalizeDir(target.directory || info?.cwd || process.cwd());
+  const directory = getSessionDirectory(info, target);
   const rawId = toRawSessionId(info?.sessionId);
   const id = toFrontendSessionId(rawId);
   return {
@@ -1029,15 +1033,22 @@ class ClaudeCodeBridgeManager {
   async listSessions(directory, workspaceId) {
     const target = this.resolveTarget(directory, workspaceId);
     const sessions = await listSessions({ dir: target.directory, limit: 10_000 });
+    const scopedSessions = sessions.filter(
+      (info) => getSessionDirectory(info, target) === target.directory,
+    );
     return await Promise.all(
-      sessions.map(async (info) => {
-        this.sessionTargets.set(info.sessionId, target);
+      scopedSessions.map(async (info) => {
+        const sessionTarget = {
+          directory: getSessionDirectory(info, target),
+          workspaceId: target.workspaceId,
+        };
+        this.sessionTargets.set(info.sessionId, sessionTarget);
         let model = info?.model;
         if (!model && info?.sessionId) {
           try {
             model = deriveClaudeSessionModel(
               await getSessionMessages(info.sessionId, {
-                dir: target.directory,
+                dir: sessionTarget.directory,
                 includeSystemMessages: false,
               }),
             );
@@ -1045,7 +1056,7 @@ class ClaudeCodeBridgeManager {
             model = null;
           }
         }
-        return makeSessionFromInfo({ ...info, model }, target);
+        return makeSessionFromInfo({ ...info, model }, sessionTarget);
       }),
     );
   }

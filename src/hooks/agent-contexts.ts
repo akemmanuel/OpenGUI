@@ -65,6 +65,7 @@ export interface ConnectionContextValue {
   workspaces: Workspace[];
   activeWorkspace: Workspace | null;
   activeWorkspaceId: string;
+  supportsMultipleWorkspaces: boolean;
   workspaceStatuses: Record<
     string,
     {
@@ -140,15 +141,10 @@ export interface ActionsContextValue {
   registerWorktree: (worktreeDir: string, parentDir: string, branch: string) => void;
   unregisterWorktree: (worktreeDir: string) => void;
   clearWorktreeCleanup: () => void;
-  createWorkspace: (input: {
-    name: string;
-    serverUrl: string;
-    username?: string;
-    password?: string;
-  }) => void;
+  createWorkspace: (input: { name: string; serverUrl: string; authToken?: string }) => void;
   updateWorkspace: (
     workspaceId: string,
-    input: Partial<Pick<Workspace, "name" | "serverUrl" | "username" | "password">>,
+    input: Partial<Pick<Workspace, "name" | "serverUrl" | "authToken">>,
   ) => void;
   removeWorkspace: (workspaceId: string) => Promise<void>;
   switchWorkspace: (workspaceId: string) => void;

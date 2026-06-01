@@ -114,6 +114,13 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
 }
 
 const markdownComponents = {
+  table({ children, node: _node, ...props }: ComponentProps<"table"> & { node?: unknown }) {
+    return (
+      <div className="markdown-table-scroll">
+        <table {...props}>{children}</table>
+      </div>
+    );
+  },
   pre({ children }: ComponentProps<"pre">) {
     // react-markdown applies component mappings before passing children to `pre`,
     // so the child type is our mapped `code` function, not the literal "code" tag.

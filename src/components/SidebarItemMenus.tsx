@@ -25,6 +25,7 @@ import { storageGet } from "@/lib/safe-storage";
 import { compareWorktreesByLabel, getWorktreeLabel } from "@/lib/worktree-placement";
 import { formatTimeAgo, getProjectName } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { useDesktopShell } from "@/shell/provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -283,6 +284,7 @@ export function ProjectMenuContent({
   onOpenWorktreePr,
   onRemoveWorktree,
 }: ProjectMenuContentProps) {
+  const shell = useDesktopShell();
   const extraWorktrees = [...worktrees]
     .filter((worktree) => worktree.path !== directory)
     .sort((left, right) => compareWorktreesByLabel(left, right, directory));
@@ -314,7 +316,7 @@ export function ProjectMenuContent({
             <DropdownMenuItem
               onClick={(event) => {
                 event.stopPropagation();
-                void window.electronAPI?.openInFileBrowser(
+                void shell.system.openInFileBrowser(
                   directory,
                   storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
                 );
@@ -326,7 +328,7 @@ export function ProjectMenuContent({
             <DropdownMenuItem
               onClick={(event) => {
                 event.stopPropagation();
-                void window.electronAPI?.openInTerminal(
+                void shell.system.openInTerminal(
                   directory,
                   storageGet(STORAGE_KEYS.TERMINAL) ?? "",
                 );
@@ -468,7 +470,7 @@ export function ProjectMenuContent({
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
             onSelect={() => {
-              void window.electronAPI?.openInFileBrowser(
+              void shell.system.openInFileBrowser(
                 directory,
                 storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
               );
@@ -480,10 +482,7 @@ export function ProjectMenuContent({
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
             onSelect={() => {
-              void window.electronAPI?.openInTerminal(
-                directory,
-                storageGet(STORAGE_KEYS.TERMINAL) ?? "",
-              );
+              void shell.system.openInTerminal(directory, storageGet(STORAGE_KEYS.TERMINAL) ?? "");
             }}
           >
             <Terminal className="size-4" />

@@ -1,6 +1,6 @@
 import type { AgentBackendId } from "@/agents";
 import type { WorktreeParentMap } from "@/hooks/agent-state-persistence";
-import { getSessionBackendId } from "@/hooks/agent-session-utils";
+import { getSessionBackendId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import { getDirectoryPlacementInfo } from "@/lib/worktree-placement";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
@@ -45,11 +45,25 @@ interface SessionsClient {
   create(input: {
     backendId: AgentBackendId;
     title?: string;
-    target: { directory?: string; workspaceId?: string };
+    target: { directory?: string; workspaceId?: string; baseUrl?: string };
   }): Promise<Session>;
-  delete(input: { sessionId: string; backendId: AgentBackendId }): Promise<unknown>;
-  rename(input: { sessionId: string; title: string; backendId?: AgentBackendId }): Promise<unknown>;
-  abort(input: { sessionId: string }): Promise<unknown>;
+  delete(input: {
+    sessionId: string;
+    backendId: AgentBackendId;
+    target?: { directory?: string; workspaceId?: string };
+    confirmQueue?: boolean;
+  }): Promise<unknown>;
+  rename(input: {
+    sessionId: string;
+    title: string;
+    backendId?: AgentBackendId;
+    target?: { directory?: string; workspaceId?: string };
+  }): Promise<unknown>;
+  abort(input: {
+    sessionId: string;
+    backendId?: AgentBackendId;
+    target?: { directory?: string; workspaceId?: string };
+  }): Promise<unknown>;
 }
 
 interface SessionRuntime {
@@ -140,6 +154,7 @@ export function createSessionDeletionPlan({
   return {
     type: "delete",
     backendId,
+    deletedSession,
     nextSessionId,
     pendingWorktreeCleanup:
       deletedDirectory && worktreePlacement?.isKnownWorktree && remainingSessions.length === 0
@@ -217,6 +232,7 @@ export async function createLifecycleSession({
     sessions: Session[];
     activeSessionId: string | null;
     activeWorkspaceId: string;
+    activeWorkspaceServerUrl?: string;
   };
   preferredBackendId: AgentBackendId;
   ensureDirectoryConnection: (
@@ -242,7 +258,11 @@ export async function createLifecycleSession({
     const session = await sessionsClient.create({
       backendId,
       title,
-      target: { directory, workspaceId: state.activeWorkspaceId },
+      target: {
+        directory,
+        workspaceId: state.activeWorkspaceId,
+        baseUrl: state.activeWorkspaceServerUrl,
+      },
     });
     dispatch({ type: "SESSION_CREATED", payload: session });
     if (isChatDirectory(directory)) {
@@ -268,6 +288,7 @@ export async function createLifecycleSession({
 export async function deleteLifecycleSession({
   sessionId,
   state,
+  confirmQueue = false,
   cleanupSessionRefs,
   selectSession,
   sessionsClient,
@@ -280,6 +301,7 @@ export async function deleteLifecycleSession({
     busySessionIds: Set<string>;
     worktreeParents: WorktreeParentMap;
   };
+  confirmQueue?: boolean;
   cleanupSessionRefs: (sessionIds?: Iterable<string>) => void;
   selectSession: (sessionId: string, options?: { session?: Session }) => Promise<void>;
   sessionsClient: SessionsClient;
@@ -305,9 +327,16 @@ export async function deleteLifecycleSession({
     void selectSession(plan.nextSessionId);
   }
 
-  void sessionsClient.delete({ sessionId, backendId: plan.backendId }).catch(() => {
-    /* best-effort deletion */
-  });
+  void sessionsClient
+    .delete({
+      sessionId,
+      backendId: plan.backendId,
+      target: getSessionProjectTarget(plan.deletedSession) ?? undefined,
+      confirmQueue,
+    })
+    .catch(() => {
+      /* best-effort deletion */
+    });
 
   if (plan.pendingWorktreeCleanup) {
     dispatch({

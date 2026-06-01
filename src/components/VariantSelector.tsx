@@ -1,7 +1,6 @@
 /**
  * Variant selector button.
  * Cycles through available model variants on click.
- * Stays visible for non-reasoning models so control remains discoverable.
  */
 
 import { Sparkles } from "lucide-react";
@@ -36,10 +35,10 @@ export function VariantSelector() {
   if (!capabilities?.models || !selectedModel) return null;
 
   const supportsReasoning = variantKeys.length > 0;
-  const label = supportsReasoning ? formatVariantLabel(currentVariant) : "no reasoning";
-  const tooltipText = supportsReasoning
-    ? `Thinking effort: ${formatVariantLabel(currentVariant)} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)`
-    : `${model?.name ?? "Selected model"} has no reasoning effort options. Pick Sonnet or Opus.`;
+  if (!supportsReasoning) return null;
+
+  const label = formatVariantLabel(currentVariant);
+  const tooltipText = `Thinking effort: ${label} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)`;
 
   return (
     <Tooltip>
@@ -49,11 +48,9 @@ export function VariantSelector() {
             type="button"
             variant="ghost"
             size="sm"
-            disabled={!supportsReasoning}
-            className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+            className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={(e) => {
               e.stopPropagation();
-              if (!supportsReasoning) return;
               cycleVariant();
             }}
           >

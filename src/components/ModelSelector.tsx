@@ -16,7 +16,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useAvailableBackendIds,
   useBackendCapabilities,
@@ -418,26 +417,22 @@ export function ModelSelector() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DialogTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="!h-7 min-w-0 shrink gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {currentModel ? (
-                <ProviderIcon provider={currentModel.providerID} className="size-3.5 shrink-0" />
-              ) : (
-                <BrainCircuit className="size-3.5 shrink-0" />
-              )}
-              <span className="truncate">{currentModel?.label ?? "Select model"}</span>
-            </Button>
-          </DialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Select model</TooltipContent>
-      </Tooltip>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          title="Select model"
+          className="!h-7 min-w-0 shrink gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {currentModel ? (
+            <ProviderIcon provider={currentModel.providerID} className="size-3.5 shrink-0" />
+          ) : (
+            <BrainCircuit className="size-3.5 shrink-0" />
+          )}
+          <span className="truncate">{currentModel?.label ?? "Select model"}</span>
+        </Button>
+      </DialogTrigger>
 
       <DialogContent
         className="p-0 sm:max-w-2xl"

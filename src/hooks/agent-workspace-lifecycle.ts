@@ -1,4 +1,4 @@
-import { LOCAL_WORKSPACE_ID, normalizeWorkspace } from "@/hooks/agent-state-persistence";
+import { normalizeWorkspace } from "@/hooks/agent-state-persistence";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 import type { SelectedModel, Workspace } from "@/types/electron";
@@ -30,15 +30,14 @@ export function createWorkspaceLifecyclePlan({
   now = Date.now(),
 }: {
   workspaces: Workspace[];
-  input: { name: string; serverUrl: string; username?: string; password?: string };
+  input: { name: string; serverUrl: string; authToken?: string };
   now?: number;
 }) {
   const workspace = normalizeWorkspace({
     id: `ws_${now.toString(36)}`,
     name: input.name,
     serverUrl: input.serverUrl,
-    username: input.username,
-    password: input.password,
+    authToken: input.authToken,
     isLocal: false,
     projects: [],
     selectedModel: null,
@@ -61,19 +60,17 @@ export function createWorkspaceUpdatePlan({
 }: {
   workspaces: Workspace[];
   workspaceId: string;
-  input: Partial<Pick<Workspace, "name" | "serverUrl" | "username" | "password">>;
+  input: Partial<Pick<Workspace, "name" | "serverUrl" | "authToken">>;
 }) {
   return workspaces.map((workspace) => {
     if (workspace.id !== workspaceId) return workspace;
-    const nextServerUrl = workspace.isLocal
-      ? DEFAULT_SERVER_URL
-      : (input.serverUrl ?? workspace.serverUrl);
     return normalizeWorkspace({
       ...workspace,
       name: input.name ?? workspace.name,
-      serverUrl: nextServerUrl,
-      username: input.username ?? workspace.username,
-      password: input.password ?? workspace.password,
+      // A Workspace is the OpenGUI Backend connection. Its backend URL is immutable;
+      // wrong URL means creating a different Workspace, while auth may still change.
+      serverUrl: workspace.isLocal ? DEFAULT_SERVER_URL : workspace.serverUrl,
+      authToken: input.authToken ?? workspace.authToken,
     });
   });
 }
@@ -102,6 +99,11 @@ export function createWorkspaceSelectionSyncPlan({
           ...workspace,
           selectedModel: selection.selectedModel,
           selectedAgent: selection.selectedAgent,
+          settings: {
+            ...workspace.settings,
+            selectedModel: selection.selectedModel,
+            selectedAgent: selection.selectedAgent,
+          },
         }
       : workspace,
   );
@@ -132,12 +134,15 @@ export function createWorkspaceRemovalPlan({
   workspaceId: string;
   hasBackends: boolean;
 }) {
-  if (workspaceId === LOCAL_WORKSPACE_ID || !hasBackends) {
+  if (!hasBackends) {
     return { type: "skip" } as const;
   }
 
   const workspace = workspaces.find((item) => item.id === workspaceId);
   if (!workspace) {
+    return { type: "skip" } as const;
+  }
+  if (workspace.isLocal) {
     return { type: "skip" } as const;
   }
 
@@ -153,9 +158,7 @@ export function createWorkspaceRemovalPlan({
       projectKey: makeProjectKey(workspaceId, directory),
     })),
     nextWorkspaces,
-    nextActiveWorkspaceId: removingActiveWorkspace
-      ? (nextWorkspace?.id ?? LOCAL_WORKSPACE_ID)
-      : activeWorkspaceId,
+    nextActiveWorkspaceId: removingActiveWorkspace ? (nextWorkspace?.id ?? "") : activeWorkspaceId,
     nextActiveSessionId: removingActiveWorkspace
       ? (nextWorkspace?.lastActiveSessionId ?? null)
       : null,

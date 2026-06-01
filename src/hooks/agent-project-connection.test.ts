@@ -1,6 +1,14 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+
+if (typeof globalThis.window === "undefined") {
+  Object.defineProperty(globalThis, "window", {
+    value: { location: { origin: "http://localhost:4096" } },
+    configurable: true,
+  });
+}
 import {
   buildBootstrapProjectConfigs,
+  createProjectConnectionDescriptor,
   createProjectConnectionStatus,
   createProjectRemovalPlan,
   createWorkspaceConnectionConfig,
@@ -8,6 +16,7 @@ import {
   resolveConnectionWorkspace,
   shouldPersistLocalConnectionSettings,
   shouldPersistWorkspaceProject,
+  shouldSnapshotProjectConnectionForRestart,
 } from "./agent-project-connection";
 
 describe("createProjectConnectionStatus", () => {
@@ -16,6 +25,7 @@ describe("createProjectConnectionStatus", () => {
 
     expect(status).toMatchObject({
       state: "connecting",
+      kind: "project",
       serverUrl: "http://localhost:4096",
       serverVersion: null,
       error: null,
@@ -28,7 +38,7 @@ describe("resolveConnectionWorkspace", () => {
   test("falls back to the local workspace when the active workspace is missing", () => {
     const workspace = resolveConnectionWorkspace([], "missing");
 
-    expect(workspace).toMatchObject({ id: "local", name: "Local" });
+    expect(workspace).toMatchObject({ id: "local" });
   });
 });
 
@@ -157,6 +167,37 @@ describe("buildBootstrapProjectConfigs", () => {
   });
 });
 
+describe("createProjectConnectionDescriptor", () => {
+  test("owns Project connection identity and backend target shape", () => {
+    expect(
+      createProjectConnectionDescriptor({
+        config: {
+          workspaceId: "workspace-1",
+          baseUrl: "http://localhost:4096",
+          directory: "/repo/",
+          authToken: "token",
+        },
+      }),
+    ).toEqual({
+      workspaceId: "workspace-1",
+      directory: "/repo",
+      projectKey: "workspace-1\u0000/repo",
+      config: {
+        workspaceId: "workspace-1",
+        baseUrl: "http://localhost:4096",
+        directory: "/repo",
+        authToken: "token",
+      },
+      target: {
+        directory: "/repo",
+        workspaceId: "workspace-1",
+        baseUrl: "http://localhost:4096",
+        authToken: "token",
+      },
+    });
+  });
+});
+
 describe("createWorkspaceConnectionConfig", () => {
   test("maps workspace settings to a connection config", () => {
     expect(
@@ -179,6 +220,40 @@ describe("createWorkspaceConnectionConfig", () => {
       username: "user",
       password: "secret",
     });
+  });
+});
+
+describe("restart snapshot filtering", () => {
+  test("skips chat infrastructure connections", () => {
+    expect(
+      shouldSnapshotProjectConnectionForRestart({
+        status: createProjectConnectionStatus("connected", "http://localhost:4096", "chat-infra"),
+        workspace: {
+          id: "local",
+          name: "Local",
+          serverUrl: "http://localhost:4096",
+          isLocal: true,
+          projects: ["/home/emmanuel"],
+        },
+        directory: "/home/emmanuel",
+      }),
+    ).toBe(false);
+  });
+
+  test("keeps explicit workspace project connections", () => {
+    expect(
+      shouldSnapshotProjectConnectionForRestart({
+        status: createProjectConnectionStatus("connected", "http://localhost:4096"),
+        workspace: {
+          id: "local",
+          name: "Local",
+          serverUrl: "http://localhost:4096",
+          isLocal: true,
+          projects: ["/repo"],
+        },
+        directory: "/repo",
+      }),
+    ).toBe(true);
   });
 });
 

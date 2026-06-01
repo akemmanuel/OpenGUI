@@ -27,6 +27,8 @@ import type {
 export interface AgentBackendTarget {
   directory?: string;
   workspaceId?: string;
+  baseUrl?: string;
+  authToken?: string;
 }
 
 export interface AgentBackendCapabilities {
@@ -126,6 +128,7 @@ interface AgentRuntimeBackend {
     title?: string;
     directory?: string;
     workspaceId?: string;
+    baseUrl?: string;
   }): Promise<Session>;
   startSession?(input: {
     text: string;
@@ -136,6 +139,7 @@ interface AgentRuntimeBackend {
     title?: string;
     directory?: string;
     workspaceId?: string;
+    baseUrl?: string;
   }): Promise<Session>;
   deleteSession(sessionId: string): Promise<boolean>;
   renameSession(sessionId: string, title: string): Promise<Session>;

@@ -183,9 +183,6 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
   const turnFooterByMessageId = useMemo(() => {
     const footerByMessageId = new Map<string, TurnFooter>();
     const visibleMessageIds = new Set(visibleMessages.map((entry) => entry.info.id));
-    const sessionThinkingLevel =
-      nonEmptyString(activeSession?.model?.variant) ??
-      (activeSessionId ? nonEmptyString(sessionMeta[activeSessionId]?.selectedVariant) : undefined);
 
     for (const turn of Object.values(turnRuns)) {
       const matchingAssistantId =
@@ -234,8 +231,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
         ("variant" in entry.info ? nonEmptyString(entry.info.variant) : undefined) ??
         (parentModel && typeof parentModel === "object" && "variant" in parentModel
           ? nonEmptyString(parentModel.variant)
-          : undefined) ??
-        sessionThinkingLevel;
+          : undefined);
       const durationMs =
         typeof completedAt === "number" && parent?.info.role === "user"
           ? completedAt - parent.info.time.created
@@ -253,7 +249,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     }
 
     return footerByMessageId;
-  }, [visibleMessages, turnRuns, activeSession, activeSessionId, sessionMeta]);
+  }, [visibleMessages, turnRuns]);
 
   // Find the last reasoning part across all assistant messages so we can
   // auto-collapse earlier reasoning blocks when a new one starts.
@@ -294,7 +290,8 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     (entry: MessageEntry, idx: number) => {
       const prev = idx > 0 ? (visibleMessages[idx - 1] ?? null) : null;
       const isConsecutive = prev !== null && prev.info.role === entry.info.role;
-      const spacing = idx === 0 ? "" : isConsecutive ? "mt-1.5" : "mt-4";
+      const spacing =
+        idx === 0 ? "" : entry.parts.length === 0 ? "" : isConsecutive ? "mt-1" : "mt-4";
       const isFirstUserMsg = entry.info.role === "user" && firstUserMessageIndex === idx;
 
       return (

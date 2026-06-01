@@ -73,12 +73,33 @@ function sameBackendSession(a: Session, b: Session) {
   return getBackendSessionIdentity(a) === getBackendSessionIdentity(b);
 }
 
+function getTurnRunIdForSession(state: InternalAgentState, sessionID: string) {
+  const direct = state.activeTurnRunBySession[sessionID];
+  if (direct) return direct;
+
+  const matchingSession = state.sessions.find(
+    (session) => session.id === sessionID || getBackendSessionIdentity(session) === sessionID,
+  );
+  const candidates = [
+    matchingSession?.id,
+    matchingSession ? getBackendSessionIdentity(matchingSession) : undefined,
+    state.activeSessionId ?? undefined,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const turnId = state.activeTurnRunBySession[candidate];
+    if (turnId) return turnId;
+  }
+  return undefined;
+}
+
 function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Message) {
   if (msg.role !== "assistant") return null;
-  const activeTurnId = state.activeTurnRunBySession[msg.sessionID];
+  const activeTurnId = getTurnRunIdForSession(state, msg.sessionID);
   if (!activeTurnId) return null;
   const run = state.turnRuns[activeTurnId];
   if (!run || run.status !== "running") return null;
+  const completedAt = typeof msg.time.completed === "number" ? msg.time.completed : undefined;
 
   return {
     turnRuns: {
@@ -92,8 +113,18 @@ function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Messag
             : run.providerID,
         modelID: "modelID" in msg && typeof msg.modelID === "string" ? msg.modelID : run.modelID,
         thinkingLevel: run.thinkingLevel,
+        ...(completedAt ? { completedAt, status: "completed" as const } : {}),
       },
     },
+    ...(completedAt
+      ? {
+          activeTurnRunBySession: Object.fromEntries(
+            Object.entries(state.activeTurnRunBySession).filter(
+              ([, turnId]) => turnId !== activeTurnId,
+            ),
+          ),
+        }
+      : {}),
   } satisfies Partial<InternalAgentState>;
 }
 
@@ -244,6 +275,7 @@ type Action =
       type: "INIT_BUSY_SESSIONS";
       payload: Record<string, { type: string }>;
     }
+  | { type: "SET_SESSION_QUEUE"; payload: { sessionID: string; prompts: QueuedPrompt[] } }
   | { type: "QUEUE_ADD"; payload: { sessionID: string; prompt: QueuedPrompt } }
   | { type: "QUEUE_SHIFT"; payload: { sessionID: string } }
   | { type: "QUEUE_REMOVE"; payload: { sessionID: string; promptID: string } }
@@ -444,18 +476,29 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
     case "SET_PROJECT_CONNECTION": {
       const { projectKey, status } = action.payload;
+      const existing = state.connections[projectKey];
       return {
         ...state,
-        connections: { ...state.connections, [projectKey]: status },
+        connections: {
+          ...state.connections,
+          [projectKey]: {
+            ...status,
+            kind: status.kind ?? existing?.kind ?? "project",
+          },
+        },
       };
     }
 
     case "REMOVE_PROJECT": {
       const { projectKey, directory } = action.payload;
       const { workspaceId } = parseProjectKey(projectKey);
+      const isExplicitWorkspaceProject = state.workspaces.some(
+        (workspace) => workspace.id === workspaceId && workspace.projects.includes(directory),
+      );
       const removedSessionIds = new Set(
         state.sessions
           .filter((s) => {
+            if (!isExplicitWorkspaceProject) return false;
             if (getSessionWorkspaceId(s) !== workspaceId) return false;
             const sessionDir = s._projectDir ?? s.directory;
             if (sessionDir !== directory) return false;
@@ -549,6 +592,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         connections: rest,
         projectWorkspaceMap: restProjectWorkspaceMap,
         sessions: state.sessions.filter((s) => {
+          if (!isExplicitWorkspaceProject) return true;
           if (getSessionWorkspaceId(s) !== workspaceId) return true;
           const sessionDir = s._projectDir ?? s.directory;
           if (sessionDir !== directory) return true;
@@ -718,7 +762,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         workspace.id === state.activeWorkspaceId
           ? {
               ...workspace,
-              lastActiveSessionId: sid ?? workspace.lastActiveSessionId,
+              lastActiveSessionId: sid,
             }
           : workspace,
       );
@@ -736,7 +780,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         messages: initialMessages,
         messageHistoryHasMore: restoredHasMore,
         messageHistoryCursor: restoredCursor,
-        isLoadingMessages: sid !== null && !isCompleteBuffer,
+        isLoadingMessages: sid !== null && !!selectedSession && !isCompleteBuffer,
         isLoadingOlderMessages: false,
         isBusy: sid ? state.busySessionIds.has(sid) || hasRunningTurn : false,
         unreadSessionIds: nextUnread,
@@ -1506,7 +1550,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         nextUnread = new Set(state.unreadSessionIds);
         nextUnread.add(sessionID);
       }
-      const activeTurnId = state.activeTurnRunBySession[sessionID];
+      const activeTurnId = getTurnRunIdForSession(state, sessionID);
       const activeTurn = activeTurnId ? state.turnRuns[activeTurnId] : undefined;
       const completedTurnPatch =
         !isBusy && activeTurn?.status === "running"
@@ -1554,6 +1598,21 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
               isBusy: statuses[state.activeSessionId]?.type === "busy",
             }
           : {}),
+      };
+    }
+
+    case "SET_SESSION_QUEUE": {
+      const { sessionID, prompts } = action.payload;
+      if (prompts.length === 0) {
+        const { [sessionID]: _, ...rest } = state.queuedPrompts;
+        return { ...state, queuedPrompts: rest };
+      }
+      return {
+        ...state,
+        queuedPrompts: {
+          ...state.queuedPrompts,
+          [sessionID]: prompts,
+        },
       };
     }
 

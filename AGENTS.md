@@ -1,4 +1,4 @@
-Default to using Vite+ (`vp`) instead of raw Bun commands.
+Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands.
 
 - Use `vp dev` for development
 - Use `vp check` for lint, format, and type checks
@@ -14,7 +14,7 @@ Default to using Vite+ (`vp`) instead of raw Bun commands.
 - Use `pnpm install` to install dependencies
 - Use `pnpm add`, `pnpm remove`, `pnpm update`, etc. for dependency changes
 - Use `pnpm run <script>` for package scripts
-- Do not use `bun`, `npm`, or `yarn` in project instructions unless code specifically requires them.
+- Do not use `npm` or `yarn` in project instructions unless code specifically requires them.
 
 ## Development
 
@@ -29,5 +29,9 @@ Use Vite+ task runner and pnpm-managed deps.
 ## Project notes
 
 - `vite.config.ts` uses `vite-plus`
-- `packageManager` is `pnpm@10.33.4`
+- `packageManager` is `pnpm@11.1.2`
 - Keep docs aligned with Vite+ / pnpm workflow
+
+## NEVER RUN
+
+Never use tsc for typechecking

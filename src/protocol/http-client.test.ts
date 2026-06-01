@@ -22,9 +22,9 @@ describe("createHttpOpenGuiClient", () => {
             protocolVersion: 1,
             server: {
               workspaces: true,
-              projects: false,
-              sessions: false,
-              events: "websocket",
+              projects: true,
+              sessions: true,
+              events: "sse",
               auth: false,
               allowedRoots: true,
             },
@@ -91,12 +91,50 @@ describe("createHttpOpenGuiClient", () => {
     });
   });
 
-  test("connectProject attaches each requested backend through project:add", async () => {
-    const calls: Array<{ channel: string; args: unknown[] }> = [];
+  test("connectProject creates the project over HTTP and then connects requested harnesses", async () => {
+    const calls: Array<{ input: string; method?: string }> = [];
     const client = createHttpOpenGuiClient({
-      rpcImpl: async <T>(channel: string, args: unknown[] = []) => {
-        calls.push({ channel, args });
-        return { success: true, data: true } as T;
+      baseUrl: "http://example.test",
+      fetchImpl: async (input, init) => {
+        calls.push({ input, method: init?.method });
+        const url = String(input);
+        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
+          return json({ ok: true, value: [] });
+        }
+        if (url.endsWith("/api/projects") && init?.method === "POST") {
+          return json({
+            ok: true,
+            value: {
+              id: "project_1",
+              workspaceId: "local",
+              displayName: "repo",
+              path: "/repo",
+              canonicalPath: "/repo",
+              createdAt: "2026-05-12T00:00:00.000Z",
+              updatedAt: "2026-05-12T00:00:00.000Z",
+            },
+          });
+        }
+        if (url.endsWith("/api/projects/project_1/connect") && init?.method === "POST") {
+          expect(init.body).toBe(
+            JSON.stringify({
+              backendIds: ["opencode", "pi"],
+              config: {
+                workspaceId: "local",
+                baseUrl: "http://127.0.0.1:4096",
+                directory: "/repo",
+              },
+            }),
+          );
+          return json({
+            ok: true,
+            value: {
+              connectedBackendIds: ["opencode", "pi"],
+              errors: [],
+            },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
       },
     });
 
@@ -113,52 +151,207 @@ describe("createHttpOpenGuiClient", () => {
       connectedBackendIds: ["opencode", "pi"],
       errors: [],
     });
-    expect(calls).toEqual([
-      {
-        channel: "opencode:project:add",
-        args: [
-          {
-            workspaceId: "local",
-            baseUrl: "http://127.0.0.1:4096",
-            directory: "/repo",
-          },
-        ],
-      },
-      {
-        channel: "pi:project:add",
-        args: [
-          {
-            workspaceId: "local",
-            baseUrl: "http://127.0.0.1:4096",
-            directory: "/repo",
-          },
-        ],
-      },
+    expect(calls.map((call) => `${call.method ?? "GET"} ${call.input}`)).toEqual([
+      "GET http://127.0.0.1:4096/api/projects",
+      "POST http://127.0.0.1:4096/api/projects",
+      "POST http://127.0.0.1:4096/api/projects/project_1/connect",
     ]);
   });
 
-  test("connectProject reports per-backend attachment failures", async () => {
+  test("creates sessions over HTTP and maps them into frontend session ids", async () => {
     const client = createHttpOpenGuiClient({
-      rpcImpl: async <T>(channel: string) => {
-        if (channel === "opencode:project:add") {
-          return { success: true, data: true } as T;
+      baseUrl: "http://example.test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
+          return json({
+            ok: true,
+            value: [
+              {
+                id: "project_1",
+                workspaceId: "local",
+                displayName: "repo",
+                path: "/repo",
+                canonicalPath: "/repo",
+                createdAt: "2026-05-12T00:00:00.000Z",
+                updatedAt: "2026-05-12T00:00:00.000Z",
+              },
+            ],
+          });
         }
-        return { success: false, error: "Pi attach failed" } as T;
+        if (url.endsWith("/api/sessions") && init?.method === "POST") {
+          return json({
+            ok: true,
+            value: {
+              id: "session_1",
+              rawId: "native-1",
+              workspaceId: "local",
+              projectId: "project_1",
+              harnessId: "pi",
+              title: "Chat",
+              status: "unknown",
+              createdAt: "2026-05-12T00:00:00.000Z",
+              updatedAt: "2026-05-12T00:00:00.000Z",
+            },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
       },
     });
 
-    const result = await client.agentBackends.connectProject({
-      config: {
-        workspaceId: "local",
-        baseUrl: "http://127.0.0.1:4096",
-        directory: "/repo",
-      },
-      backendIds: ["opencode", "pi"],
+    const session = await client.sessions.create({
+      backendId: "pi",
+      title: "Chat",
+      target: { directory: "/repo", workspaceId: "local" },
     });
 
-    expect(result).toEqual({
-      connectedBackendIds: ["opencode"],
-      errors: [{ backendId: "pi", error: "Pi attach failed" }],
+    expect(session).toMatchObject({
+      id: "pi:native-1",
+      title: "Chat",
+      _backendId: "pi",
+      _rawId: "native-1",
+      _projectDir: "/repo",
+      _workspaceId: "local",
     });
+  });
+
+  test("sends auth token with RPC requests", async () => {
+    const originalFetch = globalThis.fetch;
+    let authHeader = "";
+    globalThis.fetch = (async (_input, init) => {
+      authHeader = new Headers(init?.headers).get("authorization") ?? "";
+      return json({ ok: true, value: "/home/emmanuel" });
+    }) as typeof fetch;
+
+    try {
+      const client = createHttpOpenGuiClient({
+        baseUrl: "http://example.test",
+        token: "secret-token",
+      });
+      const homeDir = await client.runtime.getHomeDir();
+      expect(homeDir).toBe("/home/emmanuel");
+      expect(authHeader).toBe("Bearer secret-token");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("sends auth token in event subscriptions", () => {
+    const urls: string[] = [];
+
+    class MockEventSource {
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+
+      constructor(url: string) {
+        urls.push(url);
+      }
+
+      close() {}
+    }
+
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      token: "secret-token",
+      eventSourceImpl: MockEventSource,
+    });
+
+    const unsubscribe = client.agentBackends.subscribe(() => {});
+    unsubscribe();
+
+    expect(urls).toEqual(["http://example.test/api/events/v2?token=secret-token"]);
+  });
+
+  test("reconnects SSE subscriptions with the last seen event id as cursor", () => {
+    const urls: string[] = [];
+    const streams: MockEventSource[] = [];
+
+    class MockEventSource {
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+
+      constructor(url: string) {
+        urls.push(url);
+        streams.push(this);
+      }
+
+      close() {}
+    }
+
+    const originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((callback: TimerHandler) => {
+      if (typeof callback === "function") callback();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout;
+
+    try {
+      const client = createHttpOpenGuiClient({
+        baseUrl: "http://example.test",
+        eventSourceImpl: MockEventSource,
+      });
+
+      const unsubscribe = client.agentBackends.subscribe(() => {});
+      streams[0]?.onmessage?.({
+        data: JSON.stringify({ ok: true }),
+        lastEventId: "evt_123",
+      } as MessageEvent<string>);
+      streams[0]?.onerror?.(new Event("error"));
+      unsubscribe();
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+
+    expect(urls).toEqual([
+      "http://example.test/api/events/v2",
+      "http://example.test/api/events/v2?cursor=evt_123",
+    ]);
+  });
+
+  test("scopes aliased session requests to the resolved project", async () => {
+    const calls: string[] = [];
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
+          return json({
+            ok: true,
+            value: [
+              {
+                id: "project_1",
+                workspaceId: "workspace-1",
+                displayName: "repo",
+                path: "/repo",
+                canonicalPath: "/repo",
+                createdAt: "2026-05-12T00:00:00.000Z",
+                updatedAt: "2026-05-12T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        if (
+          url ===
+            "http://example.test/api/sessions/pi%3Anative-1/abort?harnessId=pi&projectId=project_1" &&
+          init?.method === "POST"
+        ) {
+          return json({ ok: true, value: true });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+    });
+
+    await client.sessions.abort({
+      sessionId: "pi:native-1",
+      backendId: "pi",
+      target: { directory: "/repo", workspaceId: "workspace-1" },
+    });
+
+    expect(calls).toEqual([
+      "GET http://example.test/api/projects",
+      "POST http://example.test/api/sessions/pi%3Anative-1/abort?harnessId=pi&projectId=project_1",
+    ]);
   });
 });

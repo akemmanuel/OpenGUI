@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 /**
  * Returns the user's home directory via the Electron bridge.
@@ -8,22 +9,23 @@ import { useEffect, useState } from "react";
  * Electron API is unavailable.
  */
 export function useHomeDir(): string {
+  const client = useOpenGuiClient();
   const [homeDir, setHomeDir] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    window.electronAPI
-      ?.getHomeDir?.()
+    client.runtime
+      .getHomeDir()
       .then((d) => {
         if (!cancelled) setHomeDir(d ?? "");
       })
       .catch(() => {
-        /* Electron API unavailable */
+        /* runtime unavailable */
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [client]);
 
   return homeDir;
 }

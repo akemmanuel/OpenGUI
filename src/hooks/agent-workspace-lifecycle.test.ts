@@ -30,7 +30,7 @@ describe("createWorkspaceLifecyclePlan", () => {
       input: {
         name: "  Team Workspace  ",
         serverUrl: "  http://example.com/  ",
-        username: "alice",
+        authToken: "secret-token",
       },
       now: 35,
     });
@@ -39,16 +39,57 @@ describe("createWorkspaceLifecyclePlan", () => {
       id: "ws_z",
       name: "Team Workspace",
       serverUrl: "http://example.com/",
-      username: "alice",
+      authToken: "secret-token",
       projects: [],
     });
     expect(plan.nextActiveWorkspaceId).toBe("ws_z");
     expect(plan.nextActiveSessionId).toBeNull();
     expect(plan.nextWorkspaces.at(-1)).toEqual(plan.workspace);
   });
+
+  test("adds https to bare workspace backend hostnames", () => {
+    const plan = createWorkspaceLifecyclePlan({
+      workspaces: [],
+      input: {
+        name: "Remote",
+        serverUrl: "gui.idunara.com",
+      },
+      now: 36,
+    });
+
+    expect(plan.workspace.serverUrl).toBe("https://gui.idunara.com");
+    expect(plan.workspace.settings?.serverUrl).toBe("https://gui.idunara.com");
+  });
 });
 
 describe("createWorkspaceUpdatePlan", () => {
+  test("keeps remote workspace backend URLs immutable", () => {
+    const next = createWorkspaceUpdatePlan({
+      workspaces: [
+        makeWorkspace({
+          id: "workspace-1",
+          name: "Remote",
+          serverUrl: "http://backend-a.example.com",
+        }),
+      ],
+      workspaceId: "workspace-1",
+      input: {
+        serverUrl: "http://backend-b.example.com",
+        name: "Renamed",
+        authToken: "secret-token",
+      },
+    });
+
+    expect(next).toEqual([
+      expect.objectContaining({
+        id: "workspace-1",
+        name: "Renamed",
+        serverUrl: "http://backend-a.example.com",
+        authToken: "secret-token",
+      }),
+    ]);
+  });
+
   test("keeps local workspaces pinned to the local server url", () => {
     const next = createWorkspaceUpdatePlan({
       workspaces: [

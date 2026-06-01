@@ -1,4 +1,3 @@
-import type { AgentBackendId } from "@/agents";
 import type { Event as OpenCodeEvent, Provider } from "@opencode-ai/sdk/v2/client";
 
 // ---------------------------------------------------------------------------
@@ -40,9 +39,11 @@ export interface AllProvidersData {
 // ---------------------------------------------------------------------------
 
 export type ConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "error";
+export type ConnectionKind = "project" | "chat-infra";
 
 export interface ConnectionStatus {
   state: ConnectionState;
+  kind?: ConnectionKind;
   serverUrl: string | null;
   serverVersion: string | null;
   error: string | null;
@@ -54,15 +55,20 @@ export interface ConnectionConfig {
   baseUrl: string;
   username?: string;
   password?: string;
+  authToken?: string;
   directory?: string;
 }
 
 export interface Workspace {
   id: string;
   name: string;
+  createdAt?: string;
+  updatedAt?: string;
+  settings?: Record<string, unknown>;
   serverUrl: string;
   username?: string;
   password?: string;
+  authToken?: string;
   isLocal: boolean;
   projects: string[];
   selectedModel?: SelectedModel | null;
@@ -333,13 +339,13 @@ export interface InstallResult {
   error?: string;
 }
 
-export interface OpenGuiBridge {
-  invoke: <T = unknown>(channel: string, args?: unknown[]) => Promise<T>;
-  onBackendEvent: (callback: (message: { channel: string; data: unknown }) => void) => () => void;
-}
+export type DesktopBackendStatus = "starting" | "running" | "stopped" | "crashed";
 
 export interface ElectronAPI {
-  openGui?: OpenGuiBridge;
+  kind?: "electron" | "web";
+  backendUrl?: string | null;
+  backendToken?: string | null;
+  backendStatus?: DesktopBackendStatus;
   settings: SettingsBridge;
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
@@ -347,9 +353,14 @@ export interface ElectronAPI {
   isMaximized: () => Promise<boolean>;
   getPlatform: () => Promise<string>;
   getSystemLocale: () => Promise<string>;
-  detectBackends: () => Promise<BackendDetectionResult>;
   isPackaged: () => Promise<boolean>;
+  restartBackend?: () => Promise<{
+    url: string;
+    token: string | null;
+    status: DesktopBackendStatus;
+  }>;
   onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void;
+  onBackendStatusChange?: (callback: (status: DesktopBackendStatus) => void) => () => void;
 
   /** Open a native directory picker dialog. Returns the selected path or null. */
   openDirectory: () => Promise<string | null>;
@@ -364,17 +375,6 @@ export interface ElectronAPI {
   /** Open a terminal at a directory. */
   openInTerminal: (dirPath: string, command?: string) => Promise<void>;
 
-  /** Get the user's home directory path. */
-  getHomeDir: () => Promise<string>;
-
-  /** Install a backend CLI by backend id. Streams progress via onInstallProgress. */
-  installBackend: (backendId: AgentBackendId) => Promise<InstallResult>;
-  /** Subscribe to install progress chunks. Returns unsubscribe fn. */
-  onInstallProgress: (callback: (progress: InstallProgress) => void) => () => void;
-
-  /** Subscribe to skills install progress chunks. Returns unsubscribe fn. */
-  onSkillsInstallProgress: (callback: (progress: InstallProgress) => void) => () => void;
-
   /** Open a project in a detached window. */
   detachProject: (projectDir: string) => Promise<void>;
 
@@ -386,14 +386,10 @@ export interface ElectronAPI {
 
   /** Subscribe to detached project visibility changes. */
   onDetachedProjectsChange: (callback: (detachedProjects: string[]) => void) => () => void;
-
-  git?: GitBridge;
-  worktree?: WorktreeBridge;
 }
 
 declare global {
   interface Window {
     electronAPI?: ElectronAPI;
-    __openGuiTransport?: "electron" | "http";
   }
 }

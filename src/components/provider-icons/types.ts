@@ -1,6 +1,6 @@
 /**
  * Auto-generated provider icon names.
- * Do not edit manually - run `bun scripts/fetch-provider-icons.ts` to regenerate.
+ * Do not edit manually - run `vp node scripts/fetch-provider-icons.ts` to regenerate.
  */
 
 export const providerIconNames = [

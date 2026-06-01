@@ -4,6 +4,7 @@ import { storageGet, storageSet } from "@/lib/safe-storage";
 import { compareSemver } from "@/lib/utils";
 import type { AppUpdateState } from "@/types/electron";
 import packageJson from "../../package.json";
+import { useDesktopShell } from "@/shell/provider";
 
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/akemmanuel/OpenGUI/releases/latest";
 const FETCH_TIMEOUT_MS = 5000;
@@ -50,15 +51,16 @@ function dismissVersion(version: string | null) {
 }
 
 export function useUpdateCheck(): UpdateCheckResult {
-  const bridge = window.electronAPI?.updates;
+  const shell = useDesktopShell();
+  const bridge = shell.updates;
   const [state, setState] = useState<AppUpdateState>(INITIAL_STATE);
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(() =>
     storageGet(STORAGE_KEYS.DISMISSED_UPDATE_VERSION),
   );
-  const [isElectronManaged, setIsElectronManaged] = useState(Boolean(bridge));
+  const [isElectronManaged, setIsElectronManaged] = useState(shell.updates.isManaged);
 
   useEffect(() => {
-    if (!bridge) {
+    if (!bridge.isManaged) {
       setIsElectronManaged(false);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -139,20 +141,20 @@ export function useUpdateCheck(): UpdateCheckResult {
   }, [state.latestVersion]);
 
   const checkNow = useCallback(async () => {
-    if (!bridge) return;
+    if (!bridge.isManaged) return;
     setDismissedVersion(storageGet(STORAGE_KEYS.DISMISSED_UPDATE_VERSION));
     const nextState = await bridge.check();
     setState(nextState);
   }, [bridge]);
 
   const download = useCallback(async () => {
-    if (!bridge) return;
+    if (!bridge.isManaged) return;
     const nextState = await bridge.download();
     setState(nextState);
   }, [bridge]);
 
   const install = useCallback(async () => {
-    if (!bridge) return;
+    if (!bridge.isManaged) return;
     await bridge.install();
   }, [bridge]);
 

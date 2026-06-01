@@ -1,11 +1,35 @@
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
-import { persistOrRemoveJSON, storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
+import {
+  persistOrRemoveJSON,
+  storageGet,
+  storageParsed,
+  storageSet,
+  storageSetJSON,
+} from "@/lib/safe-storage";
 import { getWorkspaceRootProjectDirectory } from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
+import type { OpenGuiClient, OpenGuiProject, OpenGuiWorkspace } from "@/protocol/client";
+import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import type { SelectedModel, Workspace } from "@/types/electron";
 
 export const NOTIFICATIONS_ENABLED_KEY = STORAGE_KEYS.NOTIFICATIONS_ENABLED;
 export const LOCAL_WORKSPACE_ID = "local";
+const LEGACY_WORKSPACE_MIGRATION_KEY = "opengui:workspaceMigrationV1";
+
+interface WorkspaceSettingsRecord {
+  serverUrl?: string;
+  username?: string;
+  password?: string;
+  authToken?: string;
+  defaultChatDirectory?: string | null;
+  isLocal?: boolean;
+  selectedModel?: SelectedModel | null;
+  selectedAgent?: string | null;
+  lastActiveSessionId?: string | null;
+  projectOrder?: string[];
+  hiddenProjects?: string[];
+  order?: number;
+}
 
 export type SessionColor =
   | "red"
@@ -90,9 +114,18 @@ export function persistProjectMetaMap(meta: ProjectMetaMap) {
   );
 }
 
-export function getStoredDefaultChatDirectory(): string | null {
+export function getLegacyStoredDefaultChatDirectory(): string | null {
   const stored = storageGet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
   return stored ? normalizeProjectPath(stored) : null;
+}
+
+export function getWorkspaceDefaultChatDirectory(
+  workspace: Workspace | null | undefined,
+): string | null {
+  if (!workspace) return null;
+  const settings = getWorkspaceSettings(workspace);
+  const value = settings.defaultChatDirectory;
+  return typeof value === "string" && value.trim() ? normalizeProjectPath(value) : null;
 }
 
 interface WorktreeMetadata {
@@ -165,10 +198,18 @@ export function getWorkspaceRootDirectory(
 }
 
 export function createLocalWorkspace(): Workspace {
+  const now = new Date().toISOString();
+  const policy = getShellWorkspacePolicy();
+  const webConfig = policy.configuredWebWorkspace;
+  const serverUrl = webConfig?.baseUrl ?? DEFAULT_SERVER_URL;
   return {
     id: LOCAL_WORKSPACE_ID,
-    name: "Local",
-    serverUrl: DEFAULT_SERVER_URL,
+    name: webConfig?.name || "Local",
+    createdAt: now,
+    updatedAt: now,
+    settings: { isLocal: true, serverUrl, authToken: webConfig?.authToken },
+    serverUrl,
+    authToken: webConfig?.authToken,
     isLocal: true,
     projects: [],
     selectedModel: null,
@@ -177,24 +218,144 @@ export function createLocalWorkspace(): Workspace {
   };
 }
 
+function normalizeProjectList(projects: string[]): string[] {
+  return Array.from(
+    new Set(projects.map((project) => normalizeProjectPath(project)).filter(Boolean)),
+  );
+}
+
+function getWorkspaceSettings(workspace: Workspace | OpenGuiWorkspace): WorkspaceSettingsRecord {
+  const settings =
+    workspace.settings &&
+    typeof workspace.settings === "object" &&
+    !Array.isArray(workspace.settings)
+      ? (workspace.settings as WorkspaceSettingsRecord)
+      : {};
+  return settings;
+}
+
+function orderProjects(
+  projects: OpenGuiProject[],
+  order: string[] | undefined,
+  hiddenProjects?: string[],
+): string[] {
+  const normalizedOrder = normalizeProjectList(order ?? []);
+  const hidden = new Set(normalizeProjectList(hiddenProjects ?? []));
+  const byPath = new Map(
+    projects.map((project) => [normalizeProjectPath(project.path) || project.path, project.path]),
+  );
+  const ordered: string[] = [];
+  for (const entry of normalizedOrder) {
+    const resolved = byPath.get(entry);
+    if (resolved && !ordered.includes(resolved)) ordered.push(resolved);
+  }
+  for (const project of projects) {
+    if (!ordered.includes(project.path)) ordered.push(project.path);
+  }
+  return normalizeProjectList(ordered).filter((project) => !hidden.has(project));
+}
+
+function normalizeWorkspaceServerUrl(value: string | undefined) {
+  const trimmed = (value || DEFAULT_SERVER_URL).trim() || DEFAULT_SERVER_URL;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 export function normalizeWorkspace(workspace: Workspace): Workspace {
-  return {
+  const settings = getWorkspaceSettings(workspace);
+  const hasSelectedModel = Object.hasOwn(workspace, "selectedModel");
+  const hasSelectedAgent = Object.hasOwn(workspace, "selectedAgent");
+  const hasLastActiveSessionId = Object.hasOwn(workspace, "lastActiveSessionId");
+  const normalizedSelectedModel = hasSelectedModel
+    ? (workspace.selectedModel ?? null)
+    : (settings.selectedModel ?? null);
+  const normalizedSelectedAgent = hasSelectedAgent
+    ? (workspace.selectedAgent ?? null)
+    : (settings.selectedAgent ?? null);
+  const normalizedLastActiveSessionId = hasLastActiveSessionId
+    ? (workspace.lastActiveSessionId ?? null)
+    : (settings.lastActiveSessionId ?? null);
+  const normalizedAuthToken =
+    workspace.authToken ??
+    settings.authToken ??
+    (!settings.username ? settings.password : undefined);
+
+  const normalized: Workspace = {
     ...workspace,
-    name: workspace.name.trim() || (workspace.isLocal ? "Local" : "Workspace"),
-    serverUrl: workspace.serverUrl.trim() || DEFAULT_SERVER_URL,
-    projects: Array.from(
-      new Set(
-        (workspace.projects ?? []).map((project) => normalizeProjectPath(project)).filter(Boolean),
-      ),
-    ),
-    selectedModel: workspace.selectedModel ?? null,
-    selectedAgent: workspace.selectedAgent ?? null,
-    lastActiveSessionId: workspace.lastActiveSessionId ?? null,
+    name: workspace.name.trim() || (workspace.isLocal || settings.isLocal ? "Local" : "Workspace"),
+    serverUrl: normalizeWorkspaceServerUrl(workspace.serverUrl || settings.serverUrl),
+    isLocal: workspace.isLocal || settings.isLocal === true,
+    projects: normalizeProjectList(workspace.projects ?? []),
+    authToken: normalizedAuthToken,
+    selectedModel: normalizedSelectedModel,
+    selectedAgent: normalizedSelectedAgent,
+    lastActiveSessionId: normalizedLastActiveSessionId,
+    createdAt: workspace.createdAt ?? new Date().toISOString(),
+    updatedAt: workspace.updatedAt ?? workspace.createdAt ?? new Date().toISOString(),
+    settings: {
+      ...settings,
+      serverUrl: normalizeWorkspaceServerUrl(workspace.serverUrl || settings.serverUrl),
+      username: workspace.username ?? settings.username,
+      password: workspace.password ?? settings.password,
+      authToken: normalizedAuthToken,
+      isLocal: workspace.isLocal || settings.isLocal === true,
+      selectedModel: normalizedSelectedModel,
+      selectedAgent: normalizedSelectedAgent,
+      lastActiveSessionId: normalizedLastActiveSessionId,
+      defaultChatDirectory:
+        typeof settings.defaultChatDirectory === "string"
+          ? normalizeProjectPath(settings.defaultChatDirectory)
+          : null,
+      projectOrder: normalizeProjectList(workspace.projects ?? settings.projectOrder ?? []),
+      hiddenProjects: normalizeProjectList(settings.hiddenProjects ?? []),
+      order: typeof settings.order === "number" ? settings.order : undefined,
+    },
+  };
+  return normalized;
+}
+
+export function workspaceToCreateInput(workspace: Workspace) {
+  const normalized = normalizeWorkspace(workspace);
+  return {
+    name: normalized.name,
+    settings: normalized.settings,
   };
 }
 
-export function getStoredWorkspaces(): Workspace[] {
+export function workspaceToUpdateInput(workspace: Workspace) {
+  const normalized = normalizeWorkspace(workspace);
+  return {
+    name: normalized.name,
+    settings: normalized.settings,
+  };
+}
+
+export function workspaceFromBackend(
+  workspace: OpenGuiWorkspace,
+  projects: OpenGuiProject[] = [],
+): Workspace {
+  const settings = getWorkspaceSettings(workspace);
+  return normalizeWorkspace({
+    id: workspace.id,
+    name: workspace.name,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+    settings: workspace.settings,
+    serverUrl: settings.serverUrl ?? DEFAULT_SERVER_URL,
+    username: settings.username,
+    password: settings.password,
+    authToken: settings.authToken ?? (!settings.username ? settings.password : undefined),
+    isLocal: settings.isLocal === true,
+    projects: orderProjects(projects, settings.projectOrder, settings.hiddenProjects),
+    selectedModel: settings.selectedModel ?? null,
+    selectedAgent: settings.selectedAgent ?? null,
+    lastActiveSessionId: settings.lastActiveSessionId ?? null,
+  });
+}
+
+function getLegacyStoredWorkspaces(): Workspace[] {
   const parsed = storageParsed<Workspace[]>(STORAGE_KEYS.WORKSPACES) ?? [];
+  const policy = getShellWorkspacePolicy();
   const workspaces = parsed
     .filter((workspace): workspace is Workspace => !!workspace?.id)
     .map((workspace) =>
@@ -203,9 +364,54 @@ export function getStoredWorkspaces(): Workspace[] {
         isLocal: workspace.id === LOCAL_WORKSPACE_ID || workspace.isLocal,
       }),
     );
-  const localWorkspace = workspaces.find((workspace) => workspace.id === LOCAL_WORKSPACE_ID);
-  if (!localWorkspace) workspaces.unshift(createLocalWorkspace());
-  return workspaces.map((workspace) =>
+  const legacyDefaultChatDirectory = getLegacyStoredDefaultChatDirectory();
+  const legacyDefaultWorkspaceId = storageGet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID);
+  const workspacesWithLegacyDefault = legacyDefaultChatDirectory
+    ? workspaces.map((workspace) => {
+        if (workspace.id !== legacyDefaultWorkspaceId) return workspace;
+        const settings = getWorkspaceSettings(workspace);
+        if (settings.defaultChatDirectory) return workspace;
+        return normalizeWorkspace({
+          ...workspace,
+          settings: { ...settings, defaultChatDirectory: legacyDefaultChatDirectory },
+        });
+      })
+    : workspaces;
+
+  if (policy.shellKind === "mobile") {
+    return workspacesWithLegacyDefault.filter(
+      (workspace) => !workspace.isLocal && workspace.id !== LOCAL_WORKSPACE_ID,
+    );
+  }
+
+  if (policy.shellKind === "web") {
+    const local = createLocalWorkspace();
+    const storedLocal = workspacesWithLegacyDefault.find(
+      (workspace) => workspace.id === LOCAL_WORKSPACE_ID,
+    );
+    const storedSettings = storedLocal ? getWorkspaceSettings(storedLocal) : {};
+    return [
+      normalizeWorkspace({
+        ...local,
+        projects: storedLocal?.projects ?? [],
+        selectedModel: storedLocal?.selectedModel ?? null,
+        selectedAgent: storedLocal?.selectedAgent ?? null,
+        lastActiveSessionId: storedLocal?.lastActiveSessionId ?? null,
+        settings: {
+          ...storedSettings,
+          ...local.settings,
+          projectOrder: storedSettings.projectOrder,
+          hiddenProjects: storedSettings.hiddenProjects,
+        },
+      }),
+    ];
+  }
+
+  const localWorkspace = workspacesWithLegacyDefault.find(
+    (workspace) => workspace.id === LOCAL_WORKSPACE_ID,
+  );
+  if (!localWorkspace) workspacesWithLegacyDefault.unshift(createLocalWorkspace());
+  return workspacesWithLegacyDefault.map((workspace) =>
     workspace.id === LOCAL_WORKSPACE_ID
       ? normalizeWorkspace({
           ...workspace,
@@ -217,11 +423,60 @@ export function getStoredWorkspaces(): Workspace[] {
   );
 }
 
+let backendWorkspaceInitPromise: Promise<Workspace[]> | null = null;
+
+function sortLocalWorkspaces(workspaces: Workspace[]): Workspace[] {
+  return [...workspaces].sort((left, right) => {
+    const leftOrder = typeof left.settings?.order === "number" ? left.settings.order : 0;
+    const rightOrder = typeof right.settings?.order === "number" ? right.settings.order : 0;
+    return leftOrder - rightOrder;
+  });
+}
+
+export async function loadBackendWorkspaces(_client: OpenGuiClient): Promise<Workspace[]> {
+  const stored = getLegacyStoredWorkspaces();
+  return sortLocalWorkspaces(stored.length > 0 ? stored : [createLocalWorkspace()]);
+}
+
+export async function migrateLegacyWorkspaceState(_client: OpenGuiClient): Promise<Workspace[]> {
+  const workspaces = sortLocalWorkspaces(getLegacyStoredWorkspaces());
+  persistWorkspaces(workspaces.length > 0 ? workspaces : [createLocalWorkspace()]);
+  storageSet(LEGACY_WORKSPACE_MIGRATION_KEY, "done");
+  return getLegacyStoredWorkspaces();
+}
+
+export async function initializeBackendWorkspaceState(client: OpenGuiClient): Promise<Workspace[]> {
+  if (backendWorkspaceInitPromise) return await backendWorkspaceInitPromise;
+
+  backendWorkspaceInitPromise = (async () => {
+    const migrationMarker = storageGet(LEGACY_WORKSPACE_MIGRATION_KEY);
+    if (migrationMarker !== "done") {
+      return await migrateLegacyWorkspaceState(client);
+    }
+    return await loadBackendWorkspaces(client);
+  })();
+
+  try {
+    return await backendWorkspaceInitPromise;
+  } finally {
+    backendWorkspaceInitPromise = null;
+  }
+}
+
+export function getStoredWorkspaces(): Workspace[] {
+  return getLegacyStoredWorkspaces();
+}
+
 export function persistWorkspaces(workspaces: Workspace[]) {
-  storageSetJSON(
-    STORAGE_KEYS.WORKSPACES,
-    workspaces.map((workspace) => normalizeWorkspace(workspace)),
-  );
+  const policy = getShellWorkspacePolicy();
+  const normalized = workspaces.map(normalizeWorkspace);
+  const scoped =
+    policy.shellKind === "mobile"
+      ? normalized.filter((workspace) => !workspace.isLocal && workspace.id !== LOCAL_WORKSPACE_ID)
+      : policy.shellKind === "web"
+        ? normalized.filter((workspace) => workspace.id === LOCAL_WORKSPACE_ID).slice(0, 1)
+        : normalized;
+  storageSetJSON(STORAGE_KEYS.WORKSPACES, sortLocalWorkspaces(scoped));
 }
 
 export function getActiveWorkspaceId(workspaces: Workspace[]) {
@@ -229,7 +484,7 @@ export function getActiveWorkspaceId(workspaces: Workspace[]) {
   if (stored && workspaces.some((workspace) => workspace.id === stored)) {
     return stored;
   }
-  return workspaces[0]?.id ?? LOCAL_WORKSPACE_ID;
+  return workspaces[0]?.id ?? "";
 }
 
 export function getUnreadSessionIds(): Set<string> {
