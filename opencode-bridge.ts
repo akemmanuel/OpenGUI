@@ -294,7 +294,27 @@ async function killServerProcess() {
       const first = out.trim().split(/\s+/)[0];
       if (first) pid = Number.parseInt(first, 10);
     } catch {
-      // no process found
+      // lsof is not installed in the Docker image by default. Fall back to ss,
+      // which is available in the image, then fuser for other Linux hosts.
+      try {
+        const out = execSync(`ss -ltnp 'sport = :${LOCAL_SERVER_PORT}'`, {
+          encoding: "utf-8",
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+        const match = out.match(/pid=(\d+)/);
+        if (match?.[1]) pid = Number.parseInt(match[1], 10);
+      } catch {
+        try {
+          const out = execSync(`fuser -n tcp ${LOCAL_SERVER_PORT}`, {
+            encoding: "utf-8",
+            stdio: ["ignore", "pipe", "ignore"],
+          });
+          const first = out.trim().split(/\s+/)[0];
+          if (first) pid = Number.parseInt(first, 10);
+        } catch {
+          // no process found
+        }
+      }
     }
   }
 

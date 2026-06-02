@@ -309,6 +309,75 @@ describe("createHttpOpenGuiClient", () => {
     ]);
   });
 
+  test("uses remembered remote base URL for session delete when target has no baseUrl", async () => {
+    const calls: string[] = [];
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://local.test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url === "http://remote.test/api/sessions/query" && init?.method === "POST") {
+          return json({
+            ok: true,
+            value: {
+              items: [
+                {
+                  workspaceId: "workspace-1",
+                  directory: "/repo",
+                  sessions: [
+                    {
+                      id: "session_1",
+                      rawId: "native-1",
+                      workspaceId: "workspace-1",
+                      projectId: "project_1",
+                      harnessId: "opencode",
+                      title: "Remote chat",
+                      status: "unknown",
+                      createdAt: "2026-05-12T00:00:00.000Z",
+                      updatedAt: "2026-05-12T00:00:00.000Z",
+                    },
+                  ],
+                },
+              ],
+              errors: [],
+            },
+          });
+        }
+        if (
+          url ===
+            "http://remote.test/api/sessions/session_1?harnessId=opencode&projectId=project_1" &&
+          init?.method === "DELETE"
+        ) {
+          return json({ ok: true, value: true });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+    });
+
+    await client.sessions.query({
+      projects: [
+        {
+          workspaceId: "workspace-1",
+          frontendProjectId: "project_1",
+          directory: "/repo",
+          baseUrl: "http://remote.test",
+        },
+      ],
+      harnessIds: ["opencode"],
+    });
+
+    await client.sessions.delete({
+      sessionId: "opencode:native-1",
+      backendId: "opencode",
+      target: { directory: "/repo", workspaceId: "workspace-1" },
+    });
+
+    expect(calls).toEqual([
+      "POST http://remote.test/api/sessions/query",
+      "DELETE http://remote.test/api/sessions/session_1?harnessId=opencode&projectId=project_1",
+    ]);
+  });
+
   test("scopes aliased session requests to the resolved project", async () => {
     const calls: string[] = [];
     const client = createHttpOpenGuiClient({
