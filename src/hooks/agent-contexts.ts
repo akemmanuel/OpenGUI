@@ -34,8 +34,8 @@ export interface SessionContextValue {
   queuedPrompts: Record<string, QueuedPrompt[]>;
   pendingPermissions: Record<string, PermissionRequest>;
   pendingQuestions: Record<string, QuestionRequest>;
-  draftSessionDirectory: string | null;
-  draftSessionBackendId: AgentBackendId | null;
+  activeTargetDirectory: string | null;
+  activeTargetBackendId: AgentBackendId | null;
   namingSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
   sessionDrafts: Record<string, string>;
@@ -126,10 +126,10 @@ export interface ActionsContextValue {
     password?: string,
   ) => Promise<void>;
   startNewChat: () => Promise<void>;
-  startDraftSession: (directory: string) => void;
+  setActiveTarget: (directory: string, backendId?: AgentBackendId | null) => void;
   setDefaultChatDirectory: (directory: string | null) => void;
-  setDraftDirectory: (directory: string) => void;
-  setDraftBackend: (backendId: AgentBackendId) => void;
+  setActiveTargetDirectory: (directory: string) => void;
+  setActiveTargetBackend: (backendId: AgentBackendId) => void;
   revertToMessage: (messageID: string) => Promise<void>;
   unrevert: () => Promise<void>;
   forkFromMessage: (messageID: string) => Promise<void>;

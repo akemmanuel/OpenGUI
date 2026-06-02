@@ -20,7 +20,7 @@ export function CollapsedProjectPopover({
   untitledLabel,
   labels,
   hasUnsentDraft,
-  startDraftSession,
+  setActiveTarget,
   selectSession,
   closePopover,
   closeMobileSidebar,
@@ -42,7 +42,7 @@ export function CollapsedProjectPopover({
     noSessionsYet: string;
   };
   hasUnsentDraft: (sessionId: string) => boolean;
-  startDraftSession: (directory: string) => void;
+  setActiveTarget: (directory: string) => void;
   selectSession: (sessionId: string) => void | Promise<void>;
   closePopover: () => void;
   closeMobileSidebar: () => void;
@@ -62,7 +62,7 @@ export function CollapsedProjectPopover({
           <button
             type="button"
             onClick={() => {
-              startDraftSession(directory);
+              setActiveTarget(directory);
               closePopover();
               closeMobileSidebar();
             }}

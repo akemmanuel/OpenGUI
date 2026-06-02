@@ -157,7 +157,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
     sendQueuedNow,
     cycleVariant,
     revertVariant,
-    startDraftSession,
+    setActiveTarget,
     removeProject,
     unregisterWorktree,
     revertToMessage,
@@ -168,7 +168,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
     activeSessionId: sessionActiveId,
     isBusy,
     isLoadingMessages,
-    draftSessionDirectory,
+    activeTargetDirectory,
   } = useSessionState();
   const { messages } = useMessages();
   const { providers, selectedModel, providerDefaults } = useModelState();
@@ -195,7 +195,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
   );
 
   const activeSessionDirectory =
-    activeSession?._projectDir ?? activeSession?.directory ?? draftSessionDirectory ?? null;
+    activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
   const activeWorktreeInfo = useMemo(() => {
     const placement = getDirectoryPlacementInfo(activeSessionDirectory, worktreeParents);
     if (!placement?.isKnownWorktree) return null;
@@ -524,7 +524,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
                       disabled={
                         isBooting ||
                         isLoadingMessages ||
-                        (!activeSessionId && !draftSessionDirectory && !defaultChatDirectory)
+                        (!activeSessionId && !activeTargetDirectory && !defaultChatDirectory)
                       }
                       isLoading={isBusy}
                       contextPercent={contextPercent}
@@ -570,7 +570,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
         }}
         onFixWithAI={(conflicts) => {
           if (!mergeInfo) return;
-          startDraftSession(mergeInfo.mainDir);
+          setActiveTarget(mergeInfo.mainDir);
           if (fixWithAiTimeoutRef.current !== null) {
             window.clearTimeout(fixWithAiTimeoutRef.current);
           }

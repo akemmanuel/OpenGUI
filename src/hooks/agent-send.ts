@@ -1,4 +1,4 @@
-import type { Agent, Session as BackendSession } from "@opencode-ai/sdk/v2/client";
+import type { Agent } from "@opencode-ai/sdk/v2/client";
 import type { AgentBackendDescriptor, AgentBackendTarget } from "@/agents/backend";
 import { getSessionBackendId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { Session } from "@/hooks/agent-state-types";
@@ -35,44 +35,6 @@ export function resolveAgentSendSelection(
     resolveVariant(model ?? null, snapshot.variantSelections, snapshot.agents, agent ?? null);
 
   return { model, agent, variant };
-}
-
-export async function startDraftSessionAgentSend({
-  runtime,
-  backendId,
-  workspaceId,
-  baseUrl,
-  directory,
-  text,
-  images,
-  selection,
-  title = "Untitled",
-}: {
-  runtime: AgentBackendDescriptor["runtime"];
-  backendId: string;
-  workspaceId?: string;
-  baseUrl?: string;
-  directory: string;
-  text: string;
-  images?: string[];
-  selection: AgentSendSelection;
-  title?: string;
-}): Promise<BackendSession> {
-  if (typeof runtime.startSession !== "function") {
-    throw new Error("Backend cannot start a session from a draft send");
-  }
-
-  return await runtime.startSession({
-    text,
-    images,
-    model: selection.model,
-    agent: selection.agent,
-    variant: selection.variant,
-    title: backendId === "claude-code" ? undefined : title,
-    directory,
-    workspaceId,
-    baseUrl,
-  });
 }
 
 export async function sendPromptToAgent({

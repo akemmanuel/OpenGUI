@@ -52,7 +52,7 @@ export function AppSidebar({
   const {
     selectSession,
     startNewChat,
-    startDraftSession,
+    setActiveTarget,
     deleteSession,
     renameSession,
     removeProject,
@@ -79,12 +79,12 @@ export function AppSidebar({
     sessionDrafts,
     sessionMeta,
     namingSessionIds,
-    draftSessionDirectory,
+    activeTargetDirectory,
   } = useSessionState();
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeSessionDirectory =
-    activeSession?._projectDir ?? activeSession?.directory ?? draftSessionDirectory ?? null;
+    activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
   const {
     connections,
     worktreeParents,
@@ -374,7 +374,7 @@ export function AppSidebar({
       refreshGitInfo={refreshGitInfo}
       setProjectPopover={setProjectPopover}
       toggleCollapsed={toggleCollapsed}
-      startDraftSession={startDraftSession}
+      setActiveTarget={setActiveTarget}
       closeMobileSidebar={closeMobileSidebar}
       setProjectPinned={setProjectPinned}
       removeProject={removeProject}
@@ -457,7 +457,7 @@ export function AppSidebar({
               noSessionsYet: t("sidebar.noSessionsYet"),
             }}
             hasUnsentDraft={hasUnsentDraft}
-            startDraftSession={startDraftSession}
+            setActiveTarget={setActiveTarget}
             selectSession={selectSession}
             closePopover={closeProjectPopover}
             closeMobileSidebar={closeMobileSidebar}
@@ -589,8 +589,8 @@ export function AppSidebar({
         onFixWithAI={(conflicts) => {
           if (!mergeInfo) return;
           // Start a new session in the main directory and send the conflict resolution prompt
-          startDraftSession(mergeInfo.mainDir);
-          // Use a small delay so the draft session is active before sending
+          setActiveTarget(mergeInfo.mainDir);
+          // Use a small delay so the active target is set before sending
           if (fixWithAiTimeoutRef.current !== null) {
             window.clearTimeout(fixWithAiTimeoutRef.current);
           }

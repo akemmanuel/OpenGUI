@@ -1,39 +1,32 @@
-import type { AgentBackendId } from "@/agents";
 import type { AgentBackendDescriptor, AgentBackendTarget } from "@/agents/backend";
 import type { SessionMeta } from "@/hooks/agent-state-persistence";
 import {
   resolveAgentSendSelection,
   sendCommandToAgent,
   sendPromptToAgent,
-  startDraftSessionAgentSend,
 } from "@/hooks/agent-send";
 import { createSessionQueueOrchestrator } from "@/hooks/agent-session-queue";
-import { createDraftSessionSendState, createPromptSendState } from "@/hooks/agent-send-state";
+import { createPromptSendState } from "@/hooks/agent-send-state";
 import { decidePromptDispatch } from "@/hooks/agent-prompt-routing";
 import { decideSessionEntry } from "@/hooks/agent-session-entry";
 import type { InternalAgentState, QueueMode, Session } from "@/hooks/agent-state-types";
-import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
+import { getSessionDraftKey } from "@/lib/session-drafts";
+import { generateSessionTitle } from "@/lib/session-namer";
+import { normalizeProjectPath } from "@/lib/utils";
 import type { OpenGuiClient } from "@/protocol/client";
 import type { SelectedModel } from "@/types/electron";
 
-interface DraftCreationLock {
+interface SessionCreationLock {
   current: boolean;
 }
 
 interface LocalIntentOptions {
   getState: () => InternalAgentState;
-  getCreationBackendId: () => AgentBackendId;
-  getCreationRuntime: () => AgentBackendDescriptor["runtime"] | undefined;
   getResourceRuntime: () => AgentBackendDescriptor["runtime"] | undefined;
   getCurrentVariant: () => string | undefined;
   getWorkspaceBaseUrl?: (workspaceId?: string | null) => string | undefined;
   sessionsClient: OpenGuiClient["sessions"];
-  ensureDirectoryConnection: (
-    directory: string,
-    options?: { backendIds?: AgentBackendId[] },
-  ) => Promise<void>;
   createSession: (title?: string, directory?: string) => Promise<Session | null>;
-  selectSession: (sessionId: string, options?: { session?: Session }) => Promise<void>;
   scheduleSessionMessageReconcile: (sessionId: string, projectTarget?: AgentBackendTarget) => void;
   requestSessionAutoName: (input: {
     sessionId: string;
@@ -41,10 +34,9 @@ interface LocalIntentOptions {
     session?: Session | null;
     force?: boolean;
   }) => void;
-  isChatDirectory: (directory?: string | null) => boolean;
   dispatch: (action: unknown) => void;
   dispatchingSessionIds: Set<string>;
-  draftCreatingRef: DraftCreationLock;
+  sessionCreatingRef: SessionCreationLock;
 }
 
 export interface LocalIntentOrchestrator {
@@ -52,7 +44,7 @@ export interface LocalIntentOrchestrator {
   sendCommand: (command: string, args: string) => Promise<void>;
   dispatchNextQueued: (sessionId: string) => Promise<void>;
   sendQueuedNow: (sessionId: string, promptId: string) => Promise<void>;
-  ensureSessionFromDraft: () => Promise<string | null>;
+  ensureSession: () => Promise<string | null>;
 }
 
 function applySessionMetaPatch(
@@ -70,21 +62,16 @@ export function createLocalIntentOrchestrator(
 ): LocalIntentOrchestrator {
   const {
     getState,
-    getCreationBackendId,
-    getCreationRuntime,
     getResourceRuntime,
     getCurrentVariant,
     getWorkspaceBaseUrl,
     sessionsClient,
-    ensureDirectoryConnection,
     createSession,
-    selectSession,
     scheduleSessionMessageReconcile,
     requestSessionAutoName,
-    isChatDirectory,
     dispatch,
     dispatchingSessionIds,
-    draftCreatingRef,
+    sessionCreatingRef,
   } = options;
 
   const prepareDirectoryChangePrompt = (sessionId: string, text: string) => {
@@ -124,135 +111,58 @@ export function createLocalIntentOrchestrator(
     return `${notice}\n\n${text}`;
   };
 
-  const resolveSessionEntry = async (): Promise<string | null> => {
+  const createSessionFromActiveTarget = async (sourceText: string): Promise<string | null> => {
+    const state = getState();
+    const directory = state.activeTargetDirectory;
+    if (!directory) {
+      dispatch({
+        type: "SET_ERROR",
+        payload: "Select or create a session first.",
+      });
+      return null;
+    }
+    if (sessionCreatingRef.current) return null;
+
+    sessionCreatingRef.current = true;
+    try {
+      const title = await generateSessionTitle(sourceText);
+      const newSession = await createSession(title, directory);
+      if (!newSession) return null;
+
+      const draftKey = getSessionDraftKey({
+        workspaceId: state.activeWorkspaceId,
+        directory,
+      });
+      if (draftKey) {
+        dispatch({ type: "CLEAR_SESSION_DRAFT", payload: draftKey });
+      }
+      dispatch({ type: "CLEAR_ACTIVE_TARGET" });
+      return newSession.id;
+    } finally {
+      sessionCreatingRef.current = false;
+    }
+  };
+
+  const resolveSessionEntry = async (sourceText?: string): Promise<string | null> => {
     const state = getState();
     const decision = decideSessionEntry({
       activeSessionId: state.activeSessionId,
-      draftDirectory: state.draftSessionDirectory,
-      canStartSession: false,
     });
 
-    switch (decision.type) {
-      case "use-active-session":
-        return decision.sessionId;
-      case "create-session-from-draft": {
-        if (draftCreatingRef.current) return null;
-        draftCreatingRef.current = true;
-        try {
-          const newSession = await createSession(undefined, decision.directory);
-          if (!newSession) return null;
-          dispatch({ type: "CLEAR_DRAFT_SESSION" });
-          return newSession.id;
-        } finally {
-          draftCreatingRef.current = false;
-        }
-      }
-      case "missing-session":
-        dispatch({
-          type: "SET_ERROR",
-          payload: "Select or create a session first.",
-        });
-        return null;
-      case "start-draft-session":
-        return null;
+    if (decision.type === "use-active-session") return decision.sessionId;
+    if (state.activeTargetDirectory && sourceText != null) {
+      return await createSessionFromActiveTarget(sourceText);
     }
+
+    dispatch({
+      type: "SET_ERROR",
+      payload: "Select or create a session first.",
+    });
+    return null;
   };
 
-  const ensureSessionFromDraft = async (): Promise<string | null> => {
+  const ensureSession = async (): Promise<string | null> => {
     return await resolveSessionEntry();
-  };
-
-  const startDraftSessionSend = async ({
-    text,
-    images,
-    model,
-    agent,
-    variant,
-    nameSourceText,
-    errorMessage,
-    trackTurnRun = false,
-  }: {
-    text: string;
-    images?: string[];
-    model?: SelectedModel;
-    agent?: string;
-    variant?: string;
-    nameSourceText: string;
-    errorMessage: string;
-    trackTurnRun?: boolean;
-  }): Promise<string | null> => {
-    const creationRuntime = getCreationRuntime();
-    const creationBackendId = getCreationBackendId();
-    const draftDirectory = getState().draftSessionDirectory;
-    if (!creationRuntime?.startSession || !draftDirectory) return null;
-    if (draftCreatingRef.current) return null;
-
-    draftCreatingRef.current = true;
-    try {
-      await ensureDirectoryConnection(draftDirectory, {
-        backendIds: [creationBackendId],
-      });
-      const pendingTitle = "Untitled";
-      dispatch({ type: "SET_BUSY", payload: true });
-      const startedAt = Date.now();
-      const currentState = getState();
-      const session = await startDraftSessionAgentSend({
-        runtime: creationRuntime,
-        backendId: creationBackendId,
-        workspaceId: currentState.activeWorkspaceId,
-        baseUrl: currentState.workspaces.find(
-          (workspace) => workspace.id === currentState.activeWorkspaceId,
-        )?.serverUrl,
-        directory: draftDirectory,
-        text,
-        images,
-        selection: { model, agent, variant },
-        title: pendingTitle,
-      });
-      const draftSendState = createDraftSessionSendState({
-        session,
-        selection: { model, agent, variant },
-        title: pendingTitle,
-        trackTurnRun,
-        isChatDirectory: isChatDirectory(draftDirectory),
-        startedAt,
-      });
-      dispatch({ type: "SESSION_CREATED", payload: draftSendState.titledSession });
-      if (draftSendState.turnRun) {
-        dispatch({
-          type: "TURN_RUN_STARTED",
-          payload: draftSendState.turnRun,
-        });
-      }
-      requestSessionAutoName({
-        sessionId: session.id,
-        sourceText: nameSourceText,
-        session: draftSendState.titledSession,
-        force: true,
-      });
-      if (draftSendState.sessionMeta) {
-        dispatch({
-          type: "SET_SESSION_META",
-          payload: {
-            sessionId: session.id,
-            meta: draftSendState.sessionMeta,
-          },
-        });
-      }
-      dispatch({ type: "CLEAR_DRAFT_SESSION" });
-      await selectSession(session.id, { session: draftSendState.titledSession });
-      scheduleSessionMessageReconcile(session.id, {
-        directory: session.directory,
-        workspaceId: getState().activeWorkspaceId,
-      });
-      return session.id;
-    } catch (error) {
-      dispatch({ type: "SET_ERROR", payload: getErrorMessage(error) || errorMessage });
-      dispatch({ type: "SET_BUSY", payload: false });
-      return null;
-    } finally {
-      draftCreatingRef.current = false;
-    }
   };
 
   const dispatchPromptDirect = async (
@@ -331,61 +241,22 @@ export function createLocalIntentOrchestrator(
     };
   };
 
-  const resolveCurrentSelection = () => resolveAgentSendSelection(getSelectionSnapshot());
-
-  const shouldStartDraftIntent = () => {
-    const state = getState();
-    return (
-      decideSessionEntry({
-        activeSessionId: state.activeSessionId,
-        draftDirectory: state.draftSessionDirectory,
-        canStartSession: typeof getCreationRuntime()?.startSession === "function",
-      }).type === "start-draft-session"
-    );
-  };
-
-  const startDraftIntent = async ({
-    text,
-    images,
-    errorMessage,
-    trackTurnRun = false,
-  }: {
-    text: string;
-    images?: string[];
-    errorMessage: string;
-    trackTurnRun?: boolean;
-  }) => {
-    const selection = resolveCurrentSelection();
-    await startDraftSessionSend({
-      text,
-      images,
-      model: selection.model,
-      agent: selection.agent,
-      variant: selection.variant,
-      nameSourceText: text,
-      errorMessage,
-      trackTurnRun,
-    });
-  };
-
   const resolveNamedSession = async (sourceText: string): Promise<string | null> => {
-    const sessionId = await resolveSessionEntry();
+    const hadActiveSession = Boolean(getState().activeSessionId);
+    const sessionId = await resolveSessionEntry(sourceText);
     if (!sessionId) return null;
 
-    requestSessionAutoName({
-      sessionId,
-      sourceText,
-      session: getState().sessions.find((session) => session.id === sessionId),
-    });
+    if (hadActiveSession) {
+      requestSessionAutoName({
+        sessionId,
+        sourceText,
+        session: getState().sessions.find((session) => session.id === sessionId),
+      });
+    }
     return sessionId;
   };
 
   const sendPrompt = async (text: string, images?: string[], mode?: QueueMode) => {
-    if (shouldStartDraftIntent()) {
-      await startDraftIntent({ text, images, errorMessage: "Prompt failed", trackTurnRun: true });
-      return;
-    }
-
     const sessionId = await resolveNamedSession(text);
     if (!sessionId) return;
 
@@ -425,11 +296,6 @@ export function createLocalIntentOrchestrator(
 
   const sendCommand = async (command: string, args: string) => {
     const commandText = `/${command}${args ? ` ${args}` : ""}`;
-    if (shouldStartDraftIntent()) {
-      await startDraftIntent({ text: commandText, errorMessage: "Command failed" });
-      return;
-    }
-
     const sessionId = await resolveNamedSession(commandText);
     if (!sessionId) return;
 
@@ -465,6 +331,6 @@ export function createLocalIntentOrchestrator(
     sendCommand,
     dispatchNextQueued,
     sendQueuedNow,
-    ensureSessionFromDraft,
+    ensureSession,
   };
 }

@@ -7,7 +7,7 @@ OpenGUI is a command center for long-running coding-agent work across projects a
 OpenGUI is split into three layers:
 
 - **OpenGUI Backend** -- Node.js HTTP/WS server owning all Harness runtimes, project access, sessions, events, filesystem/git operations, prompt queues, and settings that affect agent execution. It does not define the Workspace primitive. Deployable as a Desktop sidecar, Docker container, or standalone server.
-- **OpenGUI Frontend** -- React UI rendering navigation, chat, and settings, and owning presentation state such as Workspaces, Project connections, Draft sessions, Queued prompts, and Session placement. Talks only to an OpenGUI Backend via `OpenGuiClient`. Runs identically in Desktop, Web, and Mobile.
+- **OpenGUI Frontend** -- React UI rendering navigation, chat, and settings, and owning presentation state such as Workspaces, Project connections, Pending prompts, Queued prompts, and Session placement. Talks only to an OpenGUI Backend via `OpenGuiClient`. Runs identically in Desktop, Web, and Mobile.
 - **Shell** -- Platform-specific scaffold that bootstraps the Frontend. Three variants:
   - **Desktop Shell** (Electron main+preload): window controls, native file picker, updater, OS notifications, backend sidecar lifecycle.
   - **Web Shell** (browser): minimal -- no backend spawning, no native file dialog. Backend connection is same-origin or user-configured URL.
@@ -26,7 +26,7 @@ The project+path/session tuple that scopes a Harness operation inside an OpenGUI
 _Avoid_: Agent session context (vague), cwd (too narrow), workspace-scoped harness
 
 **OpenGUI Backend**:
-The Node.js server process that owns execution state and backend-facing resources: Harness Adapters, Sessions, Harness Sessions, project access, streaming events, filesystem/git operations, and settings that affect agent execution. It does not define Workspaces, accept Workspace IDs as domain identity, own Project connections, Draft sessions, or Session presentation assignment. Runs as Desktop sidecar, standalone server, or inside Docker. It may run API-only or serve a Hosted Frontend in addition to its API.
+The Node.js server process that owns execution state and backend-facing resources: Harness Adapters, Sessions, Harness Sessions, project access, streaming events, filesystem/git operations, and settings that affect agent execution. It does not define Workspaces, accept Workspace IDs as domain identity, own Project connections, Pending prompts, or Session presentation assignment. Runs as Desktop sidecar, standalone server, or inside Docker. It may run API-only or serve a Hosted Frontend in addition to its API.
 _Avoid_: server, headless backend, daemon
 
 **Frontend Host**:
@@ -46,7 +46,7 @@ A convenience deployment where one process or container serves both the OpenGUI 
 _Avoid_: monolith, web backend
 
 **OpenGUI Frontend**:
-The React UI layer and primary presentation layer. It owns frontend-local Workspaces, Project connections, Draft sessions, Queued prompts, and Session presentation, and talks only to one OpenGUI Backend via `OpenGuiClient` at a time.
+The React UI layer and primary presentation layer. It owns frontend-local Workspaces, Project connections, Pending prompts, Queued prompts, and Session presentation, and talks only to one OpenGUI Backend via `OpenGuiClient` at a time.
 _Avoid_: renderer, stateless client
 
 **Desktop Shell**:
@@ -108,7 +108,7 @@ Frontend-local composition state choosing the model, agent, and variant for futu
 _Avoid_: shared session setting, backend default
 
 **Default chat directory**:
-A Workspace-local Project path used when starting a new Draft session without choosing a specific Project first. Each Workspace has its own Default chat directory because project paths are meaningful only for that Workspace's OpenGUI Backend connection.
+A Workspace-local Project path selected for the next Pending prompt when starting a new chat without choosing a specific Project first. Each Workspace has its own Default chat directory because project paths are meaningful only for that Workspace's OpenGUI Backend connection.
 _Avoid_: global chat directory, app default project
 
 **Project**:
@@ -151,12 +151,12 @@ _Avoid_: client-side race resolution, per-frontend session truth
 The canonical name of a Session as defined by its Harness. OpenGUI may request a rename, but the Harness is the only source of truth for the title.
 _Avoid_: local title override, frontend-only title, frontend title
 
-**Draft session**:
-A frontend-local, durable, Workspace-local conversation intent for one specific Project selected before any Harness Session exists. It carries an intended Harness that may still change before first send, and its first Agent send creates a new shared Session. If its Project connection is errored or intended Harness is unavailable, the draft may remain stored but is not sendable until resolved.
-_Avoid_: unsent session, pending chat
+**Pending prompt**:
+Frontend-local prompt text stored in `sessionDrafts` before a Session exists. It is scoped to the selected Project and Frontend Workspace, and pressing send creates the shared Session with its initial title before dispatching the Agent send.
+_Avoid_: Draft session, unsent session
 
 **Queued prompt**:
-A backend-owned, shared Session-level prompt stored in the one shared queue for an existing shared Session. A Queued prompt captures model/agent/variant intent when queued, cannot exist for a Draft session, is visible across connected Frontends, follows shared backend queue order, and is the default result of a normal follow-up sent while the Session is busy. It remains queued during temporary Harness unavailability and is not yet part of the Session transcript until dispatch.
+A backend-owned, shared Session-level prompt stored in the one shared queue for an existing shared Session. A Queued prompt captures model/agent/variant intent when queued, cannot exist before a Session exists, is visible across connected Frontends, follows shared backend queue order, and is the default result of a normal follow-up sent while the Session is busy. It remains queued during temporary Harness unavailability and is not yet part of the Session transcript until dispatch.
 _Avoid_: pending message, buffered turn, frontend-only queue item
 
 **After-part prompt**:
@@ -168,11 +168,11 @@ The backend orchestration that turns a Queued prompt into an Agent send when a S
 _Avoid_: queue flush, frontend-only auto-send side effect
 
 **Agent send**:
-The moment OpenGUI turns local intent into a Harness operation such as `startSession`, `prompt`, or `sendCommand`. Draft sessions and queued prompts exist before an agent send; Harness transcript state exists after it.
+The moment OpenGUI turns local intent into a Harness operation such as `startSession`, `prompt`, or `sendCommand`. Pending prompts and queued prompts exist before an agent send; Harness transcript state exists after it.
 _Avoid_: enqueue, draft
 
 **Local intent orchestration**:
-The frontend-local orchestration around Draft sessions and send requests before they become shared backend actions. It coordinates with Queue dispatch, Project connection, and Session lifecycle rules.
+The frontend-local orchestration around Pending prompts and send requests before they become shared backend actions. It coordinates with Queue dispatch, Project connection, and Session lifecycle rules.
 
 **Project connection**:
 The act or state of making a Workspace-scoped Frontend Project available for backend-backed operations such as Session listing or Agent send. It is frontend presentation/execution-readiness state, not a backend domain object. A failed Project connection leaves the Frontend Project visible in the sidebar with an error instead of deleting it.
@@ -307,7 +307,7 @@ _Avoid_: Project in product language, Workspace Project
 
 **Dev**: If the user picks a project but has not sent anything yet, do we already have a session?
 
-**Domain expert**: No. That is a **Draft session**. It is local-only until an **Agent send** happens.
+**Domain expert**: No. That is a **Pending prompt**. It is local-only until an **Agent send** happens.
 
 **Dev**: And when the agent is busy and the user types the next instruction?
 

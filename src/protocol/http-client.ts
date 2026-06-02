@@ -587,16 +587,25 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   };
 
   const requestBaseUrlForSession = (input: SessionLookupInput) => {
-    const targetBaseUrl = requestBaseUrlForTarget(input.target ?? input);
-    if (targetBaseUrl) return targetBaseUrl;
+    const target = input.target ?? input;
+    if (target?.baseUrl) return requestBaseUrlForTarget(target);
+
     const direct = sessionRecordByCanonicalId.get(input.sessionId);
-    if (direct) return sessionBaseUrls.get(direct.id) ?? getDefaultBaseUrl();
+    if (direct) {
+      const directBaseUrl = sessionBaseUrls.get(direct.id);
+      if (directBaseUrl) return directBaseUrl;
+    }
+
     const canonicalIds = sessionCanonicalIdsByFrontendId.get(input.sessionId);
     for (const canonicalId of canonicalIds ?? []) {
       const sessionBaseUrl = sessionBaseUrls.get(canonicalId);
       if (sessionBaseUrl) return sessionBaseUrl;
     }
-    return sessionBaseUrls.get(input.sessionId) ?? getDefaultBaseUrl();
+
+    const frontendBaseUrl = sessionBaseUrls.get(input.sessionId);
+    if (frontendBaseUrl) return frontendBaseUrl;
+
+    return requestBaseUrlForTarget(target);
   };
 
   const findProjectForTarget = async (

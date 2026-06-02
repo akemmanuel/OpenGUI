@@ -50,7 +50,7 @@ export function ProjectEntry({
   refreshGitInfo,
   setProjectPopover,
   toggleCollapsed,
-  startDraftSession,
+  setActiveTarget,
   closeMobileSidebar,
   setProjectPinned,
   removeProject,
@@ -85,7 +85,7 @@ export function ProjectEntry({
     React.SetStateAction<{ directory: string; top: number } | null>
   >;
   toggleCollapsed: (directory: string) => void;
-  startDraftSession: (directory: string) => void;
+  setActiveTarget: (directory: string) => void;
   closeMobileSidebar: () => void;
   setProjectPinned: (directory: string, pinned: boolean) => void;
   removeProject: (directory: string) => void | Promise<void>;
@@ -130,7 +130,7 @@ export function ProjectEntry({
     canCreateSession: isProjectConnected,
     onTogglePin: () => setProjectPinned(directory, !isPinned),
     onNewSession: () => {
-      startDraftSession(directory);
+      setActiveTarget(directory);
       closeMobileSidebar();
     },
     canRemove: !detachedProject,
@@ -232,13 +232,13 @@ export function ProjectEntry({
                       className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
                       onClick={(e) => {
                         e.stopPropagation();
-                        startDraftSession(directory);
+                        setActiveTarget(directory);
                         closeMobileSidebar();
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.stopPropagation();
-                          startDraftSession(directory);
+                          setActiveTarget(directory);
                           closeMobileSidebar();
                         }
                       }}

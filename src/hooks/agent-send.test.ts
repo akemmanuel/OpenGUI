@@ -1,10 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import {
-  resolveAgentSendSelection,
-  sendCommandToAgent,
-  sendPromptToAgent,
-  startDraftSessionAgentSend,
-} from "./agent-send";
+import { resolveAgentSendSelection, sendCommandToAgent, sendPromptToAgent } from "./agent-send";
 
 describe("resolveAgentSendSelection", () => {
   test("uses explicit override variant before fallback resolution", () => {
@@ -22,32 +17,6 @@ describe("resolveAgentSendSelection", () => {
       model: { providerID: "openai", modelID: "gpt-5" },
       agent: "reviewer",
       variant: "max",
-    });
-  });
-});
-
-describe("startDraftSessionAgentSend", () => {
-  test("omits title for claude-code draft send", async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    const startSession = async (input: Record<string, unknown>) => {
-      calls.push(input);
-      return { id: "session-1", directory: input.directory };
-    };
-
-    await startDraftSessionAgentSend({
-      runtime: { startSession, sendCommand: async () => undefined } as never,
-      backendId: "claude-code",
-      workspaceId: "workspace-1",
-      directory: "/repo",
-      text: "hello",
-      selection: {},
-    });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      title: undefined,
-      directory: "/repo",
-      workspaceId: "workspace-1",
     });
   });
 });

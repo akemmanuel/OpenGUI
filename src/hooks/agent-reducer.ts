@@ -290,12 +290,10 @@ type Action =
   | { type: "QUEUE_CLEAR"; payload: { sessionID: string } }
   | { type: "SET_DEFAULT_CHAT_DIRECTORY"; payload: string | null }
   | {
-      type: "START_DRAFT_SESSION";
-      payload: { directory: string; backendId: AgentBackendId };
+      type: "SET_ACTIVE_TARGET";
+      payload: { directory: string; backendId: AgentBackendId | null };
     }
-  | { type: "SET_DRAFT_DIRECTORY"; payload: string }
-  | { type: "SET_DRAFT_BACKEND"; payload: AgentBackendId }
-  | { type: "CLEAR_DRAFT_SESSION" }
+  | { type: "CLEAR_ACTIVE_TARGET" }
   | { type: "SET_SESSION_NAMING"; payload: { sessionId: string; naming: boolean } }
   | {
       type: "SET_SESSION_META";
@@ -619,11 +617,10 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
               isBusy: false,
             }
           : {}),
-        // Clear draft if it belongs to the removed project
-        draftSessionDirectory:
-          state.draftSessionDirectory === directory ? null : state.draftSessionDirectory,
-        draftSessionBackendId:
-          state.draftSessionDirectory === directory ? null : state.draftSessionBackendId,
+        activeTargetDirectory:
+          state.activeTargetDirectory === directory ? null : state.activeTargetDirectory,
+        activeTargetBackendId:
+          state.activeTargetDirectory === directory ? null : state.activeTargetBackendId,
       };
     }
 
@@ -784,9 +781,8 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         isLoadingOlderMessages: false,
         isBusy: sid ? state.busySessionIds.has(sid) || hasRunningTurn : false,
         unreadSessionIds: nextUnread,
-        // Selecting a real session clears any pending draft
-        draftSessionDirectory: sid ? null : state.draftSessionDirectory,
-        draftSessionBackendId: sid ? null : state.draftSessionBackendId,
+        activeTargetDirectory: sid ? null : state.activeTargetDirectory,
+        activeTargetBackendId: sid ? null : state.activeTargetBackendId,
         _pendingSnapshots: [],
         _sessionBuffers: isCompleteBuffer ? remainingBuffers : startingBuffers,
       };
@@ -1736,11 +1732,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     case "SET_DEFAULT_CHAT_DIRECTORY":
       return { ...state, defaultChatDirectory: action.payload };
 
-    case "START_DRAFT_SESSION":
+    case "SET_ACTIVE_TARGET":
       return {
         ...state,
-        draftSessionDirectory: action.payload.directory,
-        draftSessionBackendId: action.payload.backendId,
+        activeTargetDirectory: action.payload.directory,
+        activeTargetBackendId: action.payload.backendId,
         activeSessionId: null,
         messages: [],
         messageHistoryHasMore: false,
@@ -1750,20 +1746,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         isBusy: false,
       };
 
-    case "SET_DRAFT_DIRECTORY":
+    case "CLEAR_ACTIVE_TARGET":
       return {
         ...state,
-        draftSessionDirectory: action.payload,
-      };
-
-    case "SET_DRAFT_BACKEND":
-      return { ...state, draftSessionBackendId: action.payload };
-
-    case "CLEAR_DRAFT_SESSION":
-      return {
-        ...state,
-        draftSessionDirectory: null,
-        draftSessionBackendId: null,
+        activeTargetDirectory: null,
+        activeTargetBackendId: null,
       };
 
     case "SET_SESSION_META": {

@@ -111,15 +111,15 @@ export interface InternalAgentState {
   queuedPrompts: Record<string, QueuedPrompt[]>;
   /** Default working directory for chats started from the global chat entry. */
   defaultChatDirectory: string | null;
-  /** Directory for a draft (not-yet-created) session. Null when no draft is active. */
-  draftSessionDirectory: string | null;
-  /** Backend chosen for draft/new session. */
-  draftSessionBackendId: AgentBackendId | null;
+  /** Directory selected for the next session before a session exists. */
+  activeTargetDirectory: string | null;
+  /** Backend selected for the next session before a session exists. */
+  activeTargetBackendId: AgentBackendId | null;
   /** Set of session IDs that are waiting for generated title */
   namingSessionIds: Set<string>;
   /** Set of session IDs that have unread content (finished generating while not active) */
   unreadSessionIds: Set<string>;
-  /** Local-only unsent textarea drafts keyed by session or draft directory. */
+  /** Local-only unsent textarea text keyed by session or pending target directory. */
   sessionDrafts: SessionDraftMap;
   /** Local-only session metadata (colors, tags, pins) keyed by session ID */
   sessionMeta: SessionMetaMap;

@@ -1,5 +1,4 @@
-import type { SessionMeta } from "@/hooks/agent-state-persistence";
-import type { Session, TurnRun } from "@/hooks/agent-state-types";
+import type { TurnRun } from "@/hooks/agent-state-types";
 import type { AgentSendSelection } from "@/hooks/agent-send";
 import { createUuid } from "@/lib/utils";
 
@@ -56,38 +55,6 @@ export function createPromptSendState({
       text,
       createdAt: startedAt,
     },
-  };
-}
-
-export interface DraftSessionSendState {
-  titledSession: Session;
-  turnRun?: TurnRun;
-  sessionMeta?: SessionMeta;
-}
-
-export function createDraftSessionSendState({
-  session,
-  selection,
-  title = "Untitled",
-  trackTurnRun = false,
-  isChatDirectory = false,
-  startedAt = Date.now(),
-  turnId = createUuid(),
-}: {
-  session: Session;
-  selection: AgentSendSelection;
-  title?: string;
-  trackTurnRun?: boolean;
-  isChatDirectory?: boolean;
-  startedAt?: number;
-  turnId?: string;
-}): DraftSessionSendState {
-  return {
-    titledSession: { ...session, title },
-    turnRun: trackTurnRun
-      ? createTurnRunStart({ sessionId: session.id, selection, startedAt, turnId })
-      : undefined,
-    sessionMeta: isChatDirectory ? { originMode: "chat", assignedProjectDir: null } : undefined,
   };
 }
 

@@ -812,6 +812,27 @@ export class OpenCodeConnection {
     });
   }
 
+  _makeGlobalEventClient(config) {
+    const headers = this._makeAuthHeaders(config);
+
+    // The OpenCode SDK rewrites GET requests from directory-scoped clients by
+    // adding ?directory=... . That is correct for most reads, but it breaks
+    // /global/event: OpenCode only emits session.status/session.idle on the
+    // truly global stream. If /global/event is directory-scoped, the frontend
+    // never sees idle and keeps the stop button/timer running forever.
+    const customFetch = (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const agent = url?.startsWith("https") ? httpsAgent : httpAgent;
+      return globalThis.fetch(input, { ...init, agent });
+    };
+
+    return createOpencodeClient({
+      baseUrl: config.baseUrl.replace(/\/+$/, ""),
+      headers,
+      fetch: customFetch,
+    });
+  }
+
   async _healthCheck() {
     this._requireClient();
     try {
@@ -845,7 +866,7 @@ export class OpenCodeConnection {
     this._abortController = abortController;
 
     try {
-      const events = await this._client.global.event({
+      const events = await this._makeGlobalEventClient(this._config).global.event({
         signal: abortController.signal,
         // Disable SDK-level retry - we handle reconnection at the app level
         // with our own backoff. Without this, the SDK silently retries with
@@ -1693,14 +1714,29 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
   });
 
-  ipcMain.handle("opencode:session:delete", async (event, id) => {
+  ipcMain.handle("opencode:session:delete", async (event, id, directory, workspaceId) => {
     try {
       const windowState = getWindowState(event.sender);
-      const conn = getConnectionForSession(windowState, id);
+      const rawId = toRawSessionId(id);
+      const entry =
+        getConnectionEntryForSession(windowState, rawId) ??
+        (directory
+          ? await (async () => {
+              const conn = await ensureConnectionForDirectory(
+                windowState,
+                event.sender,
+                directory,
+                workspaceId,
+              );
+              const projectKey = makeProjectKey(windowState, workspaceId, directory);
+              return conn ? { projectKey, connection: conn } : null;
+            })()
+          : null) ??
+        getAnyConnectionEntry(windowState, workspaceId);
+      const conn = entry?.connection ?? null;
       if (!conn) {
         return { success: false, error: "Session connection not found" };
       }
-      const rawId = toRawSessionId(id);
       const result = await conn.deleteSession(rawId);
       windowState.projectRegistry.deleteSession(rawId);
       return { success: true, data: result };

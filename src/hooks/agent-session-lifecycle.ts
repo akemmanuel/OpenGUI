@@ -84,18 +84,18 @@ function getForkBaseTitle(title: string | null | undefined): string {
 }
 
 export function resolveSessionCreationBackendId({
-  draftSessionBackendId,
+  activeTargetBackendId,
   sessions,
   activeSessionId,
   preferredBackendId,
 }: {
-  draftSessionBackendId: AgentBackendId | null;
+  activeTargetBackendId: AgentBackendId | null;
   sessions: Session[];
   activeSessionId: string | null;
   preferredBackendId: AgentBackendId;
 }) {
   return (
-    draftSessionBackendId ??
+    activeTargetBackendId ??
     getSessionBackendId(sessions.find((session) => session.id === activeSessionId)) ??
     preferredBackendId
   );
@@ -228,7 +228,7 @@ export async function createLifecycleSession({
   title?: string;
   directory?: string;
   state: {
-    draftSessionBackendId: AgentBackendId | null;
+    activeTargetBackendId: AgentBackendId | null;
     sessions: Session[];
     activeSessionId: string | null;
     activeWorkspaceId: string;
@@ -245,7 +245,7 @@ export async function createLifecycleSession({
   dispatch: (action: LifecycleAction) => void;
 }): Promise<Session | null> {
   const backendId = resolveSessionCreationBackendId({
-    draftSessionBackendId: state.draftSessionBackendId,
+    activeTargetBackendId: state.activeTargetBackendId,
     sessions: state.sessions,
     activeSessionId: state.activeSessionId,
     preferredBackendId,

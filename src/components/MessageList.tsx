@@ -121,7 +121,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     pendingQuestions,
     activeSessionId,
     sessions,
-    draftSessionDirectory,
+    activeTargetDirectory,
     sessionMeta,
   } = useSessionState();
   const { messages, turnRuns, messageHistoryHasMore, isLoadingOlderMessages } = useMessages();
@@ -341,7 +341,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     );
   }
 
-  const isDraft = !activeSessionId && !!draftSessionDirectory;
+  const isDraft = !activeSessionId && !!activeTargetDirectory;
 
   if (isDraft || !activeSessionId || (visibleMessages.length === 0 && !isBusy)) {
     return (

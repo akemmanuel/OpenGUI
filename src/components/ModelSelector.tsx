@@ -137,15 +137,15 @@ function ModelRow({
 }
 
 export function ModelSelector() {
-  const { setModel, setDraftBackend } = useActions();
+  const { setModel, setActiveTargetBackend } = useActions();
   const { providers, selectedModel } = useModelState();
-  const { sessions, activeSessionId, draftSessionBackendId } = useSessionState();
+  const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
   const availableBackendIds = useAvailableBackendIds();
   const preferredBackendId = useCurrentAgentBackendId();
   const capabilities = useBackendCapabilities();
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const lockedBackendId = activeSession?._backendId ?? null;
-  const selectedBackendId = lockedBackendId ?? draftSessionBackendId ?? preferredBackendId;
+  const selectedBackendId = lockedBackendId ?? activeTargetBackendId ?? preferredBackendId;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -458,7 +458,7 @@ export function ModelSelector() {
                     size="sm"
                     className="h-7 px-2 text-[11px]"
                     disabled={!!lockedBackendId}
-                    onClick={() => setDraftBackend(backendId)}
+                    onClick={() => setActiveTargetBackend(backendId)}
                   >
                     {AGENT_BACKEND_LABELS[backendId]}
                   </Button>

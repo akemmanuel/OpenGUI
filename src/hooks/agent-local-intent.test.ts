@@ -33,8 +33,8 @@ function makeState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     commands: [],
     queuedPrompts: {},
     defaultChatDirectory: null,
-    draftSessionDirectory: null,
-    draftSessionBackendId: null,
+    activeTargetDirectory: null,
+    activeTargetBackendId: null,
     namingSessionIds: new Set(),
     unreadSessionIds: new Set(),
     sessionDrafts: {},
@@ -65,81 +65,54 @@ function makeSession(input: Partial<Session> & Pick<Session, "id">): Session {
 }
 
 describe("createLocalIntentOrchestrator", () => {
-  test("starts a draft session send when no backend session exists yet", async () => {
+  test("creates a titled session on first send when no backend session exists yet", async () => {
     const state = makeState({
-      draftSessionDirectory: "/repo",
+      activeTargetDirectory: "/repo",
       selectedModel: { providerID: "openai", modelID: "gpt-5" },
     });
     const actions: Array<Record<string, unknown>> = [];
-    const ensured: Array<Record<string, unknown>> = [];
-    const selectCalls: Array<Record<string, unknown>> = [];
-    const named: Array<Record<string, unknown>> = [];
     const reconciled: Array<Record<string, unknown>> = [];
 
     const orchestrator = createLocalIntentOrchestrator({
       getState: () => state,
-      getCreationBackendId: () => "opencode",
-      getCreationRuntime: () =>
-        ({
-          startSession: async (input: Record<string, unknown>) => ({
-            id: "session-1",
-            directory: input.directory,
-          }),
-        }) as never,
       getResourceRuntime: () => undefined,
       getCurrentVariant: () => undefined,
       sessionsClient: {
+        prompt: async () => undefined,
         abort: async () => undefined,
       } as never,
-      ensureDirectoryConnection: async (directory, options) => {
-        ensured.push({ directory, options });
-      },
-      createSession: async () => null,
-      selectSession: async (sessionId, options) => {
-        selectCalls.push({ sessionId, options });
+      createSession: async (title, directory) => {
+        const session = {
+          id: "session-1",
+          title,
+          directory,
+          _projectDir: directory,
+          _workspaceId: "workspace-1",
+          time: { created: 1, updated: 1 },
+        } as Session;
+        state.sessions = [session];
+        return session;
       },
       scheduleSessionMessageReconcile: (sessionId, projectTarget) => {
         reconciled.push({ sessionId, projectTarget });
       },
-      requestSessionAutoName: (input) => {
-        named.push(input as Record<string, unknown>);
-      },
-      isChatDirectory: () => false,
+      requestSessionAutoName: () => undefined,
       dispatch: (action) => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       dispatchingSessionIds: new Set(),
-      draftCreatingRef: { current: false },
+      sessionCreatingRef: { current: false },
     });
 
     await orchestrator.sendPrompt("Ship it");
 
-    expect(ensured).toEqual([{ directory: "/repo", options: { backendIds: ["opencode"] } }]);
     expect(actions).toEqual(
       expect.arrayContaining([
+        { type: "CLEAR_SESSION_DRAFT", payload: "draft:workspace-1:/repo" },
+        { type: "CLEAR_ACTIVE_TARGET" },
         { type: "SET_BUSY", payload: true },
-        {
-          type: "SESSION_CREATED",
-          payload: expect.objectContaining({ id: "session-1", title: "Untitled" }),
-        },
-        { type: "CLEAR_DRAFT_SESSION" },
       ]),
     );
-    expect(named).toEqual([
-      expect.objectContaining({
-        sessionId: "session-1",
-        sourceText: "Ship it",
-        force: true,
-      }),
-    ]);
-    expect(selectCalls).toEqual([
-      {
-        sessionId: "session-1",
-        options: {
-          session: expect.objectContaining({ id: "session-1", title: "Untitled" }),
-        },
-      },
-    ]);
     expect(reconciled).toEqual([
       {
         sessionId: "session-1",
@@ -171,8 +144,6 @@ describe("createLocalIntentOrchestrator", () => {
 
     const orchestrator = createLocalIntentOrchestrator({
       getState: () => state,
-      getCreationBackendId: () => "opencode",
-      getCreationRuntime: () => undefined,
       getResourceRuntime: () => undefined,
       getCurrentVariant: () => undefined,
       sessionsClient: {
@@ -181,17 +152,14 @@ describe("createLocalIntentOrchestrator", () => {
         },
         abort: async () => undefined,
       } as never,
-      ensureDirectoryConnection: async () => undefined,
       createSession: async () => null,
-      selectSession: async () => undefined,
       scheduleSessionMessageReconcile: () => undefined,
       requestSessionAutoName: () => undefined,
-      isChatDirectory: () => false,
       dispatch: (action) => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       dispatchingSessionIds: new Set(),
-      draftCreatingRef: { current: false },
+      sessionCreatingRef: { current: false },
     });
 
     await orchestrator.sendPrompt("Continue");
@@ -230,8 +198,6 @@ describe("createLocalIntentOrchestrator", () => {
 
     const orchestrator = createLocalIntentOrchestrator({
       getState: () => state,
-      getCreationBackendId: () => "opencode",
-      getCreationRuntime: () => undefined,
       getResourceRuntime: () => undefined,
       getCurrentVariant: () => undefined,
       sessionsClient: {
@@ -258,17 +224,14 @@ describe("createLocalIntentOrchestrator", () => {
           },
         },
       } as never,
-      ensureDirectoryConnection: async () => undefined,
       createSession: async () => null,
-      selectSession: async () => undefined,
       scheduleSessionMessageReconcile: () => undefined,
       requestSessionAutoName: () => undefined,
-      isChatDirectory: () => false,
       dispatch: (action) => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       dispatchingSessionIds: new Set(),
-      draftCreatingRef: { current: false },
+      sessionCreatingRef: { current: false },
     });
 
     await orchestrator.sendPrompt("Queue this");
@@ -307,8 +270,6 @@ describe("createLocalIntentOrchestrator", () => {
 
     const orchestrator = createLocalIntentOrchestrator({
       getState: () => state,
-      getCreationBackendId: () => "opencode",
-      getCreationRuntime: () => undefined,
       getResourceRuntime: () =>
         ({
           sendCommand: async (input: Record<string, unknown>) => {
@@ -319,17 +280,14 @@ describe("createLocalIntentOrchestrator", () => {
       sessionsClient: {
         abort: async () => undefined,
       } as never,
-      ensureDirectoryConnection: async () => undefined,
       createSession: async () => null,
-      selectSession: async () => undefined,
       scheduleSessionMessageReconcile: (sessionId, projectTarget) => {
         reconciled.push({ sessionId, projectTarget });
       },
       requestSessionAutoName: () => undefined,
-      isChatDirectory: () => false,
       dispatch: () => undefined,
       dispatchingSessionIds: new Set(),
-      draftCreatingRef: { current: false },
+      sessionCreatingRef: { current: false },
     });
 
     await orchestrator.sendCommand("review", "--all");

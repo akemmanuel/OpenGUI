@@ -278,8 +278,8 @@ const initialState: InternalAgentState = {
   commands: [],
   queuedPrompts: {},
   defaultChatDirectory: null,
-  draftSessionDirectory: null,
-  draftSessionBackendId: null,
+  activeTargetDirectory: null,
+  activeTargetBackendId: null,
   namingSessionIds: new Set(),
   unreadSessionIds: getUnreadSessionIds(),
   sessionDrafts: getSessionDrafts(),
@@ -333,7 +333,7 @@ function InternalAgentProvider({
     ? (state.sessions.find((session) => session.id === state.activeSessionId) ?? null)
     : null;
   const activeSessionBackendId = getSessionBackendId(activeSession);
-  const creationBackendId = state.draftSessionBackendId ?? preferredBackendId;
+  const creationBackendId = state.activeTargetBackendId ?? preferredBackendId;
   const resourceBackendId = activeSessionBackendId ?? creationBackendId;
   const discoveryBackendIds = useMemo(
     () => allBackends.map((backend) => backend.id as AgentBackendId),
@@ -341,8 +341,6 @@ function InternalAgentProvider({
   );
   const resourceBridge =
     backendsById[resourceBackendId] ?? openGuiClient.agentBackends.get(resourceBackendId);
-  const creationBridge =
-    backendsById[creationBackendId] ?? openGuiClient.agentBackends.get(creationBackendId);
   const workspaceProfile = resourceBridge?.workspace;
   const runtime = resourceBridge?.runtime;
   const expectedDirectoriesRef = useRef<Set<string>>(new Set());
@@ -999,8 +997,8 @@ function InternalAgentProvider({
             normalizedDirectory === normalizedDefaultChatDirectory
           ) {
             setDefaultChatDirectory(null);
-            if (stateRef.current.draftSessionDirectory === normalizedDirectory) {
-              dispatch({ type: "CLEAR_DRAFT_SESSION" });
+            if (stateRef.current.activeTargetDirectory === normalizedDirectory) {
+              dispatch({ type: "CLEAR_ACTIVE_TARGET" });
             }
           }
 
@@ -1455,10 +1453,10 @@ function InternalAgentProvider({
 
   useEffect(() => {
     if (detachedProject) return;
-    if (state.activeSessionId || state.draftSessionDirectory) return;
+    if (state.activeSessionId || state.activeTargetDirectory) return;
     if (!state.defaultChatDirectory) return;
     dispatch({
-      type: "START_DRAFT_SESSION",
+      type: "SET_ACTIVE_TARGET",
       payload: {
         directory: state.defaultChatDirectory,
         backendId: preferredBackendId,
@@ -1468,7 +1466,7 @@ function InternalAgentProvider({
     detachedProject,
     preferredBackendId,
     state.activeSessionId,
-    state.draftSessionDirectory,
+    state.activeTargetDirectory,
     state.defaultChatDirectory,
   ]);
 
@@ -1559,15 +1557,15 @@ function InternalAgentProvider({
     if (connectedDirectories.length > 0) {
       return getWorkspaceRootDirectory(connectedDirectories[0]!, state.worktreeParents);
     }
-    return state.draftSessionDirectory &&
-      visibleActiveWorkspaceProjectSet.has(state.draftSessionDirectory)
-      ? getWorkspaceRootDirectory(state.draftSessionDirectory, state.worktreeParents)
+    return state.activeTargetDirectory &&
+      visibleActiveWorkspaceProjectSet.has(state.activeTargetDirectory)
+      ? getWorkspaceRootDirectory(state.activeTargetDirectory, state.worktreeParents)
       : null;
   }, [
     visibleWorkspaceConnections,
     visibleActiveWorkspaceProjectSet,
     state.worktreeParents,
-    state.draftSessionDirectory,
+    state.activeTargetDirectory,
   ]);
 
   const workspaceConnection = useMemo(() => {
@@ -1607,12 +1605,12 @@ function InternalAgentProvider({
   const activeResourceDirectory = useMemo(() => {
     const sessionDirectory = getSessionDirectory(activeResourceSession);
     if (sessionDirectory) return sessionDirectory;
-    if (state.draftSessionDirectory) return state.draftSessionDirectory;
+    if (state.activeTargetDirectory) return state.activeTargetDirectory;
 
     return workspaceDirectory;
-  }, [activeResourceSession, state.draftSessionDirectory, workspaceDirectory]);
+  }, [activeResourceSession, state.activeTargetDirectory, workspaceDirectory]);
   const activeResourceBackendId =
-    getSessionBackendId(activeResourceSession) ?? state.draftSessionBackendId ?? preferredBackendId;
+    getSessionBackendId(activeResourceSession) ?? state.activeTargetBackendId ?? preferredBackendId;
 
   useEffect(() => {
     if (!resourceBridge || !activeResourceDirectory) return;
@@ -1905,7 +1903,7 @@ function InternalAgentProvider({
         title,
         directory,
         state: {
-          draftSessionBackendId: stateRef.current.draftSessionBackendId,
+          activeTargetBackendId: stateRef.current.activeTargetBackendId,
           sessions: stateRef.current.sessions,
           activeSessionId: stateRef.current.activeSessionId,
           activeWorkspaceId: stateRef.current.activeWorkspaceId,
@@ -1983,8 +1981,8 @@ function InternalAgentProvider({
   // Track which sessions are currently dispatching a queued prompt
   const dispatchingRef = useRef<Set<string>>(new Set());
 
-  // Lock to prevent double session creation from draft
-  const draftCreatingRef = useRef(false);
+  // Lock to prevent double session creation from a pending prompt send
+  const sessionCreatingRef = useRef(false);
 
   const requestSessionAutoName = useCallback(
     ({
@@ -2013,8 +2011,6 @@ function InternalAgentProvider({
     () =>
       createLocalIntentOrchestrator({
         getState: () => stateRef.current,
-        getCreationBackendId: () => creationBackendId,
-        getCreationRuntime: () => creationBridge?.runtime,
         getResourceRuntime: () => runtime,
         getCurrentVariant: () => currentVariant,
         getWorkspaceBaseUrl: (workspaceId) => {
@@ -2022,33 +2018,24 @@ function InternalAgentProvider({
           return workspace && !workspace.isLocal ? workspace.serverUrl : undefined;
         },
         sessionsClient: openGuiClient.sessions,
-        ensureDirectoryConnection,
         createSession,
-        selectSession,
         scheduleSessionMessageReconcile,
         requestSessionAutoName,
-        isChatDirectory,
         dispatch: (action) => dispatch(action as never),
         dispatchingSessionIds: dispatchingRef.current,
-        draftCreatingRef,
+        sessionCreatingRef,
       }),
     [
       createSession,
-      creationBackendId,
-      creationBridge,
       currentVariant,
-      ensureDirectoryConnection,
-      isChatDirectory,
       openGuiClient,
       requestSessionAutoName,
       runtime,
       scheduleSessionMessageReconcile,
-      selectSession,
     ],
   );
 
-  const { sendPrompt, sendCommand, dispatchNextQueued, sendQueuedNow, ensureSessionFromDraft } =
-    localIntent;
+  const { sendPrompt, sendCommand, dispatchNextQueued, sendQueuedNow, ensureSession } = localIntent;
 
   const findFiles = useCallback(
     async (directory: string | null, query: string): Promise<string[]> => {
@@ -2072,7 +2059,7 @@ function InternalAgentProvider({
 
   const summarizeSession = useCallback(async () => {
     if (!runtime) return;
-    const sessionId = await ensureSessionFromDraft();
+    const sessionId = await ensureSession();
     if (!sessionId) return;
 
     const model = state.selectedModel;
@@ -2124,7 +2111,7 @@ function InternalAgentProvider({
       dispatch({ type: "SET_ERROR", payload: getErrorMessage(err) });
     }
     // Note: SET_BUSY=false is handled by SESSION_STATUS backend events
-  }, [runtime, state.selectedModel, ensureSessionFromDraft, openGuiClient]);
+  }, [runtime, state.selectedModel, ensureSession, openGuiClient]);
 
   // Auto-dispatch queued prompts when a session transitions from busy to idle.
   // Builds a synthetic trigger map (sessionID -> true) for newly-idle sessions
@@ -2314,13 +2301,13 @@ function InternalAgentProvider({
     });
   }, []);
 
-  const startDraftSession = useCallback(
-    (directory: string) => {
+  const setActiveTarget = useCallback(
+    (directory: string, backendId?: AgentBackendId | null) => {
       dispatch({
-        type: "START_DRAFT_SESSION",
+        type: "SET_ACTIVE_TARGET",
         payload: {
           directory,
-          backendId: getSessionBackendId(activeSession) ?? preferredBackendId,
+          backendId: backendId ?? getSessionBackendId(activeSession) ?? preferredBackendId,
         },
       });
     },
@@ -2331,15 +2318,21 @@ function InternalAgentProvider({
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
     if (!defaultChatDirectory) return;
     await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
-    startDraftSession(defaultChatDirectory);
-  }, [ensureDirectoryConnection, startDraftSession]);
+    setActiveTarget(defaultChatDirectory);
+  }, [ensureDirectoryConnection, setActiveTarget]);
 
-  const setDraftDirectory = useCallback((directory: string) => {
-    dispatch({ type: "SET_DRAFT_DIRECTORY", payload: directory });
-  }, []);
+  const setActiveTargetDirectory = useCallback(
+    (directory: string) => {
+      const backendId = stateRef.current.activeTargetBackendId ?? preferredBackendId;
+      dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, backendId } });
+    },
+    [preferredBackendId],
+  );
 
-  const setDraftBackend = useCallback((backendId: AgentBackendId) => {
-    dispatch({ type: "SET_DRAFT_BACKEND", payload: backendId });
+  const setActiveTargetBackend = useCallback((backendId: AgentBackendId) => {
+    const directory = stateRef.current.activeTargetDirectory;
+    if (!directory) return;
+    dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, backendId } });
   }, []);
 
   /** Re-fetch providers from the server and update global state. */
@@ -2720,8 +2713,8 @@ function InternalAgentProvider({
       queuedPrompts: state.queuedPrompts,
       pendingPermissions: state.pendingPermissions,
       pendingQuestions: state.pendingQuestions,
-      draftSessionDirectory: state.draftSessionDirectory,
-      draftSessionBackendId: state.draftSessionBackendId,
+      activeTargetDirectory: state.activeTargetDirectory,
+      activeTargetBackendId: state.activeTargetBackendId,
       namingSessionIds: state.namingSessionIds,
       unreadSessionIds: state.unreadSessionIds,
       sessionDrafts: state.sessionDrafts,
@@ -2738,8 +2731,8 @@ function InternalAgentProvider({
       state.queuedPrompts,
       state.pendingPermissions,
       state.pendingQuestions,
-      state.draftSessionDirectory,
-      state.draftSessionBackendId,
+      state.activeTargetDirectory,
+      state.activeTargetBackendId,
       state.namingSessionIds,
       state.unreadSessionIds,
       state.sessionDrafts,
@@ -2918,10 +2911,10 @@ function InternalAgentProvider({
       openDirectory,
       connectToProject,
       startNewChat,
-      startDraftSession,
+      setActiveTarget,
       setDefaultChatDirectory,
-      setDraftDirectory,
-      setDraftBackend,
+      setActiveTargetDirectory,
+      setActiveTargetBackend,
       revertToMessage,
       unrevert,
       forkFromMessage,
@@ -2970,10 +2963,10 @@ function InternalAgentProvider({
       openDirectory,
       connectToProject,
       startNewChat,
-      startDraftSession,
+      setActiveTarget,
       setDefaultChatDirectory,
-      setDraftDirectory,
-      setDraftBackend,
+      setActiveTargetDirectory,
+      setActiveTargetBackend,
       revertToMessage,
       unrevert,
       forkFromMessage,

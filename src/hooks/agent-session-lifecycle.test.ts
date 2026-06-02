@@ -23,7 +23,7 @@ function makeSession(input: Partial<Session> & Pick<Session, "id">): Session {
 describe("resolveSessionCreationBackendId", () => {
   test("prefers the draft backend over the active session and default backend", () => {
     const backendId = resolveSessionCreationBackendId({
-      draftSessionBackendId: "codex",
+      activeTargetBackendId: "codex",
       sessions: [makeSession({ id: "pi:session-1", _backendId: "pi" })],
       activeSessionId: "pi:session-1",
       preferredBackendId: "claude-code",
@@ -34,7 +34,7 @@ describe("resolveSessionCreationBackendId", () => {
 
   test("falls back to the active session backend before the preferred backend", () => {
     const backendId = resolveSessionCreationBackendId({
-      draftSessionBackendId: null,
+      activeTargetBackendId: null,
       sessions: [makeSession({ id: "pi:session-1", _backendId: "pi" })],
       activeSessionId: "pi:session-1",
       preferredBackendId: "claude-code",
@@ -138,7 +138,7 @@ describe("createLifecycleSession", () => {
       title: "New",
       directory: "/chat",
       state: {
-        draftSessionBackendId: null,
+        activeTargetBackendId: null,
         sessions: [],
         activeSessionId: null,
         activeWorkspaceId: "workspace-1",

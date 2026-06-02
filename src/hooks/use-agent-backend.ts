@@ -51,9 +51,9 @@ function useAllAgentBackends() {
 
 function useResourceAgentBackendId() {
   const preferredBackendId = useCurrentAgentBackendId();
-  const { sessions, activeSessionId, draftSessionBackendId } = useSessionState();
+  const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
   const activeSession = sessions.find((session) => session.id === activeSessionId);
-  return activeSession?._backendId ?? draftSessionBackendId ?? preferredBackendId;
+  return activeSession?._backendId ?? activeTargetBackendId ?? preferredBackendId;
 }
 
 export function useAgentBackend(backendId?: AgentBackendId) {

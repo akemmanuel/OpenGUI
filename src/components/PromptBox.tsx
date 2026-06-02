@@ -122,7 +122,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       sendCommand,
       summarizeSession,
       findFiles,
-      setDraftDirectory,
+      setActiveTargetDirectory,
       setSessionDraft,
       clearSessionDraft,
       registerWorktree,
@@ -131,7 +131,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const { commands, agents, selectedAgent } = useModelState();
     const capabilities = useBackendCapabilities();
     const canManageMcp = Boolean(capabilities?.mcp);
-    const { sessions, activeSessionId, draftSessionDirectory, sessionDrafts } = useSessionState();
+    const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
     const { messages } = useMessages();
 
     // Detect if compaction is in-progress: session is busy AND message immediately
@@ -163,15 +163,15 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const selectedWorktreeDirectory = React.useMemo(
       () =>
         normalizeProjectPath(
-          activeSession?._projectDir ?? activeSession?.directory ?? draftSessionDirectory ?? "",
+          activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? "",
         ) || null,
-      [activeSession, draftSessionDirectory],
+      [activeSession, activeTargetDirectory],
     );
     const projectDir = React.useMemo(() => {
       if (!selectedWorktreeDirectory) return null;
       return getWorkspaceRootProjectDirectory(selectedWorktreeDirectory, worktreeParents);
     }, [selectedWorktreeDirectory, worktreeParents]);
-    const isDraftWorktreeSelection = !activeSessionId && Boolean(draftSessionDirectory);
+    const isDraftWorktreeSelection = !activeSessionId && Boolean(activeTargetDirectory);
 
     // Slash command popover state
     const [showSlash, setShowSlash] = React.useState(false);
@@ -210,10 +210,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       () =>
         getSessionDraftKey({
           sessionId: activeSessionId,
-          directory: activeSessionId ? null : draftSessionDirectory,
+          directory: activeSessionId ? null : activeTargetDirectory,
           workspaceId: activeWorkspaceId,
         }),
-      [activeSessionId, draftSessionDirectory, activeWorkspaceId],
+      [activeSessionId, activeTargetDirectory, activeWorkspaceId],
     );
 
     const { handleHistoryKeyDown, noteManualInput, resetHistory } = usePromptHistoryNavigation({
@@ -415,8 +415,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         const activeSession = sessions.find((s) => s.id === activeSessionId);
         return activeSession?._projectDir ?? activeSession?.directory ?? null;
       }
-      return draftSessionDirectory;
-    }, [activeSessionId, sessions, draftSessionDirectory]);
+      return activeTargetDirectory;
+    }, [activeSessionId, sessions, activeTargetDirectory]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
@@ -796,7 +796,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             if (!worktreeDialogDir) return;
             registerWorktree(worktreePath, worktreeDialogDir, branch);
             await connectToProject(worktreePath);
-            setDraftDirectory(worktreePath);
+            setActiveTargetDirectory(worktreePath);
             setSetupWorktreePath(worktreePath);
             setWorktreeDialogDir(null);
           }}
@@ -876,7 +876,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                           if (option.path !== projectDir && !worktreeParents[option.path]) {
                             registerWorktree(option.path, projectDir!, option.branch ?? "unknown");
                           }
-                          setDraftDirectory(option.path);
+                          setActiveTargetDirectory(option.path);
                         }}
                         className="text-xs"
                       >
