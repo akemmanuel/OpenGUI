@@ -343,11 +343,7 @@ describe("createHttpOpenGuiClient", () => {
             },
           });
         }
-        if (
-          url ===
-            "http://remote.test/api/sessions/session_1?harnessId=opencode&projectId=project_1" &&
-          init?.method === "DELETE"
-        ) {
+        if (url === "http://remote.test/api/sessions/session_1" && init?.method === "DELETE") {
           return json({ ok: true, value: true });
         }
         throw new Error(`Unexpected fetch: ${url}`);
@@ -374,7 +370,7 @@ describe("createHttpOpenGuiClient", () => {
 
     expect(calls).toEqual([
       "POST http://remote.test/api/sessions/query",
-      "DELETE http://remote.test/api/sessions/session_1?harnessId=opencode&projectId=project_1",
+      "DELETE http://remote.test/api/sessions/session_1",
     ]);
   });
 
