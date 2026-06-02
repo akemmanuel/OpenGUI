@@ -1,6 +1,7 @@
 import type { Agent } from "@opencode-ai/sdk/v2/client";
 import type { AgentBackendDescriptor, AgentBackendTarget } from "@/agents/backend";
-import { getSessionBackendId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
+import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { Session } from "@/hooks/agent-state-types";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import { resolveVariant } from "@/hooks/use-agent-variant-core";
@@ -61,7 +62,7 @@ export async function sendPromptToAgent({
   const baseUrl = getWorkspaceBaseUrl?.(workspaceId);
   const projectTarget =
     baseUrl || workspaceId ? { ...rawProjectTarget, workspaceId, baseUrl } : rawProjectTarget;
-  const backendId = getSessionBackendId(session) ?? undefined;
+  const backendId = resolveSessionHarnessRoute(session).backendId ?? undefined;
 
   await sessions.prompt({
     sessionId,

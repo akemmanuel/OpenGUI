@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentBackendId } from "@/agents";
 import { AGENT_BACKEND_IDS } from "@/agents";
+import { resolveActiveResourceHarnessRoute } from "@/hooks/agent-harness-routing";
 import { useSessionState } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/safe-storage";
@@ -52,8 +53,12 @@ function useAllAgentBackends() {
 function useResourceAgentBackendId() {
   const preferredBackendId = useCurrentAgentBackendId();
   const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
-  const activeSession = sessions.find((session) => session.id === activeSessionId);
-  return activeSession?._backendId ?? activeTargetBackendId ?? preferredBackendId;
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  return resolveActiveResourceHarnessRoute({
+    activeSession,
+    activeTargetBackendId,
+    preferredBackendId,
+  }).backendId;
 }
 
 export function useAgentBackend(backendId?: AgentBackendId) {

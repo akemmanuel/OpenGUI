@@ -1,10 +1,7 @@
 import { getAgentBackendIdFromSessionId, type AgentBackendId } from "@/agents";
 import { getChildSessionId, MESSAGE_PAGE_SIZE } from "@/hooks/agent-message-state";
-import {
-  getSessionBackendId,
-  getSessionProjectTarget,
-  type ProjectTarget,
-} from "@/hooks/agent-session-utils";
+import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
+import { getSessionProjectTarget, type ProjectTarget } from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 
 interface SessionsMessagesClient {
@@ -61,7 +58,7 @@ export async function fetchSessionMessagePage({
   const resolvedTarget = projectTarget ?? getSessionProjectTarget(session);
   const data = await sessionsClient.getMessages({
     sessionId,
-    backendId: getSessionBackendId(session) ?? undefined,
+    backendId: resolveSessionHarnessRoute(session).backendId ?? undefined,
     options: {
       limit: pageSize,
       before: options?.before,

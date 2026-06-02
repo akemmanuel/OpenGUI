@@ -20,7 +20,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { getAgentBackendIdFromSessionId, type AgentBackendId } from "@/agents";
+import type { AgentBackendId } from "@/agents";
+import {
+  resolveActiveResourceHarnessRoute,
+  resolvePendingPromptCreationHarnessRoute,
+  resolveSessionHarnessRoute,
+} from "@/hooks/agent-harness-routing";
 import { createLocalIntentOrchestrator } from "@/hooks/agent-local-intent";
 import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
@@ -332,9 +337,14 @@ function InternalAgentProvider({
   const activeSession = state.activeSessionId
     ? (state.sessions.find((session) => session.id === state.activeSessionId) ?? null)
     : null;
-  const activeSessionBackendId = getSessionBackendId(activeSession);
-  const creationBackendId = state.activeTargetBackendId ?? preferredBackendId;
-  const resourceBackendId = activeSessionBackendId ?? creationBackendId;
+  const activeSessionHarnessRoute = resolveSessionHarnessRoute(activeSession);
+  const resourceHarnessRoute = resolveActiveResourceHarnessRoute({
+    activeSession,
+    activeTargetBackendId: state.activeTargetBackendId,
+    preferredBackendId,
+  });
+  const activeSessionBackendId = activeSessionHarnessRoute.backendId;
+  const resourceBackendId = resourceHarnessRoute.backendId;
   const discoveryBackendIds = useMemo(
     () => allBackends.map((backend) => backend.id as AgentBackendId),
     [allBackends],
@@ -1609,8 +1619,11 @@ function InternalAgentProvider({
 
     return workspaceDirectory;
   }, [activeResourceSession, state.activeTargetDirectory, workspaceDirectory]);
-  const activeResourceBackendId =
-    getSessionBackendId(activeResourceSession) ?? state.activeTargetBackendId ?? preferredBackendId;
+  const activeResourceBackendId = resolveActiveResourceHarnessRoute({
+    activeSession: activeResourceSession,
+    activeTargetBackendId: state.activeTargetBackendId,
+    preferredBackendId,
+  }).backendId;
 
   useEffect(() => {
     if (!resourceBridge || !activeResourceDirectory) return;
@@ -1766,8 +1779,7 @@ function InternalAgentProvider({
         .rename({
           sessionId: canonicalSessionId,
           title: trimmed,
-          backendId:
-            getSessionBackendId(current) ?? getAgentBackendIdFromSessionId(sessionId) ?? undefined,
+          backendId: resolveSessionHarnessRoute(current).backendId ?? undefined,
           target: (() => {
             const target = getSessionProjectTarget(current);
             const workspaceId = target?.workspaceId ?? stateRef.current.activeWorkspaceId;
@@ -1968,7 +1980,7 @@ function InternalAgentProvider({
         .rename({
           sessionId: id,
           title: plan.trimmedTitle,
-          backendId: getSessionBackendId(plan.currentSession) ?? undefined,
+          backendId: resolveSessionHarnessRoute(plan.currentSession).backendId ?? undefined,
           target: getSessionProjectTarget(plan.currentSession) ?? undefined,
         })
         .catch(() => {
@@ -2151,7 +2163,7 @@ function InternalAgentProvider({
         const session = state.sessions.find((item) => item.id === input.sessionId);
         return openGuiClient.sessions.abort({
           ...input,
-          backendId: getSessionBackendId(session) ?? undefined,
+          backendId: resolveSessionHarnessRoute(session).backendId ?? undefined,
           target: getSessionProjectTarget(session) ?? undefined,
         });
       },
@@ -2197,10 +2209,7 @@ function InternalAgentProvider({
     const workspace = state.workspaces.find((item) => item.id === workspaceId);
     await openGuiClient.sessions.abort({
       sessionId,
-      backendId:
-        getSessionBackendId(activeSession) ??
-        getAgentBackendIdFromSessionId(state.activeSessionId) ??
-        undefined,
+      backendId: resolveSessionHarnessRoute(activeSession).backendId ?? undefined,
       target:
         workspace && !workspace.isLocal
           ? { ...target, workspaceId, baseUrl: workspace.serverUrl }
@@ -2307,11 +2316,16 @@ function InternalAgentProvider({
         type: "SET_ACTIVE_TARGET",
         payload: {
           directory,
-          backendId: backendId ?? getSessionBackendId(activeSession) ?? preferredBackendId,
+          backendId:
+            backendId ??
+            resolvePendingPromptCreationHarnessRoute({
+              activeTargetBackendId: stateRef.current.activeTargetBackendId,
+              preferredBackendId,
+            }).backendId,
         },
       });
     },
-    [activeSession, preferredBackendId],
+    [preferredBackendId],
   );
 
   const startNewChat = useCallback(async () => {
@@ -2323,7 +2337,10 @@ function InternalAgentProvider({
 
   const setActiveTargetDirectory = useCallback(
     (directory: string) => {
-      const backendId = stateRef.current.activeTargetBackendId ?? preferredBackendId;
+      const backendId = resolvePendingPromptCreationHarnessRoute({
+        activeTargetBackendId: stateRef.current.activeTargetBackendId,
+        preferredBackendId,
+      }).backendId;
       dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, backendId } });
     },
     [preferredBackendId],
@@ -2432,7 +2449,7 @@ function InternalAgentProvider({
         );
         await openGuiClient.sessions.abort({
           sessionId: state.activeSessionId,
-          backendId: getSessionBackendId(activeSession) ?? undefined,
+          backendId: resolveSessionHarnessRoute(activeSession).backendId ?? undefined,
           target: getSessionProjectTarget(activeSession) ?? undefined,
         });
       }

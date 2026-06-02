@@ -21,7 +21,7 @@ function makeSession(input: Partial<Session> & Pick<Session, "id">): Session {
 }
 
 describe("resolveSessionCreationBackendId", () => {
-  test("prefers the draft backend over the active session and default backend", () => {
+  test("prefers the active target Harness over the active Session and preferred Harness", () => {
     const backendId = resolveSessionCreationBackendId({
       activeTargetBackendId: "codex",
       sessions: [makeSession({ id: "pi:session-1", _backendId: "pi" })],
@@ -32,7 +32,7 @@ describe("resolveSessionCreationBackendId", () => {
     expect(backendId).toBe("codex");
   });
 
-  test("falls back to the active session backend before the preferred backend", () => {
+  test("falls back to the preferred Harness instead of inheriting the active Session Harness", () => {
     const backendId = resolveSessionCreationBackendId({
       activeTargetBackendId: null,
       sessions: [makeSession({ id: "pi:session-1", _backendId: "pi" })],
@@ -40,7 +40,7 @@ describe("resolveSessionCreationBackendId", () => {
       preferredBackendId: "claude-code",
     });
 
-    expect(backendId).toBe("pi");
+    expect(backendId).toBe("claude-code");
   });
 });
 

@@ -7,8 +7,26 @@ android {
         applicationId "com.opengui.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        def resolvedVersionName = System.getenv("GITHUB_REF_NAME")
+            ?: providers.exec {
+                commandLine "git", "describe", "--tags", "--abbrev=0"
+                ignoreExitValue = true
+            }.standardOutput.asText.get().trim()
+            ?: "v0.0.1"
+        resolvedVersionName = resolvedVersionName.replaceFirst(/^v/, "")
+
+        def semverMatch = resolvedVersionName =~ /^(\d+)\.(\d+)\.(\d+)/
+        if (!semverMatch) {
+            resolvedVersionName = "0.0.1"
+            semverMatch = resolvedVersionName =~ /^(\d+)\.(\d+)\.(\d+)/
+        }
+
+        def major = semverMatch[0][1].toInteger()
+        def minor = semverMatch[0][2].toInteger()
+        def patch = semverMatch[0][3].toInteger()
+
+        versionCode Math.max(1, major * 1000000 + minor * 1000 + patch)
+        versionName resolvedVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

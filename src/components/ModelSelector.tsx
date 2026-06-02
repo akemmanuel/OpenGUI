@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { resolveActiveResourceHarnessRoute } from "@/hooks/agent-harness-routing";
 import {
   useAvailableBackendIds,
   useBackendCapabilities,
@@ -144,8 +145,13 @@ export function ModelSelector() {
   const preferredBackendId = useCurrentAgentBackendId();
   const capabilities = useBackendCapabilities();
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
-  const lockedBackendId = activeSession?._backendId ?? null;
-  const selectedBackendId = lockedBackendId ?? activeTargetBackendId ?? preferredBackendId;
+  const selectedHarnessRoute = resolveActiveResourceHarnessRoute({
+    activeSession,
+    activeTargetBackendId,
+    preferredBackendId,
+  });
+  const lockedBackendId = selectedHarnessRoute.locked ? selectedHarnessRoute.backendId : null;
+  const selectedBackendId = selectedHarnessRoute.backendId;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);

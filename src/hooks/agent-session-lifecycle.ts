@@ -1,5 +1,6 @@
 import type { AgentBackendId } from "@/agents";
 import type { WorktreeParentMap } from "@/hooks/agent-state-persistence";
+import { resolvePendingPromptCreationHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionBackendId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import { getDirectoryPlacementInfo } from "@/lib/worktree-placement";
@@ -85,20 +86,17 @@ function getForkBaseTitle(title: string | null | undefined): string {
 
 export function resolveSessionCreationBackendId({
   activeTargetBackendId,
-  sessions,
-  activeSessionId,
   preferredBackendId,
 }: {
   activeTargetBackendId: AgentBackendId | null;
-  sessions: Session[];
-  activeSessionId: string | null;
+  sessions?: Session[];
+  activeSessionId?: string | null;
   preferredBackendId: AgentBackendId;
 }) {
-  return (
-    activeTargetBackendId ??
-    getSessionBackendId(sessions.find((session) => session.id === activeSessionId)) ??
-    preferredBackendId
-  );
+  return resolvePendingPromptCreationHarnessRoute({
+    activeTargetBackendId,
+    preferredBackendId,
+  }).backendId;
 }
 
 export function createSessionDeletionPlan({

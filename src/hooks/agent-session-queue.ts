@@ -1,6 +1,7 @@
 import type { AgentBackendId } from "@/agents";
 import type { AgentBackendTarget } from "@/agents/backend";
-import { getSessionBackendId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
+import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { InternalAgentState, QueuedPrompt, Session } from "@/hooks/agent-state-types";
 import type { OpenGuiClient } from "@/protocol/client";
 
@@ -37,7 +38,7 @@ export interface SessionQueueOrchestrator {
 
 function getSessionLookup(session: Session | undefined): QueueLookup {
   return {
-    backendId: getSessionBackendId(session) ?? undefined,
+    backendId: resolveSessionHarnessRoute(session).backendId ?? undefined,
     target: getSessionProjectTarget(session) ?? undefined,
   };
 }
