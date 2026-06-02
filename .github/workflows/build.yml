@@ -62,7 +62,6 @@ jobs:
           key: ${{ runner.os }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
-        if: steps.cache-nm.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Cache Electron binaries
@@ -115,7 +114,6 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.arch }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
-        if: steps.cache-nm.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Cache Electron binaries
@@ -171,7 +169,6 @@ jobs:
           key: ${{ runner.os }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
-        if: steps.cache-nm.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Cache Electron binaries
