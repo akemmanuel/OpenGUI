@@ -433,14 +433,19 @@ function sortLocalWorkspaces(workspaces: Workspace[]): Workspace[] {
   });
 }
 
+function getInitialWorkspacesForShell(): Workspace[] {
+  const policy = getShellWorkspacePolicy();
+  return policy.shellKind === "mobile" ? [] : [createLocalWorkspace()];
+}
+
 export async function loadBackendWorkspaces(_client: OpenGuiClient): Promise<Workspace[]> {
   const stored = getLegacyStoredWorkspaces();
-  return sortLocalWorkspaces(stored.length > 0 ? stored : [createLocalWorkspace()]);
+  return sortLocalWorkspaces(stored.length > 0 ? stored : getInitialWorkspacesForShell());
 }
 
 export async function migrateLegacyWorkspaceState(_client: OpenGuiClient): Promise<Workspace[]> {
   const workspaces = sortLocalWorkspaces(getLegacyStoredWorkspaces());
-  persistWorkspaces(workspaces.length > 0 ? workspaces : [createLocalWorkspace()]);
+  persistWorkspaces(workspaces.length > 0 ? workspaces : getInitialWorkspacesForShell());
   storageSet(LEGACY_WORKSPACE_MIGRATION_KEY, "done");
   return getLegacyStoredWorkspaces();
 }

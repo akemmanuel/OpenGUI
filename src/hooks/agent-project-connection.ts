@@ -40,13 +40,14 @@ export function createProjectConnectionStatus(
   state: ConnectionStatus["state"],
   serverUrl: string,
   kind: ConnectionKind = "project",
+  error: string | null = null,
 ): ConnectionStatus {
   return {
     state,
     kind,
     serverUrl,
     serverVersion: null,
-    error: null,
+    error,
     lastEventAt: Date.now(),
   };
 }

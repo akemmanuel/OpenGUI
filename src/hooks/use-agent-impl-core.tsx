@@ -798,28 +798,29 @@ function InternalAgentProvider({
           config: connection.config,
           backendIds: [backendId],
         });
-        if (connectResult.connectedBackendIds.length === 0) {
-          const errorMessage = connectResult.errors[0]?.error || "Connection failed";
-          updateProjectHydration(projectKey, (current) =>
-            settleProjectHydration(current, {
-              failedBackends: { [backendId]: errorMessage },
-            }),
-          );
-          return { backendId, success: false as const, error: errorMessage };
-        }
+        const connectionError =
+          connectResult.connectedBackendIds.length === 0
+            ? connectResult.errors[0]?.error || "Connection failed"
+            : null;
 
         dispatch({
           type: "SET_PROJECT_CONNECTION",
           payload: {
             projectKey,
             status: createProjectConnectionStatus(
-              "connected",
+              connectionError ? "error" : "connected",
               connection.config.baseUrl,
               connectionKind ?? "project",
+              connectionError ?? undefined,
             ),
           },
         });
 
+        // History is server data, not a live backend capability.  Desktop and
+        // mobile should both show the same sessions for a remote workspace even
+        // when a specific agent backend is currently unhealthy/unavailable for
+        // new work.  Keep loading the session index after a failed connect and
+        // only mark the backend hydration as failed after history has merged.
         const sessionResults = await openGuiClient.agentBackends.listProjectSessions({
           backendIds: [backendId],
           target: connection.target,
@@ -834,6 +835,15 @@ function InternalAgentProvider({
             backendIds: [backendId],
           },
         });
+
+        if (connectionError) {
+          updateProjectHydration(projectKey, (current) =>
+            settleProjectHydration(current, {
+              failedBackends: { [backendId]: connectionError },
+            }),
+          );
+          return { backendId, success: false as const, error: connectionError };
+        }
 
         try {
           const queuedPromptsBySession = await openGuiClient.sessions.queue.listProject({

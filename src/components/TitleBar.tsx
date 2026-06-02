@@ -445,7 +445,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
                 </SortableContext>
               </DndContext>
             )}
-            {showWorkspaceTabs && canManageWorkspaces && (
+            {canManageWorkspaces && (
               <Button
                 variant="ghost"
                 size="icon"
