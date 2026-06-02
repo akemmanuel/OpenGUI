@@ -629,12 +629,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         const cmd = commands.find((c) => c.name === commandName);
         if (cmd) {
           try {
-            await sendCommand(commandName, args);
             if (currentDraftKey) clearSessionDraft(currentDraftKey);
             setValue("");
             setImagePreviews([]);
             setShowSlash(false);
             resetHistory();
+            await sendCommand(commandName, args);
           } finally {
             submittingRef.current = false;
           }
