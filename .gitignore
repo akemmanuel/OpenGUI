@@ -57,3 +57,6 @@ changes.patch
 .claude/
 .pi/
 .opencode/
+
+# Local build/debug artifacts
+build/
