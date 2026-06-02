@@ -17,17 +17,17 @@ function session(overrides: Partial<Session>): Session {
 
 describe("Harness routing", () => {
   test("routes existing Session operations to the Session Harness", () => {
-    expect(resolveSessionHarnessRoute(session({ _backendId: "codex" })).backendId).toBe("codex");
+    expect(resolveSessionHarnessRoute(session({ _backendId: "codex" })).harnessId).toBe("codex");
   });
 
   test("infers legacy Session Harnesses from Session IDs", () => {
-    expect(resolveSessionHarnessRoute(session({ id: "claude-code:abc" })).backendId).toBe(
+    expect(resolveSessionHarnessRoute(session({ id: "claude-code:abc" })).harnessId).toBe(
       "claude-code",
     );
   });
 
   test("does not invent a Harness for untagged existing Sessions", () => {
-    expect(resolveSessionHarnessRoute(session({ id: "unknown" })).backendId).toBeNull();
+    expect(resolveSessionHarnessRoute(session({ id: "unknown" })).harnessId).toBeNull();
   });
 
   test("creates Pending prompt Sessions with active target Harness first", () => {
@@ -36,7 +36,7 @@ describe("Harness routing", () => {
         activeTargetBackendId: "pi",
         preferredBackendId: "opencode",
       }),
-    ).toEqual({ backendId: "pi", reason: "active-target", locked: false });
+    ).toEqual({ harnessId: "pi", reason: "active-target", locked: false });
   });
 
   test("creates Pending prompt Sessions with preferred Harness when there is no active target", () => {
@@ -45,7 +45,7 @@ describe("Harness routing", () => {
         activeTargetBackendId: null,
         preferredBackendId: "opencode",
       }),
-    ).toEqual({ backendId: "opencode", reason: "preferred", locked: false });
+    ).toEqual({ harnessId: "opencode", reason: "preferred", locked: false });
   });
 
   test("loads active resources from active Session Harness first", () => {
@@ -55,7 +55,7 @@ describe("Harness routing", () => {
         activeTargetBackendId: "pi",
         preferredBackendId: "opencode",
       }),
-    ).toEqual({ backendId: "claude-code", reason: "session", locked: true });
+    ).toEqual({ harnessId: "claude-code", reason: "session", locked: true });
   });
 
   test("loads active resources from active target before preferred Harness", () => {
@@ -65,6 +65,6 @@ describe("Harness routing", () => {
         activeTargetBackendId: "pi",
         preferredBackendId: "opencode",
       }),
-    ).toEqual({ backendId: "pi", reason: "active-target", locked: false });
+    ).toEqual({ harnessId: "pi", reason: "active-target", locked: false });
   });
 });

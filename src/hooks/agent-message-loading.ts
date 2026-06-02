@@ -58,7 +58,7 @@ export async function fetchSessionMessagePage({
   const resolvedTarget = projectTarget ?? getSessionProjectTarget(session);
   const data = await sessionsClient.getMessages({
     sessionId,
-    backendId: resolveSessionHarnessRoute(session).backendId ?? undefined,
+    backendId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
     options: {
       limit: pageSize,
       before: options?.before,

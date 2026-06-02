@@ -38,7 +38,7 @@ export interface SessionQueueOrchestrator {
 
 function getSessionLookup(session: Session | undefined): QueueLookup {
   return {
-    backendId: resolveSessionHarnessRoute(session).backendId ?? undefined,
+    backendId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
     target: getSessionProjectTarget(session) ?? undefined,
   };
 }

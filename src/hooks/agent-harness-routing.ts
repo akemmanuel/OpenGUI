@@ -5,13 +5,13 @@ import type { Session } from "@/hooks/agent-state-types";
 export type HarnessRouteReason = "session" | "active-target" | "preferred";
 
 export type HarnessRoute = {
-  backendId: AgentBackendId;
+  harnessId: AgentBackendId;
   reason: HarnessRouteReason;
   locked: boolean;
 };
 
 export type SessionHarnessRoute = {
-  backendId: AgentBackendId | null;
+  harnessId: AgentBackendId | null;
   reason: "session" | null;
   locked: true;
 };
@@ -19,10 +19,10 @@ export type SessionHarnessRoute = {
 export function resolveSessionHarnessRoute(
   session: Session | null | undefined,
 ): SessionHarnessRoute {
-  const backendId = getSessionBackendId(session);
+  const harnessId = getSessionBackendId(session);
   return {
-    backendId,
-    reason: backendId ? "session" : null,
+    harnessId,
+    reason: harnessId ? "session" : null,
     locked: true,
   };
 }
@@ -35,9 +35,9 @@ export function resolvePendingPromptCreationHarnessRoute({
   preferredBackendId: AgentBackendId;
 }): HarnessRoute {
   if (activeTargetBackendId) {
-    return { backendId: activeTargetBackendId, reason: "active-target", locked: false };
+    return { harnessId: activeTargetBackendId, reason: "active-target", locked: false };
   }
-  return { backendId: preferredBackendId, reason: "preferred", locked: false };
+  return { harnessId: preferredBackendId, reason: "preferred", locked: false };
 }
 
 export function resolveActiveResourceHarnessRoute({
@@ -51,10 +51,10 @@ export function resolveActiveResourceHarnessRoute({
 }): HarnessRoute {
   const sessionBackendId = getSessionBackendId(activeSession);
   if (sessionBackendId) {
-    return { backendId: sessionBackendId, reason: "session", locked: true };
+    return { harnessId: sessionBackendId, reason: "session", locked: true };
   }
   if (activeTargetBackendId) {
-    return { backendId: activeTargetBackendId, reason: "active-target", locked: false };
+    return { harnessId: activeTargetBackendId, reason: "active-target", locked: false };
   }
-  return { backendId: preferredBackendId, reason: "preferred", locked: false };
+  return { harnessId: preferredBackendId, reason: "preferred", locked: false };
 }

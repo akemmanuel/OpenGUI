@@ -62,7 +62,7 @@ export async function sendPromptToAgent({
   const baseUrl = getWorkspaceBaseUrl?.(workspaceId);
   const projectTarget =
     baseUrl || workspaceId ? { ...rawProjectTarget, workspaceId, baseUrl } : rawProjectTarget;
-  const backendId = resolveSessionHarnessRoute(session).backendId ?? undefined;
+  const backendId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
 
   await sessions.prompt({
     sessionId,

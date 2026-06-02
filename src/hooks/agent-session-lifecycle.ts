@@ -84,21 +84,6 @@ function getForkBaseTitle(title: string | null | undefined): string {
   return trimmed.match(FORK_TITLE_RE)?.[2]?.trim() || trimmed;
 }
 
-export function resolveSessionCreationBackendId({
-  activeTargetBackendId,
-  preferredBackendId,
-}: {
-  activeTargetBackendId: AgentBackendId | null;
-  sessions?: Session[];
-  activeSessionId?: string | null;
-  preferredBackendId: AgentBackendId;
-}) {
-  return resolvePendingPromptCreationHarnessRoute({
-    activeTargetBackendId,
-    preferredBackendId,
-  }).backendId;
-}
-
 export function createSessionDeletionPlan({
   sessionId,
   sessions,
@@ -242,12 +227,10 @@ export async function createLifecycleSession({
   selectSession: (sessionId: string, options?: { session?: Session }) => Promise<void>;
   dispatch: (action: LifecycleAction) => void;
 }): Promise<Session | null> {
-  const backendId = resolveSessionCreationBackendId({
+  const backendId = resolvePendingPromptCreationHarnessRoute({
     activeTargetBackendId: state.activeTargetBackendId,
-    sessions: state.sessions,
-    activeSessionId: state.activeSessionId,
     preferredBackendId,
-  });
+  }).harnessId;
 
   try {
     if (directory) {

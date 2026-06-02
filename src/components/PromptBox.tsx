@@ -1,23 +1,21 @@
-import type { Command } from "@opencode-ai/sdk/v2/client";
 import {
   ArrowUp,
   Check,
   GitBranch,
   ListEnd,
-  Loader2,
   Paperclip,
   Plus,
   Square,
   Wrench,
   X,
-  Minimize2,
 } from "lucide-react";
 import * as React from "react";
 import { AgentSelector } from "@/components/AgentSelector";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
 import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
-import { SlashCommandPopover, useFilteredCommands } from "@/components/SlashCommandPopover";
+import { PromptContextStatus } from "@/components/PromptContextStatus";
+import { SlashCommandPopover } from "@/components/SlashCommandPopover";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,14 +24,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { VariantSelector } from "@/components/VariantSelector";
 import { WorktreeDialog } from "@/components/WorktreeDialog";
 import { WorktreeSetupDialog } from "@/components/WorktreeSetupDialog";
-import { useOpenGuiClient } from "@/protocol/provider";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
+import { useFileMention } from "@/hooks/use-file-mention";
 import { useListKeyboardNavigation } from "@/hooks/use-list-keyboard-navigation";
 import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigation";
+import { usePromptCompaction } from "@/hooks/use-prompt-compaction";
+import { usePromptDraft } from "@/hooks/use-prompt-draft";
+import { getNextPrimaryAgent } from "@/hooks/use-primary-agent-cycle";
+import { usePromptImages } from "@/hooks/use-prompt-images";
+import { usePromptSubmit } from "@/hooks/use-prompt-submit";
+import { usePromptWorktreeSelector } from "@/hooks/use-prompt-worktree-selector";
+import { useSlashCommandInput } from "@/hooks/use-slash-command-input";
 import {
   type QueueMode,
   useActions,
@@ -43,21 +47,9 @@ import {
   useSessionState,
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
-import { compressImage } from "@/lib/image-compression";
-import {
-  getSessionDraftImages,
-  getSessionDraftKey,
-  persistSessionDraftImages,
-} from "@/lib/session-drafts";
+import { getSessionDraftKey } from "@/lib/session-drafts";
 import { shouldShowStopButton } from "@/lib/session-controls";
-import {
-  compareWorktreesByLabel,
-  getWorktreeLabel,
-  getWorkspaceRootProjectDirectory,
-  isRootWorktreePath,
-} from "@/lib/worktree-placement";
-import { cn, getPrimaryAgents, normalizeProjectPath } from "@/lib/utils";
-import type { GitWorktree } from "@/types/electron";
+import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps extends Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
@@ -102,18 +94,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
-    const [value, setValue] = React.useState("");
-    const [imagePreviews, setImagePreviews] = React.useState<string[]>([]);
-    const [isDragging, setIsDragging] = React.useState(false);
     const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
     const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<string | null>(null);
     const [setupWorktreePath, setSetupWorktreePath] = React.useState<string | null>(null);
-    const [discoveredWorktrees, setDiscoveredWorktrees] = React.useState<GitWorktree[]>([]);
-    const [worktreeDiscoveryState, setWorktreeDiscoveryState] = React.useState<
-      "hidden" | "ready" | "error"
-    >("hidden");
-
-    const [isCompacting, setIsCompacting] = React.useState(false);
 
     const isDisabled = Boolean(props.disabled);
 
@@ -134,72 +117,29 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
     const { messages } = useMessages();
 
-    // Detect if compaction is in-progress: session is busy AND message immediately
-    // before current running message is summary marker.
-    const isCompactingInProgress = React.useMemo(() => {
-      if (!isLoading || messages.length < 2) return false;
-      const lastMsg = messages.at(-1);
-      const prevMsg = messages.at(-2);
-      if (!lastMsg || !prevMsg) return false;
-      return (
-        lastMsg.info.role === "user" &&
-        prevMsg.info.role === "assistant" &&
-        "summary" in prevMsg.info &&
-        prevMsg.info.summary === true
-      );
-    }, [isLoading, messages]);
+    const promptCompaction = usePromptCompaction({
+      isLoading,
+      messages,
+      summarizeSession,
+    });
 
     const { activeWorkspaceId, worktreeParents, isLocalWorkspace } = useConnectionState();
-    const worktreeParentsRef = React.useRef(worktreeParents);
-    const registerWorktreeRef = React.useRef(registerWorktree);
-    const syncingDraftRef = React.useRef(false);
-    const syncingImageDraftRef = React.useRef(false);
-    const sessionDraftsRef = React.useRef(sessionDrafts);
-    const sessionDraftImagesRef = React.useRef(getSessionDraftImages());
     const activeSession = React.useMemo(
       () => sessions.find((session) => session.id === activeSessionId) ?? null,
       [sessions, activeSessionId],
     );
-    const selectedWorktreeDirectory = React.useMemo(
-      () =>
-        normalizeProjectPath(
-          activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? "",
-        ) || null,
-      [activeSession, activeTargetDirectory],
-    );
-    const projectDir = React.useMemo(() => {
-      if (!selectedWorktreeDirectory) return null;
-      return getWorkspaceRootProjectDirectory(selectedWorktreeDirectory, worktreeParents);
-    }, [selectedWorktreeDirectory, worktreeParents]);
-    const isDraftWorktreeSelection = !activeSessionId && Boolean(activeTargetDirectory);
+    const worktreeSelector = usePromptWorktreeSelector({
+      activeSession,
+      activeSessionId,
+      activeTargetDirectory,
+      worktreeParents,
+      isLocalWorkspace,
+      registerWorktree,
+    });
+    const selectedWorktreeDirectory = worktreeSelector.selectedDirectory;
+    const projectDir = worktreeSelector.projectDir;
 
     // Slash command popover state
-    const [showSlash, setShowSlash] = React.useState(false);
-    const [slashFilter, setSlashFilter] = React.useState("");
-    const [slashActiveIndex, setSlashActiveIndex] = React.useState(0);
-    const filteredSlashCommands = useFilteredCommands(commands, slashFilter);
-
-    // @file mention popover state
-    const [showFileMention, setShowFileMention] = React.useState(false);
-    const [fileMentionResults, setFileMentionResults] = React.useState<string[]>([]);
-    const [fileMentionActiveIndex, setFileMentionActiveIndex] = React.useState(0);
-    const [fileMentionLoading, setFileMentionLoading] = React.useState(false);
-    const [fileMentionEmptyMessage, setFileMentionEmptyMessage] = React.useState<string | null>(
-      null,
-    );
-    // Position of the "@" character that triggered the popover
-    const fileMentionAnchorRef = React.useRef(-1);
-    const fileMentionDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // Clear pending debounce timeout on unmount
-    React.useEffect(() => {
-      return () => {
-        if (fileMentionDebounceRef.current !== null) {
-          clearTimeout(fileMentionDebounceRef.current);
-          fileMentionDebounceRef.current = null;
-        }
-      };
-    }, []);
 
     const primaryAgents = React.useMemo(
       () => getPrimaryAgents(agents).map((a) => a.name),
@@ -216,6 +156,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       [activeSessionId, activeTargetDirectory, activeWorkspaceId],
     );
 
+    const { value, setValue, imagePreviews, setImagePreviews, clearPromptDraft } = usePromptDraft({
+      draftKey: currentDraftKey,
+      sessionDrafts,
+      setSessionDraft,
+      clearSessionDraft,
+    });
+
     const { handleHistoryKeyDown, noteManualInput, resetHistory } = usePromptHistoryNavigation({
       messages,
       value,
@@ -225,160 +172,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       textareaRef: internalTextareaRef,
     });
 
-    React.useEffect(() => {
-      sessionDraftsRef.current = sessionDrafts;
-    }, [sessionDrafts]);
-
-    React.useEffect(() => {
-      worktreeParentsRef.current = worktreeParents;
-    }, [worktreeParents]);
-
-    React.useEffect(() => {
-      registerWorktreeRef.current = registerWorktree;
-    }, [registerWorktree]);
-
-    const client = useOpenGuiClient();
-
-    React.useEffect(() => {
-      if (!projectDir || !isLocalWorkspace) {
-        setDiscoveredWorktrees([]);
-        setWorktreeDiscoveryState("hidden");
-        return;
-      }
-
-      let cancelled = false;
-
-      void Promise.all([client.git.isRepo(projectDir), client.git.listWorktrees(projectDir)])
-        .then(([isRepo, worktrees]) => {
-          if (cancelled) return;
-          if (!isRepo) {
-            setDiscoveredWorktrees([]);
-            setWorktreeDiscoveryState("hidden");
-            return;
-          }
-          const normalizedWorktrees = worktrees.map((worktree) => ({
-            ...worktree,
-            path: normalizeProjectPath(worktree.path),
-          }));
-          for (const worktree of normalizedWorktrees) {
-            if (worktree.path === projectDir || worktreeParentsRef.current[worktree.path]) continue;
-            registerWorktreeRef.current(worktree.path, projectDir, worktree.branch ?? "unknown");
-          }
-          setDiscoveredWorktrees(normalizedWorktrees);
-          setWorktreeDiscoveryState("ready");
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setDiscoveredWorktrees([]);
-          setWorktreeDiscoveryState("error");
-        });
-
-      return () => {
-        cancelled = true;
-      };
-    }, [client, projectDir, isLocalWorkspace]);
-
-    const worktreeOptions = React.useMemo(() => {
-      if (worktreeDiscoveryState !== "ready" || !projectDir) return [];
-      const byPath = new Map<string, GitWorktree>();
-      for (const worktree of discoveredWorktrees) {
-        const normalizedPath = normalizeProjectPath(worktree.path);
-        if (!normalizedPath) continue;
-        byPath.set(normalizedPath, {
-          ...worktree,
-          path: normalizedPath,
-        });
-      }
-      if (selectedWorktreeDirectory && !byPath.has(selectedWorktreeDirectory)) {
-        byPath.set(selectedWorktreeDirectory, {
-          path: selectedWorktreeDirectory,
-          branch: worktreeParents[selectedWorktreeDirectory]?.branch,
-        });
-      }
-      if (!Array.from(byPath.keys()).some((path) => isRootWorktreePath(path, projectDir))) {
-        byPath.set(projectDir, {
-          path: projectDir,
-          branch: worktreeParents[projectDir]?.branch,
-        });
-      }
-      return Array.from(byPath.values())
-        .sort((left, right) => {
-          const leftIsRoot = isRootWorktreePath(left.path, projectDir);
-          const rightIsRoot = isRootWorktreePath(right.path, projectDir);
-          if (leftIsRoot !== rightIsRoot) return leftIsRoot ? -1 : 1;
-          return compareWorktreesByLabel(left, right, projectDir);
-        })
-        .map((worktree) => ({
-          ...worktree,
-          isRoot: isRootWorktreePath(worktree.path, projectDir),
-          label: getWorktreeLabel({ ...worktree, rootDirectory: projectDir }),
-        }));
-    }, [
-      discoveredWorktrees,
-      projectDir,
-      selectedWorktreeDirectory,
-      worktreeDiscoveryState,
-      worktreeParents,
-    ]);
-
-    const selectedWorktreeOption = React.useMemo(
-      () => worktreeOptions.find((option) => option.path === selectedWorktreeDirectory) ?? null,
-      [worktreeOptions, selectedWorktreeDirectory],
-    );
-
-    const shouldShowWorktreeSelector =
-      Boolean(projectDir) && isLocalWorkspace && worktreeDiscoveryState === "ready";
-
-    React.useEffect(() => {
-      syncingDraftRef.current = true;
-      syncingImageDraftRef.current = true;
-      setValue(currentDraftKey ? (sessionDraftsRef.current[currentDraftKey] ?? "") : "");
-      setImagePreviews(
-        currentDraftKey ? [...(sessionDraftImagesRef.current[currentDraftKey] ?? [])] : [],
-      );
-      setShowSlash(false);
-      setShowFileMention(false);
-      setFileMentionResults([]);
-      setFileMentionEmptyMessage(null);
-      fileMentionAnchorRef.current = -1;
-    }, [currentDraftKey]);
-
-    React.useEffect(() => {
-      if (!currentDraftKey) return;
-      if (syncingDraftRef.current) {
-        syncingDraftRef.current = false;
-        return;
-      }
-      const existingDraft = sessionDrafts[currentDraftKey] ?? "";
-      if (value.trim().length === 0) {
-        if (existingDraft) clearSessionDraft(currentDraftKey);
-        return;
-      }
-      if (existingDraft !== value) {
-        setSessionDraft(currentDraftKey, value);
-      }
-    }, [clearSessionDraft, currentDraftKey, sessionDrafts, setSessionDraft, value]);
-
-    React.useEffect(() => {
-      if (!currentDraftKey) return;
-      if (syncingImageDraftRef.current) {
-        syncingImageDraftRef.current = false;
-        return;
-      }
-      const existingImages = sessionDraftImagesRef.current[currentDraftKey] ?? [];
-      const unchanged =
-        existingImages.length === imagePreviews.length &&
-        existingImages.every((image, index) => image === imagePreviews[index]);
-      if (unchanged) return;
-      const next = { ...sessionDraftImagesRef.current };
-      if (imagePreviews.length === 0) {
-        delete next[currentDraftKey];
-      } else {
-        next[currentDraftKey] = [...imagePreviews];
-      }
-      sessionDraftImagesRef.current = next;
-      persistSessionDraftImages(next);
-    }, [currentDraftKey, imagePreviews]);
+    const worktreeOptions = worktreeSelector.options;
+    const selectedWorktreeOption = worktreeSelector.selectedOption;
+    const shouldShowWorktreeSelector = worktreeSelector.shouldShowSelector;
 
     React.useImperativeHandle(ref, () => internalTextareaRef.current as HTMLTextAreaElement, []);
 
@@ -398,17 +194,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       }
     }, [autoFocus, activeSessionId, props.disabled]);
 
-    const appendImages = React.useCallback(
-      async (files: FileList | File[]) => {
-        if (isDisabled) return;
-        const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
-        if (imageFiles.length === 0) return;
-        const results = await Promise.all(imageFiles.map(compressImage));
-        setImagePreviews((prev) => [...prev, ...results]);
-      },
-      [isDisabled],
-    );
-
     // Helper to determine which project directory to search
     const getActiveDirectory = React.useCallback((): string | null => {
       if (activeSessionId) {
@@ -418,6 +203,25 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       return activeTargetDirectory;
     }, [activeSessionId, sessions, activeTargetDirectory]);
 
+    const fileMention = useFileMention({
+      value,
+      setValue,
+      textareaRef: internalTextareaRef,
+      findFiles,
+      getActiveDirectory,
+    });
+    const slashCommand = useSlashCommandInput({
+      enabled: Boolean(capabilities?.commands),
+      commands,
+      setValue,
+      textareaRef: internalTextareaRef,
+    });
+
+    React.useEffect(() => {
+      fileMention.reset();
+      slashCommand.reset();
+    }, [currentDraftKey, fileMention.reset, slashCommand.reset]);
+
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
       setValue(newValue);
@@ -425,240 +229,46 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
       noteManualInput();
 
-      // Detect slash command input: "/" at start with no spaces
-      const slashMatch = newValue.match(/^\/(\S*)$/);
-      if (capabilities?.commands && slashMatch) {
-        setSlashFilter(slashMatch[1] ?? "");
-        setSlashActiveIndex(0);
-        setShowSlash(true);
-      } else {
-        setShowSlash(false);
-      }
-
-      // Detect @file mention: scan backward from cursor for "@"
-      const cursorPos = e.target.selectionStart;
-      const textBeforeCursor = newValue.slice(0, cursorPos);
-
-      // Find the last "@" that is at start or preceded by whitespace
-      let atIndex = -1;
-      for (let i = textBeforeCursor.length - 1; i >= 0; i--) {
-        const ch = textBeforeCursor[i];
-        // If we hit whitespace before finding @, stop (no active mention)
-        if (ch === " " || ch === "\n" || ch === "\t") break;
-        if (ch === "@") {
-          // Valid if at start or preceded by whitespace
-          if (i === 0 || /\s/.test(textBeforeCursor[i - 1] ?? "")) {
-            atIndex = i;
-          }
-          break;
-        }
-      }
-
-      if (atIndex >= 0) {
-        const query = textBeforeCursor.slice(atIndex + 1);
-        fileMentionAnchorRef.current = atIndex;
-        setFileMentionActiveIndex(0);
-        setShowFileMention(true);
-
-        // Debounce the API call
-        if (fileMentionDebounceRef.current) {
-          clearTimeout(fileMentionDebounceRef.current);
-        }
-        if (query.trim().length === 0) {
-          setFileMentionLoading(false);
-          setFileMentionResults([]);
-          setFileMentionEmptyMessage("Type to search files");
-          return;
-        }
-        setFileMentionEmptyMessage(null);
-        setFileMentionLoading(true);
-        fileMentionDebounceRef.current = setTimeout(async () => {
-          try {
-            const activeDir = getActiveDirectory();
-            const results = await findFiles(activeDir, query);
-            setFileMentionResults(results.slice(0, 20));
-            setFileMentionEmptyMessage(results.length === 0 ? "No matching files" : null);
-          } catch {
-            setFileMentionResults([]);
-            setFileMentionEmptyMessage("File search failed");
-          } finally {
-            setFileMentionLoading(false);
-          }
-        }, 150);
-      } else {
-        setShowFileMention(false);
-        setFileMentionResults([]);
-        setFileMentionEmptyMessage(null);
-        fileMentionAnchorRef.current = -1;
-        if (fileMentionDebounceRef.current) {
-          clearTimeout(fileMentionDebounceRef.current);
-          fileMentionDebounceRef.current = null;
-        }
-      }
+      slashCommand.updateForInput(newValue);
+      fileMention.updateForInput(newValue, e.target.selectionStart);
     };
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-      if (isDisabled) return;
-      if (event.target.files) {
-        void appendImages(event.target.files);
-      }
-      event.target.value = "";
-    };
+    const promptImages = usePromptImages({
+      disabled: isDisabled,
+      setImagePreviews,
+    });
 
-    const handleRemoveImage = (index: number, e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
-      setImagePreviews((prev) => prev.filter((_, i) => i !== index));
-    };
-
-    const handleDragOver = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (isDisabled) return;
-      setIsDragging(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragging(false);
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (isDisabled) return;
-      setIsDragging(false);
-      if (e.dataTransfer.files.length > 0) {
-        void appendImages(e.dataTransfer.files);
-      }
-    };
-
-    const handlePaste = (e: React.ClipboardEvent) => {
-      if (isDisabled) return;
-      const items = Array.from(e.clipboardData.items);
-      const imageFiles: File[] = [];
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          const file = item.getAsFile();
-          if (file) imageFiles.push(file);
-        }
-      }
-      if (imageFiles.length > 0) {
-        void appendImages(imageFiles);
-      }
-    };
-
-    const hasValue = value.trim().length > 0 || imagePreviews.length > 0;
-
-    const handleFileMentionSelect = React.useCallback(
-      (filePath: string) => {
-        const anchor = fileMentionAnchorRef.current;
-        if (anchor < 0) return;
-        const textarea = internalTextareaRef.current;
-        const cursorPos = textarea?.selectionStart ?? value.length;
-
-        // Replace @query with @filepath + trailing space
-        const before = value.slice(0, anchor);
-        const after = value.slice(cursorPos);
-        const insertion = `@${filePath} `;
-        const newValue = before + insertion + after;
-
-        setValue(newValue);
-        setShowFileMention(false);
-        setFileMentionResults([]);
-        setFileMentionEmptyMessage(null);
-        fileMentionAnchorRef.current = -1;
-
-        // Move cursor to after the inserted mention
-        const newCursorPos = before.length + insertion.length;
-        requestAnimationFrame(() => {
-          textarea?.focus();
-          textarea?.setSelectionRange(newCursorPos, newCursorPos);
-        });
-      },
-      [value],
-    );
-
-    const handleSlashSelect = React.useCallback((cmd: Command) => {
-      // Prefill the input with the command name + space for arguments
-      const text = `/${cmd.name} `;
-      setValue(text);
-      setShowSlash(false);
-      internalTextareaRef.current?.focus();
-    }, []);
-
-    const dismissFileMention = React.useCallback(() => {
-      setShowFileMention(false);
-      setFileMentionResults([]);
-      fileMentionAnchorRef.current = -1;
-    }, []);
+    const promptSubmit = usePromptSubmit({
+      value,
+      imagePreviews,
+      disabled: isDisabled,
+      isLoading,
+      queueMode,
+      parseSlashCommand: slashCommand.parse,
+      sendCommand,
+      onSubmit,
+      clearPromptDraft,
+      resetSlashCommand: slashCommand.reset,
+      resetHistory,
+    });
 
     const handleFileMentionKeyboard = useListKeyboardNavigation({
-      open: showFileMention,
-      items: fileMentionResults,
-      activeIndex: fileMentionActiveIndex,
-      setActiveIndex: setFileMentionActiveIndex,
-      onSelect: handleFileMentionSelect,
-      onDismiss: dismissFileMention,
+      open: fileMention.open,
+      items: fileMention.results,
+      activeIndex: fileMention.activeIndex,
+      setActiveIndex: fileMention.setActiveIndex,
+      onSelect: fileMention.select,
+      onDismiss: fileMention.dismiss,
     });
 
     const handleSlashKeyboard = useListKeyboardNavigation({
-      open: Boolean(capabilities?.commands && showSlash),
-      items: filteredSlashCommands,
-      activeIndex: slashActiveIndex,
-      setActiveIndex: setSlashActiveIndex,
-      onSelect: handleSlashSelect,
-      onDismiss: () => setShowSlash(false),
+      open: slashCommand.open,
+      items: slashCommand.filteredCommands,
+      activeIndex: slashCommand.activeIndex,
+      setActiveIndex: slashCommand.setActiveIndex,
+      onSelect: slashCommand.select,
+      onDismiss: slashCommand.reset,
     });
-
-    const submittingRef = React.useRef(false);
-
-    const handleSubmit = async () => {
-      if (submittingRef.current) return;
-      if (isDisabled) return;
-      if (!hasValue) return;
-      submittingRef.current = true;
-
-      // Intercept slash commands
-      if (capabilities?.commands && value.startsWith("/")) {
-        const trimmed = value.trim();
-        const spaceIndex = trimmed.indexOf(" ");
-        const commandName = spaceIndex > 0 ? trimmed.slice(1, spaceIndex) : trimmed.slice(1);
-        const args = spaceIndex > 0 ? trimmed.slice(spaceIndex + 1) : "";
-
-        const cmd = commands.find((c) => c.name === commandName);
-        if (cmd) {
-          try {
-            if (currentDraftKey) clearSessionDraft(currentDraftKey);
-            setValue("");
-            setImagePreviews([]);
-            setShowSlash(false);
-            resetHistory();
-            await sendCommand(commandName, args);
-          } finally {
-            submittingRef.current = false;
-          }
-          return;
-        }
-      }
-
-      try {
-        const images = imagePreviews.length > 0 ? imagePreviews : undefined;
-        await onSubmit?.(value, images, isLoading ? queueMode : undefined);
-        if (currentDraftKey) {
-          clearSessionDraft(currentDraftKey);
-          const next = { ...sessionDraftImagesRef.current };
-          delete next[currentDraftKey];
-          sessionDraftImagesRef.current = next;
-          persistSessionDraftImages(next);
-        }
-        setValue("");
-        setImagePreviews([]);
-        resetHistory();
-      } finally {
-        submittingRef.current = false;
-      }
-    };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (handleFileMentionKeyboard(e)) return;
@@ -669,18 +279,17 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (isDisabled) return;
-        void handleSubmit();
+        void promptSubmit.submit();
       }
       if (capabilities?.agents && e.key === "Tab" && primaryAgents.length > 1) {
         e.preventDefault();
-        const effective = selectedAgent ?? "build";
-        const currentIndex = primaryAgents.indexOf(effective);
-        const idx = currentIndex === -1 ? 0 : currentIndex;
-        const next = e.shiftKey
-          ? (idx - 1 + primaryAgents.length) % primaryAgents.length
-          : (idx + 1) % primaryAgents.length;
-        const nextAgent = primaryAgents[next];
-        setAgent(nextAgent === "build" ? null : (nextAgent ?? null));
+        setAgent(
+          getNextPrimaryAgent({
+            primaryAgents,
+            selectedAgent,
+            shiftKey: e.shiftKey,
+          }),
+        );
       }
     };
 
@@ -689,12 +298,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         ref={containerRef}
         aria-label="Message input"
         data-slot="prompt-box"
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        onDragOver={promptImages.handleDragOver}
+        onDragLeave={promptImages.handleDragLeave}
+        onDrop={promptImages.handleDrop}
         className={cn(
           "flex flex-col bg-background px-2 pt-2 shadow-xs transition-colors cursor-text border rounded-xl",
-          isDragging && "border-ring ring-ring/50 ring-[3px]",
+          promptImages.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
         )}
         onClick={() => internalTextareaRef.current?.focus()}
@@ -704,28 +313,28 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           }
         }}
       >
-        {showFileMention &&
-          (fileMentionResults.length > 0 || fileMentionLoading || fileMentionEmptyMessage) && (
+        {fileMention.open &&
+          (fileMention.results.length > 0 || fileMention.loading || fileMention.emptyMessage) && (
             <div className="relative">
               <FileMentionPopover
-                files={fileMentionResults}
-                activeIndex={fileMentionActiveIndex}
-                onSelect={handleFileMentionSelect}
-                onHover={setFileMentionActiveIndex}
-                loading={fileMentionLoading}
-                emptyMessage={fileMentionEmptyMessage}
+                files={fileMention.results}
+                activeIndex={fileMention.activeIndex}
+                onSelect={fileMention.select}
+                onHover={fileMention.setActiveIndex}
+                loading={fileMention.loading}
+                emptyMessage={fileMention.emptyMessage}
               />
             </div>
           )}
 
-        {capabilities?.commands && showSlash && filteredSlashCommands.length > 0 && (
+        {slashCommand.open && slashCommand.filteredCommands.length > 0 && (
           <div className="relative">
             <SlashCommandPopover
               commands={commands}
-              filter={slashFilter}
-              activeIndex={slashActiveIndex}
-              onSelect={handleSlashSelect}
-              onHover={setSlashActiveIndex}
+              filter={slashCommand.filter}
+              activeIndex={slashCommand.activeIndex}
+              onSelect={slashCommand.select}
+              onHover={slashCommand.setActiveIndex}
             />
           </div>
         )}
@@ -733,7 +342,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         <input
           type="file"
           ref={fileInputRef}
-          onChange={handleFileChange}
+          onChange={promptImages.handleFileChange}
           className="hidden"
           accept="image/*"
           multiple
@@ -752,7 +361,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                   variant="secondary"
                   size="icon-xs"
                   className="absolute -right-1.5 -top-1.5"
-                  onClick={(e) => handleRemoveImage(idx, e)}
+                  onClick={(e) => promptImages.removeImage(idx, e)}
                   aria-label="Remove image"
                 >
                   <X />
@@ -769,7 +378,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           value={value}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
+          onPaste={promptImages.handlePaste}
           placeholder={
             isDisabled
               ? "Select or create a session..."
@@ -856,7 +465,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
           {shouldShowWorktreeSelector && selectedWorktreeOption && (
             <div className="flex min-w-0 items-center gap-1">
-              {isDraftWorktreeSelection ? (
+              {worktreeSelector.isPendingTargetSelection ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -950,100 +559,22 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
           <div className="ml-auto flex items-center gap-1.5">
             {capabilities?.compact && contextPercent != null && contextPercent >= 0 && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <div className="flex">
-                    <button
-                      type="button"
-                      className={cn(
-                        "flex items-center gap-1 text-[11px] tabular-nums select-none cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors",
-                        (isCompacting || isCompactingInProgress) && "animate-pulse",
-                        contextPercent >= 90
-                          ? "text-destructive hover:text-destructive"
-                          : contextPercent >= 70
-                            ? "text-amber-500 hover:text-amber-600"
-                            : "text-muted-foreground/70 hover:text-foreground",
-                      )}
-                    >
-                      {isCompacting || isCompactingInProgress ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 20 20"
-                          className="shrink-0 -rotate-90"
-                          aria-hidden="true"
-                        >
-                          <circle
-                            cx="10"
-                            cy="10"
-                            r="8"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            opacity="0.2"
-                          />
-                          <circle
-                            cx="10"
-                            cy="10"
-                            r="8"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
-                          />
-                        </svg>
-                      )}
-                      {isCompacting || isCompactingInProgress
-                        ? "Compacting"
-                        : contextPercent === 0
-                          ? "0%"
-                          : contextPercent < 1
-                            ? "<1%"
-                            : `${contextPercent}%`}
-                    </button>
-                  </div>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="center" className="w-48 p-3 text-xs z-50">
-                  <div className="font-semibold mb-2">Context window</div>
-                  {contextTokens != null && contextLimit != null ? (
-                    <div className="text-muted-foreground mb-1">
-                      {contextTokens.toLocaleString()} / {contextLimit.toLocaleString()} tokens
-                    </div>
-                  ) : contextTokens != null ? (
-                    <div className="text-muted-foreground mb-1">
-                      {contextTokens.toLocaleString()} tokens
-                    </div>
-                  ) : null}
-                  {contextCost != null && contextCost > 0 && (
-                    <div className="text-muted-foreground mb-2">
-                      Cost: ${contextCost < 0.01 ? contextCost.toFixed(6) : contextCost.toFixed(4)}
-                    </div>
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full mt-2 gap-2"
-                    disabled={isLoading || isDisabled || isCompactingInProgress}
-                    onClick={async () => {
-                      setIsCompacting(true);
-                      try {
-                        await summarizeSession();
-                      } finally {
-                        setIsCompacting(false);
-                      }
-                    }}
-                  >
-                    <Minimize2 className="size-3" />
-                    Compact
-                  </Button>
-                </PopoverContent>
-              </Popover>
+              <PromptContextStatus
+                contextPercent={contextPercent}
+                contextTokens={contextTokens}
+                contextCost={contextCost}
+                contextLimit={contextLimit}
+                isLoading={isLoading}
+                isDisabled={isDisabled}
+                isCompacting={promptCompaction.isCompacting}
+                isCompactingInProgress={promptCompaction.isCompactingInProgress}
+                onCompact={promptCompaction.compact}
+              />
             )}
-            {shouldShowStopButton({ isLoading, isCompactingInProgress }) ? (
+            {shouldShowStopButton({
+              isLoading,
+              isCompactingInProgress: promptCompaction.isCompactingInProgress,
+            }) ? (
               <Button
                 type="button"
                 size="icon-sm"
@@ -1063,10 +594,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 size="icon-sm"
                 variant="default"
                 title={isLoading ? (queueMode === "after-part" ? "Steer" : "Queue") : "Send"}
-                disabled={isDisabled || !hasValue}
+                disabled={isDisabled || !promptSubmit.hasValue}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void handleSubmit();
+                  void promptSubmit.submit();
                 }}
               >
                 <ArrowUp />

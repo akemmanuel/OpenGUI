@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentBackendId } from "@/agents";
 import { AGENT_BACKEND_IDS } from "@/agents";
-import { resolveActiveResourceHarnessRoute } from "@/hooks/agent-harness-routing";
+import {
+  resolveActiveResourceHarnessRoute,
+  type HarnessRoute,
+} from "@/hooks/agent-harness-routing";
 import { useSessionState } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/safe-storage";
@@ -50,7 +53,7 @@ function useAllAgentBackends() {
   }, [openGuiClient]);
 }
 
-function useResourceAgentBackendId() {
+export function useActiveResourceHarnessRoute(): HarnessRoute {
   const preferredBackendId = useCurrentAgentBackendId();
   const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
@@ -58,15 +61,21 @@ function useResourceAgentBackendId() {
     activeSession,
     activeTargetBackendId,
     preferredBackendId,
-  }).backendId;
+  });
+}
+
+export function useRoutedAgentBackend(backendId?: AgentBackendId) {
+  const allBackends = useAllAgentBackends();
+  const route = useActiveResourceHarnessRoute();
+  const resolvedBackendId = backendId ?? route.harnessId;
+  const openGuiClient = useOpenGuiClient();
+  const backend =
+    allBackends[resolvedBackendId] ?? openGuiClient.agentBackends.get(resolvedBackendId);
+  return { backend, route };
 }
 
 export function useAgentBackend(backendId?: AgentBackendId) {
-  const allBackends = useAllAgentBackends();
-  const resourceBackendId = useResourceAgentBackendId();
-  const resolvedBackendId = backendId ?? resourceBackendId;
-  const openGuiClient = useOpenGuiClient();
-  return allBackends[resolvedBackendId] ?? openGuiClient.agentBackends.get(resolvedBackendId);
+  return useRoutedAgentBackend(backendId).backend;
 }
 
 export function useAvailableBackendIds() {

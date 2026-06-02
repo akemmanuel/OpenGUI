@@ -16,13 +16,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { resolveActiveResourceHarnessRoute } from "@/hooks/agent-harness-routing";
-import {
-  useAvailableBackendIds,
-  useBackendCapabilities,
-  useCurrentAgentBackendId,
-} from "@/hooks/use-agent-backend";
-import { useActions, useModelState, useSessionState } from "@/hooks/use-agent-state";
+import { useAvailableBackendIds, useRoutedAgentBackend } from "@/hooks/use-agent-backend";
+import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
 import {
   filterModelSearchCandidates,
@@ -140,18 +135,11 @@ function ModelRow({
 export function ModelSelector() {
   const { setModel, setActiveTargetBackend } = useActions();
   const { providers, selectedModel } = useModelState();
-  const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
   const availableBackendIds = useAvailableBackendIds();
-  const preferredBackendId = useCurrentAgentBackendId();
-  const capabilities = useBackendCapabilities();
-  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
-  const selectedHarnessRoute = resolveActiveResourceHarnessRoute({
-    activeSession,
-    activeTargetBackendId,
-    preferredBackendId,
-  });
-  const lockedBackendId = selectedHarnessRoute.locked ? selectedHarnessRoute.backendId : null;
-  const selectedBackendId = selectedHarnessRoute.backendId;
+  const { backend, route: selectedHarnessRoute } = useRoutedAgentBackend();
+  const capabilities = backend?.capabilities;
+  const lockedBackendId = selectedHarnessRoute.locked ? selectedHarnessRoute.harnessId : null;
+  const selectedBackendId = selectedHarnessRoute.harnessId;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
