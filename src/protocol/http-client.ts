@@ -1,10 +1,5 @@
 import type { AgentBackendId } from "@/agents";
-import {
-  AGENT_BACKEND_IDS,
-  AGENT_BACKEND_LABELS,
-  createAgentIdCodec,
-  getAgentBackendIdFromSessionId,
-} from "@/agents";
+import { AGENT_BACKEND_IDS, AGENT_BACKEND_LABELS, getAgentBackendIdFromSessionId } from "@/agents";
 import type {
   AgentBackendDescriptor,
   AgentBackendEvent,
@@ -38,6 +33,7 @@ import type {
   UpdateProjectInput,
   UpdateWorkspaceInput,
 } from "@/protocol/client";
+import { composeFrontendSessionId } from "@/lib/session-identity";
 import type {
   BackendDetectionResult,
   GitMergeResult,
@@ -436,7 +432,6 @@ function eventUrl(
 interface SessionRecordResponse {
   id: string;
   rawId: string;
-  workspaceId: string;
   projectId: string;
   harnessId: AgentBackendId;
   title: string;
@@ -444,6 +439,12 @@ interface SessionRecordResponse {
   updatedAt: string;
   status: "idle" | "running" | "error" | "unknown";
   metadata?: Record<string, unknown>;
+}
+
+type BackendProjectResponse = Omit<OpenGuiProject, "workspaceId"> & { workspaceId?: string };
+
+function toFrontendProject(project: BackendProjectResponse, workspaceId?: string): OpenGuiProject {
+  return { ...project, workspaceId: workspaceId ?? project.workspaceId ?? "local" };
 }
 
 interface SessionListResponse {
@@ -455,14 +456,12 @@ interface SessionQueryResponse {
   items: Array<{
     frontendProjectId: string;
     directory: string;
-    workspaceId?: string;
     harnessId: AgentBackendId;
     sessions: SessionRecordResponse[];
   }>;
   errors?: Array<{
     frontendProjectId: string;
     directory: string;
-    workspaceId?: string;
     harnessId?: AgentBackendId;
     error: string;
   }>;
@@ -481,7 +480,6 @@ interface CanonicalEventEnvelope {
   id: string;
   type: string;
   createdAt: string;
-  workspaceId?: string;
   projectId?: string;
   sessionId?: string;
   harnessId?: string;
@@ -614,10 +612,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     const directory = target?.directory;
     if (!directory) return null;
     const normalizedDirectory = directory.replace(/[\\/]+$/, "");
-    const projects = await requestAt<OpenGuiProject[]>(
-      requestBaseUrlForTarget(target),
-      "/api/projects",
-    );
+    const projects = (
+      await requestAt<BackendProjectResponse[]>(requestBaseUrlForTarget(target), "/api/projects")
+    ).map((project) => toFrontendProject(project, target?.workspaceId));
     return (
       projects.find(
         (project) =>
@@ -635,17 +632,20 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     if (!target?.directory) return null;
     const existing = await findProjectForTarget(target);
     if (existing) return existing;
-    return await requestAt<OpenGuiProject>(requestBaseUrlForTarget(target), "/api/projects", {
-      method: "POST",
-      body: JSON.stringify({
-        path: target.directory,
-        displayName: toProjectDisplayName(target.directory),
-      } satisfies CreateProjectInput),
-    });
+    return toFrontendProject(
+      await requestAt<BackendProjectResponse>(requestBaseUrlForTarget(target), "/api/projects", {
+        method: "POST",
+        body: JSON.stringify({
+          path: target.directory,
+          displayName: toProjectDisplayName(target.directory),
+        } satisfies CreateProjectInput),
+      }),
+      target.workspaceId,
+    );
   };
 
   const frontendSessionIdFromRecord = (record: SessionRecordResponse) =>
-    createAgentIdCodec(record.harnessId).compose(record.rawId);
+    composeFrontendSessionId(record.harnessId, record.rawId);
 
   const rememberSessionRecord = (record: SessionRecordResponse) => {
     sessionRecordByCanonicalId.set(record.id, record);
@@ -714,7 +714,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   ): ProjectSessionsResult["sessions"][number] => {
     rememberSessionRecord(record);
     if (requestBaseUrl) rememberSessionBaseUrl(record, requestBaseUrl);
-    const resolvedWorkspaceId = workspaceId ?? record.workspaceId;
+    const resolvedWorkspaceId = workspaceId ?? "local";
     return {
       id: frontendSessionIdFromRecord(record),
       slug: record.rawId,
@@ -740,7 +740,12 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   ): Promise<ProjectSessionsResult["sessions"][number]> => {
     const resolvedProject = project ?? (await getProject(record.projectId));
     const directory = resolvedProject?.path ?? resolvedProject?.canonicalPath ?? "";
-    return toFrontendSessionFromDirectory(record, directory, record.workspaceId, requestBaseUrl);
+    return toFrontendSessionFromDirectory(
+      record,
+      directory,
+      resolvedProject?.workspaceId,
+      requestBaseUrl,
+    );
   };
 
   const getSessionRecord = async (sessionId: string, input: SessionLookupInput = { sessionId }) =>
@@ -929,26 +934,36 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       },
     },
     projects: {
-      list: (_workspaceId: string) => request<OpenGuiProject[]>("/api/projects"),
+      list: async (workspaceId: string) =>
+        (await request<BackendProjectResponse[]>("/api/projects")).map((project) =>
+          toFrontendProject(project, workspaceId),
+        ),
       get: async (id: string) => {
         try {
-          return await request<OpenGuiProject>(`/api/projects/${encodeURIComponent(id)}`);
+          return toFrontendProject(
+            await request<BackendProjectResponse>(`/api/projects/${encodeURIComponent(id)}`),
+          );
         } catch (error) {
           if (error instanceof Error && error.message === "Project not found") return null;
           throw error;
         }
       },
-      create: (_workspaceId: string, input: CreateProjectInput) =>
-        request<OpenGuiProject>("/api/projects", {
-          method: "POST",
-          body: JSON.stringify(input),
-        }),
+      create: async (workspaceId: string, input: CreateProjectInput) =>
+        toFrontendProject(
+          await request<BackendProjectResponse>("/api/projects", {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+          workspaceId,
+        ),
       update: async (id: string, input: UpdateProjectInput) => {
         try {
-          return await request<OpenGuiProject>(`/api/projects/${encodeURIComponent(id)}`, {
-            method: "PATCH",
-            body: JSON.stringify(input),
-          });
+          return toFrontendProject(
+            await request<BackendProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {
+              method: "PATCH",
+              body: JSON.stringify(input),
+            }),
+          );
         } catch (error) {
           if (error instanceof Error && error.message === "Project not found") return null;
           throw error;
@@ -978,7 +993,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
                 listener({
                   type: message.type,
                   ...(message.payload as object),
-                  ...(message.workspaceId ? { workspaceId: message.workspaceId } : {}),
                   ...(message.projectId ? { projectId: message.projectId } : {}),
                   ...(message.sessionId ? { sessionId: message.sessionId } : {}),
                   ...(message.harnessId ? { harnessId: message.harnessId } : {}),
@@ -1140,7 +1154,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             const requestBaseUrl = requestBaseUrlForTarget(target);
             const page = await requestAt<SessionListResponse>(
               requestBaseUrl,
-              `/api/sessions?workspaceId=${encodeURIComponent(project.workspaceId)}&projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(backendId)}&sync=true`,
+              `/api/sessions?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(backendId)}&sync=true`,
             );
             return {
               backendId,
@@ -1192,20 +1206,31 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               response.items.map((item) => ({
                 item,
                 requestBaseUrl: groupedRequests[index]?.requestBaseUrl,
+                requestProject: groupedRequests[index]?.projects.find(
+                  (project) => project.frontendProjectId === item.frontendProjectId,
+                ),
               })),
             )
-            .map(({ item, requestBaseUrl }) => ({
+            .map(({ item, requestBaseUrl, requestProject }) => ({
               ...item,
+              workspaceId: requestProject?.workspaceId,
               sessions: item.sessions.map((session) =>
                 toFrontendSessionFromDirectory(
                   session,
                   item.directory,
-                  item.workspaceId,
+                  requestProject?.workspaceId,
                   requestBaseUrl,
                 ),
               ),
             })),
-          errors: responses.flatMap((response) => response.errors ?? []),
+          errors: responses.flatMap((response, index) =>
+            (response.errors ?? []).map((error) => ({
+              ...error,
+              workspaceId: groupedRequests[index]?.projects.find(
+                (project) => project.frontendProjectId === error.frontendProjectId,
+              )?.workspaceId,
+            })),
+          ),
         };
       },
       create: async ({ backendId, title, target }) => {

@@ -23,13 +23,16 @@ export function useFileMention({
   setValue,
   textareaRef,
   findFiles,
-  getActiveDirectory,
+  getActiveTarget,
 }: {
   value: string;
   setValue: (value: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-  findFiles: (directory: string | null, query: string) => Promise<string[]>;
-  getActiveDirectory: () => string | null;
+  findFiles: (
+    target: { directory?: string; workspaceId?: string; baseUrl?: string } | null,
+    query: string,
+  ) => Promise<string[]>;
+  getActiveTarget: () => { directory?: string; workspaceId?: string; baseUrl?: string } | null;
 }) {
   const [open, setOpen] = React.useState(false);
   const [results, setResults] = React.useState<string[]>([]);
@@ -87,8 +90,8 @@ export function useFileMention({
       setLoading(true);
       debounceRef.current = setTimeout(async () => {
         try {
-          const activeDir = getActiveDirectory();
-          const found = await findFiles(activeDir, query);
+          const activeTarget = getActiveTarget();
+          const found = await findFiles(activeTarget, query);
           setResults(found.slice(0, 20));
           setEmptyMessage(found.length === 0 ? "No matching files" : null);
         } catch {
@@ -99,7 +102,7 @@ export function useFileMention({
         }
       }, 150);
     },
-    [clearDebounce, dismiss, findFiles, getActiveDirectory],
+    [clearDebounce, dismiss, findFiles, getActiveTarget],
   );
 
   const select = React.useCallback(

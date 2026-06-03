@@ -91,6 +91,32 @@ describe("createHttpOpenGuiClient", () => {
     });
   });
 
+  test("attaches Workspace presentation state to Backend Project records", async () => {
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      fetchImpl: async (input) => {
+        expect(String(input)).toBe("http://example.test/api/projects");
+        return json({
+          ok: true,
+          value: [
+            {
+              id: "project_1",
+              displayName: "repo",
+              path: "/repo",
+              canonicalPath: "/repo",
+              createdAt: "2026-05-12T00:00:00.000Z",
+              updatedAt: "2026-05-12T00:00:00.000Z",
+            },
+          ],
+        });
+      },
+    });
+
+    await expect(client.projects.list("workspace-1")).resolves.toEqual([
+      expect.objectContaining({ id: "project_1", workspaceId: "workspace-1" }),
+    ]);
+  });
+
   test("connectProject creates the project over HTTP and then connects requested harnesses", async () => {
     const calls: Array<{ input: string; method?: string }> = [];
     const client = createHttpOpenGuiClient({

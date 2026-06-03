@@ -12,6 +12,11 @@ export interface PromptSendState {
   };
 }
 
+export type PromptSendStartAction =
+  | { type: "SET_BUSY"; payload: true }
+  | { type: "TURN_RUN_STARTED"; payload: TurnRun }
+  | { type: "PROMPT_SUBMITTED"; payload: PromptSendState["promptSubmitted"] };
+
 export function createTurnRunStart({
   sessionId,
   selection,
@@ -56,6 +61,21 @@ export function createPromptSendState({
       createdAt: startedAt,
     },
   };
+}
+
+export function createPromptSendStartActions(input: {
+  sessionId: string;
+  text: string;
+  selection: AgentSendSelection;
+  startedAt?: number;
+  turnId?: string;
+}): PromptSendStartAction[] {
+  const promptSendState = createPromptSendState(input);
+  return [
+    { type: "SET_BUSY", payload: true },
+    { type: "TURN_RUN_STARTED", payload: promptSendState.turnRun },
+    { type: "PROMPT_SUBMITTED", payload: promptSendState.promptSubmitted },
+  ];
 }
 
 export function nextNamingRequestId(current: number | undefined): number {

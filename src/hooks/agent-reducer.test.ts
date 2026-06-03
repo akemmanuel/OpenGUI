@@ -36,6 +36,7 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     bootState: "idle",
     bootError: null,
     bootLogs: null,
+    workspaceResources: {},
     providers: [],
     providerDefaults: {},
     selectedModel: null,

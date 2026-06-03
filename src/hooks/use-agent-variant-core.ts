@@ -1,7 +1,8 @@
 import type { Agent, Model, Provider } from "@opencode-ai/sdk/v2/client";
 import { useCallback, useMemo } from "react";
+import { persistVariantSelectionsForWorkspace } from "@/hooks/agent-state-persistence";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageSetJSON, storageSetOrRemove } from "@/lib/safe-storage";
+import { storageSetOrRemove } from "@/lib/safe-storage";
 import { findModel } from "@/lib/utils";
 import type { SelectedModel } from "@/types/electron";
 
@@ -9,11 +10,6 @@ export type VariantSelections = Record<string, string | undefined>;
 
 export function variantKey(providerID: string, modelID: string): string {
   return `${providerID}/${modelID}`;
-}
-
-/** Persist variant selections to storage. */
-function persistVariantSelections(selections: VariantSelections): void {
-  storageSetJSON(STORAGE_KEYS.VARIANT_SELECTIONS, selections);
 }
 
 /**
@@ -96,6 +92,7 @@ interface UseVariantParams {
   agents: Agent[];
   selectedAgent: string | null;
   variantSelections: VariantSelections;
+  workspaceId: string;
   dispatch: (
     action:
       | { type: "SET_SELECTED_MODEL"; payload: SelectedModel | null }
@@ -110,6 +107,7 @@ export function useVariant({
   agents,
   selectedAgent,
   variantSelections,
+  workspaceId,
   dispatch,
 }: UseVariantParams) {
   const model = useMemo(() => {
@@ -148,8 +146,8 @@ export function useVariant({
     if (currentVariant === next) return;
     const newSelections = updateVariantSelections(variantSelections, key, next);
     dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-    persistVariantSelections(newSelections);
-  }, [selectedModel, currentVariant, model, variantSelections, dispatch]);
+    persistVariantSelectionsForWorkspace(workspaceId, newSelections);
+  }, [selectedModel, currentVariant, model, variantSelections, workspaceId, dispatch]);
 
   const setVariant = useCallback(
     (variant: string | undefined) => {
@@ -158,9 +156,9 @@ export function useVariant({
       if (currentVariant === variant) return;
       const newSelections = updateVariantSelections(variantSelections, key, variant);
       dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-      persistVariantSelections(newSelections);
+      persistVariantSelectionsForWorkspace(workspaceId, newSelections);
     },
-    [selectedModel, currentVariant, variantSelections, dispatch],
+    [selectedModel, currentVariant, variantSelections, workspaceId, dispatch],
   );
 
   const revertVariant = useCallback(() => {
@@ -170,8 +168,8 @@ export function useVariant({
     if (currentVariant === previous) return;
     const newSelections = updateVariantSelections(variantSelections, key, previous);
     dispatch({ type: "SET_VARIANT_SELECTIONS", payload: newSelections });
-    persistVariantSelections(newSelections);
-  }, [selectedModel, currentVariant, model, variantSelections, dispatch]);
+    persistVariantSelectionsForWorkspace(workspaceId, newSelections);
+  }, [selectedModel, currentVariant, model, variantSelections, workspaceId, dispatch]);
 
   return {
     currentVariant,

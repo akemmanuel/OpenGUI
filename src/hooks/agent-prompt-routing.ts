@@ -57,6 +57,40 @@ export type PromptDispatchDecision =
       shouldSetAfterPartPending: boolean;
     };
 
+export interface PromptQueueEffect {
+  enqueue: {
+    text: string;
+    images?: string[];
+    model?: QueuedPrompt["model"];
+    agent?: string;
+    variant?: string;
+    mode: QueueMode;
+    insertAt: "front" | "back";
+  };
+  afterEnqueue: "abort" | "mark-after-part-pending" | "none";
+}
+
+export function createPromptQueueEffect(
+  decision: Extract<PromptDispatchDecision, { type: "queue" }>,
+): PromptQueueEffect {
+  return {
+    enqueue: {
+      text: decision.prompt.text,
+      images: decision.prompt.images,
+      model: decision.prompt.model,
+      agent: decision.prompt.agent,
+      variant: decision.prompt.variant,
+      mode: decision.prompt.mode,
+      insertAt: decision.insertAt,
+    },
+    afterEnqueue: decision.shouldAbort
+      ? "abort"
+      : decision.shouldSetAfterPartPending
+        ? "mark-after-part-pending"
+        : "none",
+  };
+}
+
 export function decidePromptDispatch({
   isBusy,
   text,

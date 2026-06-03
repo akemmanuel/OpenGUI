@@ -1,6 +1,6 @@
 import type { Agent } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { decidePromptDispatch } from "./agent-prompt-routing";
+import { createPromptQueueEffect, decidePromptDispatch } from "./agent-prompt-routing";
 
 describe("decidePromptDispatch", () => {
   test("sends direct when session is not busy", () => {
@@ -71,6 +71,9 @@ describe("decidePromptDispatch", () => {
       shouldSetAfterPartPending: false,
     });
     expect(decision.type === "queue" ? decision.prompt.mode : null).toBe("interrupt");
+    expect(decision.type === "queue" ? createPromptQueueEffect(decision).afterEnqueue : null).toBe(
+      "abort",
+    );
   });
 
   test("queues at the front and marks after-part pending", () => {
@@ -93,6 +96,9 @@ describe("decidePromptDispatch", () => {
       shouldSetAfterPartPending: true,
     });
     expect(decision.type === "queue" ? decision.prompt.mode : null).toBe("after-part");
+    expect(decision.type === "queue" ? createPromptQueueEffect(decision).afterEnqueue : null).toBe(
+      "mark-after-part-pending",
+    );
   });
 
   test("falls back to the selected agent variant when no explicit variant is set", () => {

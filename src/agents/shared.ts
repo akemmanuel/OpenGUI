@@ -2,6 +2,7 @@ import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
 import type { AgentBackendEvent, AgentBackendTarget } from "./backend.ts";
 import type { AgentBackendId } from "./index.ts";
+import { composeFrontendSessionId, rawSessionIdForHarness } from "../lib/session-identity.ts";
 
 function normalizeProjectPath(path: string): string {
   const trimmed = path.trim();
@@ -37,9 +38,8 @@ export function requireSuccess<T>(result: BridgeResult<T>, fallback: string): T 
 export function createBackendIdCodec(prefix: AgentBackendId) {
   const marker = `${prefix}:`;
   return {
-    compose: (rawId: string) => (rawId.startsWith(marker) ? rawId : `${marker}${rawId}`),
-    decompose: (sessionId: string) =>
-      sessionId.startsWith(marker) ? sessionId.slice(marker.length) : sessionId,
+    compose: (rawId: string) => composeFrontendSessionId(prefix, rawId),
+    decompose: (sessionId: string) => rawSessionIdForHarness(sessionId, prefix),
     matches: (sessionId: string | null | undefined) => Boolean(sessionId?.startsWith(marker)),
   };
 }

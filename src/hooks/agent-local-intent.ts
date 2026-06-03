@@ -1,4 +1,7 @@
 import type { AgentBackendDescriptor, AgentBackendTarget } from "@/agents/backend";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { planDirectoryChangePrompt } from "@/hooks/agent-directory-change-notice";
+import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import type { SessionMeta } from "@/hooks/agent-state-persistence";
 import {
   resolveAgentSendSelection,
@@ -6,13 +9,17 @@ import {
   sendPromptToAgent,
 } from "@/hooks/agent-send";
 import { createSessionQueueOrchestrator } from "@/hooks/agent-session-queue";
-import { createPromptSendState } from "@/hooks/agent-send-state";
-import { decidePromptDispatch } from "@/hooks/agent-prompt-routing";
+import { createPromptSendStartActions } from "@/hooks/agent-send-state";
+import {
+  processAfterPartQueueTriggers,
+  processBusyToIdleTransitions,
+} from "@/hooks/agent-queue-dispatch";
+import { createPromptQueueEffect, decidePromptDispatch } from "@/hooks/agent-prompt-routing";
 import { decideSessionEntry } from "@/hooks/agent-session-entry";
+import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { InternalAgentState, QueueMode, Session } from "@/hooks/agent-state-types";
 import { getSessionDraftKey } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
-import { normalizeProjectPath } from "@/lib/utils";
 import type { OpenGuiClient } from "@/protocol/client";
 import type { SelectedModel } from "@/types/electron";
 
@@ -47,6 +54,21 @@ export interface LocalIntentOrchestrator {
   ensureSession: () => Promise<string | null>;
 }
 
+interface LocalIntentHookOptions extends Omit<
+  LocalIntentOptions,
+  "dispatchingSessionIds" | "sessionCreatingRef"
+> {
+  state: InternalAgentState;
+  refreshSessionMessages: (
+    sessionId: string,
+    projectTarget?: { directory?: string; workspaceId?: string },
+  ) => Promise<unknown>;
+}
+
+export interface LocalIntentHookResult extends LocalIntentOrchestrator {
+  justIdledMap: Record<string, true>;
+}
+
 function applySessionMetaPatch(
   current: SessionMeta | undefined,
   patch: Partial<SessionMeta>,
@@ -77,38 +99,19 @@ export function createLocalIntentOrchestrator(
   const prepareDirectoryChangePrompt = (sessionId: string, text: string) => {
     const state = getState();
     const meta = state.sessionMeta[sessionId];
-    const targetDirectory = meta?.assignedProjectDir
-      ? normalizeProjectPath(meta.assignedProjectDir)
-      : null;
-    if (!meta?.pendingDirectoryChangeNotice || !targetDirectory) return text;
-
     const session = state.sessions.find((item) => item.id === sessionId);
-    const sourceDirectory = normalizeProjectPath(
-      meta.assignedProjectSourceDir ?? session?._projectDir ?? session?.directory ?? "",
-    );
-    const notice = [
-      "<SYSTEM-APPEND>",
-      `OpenGUI has reassigned this conversation from project \`${sourceDirectory || "unknown"}\` to project \`${targetDirectory}\`.`,
-      "Important: the native backend session may still have its original working directory.",
-      `From now on, treat \`${targetDirectory}\` as the intended project root.`,
-      `When using tools, file paths, search commands, shell commands, or edits, explicitly target \`${targetDirectory}\` unless the user asks otherwise.`,
-      "Do not assume relative paths resolve against the intended project root; use absolute paths when needed.",
-      "Do not mention this implementation detail to the user unless it becomes relevant to explain tool behavior.",
-      "</SYSTEM-APPEND>",
-    ].join("\n");
+    const plan = planDirectoryChangePrompt({ text, session, meta });
+    if (!plan.metaPatch) return plan.text;
 
     dispatch({
       type: "SET_SESSION_META",
       payload: {
         sessionId,
-        meta: applySessionMetaPatch(meta, {
-          pendingDirectoryChangeNotice: false,
-          hideSystemAppendBlocks: true,
-        }),
+        meta: applySessionMetaPatch(meta, plan.metaPatch),
       },
     });
 
-    return `${notice}\n\n${text}`;
+    return plan.text;
   };
 
   const createSessionFromActiveTarget = async (sourceText: string): Promise<string | null> => {
@@ -174,8 +177,6 @@ export function createLocalIntentOrchestrator(
     overrideVariant?: string,
   ) => {
     const state = getState();
-    dispatch({ type: "SET_BUSY", payload: true });
-
     const selection = resolveAgentSendSelection(
       {
         selectedModel: state.selectedModel,
@@ -189,19 +190,9 @@ export function createLocalIntentOrchestrator(
         variant: overrideVariant,
       },
     );
-    const promptSendState = createPromptSendState({
-      sessionId,
-      text,
-      selection,
-    });
-    dispatch({
-      type: "TURN_RUN_STARTED",
-      payload: promptSendState.turnRun,
-    });
-    dispatch({
-      type: "PROMPT_SUBMITTED",
-      payload: promptSendState.promptSubmitted,
-    });
+    for (const action of createPromptSendStartActions({ sessionId, text, selection })) {
+      dispatch(action);
+    }
 
     try {
       const currentState = getState();
@@ -270,19 +261,14 @@ export function createLocalIntentOrchestrator(
     });
 
     if (promptDecision.type === "queue") {
+      const queueEffect = createPromptQueueEffect(promptDecision);
       await sessionQueue.enqueuePrompt({
         sessionId,
-        text: promptDecision.prompt.text,
-        images: promptDecision.prompt.images,
-        model: promptDecision.prompt.model,
-        agent: promptDecision.prompt.agent,
-        variant: promptDecision.prompt.variant,
-        mode: promptDecision.prompt.mode,
-        insertAt: promptDecision.insertAt,
+        ...queueEffect.enqueue,
       });
-      if (promptDecision.shouldAbort) {
+      if (queueEffect.afterEnqueue === "abort") {
         await sessionQueue.abort(sessionId);
-      } else if (promptDecision.shouldSetAfterPartPending) {
+      } else if (queueEffect.afterEnqueue === "mark-after-part-pending") {
         dispatch({
           type: "SET_AFTER_PART_PENDING",
           payload: { sessionID: sessionId, pending: true },
@@ -333,4 +319,91 @@ export function createLocalIntentOrchestrator(
     sendQueuedNow,
     ensureSession,
   };
+}
+
+export function useLocalIntentOrchestration(
+  options: LocalIntentHookOptions,
+): LocalIntentHookResult {
+  const {
+    state,
+    refreshSessionMessages,
+    getState,
+    getResourceRuntime,
+    getCurrentVariant,
+    getWorkspaceBaseUrl,
+    sessionsClient,
+    createSession,
+    scheduleSessionMessageReconcile,
+    requestSessionAutoName,
+    dispatch,
+  } = options;
+
+  const dispatchingRef = useRef<Set<string>>(new Set());
+  const sessionCreatingRef = useRef(false);
+  const prevBusyRef = useRef<Set<string>>(new Set());
+  const [justIdledMap, setJustIdledMap] = useState<Record<string, true>>({});
+
+  const orchestrator = useMemo(
+    () =>
+      createLocalIntentOrchestrator({
+        getState,
+        getResourceRuntime,
+        getCurrentVariant,
+        getWorkspaceBaseUrl,
+        sessionsClient,
+        createSession,
+        scheduleSessionMessageReconcile,
+        requestSessionAutoName,
+        dispatch,
+        dispatchingSessionIds: dispatchingRef.current,
+        sessionCreatingRef,
+      }),
+    [
+      createSession,
+      dispatch,
+      getCurrentVariant,
+      getResourceRuntime,
+      getState,
+      getWorkspaceBaseUrl,
+      requestSessionAutoName,
+      scheduleSessionMessageReconcile,
+      sessionsClient,
+    ],
+  );
+
+  useEffect(() => {
+    const next = processBusyToIdleTransitions({
+      previousBusySessionIds: prevBusyRef.current,
+      currentBusySessionIds: state.busySessionIds,
+      activeSessionId: getState().activeSessionId,
+      sessions: getState().sessions,
+      dispatchNextQueued: orchestrator.dispatchNextQueued,
+      refreshSessionMessages,
+    });
+    setJustIdledMap((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length === nextKeys.length && nextKeys.every((key) => prev[key])) return prev;
+      return next;
+    });
+    prevBusyRef.current = new Set(state.busySessionIds);
+  }, [state.busySessionIds, getState, orchestrator.dispatchNextQueued, refreshSessionMessages]);
+
+  useEffect(() => {
+    if (state._afterPartTriggered.size === 0) return;
+    processAfterPartQueueTriggers({
+      sessionIds: state._afterPartTriggered,
+      abortSession: (input) => {
+        const session = getState().sessions.find((item) => item.id === input.sessionId);
+        return sessionsClient.abort({
+          ...input,
+          backendId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+          target: getSessionProjectTarget(session) ?? undefined,
+        });
+      },
+      dispatch: dispatch as never,
+    });
+  }, [state._afterPartTriggered, sessionsClient, getState, dispatch]);
+
+  return { ...orchestrator, justIdledMap };
 }

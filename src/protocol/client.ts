@@ -290,10 +290,7 @@ export interface OpenGuiClient {
     };
   };
   files: {
-    find(input: {
-      target: Pick<AgentBackendTarget, "directory">;
-      query: string;
-    }): Promise<string[]>;
+    find(input: { target: AgentBackendTarget; query: string }): Promise<string[]>;
   };
   git: {
     isRepo(directory: string): Promise<boolean>;

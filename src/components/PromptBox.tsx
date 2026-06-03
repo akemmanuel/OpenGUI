@@ -123,7 +123,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       summarizeSession,
     });
 
-    const { activeWorkspaceId, worktreeParents, isLocalWorkspace } = useConnectionState();
+    const { activeWorkspaceId, workspaceServerUrl, worktreeParents, isLocalWorkspace } =
+      useConnectionState();
     const activeSession = React.useMemo(
       () => sessions.find((session) => session.id === activeSessionId) ?? null,
       [sessions, activeSessionId],
@@ -194,21 +195,31 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       }
     }, [autoFocus, activeSessionId, props.disabled]);
 
-    // Helper to determine which project directory to search
-    const getActiveDirectory = React.useCallback((): string | null => {
+    // Helper to determine which backend target to search.
+    const getActiveTarget = React.useCallback(() => {
       if (activeSessionId) {
         const activeSession = sessions.find((s) => s.id === activeSessionId);
-        return activeSession?._projectDir ?? activeSession?.directory ?? null;
+        const directory = activeSession?._projectDir ?? activeSession?.directory ?? undefined;
+        const workspaceId = activeSession?._workspaceId ?? activeWorkspaceId ?? undefined;
+        return {
+          directory,
+          workspaceId,
+          baseUrl: workspaceServerUrl ?? undefined,
+        };
       }
-      return activeTargetDirectory;
-    }, [activeSessionId, sessions, activeTargetDirectory]);
+      return {
+        directory: activeTargetDirectory ?? undefined,
+        workspaceId: activeWorkspaceId ?? undefined,
+        baseUrl: workspaceServerUrl ?? undefined,
+      };
+    }, [activeSessionId, sessions, activeTargetDirectory, activeWorkspaceId, workspaceServerUrl]);
 
     const fileMention = useFileMention({
       value,
       setValue,
       textareaRef: internalTextareaRef,
       findFiles,
-      getActiveDirectory,
+      getActiveTarget,
     });
     const slashCommand = useSlashCommandInput({
       enabled: Boolean(capabilities?.commands),

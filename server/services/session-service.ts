@@ -1,4 +1,9 @@
 import type { HarnessId } from "../../src/agents/index.ts";
+import {
+  harnessRawSessionKey,
+  parseFrontendSessionId,
+  scopedRawSessionKey,
+} from "../../src/lib/session-identity.ts";
 import type { BackendEventBus } from "./event-bus.ts";
 import type { SessionMappingRecord, StorageService } from "./storage-service.ts";
 import type {
@@ -9,22 +14,8 @@ import type {
   UpdateSessionInput,
 } from "./session-types.ts";
 
-const KNOWN_HARNESS_IDS = ["opencode", "claude-code", "pi", "codex"] as const;
-
 function createCanonicalSessionId(): string {
   return `session_${crypto.randomUUID()}`;
-}
-
-function createRawSessionKey(input: {
-  projectId: string;
-  harnessId: HarnessId;
-  rawId: string;
-}): string {
-  return [input.projectId, input.harnessId, input.rawId].join("::");
-}
-
-function createHarnessRawKey(harnessId: HarnessId, rawId: string): string {
-  return `${harnessId}::${rawId}`;
 }
 
 function encodeCursor(offset: number): string {
@@ -41,18 +32,6 @@ function decodeCursor(cursor?: string | null): number {
   } catch {
     return 0;
   }
-}
-
-function parseHarnessPrefixedSessionId(
-  value: string,
-): { harnessId: HarnessId; rawId: string } | null {
-  for (const harnessId of KNOWN_HARNESS_IDS) {
-    const prefix = `${harnessId}:`;
-    if (value.startsWith(prefix)) {
-      return { harnessId, rawId: value.slice(prefix.length) };
-    }
-  }
-  return null;
 }
 
 function sameMetadata(
@@ -92,7 +71,7 @@ export class SessionService {
         this.storeMapping(mapping, false);
       }
       for (const session of sessions) {
-        const mappingKey = createRawSessionKey({
+        const mappingKey = scopedRawSessionKey({
           projectId: session.projectId,
           harnessId: session.harnessId,
           rawId: session.rawId,
@@ -163,7 +142,7 @@ export class SessionService {
     rawId: string;
   }): Promise<SessionRecord | null> {
     await this.ensureInitialized();
-    const canonicalId = this.rawToCanonical.get(createRawSessionKey(input));
+    const canonicalId = this.rawToCanonical.get(scopedRawSessionKey(input));
     return canonicalId ? (this.sessions.get(canonicalId) ?? null) : null;
   }
 
@@ -328,7 +307,7 @@ export class SessionService {
   ): string | null {
     if (this.sessions.has(idOrAlias)) return idOrAlias;
 
-    const parsed = parseHarnessPrefixedSessionId(idOrAlias);
+    const parsed = parseFrontendSessionId(idOrAlias);
     if (parsed) {
       return this.resolveByHarnessRawId(parsed.harnessId, parsed.rawId, scope);
     }
@@ -355,7 +334,7 @@ export class SessionService {
     scope: Pick<ListSessionsInput, "projectId" | "harnessId">,
   ): string | null {
     const matches = [
-      ...(this.harnessRawToCanonical.get(createHarnessRawKey(harnessId, rawId)) ?? []),
+      ...(this.harnessRawToCanonical.get(harnessRawSessionKey(harnessId, rawId)) ?? []),
     ]
       .map((id) => this.sessions.get(id))
       .filter((session): session is SessionRecord => Boolean(session))
@@ -387,14 +366,14 @@ export class SessionService {
 
   private storeMapping(mapping: SessionMappingRecord, persist = true) {
     this.rawToCanonical.set(
-      createRawSessionKey({
+      scopedRawSessionKey({
         projectId: mapping.projectId,
         harnessId: mapping.harnessId,
         rawId: mapping.rawId,
       }),
       mapping.canonicalSessionId,
     );
-    const harnessRawKey = createHarnessRawKey(mapping.harnessId, mapping.rawId);
+    const harnessRawKey = harnessRawSessionKey(mapping.harnessId, mapping.rawId);
     const existing = this.harnessRawToCanonical.get(harnessRawKey) ?? new Set<string>();
     existing.add(mapping.canonicalSessionId);
     this.harnessRawToCanonical.set(harnessRawKey, existing);
@@ -405,13 +384,13 @@ export class SessionService {
 
   private async removeStoredSession(session: SessionRecord) {
     this.sessions.delete(session.id);
-    const rawKey = createRawSessionKey({
+    const rawKey = scopedRawSessionKey({
       projectId: session.projectId,
       harnessId: session.harnessId,
       rawId: session.rawId,
     });
     this.rawToCanonical.delete(rawKey);
-    const harnessRawKey = createHarnessRawKey(session.harnessId, session.rawId);
+    const harnessRawKey = harnessRawSessionKey(session.harnessId, session.rawId);
     const set = this.harnessRawToCanonical.get(harnessRawKey);
     if (set) {
       set.delete(session.id);

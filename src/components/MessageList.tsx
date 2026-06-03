@@ -22,6 +22,7 @@ import {
   useMessages,
   useSessionState,
 } from "@/hooks/use-agent-state";
+import type { TurnRun } from "@/hooks/agent-state-types";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
 
@@ -182,16 +183,50 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
 
   const turnFooterByMessageId = useMemo(() => {
     const footerByMessageId = new Map<string, TurnFooter>();
-    const visibleMessageIds = new Set(visibleMessages.map((entry) => entry.info.id));
+
+    type AssistantTurn = {
+      user?: MessageEntry;
+      assistants: MessageEntry[];
+    };
+
+    const assistantTurns: AssistantTurn[] = [];
+    let currentTurn: AssistantTurn | null = null;
+
+    const flushTurn = () => {
+      if (currentTurn?.assistants.length) assistantTurns.push(currentTurn);
+    };
+
+    for (const entry of visibleMessages) {
+      if (entry.info.role === "user") {
+        flushTurn();
+        currentTurn = { user: entry, assistants: [] };
+        continue;
+      }
+      if (entry.info.role !== "assistant") continue;
+      if (!currentTurn) currentTurn = { assistants: [] };
+      currentTurn.assistants.push(entry);
+    }
+    flushTurn();
+
+    const latestAssistantForRun = (turn: TurnRun) => {
+      const byBoundMessage = assistantTurns.find((candidate) =>
+        candidate.assistants.some((entry) => entry.info.id === turn.assistantMessageID),
+      );
+      if (byBoundMessage) return byBoundMessage.assistants.at(-1);
+
+      const byTime = assistantTurns.find((candidate) => {
+        const firstAssistant = candidate.assistants[0];
+        const lastAssistant = candidate.assistants.at(-1);
+        if (!firstAssistant || !lastAssistant) return false;
+        const firstCreated = firstAssistant.info.time.created;
+        const lastCreated = lastAssistant.info.time.created;
+        return lastCreated >= turn.startedAt && firstCreated <= (turn.completedAt ?? Date.now());
+      });
+      return byTime?.assistants.at(-1);
+    };
 
     for (const turn of Object.values(turnRuns)) {
-      const matchingAssistantId =
-        turn.assistantMessageID && visibleMessageIds.has(turn.assistantMessageID)
-          ? turn.assistantMessageID
-          : visibleMessages.findLast(
-              (entry) =>
-                entry.info.role === "assistant" && entry.info.time.created >= turn.startedAt,
-            )?.info.id;
+      const matchingAssistantId = latestAssistantForRun(turn)?.info.id;
       if (!matchingAssistantId) continue;
       footerByMessageId.set(matchingAssistantId, {
         startedAt: turn.startedAt,
@@ -203,32 +238,41 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
       });
     }
 
-    const latestAssistantByParentId = new Map<string, MessageEntry>();
-    for (const entry of visibleMessages) {
-      if (entry.info.role !== "assistant") continue;
-      const parentId = "parentID" in entry.info ? entry.info.parentID : undefined;
-      if (!parentId) continue;
-      latestAssistantByParentId.set(parentId, entry);
-    }
-
-    for (const entry of latestAssistantByParentId.values()) {
+    for (const assistantTurn of assistantTurns) {
+      const entry = assistantTurn.assistants.at(-1);
+      if (!entry) continue;
       if (footerByMessageId.has(entry.info.id)) continue;
 
+      const assistantWithProvider = assistantTurn.assistants.findLast(
+        (item) => "providerID" in item.info && typeof item.info.providerID === "string",
+      );
+      const assistantWithModel = assistantTurn.assistants.findLast(
+        (item) => "modelID" in item.info && typeof item.info.modelID === "string",
+      );
+      const assistantWithVariant = assistantTurn.assistants.findLast(
+        (item) => "variant" in item.info && nonEmptyString(item.info.variant),
+      );
       const providerID =
-        "providerID" in entry.info && typeof entry.info.providerID === "string"
-          ? entry.info.providerID
+        assistantWithProvider && "providerID" in assistantWithProvider.info
+          ? assistantWithProvider.info.providerID
           : undefined;
       const modelID =
-        "modelID" in entry.info && typeof entry.info.modelID === "string"
-          ? entry.info.modelID
+        assistantWithModel && "modelID" in assistantWithModel.info
+          ? assistantWithModel.info.modelID
           : undefined;
-      const completedAt = (entry.info.time as { completed?: number }).completed;
-      const parentId = "parentID" in entry.info ? entry.info.parentID : undefined;
-      const parent = visibleMessages.find((item) => item.info.id === parentId);
+      const completedAssistant = assistantTurn.assistants.findLast(
+        (item) => typeof (item.info.time as { completed?: number }).completed === "number",
+      );
+      const completedAt = completedAssistant
+        ? (completedAssistant.info.time as { completed?: number }).completed
+        : undefined;
+      const parent = assistantTurn.user;
       const parentModel =
         parent?.info.role === "user" && "model" in parent.info ? parent.info.model : null;
       const thinkingLevel =
-        ("variant" in entry.info ? nonEmptyString(entry.info.variant) : undefined) ??
+        (assistantWithVariant && "variant" in assistantWithVariant.info
+          ? nonEmptyString(assistantWithVariant.info.variant)
+          : undefined) ??
         (parentModel && typeof parentModel === "object" && "variant" in parentModel
           ? nonEmptyString(parentModel.variant)
           : undefined);

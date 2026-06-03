@@ -348,6 +348,9 @@ jobs:
             artifacts/mac-release/*.dmg
             artifacts/mac-release/*.zip
             artifacts/mac-release/*.blockmap
+            artifacts/mac-release-arm64/*.dmg
+            artifacts/mac-release-arm64/*.zip
+            artifacts/mac-release-arm64/*.blockmap
             artifacts/mac-release/latest-mac.yml
             artifacts/windows-nsis/*.exe
             artifacts/windows-nsis/*.blockmap

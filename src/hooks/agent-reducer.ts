@@ -56,21 +56,27 @@ import {
 import { prependProjectIfMissing } from "@/lib/sidebar-order";
 import { normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, ProvidersData, SelectedModel, Workspace } from "@/types/electron";
+import {
+  backendSessionIdentity,
+  rawSessionIdForHarness,
+  sameBackendSessionIdentity,
+} from "@/lib/session-identity";
 
 const MAX_DELETED_SESSION_IDS = 200;
 
 function getBackendSessionIdentity(session: Session) {
-  const backendId = getSessionBackendId(session);
-  if (!backendId) return session.id;
-  const marker = `${backendId}:`;
-  const rawId =
-    session._rawId ??
-    (session.id.startsWith(marker) ? session.id.slice(marker.length) : session.id);
-  return `${backendId}:${rawId}`;
+  return backendSessionIdentity({
+    id: session.id,
+    _backendId: getSessionBackendId(session) ?? undefined,
+    _rawId: session._rawId,
+  });
 }
 
 function sameBackendSession(a: Session, b: Session) {
-  return getBackendSessionIdentity(a) === getBackendSessionIdentity(b);
+  return sameBackendSessionIdentity(
+    { id: a.id, _backendId: getSessionBackendId(a) ?? undefined, _rawId: a._rawId },
+    { id: b.id, _backendId: getSessionBackendId(b) ?? undefined, _rawId: b._rawId },
+  );
 }
 
 function getTurnRunIdForSession(state: InternalAgentState, sessionID: string) {
@@ -113,18 +119,13 @@ function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Messag
             : run.providerID,
         modelID: "modelID" in msg && typeof msg.modelID === "string" ? msg.modelID : run.modelID,
         thinkingLevel: run.thinkingLevel,
-        ...(completedAt ? { completedAt, status: "completed" as const } : {}),
+        // OpenCode can emit several completed assistant messages for one user turn
+        // (assistant text, tool calls, follow-up assistant text, ...).  A
+        // message-level completed timestamp is not a turn-level completion
+        // signal; SESSION_STATUS idle is the canonical end of the live turn.
+        ...(completedAt ? { completedAt } : {}),
       },
     },
-    ...(completedAt
-      ? {
-          activeTurnRunBySession: Object.fromEntries(
-            Object.entries(state.activeTurnRunBySession).filter(
-              ([, turnId]) => turnId !== activeTurnId,
-            ),
-          ),
-        }
-      : {}),
   } satisfies Partial<InternalAgentState>;
 }
 
@@ -234,6 +235,20 @@ type Action =
       type: "SET_QUESTION";
       payload: QuestionRequest | { sessionID: string; clear: true };
     }
+  | {
+      type: "SET_WORKSPACE_RESOURCES";
+      payload: {
+        workspaceId: string;
+        backendId: AgentBackendId;
+        projectKey: string | null;
+        providersData: ProvidersData;
+        agentsData: Agent[];
+        commandsData: Command[];
+        variantSelections: VariantSelections;
+      };
+    }
+  | { type: "ACTIVATE_WORKSPACE_RESOURCES"; payload: { workspaceId: string } }
+  | { type: "EVICT_WORKSPACE_RESOURCES"; payload: { workspaceId: string } }
   | { type: "SET_PROVIDERS"; payload: ProvidersData }
   | { type: "SET_SELECTED_MODEL"; payload: SelectedModel | null }
   | { type: "SET_AGENTS"; payload: Agent[] }
@@ -351,7 +366,9 @@ export function mergeProjectBackendSessions({
   const incomingBackendRawKeys = new Set(
     incoming.flatMap((session) => {
       const backendId = getSessionBackendId(session);
-      const rawId = session._rawId ?? session.id.replace(/^[^:]+:/, "");
+      const rawId = backendId
+        ? (session._rawId ?? rawSessionIdForHarness(session.id, backendId))
+        : session.id;
       return backendId ? [`${backendId}\0${rawId}`] : [];
     }),
   );
@@ -359,7 +376,9 @@ export function mergeProjectBackendSessions({
     ...current.filter((session) => {
       if (incomingIds.has(session.id)) return false;
       const sessionBackendId = getSessionBackendId(session);
-      const sessionRawId = session._rawId ?? session.id.replace(/^[^:]+:/, "");
+      const sessionRawId = sessionBackendId
+        ? (session._rawId ?? rawSessionIdForHarness(session.id, sessionBackendId))
+        : session.id;
       if (sessionBackendId && incomingBackendRawKeys.has(`${sessionBackendId}\0${sessionRawId}`)) {
         return false;
       }
@@ -411,8 +430,18 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return changed ? { ...state, workspaces: nextWorkspaces } : state;
     }
 
-    case "SET_ACTIVE_WORKSPACE":
-      return { ...state, activeWorkspaceId: action.payload };
+    case "SET_ACTIVE_WORKSPACE": {
+      const resources = state.workspaceResources[action.payload];
+      return {
+        ...state,
+        activeWorkspaceId: action.payload,
+        providers: resources?.providers ?? [],
+        providerDefaults: resources?.providerDefaults ?? {},
+        agents: resources?.agents ?? [],
+        commands: resources?.commands ?? [],
+        variantSelections: resources?.variantSelections ?? {},
+      };
+    }
 
     case "REORDER_WORKSPACES": {
       const { fromIndex, toIndex } = action.payload;
@@ -919,6 +948,68 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       };
     }
 
+    case "SET_WORKSPACE_RESOURCES": {
+      const { workspaceId, backendId, projectKey, providersData, agentsData, commandsData } =
+        action.payload;
+      const resourceState = {
+        providers: providersData.providers,
+        providerDefaults: providersData.default,
+        agents: agentsData,
+        commands: commandsData,
+        variantSelections: action.payload.variantSelections,
+        loadedBackendId: backendId,
+        loadedProjectKey: projectKey,
+      };
+      const isActive = workspaceId === state.activeWorkspaceId;
+      return {
+        ...state,
+        workspaceResources: {
+          ...state.workspaceResources,
+          [workspaceId]: resourceState,
+        },
+        ...(isActive
+          ? {
+              providers: resourceState.providers,
+              providerDefaults: resourceState.providerDefaults,
+              agents: resourceState.agents,
+              commands: resourceState.commands,
+              variantSelections: resourceState.variantSelections,
+            }
+          : null),
+      };
+    }
+
+    case "ACTIVATE_WORKSPACE_RESOURCES": {
+      const resources = state.workspaceResources[action.payload.workspaceId];
+      return {
+        ...state,
+        providers: resources?.providers ?? [],
+        providerDefaults: resources?.providerDefaults ?? {},
+        agents: resources?.agents ?? [],
+        commands: resources?.commands ?? [],
+        variantSelections: resources?.variantSelections ?? {},
+      };
+    }
+
+    case "EVICT_WORKSPACE_RESOURCES": {
+      const { [action.payload.workspaceId]: _removed, ...workspaceResources } =
+        state.workspaceResources;
+      const isActive = action.payload.workspaceId === state.activeWorkspaceId;
+      return {
+        ...state,
+        workspaceResources,
+        ...(isActive
+          ? {
+              providers: [],
+              providerDefaults: {},
+              agents: [],
+              commands: [],
+              variantSelections: {},
+            }
+          : null),
+      };
+    }
+
     case "SET_PROVIDERS":
       return {
         ...state,
@@ -938,8 +1029,23 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     case "SET_SELECTED_AGENT":
       return { ...state, selectedAgent: action.payload };
 
-    case "SET_VARIANT_SELECTIONS":
-      return { ...state, variantSelections: action.payload };
+    case "SET_VARIANT_SELECTIONS": {
+      const activeWorkspaceId = state.activeWorkspaceId;
+      const existing = state.workspaceResources[activeWorkspaceId];
+      return {
+        ...state,
+        variantSelections: action.payload,
+        workspaceResources: existing
+          ? {
+              ...state.workspaceResources,
+              [activeWorkspaceId]: {
+                ...existing,
+                variantSelections: action.payload,
+              },
+            }
+          : state.workspaceResources,
+      };
+    }
 
     case "SESSION_CREATED": {
       // Ignore subagent / child sessions - only root sessions appear in the sidebar.

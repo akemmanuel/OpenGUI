@@ -4,7 +4,6 @@ import type { ProjectRecord } from "./storage-service.ts";
 import type { SessionRecord } from "./session-types.ts";
 
 export interface BackendEventRefs {
-  workspaceId?: string;
   projectId?: string;
   sessionId?: string;
   harnessId?: string;

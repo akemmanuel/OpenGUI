@@ -97,7 +97,10 @@ export interface ActionsContextValue {
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   sendPrompt: (text: string, images?: string[], mode?: QueueMode) => Promise<void>;
-  findFiles: (directory: string | null, query: string) => Promise<string[]>;
+  findFiles: (
+    target: { directory?: string; workspaceId?: string; baseUrl?: string } | null,
+    query: string,
+  ) => Promise<string[]>;
   sendCommand: (command: string, args: string) => Promise<void>;
   summarizeSession: (model?: SelectedModel) => Promise<void>;
   abortSession: () => Promise<void>;

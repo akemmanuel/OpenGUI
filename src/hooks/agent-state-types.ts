@@ -54,6 +54,23 @@ export interface TurnRun {
   thinkingLevel?: string;
 }
 
+export interface WorkspaceResourceState {
+  /** Available providers and their models for this workspace. */
+  providers: Provider[];
+  /** Default model mappings from this workspace's server config. */
+  providerDefaults: { [key: string]: string };
+  /** Available agents from this workspace's server. */
+  agents: Agent[];
+  /** Available slash commands from this workspace's server. */
+  commands: Command[];
+  /** Per-model variant selections for this workspace. */
+  variantSelections: VariantSelections;
+  /** Backend that produced this resource catalog. */
+  loadedBackendId: AgentBackendId | null;
+  /** Workspace-scoped project key that produced this resource catalog. */
+  loadedProjectKey: string | null;
+}
+
 export interface InternalAgentState {
   /** Configured workspaces. */
   workspaces: Workspace[];
@@ -91,7 +108,9 @@ export interface InternalAgentState {
   bootError: string | null;
   /** Server process logs captured during a failed startup */
   bootLogs: string | null;
-  /** Available providers and their models */
+  /** Resource catalogs keyed by workspace ID. */
+  workspaceResources: Record<string, WorkspaceResourceState>;
+  /** Available providers and their models for the active workspace */
   providers: Provider[];
   /** Default model mappings from server config */
   providerDefaults: { [key: string]: string };

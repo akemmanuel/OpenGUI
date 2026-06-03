@@ -1,0 +1,58 @@
+import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
+import type { QueueMode } from "../../src/lib/session-drafts.ts";
+import type { SelectedModel } from "../../src/types/electron.d.ts";
+
+export async function readJsonBody(request: Request) {
+  try {
+    return await request.json();
+  } catch {
+    throw new Error("Invalid JSON body");
+  }
+}
+
+export function toOptionalString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${fieldName} must be a string`);
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+export function toOptionalNullableString(
+  value: unknown,
+  fieldName: string,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") throw new Error(`${fieldName} must be a string or null`);
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+export function toOptionalImages(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : undefined;
+}
+
+export function toOptionalSelectedModel(value: unknown): SelectedModel | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as unknown as SelectedModel)
+    : undefined;
+}
+
+export function toQueueMode(value: unknown, fallback: QueueMode): QueueMode;
+export function toQueueMode(value: unknown, fallback?: QueueMode): QueueMode | undefined;
+export function toQueueMode(value: unknown, fallback?: QueueMode): QueueMode | undefined {
+  const mode = toOptionalString(value, "mode");
+  if (mode !== "queue" && mode !== "interrupt" && mode !== "after-part") return fallback;
+  return mode;
+}
+
+export function toQuestionAnswers(value: unknown): QuestionAnswer[] {
+  return Array.isArray(value)
+    ? (value.filter(
+        (item): item is Record<string, unknown> =>
+          !!item && typeof item === "object" && !Array.isArray(item),
+      ) as unknown as QuestionAnswer[])
+    : [];
+}

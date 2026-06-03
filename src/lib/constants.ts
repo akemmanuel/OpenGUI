@@ -25,6 +25,7 @@ export const STORAGE_KEYS = {
   SELECTED_MODEL: "opencode:selectedModel",
   SELECTED_AGENT: "opencode:selectedAgent",
   VARIANT_SELECTIONS: "opencode:variantSelections",
+  WORKSPACE_VARIANT_SELECTIONS: "opencode:workspaceVariantSelections",
   UNREAD_SESSIONS: "opencode:unreadSessionIds",
   SESSION_DRAFTS: "opencode:sessionDrafts",
   SESSION_DRAFT_IMAGES: "opencode:sessionDraftImages",

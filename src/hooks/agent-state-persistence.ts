@@ -10,6 +10,7 @@ import { getWorkspaceRootProjectDirectory } from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
 import type { OpenGuiClient, OpenGuiProject, OpenGuiWorkspace } from "@/protocol/client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
+import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type { SelectedModel, Workspace } from "@/types/electron";
 
 export const NOTIFICATIONS_ENABLED_KEY = STORAGE_KEYS.NOTIFICATIONS_ENABLED;
@@ -106,6 +107,37 @@ export function persistSessionMetaMap(meta: SessionMetaMap) {
 
 export function getProjectMetaMap(): ProjectMetaMap {
   return storageParsed<ProjectMetaMap>(STORAGE_KEYS.PROJECT_META) ?? {};
+}
+
+export type WorkspaceVariantSelectionsMap = Record<string, VariantSelections>;
+
+export function getWorkspaceVariantSelectionsMap(): WorkspaceVariantSelectionsMap {
+  return (
+    storageParsed<WorkspaceVariantSelectionsMap>(STORAGE_KEYS.WORKSPACE_VARIANT_SELECTIONS) ?? {}
+  );
+}
+
+export function getVariantSelectionsForWorkspace(workspaceId: string): VariantSelections {
+  return (
+    getWorkspaceVariantSelectionsMap()[workspaceId] ??
+    storageParsed<VariantSelections>(STORAGE_KEYS.VARIANT_SELECTIONS) ??
+    {}
+  );
+}
+
+export function persistVariantSelectionsForWorkspace(
+  workspaceId: string,
+  selections: VariantSelections,
+) {
+  const next = {
+    ...getWorkspaceVariantSelectionsMap(),
+    [workspaceId]: selections,
+  };
+  persistOrRemoveJSON(
+    STORAGE_KEYS.WORKSPACE_VARIANT_SELECTIONS,
+    next,
+    Object.values(next).every((value) => Object.keys(value).length === 0),
+  );
 }
 
 export function persistProjectMetaMap(meta: ProjectMetaMap) {
