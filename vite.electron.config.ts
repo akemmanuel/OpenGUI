@@ -1,7 +1,7 @@
 import "./build/suppress-node-deprecations.ts";
 
 import { copyFile, readdir } from "node:fs/promises";
-import { builtinModules } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import { join } from "node:path";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
@@ -45,6 +45,8 @@ function isExternal(id: string) {
   return Boolean(packageId && externals.has(packageId));
 }
 
+const require = createRequire(import.meta.url);
+
 const nodeEsmCompatBanner = [
   "import { createRequire as __openguiCreateRequire } from 'node:module';",
   "import { fileURLToPath as __openguiFileURLToPath } from 'node:url';",
@@ -55,6 +57,12 @@ const nodeEsmCompatBanner = [
 ].join(" ");
 
 async function findPhotonWasm() {
+  try {
+    return require.resolve("@silvia-odwyer/photon-node/photon_rs_bg.wasm");
+  } catch {
+    // Fall back to pnpm's virtual store layout when package exports do not expose the wasm file.
+  }
+
   const pnpmDir = join(process.cwd(), "node_modules", ".pnpm");
   const entries = await readdir(pnpmDir, { withFileTypes: true });
   const photonEntry = entries.find(
