@@ -110,7 +110,6 @@ export interface AgentCapabilities {
   sessions?: boolean;
   streaming?: boolean;
   messages?: boolean;
-  images?: boolean;
   models?: boolean;
   commands?: boolean;
   permissions?: boolean;
@@ -141,7 +140,6 @@ export interface MessageRef {
 
 export type MessagePart =
   | { id: PartId; type: "text"; text: string }
-  | { id: PartId; type: "image"; url: string }
   | { id: PartId; type: "tool"; name: string; input?: unknown; output?: unknown }
   | { id: PartId; type: string; data?: unknown };
 
@@ -170,7 +168,6 @@ export interface SessionStartResult {
 export interface SessionTurnSendParams {
   sessionId: SessionId;
   text: string;
-  images?: string[];
   model?: string;
   agent?: string;
   variant?: string;

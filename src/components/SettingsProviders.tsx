@@ -11,6 +11,7 @@ import type { AgentBackendId } from "@/agents";
 import { AGENT_BACKEND_LABELS } from "@/agents";
 import { Loader2, Plus, Search, Unplug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { DialogConnectProvider } from "@/components/DialogConnectProvider";
 import { DialogCustomProvider } from "@/components/DialogCustomProvider";
 import { DialogSelectProvider } from "@/components/DialogSelectProvider";
@@ -75,10 +76,6 @@ export function SettingsProviders() {
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState<string | null>(null);
-  const [disconnectError, setDisconnectError] = useState<{
-    providerID: string;
-    message: string;
-  } | null>(null);
 
   // Sub-dialog state
   const [connectProviderID, setConnectProviderID] = useState<string | null>(null);
@@ -131,7 +128,6 @@ export function SettingsProviders() {
   const handleDisconnect = async (providerID: string) => {
     if (!providersApi) return;
     setConfirmingDisconnect(null);
-    setDisconnectError(null);
     setDisconnecting(providerID);
     try {
       const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
@@ -140,10 +136,7 @@ export function SettingsProviders() {
       await refresh();
       await refreshProviders();
     } catch (err) {
-      setDisconnectError({
-        providerID,
-        message: getErrorMessage(err, "Failed to disconnect"),
-      });
+      toast.error(getErrorMessage(err, "Failed to disconnect"));
     } finally {
       setDisconnecting(null);
     }
@@ -237,17 +230,113 @@ export function SettingsProviders() {
               const isEnv = provider.source === "env";
               const isDisconnecting = disconnecting === provider.id;
               const isConfirming = confirmingDisconnect === provider.id;
-              const showError = disconnectError?.providerID === provider.id && !isDisconnecting;
               return (
-                <div key={provider.id}>
-                  <div className="flex items-center gap-3 rounded-lg border p-3 bg-card">
-                    <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
-                    <span className="text-sm font-medium truncate flex-1">
-                      {provider.name || provider.id}
-                    </span>
-                    {isConnected ? (
-                      isEnv ? (
-                        <span className="text-[11px] text-muted-foreground shrink-0">from env</span>
+                <div
+                  key={provider.id}
+                  className="flex items-center gap-3 rounded-lg border p-3 bg-card"
+                >
+                  <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
+                  <span className="text-sm font-medium truncate flex-1">
+                    {provider.name || provider.id}
+                  </span>
+                  {isConnected ? (
+                    isEnv ? (
+                      <span className="text-[11px] text-muted-foreground shrink-0">from env</span>
+                    ) : isConfirming ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs text-muted-foreground mr-1">
+                          Disconnect {provider.name || provider.id}?
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setConfirmingDisconnect(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-destructive"
+                          disabled={isDisconnecting}
+                          onClick={() => handleDisconnect(provider.id)}
+                        >
+                          {isDisconnecting ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Unplug className="size-3.5" />
+                          )}
+                          <span className="ml-1">Disconnect</span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive shrink-0"
+                        disabled={isDisconnecting}
+                        onClick={() => setConfirmingDisconnect(provider.id)}
+                      >
+                        {isDisconnecting ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Unplug className="size-3.5" />
+                        )}
+                        <span className="ml-1.5">Disconnect</span>
+                      </Button>
+                    )
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConnectProviderID(provider.id)}
+                    >
+                      <Plus className="size-3.5 mr-1" />
+                      Connect
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+            {filteredProviders.length === 0 && (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No providers found for &quot;{search}&quot;
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {connectedProviders.length > 0 && (
+              <section className="space-y-2">
+                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Connected
+                </h4>
+                {connectedProviders.map((provider) => {
+                  const isEnv = provider.source === "env";
+                  const isDisconnecting = disconnecting === provider.id;
+                  const isConfirming = confirmingDisconnect === provider.id;
+                  return (
+                    <div
+                      key={provider.id}
+                      className="flex items-center gap-3 rounded-lg border p-3 bg-card"
+                    >
+                      <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">
+                            {provider.name || provider.id}
+                          </span>
+                          <SourceBadge source={getProviderBadgeSource(allProviders, provider)} />
+                        </div>
+                      </div>
+                      {isEnv ? (
+                        <span
+                          className="text-[11px] text-muted-foreground shrink-0"
+                          title="Connected from your environment variables"
+                        >
+                          from env
+                        </span>
                       ) : isConfirming ? (
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-xs text-muted-foreground mr-1">
@@ -291,128 +380,6 @@ export function SettingsProviders() {
                           )}
                           <span className="ml-1.5">Disconnect</span>
                         </Button>
-                      )
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConnectProviderID(provider.id)}
-                      >
-                        <Plus className="size-3.5 mr-1" />
-                        Connect
-                      </Button>
-                    )}
-                  </div>
-                  {showError && (
-                    <div className="flex items-center gap-2 mt-1 px-1">
-                      <p className="text-xs text-destructive flex-1">{disconnectError?.message}</p>
-                      <button
-                        type="button"
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => setDisconnectError(null)}
-                      >
-                        dismiss
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {filteredProviders.length === 0 && (
-              <div className="text-center py-6 text-sm text-muted-foreground">
-                No providers found for &quot;{search}&quot;
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {connectedProviders.length > 0 && (
-              <section className="space-y-2">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Connected
-                </h4>
-                {connectedProviders.map((provider) => {
-                  const isEnv = provider.source === "env";
-                  const isDisconnecting = disconnecting === provider.id;
-                  const isConfirming = confirmingDisconnect === provider.id;
-                  const showError = disconnectError?.providerID === provider.id && !isDisconnecting;
-                  return (
-                    <div key={provider.id}>
-                      <div className="flex items-center gap-3 rounded-lg border p-3 bg-card">
-                        <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">
-                              {provider.name || provider.id}
-                            </span>
-                            <SourceBadge source={getProviderBadgeSource(allProviders, provider)} />
-                          </div>
-                        </div>
-                        {isEnv ? (
-                          <span
-                            className="text-[11px] text-muted-foreground shrink-0"
-                            title="Connected from your environment variables"
-                          >
-                            from env
-                          </span>
-                        ) : isConfirming ? (
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-xs text-muted-foreground mr-1">
-                              Disconnect {provider.name || provider.id}?
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => setConfirmingDisconnect(null)}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs text-destructive"
-                              disabled={isDisconnecting}
-                              onClick={() => handleDisconnect(provider.id)}
-                            >
-                              {isDisconnecting ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Unplug className="size-3.5" />
-                              )}
-                              <span className="ml-1">Disconnect</span>
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive shrink-0"
-                            disabled={isDisconnecting}
-                            onClick={() => setConfirmingDisconnect(provider.id)}
-                          >
-                            {isDisconnecting ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Unplug className="size-3.5" />
-                            )}
-                            <span className="ml-1.5">Disconnect</span>
-                          </Button>
-                        )}
-                      </div>
-                      {showError && (
-                        <div className="flex items-center gap-2 mt-1 px-1">
-                          <p className="text-xs text-destructive flex-1">
-                            {disconnectError?.message}
-                          </p>
-                          <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:text-foreground"
-                            onClick={() => setDisconnectError(null)}
-                          >
-                            dismiss
-                          </button>
-                        </div>
                       )}
                     </div>
                   );

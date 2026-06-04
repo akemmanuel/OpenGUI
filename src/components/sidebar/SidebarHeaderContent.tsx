@@ -93,7 +93,7 @@ export function SidebarHeaderContent({
           )}
         </div>
       </div>
-      {!detachedProject && (
+      {!detachedProject && defaultChatDirectory && (
         <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border">
           <button
             type="button"
@@ -102,7 +102,6 @@ export function SidebarHeaderContent({
               void startNewChat();
               closeMobileSidebar();
             }}
-            disabled={!defaultChatDirectory}
             className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm font-medium transition-colors hover:bg-sidebar-accent/70 hover:text-foreground"
           >
             <SquarePen className="size-4 shrink-0" />

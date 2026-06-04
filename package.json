@@ -1,6 +1,6 @@
 {
   "name": "opengui",
-  "version": "0.5.23",
+  "version": "0.5.24",
   "private": false,
   "description": "OpenGUI - Desktop and web command center for coding agents",
   "homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -47,6 +47,7 @@
     "react-i18next": "^17.0.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "vscode-oniguruma": "^2.0.1"
   },

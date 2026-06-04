@@ -517,6 +517,21 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     const response = await fetchImpl(joinUrl(requestBaseUrl, path), { ...init, headers });
     const body = (await response.json().catch(() => null)) as RpcEnvelope<T> | null;
     if (!response.ok || !body?.ok) {
+      const isMissingSessionMessagePage =
+        body?.error === "Session not found" && path.includes("/messages");
+      if (import.meta.env.DEV && !isMissingSessionMessagePage) {
+        console.error(
+          "[http] failed " +
+            JSON.stringify({
+              method: init.method ?? "GET",
+              url: joinUrl(requestBaseUrl, path),
+              status: response.status,
+              error: body?.error,
+              responseBody: body,
+              requestBody: typeof init.body === "string" ? init.body : undefined,
+            }),
+        );
+      }
       throwRpcError(body, `Request failed: ${path}`);
     }
     return body.value as T;
@@ -785,7 +800,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           method: "POST",
           body: JSON.stringify({
             text: input.text,
-            images: input.images,
             model: input.model,
             agent: input.agent,
             variant: input.variant,
@@ -991,12 +1005,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             if (isCanonicalEventEnvelope(message)) {
               if (message.payload && typeof message.payload === "object") {
                 listener({
+                  id: message.id,
                   type: message.type,
                   ...(message.payload as object),
                   ...(message.projectId ? { projectId: message.projectId } : {}),
                   ...(message.sessionId ? { sessionId: message.sessionId } : {}),
                   ...(message.harnessId ? { harnessId: message.harnessId } : {}),
-                } as AgentBackendEvent);
+                } as unknown as AgentBackendEvent);
               }
               return;
             }
@@ -1045,9 +1060,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             }
           };
           stream.onerror = (error) => {
-            console.error("OpenGUI event stream error", error);
             stream?.close();
             if (closed) return;
+            console.error("OpenGUI event stream error", error);
             retry = setTimeout(connect, retryDelayMs);
             retryDelayMs = Math.min(retryDelayMs * 2, MAX_EVENT_RETRY_MS);
           };
@@ -1147,7 +1162,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
       },
       listProjectSessions: async ({ backendIds, target }) => {
-        const project = await ensureProjectForTarget(target);
+        const project = await findProjectForTarget(target);
         if (!project) return [];
         const results = await Promise.all(
           backendIds.map(async (backendId) => {
@@ -1285,24 +1300,31 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           url.searchParams.set("direction", "older");
         }
         if (options?.limit) url.searchParams.set("limit", String(options.limit));
-        return await requestAt<MessagePageResult>(
-          requestBaseUrlForSession({
-            sessionId,
-            backendId,
-            directory: options?.directory,
-            workspaceId: options?.workspaceId,
-            baseUrl: options?.baseUrl,
-          }),
-          `${url.pathname}${url.search}`,
-        );
+        try {
+          return await requestAt<MessagePageResult>(
+            requestBaseUrlForSession({
+              sessionId,
+              backendId,
+              directory: options?.directory,
+              workspaceId: options?.workspaceId,
+              baseUrl: options?.baseUrl,
+            }),
+            `${url.pathname}${url.search}`,
+          );
+        } catch (error) {
+          if (error instanceof OpenGuiRpcError && error.message === "Session not found") {
+            return { messages: [], nextCursor: null };
+          }
+          throw error;
+        }
       },
-      prompt: async ({ sessionId, text, images, model, agent, variant, target, backendId }) => {
+      prompt: async ({ sessionId, text, model, agent, variant, mode, target, backendId }) => {
         await requestAt<boolean>(
           requestBaseUrlForSession({ sessionId, backendId, target }),
           await resolveSessionPath({ sessionId, backendId, target }, "/prompt"),
           {
             method: "POST",
-            body: JSON.stringify({ text, images, model, agent, variant }),
+            body: JSON.stringify({ text, model, agent, variant, mode }),
           },
         );
       },
@@ -1361,11 +1383,11 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         enqueue: async ({
           sessionId,
           text,
-          images,
           model,
           agent,
           variant,
           mode,
+          insertAt,
           backendId,
           target,
         }) =>
@@ -1374,7 +1396,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             await resolveSessionPath({ sessionId, backendId, target }, "/queue"),
             {
               method: "POST",
-              body: JSON.stringify({ text, images, model, agent, variant, mode }),
+              body: JSON.stringify({ text, model, agent, variant, mode, insertAt }),
             },
           ),
         remove: async ({ sessionId, entryId, backendId, target }) =>
@@ -1390,7 +1412,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           sessionId,
           entryId,
           text,
-          images,
           model,
           agent,
           variant,
@@ -1406,7 +1427,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             ),
             {
               method: "PATCH",
-              body: JSON.stringify({ text, images, model, agent, variant, mode }),
+              body: JSON.stringify({ text, model, agent, variant, mode }),
             },
           ),
         reorder: async ({ sessionId, entryId, index, backendId, target }) =>
@@ -1421,10 +1442,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               body: JSON.stringify({ index }),
             },
           ),
-        dispatchNext: async ({ sessionId, backendId, target }) =>
+        sendNow: async ({ sessionId, entryId, backendId, target }) =>
           await requestAt<OpenGuiQueueEntry[]>(
             requestBaseUrlForSession({ sessionId, backendId, target }),
-            await resolveSessionPath({ sessionId, backendId, target }, "/queue/dispatch"),
+            await resolveSessionPath(
+              { sessionId, backendId, target },
+              `/queue/${encodeURIComponent(entryId)}/send-now`,
+            ),
             { method: "POST" },
           ),
       },

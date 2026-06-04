@@ -6,6 +6,7 @@ import type { Session } from "@/hooks/agent-state-types";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import { resolveVariant } from "@/hooks/use-agent-variant-core";
 import type { OpenGuiClient } from "@/protocol/client";
+import type { QueueMode } from "@/lib/session-drafts";
 import type { SelectedModel } from "@/types/electron";
 
 export interface AgentSendSelectionSnapshot {
@@ -43,19 +44,19 @@ export async function sendPromptToAgent({
   session,
   sessionId,
   text,
-  images,
   selection,
   activeWorkspaceId,
   getWorkspaceBaseUrl,
+  mode,
 }: {
   sessions: OpenGuiClient["sessions"];
   session: Session | null | undefined;
   sessionId: string;
   text: string;
-  images?: string[];
   selection: AgentSendSelection;
   activeWorkspaceId?: string;
   getWorkspaceBaseUrl?: (workspaceId?: string | null) => string | undefined;
+  mode?: QueueMode;
 }): Promise<{ projectTarget?: AgentBackendTarget }> {
   const rawProjectTarget = getSessionProjectTarget(session) ?? undefined;
   const workspaceId = rawProjectTarget?.workspaceId ?? activeWorkspaceId;
@@ -67,10 +68,10 @@ export async function sendPromptToAgent({
   await sessions.prompt({
     sessionId,
     text,
-    images,
     model: selection.model,
     agent: selection.agent,
     variant: selection.variant,
+    mode,
     target: projectTarget,
     backendId,
   });

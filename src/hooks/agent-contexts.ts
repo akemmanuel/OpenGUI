@@ -96,7 +96,7 @@ export interface ActionsContextValue {
   loadOlderMessages: () => Promise<boolean>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
-  sendPrompt: (text: string, images?: string[], mode?: QueueMode) => Promise<void>;
+  sendPrompt: (text: string, mode?: QueueMode) => Promise<void>;
   findFiles: (
     target: { directory?: string; workspaceId?: string; baseUrl?: string } | null,
     query: string,

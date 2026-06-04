@@ -121,7 +121,7 @@ export function SidebarContentSections({
           </SidebarGroupContent>
         </SidebarGroup>
       )}
-      {!detachedProject && (
+      {!detachedProject && defaultChatDirectory && (
         <SidebarGroup>
           <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
             <span>{labels.chats}</span>

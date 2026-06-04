@@ -28,7 +28,6 @@ export const STORAGE_KEYS = {
   WORKSPACE_VARIANT_SELECTIONS: "opencode:workspaceVariantSelections",
   UNREAD_SESSIONS: "opencode:unreadSessionIds",
   SESSION_DRAFTS: "opencode:sessionDrafts",
-  SESSION_DRAFT_IMAGES: "opencode:sessionDraftImages",
   QUEUED_PROMPTS: "opencode:queuedPrompts",
   NOTIFICATIONS_ENABLED: "opencode:notificationsEnabled",
   SESSION_META: "opencode:sessionMeta",

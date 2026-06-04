@@ -410,6 +410,8 @@ function InternalAgentProvider({
   }, []);
 
   const workspaceBootstrapRef = useRef(false);
+  const pendingStartupSessionRestoreRef = useRef<string | null>(null);
+  const attemptedStartupSessionRestoreRef = useRef<string | null>(null);
   useEffect(() => {
     if (workspaceBootstrapRef.current) return;
     workspaceBootstrapRef.current = true;
@@ -423,10 +425,7 @@ function InternalAgentProvider({
         dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: activeWorkspaceId });
         const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
         const legacyDefaultChatDirectory = getLegacyStoredDefaultChatDirectory();
-        dispatch({
-          type: "SET_ACTIVE_SESSION",
-          payload: activeWorkspace?.lastActiveSessionId ?? null,
-        });
+        pendingStartupSessionRestoreRef.current = activeWorkspace?.lastActiveSessionId ?? null;
         dispatch({
           type: "SET_DEFAULT_CHAT_DIRECTORY",
           payload: getWorkspaceDefaultChatDirectory(activeWorkspace) ?? legacyDefaultChatDirectory,
@@ -473,9 +472,26 @@ function InternalAgentProvider({
     [openGuiClient],
   );
 
+  const seenBackendEventIdsRef = useRef<string[]>([]);
+  const seenBackendEventIdSetRef = useRef(new Set<string>());
+
   // --- Backend event handler ---
   const handleBackendEvent = useCallback(
     (event: BackendEventEnvelope) => {
+      // Remote workspaces deliver events through the canonical SSE stream.  A reconnect or
+      // overlapping subscription can surface the same canonical event more than once; streaming
+      // text events are mutations, so applying a duplicate delta duplicates visible text.
+      if (typeof event.id === "string") {
+        const seenIds = seenBackendEventIdSetRef.current;
+        if (seenIds.has(event.id)) return;
+        seenIds.add(event.id);
+        const order = seenBackendEventIdsRef.current;
+        order.push(event.id);
+        while (order.length > 1000) {
+          const expired = order.shift();
+          if (expired) seenIds.delete(expired);
+        }
+      }
       if (isQueueEvent(event)) {
         if (Array.isArray(event.entries)) {
           dispatch({
@@ -1896,6 +1912,44 @@ function InternalAgentProvider({
       sessionReconcileRequestRef,
     });
 
+  useEffect(() => {
+    if (!workspaceStateReady) return;
+    const restoreSessionId = pendingStartupSessionRestoreRef.current;
+    if (!restoreSessionId) return;
+    const activeWorkspaceId = state.activeWorkspaceId;
+    const session = state.sessions.find(
+      (item) => item.id === restoreSessionId && getSessionWorkspaceId(item) === activeWorkspaceId,
+    );
+    if (!session) return;
+    const attemptKey = `${activeWorkspaceId}\u0000${restoreSessionId}`;
+    if (attemptedStartupSessionRestoreRef.current === attemptKey) return;
+    attemptedStartupSessionRestoreRef.current = attemptKey;
+    pendingStartupSessionRestoreRef.current = null;
+    void selectSession(restoreSessionId, {
+      session,
+      force: true,
+      preserveSelectionOnFailure: true,
+    });
+  }, [selectSession, state.activeWorkspaceId, state.sessions, workspaceStateReady]);
+
+  useEffect(() => {
+    const sessionId = state.activeSessionId;
+    if (!sessionId || state.isLoadingMessages || state.messages.length > 0) return;
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    void selectSession(sessionId, {
+      session,
+      force: true,
+      preserveSelectionOnFailure: true,
+    });
+  }, [
+    selectSession,
+    state.activeSessionId,
+    state.isLoadingMessages,
+    state.messages.length,
+    state.sessions,
+  ]);
+
   const isChatDirectory = useCallback((directory?: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
@@ -2267,8 +2321,8 @@ function InternalAgentProvider({
   const startNewChat = useCallback(async () => {
     const defaultChatDirectory = stateRef.current.defaultChatDirectory;
     if (!defaultChatDirectory) return;
-    await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
     setActiveTarget(defaultChatDirectory);
+    await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
   }, [ensureDirectoryConnection, setActiveTarget]);
 
   const setActiveTargetDirectory = useCallback(

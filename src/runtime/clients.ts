@@ -88,8 +88,39 @@ function getActiveWorkspaceServerUrl() {
   return getWorkspaceUrl(remoteWorkspace);
 }
 
+function getSelectedAdditionalWorkspaceServerUrl() {
+  const activeWorkspace = getActiveWorkspaceConnection();
+  const selectedUrl = getWorkspaceUrl(activeWorkspace);
+  return selectedUrl && isAdditionalWorkspace(activeWorkspace) ? selectedUrl : "";
+}
+
 function getActiveWorkspaceAuthToken() {
   return getWorkspaceAuthToken(getActiveWorkspaceConnection());
+}
+
+function getSelectedAdditionalWorkspaceAuthToken() {
+  const activeWorkspace = getActiveWorkspaceConnection();
+  return isAdditionalWorkspace(activeWorkspace) ? getWorkspaceAuthToken(activeWorkspace) : "";
+}
+
+function getWorkspaceAuthTokenForUrl(url: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "";
+  }
+  for (const workspace of getStoredWorkspaceConnections()) {
+    const workspaceUrl = getWorkspaceUrl(workspace);
+    if (!workspaceUrl || !isAdditionalWorkspace(workspace)) continue;
+    try {
+      const parsedWorkspaceUrl = new URL(workspaceUrl);
+      if (parsed.origin === parsedWorkspaceUrl.origin) return getWorkspaceAuthToken(workspace);
+    } catch {
+      // Ignore malformed stored workspace URLs.
+    }
+  }
+  return "";
 }
 
 export function initializeRuntimeClients(): RuntimeClients {
@@ -105,6 +136,16 @@ export function initializeRuntimeClients(): RuntimeClients {
   const browserAuthToken = useCapacitorShell
     ? getActiveWorkspaceAuthToken
     : () => configuredWebAuthToken;
+
+  const getElectronBaseUrl = () => {
+    const remoteUrl = getSelectedAdditionalWorkspaceServerUrl();
+    return remoteUrl || electronApi?.backendUrl || undefined;
+  };
+
+  const getElectronAuthToken = () => {
+    const remoteToken = getSelectedAdditionalWorkspaceAuthToken();
+    return remoteToken || electronApi?.backendToken || undefined;
+  };
 
   const ensureElectronBackend = async () => {
     if (!electronApi || electronApi.kind !== "electron") return null;
@@ -123,25 +164,41 @@ export function initializeRuntimeClients(): RuntimeClients {
       ? createHttpOpenGuiClient({
           baseUrl: electronApi.backendUrl ?? "",
           token: electronApi.backendToken ?? undefined,
-          resolveBaseUrl: () => electronApi.backendUrl ?? undefined,
+          resolveBaseUrl: getElectronBaseUrl,
+          resolveToken: getElectronAuthToken,
           fetchImpl: async (input, init) => {
             const api = await ensureElectronBackend();
-            const baseUrl = api?.backendUrl?.replace(/\/+$/, "") ?? "";
-            let url = baseUrl && input.startsWith("/") ? `${baseUrl}${input}` : input;
-            if (baseUrl) {
+            const localBaseUrl = api?.backendUrl?.replace(/\/+$/, "") ?? "";
+            const resolvedBaseUrl = getElectronBaseUrl()?.replace(/\/+$/, "") ?? localBaseUrl;
+            let url =
+              resolvedBaseUrl && input.startsWith("/") ? `${resolvedBaseUrl}${input}` : input;
+            if (resolvedBaseUrl) {
               try {
                 const parsed = new URL(url);
+                const localBackend = localBaseUrl ? new URL(localBaseUrl) : null;
+                const isLocalhost =
+                  parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+                const isElectronBackendUrl =
+                  localBackend &&
+                  parsed.hostname === localBackend.hostname &&
+                  parsed.port === localBackend.port;
                 if (
-                  (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost") &&
-                  parsed.port === "4096"
+                  isLocalhost &&
+                  (parsed.port === "4096" ||
+                    (isElectronBackendUrl && resolvedBaseUrl !== localBaseUrl))
                 ) {
-                  url = `${baseUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
+                  url = `${resolvedBaseUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
                 }
               } catch {
                 // Non-URL inputs are passed through unchanged.
               }
             }
-            return await fetch(url, init);
+            const headers = new Headers(init?.headers);
+            const workspaceToken = getWorkspaceAuthTokenForUrl(url);
+            if (workspaceToken && !headers.has("authorization")) {
+              headers.set("authorization", `Bearer ${workspaceToken}`);
+            }
+            return await fetch(url, { ...init, headers });
           },
           rpcImpl: async (channel, args = []) => {
             const api = await ensureElectronBackend();

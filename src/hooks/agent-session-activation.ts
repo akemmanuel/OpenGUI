@@ -122,8 +122,11 @@ export function useAgentSessionActivation({
   sessionReconcileRequestRef: MutableRefObject<Record<string, number>>;
 }) {
   const selectSession = useCallback(
-    async (id: string | null, options?: { session?: Session | null }) => {
-      if (id === stateRef.current.activeSessionId) return;
+    async (
+      id: string | null,
+      options?: { session?: Session | null; force?: boolean; preserveSelectionOnFailure?: boolean },
+    ) => {
+      if (!options?.force && id === stateRef.current.activeSessionId) return;
 
       const applySelectionFromMessages = (messages: MessageEntry[]) => {
         const derived = deriveSelectionFromMessages(messages);
@@ -177,6 +180,13 @@ export function useAgentSessionActivation({
         page = await fetchMessagePage(id, undefined, projectTarget ?? undefined);
       } catch {
         if (requestId !== selectSessionRequestRef.current) return;
+        if (options?.preserveSelectionOnFailure) {
+          dispatch({
+            type: "SET_MESSAGES",
+            payload: { messages: [], hasMore: false, nextCursor: null },
+          });
+          return;
+        }
         dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
         dispatch({
           type: "SET_MESSAGES",

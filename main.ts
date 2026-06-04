@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, dialog, ipcMain, shell } =
+const { app, BrowserWindow, dialog, ipcMain, shell, session } =
   require("electron") as typeof import("electron");
 import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
@@ -275,6 +275,31 @@ function createWindow() {
 
   win.once("ready-to-show", () => {
     win.show();
+  });
+}
+
+function installDevNetworkFailureLogging() {
+  if (!isDev) return;
+  const seen = new Set<string>();
+  session.defaultSession.webRequest.onCompleted((details) => {
+    if (details.statusCode < 400) return;
+    const key = `${details.method} ${details.url} ${details.statusCode}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    console.error(
+      `[net] FAILED ${details.method} ${details.url} -> ${details.statusCode} ${details.statusLine}`,
+    );
+  });
+  session.defaultSession.webRequest.onErrorOccurred((details) => {
+    // SSE/EventSource connections are intentionally long-lived and are often
+    // reported by Chromium as ERR_ABORTED/ERR_FAILED during teardown or
+    // workspace switches. The renderer owns retry/error handling for these;
+    // do not treat their lifecycle as failed HTTP requests in dev logging.
+    if (details.url.includes("/api/events/")) return;
+    const key = `${details.method} ${details.url} ${details.error}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    console.error(`[net] ERROR ${details.method} ${details.url} -> ${details.error}`);
   });
 }
 
@@ -557,6 +582,8 @@ ipcMain.handle("backend:install", (event, backendId) => {
 });
 
 void app.whenReady().then(async () => {
+  installDevNetworkFailureLogging();
+
   try {
     await backendSidecar.start();
   } catch (error) {

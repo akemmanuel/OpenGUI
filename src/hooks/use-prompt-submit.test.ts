@@ -9,7 +9,6 @@ describe("decidePromptSubmit", () => {
     expect(
       decidePromptSubmit({
         value: "Ship it",
-        imagePreviews: [],
         disabled: true,
         queueMode: "queue",
         slashInvocation: null,
@@ -21,7 +20,6 @@ describe("decidePromptSubmit", () => {
     expect(
       decidePromptSubmit({
         value: "   ",
-        imagePreviews: [],
         disabled: false,
         queueMode: "queue",
         slashInvocation: null,
@@ -33,7 +31,6 @@ describe("decidePromptSubmit", () => {
     expect(
       decidePromptSubmit({
         value: "/review --all",
-        imagePreviews: [],
         disabled: false,
         queueMode: "queue",
         slashInvocation: { commandName: "review", args: "--all", command },
@@ -41,28 +38,38 @@ describe("decidePromptSubmit", () => {
     ).toEqual({ type: "command", commandName: "review", args: "--all" });
   });
 
-  test("routes normal prompts with images", () => {
+  test("routes normal prompts", () => {
     expect(
       decidePromptSubmit({
         value: "Ship it",
-        imagePreviews: ["image-data"],
         disabled: false,
         queueMode: "queue",
         slashInvocation: null,
       }),
-    ).toEqual({ type: "prompt", text: "Ship it", images: ["image-data"], mode: undefined });
+    ).toEqual({ type: "prompt", text: "Ship it", mode: undefined });
+  });
+
+  test("skips while uploading", () => {
+    expect(
+      decidePromptSubmit({
+        value: "Ship it",
+        disabled: false,
+        isUploading: true,
+        queueMode: "queue",
+        slashInvocation: null,
+      }),
+    ).toEqual({ type: "skip" });
   });
 
   test("passes queue mode while loading", () => {
     expect(
       decidePromptSubmit({
         value: "Follow up",
-        imagePreviews: [],
         disabled: false,
         isLoading: true,
         queueMode: "after-part",
         slashInvocation: null,
       }),
-    ).toEqual({ type: "prompt", text: "Follow up", images: undefined, mode: "after-part" });
+    ).toEqual({ type: "prompt", text: "Follow up", mode: "after-part" });
   });
 });

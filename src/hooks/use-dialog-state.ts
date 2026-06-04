@@ -1,15 +1,20 @@
 import { useCallback, useState } from "react";
+import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 
 export function useDialogError() {
   const [error, setError] = useState<string | null>(null);
   const clearError = useCallback(() => setError(null), []);
+  const showError = useCallback((message: string | null) => {
+    setError(null);
+    if (message) toast.error(message);
+  }, []);
   const setUnknownError = useCallback(
-    (err: unknown, fallback = "Operation failed") => setError(getErrorMessage(err, fallback)),
-    [],
+    (err: unknown, fallback = "Operation failed") => showError(getErrorMessage(err, fallback)),
+    [showError],
   );
 
-  return { error, setError, clearError, setUnknownError };
+  return { error, setError: showError, clearError, setUnknownError };
 }
 
 export function useAsyncDialogOperation<TArgs extends unknown[]>(

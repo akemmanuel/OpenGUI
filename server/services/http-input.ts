@@ -28,12 +28,6 @@ export function toOptionalNullableString(
   return trimmed || null;
 }
 
-export function toOptionalImages(value: unknown): string[] | undefined {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : undefined;
-}
-
 export function toOptionalSelectedModel(value: unknown): SelectedModel | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as unknown as SelectedModel)

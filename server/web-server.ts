@@ -1,7 +1,8 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, realpath, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type { AgentBackendEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
@@ -20,7 +21,6 @@ import {
   createSessionThroughHarness,
   deleteSessionThroughHarness,
   disconnectProjectFromHarnesses,
-  dispatchNextQueuedPromptThroughHarness,
   enqueueSessionPrompt,
   findFilesInDirectory,
   findOrCreateProjectRecordByPath,
@@ -40,9 +40,9 @@ import {
   normalizeUpdateProjectInput as normalizeProjectUpdateInput,
   parseCreateProjectInput,
   parseUpdateProjectInput,
-  promptSessionThroughHarness,
   readJsonBody,
   rejectHarnessQuestion,
+  registerSharedSessionControl,
   removeSessionPrompt,
   renameSessionThroughHarness,
   reorderSessionPrompt,
@@ -50,7 +50,8 @@ import {
   respondToHarnessPermission,
   revertSessionThroughHarness,
   sendCommandThroughHarness,
-  toOptionalImages,
+  sendQueuedPromptNow,
+  submitSessionPrompt,
   toOptionalNullableString,
   toOptionalSelectedModel,
   toOptionalString,
@@ -227,7 +228,7 @@ async function createBackendServiceContext(
     events,
   );
 
-  return {
+  const services = {
     dataDir,
     storage,
     events,
@@ -238,6 +239,8 @@ async function createBackendServiceContext(
     restartHarness: (harnessId: string) => harnesses.restartHarness(harnessId),
     restartAllHarnesses: () => harnesses.restartAllHarnesses(),
   };
+  registerSharedSessionControl({ services });
+  return services;
 }
 
 const rawClients = new Set<SseClient>();
@@ -336,6 +339,22 @@ function parseAllowedRoots() {
 }
 
 const allowedRoots = parseAllowedRoots();
+
+function parsePositiveIntegerEnv(name: string, fallback: number) {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+const uploadMaxFileBytes = parsePositiveIntegerEnv(
+  "OPENGUI_UPLOAD_MAX_FILE_BYTES",
+  100 * 1024 * 1024,
+);
+const uploadMaxBatchBytes = parsePositiveIntegerEnv(
+  "OPENGUI_UPLOAD_MAX_BATCH_BYTES",
+  500 * 1024 * 1024,
+);
 
 function getRequestToken(request: Request) {
   const header = request.headers.get("authorization") || request.headers.get("Authorization");
@@ -877,27 +896,15 @@ async function handleSessionRequest(request: Request) {
               services,
               sessionId,
               text: body.text,
-              images: toOptionalImages(body.images),
               model: toOptionalSelectedModel(body.model),
               agent: toOptionalString(body.agent, "agent"),
               variant: toOptionalString(body.variant, "variant"),
               mode: toQueueMode(body.mode, "queue"),
+              insertAt: body.insertAt === "front" ? "front" : "back",
             }),
           });
         }
         return new Response("Method Not Allowed", { status: 405 });
-      }
-
-      if (grandchild === "dispatch") {
-        if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
-        return Response.json({
-          ok: true,
-          value: await dispatchNextQueuedPromptThroughHarness({
-            services,
-            project,
-            session: existing,
-          }),
-        });
       }
 
       const entryId = decodeURIComponent(grandchild);
@@ -915,6 +922,19 @@ async function handleSessionRequest(request: Request) {
         });
       }
 
+      if (action === "send-now") {
+        if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+        return Response.json({
+          ok: true,
+          value: await sendQueuedPromptNow({
+            services,
+            project,
+            session: existing,
+            entryId,
+          }),
+        });
+      }
+
       if (request.method === "PATCH") {
         const body = await readJsonBody(request);
         if (!isPlainObject(body)) throw new Error("Request body must be an object");
@@ -925,7 +945,6 @@ async function handleSessionRequest(request: Request) {
             sessionId,
             entryId,
             text: toOptionalString(body.text, "text"),
-            images: toOptionalImages(body.images),
             model: toOptionalSelectedModel(body.model),
             agent: toOptionalNullableString(body.agent, "agent"),
             variant: toOptionalNullableString(body.variant, "variant"),
@@ -968,15 +987,15 @@ async function handleSessionRequest(request: Request) {
       const body = await readJsonBody(request);
       if (!isPlainObject(body) || typeof body.text !== "string")
         throw new Error("text is required");
-      await promptSessionThroughHarness({
+      await submitSessionPrompt({
         services,
         project,
         session: existing,
         text: body.text,
-        images: toOptionalImages(body.images),
         model: toOptionalSelectedModel(body.model),
         agent: toOptionalString(body.agent, "agent"),
         variant: toOptionalString(body.variant, "variant"),
+        mode: toQueueMode(body.mode, "queue"),
       });
       return Response.json({ ok: true, value: true });
     }
@@ -1263,6 +1282,36 @@ app.get("/api/fs/search", async (c) => {
     const project = await getProjectOrThrow(await servicesReady, projectId);
     const files = await findFilesInDirectory(project.path, query);
     return Response.json({ ok: true, value: files.slice(0, limit) });
+  } catch (error) {
+    return jsonError(error, 400);
+  }
+});
+app.post("/api/fs/upload", async (c) => {
+  try {
+    const form = await c.req.raw.formData();
+    const files = form.getAll("files").filter((value): value is File => value instanceof File);
+    if (files.length === 0) throw new Error("At least one file is required");
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > uploadMaxBatchBytes) throw new Error("Upload batch exceeds size limit");
+    for (const file of files) {
+      if (file.size > uploadMaxFileBytes) throw new Error("File exceeds size limit");
+    }
+
+    const dir = join(tmpdir(), "opengui-uploads");
+    await mkdir(dir, { recursive: true });
+
+    const uploaded: string[] = [];
+    for (const file of files) {
+      const originalName = typeof file.name === "string" ? basename(file.name) : "file";
+      const extension = extname(originalName)
+        .replace(/[^a-zA-Z0-9.]/g, "")
+        .slice(0, 24);
+      const filePath = join(dir, `${randomUUID()}${extension}`);
+      await writeFile(filePath, Buffer.from(await file.arrayBuffer()));
+      uploaded.push(filePath);
+    }
+
+    return Response.json({ ok: true, value: uploaded });
   } catch (error) {
     return jsonError(error, 400);
   }

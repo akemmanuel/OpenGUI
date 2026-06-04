@@ -1,12 +1,9 @@
 import { afterEach, beforeAll, describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { STORAGE_KEYS } from "../constants";
 import {
-  getSessionDraftImages,
   getSessionDraftKey,
   getSessionDrafts,
-  persistSessionDraftImages,
   persistSessionDrafts,
-  pruneSessionDraftImages,
   pruneSessionDrafts,
 } from "../session-drafts";
 import { polyfillLocalStorage } from "./setup";
@@ -42,49 +39,6 @@ describe("pruneSessionDrafts", () => {
         "draft:/tmp": "\n",
       }),
     ).toEqual({ "session:a": "hello" });
-  });
-});
-
-describe("session draft image persistence", () => {
-  test("drops blank image entries and keeps non-empty arrays", () => {
-    expect(
-      pruneSessionDraftImages({
-        "session:a": ["data:image/png;base64,aaa"],
-        "session:b": [],
-        "session:c": ["   "],
-      }),
-    ).toEqual({ "session:a": ["data:image/png;base64,aaa"] });
-  });
-
-  test("reads persisted image drafts and prunes blanks", () => {
-    localStorage.setItem(
-      STORAGE_KEYS.SESSION_DRAFT_IMAGES,
-      JSON.stringify({
-        "session:a": ["data:image/png;base64,kept"],
-        "session:b": [],
-      }),
-    );
-
-    expect(getSessionDraftImages()).toEqual({
-      "session:a": ["data:image/png;base64,kept"],
-    });
-  });
-
-  test("persists only non-empty image drafts", () => {
-    persistSessionDraftImages({
-      "session:a": ["data:image/png;base64,kept"],
-      "session:b": [],
-    });
-
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSION_DRAFT_IMAGES) ?? "")).toEqual({
-      "session:a": ["data:image/png;base64,kept"],
-    });
-  });
-
-  test("removes image draft storage when all drafts are empty", () => {
-    persistSessionDraftImages({ "session:a": [] });
-
-    expect(localStorage.getItem(STORAGE_KEYS.SESSION_DRAFT_IMAGES)).toBeNull();
   });
 });
 

@@ -49,7 +49,12 @@ for (let i = 0; i < maxAttempts; i++) {
 const electronEnv = { ...process.env };
 delete electronEnv.ELECTRON_RUN_AS_NODE;
 
-const electron = spawn("pnpm", ["exec", "electron", ".", "--enable-logging=stderr"], {
+const electronArgs = ["exec", "electron", ".", "--enable-logging=stderr"];
+if (process.env.OPENGUI_REMOTE_DEBUGGING_PORT) {
+  electronArgs.push(`--remote-debugging-port=${process.env.OPENGUI_REMOTE_DEBUGGING_PORT}`);
+}
+
+const electron = spawn("pnpm", electronArgs, {
   stdio: "inherit",
   env: {
     ...electronEnv,

@@ -14,7 +14,6 @@ import {
   processAfterPartQueueTriggers,
   processBusyToIdleTransitions,
 } from "@/hooks/agent-queue-dispatch";
-import { createPromptQueueEffect, decidePromptDispatch } from "@/hooks/agent-prompt-routing";
 import { decideSessionEntry } from "@/hooks/agent-session-entry";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { InternalAgentState, QueueMode, Session } from "@/hooks/agent-state-types";
@@ -42,22 +41,17 @@ interface LocalIntentOptions {
     force?: boolean;
   }) => void;
   dispatch: (action: unknown) => void;
-  dispatchingSessionIds: Set<string>;
   sessionCreatingRef: SessionCreationLock;
 }
 
 export interface LocalIntentOrchestrator {
-  sendPrompt: (text: string, images?: string[], mode?: QueueMode) => Promise<void>;
+  sendPrompt: (text: string, mode?: QueueMode) => Promise<void>;
   sendCommand: (command: string, args: string) => Promise<void>;
-  dispatchNextQueued: (sessionId: string) => Promise<void>;
   sendQueuedNow: (sessionId: string, promptId: string) => Promise<void>;
   ensureSession: () => Promise<string | null>;
 }
 
-interface LocalIntentHookOptions extends Omit<
-  LocalIntentOptions,
-  "dispatchingSessionIds" | "sessionCreatingRef"
-> {
+interface LocalIntentHookOptions extends Omit<LocalIntentOptions, "sessionCreatingRef"> {
   state: InternalAgentState;
   refreshSessionMessages: (
     sessionId: string,
@@ -92,7 +86,6 @@ export function createLocalIntentOrchestrator(
     scheduleSessionMessageReconcile,
     requestSessionAutoName,
     dispatch,
-    dispatchingSessionIds,
     sessionCreatingRef,
   } = options;
 
@@ -171,10 +164,10 @@ export function createLocalIntentOrchestrator(
   const dispatchPromptDirect = async (
     sessionId: string,
     text: string,
-    images?: string[],
     overrideModel?: SelectedModel,
     overrideAgent?: string,
     overrideVariant?: string,
+    mode?: QueueMode,
   ) => {
     const state = getState();
     const selection = resolveAgentSendSelection(
@@ -202,10 +195,10 @@ export function createLocalIntentOrchestrator(
         session: currentSession,
         sessionId,
         text,
-        images,
         selection,
         activeWorkspaceId: currentState.activeWorkspaceId,
         getWorkspaceBaseUrl,
+        mode,
       });
       scheduleSessionMessageReconcile(sessionId, projectTarget);
     } catch {
@@ -217,10 +210,7 @@ export function createLocalIntentOrchestrator(
     getState,
     sessionsClient,
     dispatch,
-    dispatchingSessionIds,
   });
-
-  const dispatchNextQueued = sessionQueue.dispatchNext;
 
   const getSelectionSnapshot = () => {
     const state = getState();
@@ -247,37 +237,39 @@ export function createLocalIntentOrchestrator(
     return sessionId;
   };
 
-  const sendPrompt = async (text: string, images?: string[], mode?: QueueMode) => {
+  const sendPrompt = async (text: string, mode?: QueueMode) => {
     const sessionId = await resolveNamedSession(text);
     if (!sessionId) return;
 
     const current = getState();
-    const promptDecision = decidePromptDispatch({
-      isBusy: current.busySessionIds.has(sessionId),
-      text,
-      images,
-      mode: mode ?? "queue",
-      ...getSelectionSnapshot(),
-    });
+    const queueMode = mode ?? "queue";
 
-    if (promptDecision.type === "queue") {
-      const queueEffect = createPromptQueueEffect(promptDecision);
+    if (queueMode === "after-part" && current.busySessionIds.has(sessionId)) {
+      const selection = resolveAgentSendSelection(getSelectionSnapshot());
       await sessionQueue.enqueuePrompt({
         sessionId,
-        ...queueEffect.enqueue,
+        text,
+        model: selection.model,
+        agent: selection.agent,
+        variant: selection.variant,
+        mode: queueMode,
+        insertAt: "front",
       });
-      if (queueEffect.afterEnqueue === "abort") {
-        await sessionQueue.abort(sessionId);
-      } else if (queueEffect.afterEnqueue === "mark-after-part-pending") {
-        dispatch({
-          type: "SET_AFTER_PART_PENDING",
-          payload: { sessionID: sessionId, pending: true },
-        });
-      }
+      dispatch({
+        type: "SET_AFTER_PART_PENDING",
+        payload: { sessionID: sessionId, pending: true },
+      });
       return;
     }
 
-    await dispatchPromptDirect(sessionId, prepareDirectoryChangePrompt(sessionId, text), images);
+    await dispatchPromptDirect(
+      sessionId,
+      prepareDirectoryChangePrompt(sessionId, text),
+      undefined,
+      undefined,
+      undefined,
+      queueMode,
+    );
   };
 
   const sendCommand = async (command: string, args: string) => {
@@ -315,7 +307,6 @@ export function createLocalIntentOrchestrator(
   return {
     sendPrompt,
     sendCommand,
-    dispatchNextQueued,
     sendQueuedNow,
     ensureSession,
   };
@@ -338,7 +329,6 @@ export function useLocalIntentOrchestration(
     dispatch,
   } = options;
 
-  const dispatchingRef = useRef<Set<string>>(new Set());
   const sessionCreatingRef = useRef(false);
   const prevBusyRef = useRef<Set<string>>(new Set());
   const [justIdledMap, setJustIdledMap] = useState<Record<string, true>>({});
@@ -355,7 +345,6 @@ export function useLocalIntentOrchestration(
         scheduleSessionMessageReconcile,
         requestSessionAutoName,
         dispatch,
-        dispatchingSessionIds: dispatchingRef.current,
         sessionCreatingRef,
       }),
     [
@@ -377,7 +366,6 @@ export function useLocalIntentOrchestration(
       currentBusySessionIds: state.busySessionIds,
       activeSessionId: getState().activeSessionId,
       sessions: getState().sessions,
-      dispatchNextQueued: orchestrator.dispatchNextQueued,
       refreshSessionMessages,
     });
     setJustIdledMap((prev) => {
@@ -387,7 +375,7 @@ export function useLocalIntentOrchestration(
       return next;
     });
     prevBusyRef.current = new Set(state.busySessionIds);
-  }, [state.busySessionIds, getState, orchestrator.dispatchNextQueued, refreshSessionMessages]);
+  }, [state.busySessionIds, getState, refreshSessionMessages]);
 
   useEffect(() => {
     if (state._afterPartTriggered.size === 0) return;

@@ -8,6 +8,7 @@
 
 import { Check, ExternalLink, Key, Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
@@ -78,7 +79,6 @@ export function DialogConnectProvider({
   // API key flow
   const [apiKey, setApiKey] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   // OAuth flow
@@ -93,7 +93,6 @@ export function DialogConnectProvider({
     setSelectedMethodIndex(authMethods.length === 1 && authMethods[0] ? 0 : null);
     setOauthData(null);
     setOauthCode("");
-    setError(null);
     setSuccess(false);
     pollingRef.current = false;
     setOauthPolling(false);
@@ -126,7 +125,6 @@ export function DialogConnectProvider({
   const handleApiKeyConnect = useCallback(async () => {
     if (!providersApi || !apiKey.trim()) return;
     setConnecting(true);
-    setError(null);
     try {
       const target = { directory, workspaceId: activeWorkspaceId };
       await providersApi.connect(target, providerID, {
@@ -137,7 +135,7 @@ export function DialogConnectProvider({
       setSuccess(true);
       scheduleConnected();
     } catch (err) {
-      setError(getErrorMessage(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setConnecting(false);
     }
@@ -152,7 +150,7 @@ export function DialogConnectProvider({
         if (!pollingRef.current || attempts >= maxAttempts) {
           setOauthPolling(false);
           if (attempts >= maxAttempts) {
-            setError("OAuth timeout - please try again");
+            toast.error("OAuth timeout - please try again");
           }
           return;
         }
@@ -182,7 +180,6 @@ export function DialogConnectProvider({
     async (methodIndex?: number) => {
       if (!providersApi) return;
       setConnecting(true);
-      setError(null);
       setOauthData(null);
       setOauthCode("");
       pollingRef.current = false;
@@ -201,7 +198,7 @@ export function DialogConnectProvider({
           void pollOAuth(methodIndex);
         }
       } catch (err) {
-        setError(getErrorMessage(err));
+        toast.error(getErrorMessage(err));
       } finally {
         setConnecting(false);
       }
@@ -212,7 +209,6 @@ export function DialogConnectProvider({
   const handleOAuthCode = useCallback(async () => {
     if (!providersApi || !oauthCode.trim()) return;
     setConnecting(true);
-    setError(null);
     try {
       const target = { directory, workspaceId: activeWorkspaceId };
       const done = await providersApi.oauthCallback(
@@ -226,10 +222,10 @@ export function DialogConnectProvider({
         setSuccess(true);
         scheduleConnected();
       } else {
-        setError("Invalid code");
+        toast.error("Invalid code");
       }
     } catch (err) {
-      setError(getErrorMessage(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setConnecting(false);
     }
@@ -456,7 +452,6 @@ export function DialogConnectProvider({
       )}
 
       {/* Error */}
-      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

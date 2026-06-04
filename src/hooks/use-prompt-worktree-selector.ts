@@ -14,15 +14,11 @@ import type { WorktreeParentMap } from "@/hooks/agent-state-persistence";
 export function buildPromptWorktreeOptions({
   discoveryState,
   projectDir,
-  selectedDirectory,
   discoveredWorktrees,
-  worktreeParents,
 }: {
   discoveryState: "hidden" | "ready" | "error";
   projectDir: string | null;
-  selectedDirectory: string | null;
   discoveredWorktrees: GitWorktree[];
-  worktreeParents: WorktreeParentMap;
 }) {
   if (discoveryState !== "ready" || !projectDir) return [];
   const byPath = new Map<string, GitWorktree>();
@@ -30,18 +26,6 @@ export function buildPromptWorktreeOptions({
     const normalizedPath = normalizeProjectPath(worktree.path);
     if (!normalizedPath) continue;
     byPath.set(normalizedPath, { ...worktree, path: normalizedPath });
-  }
-  if (selectedDirectory && !byPath.has(selectedDirectory)) {
-    byPath.set(selectedDirectory, {
-      path: selectedDirectory,
-      branch: worktreeParents[selectedDirectory]?.branch,
-    });
-  }
-  if (!Array.from(byPath.keys()).some((path) => isRootWorktreePath(path, projectDir))) {
-    byPath.set(projectDir, {
-      path: projectDir,
-      branch: worktreeParents[projectDir]?.branch,
-    });
   }
   return Array.from(byPath.values())
     .sort((left, right) => {
@@ -144,11 +128,9 @@ export function usePromptWorktreeSelector({
       buildPromptWorktreeOptions({
         discoveryState,
         projectDir,
-        selectedDirectory,
         discoveredWorktrees,
-        worktreeParents,
       }),
-    [discoveredWorktrees, projectDir, selectedDirectory, discoveryState, worktreeParents],
+    [discoveredWorktrees, projectDir, discoveryState],
   );
 
   const selectedOption = React.useMemo(
@@ -161,7 +143,8 @@ export function usePromptWorktreeSelector({
     projectDir,
     options,
     selectedOption,
-    shouldShowSelector: Boolean(projectDir) && isLocalWorkspace && discoveryState === "ready",
+    shouldShowSelector:
+      Boolean(projectDir) && isLocalWorkspace && discoveryState === "ready" && options.length > 1,
     isPendingTargetSelection: !activeSessionId && Boolean(activeTargetDirectory),
   };
 }

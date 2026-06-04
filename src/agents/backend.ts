@@ -35,7 +35,6 @@ export interface AgentBackendCapabilities {
   sessions: boolean;
   streaming: boolean;
   messagePaging: boolean;
-  images: boolean;
   models: boolean;
   agents: boolean;
   commands: boolean;
@@ -132,7 +131,6 @@ interface AgentRuntimeBackend {
   }): Promise<Session>;
   startSession?(input: {
     text: string;
-    images?: string[];
     model?: SelectedModel;
     agent?: string;
     variant?: string;

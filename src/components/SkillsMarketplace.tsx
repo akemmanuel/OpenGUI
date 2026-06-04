@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   AlertCircle,
   CheckCircle2,
@@ -275,7 +276,6 @@ export function SkillsMarketplace() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [skills, setSkills] = useState<MarketplaceSkill[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [installedSkills, setInstalledSkills] = useState<InstalledSkillInfo[]>([]);
   const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set());
   const [selectedSkill, setSelectedSkill] = useState<MarketplaceSkill | null>(null);
@@ -317,7 +317,6 @@ export function SkillsMarketplace() {
   const fetchSkills = useCallback(async () => {
     if (!marketplaceApi) return;
     setLoading(true);
-    setError(null);
     try {
       if (debouncedQuery) {
         if (debouncedQuery.length < 2) {
@@ -331,7 +330,7 @@ export function SkillsMarketplace() {
         setSkills(res.data);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load plugins");
+      toast.error(err instanceof Error ? err.message : "Failed to load plugins");
     } finally {
       setLoading(false);
     }
@@ -484,25 +483,6 @@ export function SkillsMarketplace() {
           </button>
         )}
       </div>
-
-      {/* Error state */}
-      {error && (
-        <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
-          <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
-            <AlertCircle className="size-4" />
-            {error}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => fetchSkills()}
-          >
-            {t("settings.marketplace.retry")}
-          </Button>
-        </div>
-      )}
 
       {/* Plugin cards grid */}
       {loading && skills.length === 0 ? (

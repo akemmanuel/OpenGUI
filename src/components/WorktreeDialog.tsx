@@ -44,7 +44,7 @@ export function WorktreeDialog({
   const client = useOpenGuiClient();
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
-  const { error, setError, clearError, setUnknownError } = useDialogError();
+  const { setError, clearError, setUnknownError } = useDialogError();
 
   const [mode, setMode] = useState<BranchMode>(defaultMode);
   const [existingBranch, setExistingBranch] = useState("");
@@ -218,8 +218,6 @@ export function WorktreeDialog({
               A new directory will be created at this path.
             </p>
           </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter>

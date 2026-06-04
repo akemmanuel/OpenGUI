@@ -7,25 +7,25 @@ type SlashInvocation = ReturnType<typeof parseSlashCommand>;
 export type PromptSubmitDecision =
   | { type: "skip" }
   | { type: "command"; commandName: string; args: string }
-  | { type: "prompt"; text: string; images?: string[]; mode?: QueueMode };
+  | { type: "prompt"; text: string; mode?: QueueMode };
 
 export function decidePromptSubmit({
   value,
-  imagePreviews,
   disabled,
+  isUploading,
   isLoading,
   queueMode,
   slashInvocation,
 }: {
   value: string;
-  imagePreviews: string[];
   disabled: boolean;
+  isUploading?: boolean;
   isLoading?: boolean;
   queueMode: QueueMode;
   slashInvocation: SlashInvocation;
 }): PromptSubmitDecision {
-  const hasValue = value.trim().length > 0 || imagePreviews.length > 0;
-  if (disabled || !hasValue) return { type: "skip" };
+  const hasValue = value.trim().length > 0;
+  if (disabled || isUploading || !hasValue) return { type: "skip" };
   if (slashInvocation) {
     return {
       type: "command",
@@ -36,15 +36,14 @@ export function decidePromptSubmit({
   return {
     type: "prompt",
     text: value,
-    images: imagePreviews.length > 0 ? imagePreviews : undefined,
     mode: isLoading ? queueMode : undefined,
   };
 }
 
 export function usePromptSubmit({
   value,
-  imagePreviews,
   disabled,
+  isUploading,
   isLoading,
   queueMode,
   parseSlashCommand,
@@ -55,30 +54,30 @@ export function usePromptSubmit({
   resetHistory,
 }: {
   value: string;
-  imagePreviews: string[];
   disabled: boolean;
+  isUploading?: boolean;
   isLoading?: boolean;
   queueMode: QueueMode;
   parseSlashCommand: (value: string) => SlashInvocation;
   sendCommand: (command: string, args: string) => Promise<void>;
-  onSubmit?: (message: string, images?: string[], mode?: QueueMode) => void | Promise<void>;
+  onSubmit?: (message: string, mode?: QueueMode) => void | Promise<void>;
   clearPromptDraft: () => void;
   resetSlashCommand: () => void;
   resetHistory: () => void;
 }) {
   const submittingRef = React.useRef(false);
-  const hasValue = value.trim().length > 0 || imagePreviews.length > 0;
+  const hasValue = value.trim().length > 0;
 
   const submit = React.useCallback(async () => {
     if (submittingRef.current) return;
-    if (disabled) return;
+    if (disabled || isUploading) return;
     if (!hasValue) return;
     submittingRef.current = true;
 
     const decision = decidePromptSubmit({
       value,
-      imagePreviews,
       disabled,
+      isUploading,
       isLoading,
       queueMode,
       slashInvocation: parseSlashCommand(value),
@@ -98,7 +97,7 @@ export function usePromptSubmit({
         return;
       }
 
-      await onSubmit?.(decision.text, decision.images, decision.mode);
+      await onSubmit?.(decision.text, decision.mode);
       clearPromptDraft();
       resetHistory();
     } finally {
@@ -108,7 +107,7 @@ export function usePromptSubmit({
     clearPromptDraft,
     disabled,
     hasValue,
-    imagePreviews,
+    isUploading,
     isLoading,
     onSubmit,
     parseSlashCommand,

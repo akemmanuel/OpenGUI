@@ -26,19 +26,19 @@ export async function enqueueSessionPrompt(input: {
   services: BackendServiceContext;
   sessionId: string;
   text: string;
-  images?: string[];
   model?: SelectedModel;
   agent?: string;
   variant?: string;
   mode: QueueMode;
+  insertAt?: "front" | "back";
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.enqueue(input.sessionId, {
     text: input.text,
-    images: input.images,
     model: input.model,
     agent: input.agent,
     variant: input.variant,
     mode: input.mode,
+    insertAt: input.insertAt,
   });
 }
 
@@ -56,7 +56,6 @@ export async function updateSessionPrompt(input: {
   sessionId: string;
   entryId: string;
   text?: string;
-  images?: string[];
   model?: SelectedModel;
   agent?: string | null;
   variant?: string | null;
@@ -64,7 +63,6 @@ export async function updateSessionPrompt(input: {
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.update(input.sessionId, input.entryId, {
     text: input.text,
-    images: input.images,
     model: input.model,
     agent: input.agent,
     variant: input.variant,

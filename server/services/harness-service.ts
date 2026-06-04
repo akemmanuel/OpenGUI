@@ -230,7 +230,6 @@ export class HarnessService {
     session: SessionRecord;
     scope: HarnessScope;
     text: string;
-    images?: string[];
     model?: SelectedModel;
     agent?: string;
     variant?: string;
@@ -238,7 +237,7 @@ export class HarnessService {
     await this.backendRpc(input.session.harnessId, "prompt", [
       input.session.rawId,
       input.text,
-      input.images,
+      undefined,
       input.model,
       input.agent,
       input.variant,

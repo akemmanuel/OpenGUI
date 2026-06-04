@@ -5,7 +5,7 @@
  */
 
 import { homedir } from "node:os";
-import { basename, extname, join, normalize } from "node:path";
+import { basename, extname, join } from "node:path";
 import { access, readFile, readdir } from "node:fs/promises";
 import {
   deleteSession,
@@ -16,6 +16,13 @@ import {
   query,
   renameSession,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+  fail,
+  makeHarnessProjectKey,
+  normalizeHarnessDirectory,
+  nowHarnessConnection,
+  ok,
+} from "./lib/harness-adapter-kit.ts";
 
 // t3code-style Claude integration: use the user-installed Claude Code CLI.
 // The Claude Agent SDK is only the JS transport layer; the native `claude`
@@ -23,14 +30,6 @@ import {
 // or CLAUDE_CODE_EXECUTABLE override). This avoids bundling optional SDK
 // platform binaries and avoids pnpm/Electron packaging resolution traps.
 const CLAUDE_EXECUTABLE_PATH = process.env.CLAUDE_CODE_EXECUTABLE?.trim() || "claude";
-
-const DEFAULT_STATUS = {
-  state: "idle",
-  serverUrl: null,
-  serverVersion: null,
-  error: null,
-  lastEventAt: null,
-};
 
 const MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
 const CLAUDE_CODE_SESSION_PREFIX = "claude-code:";
@@ -266,34 +265,15 @@ function buildVariantQueryOptions(variant, modelInfo) {
 }
 
 function normalizeDir(directory) {
-  if (typeof directory !== "string") return "";
-  const trimmed = directory.trim();
-  if (!trimmed) return "";
-  return normalize(trimmed);
+  return normalizeHarnessDirectory(directory);
 }
 
 function makeProjectKey(workspaceId, directory) {
-  return `${workspaceId ?? "local"}:${normalizeDir(directory)}`;
+  return makeHarnessProjectKey(workspaceId, directory);
 }
 
 function nowConnection(status = {}) {
-  return {
-    ...DEFAULT_STATUS,
-    ...status,
-    lastEventAt: Date.now(),
-  };
-}
-
-function ok(data) {
-  return { success: true, data };
-}
-
-function fail(error, data) {
-  return {
-    success: false,
-    error: error instanceof Error ? error.message : String(error),
-    data,
-  };
+  return nowHarnessConnection(status);
 }
 
 function makeSessionTitle(text, title) {

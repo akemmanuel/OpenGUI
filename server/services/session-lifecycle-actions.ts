@@ -129,7 +129,6 @@ export async function promptSessionThroughHarness(input: {
   project: ProjectRecord;
   session: SessionRecord;
   text: string;
-  images?: string[];
   model?: SelectedModel;
   agent?: string;
   variant?: string;
@@ -142,7 +141,6 @@ export async function promptSessionThroughHarness(input: {
       sessionId: input.session.id,
     }),
     text: input.text,
-    images: input.images,
     model: input.model,
     agent: input.agent,
     variant: input.variant,

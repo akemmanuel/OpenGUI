@@ -1,5 +1,6 @@
 import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +62,6 @@ export function ProjectPathDialog() {
   const [value, setValue] = useState("");
   const [showServerBrowser, setShowServerBrowser] = useState(false);
   const [serverListing, setServerListing] = useState<ServerDirectoryListing | null>(null);
-  const [serverBrowserError, setServerBrowserError] = useState<string | null>(null);
   const [serverBrowserLoading, setServerBrowserLoading] = useState(false);
   const resolverRef = useRef<((value: string | null) => void) | null>(null);
   const webRuntime = isWebRuntime();
@@ -94,7 +94,6 @@ export function ProjectPathDialog() {
 
   const loadServerDirectory = async (path?: string) => {
     setServerBrowserLoading(true);
-    setServerBrowserError(null);
     try {
       const params = new URLSearchParams();
       if (path) params.set("path", path);
@@ -110,7 +109,7 @@ export function ProjectPathDialog() {
       setServerListing(body.value);
       setValue(body.value.path);
     } catch (error) {
-      setServerBrowserError(error instanceof Error ? error.message : String(error));
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setServerBrowserLoading(false);
     }
@@ -212,11 +211,6 @@ export function ProjectPathDialog() {
                   Up
                 </Button>
               </div>
-              {serverBrowserError && (
-                <div className="mb-2 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-                  {serverBrowserError}
-                </div>
-              )}
               <div className="max-h-56 overflow-y-auto rounded border bg-background">
                 {serverBrowserLoading ? (
                   <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>

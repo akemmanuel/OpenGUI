@@ -1,10 +1,12 @@
-import { AlertCircle, ChevronDown, ChevronUp, ExternalLink, GitMerge, X } from "lucide-react";
+import { ExternalLink, GitMerge } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
@@ -27,6 +29,8 @@ import {
 } from "@/hooks/use-keyboard-shortcuts";
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { POST_MERGE_DELAY_MS, STORAGE_KEYS } from "@/lib/constants";
+import { getChatSurfaceState, hasProjectConnectedPrompt } from "@/lib/chat-surface";
+import { parseProjectKey } from "@/hooks/agent-session-utils";
 import { storageGet } from "@/lib/safe-storage";
 import { OpenGuiClientProvider, useOpenGuiClient } from "@/protocol/provider";
 import { getDesktopShellClient } from "@/runtime/clients";
@@ -35,6 +39,7 @@ import { getDirectoryPlacementInfo, getWorktreePlacementMeta } from "@/lib/workt
 import {
   buildPRUrl,
   computeTokenTotal,
+  normalizeProjectPath,
   normalizeTerminalOutput,
   openExternalLink,
 } from "@/lib/utils";
@@ -52,6 +57,49 @@ type ContextInfo = {
   cost: number | null;
   contextLimit: number | null;
 };
+
+function NoProjectConnected({
+  canStartChat,
+  onStartChat,
+}: {
+  canStartChat: boolean;
+  onStartChat: () => void;
+}) {
+  return (
+    <div className="flex-1 flex items-center justify-center px-6">
+      <div className="max-w-md text-center space-y-4">
+        <div className="space-y-1.5">
+          <h2 className="text-lg font-semibold tracking-tight">No project connected</h2>
+          <p className="text-sm text-muted-foreground">
+            {canStartChat
+              ? "Connect a project now or start a chat."
+              : "Connect a project to start chatting."}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {canStartChat && (
+            <Button type="button" onClick={onStartChat}>
+              Start a chat
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NoSessionSelected() {
+  return (
+    <div className="flex-1 flex items-center justify-center px-6">
+      <div className="max-w-md text-center space-y-1.5">
+        <h2 className="text-lg font-semibold tracking-tight">No session selected</h2>
+        <p className="text-sm text-muted-foreground">
+          Select a session or start a new one from a connected project.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function useContextInfo({
   activeSessionId,
@@ -149,7 +197,6 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
   const {
     sendPrompt,
     abortSession,
-    clearError,
     getQueuedPrompts,
     removeFromQueue,
     reorderQueue,
@@ -157,6 +204,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
     sendQueuedNow,
     cycleVariant,
     revertVariant,
+    startNewChat,
     setActiveTarget,
     removeProject,
     unregisterWorktree,
@@ -173,9 +221,15 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
   const { messages } = useMessages();
   const { providers, selectedModel, providerDefaults } = useModelState();
   const capabilities = useBackendCapabilities();
-  const { bootState, bootError, bootLogs, lastError, worktreeParents, defaultChatDirectory } =
-    useConnectionState();
-  const [logsExpanded, setLogsExpanded] = useState(false);
+  const {
+    bootState,
+    bootError,
+    bootLogs,
+    lastError,
+    worktreeParents,
+    defaultChatDirectory,
+    connections,
+  } = useConnectionState();
   const [mergeInfo, setMergeInfo] = useState<{
     mainDir: string;
     branch: string;
@@ -196,6 +250,40 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
 
   const activeSessionDirectory =
     activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
+  const connectedTargetDirectories = useMemo(
+    () =>
+      Object.entries(connections)
+        .filter(([, status]) => status.state === "connected")
+        .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory)),
+    [connections],
+  );
+  const connectedProjectDirectories = useMemo(
+    () =>
+      Object.entries(connections)
+        .filter(([, status]) => status.state === "connected" && status.kind !== "chat-infra")
+        .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory)),
+    [connections],
+  );
+  const connectedActiveTargetDirectory = (() => {
+    if (!activeTargetDirectory) return null;
+    const normalizedActiveTarget = normalizeProjectPath(activeTargetDirectory);
+    if (connectedTargetDirectories.includes(normalizedActiveTarget)) return activeTargetDirectory;
+    if (normalizedActiveTarget === normalizeProjectPath(defaultChatDirectory ?? "")) {
+      return activeTargetDirectory;
+    }
+    return null;
+  })();
+  const chatSurfaceState = useMemo(
+    () =>
+      getChatSurfaceState({
+        activeSessionId: sessionActiveId,
+        activeTargetDirectory: connectedActiveTargetDirectory,
+        defaultChatDirectory,
+      }),
+    [connectedActiveTargetDirectory, defaultChatDirectory, sessionActiveId],
+  );
+  const hasConnectedProjects = connectedProjectDirectories.length > 0;
+  const showPromptBox = hasProjectConnectedPrompt(chatSurfaceState);
   const activeWorktreeInfo = useMemo(() => {
     const placement = getDirectoryPlacementInfo(activeSessionDirectory, worktreeParents);
     if (!placement?.isKnownWorktree) return null;
@@ -337,6 +425,16 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
   const isBooting = bootState === "checking-server" || bootState === "starting-server";
 
   useEffect(() => {
+    if (isBooting) return;
+    const message = bootState === "error" ? bootError : lastError;
+    if (!message) return;
+    toast.error(message, {
+      description: bootState === "error" && normalizedBootLogs ? normalizedBootLogs : undefined,
+      duration: 8000,
+    });
+  }, [bootState, bootError, isBooting, lastError, normalizedBootLogs]);
+
+  useEffect(() => {
     let cancelled = false;
     const mainDir = activeWorktreeInfo?.mainDir;
     if (!mainDir) {
@@ -395,51 +493,6 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
               </div>
             )}
 
-            {/* Error banner */}
-            {!isBooting && (bootState === "error" || lastError) && (
-              <div className="border-b border-destructive/20 bg-destructive/10">
-                <div className="flex items-center gap-2 px-4 py-2 text-sm text-destructive">
-                  <AlertCircle className="size-4 shrink-0" />
-                  <span className="flex-1 truncate">
-                    {bootState === "error" ? bootError : lastError}
-                  </span>
-                  {bootState === "error" && bootLogs && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs text-destructive hover:text-destructive"
-                      onClick={() => setLogsExpanded((v) => !v)}
-                    >
-                      {logsExpanded ? (
-                        <>
-                          Hide logs <ChevronUp className="size-3 ml-1" />
-                        </>
-                      ) : (
-                        <>
-                          Show logs <ChevronDown className="size-3 ml-1" />
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => {
-                      clearError();
-                      setLogsExpanded(false);
-                    }}
-                  >
-                    <X className="size-3" />
-                  </Button>
-                </div>
-                {logsExpanded && normalizedBootLogs && (
-                  <pre className="terminal-output w-full min-w-0 max-w-full px-4 pb-3 text-destructive/80 max-h-48 overflow-y-auto overflow-x-hidden select-text">
-                    {normalizedBootLogs}
-                  </pre>
-                )}
-              </div>
-            )}
-
             {activeView === "settings" ? (
               <SettingsView onBack={() => setActiveView("chat")} />
             ) : (
@@ -475,71 +528,83 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
                     </div>
                   </div>
                 )}
-                <MessageList detachedProject={detachedProject} />
+                {chatSurfaceState.kind === "no-project" ||
+                chatSurfaceState.kind === "default-chat" ? (
+                  hasConnectedProjects ? (
+                    <NoSessionSelected />
+                  ) : (
+                    <NoProjectConnected
+                      canStartChat={chatSurfaceState.kind === "default-chat"}
+                      onStartChat={() => {
+                        void startNewChat();
+                      }}
+                    />
+                  )
+                ) : (
+                  <MessageList detachedProject={detachedProject} />
+                )}
 
                 {/* Queue list + Prompt input */}
-                <div className="shrink-0 px-4 pb-3">
-                  <div className="max-w-2xl mx-auto">
-                    {queuedPrompts.length > 0 && (
-                      <div className="mb-1.5">
-                        <QueueList
-                          items={queuedPrompts}
-                          onRemove={(id) => {
-                            if (!activeSessionId) return;
-                            removeFromQueue(activeSessionId, id);
-                          }}
-                          onMoveUp={(index) => {
-                            if (!activeSessionId) return;
-                            reorderQueue(activeSessionId, index, index - 1);
-                          }}
-                          onMoveDown={(index) => {
-                            if (!activeSessionId) return;
-                            reorderQueue(activeSessionId, index, index + 1);
-                          }}
-                          onMoveToTop={(index) => {
-                            if (!activeSessionId) return;
-                            reorderQueue(activeSessionId, index, 0);
-                          }}
-                          onMoveToBottom={(index) => {
-                            if (!activeSessionId) return;
-                            reorderQueue(activeSessionId, index, queuedPrompts.length - 1);
-                          }}
-                          onEdit={(id, newText) => {
-                            if (!activeSessionId) return;
-                            updateQueuedPrompt(activeSessionId, id, newText);
-                          }}
-                          onSendNow={(id) => {
-                            if (!activeSessionId) return;
-                            void sendQueuedNow(activeSessionId, id);
-                          }}
-                          onReorder={(fromIndex, toIndex) => {
-                            if (!activeSessionId) return;
-                            reorderQueue(activeSessionId, fromIndex, toIndex);
-                          }}
-                        />
-                      </div>
-                    )}
-                    <PromptBox
-                      autoFocus
-                      disabled={
-                        isBooting ||
-                        isLoadingMessages ||
-                        (!activeSessionId && !activeTargetDirectory && !defaultChatDirectory)
-                      }
-                      isLoading={isBusy}
-                      contextPercent={contextPercent}
-                      contextTokens={contextInfo.tokens}
-                      contextCost={contextInfo.cost}
-                      contextLimit={contextInfo.contextLimit}
-                      queueMode={queueMode}
-                      onQueueModeChange={setQueueMode}
-                      onSubmit={(message, images, mode) => {
-                        return sendPrompt(message, images, mode);
-                      }}
-                      onStop={() => abortSession()}
-                    />
+                {showPromptBox && (
+                  <div className="shrink-0 px-4 pb-3">
+                    <div className="max-w-2xl mx-auto">
+                      {queuedPrompts.length > 0 && (
+                        <div className="mb-1.5">
+                          <QueueList
+                            items={queuedPrompts}
+                            onRemove={(id) => {
+                              if (!activeSessionId) return;
+                              removeFromQueue(activeSessionId, id);
+                            }}
+                            onMoveUp={(index) => {
+                              if (!activeSessionId) return;
+                              reorderQueue(activeSessionId, index, index - 1);
+                            }}
+                            onMoveDown={(index) => {
+                              if (!activeSessionId) return;
+                              reorderQueue(activeSessionId, index, index + 1);
+                            }}
+                            onMoveToTop={(index) => {
+                              if (!activeSessionId) return;
+                              reorderQueue(activeSessionId, index, 0);
+                            }}
+                            onMoveToBottom={(index) => {
+                              if (!activeSessionId) return;
+                              reorderQueue(activeSessionId, index, queuedPrompts.length - 1);
+                            }}
+                            onEdit={(id, newText) => {
+                              if (!activeSessionId) return;
+                              updateQueuedPrompt(activeSessionId, id, newText);
+                            }}
+                            onSendNow={(id) => {
+                              if (!activeSessionId) return;
+                              void sendQueuedNow(activeSessionId, id);
+                            }}
+                            onReorder={(fromIndex, toIndex) => {
+                              if (!activeSessionId) return;
+                              reorderQueue(activeSessionId, fromIndex, toIndex);
+                            }}
+                          />
+                        </div>
+                      )}
+                      <PromptBox
+                        autoFocus
+                        disabled={isBooting || isLoadingMessages}
+                        isLoading={isBusy}
+                        contextPercent={contextPercent}
+                        contextTokens={contextInfo.tokens}
+                        contextCost={contextInfo.cost}
+                        contextLimit={contextInfo.contextLimit}
+                        queueMode={queueMode}
+                        onQueueModeChange={setQueueMode}
+                        onSubmit={(message, mode) => {
+                          return sendPrompt(message, mode);
+                        }}
+                        onStop={() => abortSession()}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
           </div>
@@ -603,6 +668,7 @@ export function App() {
           <SidebarProvider className="!h-dvh">
             <AppContent detachedProject={detachedProject} />
             {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
+            <Toaster richColors closeButton />
           </SidebarProvider>
         </AgentBackendProvider>
       </OpenGuiClientProvider>

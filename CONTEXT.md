@@ -17,9 +17,41 @@ OpenGUI is split into three layers:
 A backend-wide coding-agent runtime (OpenCode, Claude Code, Codex, Pi) that OpenGUI Backend manages. Harness availability is not Project-specific. Harnesses are hosted inside the Backend process via adapters (`opencode-bridge.ts`, `claude-code-bridge.ts`, etc.). The Frontend never speaks to a Harness directly.
 _Avoid_: Agent backend, agent runtime (in product UI), bridge, provider
 
+**Detected Harness**:
+A Harness CLI OpenGUI finds already installed and available on the user's machine. Setup does not show a Detected Harness list; detected readiness only determines whether the user can start Agent sends after completing setup.
+_Avoid_: recommended harness, preferred harness, default agent, onboarding harness picker
+
+**No Harness Installed**:
+The setup and home state where OpenGUI cannot find any available Harness CLI on the user's machine. After setup, this state shows a single Setup action in the empty state that opens the OpenCode install/provider flow; it does not list every possible Harness installation path.
+_Avoid_: failed setup, broken app, install every harness, equal install menu
+
+**OpenCode Setup Flow**:
+The setup wizard flow for installing OpenCode and connecting its providers when no Harness is installed. OpenCode is privileged only as the guided installation path; already Detected Harnesses are still presented neutrally as available Harness choices.
+_Avoid_: recommended harness overall, only supported harness, list all harness installers
+
+**Skip Harness Setup**:
+The setup wizard path where a user intentionally skips the OpenCode Setup Flow because they want to use another Harness or postpone Harness setup, then continues to non-execution preferences such as Default chat directory and appearance. Skipping Harness setup does not show a Harness picker; after setup, Detected Harnesses may be used immediately while No Harness Installed shows the Setup empty-state action.
+_Avoid_: skip onboarding, ready without harness, cancel setup, install another harness in setup
+
 **Harness Adapter**:
 The local integration code that translates OpenGUI Backend operations into Harness SDK calls. One adapter per Harness type.
 _Avoid_: Bridge, provider glue, agent SDK glue
+
+**Guided Harness Install**:
+A user-approved setup flow where OpenGUI helps install OpenCode and then verifies whether it is available. It must not silently install anything or present guided installation for every Harness.
+_Avoid_: silent install, bundled agent, automatic setup, default npm install, all-harness installer
+
+**Official Installer Consent**:
+The explicit approval step before OpenGUI starts a Harness install action. OpenGUI shows what it will install in plain language, shows the command or installer source when relevant, and offers manual instructions as an alternative.
+_Avoid_: hidden script execution, blind install, terminal-only setup
+
+**Install Verification**:
+The post-install check where OpenGUI detects whether a Harness CLI became available after Guided Harness Install. OpenGUI polls automatically and also lets the user manually request another check.
+_Avoid_: assume installed, user-only confirmation, one-shot detection
+
+**Harness Readiness**:
+The user-facing availability state of a Harness: not installed, installed but not authenticated, ready, or broken. A verified CLI install is not ready until the Harness has usable provider credentials or CLI-authenticated provider state.
+_Avoid_: installed means ready, backend available, binary found
 
 **Harness Scope**:
 The project+path/session tuple that scopes a Harness operation inside an OpenGUI Backend. Frontend Workspaces may choose and route that scope, but they are not part of it.
@@ -64,6 +96,10 @@ _Avoid_: Mobile app, phone client
 **Provider credentials**:
 Backend-owned credentials or references needed for Harness execution, such as API keys, OAuth tokens, or CLI-authenticated provider state. The Frontend may collect or configure them, but execution uses credentials available to the OpenGUI Backend.
 _Avoid_: frontend secret, local browser credential
+
+**Everyday Builder**:
+A non-technical or lightly technical person using OpenGUI to get coding-agent help with practical software work, such as websites, WordPress, PHP, scripts, or small business tools. They may recognize terminals and files but should not need to understand package managers, daemon processes, ports, environment variables, or CLI authentication flows to use the product.
+_Avoid_: Normie, power user, professional developer only
 
 **Backend access token**:
 A bearer token used by a Frontend or Shell to authenticate to an OpenGUI Backend API, matching the Backend's configured `OPENGUI_AUTH_TOKEN`. It is Workspace connection material, not a provider credential and not a username/password login.
@@ -110,6 +146,38 @@ _Avoid_: shared session setting, backend default
 **Default chat directory**:
 A Workspace-local Project path selected for the next Pending prompt when starting a new chat without choosing a specific Project first. Each Workspace has its own Default chat directory because project paths are meaningful only for that Workspace's OpenGUI Backend connection.
 _Avoid_: global chat directory, app default project
+
+**Chats section**:
+The sidebar area for Sessions started from the Workspace's Default chat directory. It is hidden when the Default chat directory is empty, and visible when the Default chat directory is set to an existing directory.
+_Avoid_: global chats, projectless chats, always-visible chats
+
+**Default chat directory verification**:
+The check that a saved Default chat directory still exists and is accessible through the active OpenGUI Backend before OpenGUI treats it as usable. A non-empty saved path alone is not enough to show the Chats section or allow starting a chat from it.
+_Avoid_: string-only default directory, assume path exists, stale chats target
+
+**Invalid Default chat directory**:
+A saved Default chat directory that no longer exists or is no longer accessible through the active OpenGUI Backend. OpenGUI clears an Invalid Default chat directory instead of preserving it as a recovery state.
+_Avoid_: stale default directory, missing-folder warning state, disconnected default chats
+
+**Optional Setup Preference**:
+A setup wizard preference the user may configure during onboarding or skip without blocking completion. Default chat directory and appearance preferences are Optional Setup Preferences.
+_Avoid_: required setup step, onboarding blocker, execution readiness
+
+**Project-connected Prompt**:
+The chat input shown only when it is attached to an active Session or an active Project target. If no Project is connected, OpenGUI shows an empty state such as No project connected instead of rendering a disabled PromptBox.
+_Avoid_: disabled global prompt, send-time folder prompt, implicit home directory
+
+**Uploaded prompt file**:
+A user-provided file that the Project-connected Prompt makes available to the OpenGUI Backend before an Agent send by storing it as a backend-accessible temporary file and inserting a file mention for that temporary path into the prompt text. Uploaded prompt files are ordinary files, not prompt images or separate message attachments.
+_Avoid_: image attachment, prompt image, base64 attachment, client-only file
+
+**No project connected**:
+The chat empty state shown when there is no active Session and no active Project target. When a valid Default chat directory exists, the empty state invites the user to connect a Project or start a chat; when it does not, the user must connect a Project first.
+_Avoid_: no chats, select or create a session, disconnected prompt
+
+**No session selected**:
+The chat empty state shown when one or more Projects are connected but there is no active Session and no active Project target. It replaces the No project connected state in Workspaces that already have connected Projects.
+_Avoid_: no project connected, blank logo state, disabled prompt
 
 **Project**:
 A Workspace-scoped, Frontend-owned work target rooted at a concrete directory that the app presents in navigation and uses to request Sessions. A Project belongs to exactly one Frontend Workspace presentation and is not a backend-owned domain object. The Frontend may resolve a Project path against the active OpenGUI Backend when it needs backend-owned Sessions or execution, but backend Project records are implementation details and must not define Workspace Project membership.

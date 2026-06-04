@@ -7,6 +7,7 @@
 
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useCallback, useState } from "react";
+import { toast } from "sonner";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,7 +176,6 @@ export function DialogCustomProvider({
   const [models, setModels] = useState<ModelEntry[]>([{ _key: nextKey(), id: "", name: "" }]);
   const [headers, setHeaders] = useState<HeaderEntry[]>([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const addModel = () => setModels([...models, { _key: nextKey(), id: "", name: "" }]);
   const removeModel = (idx: number) => setModels(models.filter((_, i) => i !== idx));
@@ -194,12 +194,11 @@ export function DialogCustomProvider({
 
       const validationError = validate(providerId, name, baseUrl, models);
       if (validationError) {
-        setError(validationError);
+        toast.error(validationError);
         return;
       }
 
       setSaving(true);
-      setError(null);
 
       try {
         // Build the models record
@@ -251,7 +250,7 @@ export function DialogCustomProvider({
         await providersApi.dispose(target);
         onSaved();
       } catch (err) {
-        setError(getErrorMessage(err, "Failed to save"));
+        toast.error(getErrorMessage(err, "Failed to save"));
       } finally {
         setSaving(false);
       }
@@ -378,9 +377,6 @@ export function DialogCustomProvider({
           updateHeader(idx, field === "first" ? "key" : "value", value)
         }
       />
-
-      {/* Error */}
-      {error && <p className="text-xs text-destructive">{error}</p>}
 
       {/* Submit */}
       <Button type="submit" size="sm" className="w-full" disabled={saving}>

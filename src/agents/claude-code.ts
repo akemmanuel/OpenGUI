@@ -6,7 +6,6 @@ export const CLAUDE_CODE_CAPABILITIES: AgentBackendCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: true,
-  images: false,
   models: true,
   agents: false,
   commands: true,

@@ -6,7 +6,6 @@ export const PI_CAPABILITIES: AgentBackendCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: false,
-  images: true,
   models: true,
   agents: false,
   commands: true,

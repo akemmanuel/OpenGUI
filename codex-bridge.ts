@@ -3,17 +3,16 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join, normalize } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Codex } from "@openai/codex-sdk";
-
-const DEFAULT_STATUS = {
-  state: "idle",
-  serverUrl: null,
-  serverVersion: null,
-  error: null,
-  lastEventAt: null,
-};
+import {
+  fail,
+  makeHarnessProjectKey,
+  normalizeHarnessDirectory,
+  nowHarnessConnection,
+  ok,
+} from "./lib/harness-adapter-kit.ts";
 
 const CODEX_VALID_VARIANTS = ["none", "minimal", "low", "medium", "high", "xhigh"];
 const DEFAULT_MODEL_ID = "gpt-5.4";
@@ -714,34 +713,15 @@ async function resolveSupportedCodexVariant(model, variant) {
 }
 
 function normalizeDir(directory) {
-  if (typeof directory !== "string") return "";
-  const trimmed = directory.trim();
-  if (!trimmed) return "";
-  return normalize(trimmed);
+  return normalizeHarnessDirectory(directory);
 }
 
 function makeProjectKey(workspaceId, directory) {
-  return `${workspaceId ?? "local"}:${normalizeDir(directory)}`;
-}
-
-function ok(data) {
-  return { success: true, data };
-}
-
-function fail(error, data) {
-  return {
-    success: false,
-    error: error instanceof Error ? error.message : String(error),
-    data,
-  };
+  return makeHarnessProjectKey(workspaceId, directory);
 }
 
 function nowConnection(status = {}) {
-  return {
-    ...DEFAULT_STATUS,
-    ...status,
-    lastEventAt: Date.now(),
-  };
+  return nowHarnessConnection(status);
 }
 
 const MAX_CODEX_SESSION_INDEX_ENTRIES = 1000;

@@ -39,7 +39,6 @@ export interface PromptQueueEntryRecord {
   id: string;
   sessionId: string;
   text: string;
-  images?: string[];
   createdAt: number;
   model?: SelectedModel;
   agent?: string;
@@ -68,7 +67,6 @@ export interface CreatePromptQueueEntryInput {
   id?: string;
   sessionId: string;
   text: string;
-  images?: string[];
   createdAt?: number;
   model?: SelectedModel;
   agent?: string;
@@ -79,7 +77,6 @@ export interface CreatePromptQueueEntryInput {
 
 export interface UpdatePromptQueueEntryInput {
   text?: string;
-  images?: string[];
   model?: SelectedModel;
   agent?: string | null;
   variant?: string | null;
@@ -446,7 +443,6 @@ export function createJsonStorageService(dataDir: string): StorageService {
         id: input.id ?? generatePromptQueueEntryId(),
         sessionId: input.sessionId,
         text: input.text,
-        images: input.images,
         createdAt: input.createdAt ?? Date.now(),
         model: input.model,
         agent: input.agent,
@@ -471,7 +467,6 @@ export function createJsonStorageService(dataDir: string): StorageService {
       const updated: PromptQueueEntryRecord = {
         ...existing,
         text: input.text ?? existing.text,
-        images: input.images ?? existing.images,
         model: input.model ?? existing.model,
         agent: input.agent === undefined ? existing.agent : (input.agent ?? undefined),
         variant: input.variant === undefined ? existing.variant : (input.variant ?? undefined),

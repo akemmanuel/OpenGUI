@@ -13,6 +13,7 @@ import {
 } from "@/lib/worktree-placement";
 import { getProjectName, normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, Workspace } from "@/types/electron";
+import { parseProjectKey } from "@/hooks/agent-session-utils";
 
 export function useSidebarModel({
   sessions,
@@ -87,26 +88,27 @@ export function useSidebarModel({
         .map((dir) => normalizeProjectPath(dir))
         .filter(Boolean),
     );
-    const openDirectories = Object.keys(connections)
-      .map((dir) => normalizeProjectPath(dir))
+    const openDirectories = Object.entries(connections)
+      .filter(([, status]) => status.state === "connected" && status.kind !== "chat-infra")
+      .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory))
       .filter((dir): dir is string => Boolean(dir) && visibleProjectDirectorySet.has(dir));
     const rootOpenDirectories = openDirectories.filter(
       (dir) => !shouldHideTopLevelProjectDirectory(dir, worktreeParents),
     );
-    const workspaceProjects = (activeWorkspace?.projects ?? [])
-      .map((dir) => normalizeProjectPath(dir))
-      .filter(Boolean);
-    const projectDirectorySet = new Set([
-      ...rootOpenDirectories,
-      ...workspaceProjects,
-      ...visibleProjectDirectorySet,
-    ]);
+    const projectDirectorySet = new Set([...rootOpenDirectories, ...visibleProjectDirectorySet]);
     const normalizedDetachedProject = normalizeProjectPath(detachedProject ?? "");
     const orderedRootDirectories = detachedProject
       ? rootOpenDirectories.filter((dir) => dir === normalizedDetachedProject)
       : [
-          ...workspaceProjects.filter((dir) => rootOpenDirectories.includes(dir)),
-          ...rootOpenDirectories.filter((dir) => !workspaceProjects.includes(dir)),
+          ...availableProjectDirectories
+            .map((dir) => normalizeProjectPath(dir))
+            .filter((dir) => rootOpenDirectories.includes(dir)),
+          ...rootOpenDirectories.filter(
+            (dir) =>
+              !availableProjectDirectories
+                .map((projectDir) => normalizeProjectPath(projectDir))
+                .includes(dir),
+          ),
         ];
     const groups = new Map<string, Session[]>();
     for (const dir of orderedRootDirectories) groups.set(dir, []);

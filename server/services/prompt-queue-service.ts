@@ -14,7 +14,6 @@ export interface PromptQueueEntry {
   sessionId: string;
   canonicalSessionId: string;
   text: string;
-  images?: string[];
   createdAt: number;
   model?: SelectedModel;
   agent?: string;
@@ -25,11 +24,11 @@ export interface PromptQueueEntry {
 
 export interface CreatePromptQueueInput {
   text: string;
-  images?: string[];
   model?: SelectedModel;
   agent?: string;
   variant?: string;
   mode: QueueMode;
+  insertAt?: "front" | "back";
 }
 
 export class PromptQueueService {
@@ -80,21 +79,26 @@ export class PromptQueueService {
     const created = await this.storage.createPromptQueueEntry({
       sessionId: session.id,
       text: input.text,
-      images: input.images,
       model: input.model,
       agent: input.agent,
       variant: input.variant,
       mode: input.mode,
       order: current.length,
     });
-    const next = await this.reindex(session.id);
+    let next = await this.reindex(session.id);
+    if (input.insertAt === "front" && next.length > 1) {
+      await this.storage.updatePromptQueueEntry(created.id, { order: -1 });
+      next = await this.reindex(session.id);
+    }
+    const publicEntries = next.map((entry) => this.toPublicEntry(session, entry));
+    const publicCreated = publicEntries.find((entry) => entry.id === created.id);
     this.events?.emit(
       "queue.added",
       {
         sessionId: this.toFrontendSessionId(session),
         canonicalSessionId: session.id,
-        entry: this.toPublicEntry(session, created),
-        entries: next.map((entry) => this.toPublicEntry(session, entry)),
+        entry: publicCreated ?? this.toPublicEntry(session, created),
+        entries: publicEntries,
       },
       {
         projectId: session.projectId,
@@ -102,7 +106,7 @@ export class PromptQueueService {
         harnessId: session.harnessId,
       },
     );
-    return next.map((entry) => this.toPublicEntry(session, entry));
+    return publicEntries;
   }
 
   async remove(

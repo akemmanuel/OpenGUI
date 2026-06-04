@@ -24,7 +24,7 @@ export function WorktreeSetupDialog({
   const [step, setStep] = useState<SetupStep>("detecting");
   const [command, setCommand] = useState("");
   const [detectedFile, setDetectedFile] = useState("");
-  const { error, setError, clearError, setUnknownError } = useDialogError();
+  const { setError, clearError, setUnknownError } = useDialogError();
   const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear auto-close timeout on unmount
@@ -145,11 +145,6 @@ export function WorktreeSetupDialog({
               className="font-mono text-sm"
             />
           </div>
-          {error && (
-            <p className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
-              {error}
-            </p>
-          )}
         </div>
       )}
 

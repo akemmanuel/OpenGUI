@@ -13,7 +13,6 @@ export const OPENCODE_CAPABILITIES: AgentBackendCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: true,
-  images: true,
   models: true,
   agents: true,
   commands: true,

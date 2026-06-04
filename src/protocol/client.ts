@@ -211,10 +211,10 @@ export interface OpenGuiClient {
     prompt(input: {
       sessionId: string;
       text: string;
-      images?: string[];
       model?: SelectedModel;
       agent?: string;
       variant?: string;
+      mode?: QueueMode;
       target?: AgentBackendTarget;
       backendId?: AgentBackendId;
     }): Promise<void>;
@@ -249,11 +249,11 @@ export interface OpenGuiClient {
       enqueue(input: {
         sessionId: string;
         text: string;
-        images?: string[];
         model?: SelectedModel;
         agent?: string;
         variant?: string;
         mode: QueueMode;
+        insertAt?: "front" | "back";
         backendId?: AgentBackendId;
         target?: AgentBackendTarget;
       }): Promise<OpenGuiQueueEntry[]>;
@@ -267,7 +267,6 @@ export interface OpenGuiClient {
         sessionId: string;
         entryId: string;
         text?: string;
-        images?: string[];
         model?: SelectedModel;
         agent?: string | null;
         variant?: string | null;
@@ -282,8 +281,9 @@ export interface OpenGuiClient {
         backendId?: AgentBackendId;
         target?: AgentBackendTarget;
       }): Promise<OpenGuiQueueEntry[]>;
-      dispatchNext(input: {
+      sendNow(input: {
         sessionId: string;
+        entryId: string;
         backendId?: AgentBackendId;
         target?: AgentBackendTarget;
       }): Promise<OpenGuiQueueEntry[]>;

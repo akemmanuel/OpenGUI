@@ -1356,6 +1356,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
     const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
     const config = normalizeServerConfig({ ...baseConfig, directory });
+    if (config.baseUrl?.replace(/\/+$/, "") === LOCAL_SERVER_URL) {
+      const started = await startLocalOpenCodeServer();
+      if (!started?.success) {
+        throw new Error(started?.error || "Failed to start local OpenCode server");
+      }
+    }
     const conn = createConnection(windowState, sender, directory, workspaceId);
     await conn.connect(config);
     windowState.serverConfig = config;

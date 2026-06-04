@@ -48,7 +48,6 @@ export {
 } from "./harness-interactions.ts";
 export {
   readJsonBody,
-  toOptionalImages,
   toOptionalNullableString,
   toOptionalSelectedModel,
   toOptionalString,
@@ -75,7 +74,11 @@ export {
   listProjectRecords,
   updateProjectRecord,
 } from "./project-record-actions.ts";
-export { dispatchNextQueuedPromptThroughHarness } from "./queue-dispatch.ts";
+export {
+  registerSharedSessionControl,
+  sendQueuedPromptNow,
+  submitSessionPrompt,
+} from "./shared-session-control.ts";
 export {
   asSessionStatus,
   ensureSessionFromRuntime,

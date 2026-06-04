@@ -1,7 +1,8 @@
 import "./build/suppress-node-deprecations.ts";
 
-import { copyFile } from "node:fs/promises";
+import { copyFile, readdir } from "node:fs/promises";
 import { builtinModules } from "node:module";
+import { join } from "node:path";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
 import pkg from "./package.json" with { type: "json" };
@@ -44,6 +45,33 @@ function isExternal(id: string) {
   return Boolean(packageId && externals.has(packageId));
 }
 
+const nodeEsmCompatBanner = [
+  "import { createRequire as __openguiCreateRequire } from 'node:module';",
+  "import { fileURLToPath as __openguiFileURLToPath } from 'node:url';",
+  "import { dirname as __openguiDirname } from 'node:path';",
+  "const require = __openguiCreateRequire(import.meta.url);",
+  "const __filename = __openguiFileURLToPath(import.meta.url);",
+  "const __dirname = __openguiDirname(__filename);",
+].join(" ");
+
+async function findPhotonWasm() {
+  const pnpmDir = join(process.cwd(), "node_modules", ".pnpm");
+  const entries = await readdir(pnpmDir, { withFileTypes: true });
+  const photonEntry = entries.find(
+    (entry) => entry.isDirectory() && entry.name.startsWith("@silvia-odwyer+photon-node@"),
+  );
+  if (!photonEntry)
+    throw new Error("Could not find @silvia-odwyer/photon-node in node_modules/.pnpm");
+  return join(
+    pnpmDir,
+    photonEntry.name,
+    "node_modules",
+    "@silvia-odwyer",
+    "photon-node",
+    "photon_rs_bg.wasm",
+  );
+}
+
 export default defineConfig({
   plugins: [
     {
@@ -51,6 +79,7 @@ export default defineConfig({
       apply: "build",
       async closeBundle() {
         await copyFile("package.json", "dist-electron/package.json");
+        await copyFile(await findPhotonWasm(), "dist-electron/photon_rs_bg.wasm");
 
         await buildWithEsbuild({
           entryPoints: ["preload.ts"],
@@ -75,7 +104,7 @@ export default defineConfig({
           minify: true,
           external: ["electron"],
           banner: {
-            js: "import { createRequire as __openguiCreateRequire } from 'node:module'; const require = __openguiCreateRequire(import.meta.url);",
+            js: nodeEsmCompatBanner,
           },
         });
 
@@ -90,7 +119,7 @@ export default defineConfig({
           minify: true,
           external: ["electron"],
           banner: {
-            js: "import { createRequire as __openguiCreateRequire } from 'node:module'; const require = __openguiCreateRequire(import.meta.url);",
+            js: nodeEsmCompatBanner,
           },
         });
       },

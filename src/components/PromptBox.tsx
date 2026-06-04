@@ -1,14 +1,4 @@
-import {
-  ArrowUp,
-  Check,
-  GitBranch,
-  ListEnd,
-  Paperclip,
-  Plus,
-  Square,
-  Wrench,
-  X,
-} from "lucide-react";
+import { ArrowUp, Check, GitBranch, ListEnd, Paperclip, Plus, Square, Wrench } from "lucide-react";
 import * as React from "react";
 import { AgentSelector } from "@/components/AgentSelector";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
@@ -34,7 +24,7 @@ import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigatio
 import { usePromptCompaction } from "@/hooks/use-prompt-compaction";
 import { usePromptDraft } from "@/hooks/use-prompt-draft";
 import { getNextPrimaryAgent } from "@/hooks/use-primary-agent-cycle";
-import { usePromptImages } from "@/hooks/use-prompt-images";
+import { usePromptFiles } from "@/hooks/use-prompt-files";
 import { usePromptSubmit } from "@/hooks/use-prompt-submit";
 import { usePromptWorktreeSelector } from "@/hooks/use-prompt-worktree-selector";
 import { useSlashCommandInput } from "@/hooks/use-slash-command-input";
@@ -55,7 +45,7 @@ interface PromptBoxProps extends Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
   "onSubmit"
 > {
-  onSubmit?: (message: string, images?: string[], mode?: QueueMode) => void | Promise<void>;
+  onSubmit?: (message: string, mode?: QueueMode) => void | Promise<void>;
   onStop?: () => void;
   isLoading?: boolean;
   autoFocus?: boolean;
@@ -123,8 +113,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       summarizeSession,
     });
 
-    const { activeWorkspaceId, workspaceServerUrl, worktreeParents, isLocalWorkspace } =
-      useConnectionState();
+    const {
+      activeWorkspace,
+      activeWorkspaceId,
+      workspaceServerUrl,
+      worktreeParents,
+      isLocalWorkspace,
+    } = useConnectionState();
     const activeSession = React.useMemo(
       () => sessions.find((session) => session.id === activeSessionId) ?? null,
       [sessions, activeSessionId],
@@ -157,7 +152,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       [activeSessionId, activeTargetDirectory, activeWorkspaceId],
     );
 
-    const { value, setValue, imagePreviews, setImagePreviews, clearPromptDraft } = usePromptDraft({
+    const { value, setValue, clearPromptDraft } = usePromptDraft({
       draftKey: currentDraftKey,
       sessionDrafts,
       setSessionDraft,
@@ -168,7 +163,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       messages,
       value,
       setValue,
-      imageCount: imagePreviews.length,
+      imageCount: 0,
       draftKey: currentDraftKey,
       textareaRef: internalTextareaRef,
     });
@@ -244,14 +239,20 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       fileMention.updateForInput(newValue, e.target.selectionStart);
     };
 
-    const promptImages = usePromptImages({
+    const promptFiles = usePromptFiles({
       disabled: isDisabled,
-      setImagePreviews,
+      value,
+      setValue,
+      serverUrl:
+        window.electronAPI?.kind === "electron" && activeWorkspace?.isLocal
+          ? null
+          : activeWorkspace?.serverUrl,
+      textareaRef: internalTextareaRef,
     });
 
     const promptSubmit = usePromptSubmit({
       value,
-      imagePreviews,
+      isUploading: promptFiles.isUploading,
       disabled: isDisabled,
       isLoading,
       queueMode,
@@ -309,12 +310,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         ref={containerRef}
         aria-label="Message input"
         data-slot="prompt-box"
-        onDragOver={promptImages.handleDragOver}
-        onDragLeave={promptImages.handleDragLeave}
-        onDrop={promptImages.handleDrop}
+        onDragOver={promptFiles.handleDragOver}
+        onDragLeave={promptFiles.handleDragLeave}
+        onDrop={promptFiles.handleDrop}
         className={cn(
           "flex flex-col bg-background px-2 pt-2 shadow-xs transition-colors cursor-text border rounded-xl",
-          promptImages.isDragging && "border-ring ring-ring/50 ring-[3px]",
+          promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
         )}
         onClick={() => internalTextareaRef.current?.focus()}
@@ -353,35 +354,25 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         <input
           type="file"
           ref={fileInputRef}
-          onChange={promptImages.handleFileChange}
+          onChange={promptFiles.handleFileChange}
           className="hidden"
-          accept="image/*"
           multiple
         />
 
-        {imagePreviews.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-1.5 pt-1.5">
-            {imagePreviews.map((img, idx) => (
-              <div key={`img-${img.slice(-20)}-${idx}`} className="relative">
-                <img
-                  src={img}
-                  alt={`Preview ${idx + 1}`}
-                  className="size-14 rounded-md object-cover"
-                />
-                <Button
-                  variant="secondary"
-                  size="icon-xs"
-                  className="absolute -right-1.5 -top-1.5"
-                  onClick={(e) => promptImages.removeImage(idx, e)}
-                  aria-label="Remove image"
-                >
-                  <X />
-                </Button>
-              </div>
-            ))}
+        {promptFiles.isUploading && (
+          <div className="px-3 pt-2">
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Uploading files…</span>
+              {promptFiles.uploadProgress != null && <span>{promptFiles.uploadProgress}%</span>}
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${promptFiles.uploadProgress ?? 0}%` }}
+              />
+            </div>
           </div>
         )}
-
         <textarea
           ref={internalTextareaRef}
           data-slot="prompt-box-textarea"
@@ -389,7 +380,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           value={value}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          onPaste={promptImages.handlePaste}
+          onPaste={promptFiles.handlePaste}
           placeholder={
             isDisabled
               ? "Select or create a session..."
@@ -445,17 +436,15 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start">
-              {capabilities?.images && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <Paperclip className="size-4" />
-                  Add file
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+              >
+                <Paperclip className="size-4" />
+                Add file
+              </DropdownMenuItem>
               {canManageMcp && (
                 <DropdownMenuItem
                   onClick={(e) => {

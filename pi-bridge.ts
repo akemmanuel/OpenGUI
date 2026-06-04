@@ -16,14 +16,13 @@ import {
   createAgentSessionServices,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-
-const DEFAULT_STATUS = {
-  state: "idle",
-  serverUrl: null,
-  serverVersion: null,
-  error: null,
-  lastEventAt: null,
-};
+import {
+  fail,
+  makeHarnessProjectKey,
+  normalizeHarnessDirectory,
+  nowHarnessConnection,
+  ok,
+} from "./lib/harness-adapter-kit.ts";
 
 const PROVIDER_ENVS = {
   anthropic: ["ANTHROPIC_API_KEY"],
@@ -52,13 +51,11 @@ const PI_DAEMON_VERSION = "2026-05-15-pi-streaming-replace-v1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function normalizeDir(directory) {
-  if (typeof directory !== "string") return "";
-  const trimmed = directory.trim();
-  return trimmed || "";
+  return normalizeHarnessDirectory(directory);
 }
 
 function makeProjectKey(workspaceId, directory) {
-  return `${workspaceId ?? "local"}:${normalizeDir(directory)}`;
+  return makeHarnessProjectKey(workspaceId, directory);
 }
 
 function toFrontendSessionId(id) {
@@ -71,24 +68,8 @@ function toRawSessionId(id) {
   return value.startsWith("pi:") ? value.slice(3) : value;
 }
 
-function ok(data) {
-  return { success: true, data };
-}
-
-function fail(error, data) {
-  return {
-    success: false,
-    error: error instanceof Error ? error.message : String(error),
-    data,
-  };
-}
-
 function nowConnection(status = {}) {
-  return {
-    ...DEFAULT_STATUS,
-    ...status,
-    lastEventAt: Date.now(),
-  };
+  return nowHarnessConnection(status);
 }
 
 function coerceTimestamp(timestamp) {

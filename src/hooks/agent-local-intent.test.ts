@@ -101,7 +101,6 @@ describe("createLocalIntentOrchestrator", () => {
       dispatch: (action) => {
         actions.push(action as unknown as Record<string, unknown>);
       },
-      dispatchingSessionIds: new Set(),
       sessionCreatingRef: { current: false },
     });
 
@@ -159,7 +158,6 @@ describe("createLocalIntentOrchestrator", () => {
       dispatch: (action) => {
         actions.push(action as unknown as Record<string, unknown>);
       },
-      dispatchingSessionIds: new Set(),
       sessionCreatingRef: { current: false },
     });
 
@@ -184,7 +182,7 @@ describe("createLocalIntentOrchestrator", () => {
     );
   });
 
-  test("queues prompts instead of sending them while the session is busy", async () => {
+  test("submits busy-session prompts to backend Shared Session control", async () => {
     const session = makeSession({ id: "session-1" });
     const model: SelectedModel = { providerID: "openai", modelID: "gpt-5" };
     const state = makeState({
@@ -195,7 +193,6 @@ describe("createLocalIntentOrchestrator", () => {
     });
     const actions: Array<Record<string, unknown>> = [];
     const prompts: Array<Record<string, unknown>> = [];
-    const queueSnapshots: Array<unknown> = [];
 
     const orchestrator = createLocalIntentOrchestrator({
       getState: () => state,
@@ -206,24 +203,7 @@ describe("createLocalIntentOrchestrator", () => {
           prompts.push(input);
         },
         abort: async () => undefined,
-        queue: {
-          enqueue: async (input: Record<string, unknown>) => {
-            const snapshot = [
-              {
-                id: "queue-1",
-                sessionId: String(input.sessionId),
-                canonicalSessionId: "session-canonical-1",
-                text: String(input.text),
-                createdAt: 1,
-                model,
-                mode: "queue",
-                order: 0,
-              },
-            ];
-            queueSnapshots.push(snapshot);
-            return snapshot as never;
-          },
-        },
+        queue: {},
       } as never,
       createSession: async () => null,
       scheduleSessionMessageReconcile: () => undefined,
@@ -231,25 +211,23 @@ describe("createLocalIntentOrchestrator", () => {
       dispatch: (action) => {
         actions.push(action as unknown as Record<string, unknown>);
       },
-      dispatchingSessionIds: new Set(),
       sessionCreatingRef: { current: false },
     });
 
     await orchestrator.sendPrompt("Queue this");
 
-    expect(prompts).toEqual([]);
-    expect(queueSnapshots).toHaveLength(1);
+    expect(prompts).toEqual([
+      expect.objectContaining({
+        sessionId: "session-1",
+        text: "Queue this",
+        model,
+        mode: "queue",
+      }),
+    ]);
     expect(actions).toEqual(
       expect.arrayContaining([
-        {
-          type: "SET_SESSION_QUEUE",
-          payload: {
-            sessionID: "session-1",
-            prompts: expect.arrayContaining([
-              expect.objectContaining({ text: "Queue this", model }),
-            ]),
-          },
-        },
+        expect.objectContaining({ type: "SET_BUSY" }),
+        expect.objectContaining({ type: "PROMPT_SUBMITTED" }),
       ]),
     );
   });
@@ -287,7 +265,6 @@ describe("createLocalIntentOrchestrator", () => {
       },
       requestSessionAutoName: () => undefined,
       dispatch: () => undefined,
-      dispatchingSessionIds: new Set(),
       sessionCreatingRef: { current: false },
     });
 
