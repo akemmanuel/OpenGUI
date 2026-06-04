@@ -381,6 +381,6 @@ _Avoid_: Project in product language, Workspace Project
 
 **Domain expert**: That becomes a **Queued prompt**. OpenGUI owns it locally until it is sent.
 
-**Dev**: So both drafting and queuing stay outside the backend?
+**Dev**: So both drafting and queuing stay outside the agent transcript?
 
-**Domain expert**: Exactly. Only an **Agent send** puts anything into the agent.
+**Domain expert**: Exactly. **Pending prompts** are frontend-local before a Session exists. **Queued prompts** are backend-owned shared Session intent, but they still are not transcript content until **Queue dispatch** performs an **Agent send**.

@@ -265,7 +265,7 @@ function InstallFlowDialog({
   );
 }
 
-export function SkillsMarketplace() {
+export function DiscoverPlugins() {
   const { t } = useTranslation();
   const skillsApi = useSkillsPlatform();
   const marketplaceApi = skillsApi?.marketplace;

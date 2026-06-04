@@ -128,7 +128,7 @@ export interface InternalAgentState {
   commands: Command[];
   /** Per-session queued prompts (sent automatically when session becomes idle) */
   queuedPrompts: Record<string, QueuedPrompt[]>;
-  /** Default working directory for chats started from the global chat entry. */
+  /** Default chat directory for Chats section Sessions. */
   defaultChatDirectory: string | null;
   /** Directory selected for the next session before a session exists. */
   activeTargetDirectory: string | null;

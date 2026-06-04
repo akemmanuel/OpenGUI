@@ -1,7 +1,7 @@
 import { BookOpen, Layers, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { SkillsMarketplace } from "@/components/SkillsMarketplace";
+import { DiscoverPlugins } from "@/components/DiscoverPlugins";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -58,7 +58,7 @@ export function PluginsTabContent() {
           {t("settings.plugins.discover")}
         </button>
       </div>
-      {activeTab === "installed" ? <InstalledPluginsView /> : <SkillsMarketplace />}
+      {activeTab === "installed" ? <InstalledPluginsView /> : <DiscoverPlugins />}
     </div>
   );
 }

@@ -166,7 +166,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: ${{ runner.os }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-nm-v2-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
