@@ -2,11 +2,13 @@
 
 Date: 2026-05-12 (updated 2026-05-27)
 
+> Superseded by CONTEXT.md for current domain language. In particular, Workspace is frontend-local and is not an OpenGUI Backend primitive.
+
 ## Summary
 
 OpenGUI becomes a client/server product with one backend and multiple shells.
 
-- **OpenGUI Backend** owns Harness adapters, workspaces, projects, sessions, prompt queues, events, filesystem/git operations, and settings that affect execution. The only stateful layer. Deployable as Desktop sidecar, Docker container, or standalone server.
+- **OpenGUI Backend** owns Harness adapters, project access, sessions, prompt queues, events, filesystem/git operations, and settings that affect execution. The only stateful layer. Deployable as Desktop sidecar, Docker container, or standalone server.
 - **OpenGUI Frontend** is the React UI layer. Stateless; renders chat, navigation, settings. Talks only to one OpenGUI Backend via `OpenGuiClient`. Same codebase runs in Desktop Shell, Web Shell, and Mobile Shell.
 - **Shell** is the platform-specific scaffold that bootstraps the Frontend. Three variants:
   - **Desktop Shell** (Electron main+preload): window controls, native file picker, updater, OS notifications, backend sidecar lifecycle.
@@ -35,7 +37,7 @@ Desktop Shell manages the sidecar lifecycle (spawn, health-check, shut down). Al
 1. Split monolithic codebase into Backend and Frontend boundaries without breaking current desktop/web flows.
 2. Let Desktop Shell run a local Backend sidecar or connect to a remote Backend.
 3. Let Mobile Shell connect to remote/LAN Backend; never spawn a Backend locally.
-4. Make OpenGUI workspaces universal across all Harnesses (OpenCode, Claude Code, Codex, Pi).
+4. Make OpenGUI frontend Workspaces across all Harnesses (OpenCode, Claude Code, Codex, Pi).
 5. Make session/project identity stable using server-issued IDs, not absolute paths.
 6. Keep current OpenCode remote-server flow as one Harness adapter detail.
 7. Prepare for mobile: all APIs async, authenticated, paginated, resumable, payload-conscious.
@@ -189,18 +191,12 @@ POST /api/auth/logout
 Workspaces:
 
 ```
-GET    /api/workspaces
-POST   /api/workspaces
-GET    /api/workspaces/:workspaceId
-PATCH  /api/workspaces/:workspaceId
-DELETE /api/workspaces/:workspaceId
+
 ```
 
 Projects:
 
 ```
-GET    /api/workspaces/:workspaceId/projects
-POST   /api/workspaces/:workspaceId/projects
 GET    /api/projects/:projectId
 PATCH  /api/projects/:projectId
 DELETE /api/projects/:projectId
@@ -212,7 +208,7 @@ GET    /api/projects/:projectId/status
 Sessions:
 
 ```
-GET    /api/sessions?workspaceId=&projectId=&harnessId=&cursor=&limit=
+GET    /api/sessions?projectId=&harnessId=&cursor=&limit=
 POST   /api/sessions
 GET    /api/sessions/:sessionId
 PATCH  /api/sessions/:sessionId
@@ -348,7 +344,7 @@ interface SessionRecord {
 }
 ```
 
-Canonical session key: `workspaceId + projectId + harnessId + rawId`
+Canonical session key: `projectId + harnessId + rawId`
 
 ## Harness adapter contract
 
@@ -420,7 +416,7 @@ Backend settings:
 - Harness config
 - Model defaults
 - MCP config
-- Skills config
+- Plugin config
 - Prompt queues
 - Session metadata shared across clients
 
@@ -753,8 +749,8 @@ Do not expose OpenCode server directly as OpenGUI Backend.
 - [ ] Complete `OpenGuiClient` hook migration (audit and convert all remaining direct electronAPI calls).
 - [ ] Add `server/services/` with workspace, project, session services.
 - [ ] Add canonical `Workspace`, `Project`, `SessionRecord`, `HarnessScope` types.
-- [ ] Rename `AgentBackendId` → `HarnessId`, `agent-backends` → `harnesses` in API and types.
-- [ ] Add real `/api/harnesses`, `/api/workspaces/*`, `/api/projects/*`, `/api/sessions/*` routes.
+- [ ] Harness terminology is current: use `HarnessId` and `harnesses` in API and types.
+- [ ] Add real `/api/harnesses`, `/api/projects/*`, `/api/sessions/*` routes.
 - [ ] Add auth/token middleware skeleton.
 - [ ] Add Desktop Shell BackendProfile model.
 - [ ] Add local sidecar launch in Desktop Shell.

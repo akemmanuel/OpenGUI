@@ -238,59 +238,59 @@ function createOpenCodePlatform(
     skills: {
       list: async (target) =>
         normalizeSkillList(
-          unwrapBridgeResult(await op("skills", targetArgs(target)), "Failed to list skills"),
+          unwrapBridgeResult(await op("skills", targetArgs(target)), "Failed to list plugins"),
         ),
       marketplace: {
         list: async (view, page, perPage, apiKey) =>
           unwrapBridgeResult(
             await op("skills:marketplace:list", [view, page, perPage, apiKey]),
-            "Failed to list marketplace skills",
+            "Failed to list plugin catalog entries",
           ),
         search: async (query, limit, apiKey) =>
           unwrapBridgeResult(
             await op("skills:marketplace:search", [query, limit, apiKey]),
-            "Failed to search marketplace skills",
+            "Failed to search plugin catalog entries",
           ),
         detail: async (source, slug, apiKey) =>
           unwrapBridgeResult(
             await op("skills:marketplace:detail", [source, slug, apiKey]),
-            "Failed to load marketplace skill",
+            "Failed to load plugin catalog entry",
           ),
         audit: async (source, slug, apiKey) =>
           unwrapBridgeResult(
             await op("skills:marketplace:audit", [source, slug, apiKey]),
-            "Failed to audit marketplace skill",
+            "Failed to audit plugin catalog entry",
           ),
         curated: async (apiKey) =>
           unwrapBridgeResult(
             await op("skills:marketplace:curated", [apiKey]),
-            "Failed to load curated marketplace skills",
+            "Failed to load curated plugin catalog entries",
           ),
       },
       install: async (source, directory, globalScope) =>
         unwrapBridgeResult(
           await op("skills:install", [source, directory, globalScope]),
-          "Failed to install skill",
+          "Failed to install plugin",
         ),
       remove: async (skillName, directory, globalScope) =>
         unwrapBridgeResult(
           await op("skills:remove", [skillName, directory, globalScope]),
-          "Failed to remove skill",
+          "Failed to remove plugin",
         ),
       update: async (skillName, directory, globalScope) =>
         unwrapBridgeResult(
           await op("skills:update", [skillName, directory, globalScope]),
-          "Failed to update skill",
+          "Failed to update plugin",
         ),
       listInstalled: async (directory) =>
         normalizeSkillList(
           unwrapBridgeResult(
             await op("skills:list-installed", [directory]),
-            "Failed to list installed skills",
+            "Failed to list installed plugins",
           ),
         ),
       checkCli: async () =>
-        unwrapBridgeResult(await op("skills:check-cli"), "Failed to check skills CLI"),
+        unwrapBridgeResult(await op("skills:check-cli"), "Failed to check plugins CLI"),
     },
     config: {
       get: (target) => platformOp("config:get", "Failed to load config", targetArgs(target)),
