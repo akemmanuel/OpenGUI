@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import { resolveActiveHarnessScope } from "@/hooks/active-harness-scope";
 import {
   resolvePendingPromptCreationHarnessRoute,
@@ -29,11 +29,11 @@ import {
 import { useLocalIntentOrchestration } from "@/hooks/agent-local-intent";
 import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
-import { handleAgentBackendEvent } from "@/hooks/agent-backend-events";
+import { handleHarnessEvent } from "@/hooks/agent-backend-events";
 import {
   isCanonicalSessionNotification,
   isQueueEvent,
-  toAgentBackendEvent,
+  toHarnessEvent,
   type BackendEventEnvelope,
 } from "@/hooks/backend-event-normalization";
 import {
@@ -309,8 +309,8 @@ function InternalAgentProvider({
   const [state, dispatch] = useReducer(reducer, initialState);
   const [workspaceStateReady, setWorkspaceStateReady] = useState(false);
   const shellWorkspacePolicy = useMemo(() => getShellWorkspacePolicy(), []);
-  const [preferredBackendId, setPreferredBackendId] = useState<AgentBackendId>(() => {
-    const stored = storageGet(STORAGE_KEYS.AGENT_BACKEND);
+  const [preferredBackendId, setPreferredBackendId] = useState<HarnessId>(() => {
+    const stored = storageGet(STORAGE_KEYS.HARNESS);
     if (stored === "claude-code") return "claude-code";
     if (stored === "pi") return "pi";
     if (stored === "codex") return "codex";
@@ -318,12 +318,12 @@ function InternalAgentProvider({
   });
 
   const openGuiClient = useOpenGuiClient();
-  const allBackends = useMemo(() => openGuiClient.agentBackends.list(), [openGuiClient]);
+  const allBackends = useMemo(() => openGuiClient.harnesses.list(), [openGuiClient]);
   const backendsById = useMemo(
     () =>
       Object.fromEntries(
-        allBackends.map((backend) => [backend.id as AgentBackendId, backend]),
-      ) as Record<AgentBackendId, (typeof allBackends)[number]>,
+        allBackends.map((backend) => [backend.id as HarnessId, backend]),
+      ) as Record<HarnessId, (typeof allBackends)[number]>,
     [allBackends],
   );
   const activeSession = state.activeSessionId
@@ -332,7 +332,7 @@ function InternalAgentProvider({
   const activeSessionHarnessRoute = resolveSessionHarnessRoute(activeSession);
   const activeSessionBackendId = activeSessionHarnessRoute.harnessId;
   const discoveryBackendIds = useMemo(
-    () => allBackends.map((backend) => backend.id as AgentBackendId),
+    () => allBackends.map((backend) => backend.id as HarnessId),
     [allBackends],
   );
   const expectedDirectoriesRef = useRef<Set<string>>(new Set());
@@ -372,7 +372,7 @@ function InternalAgentProvider({
     }
   }, []);
   const loadedResourceProjectKeyRef = useRef<string | null>(null);
-  const loadedResourceBackendIdRef = useRef<AgentBackendId | null>(null);
+  const loadedResourceBackendIdRef = useRef<HarnessId | null>(null);
   const resourceLoadRequestRef = useRef(0);
   const resourceLoadInFlightKeyRef = useRef<string | null>(null);
   const projectHydrationRef = useRef<Record<string, ProjectHydrationState>>({});
@@ -392,7 +392,7 @@ function InternalAgentProvider({
 
   useEffect(() => {
     return onSettingsChange((change) => {
-      if (change.key !== STORAGE_KEYS.AGENT_BACKEND) return;
+      if (change.key !== STORAGE_KEYS.HARNESS) return;
       if (change.value === "claude-code") {
         setPreferredBackendId("claude-code");
         return;
@@ -509,8 +509,8 @@ function InternalAgentProvider({
         // are handled below. Explicit refresh/open/send paths do any needed reconciliation.
         return;
       }
-      handleAgentBackendEvent({
-        event: toAgentBackendEvent(event),
+      handleHarnessEvent({
+        event: toHarnessEvent(event),
         expectedProjectKeys: expectedDirectoriesRef.current,
         tracking: {
           forcedTitles: forcedSessionTitlesRef.current,
@@ -542,13 +542,13 @@ function InternalAgentProvider({
   // stream that marks turns idle must target the same remote Backend too.
   useEffect(() => {
     if (allBackends.length === 0) return;
-    const unsubscribers = [openGuiClient.agentBackends.subscribe(handleBackendEvent)];
+    const unsubscribers = [openGuiClient.harnesses.subscribe(handleBackendEvent)];
     for (const remote of remoteWorkspaceEventSources) {
       unsubscribers.push(
         createHttpOpenGuiClient({
           baseUrl: remote.baseUrl,
           token: remote.authToken,
-        }).agentBackends.subscribe(handleBackendEvent),
+        }).harnesses.subscribe(handleBackendEvent),
       );
     }
     return () => {
@@ -664,14 +664,14 @@ function InternalAgentProvider({
   // --- Actions ---
 
   const loadServerResources = useCallback(
-    async (backendId: AgentBackendId, directory?: string | null, workspaceId?: string | null) => {
+    async (harnessId: HarnessId, directory?: string | null, workspaceId?: string | null) => {
       const targetDirectory = directory?.trim() || undefined;
       const targetWorkspaceId = workspaceId?.trim() || undefined;
       const projectKey = targetDirectory ? makeProjectKey(targetWorkspaceId, targetDirectory) : "";
-      const loadKey = `${backendId}\u0000${projectKey}`;
+      const loadKey = `${harnessId}\u0000${projectKey}`;
       if (
         resourceLoadInFlightKeyRef.current === loadKey ||
-        (loadedResourceBackendIdRef.current === backendId &&
+        (loadedResourceBackendIdRef.current === harnessId &&
           loadedResourceProjectKeyRef.current === (targetDirectory ? projectKey : null))
       ) {
         return;
@@ -680,8 +680,8 @@ function InternalAgentProvider({
       const requestId = ++resourceLoadRequestRef.current;
       try {
         const { providersData, agentsData, commandsData } =
-          await openGuiClient.agentBackends.loadResources({
-            backendId,
+          await openGuiClient.harnesses.loadResources({
+            harnessId,
             target: {
               directory: targetDirectory,
               workspaceId: targetWorkspaceId,
@@ -691,7 +691,7 @@ function InternalAgentProvider({
         if (requestId !== resourceLoadRequestRef.current) return;
 
         loadedResourceProjectKeyRef.current = targetDirectory ? projectKey : null;
-        loadedResourceBackendIdRef.current = backendId;
+        loadedResourceBackendIdRef.current = harnessId;
 
         const activeSessionId = stateRef.current.activeSessionId;
         const activeSession = activeSessionId
@@ -769,7 +769,7 @@ function InternalAgentProvider({
           type: "SET_WORKSPACE_RESOURCES",
           payload: {
             workspaceId: targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
-            backendId,
+            harnessId,
             projectKey: targetDirectory ? projectKey : null,
             providersData,
             agentsData,
@@ -797,26 +797,26 @@ function InternalAgentProvider({
       config,
       workspaceId,
       projectKey,
-      backendId,
+      harnessId,
       suppressError,
       connectionKind,
     }: {
       config: ConnectionConfig;
       workspaceId: string;
       projectKey: string;
-      backendId: AgentBackendId;
+      harnessId: HarnessId;
       suppressError?: boolean;
       connectionKind?: ConnectionStatus["kind"];
     }) => {
       const connection = createProjectConnectionDescriptor({ config, workspaceId });
-      updateProjectHydration(projectKey, (current) => startProjectHydration(current, [backendId]));
+      updateProjectHydration(projectKey, (current) => startProjectHydration(current, [harnessId]));
       try {
-        const connectResult = await openGuiClient.agentBackends.connectProject({
+        const connectResult = await openGuiClient.harnesses.connectProject({
           config: connection.config,
-          backendIds: [backendId],
+          harnessIds: [harnessId],
         });
         const connectionError =
-          connectResult.connectedBackendIds.length === 0
+          connectResult.connectedHarnessIds.length === 0
             ? connectResult.errors[0]?.error || "Connection failed"
             : null;
 
@@ -838,8 +838,8 @@ function InternalAgentProvider({
         // when a specific agent backend is currently unhealthy/unavailable for
         // new work.  Keep loading the session index after a failed connect and
         // only mark the backend hydration as failed after history has merged.
-        const sessionResults = await openGuiClient.agentBackends.listProjectSessions({
-          backendIds: [backendId],
+        const sessionResults = await openGuiClient.harnesses.listProjectSessions({
+          harnessIds: [harnessId],
           target: connection.target,
         });
         const sessions = sessionResults[0]?.sessions ?? [];
@@ -849,22 +849,22 @@ function InternalAgentProvider({
             projectKey,
             directory: connection.directory,
             sessions,
-            backendIds: [backendId],
+            harnessIds: [harnessId],
           },
         });
 
         if (connectionError) {
           updateProjectHydration(projectKey, (current) =>
             settleProjectHydration(current, {
-              failedBackends: { [backendId]: connectionError },
+              failedBackends: { [harnessId]: connectionError },
             }),
           );
-          return { backendId, success: false as const, error: connectionError };
+          return { harnessId, success: false as const, error: connectionError };
         }
 
         try {
           const queuedPromptsBySession = await openGuiClient.sessions.queue.listProject({
-            backendId,
+            harnessId,
             target: connection.target,
           });
           for (const [sessionId, prompts] of Object.entries(queuedPromptsBySession)) {
@@ -878,8 +878,8 @@ function InternalAgentProvider({
         }
 
         try {
-          const statuses = await openGuiClient.agentBackends.listProjectSessionStatuses({
-            backendIds: [backendId],
+          const statuses = await openGuiClient.harnesses.listProjectSessionStatuses({
+            harnessIds: [harnessId],
             target: connection.target,
           });
           dispatch({
@@ -892,21 +892,21 @@ function InternalAgentProvider({
 
         updateProjectHydration(projectKey, (current) =>
           settleProjectHydration(current, {
-            completedBackendIds: [backendId],
+            completedBackendIds: [harnessId],
           }),
         );
-        return { backendId, success: true as const };
+        return { harnessId, success: true as const };
       } catch (error) {
         const errorMessage = getErrorMessage(error) || "Connection failed";
         updateProjectHydration(projectKey, (current) =>
           settleProjectHydration(current, {
-            failedBackends: { [backendId]: errorMessage },
+            failedBackends: { [harnessId]: errorMessage },
           }),
         );
         if (!suppressError) {
           dispatch({ type: "SET_ERROR", payload: errorMessage });
         }
-        return { backendId, success: false as const, error: errorMessage };
+        return { harnessId, success: false as const, error: errorMessage };
       }
     },
     [openGuiClient, updateProjectHydration],
@@ -919,7 +919,7 @@ function InternalAgentProvider({
         suppressError?: boolean;
         hidden?: boolean;
         transient?: boolean;
-        backendIds?: AgentBackendId[];
+        harnessIds?: HarnessId[];
       },
     ) => {
       if (allBackends.length === 0 || !config.directory) return;
@@ -958,13 +958,13 @@ function InternalAgentProvider({
         },
       });
       const currentHydration = projectHydrationRef.current[projectKey];
-      const requestedBackendIds = options?.backendIds?.length
-        ? options.backendIds
+      const requestedBackendIds = options?.harnessIds?.length
+        ? options.harnessIds
         : discoveryBackendIds;
-      const targetBackendIds = options?.backendIds?.length
-        ? requestedBackendIds.filter((backendId) => {
-            const completed = currentHydration?.completedBackendIds.includes(backendId) ?? false;
-            const loading = currentHydration?.loadingBackendIds.includes(backendId) ?? false;
+      const targetBackendIds = options?.harnessIds?.length
+        ? requestedBackendIds.filter((harnessId) => {
+            const completed = currentHydration?.completedBackendIds.includes(harnessId) ?? false;
+            const loading = currentHydration?.loadingBackendIds.includes(harnessId) ?? false;
             return !completed && !loading;
           })
         : getPendingProjectHydrationBackendIds(currentHydration, requestedBackendIds);
@@ -974,12 +974,12 @@ function InternalAgentProvider({
 
       const hydrationResults = await Promise.allSettled(
         targetBackendIds.map(
-          async (backendId) =>
+          async (harnessId) =>
             await hydrateProjectBackend({
               config: connection.config,
               workspaceId: connection.workspaceId,
               projectKey,
-              backendId,
+              harnessId,
               suppressError: options?.suppressError,
               connectionKind,
             }),
@@ -1070,7 +1070,7 @@ function InternalAgentProvider({
   const ensureDirectoryConnection = useCallback(
     async (
       directory: string,
-      options?: { hidden?: boolean; transient?: boolean; backendIds?: AgentBackendId[] },
+      options?: { hidden?: boolean; transient?: boolean; harnessIds?: HarnessId[] },
     ) => {
       const normalizedDirectory = normalizeProjectPath(directory);
       if (!normalizedDirectory) return;
@@ -1081,8 +1081,8 @@ function InternalAgentProvider({
       const workspaceId = workspace.id;
       const projectKey = makeProjectKey(workspaceId, normalizedDirectory);
       const status = stateRef.current.connections[projectKey];
-      const requestedBackendIds = options?.backendIds?.length
-        ? options.backendIds
+      const requestedBackendIds = options?.harnessIds?.length
+        ? options.harnessIds
         : discoveryBackendIds;
       const currentHydration = projectHydrationRef.current[projectKey];
       const missingBackendIds = getPendingProjectHydrationBackendIds(
@@ -1090,7 +1090,7 @@ function InternalAgentProvider({
         requestedBackendIds,
       );
       const completedRequestedBackends = requestedBackendIds.every(
-        (backendId) => currentHydration?.completedBackendIds.includes(backendId) ?? false,
+        (harnessId) => currentHydration?.completedBackendIds.includes(harnessId) ?? false,
       );
       if (missingBackendIds.length === 0) {
         const hasInFlightHydration = hasProjectHydrationInFlight(
@@ -1114,14 +1114,14 @@ function InternalAgentProvider({
           suppressError: true,
           hidden: options?.hidden,
           transient: options?.transient,
-          backendIds: missingBackendIds.length > 0 ? missingBackendIds : requestedBackendIds,
+          harnessIds: missingBackendIds.length > 0 ? missingBackendIds : requestedBackendIds,
         },
       );
 
-      if (options?.backendIds?.length) {
+      if (options?.harnessIds?.length) {
         const nextHydration = projectHydrationRef.current[projectKey];
         const completedExplicitBackends = requestedBackendIds.every(
-          (backendId) => nextHydration?.completedBackendIds.includes(backendId) ?? false,
+          (harnessId) => nextHydration?.completedBackendIds.includes(harnessId) ?? false,
         );
         const stillLoadingExplicitBackends = hasProjectHydrationInFlight(
           nextHydration,
@@ -1129,7 +1129,7 @@ function InternalAgentProvider({
         );
         if (!completedExplicitBackends && !stillLoadingExplicitBackends) {
           const firstError = requestedBackendIds
-            .map((backendId) => nextHydration?.errors?.[backendId])
+            .map((harnessId) => nextHydration?.errors?.[harnessId])
             .find((value) => typeof value === "string" && value.length > 0);
           throw new Error(firstError || "Connection failed");
         }
@@ -1138,7 +1138,7 @@ function InternalAgentProvider({
     [addProject, discoveryBackendIds],
   );
 
-  const restartAgentBackends = useCallback(async () => {
+  const restartHarnesses = useCallback(async () => {
     const snapshot = Object.entries(stateRef.current.connections)
       .map(([projectKey, status]) => {
         const { workspaceId, directory } = parseProjectKey(projectKey);
@@ -1152,11 +1152,11 @@ function InternalAgentProvider({
       );
 
     dispatch({ type: "SET_ERROR", payload: null });
-    const restartResults = await openGuiClient.agentBackends.restart();
+    const restartResults = await openGuiClient.harnesses.restart();
     const failedRestarts = Object.entries(restartResults).filter(([, result]) => !result.success);
     if (failedRestarts.length > 0) {
       const message = failedRestarts
-        .map(([backendId, result]) => `${backendId}: ${result.error || "restart failed"}`)
+        .map(([harnessId, result]) => `${harnessId}: ${result.error || "restart failed"}`)
         .join("; ");
       dispatch({ type: "SET_ERROR", payload: message });
       throw new Error(message);
@@ -1180,7 +1180,7 @@ function InternalAgentProvider({
         await addProject(createWorkspaceConnectionConfig({ workspace, directory }), {
           suppressError: true,
           hidden: stateRef.current.projectMeta[projectKey]?.hidden === true,
-          backendIds: discoveryBackendIds,
+          harnessIds: discoveryBackendIds,
         });
       }),
     );
@@ -1229,26 +1229,12 @@ function InternalAgentProvider({
         cleanupSessionRefs(removedSessionIds);
         expectedDirectoriesRef.current.delete(projectKey);
         clearProjectHydration(projectKey);
-        await openGuiClient.agentBackends.disconnectProject({
+        await openGuiClient.harnesses.disconnectProject({
           target: { directory: dir, workspaceId },
         });
         dispatch({
           type: "REMOVE_PROJECT",
           payload: { projectKey, directory: dir },
-        });
-      }
-
-      const workspace = stateRef.current.workspaces.find((item) => item.id === workspaceId);
-      if (workspace) {
-        const hiddenProjects = new Set(
-          ((workspace.settings?.hiddenProjects as string[] | undefined) ?? []).filter(Boolean),
-        );
-        for (const dir of directoriesToRemove) hiddenProjects.add(dir);
-        void openGuiClient.workspaces.update(workspaceId, {
-          settings: {
-            ...workspace.settings,
-            hiddenProjects: [...hiddenProjects],
-          },
         });
       }
 
@@ -1283,7 +1269,7 @@ function InternalAgentProvider({
         baseUrl?: string;
         authToken?: string;
       }>,
-      harnessIds: AgentBackendId[] = discoveryBackendIds,
+      harnessIds: HarnessId[] = discoveryBackendIds,
     ) => {
       const uniqueProjects = Array.from(
         new Map(
@@ -1301,8 +1287,8 @@ function InternalAgentProvider({
       if (uniqueProjects.length === 0 || harnessIds.length === 0) return;
 
       await runWithConcurrency(uniqueProjects, 4, async (project) => {
-        const results = await openGuiClient.agentBackends.listProjectSessions({
-          backendIds: harnessIds,
+        const results = await openGuiClient.harnesses.listProjectSessions({
+          harnessIds: harnessIds,
           target: {
             directory: project.directory,
             workspaceId: project.workspaceId,
@@ -1318,7 +1304,7 @@ function InternalAgentProvider({
               projectKey: makeProjectKey(project.workspaceId, project.directory),
               directory: project.directory,
               sessions: item.sessions,
-              backendIds: [item.backendId],
+              harnessIds: [item.harnessId],
             },
           });
         }
@@ -1478,7 +1464,7 @@ function InternalAgentProvider({
       type: "SET_ACTIVE_TARGET",
       payload: {
         directory: state.defaultChatDirectory,
-        backendId: preferredBackendId,
+        harnessId: preferredBackendId,
       },
     });
   }, [
@@ -1797,7 +1783,7 @@ function InternalAgentProvider({
         .rename({
           sessionId: canonicalSessionId,
           title: trimmed,
-          backendId: resolveSessionHarnessRoute(current).harnessId ?? undefined,
+          harnessId: resolveSessionHarnessRoute(current).harnessId ?? undefined,
           target: (() => {
             const target = getSessionProjectTarget(current);
             const workspaceId = target?.workspaceId ?? stateRef.current.activeWorkspaceId;
@@ -2036,7 +2022,7 @@ function InternalAgentProvider({
         .rename({
           sessionId: id,
           title: plan.trimmedTitle,
-          backendId: resolveSessionHarnessRoute(plan.currentSession).harnessId ?? undefined,
+          harnessId: resolveSessionHarnessRoute(plan.currentSession).harnessId ?? undefined,
           target: getSessionProjectTarget(plan.currentSession) ?? undefined,
         })
         .catch(() => {
@@ -2204,7 +2190,7 @@ function InternalAgentProvider({
     const workspace = state.workspaces.find((item) => item.id === workspaceId);
     await openGuiClient.sessions.abort({
       sessionId,
-      backendId: resolveSessionHarnessRoute(activeSession).harnessId ?? undefined,
+      harnessId: resolveSessionHarnessRoute(activeSession).harnessId ?? undefined,
       target:
         workspace && !workspace.isLocal
           ? { ...target, workspaceId, baseUrl: workspace.serverUrl }
@@ -2229,7 +2215,7 @@ function InternalAgentProvider({
         sessionId: state.activeSessionId,
         permissionId: pending.id,
         response,
-        backendId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+        harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
         target: getSessionProjectTarget(session) ?? undefined,
       });
       dispatch({
@@ -2249,7 +2235,7 @@ function InternalAgentProvider({
         await openGuiClient.sessions.replyQuestion({
           requestId: pending.id,
           answers,
-          backendId: activeSessionBackendId ?? undefined,
+          harnessId: activeSessionBackendId ?? undefined,
         });
       } catch (error) {
         dispatch({
@@ -2268,7 +2254,7 @@ function InternalAgentProvider({
     try {
       await openGuiClient.sessions.rejectQuestion({
         requestId: pending.id,
-        backendId: activeSessionBackendId ?? undefined,
+        harnessId: activeSessionBackendId ?? undefined,
       });
     } catch (error) {
       dispatch({
@@ -2301,13 +2287,13 @@ function InternalAgentProvider({
   }, []);
 
   const setActiveTarget = useCallback(
-    (directory: string, backendId?: AgentBackendId | null) => {
+    (directory: string, harnessId?: HarnessId | null) => {
       dispatch({
         type: "SET_ACTIVE_TARGET",
         payload: {
           directory,
-          backendId:
-            backendId ??
+          harnessId:
+            harnessId ??
             resolvePendingPromptCreationHarnessRoute({
               activeTargetBackendId: stateRef.current.activeTargetBackendId,
               preferredBackendId,
@@ -2327,19 +2313,19 @@ function InternalAgentProvider({
 
   const setActiveTargetDirectory = useCallback(
     (directory: string) => {
-      const backendId = resolvePendingPromptCreationHarnessRoute({
+      const harnessId = resolvePendingPromptCreationHarnessRoute({
         activeTargetBackendId: stateRef.current.activeTargetBackendId,
         preferredBackendId,
       }).harnessId;
-      dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, backendId } });
+      dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, harnessId } });
     },
     [preferredBackendId],
   );
 
-  const setActiveTargetBackend = useCallback((backendId: AgentBackendId) => {
+  const setActiveTargetBackend = useCallback((harnessId: HarnessId) => {
     const directory = stateRef.current.activeTargetDirectory;
     if (!directory) return;
-    dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, backendId } });
+    dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, harnessId } });
   }, []);
 
   /** Re-fetch providers from the server and update global state. */
@@ -2439,7 +2425,7 @@ function InternalAgentProvider({
         );
         await openGuiClient.sessions.abort({
           sessionId: state.activeSessionId,
-          backendId: resolveSessionHarnessRoute(activeSession).harnessId ?? undefined,
+          harnessId: resolveSessionHarnessRoute(activeSession).harnessId ?? undefined,
           target: getSessionProjectTarget(activeSession) ?? undefined,
         });
       }
@@ -2907,7 +2893,7 @@ function InternalAgentProvider({
       revertVariant: doRevertVariant,
       clearError,
       refreshProviders,
-      restartAgentBackends,
+      restartHarnesses,
       getQueuedPrompts,
       removeFromQueue,
       reorderQueue,
@@ -2959,7 +2945,7 @@ function InternalAgentProvider({
       doRevertVariant,
       clearError,
       refreshProviders,
-      restartAgentBackends,
+      restartHarnesses,
       getQueuedPrompts,
       removeFromQueue,
       reorderQueue,
@@ -3081,5 +3067,5 @@ export function useActions(): ActionsContextValue {
 }
 
 // Compatibility aliases. App-facing code should prefer generic names.
-export const AgentBackendProvider = InternalAgentProvider;
-export type AgentBackendState = InternalAgentState;
+export const HarnessProvider = InternalAgentProvider;
+export type HarnessState = InternalAgentState;

@@ -1,5 +1,5 @@
 export {
-  AgentBackendProvider,
+  HarnessProvider,
   LOCAL_WORKSPACE_ID,
   NOTIFICATIONS_ENABLED_KEY,
   resolveServerDefaultModel,
@@ -11,7 +11,7 @@ export {
 } from "./use-agent-impl-core";
 
 export type {
-  AgentBackendState,
+  HarnessState,
   MessageEntry,
   QueueMode,
   QueuedPrompt,

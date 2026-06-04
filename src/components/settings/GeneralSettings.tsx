@@ -38,19 +38,19 @@ import packageJson from "../../../package.json";
 
 export function GeneralSettings() {
   const { t } = useTranslation();
-  const { restartAgentBackends } = useActions();
+  const { restartHarnesses } = useActions();
   const [restarting, setRestarting] = useState(false);
 
   const handleRestart = useCallback(async () => {
     setRestarting(true);
     try {
-      await restartAgentBackends();
+      await restartHarnesses();
     } catch (error) {
       console.error("Failed to restart agent backends", error);
     } finally {
       setRestarting(false);
     }
-  }, [restartAgentBackends]);
+  }, [restartHarnesses]);
 
   return (
     <div className="flex flex-col gap-4">

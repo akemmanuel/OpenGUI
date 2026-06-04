@@ -17,7 +17,7 @@ function session(overrides: Partial<Session>): Session {
 
 describe("Harness routing", () => {
   test("routes existing Session operations to the Session Harness", () => {
-    expect(resolveSessionHarnessRoute(session({ _backendId: "codex" })).harnessId).toBe("codex");
+    expect(resolveSessionHarnessRoute(session({ _harnessId: "codex" })).harnessId).toBe("codex");
   });
 
   test("infers legacy Session Harnesses from Session IDs", () => {
@@ -51,7 +51,7 @@ describe("Harness routing", () => {
   test("loads active resources from active Session Harness first", () => {
     expect(
       resolveActiveResourceHarnessRoute({
-        activeSession: session({ _backendId: "claude-code" }),
+        activeSession: session({ _harnessId: "claude-code" }),
         activeTargetBackendId: "pi",
         preferredBackendId: "opencode",
       }),

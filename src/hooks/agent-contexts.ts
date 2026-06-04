@@ -7,7 +7,7 @@ import type {
   QuestionAnswer,
   QuestionRequest,
 } from "@opencode-ai/sdk/v2/client";
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type {
   InternalAgentState,
@@ -35,7 +35,7 @@ export interface SessionContextValue {
   pendingPermissions: Record<string, PermissionRequest>;
   pendingQuestions: Record<string, QuestionRequest>;
   activeTargetDirectory: string | null;
-  activeTargetBackendId: AgentBackendId | null;
+  activeTargetBackendId: HarnessId | null;
   namingSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
   sessionDrafts: Record<string, string>;
@@ -113,7 +113,7 @@ export interface ActionsContextValue {
   revertVariant: () => void;
   clearError: () => void;
   refreshProviders: () => Promise<void>;
-  restartAgentBackends: () => Promise<void>;
+  restartHarnesses: () => Promise<void>;
   getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
   removeFromQueue: (sessionId: string, promptId: string) => void;
   reorderQueue: (sessionId: string, fromIndex: number, toIndex: number) => void;
@@ -129,10 +129,10 @@ export interface ActionsContextValue {
     password?: string,
   ) => Promise<void>;
   startNewChat: () => Promise<void>;
-  setActiveTarget: (directory: string, backendId?: AgentBackendId | null) => void;
+  setActiveTarget: (directory: string, harnessId?: HarnessId | null) => void;
   setDefaultChatDirectory: (directory: string | null) => void;
   setActiveTargetDirectory: (directory: string) => void;
-  setActiveTargetBackend: (backendId: AgentBackendId) => void;
+  setActiveTargetBackend: (harnessId: HarnessId) => void;
   revertToMessage: (messageID: string) => Promise<void>;
   unrevert: () => Promise<void>;
   forkFromMessage: (messageID: string) => Promise<void>;

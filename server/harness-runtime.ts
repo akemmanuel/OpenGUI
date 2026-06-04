@@ -1,4 +1,4 @@
-import type { AgentBackendEvent } from "../src/agents/backend.ts";
+import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
 import { normalizeClaudeCodeEvent } from "../src/agents/claude-code.ts";
 import { normalizeCodexEvent } from "../src/agents/codex.ts";
@@ -43,17 +43,15 @@ export interface HarnessControl {
   restart?: () => Promise<unknown>;
 }
 
-const BRIDGE_EVENT_NORMALIZERS: Record<
-  ManagedHarnessId,
-  (event: unknown) => AgentBackendEvent | null
-> = {
-  opencode: (event) =>
-    normalizeOpenCodeEvent(event as Parameters<typeof normalizeOpenCodeEvent>[0]),
-  "claude-code": (event) =>
-    normalizeClaudeCodeEvent(event as Parameters<typeof normalizeClaudeCodeEvent>[0]),
-  pi: (event) => normalizePiEvent(event as Parameters<typeof normalizePiEvent>[0]),
-  codex: (event) => normalizeCodexEvent(event as Parameters<typeof normalizeCodexEvent>[0]),
-};
+const BRIDGE_EVENT_NORMALIZERS: Record<ManagedHarnessId, (event: unknown) => HarnessEvent | null> =
+  {
+    opencode: (event) =>
+      normalizeOpenCodeEvent(event as Parameters<typeof normalizeOpenCodeEvent>[0]),
+    "claude-code": (event) =>
+      normalizeClaudeCodeEvent(event as Parameters<typeof normalizeClaudeCodeEvent>[0]),
+    pi: (event) => normalizePiEvent(event as Parameters<typeof normalizePiEvent>[0]),
+    codex: (event) => normalizeCodexEvent(event as Parameters<typeof normalizeCodexEvent>[0]),
+  };
 
 export function isManagedHarnessId(value: unknown): value is ManagedHarnessId {
   return typeof value === "string" && MANAGED_HARNESS_IDS.includes(value as ManagedHarnessId);
@@ -66,7 +64,7 @@ export function getHarnessIdFromBridgeChannel(channel: string): ManagedHarnessId
 export function normalizeBridgeEvent(input: {
   harnessId: ManagedHarnessId;
   event: unknown;
-}): AgentBackendEvent | null {
+}): HarnessEvent | null {
   return BRIDGE_EVENT_NORMALIZERS[input.harnessId]?.(input.event) ?? null;
 }
 

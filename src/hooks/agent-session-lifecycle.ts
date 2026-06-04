@@ -1,7 +1,7 @@
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import type { WorktreeParentMap } from "@/hooks/agent-state-persistence";
 import { resolvePendingPromptCreationHarnessRoute } from "@/hooks/agent-harness-routing";
-import { getSessionBackendId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import { getSessionHarnessId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import { getDirectoryPlacementInfo } from "@/lib/worktree-placement";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
@@ -44,25 +44,25 @@ type LifecycleAction =
 
 interface SessionsClient {
   create(input: {
-    backendId: AgentBackendId;
+    harnessId: HarnessId;
     title?: string;
     target: { directory?: string; workspaceId?: string; baseUrl?: string };
   }): Promise<Session>;
   delete(input: {
     sessionId: string;
-    backendId: AgentBackendId;
+    harnessId: HarnessId;
     target?: { directory?: string; workspaceId?: string };
     confirmQueue?: boolean;
   }): Promise<unknown>;
   rename(input: {
     sessionId: string;
     title: string;
-    backendId?: AgentBackendId;
+    harnessId?: HarnessId;
     target?: { directory?: string; workspaceId?: string };
   }): Promise<unknown>;
   abort(input: {
     sessionId: string;
-    backendId?: AgentBackendId;
+    harnessId?: HarnessId;
     target?: { directory?: string; workspaceId?: string };
   }): Promise<unknown>;
 }
@@ -98,15 +98,15 @@ export function createSessionDeletionPlan({
   worktreeParents: WorktreeParentMap;
 }) {
   const deletedSession = sessions.find((session) => session.id === sessionId);
-  const backendId = getSessionBackendId(deletedSession);
-  if (!backendId) {
+  const harnessId = getSessionHarnessId(deletedSession);
+  if (!harnessId) {
     return { type: "skip" } as const;
   }
-  if ((backendId === "pi" || backendId === "codex") && busySessionIds.has(sessionId)) {
+  if ((harnessId === "pi" || harnessId === "codex") && busySessionIds.has(sessionId)) {
     return {
       type: "blocked",
       errorMessage:
-        backendId === "pi"
+        harnessId === "pi"
           ? "Stop Pi session before deleting it."
           : "Stop Codex session before deleting it.",
     } as const;
@@ -136,7 +136,7 @@ export function createSessionDeletionPlan({
 
   return {
     type: "delete",
-    backendId,
+    harnessId,
     deletedSession,
     nextSessionId,
     pendingWorktreeCleanup:
@@ -211,33 +211,33 @@ export async function createLifecycleSession({
   title?: string;
   directory?: string;
   state: {
-    activeTargetBackendId: AgentBackendId | null;
+    activeTargetBackendId: HarnessId | null;
     sessions: Session[];
     activeSessionId: string | null;
     activeWorkspaceId: string;
     activeWorkspaceServerUrl?: string;
   };
-  preferredBackendId: AgentBackendId;
+  preferredBackendId: HarnessId;
   ensureDirectoryConnection: (
     directory: string,
-    options?: { backendIds?: AgentBackendId[] },
+    options?: { harnessIds?: HarnessId[] },
   ) => Promise<void>;
   sessionsClient: SessionsClient;
   isChatDirectory: (directory?: string | null) => boolean;
   selectSession: (sessionId: string, options?: { session?: Session }) => Promise<void>;
   dispatch: (action: LifecycleAction) => void;
 }): Promise<Session | null> {
-  const backendId = resolvePendingPromptCreationHarnessRoute({
+  const harnessId = resolvePendingPromptCreationHarnessRoute({
     activeTargetBackendId: state.activeTargetBackendId,
     preferredBackendId,
   }).harnessId;
 
   try {
     if (directory) {
-      await ensureDirectoryConnection(directory, { backendIds: [backendId] });
+      await ensureDirectoryConnection(directory, { harnessIds: [harnessId] });
     }
     const session = await sessionsClient.create({
-      backendId,
+      harnessId,
       title,
       target: {
         directory,
@@ -311,7 +311,7 @@ export async function deleteLifecycleSession({
   void sessionsClient
     .delete({
       sessionId,
-      backendId: plan.backendId,
+      harnessId: plan.harnessId,
       target: getSessionProjectTarget(plan.deletedSession) ?? undefined,
       confirmQueue,
     })

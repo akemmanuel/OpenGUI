@@ -1,10 +1,6 @@
-import type { AgentBackendId } from "@/agents";
-import { AGENT_BACKEND_IDS, AGENT_BACKEND_LABELS, getAgentBackendIdFromSessionId } from "@/agents";
-import type {
-  AgentBackendDescriptor,
-  AgentBackendEvent,
-  AgentBackendTarget,
-} from "@/agents/backend";
+import type { HarnessId } from "@/agents";
+import { HARNESS_IDS, HARNESS_LABELS, getHarnessIdFromSessionId } from "@/agents";
+import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/backend";
 import {
   CLAUDE_CODE_CAPABILITIES,
   CLAUDE_CODE_WORKSPACE,
@@ -18,20 +14,17 @@ import {
 } from "@/agents/opencode";
 import { normalizePiEvent, PI_CAPABILITIES, PI_WORKSPACE } from "@/agents/pi";
 import type {
-  BackendResourceBundle,
+  HarnessResourceBundle,
   CreateProjectInput,
-  CreateWorkspaceInput,
   MessagePageResult,
   OpenGuiCapabilities,
   OpenGuiClient,
   OpenGuiQueueEntry,
   OpenGuiProject,
-  OpenGuiWorkspace,
   ProjectConnectResult,
-  ProjectSessionsResult,
+  HarnessProjectSessionsResult,
   SessionQueryResult,
   UpdateProjectInput,
-  UpdateWorkspaceInput,
 } from "@/protocol/client";
 import { composeFrontendSessionId } from "@/lib/session-identity";
 import type {
@@ -136,13 +129,13 @@ const WEB_BACKEND_META = {
     normalizeEvent: normalizeCodexEvent,
   },
 } satisfies Record<
-  AgentBackendId,
-  Pick<AgentBackendDescriptor, "capabilities" | "workspace"> & {
-    normalizeEvent: (event: never) => AgentBackendEvent | null;
+  HarnessId,
+  Pick<HarnessDescriptor, "capabilities" | "workspace"> & {
+    normalizeEvent: (event: never) => HarnessEvent | null;
   }
 >;
 
-function targetArgs(target?: AgentBackendTarget) {
+function targetArgs(target?: HarnessTarget) {
   return [target?.directory, target?.workspaceId];
 }
 
@@ -169,13 +162,13 @@ function normalizeSkillList<T>(value: T[] | Record<string, T> | null | undefined
   return [];
 }
 
-function appendTarget(target?: AgentBackendTarget, ...args: unknown[]) {
+function appendTarget(target?: HarnessTarget, ...args: unknown[]) {
   return [...targetArgs(target), ...args];
 }
 
 function createOpenCodePlatform(
   op: <T>(suffix: string, args?: unknown[]) => Promise<T>,
-): AgentBackendDescriptor["platform"] {
+): HarnessDescriptor["platform"] {
   const platformOp = async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
     unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
 
@@ -309,7 +302,7 @@ function createOpenCodePlatform(
 
 function createPiPlatform(
   op: <T>(suffix: string, args?: unknown[]) => Promise<T>,
-): AgentBackendDescriptor["platform"] {
+): HarnessDescriptor["platform"] {
   const platformOp = async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
     unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
 
@@ -354,17 +347,17 @@ function createPiPlatform(
 }
 
 function createWebBackendDescriptor(
-  backendId: AgentBackendId,
+  harnessId: HarnessId,
   rpcCall: <T>(channel: string, args?: unknown[]) => Promise<T>,
-  runtimeOverrides: Partial<AgentBackendDescriptor["runtime"]> = {},
-): AgentBackendDescriptor {
-  const meta = WEB_BACKEND_META[backendId];
+  runtimeOverrides: Partial<HarnessDescriptor["runtime"]> = {},
+): HarnessDescriptor {
+  const meta = WEB_BACKEND_META[harnessId];
   const backendCall = async <T>(suffix: string, args: unknown[] = []) =>
     unwrapIpcResult(
-      await rpcCall<IPCResult<T>>(`${backendId}:${suffix}`, args),
-      `Backend call failed: ${backendId}:${suffix}`,
+      await rpcCall<IPCResult<T>>(`${harnessId}:${suffix}`, args),
+      `Backend call failed: ${harnessId}:${suffix}`,
     );
-  const runtime: AgentBackendDescriptor["runtime"] = {
+  const runtime: HarnessDescriptor["runtime"] = {
     createSession: ({ title, directory, workspaceId } = {}) =>
       backendCall("session:create", [title, directory, workspaceId]),
     startSession: (input) => backendCall("session:start", [input]),
@@ -390,23 +383,23 @@ function createWebBackendDescriptor(
     ...runtimeOverrides,
   };
   const op = <T>(suffix: string, args: unknown[] = []) =>
-    rpcCall<T>(`${backendId}:${suffix}`, args);
+    rpcCall<T>(`${harnessId}:${suffix}`, args);
   const platform =
-    backendId === "opencode"
+    harnessId === "opencode"
       ? createOpenCodePlatform(op)
-      : backendId === "pi"
+      : harnessId === "pi"
         ? createPiPlatform(op)
         : undefined;
 
   return {
-    id: backendId,
-    label: AGENT_BACKEND_LABELS[backendId],
+    id: harnessId,
+    label: HARNESS_LABELS[harnessId],
     capabilities: meta.capabilities,
     workspace: meta.workspace,
     runtime,
     platform,
-    normalizeEvent: meta.normalizeEvent as (event: unknown) => AgentBackendEvent | null,
-  } as AgentBackendDescriptor & { normalizeEvent: (event: unknown) => AgentBackendEvent | null };
+    normalizeEvent: meta.normalizeEvent as (event: unknown) => HarnessEvent | null,
+  } as HarnessDescriptor & { normalizeEvent: (event: unknown) => HarnessEvent | null };
 }
 
 function eventUrl(
@@ -433,7 +426,7 @@ interface SessionRecordResponse {
   id: string;
   rawId: string;
   projectId: string;
-  harnessId: AgentBackendId;
+  harnessId: HarnessId;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -456,21 +449,21 @@ interface SessionQueryResponse {
   items: Array<{
     frontendProjectId: string;
     directory: string;
-    harnessId: AgentBackendId;
+    harnessId: HarnessId;
     sessions: SessionRecordResponse[];
   }>;
   errors?: Array<{
     frontendProjectId: string;
     directory: string;
-    harnessId?: AgentBackendId;
+    harnessId?: HarnessId;
     error: string;
   }>;
 }
 
 interface SessionLookupInput {
   sessionId: string;
-  backendId?: AgentBackendId;
-  target?: AgentBackendTarget;
+  harnessId?: HarnessId;
+  target?: HarnessTarget;
   workspaceId?: string;
   directory?: string;
   baseUrl?: string;
@@ -543,13 +536,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const rpcCall = <T>(channel: string, args: unknown[] = []) =>
     options.rpcImpl?.<T>(channel, args) ??
     httpRpc<T>(getDefaultBaseUrl(), getToken(), channel, args);
-  const backendIdsOrAll = (backendIds?: AgentBackendId[]) =>
-    backendIds?.length ? backendIds : AGENT_BACKEND_IDS;
-  const backendChannel = (backendId: AgentBackendId, suffix: string) => `${backendId}:${suffix}`;
-  const backendRpc = async <T>(backendId: AgentBackendId, suffix: string, args: unknown[] = []) =>
+  const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
+    harnessIds?.length ? harnessIds : HARNESS_IDS;
+  const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
+  const backendRpc = async <T>(harnessId: HarnessId, suffix: string, args: unknown[] = []) =>
     unwrapIpcResult(
-      await rpcCall<IPCResult<T>>(backendChannel(backendId, suffix), args),
-      `Backend call failed: ${backendId}:${suffix}`,
+      await rpcCall<IPCResult<T>>(backendChannel(harnessId, suffix), args),
+      `Backend call failed: ${harnessId}:${suffix}`,
     );
   const projectById = new Map<string, Promise<OpenGuiProject | null>>();
   const workspaceBaseUrls = new Map<string, string>();
@@ -573,7 +566,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     return promise;
   };
 
-  const requestBaseUrlForTarget = (target?: AgentBackendTarget) => {
+  const requestBaseUrlForTarget = (target?: HarnessTarget) => {
     const normalizedBaseUrl = target?.baseUrl?.replace(/\/+$/, "");
     if (target?.workspaceId && normalizedBaseUrl) {
       workspaceBaseUrls.set(target.workspaceId, normalizedBaseUrl);
@@ -621,9 +614,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     return requestBaseUrlForTarget(target);
   };
 
-  const findProjectForTarget = async (
-    target?: AgentBackendTarget,
-  ): Promise<OpenGuiProject | null> => {
+  const findProjectForTarget = async (target?: HarnessTarget): Promise<OpenGuiProject | null> => {
     const directory = target?.directory;
     if (!directory) return null;
     const normalizedDirectory = directory.replace(/[\\/]+$/, "");
@@ -641,9 +632,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     );
   };
 
-  const ensureProjectForTarget = async (
-    target?: AgentBackendTarget,
-  ): Promise<OpenGuiProject | null> => {
+  const ensureProjectForTarget = async (target?: HarnessTarget): Promise<OpenGuiProject | null> => {
     if (!target?.directory) return null;
     const existing = await findProjectForTarget(target);
     if (existing) return existing;
@@ -679,11 +668,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         .map((canonicalId) => sessionRecordByCanonicalId.get(canonicalId))
         .filter((record): record is SessionRecordResponse => Boolean(record)),
     ];
-    const backendId =
-      input.backendId ?? getAgentBackendIdFromSessionId(input.sessionId) ?? undefined;
+    const harnessId = input.harnessId ?? getHarnessIdFromSessionId(input.sessionId) ?? undefined;
     return candidates.filter((record, index) => {
       if (candidates.findIndex((candidate) => candidate.id === record.id) !== index) return false;
-      return !backendId || record.harnessId === backendId;
+      return !harnessId || record.harnessId === harnessId;
     });
   };
 
@@ -698,10 +686,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
 
     const workspaceId = input.target?.workspaceId ?? input.workspaceId;
     const directory = input.target?.directory ?? input.directory;
-    const backendId =
-      input.backendId ?? getAgentBackendIdFromSessionId(input.sessionId) ?? undefined;
+    const harnessId = input.harnessId ?? getHarnessIdFromSessionId(input.sessionId) ?? undefined;
     const params = new URLSearchParams();
-    if (backendId) params.set("harnessId", backendId);
+    if (harnessId) params.set("harnessId", harnessId);
 
     if (directory) {
       const project = await ensureProjectForTarget({ directory, workspaceId });
@@ -709,7 +696,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         params.set("projectId", project.id);
         candidates = candidates.filter(
           (record) =>
-            record.projectId === project.id && (!backendId || record.harnessId === backendId),
+            record.projectId === project.id && (!harnessId || record.harnessId === harnessId),
         );
         if (candidates.length === 1) {
           return `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`;
@@ -726,7 +713,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     directory: string,
     workspaceId?: string,
     requestBaseUrl?: string,
-  ): ProjectSessionsResult["sessions"][number] => {
+  ): HarnessProjectSessionsResult["sessions"][number] => {
     rememberSessionRecord(record);
     if (requestBaseUrl) rememberSessionBaseUrl(record, requestBaseUrl);
     const resolvedWorkspaceId = workspaceId ?? "local";
@@ -743,16 +730,16 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       },
       _projectDir: directory || undefined,
       _workspaceId: resolvedWorkspaceId,
-      _backendId: record.harnessId,
+      _harnessId: record.harnessId,
       _rawId: record.rawId,
-    } as ProjectSessionsResult["sessions"][number];
+    } as HarnessProjectSessionsResult["sessions"][number];
   };
 
   const toFrontendSession = async (
     record: SessionRecordResponse,
     project?: OpenGuiProject | null,
     requestBaseUrl?: string,
-  ): Promise<ProjectSessionsResult["sessions"][number]> => {
+  ): Promise<HarnessProjectSessionsResult["sessions"][number]> => {
     const resolvedProject = project ?? (await getProject(record.projectId));
     const directory = resolvedProject?.path ?? resolvedProject?.canonicalPath ?? "";
     return toFrontendSessionFromDirectory(
@@ -770,8 +757,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     );
 
   const runtimeOverridesForBackend = (
-    backendId: AgentBackendId,
-  ): Partial<AgentBackendDescriptor["runtime"]> => ({
+    harnessId: HarnessId,
+  ): Partial<HarnessDescriptor["runtime"]> => ({
     createSession: async ({ title, directory, workspaceId, baseUrl: targetBaseUrl } = {}) => {
       const target = { directory, workspaceId, baseUrl: targetBaseUrl };
       const project = await ensureProjectForTarget(target);
@@ -779,7 +766,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       const requestBaseUrl = requestBaseUrlForTarget(target);
       const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ projectId: project.id, harnessId: backendId, title }),
+        body: JSON.stringify({ projectId: project.id, harnessId: harnessId, title }),
       });
       rememberSessionBaseUrl(record, requestBaseUrl);
       return await toFrontendSession(record, project);
@@ -790,7 +777,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       const requestBaseUrl = requestBaseUrlForTarget(input);
       const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ projectId: project.id, harnessId: backendId, title: input.title }),
+        body: JSON.stringify({ projectId: project.id, harnessId: harnessId, title: input.title }),
       });
       rememberSessionBaseUrl(record, requestBaseUrl);
       await requestAt<boolean>(
@@ -809,12 +796,12 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       return await toFrontendSession(record, project);
     },
     deleteSession: async (sessionId) =>
-      await request<boolean>(await resolveSessionPath({ sessionId, backendId }, ""), {
+      await request<boolean>(await resolveSessionPath({ sessionId, harnessId }, ""), {
         method: "DELETE",
       }),
     renameSession: async (sessionId, title) => {
       const record = await request<SessionRecordResponse>(
-        await resolveSessionPath({ sessionId, backendId }),
+        await resolveSessionPath({ sessionId, harnessId }),
         {
           method: "PATCH",
           body: JSON.stringify({ title }),
@@ -823,14 +810,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       return await toFrontendSession(record);
     },
     compactSession: async (sessionId, model) => {
-      await request<boolean>(await resolveSessionPath({ sessionId, backendId }, "/compact"), {
+      await request<boolean>(await resolveSessionPath({ sessionId, harnessId }, "/compact"), {
         method: "POST",
         body: JSON.stringify({ model }),
       });
     },
     forkSession: async (sessionId, messageID) => {
       const record = await request<SessionRecordResponse>(
-        await resolveSessionPath({ sessionId, backendId }, "/fork"),
+        await resolveSessionPath({ sessionId, harnessId }, "/fork"),
         {
           method: "POST",
           body: JSON.stringify({ messageId: messageID }),
@@ -840,7 +827,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     },
     revertSession: async (sessionId, messageID, partID) => {
       const value = await request<SessionRecordResponse | boolean>(
-        await resolveSessionPath({ sessionId, backendId }, "/revert"),
+        await resolveSessionPath({ sessionId, harnessId }, "/revert"),
         {
           method: "POST",
           body: JSON.stringify({ messageId: messageID, partId: partID }),
@@ -848,18 +835,18 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       );
       return await toFrontendSession(
         typeof value === "boolean"
-          ? await getSessionRecord(sessionId, { sessionId, backendId })
+          ? await getSessionRecord(sessionId, { sessionId, harnessId })
           : value,
       );
     },
     unrevertSession: async (sessionId) => {
       const value = await request<SessionRecordResponse | boolean>(
-        await resolveSessionPath({ sessionId, backendId }, "/unrevert"),
+        await resolveSessionPath({ sessionId, harnessId }, "/unrevert"),
         { method: "POST" },
       );
       return await toFrontendSession(
         typeof value === "boolean"
-          ? await getSessionRecord(sessionId, { sessionId, backendId })
+          ? await getSessionRecord(sessionId, { sessionId, harnessId })
           : value,
       );
     },
@@ -868,7 +855,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         await resolveSessionPath(
           {
             sessionId: input.sessionId,
-            backendId,
+            harnessId,
             target: { directory: input.directory, workspaceId: input.workspaceId },
           },
           "/command",
@@ -887,12 +874,12 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     },
   });
 
-  const webBackends = AGENT_BACKEND_IDS.map((backendId) =>
-    createWebBackendDescriptor(backendId, rpcCall, runtimeOverridesForBackend(backendId)),
+  const webBackends = HARNESS_IDS.map((harnessId) =>
+    createWebBackendDescriptor(harnessId, rpcCall, runtimeOverridesForBackend(harnessId)),
   );
   const list = () => webBackends;
-  const get = (backendId: AgentBackendId = "opencode") =>
-    webBackends.find((backend) => backend.id === backendId);
+  const get = (harnessId: HarnessId = "opencode") =>
+    webBackends.find((backend) => backend.id === harnessId);
 
   return {
     capabilities: () =>
@@ -907,46 +894,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               auth: false,
               allowedRoots: true,
             },
-            agentBackends: AGENT_BACKEND_IDS,
+            harnesses: HARNESS_IDS,
           } satisfies OpenGuiCapabilities)
         : request<OpenGuiCapabilities>("/api/capabilities"),
-    workspaces: {
-      list: () => request<OpenGuiWorkspace[]>("/api/workspaces"),
-      get: async (id: string) => {
-        try {
-          return await request<OpenGuiWorkspace>(`/api/workspaces/${encodeURIComponent(id)}`);
-        } catch (error) {
-          if (error instanceof Error && error.message === "Workspace not found") return null;
-          throw error;
-        }
-      },
-      create: (input: CreateWorkspaceInput = {}) =>
-        request<OpenGuiWorkspace>("/api/workspaces", {
-          method: "POST",
-          body: JSON.stringify(input),
-        }),
-      update: async (id: string, input: UpdateWorkspaceInput) => {
-        try {
-          return await request<OpenGuiWorkspace>(`/api/workspaces/${encodeURIComponent(id)}`, {
-            method: "PATCH",
-            body: JSON.stringify(input),
-          });
-        } catch (error) {
-          if (error instanceof Error && error.message === "Workspace not found") return null;
-          throw error;
-        }
-      },
-      delete: async (id: string) => {
-        try {
-          return await request<boolean>(`/api/workspaces/${encodeURIComponent(id)}`, {
-            method: "DELETE",
-          });
-        } catch (error) {
-          if (error instanceof Error && error.message === "Workspace not found") return false;
-          throw error;
-        }
-      },
-    },
     projects: {
       list: async (workspaceId: string) =>
         (await request<BackendProjectResponse[]>("/api/projects")).map((project) =>
@@ -994,10 +944,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         }
       },
     },
-    agentBackends: {
+    harnesses: {
       list,
       get,
-      subscribe: (listener: (event: AgentBackendEvent) => void) => {
+      subscribe: (listener: (event: HarnessEvent) => void) => {
         const handleMessage = (
           message: { channel?: string; data?: unknown } | CanonicalEventEnvelope,
         ) => {
@@ -1011,7 +961,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
                   ...(message.projectId ? { projectId: message.projectId } : {}),
                   ...(message.sessionId ? { sessionId: message.sessionId } : {}),
                   ...(message.harnessId ? { harnessId: message.harnessId } : {}),
-                } as unknown as AgentBackendEvent);
+                } as unknown as HarnessEvent);
               }
               return;
             }
@@ -1020,9 +970,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               (candidate) => message.channel === `${candidate.id}:bridge-event`,
             );
             const backendEvent = (
-              backend as
-                | { normalizeEvent?: (event: unknown) => AgentBackendEvent | null }
-                | undefined
+              backend as { normalizeEvent?: (event: unknown) => HarnessEvent | null } | undefined
             )?.normalizeEvent?.(message.data);
             if (backendEvent) listener(backendEvent);
           } catch (error) {
@@ -1076,50 +1024,50 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       },
       restart: async () =>
         unwrapIpcResult(
-          await rpcCall<IPCResult<Record<AgentBackendId, { success: boolean; error?: string }>>>(
+          await rpcCall<IPCResult<Record<HarnessId, { success: boolean; error?: string }>>>(
             "agent-backends:restart",
             [],
           ),
           "Failed to restart agent backends",
         ),
-      loadResources: async ({ backendId, target }) => {
+      loadResources: async ({ harnessId, target }) => {
         if (!target?.directory) {
           const args = targetArgs(target);
           const [providersData, agentsData, commandsData] = await Promise.all([
-            backendRpc<BackendResourceBundle["providersData"]>(backendId, "providers", args),
-            backendRpc<BackendResourceBundle["agentsData"]>(backendId, "agents", args),
-            backendRpc<BackendResourceBundle["commandsData"]>(backendId, "commands", args),
+            backendRpc<HarnessResourceBundle["providersData"]>(harnessId, "providers", args),
+            backendRpc<HarnessResourceBundle["agentsData"]>(harnessId, "agents", args),
+            backendRpc<HarnessResourceBundle["commandsData"]>(harnessId, "commands", args),
           ]);
           return { providersData, agentsData, commandsData };
         }
         const project = await ensureProjectForTarget(target);
         if (!project) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
         const [providersData, agentsData, commandsData] = await Promise.all([
-          requestAt<BackendResourceBundle["providersData"]>(
+          requestAt<HarnessResourceBundle["providersData"]>(
             requestBaseUrlForTarget(target),
-            `/api/projects/${encodeURIComponent(project.id)}/providers?harnessId=${encodeURIComponent(backendId)}`,
+            `/api/projects/${encodeURIComponent(project.id)}/providers?harnessId=${encodeURIComponent(harnessId)}`,
           ),
-          requestAt<BackendResourceBundle["agentsData"]>(
+          requestAt<HarnessResourceBundle["agentsData"]>(
             requestBaseUrlForTarget(target),
-            `/api/projects/${encodeURIComponent(project.id)}/agents?harnessId=${encodeURIComponent(backendId)}`,
+            `/api/projects/${encodeURIComponent(project.id)}/agents?harnessId=${encodeURIComponent(harnessId)}`,
           ),
-          requestAt<BackendResourceBundle["commandsData"]>(
+          requestAt<HarnessResourceBundle["commandsData"]>(
             requestBaseUrlForTarget(target),
-            `/api/projects/${encodeURIComponent(project.id)}/commands?harnessId=${encodeURIComponent(backendId)}`,
+            `/api/projects/${encodeURIComponent(project.id)}/commands?harnessId=${encodeURIComponent(harnessId)}`,
           ),
         ]);
         return { providersData, agentsData, commandsData };
       },
-      connectProject: async ({ config, backendIds }) => {
-        const targetBackends = backendIdsOrAll(backendIds);
+      connectProject: async ({ config, harnessIds }) => {
+        const targetBackends = harnessIdsOrAll(harnessIds);
         if (config.workspaceId && config.baseUrl) {
           workspaceBaseUrls.set(config.workspaceId, config.baseUrl);
         }
         if (!config.directory) {
           return {
-            connectedBackendIds: [],
-            errors: targetBackends.map((backendId) => ({
-              backendId,
+            connectedHarnessIds: [],
+            errors: targetBackends.map((harnessId) => ({
+              harnessId,
               error: "Directory is required",
             })),
           };
@@ -1133,9 +1081,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         const project = await ensureProjectForTarget(target);
         if (!project) {
           return {
-            connectedBackendIds: [],
-            errors: targetBackends.map((backendId) => ({
-              backendId,
+            connectedHarnessIds: [],
+            errors: targetBackends.map((harnessId) => ({
+              harnessId,
               error: "Directory is required",
             })),
           };
@@ -1145,11 +1093,11 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/projects/${encodeURIComponent(project.id)}/connect`,
           {
             method: "POST",
-            body: JSON.stringify({ backendIds: targetBackends, config }),
+            body: JSON.stringify({ harnessIds: targetBackends, config }),
           },
         );
       },
-      disconnectProject: async ({ target, backendIds }) => {
+      disconnectProject: async ({ target, harnessIds }) => {
         const project = await findProjectForTarget(target);
         if (!project) return;
         await requestAt<boolean>(
@@ -1157,22 +1105,22 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/projects/${encodeURIComponent(project.id)}/disconnect`,
           {
             method: "POST",
-            body: JSON.stringify({ backendIds: backendIdsOrAll(backendIds) }),
+            body: JSON.stringify({ harnessIds: harnessIdsOrAll(harnessIds) }),
           },
         );
       },
-      listProjectSessions: async ({ backendIds, target }) => {
+      listProjectSessions: async ({ harnessIds, target }) => {
         const project = await findProjectForTarget(target);
         if (!project) return [];
         const results = await Promise.all(
-          backendIds.map(async (backendId) => {
+          harnessIds.map(async (harnessId) => {
             const requestBaseUrl = requestBaseUrlForTarget(target);
             const page = await requestAt<SessionListResponse>(
               requestBaseUrl,
-              `/api/sessions?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(backendId)}&sync=true`,
+              `/api/sessions?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(harnessId)}&sync=true`,
             );
             return {
-              backendId,
+              harnessId,
               sessions: await Promise.all(
                 page.sessions.map((session) => toFrontendSession(session, project, requestBaseUrl)),
               ),
@@ -1181,7 +1129,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
         return results;
       },
-      listProjectSessionStatuses: async ({ backendIds, target }) => {
+      listProjectSessionStatuses: async ({ harnessIds, target }) => {
         const project = await ensureProjectForTarget(target);
         if (!project) return {};
         const status = await requestAt<
@@ -1191,7 +1139,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/projects/${encodeURIComponent(project.id)}/status`,
         );
         return Object.fromEntries(
-          backendIds.flatMap((backendId) => Object.entries(status[backendId]?.statuses ?? {})),
+          harnessIds.flatMap((harnessId) => Object.entries(status[harnessId]?.statuses ?? {})),
         );
       },
     },
@@ -1248,34 +1196,34 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           ),
         };
       },
-      create: async ({ backendId, title, target }) => {
+      create: async ({ harnessId, title, target }) => {
         const project = await ensureProjectForTarget(target);
         if (!project) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
         const requestBaseUrl = requestBaseUrlForTarget(target);
         const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
           method: "POST",
-          body: JSON.stringify({ projectId: project.id, harnessId: backendId, title }),
+          body: JSON.stringify({ projectId: project.id, harnessId: harnessId, title }),
         });
         rememberSessionBaseUrl(record, requestBaseUrl);
         return await toFrontendSession(record, project, requestBaseUrl);
       },
-      delete: async ({ sessionId, backendId, target, confirmQueue }) => {
-        const path = await resolveSessionPath({ sessionId, backendId, target });
+      delete: async ({ sessionId, harnessId, target, confirmQueue }) => {
+        const path = await resolveSessionPath({ sessionId, harnessId, target });
         const url = new URL(path, "http://opengui.local");
         if (confirmQueue) url.searchParams.set("confirmQueue", "true");
         return await requestAt<boolean>(
-          requestBaseUrlForSession({ sessionId, backendId, target }),
+          requestBaseUrlForSession({ sessionId, harnessId, target }),
           `${url.pathname}${url.search}`,
           {
             method: "DELETE",
           },
         );
       },
-      rename: async ({ sessionId, title, backendId, target }) => {
-        const requestBaseUrl = requestBaseUrlForSession({ sessionId, backendId, target });
+      rename: async ({ sessionId, title, harnessId, target }) => {
+        const requestBaseUrl = requestBaseUrlForSession({ sessionId, harnessId, target });
         const record = await requestAt<SessionRecordResponse>(
           requestBaseUrl,
-          await resolveSessionPath({ sessionId, backendId, target }),
+          await resolveSessionPath({ sessionId, harnessId, target }),
           {
             method: "PATCH",
             body: JSON.stringify({ title }),
@@ -1283,11 +1231,11 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
         return await toFrontendSession(record, null, requestBaseUrl);
       },
-      getMessages: async ({ sessionId, backendId, options }) => {
+      getMessages: async ({ sessionId, harnessId, options }) => {
         const path = await resolveSessionPath(
           {
             sessionId,
-            backendId,
+            harnessId,
             workspaceId: options?.workspaceId,
             directory: options?.directory,
             baseUrl: options?.baseUrl,
@@ -1304,7 +1252,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           return await requestAt<MessagePageResult>(
             requestBaseUrlForSession({
               sessionId,
-              backendId,
+              harnessId,
               directory: options?.directory,
               workspaceId: options?.workspaceId,
               baseUrl: options?.baseUrl,
@@ -1318,26 +1266,26 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           throw error;
         }
       },
-      prompt: async ({ sessionId, text, model, agent, variant, mode, target, backendId }) => {
+      prompt: async ({ sessionId, text, model, agent, variant, mode, target, harnessId }) => {
         await requestAt<boolean>(
-          requestBaseUrlForSession({ sessionId, backendId, target }),
-          await resolveSessionPath({ sessionId, backendId, target }, "/prompt"),
+          requestBaseUrlForSession({ sessionId, harnessId, target }),
+          await resolveSessionPath({ sessionId, harnessId, target }, "/prompt"),
           {
             method: "POST",
             body: JSON.stringify({ text, model, agent, variant, mode }),
           },
         );
       },
-      abort: async ({ sessionId, backendId, target }) => {
+      abort: async ({ sessionId, harnessId, target }) => {
         await requestAt<boolean>(
-          requestBaseUrlForSession({ sessionId, backendId, target }),
-          await resolveSessionPath({ sessionId, backendId, target }, "/abort"),
+          requestBaseUrlForSession({ sessionId, harnessId, target }),
+          await resolveSessionPath({ sessionId, harnessId, target }, "/abort"),
           {
             method: "POST",
           },
         );
       },
-      respondPermission: async ({ sessionId, permissionId, response, backendId, target }) => {
+      respondPermission: async ({ sessionId, permissionId, response, harnessId, target }) => {
         const project = target ? await ensureProjectForTarget(target) : null;
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
@@ -1347,37 +1295,37 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             body: JSON.stringify({
               sessionId,
               response,
-              backendId,
+              harnessId,
               workspaceId: project?.workspaceId ?? target?.workspaceId,
               projectId: project?.id,
             }),
           },
         );
       },
-      replyQuestion: async ({ requestId, answers, backendId }) => {
+      replyQuestion: async ({ requestId, answers, harnessId }) => {
         await request<boolean>(`/api/questions/${encodeURIComponent(requestId)}/reply`, {
           method: "POST",
-          body: JSON.stringify({ answers, backendId }),
+          body: JSON.stringify({ answers, harnessId }),
         });
       },
-      rejectQuestion: async ({ requestId, backendId }) => {
+      rejectQuestion: async ({ requestId, harnessId }) => {
         await request<boolean>(`/api/questions/${encodeURIComponent(requestId)}/reject`, {
           method: "POST",
-          body: JSON.stringify({ backendId }),
+          body: JSON.stringify({ harnessId }),
         });
       },
       queue: {
-        list: async ({ sessionId, backendId, target }) =>
+        list: async ({ sessionId, harnessId, target }) =>
           await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, backendId, target }),
-            await resolveSessionPath({ sessionId, backendId, target }, "/queue"),
+            requestBaseUrlForSession({ sessionId, harnessId, target }),
+            await resolveSessionPath({ sessionId, harnessId, target }, "/queue"),
           ),
-        listProject: async ({ backendId, target }) => {
+        listProject: async ({ harnessId, target }) => {
           const project = await ensureProjectForTarget(target);
           if (!project) return {};
           return await requestAt<Record<string, OpenGuiQueueEntry[]>>(
             requestBaseUrlForTarget(target),
-            `/api/queues?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(backendId)}`,
+            `/api/queues?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(harnessId)}`,
           );
         },
         enqueue: async ({
@@ -1388,22 +1336,22 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           variant,
           mode,
           insertAt,
-          backendId,
+          harnessId,
           target,
         }) =>
           await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, backendId, target }),
-            await resolveSessionPath({ sessionId, backendId, target }, "/queue"),
+            requestBaseUrlForSession({ sessionId, harnessId, target }),
+            await resolveSessionPath({ sessionId, harnessId, target }, "/queue"),
             {
               method: "POST",
               body: JSON.stringify({ text, model, agent, variant, mode, insertAt }),
             },
           ),
-        remove: async ({ sessionId, entryId, backendId, target }) =>
+        remove: async ({ sessionId, entryId, harnessId, target }) =>
           await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, backendId, target }),
+            requestBaseUrlForSession({ sessionId, harnessId, target }),
             await resolveSessionPath(
-              { sessionId, backendId, target },
+              { sessionId, harnessId, target },
               `/queue/${encodeURIComponent(entryId)}`,
             ),
             { method: "DELETE" },
@@ -1416,13 +1364,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           agent,
           variant,
           mode,
-          backendId,
+          harnessId,
           target,
         }) =>
           await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, backendId, target }),
+            requestBaseUrlForSession({ sessionId, harnessId, target }),
             await resolveSessionPath(
-              { sessionId, backendId, target },
+              { sessionId, harnessId, target },
               `/queue/${encodeURIComponent(entryId)}`,
             ),
             {
@@ -1430,11 +1378,11 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               body: JSON.stringify({ text, model, agent, variant, mode }),
             },
           ),
-        reorder: async ({ sessionId, entryId, index, backendId, target }) =>
+        reorder: async ({ sessionId, entryId, index, harnessId, target }) =>
           await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, backendId, target }),
+            requestBaseUrlForSession({ sessionId, harnessId, target }),
             await resolveSessionPath(
-              { sessionId, backendId, target },
+              { sessionId, harnessId, target },
               `/queue/${encodeURIComponent(entryId)}/reorder`,
             ),
             {
@@ -1442,11 +1390,11 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               body: JSON.stringify({ index }),
             },
           ),
-        sendNow: async ({ sessionId, entryId, backendId, target }) =>
+        sendNow: async ({ sessionId, entryId, harnessId, target }) =>
           await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, backendId, target }),
+            requestBaseUrlForSession({ sessionId, harnessId, target }),
             await resolveSessionPath(
-              { sessionId, backendId, target },
+              { sessionId, harnessId, target },
               `/queue/${encodeURIComponent(entryId)}/send-now`,
             ),
             { method: "POST" },
@@ -1535,8 +1483,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     runtime: {
       getHomeDir: async () => await rpcCall<string>("platform:homeDir"),
       detectBackends: async () => await rpcCall<BackendDetectionResult>("platform:detectBackends"),
-      installBackend: async (backendId: AgentBackendId) =>
-        await rpcCall<InstallResult>("backend:install", [backendId]),
+      installBackend: async (harnessId: HarnessId) =>
+        await rpcCall<InstallResult>("backend:install", [harnessId]),
     },
     desktop: {
       openDirectory: async () =>
@@ -1547,4 +1495,4 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   };
 }
 
-export type { AgentBackendId };
+export type { HarnessId };

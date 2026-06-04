@@ -297,7 +297,7 @@ function makeSessionFromInfo(info, target = {}, fallbackTitle) {
   return {
     id,
     slug: id,
-    _backendId: "claude-code",
+    _harnessId: "claude-code",
     _rawId: rawId,
     projectID: directory,
     workspaceID: target.workspaceId,

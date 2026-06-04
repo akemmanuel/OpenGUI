@@ -12,8 +12,8 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AgentBackendId } from "@/agents";
-import { useAgentBackend } from "@/hooks/use-agent-backend";
+import type { HarnessId } from "@/agents";
+import { useHarness } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -120,7 +120,7 @@ function KeyValueListEditor({
 
 interface DialogCustomProviderProps {
   directory?: string;
-  backendId?: AgentBackendId;
+  harnessId?: HarnessId;
   onSaved: () => void;
   onBack: () => void;
 }
@@ -160,11 +160,11 @@ function validate(
 
 export function DialogCustomProvider({
   directory,
-  backendId,
+  harnessId,
   onSaved,
   onBack,
 }: DialogCustomProviderProps) {
-  const backend = useAgentBackend(backendId);
+  const backend = useHarness(harnessId);
   const providersApi = backend?.platform?.providers;
   const configApi = backend?.platform?.config;
   const { activeWorkspaceId } = useConnectionState();

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import {
-  backendSessionIdentity,
+  harnessSessionIdentity,
   composeFrontendSessionId,
   harnessRawSessionKey,
   parseFrontendSessionId,
   rawSessionIdForHarness,
-  sameBackendSessionIdentity,
+  sameHarnessSessionIdentity,
   scopedRawSessionKey,
 } from "@/lib/session-identity";
 
@@ -24,12 +24,12 @@ describe("session identity", () => {
 
   test("compares the same backend Session across frontend shapes", () => {
     expect(
-      sameBackendSessionIdentity(
+      sameHarnessSessionIdentity(
         { id: "opencode:raw-1" },
-        { id: "anything", _backendId: "opencode", _rawId: "raw-1" },
+        { id: "anything", _harnessId: "opencode", _rawId: "raw-1" },
       ),
     ).toBe(true);
-    expect(backendSessionIdentity({ id: "anything", _backendId: "pi", _rawId: "raw-1" })).toBe(
+    expect(harnessSessionIdentity({ id: "anything", _harnessId: "pi", _rawId: "raw-1" })).toBe(
       "pi:raw-1",
     );
   });

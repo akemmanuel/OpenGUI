@@ -1,8 +1,8 @@
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend.ts";
+import type { HarnessCapabilities, HarnessEvent } from "./backend.ts";
 import { normalizeTaggedBackendEvent } from "./shared.ts";
 
-export const CLAUDE_CODE_CAPABILITIES: AgentBackendCapabilities = {
+export const CLAUDE_CODE_CAPABILITIES: HarnessCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: true,
@@ -31,6 +31,6 @@ export const CLAUDE_CODE_WORKSPACE = {
   },
 } as const;
 
-export function normalizeClaudeCodeEvent(event: NativeBackendEvent): AgentBackendEvent | null {
+export function normalizeClaudeCodeEvent(event: NativeBackendEvent): HarnessEvent | null {
   return normalizeTaggedBackendEvent("claude-code", event, "claude-code:event");
 }

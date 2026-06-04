@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { useOpenGuiClient } from "@/protocol/provider";
 
-export function useSkillsPlatform() {
+export function usePluginsPlatform() {
   const openGuiClient = useOpenGuiClient();
 
   return useMemo(() => {
-    for (const platform of openGuiClient.agentBackends
+    for (const platform of openGuiClient.harnesses
       .list()
       .map((entry) => entry.platform)
       .filter(Boolean)) {

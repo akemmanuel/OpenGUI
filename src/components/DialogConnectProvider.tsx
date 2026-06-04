@@ -14,8 +14,8 @@ import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AgentBackendId } from "@/agents";
-import { useAgentBackend } from "@/hooks/use-agent-backend";
+import type { HarnessId } from "@/agents";
+import { useHarness } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { getErrorMessage, openExternalLink } from "@/lib/utils";
 import type { ProviderAuthMethod, ProviderOAuthAuthorization } from "@/types/electron";
@@ -26,7 +26,7 @@ import type { ProviderAuthMethod, ProviderOAuthAuthorization } from "@/types/ele
 
 interface DialogConnectProviderProps {
   directory?: string;
-  backendId?: AgentBackendId;
+  harnessId?: HarnessId;
   providerID: string;
   providerName: string;
   authMethods: ProviderAuthMethod[];
@@ -41,7 +41,7 @@ interface DialogConnectProviderProps {
 
 export function DialogConnectProvider({
   directory,
-  backendId,
+  harnessId,
   providerID,
   providerName,
   authMethods,
@@ -49,7 +49,7 @@ export function DialogConnectProvider({
   onConnected,
   onBack,
 }: DialogConnectProviderProps) {
-  const backend = useAgentBackend(backendId);
+  const backend = useHarness(harnessId);
   const providersApi = backend?.platform?.providers;
   const { activeWorkspaceId } = useConnectionState();
 

@@ -387,7 +387,7 @@ function tagOpenCodeSession(session, dir, workspaceId) {
     ...session,
     id,
     slug: session.slug ? toFrontendSessionId(session.slug) : id,
-    _backendId: "opencode",
+    _harnessId: "opencode",
     _rawId: rawId,
     _projectDir: dir ?? session._projectDir ?? session.directory,
     _workspaceId: workspaceId ?? session._workspaceId,

@@ -12,26 +12,26 @@ import type {
 import type {
   AllProvidersData,
   ConnectionStatus,
-  InstalledSkillInfo,
-  MarketplaceAuditResponse,
-  MarketplaceCuratedResponse,
-  MarketplaceDetailResponse,
-  MarketplaceListResponse,
-  MarketplaceSearchResponse,
+  InstalledPluginInfo,
+  PluginCatalogAuditResponse,
+  PluginCatalogCuratedResponse,
+  PluginCatalogDetailResponse,
+  PluginCatalogListResponse,
+  PluginCatalogSearchResponse,
   ProviderAuth,
   ProviderAuthMethod,
   ProviderOAuthAuthorization,
   SelectedModel,
 } from "@/types/electron";
 
-export interface AgentBackendTarget {
+export interface HarnessTarget {
   directory?: string;
   workspaceId?: string;
   baseUrl?: string;
   authToken?: string;
 }
 
-export interface AgentBackendCapabilities {
+export interface HarnessCapabilities {
   sessions: boolean;
   streaming: boolean;
   messagePaging: boolean;
@@ -50,7 +50,7 @@ export interface AgentBackendCapabilities {
   localServer: boolean;
 }
 
-interface AgentBackendWorkspaceProfile {
+interface HarnessWorkspaceProfile {
   kind: "remote-server" | "local-cli";
   fields: {
     serverUrl: boolean;
@@ -64,7 +64,7 @@ interface AgentSessionStatus {
   type: string;
 }
 
-export type AgentBackendEvent =
+export type HarnessEvent =
   | {
       type: "connection.status";
       directory: string;
@@ -122,7 +122,7 @@ export type AgentBackendEvent =
   | { type: "question.cleared"; sessionID: string }
   | { type: "session.error"; error: string; sessionID?: string };
 
-interface AgentRuntimeBackend {
+interface HarnessRuntime {
   createSession(input?: {
     title?: string;
     directory?: string;
@@ -141,11 +141,7 @@ interface AgentRuntimeBackend {
   }): Promise<Session>;
   deleteSession(sessionId: string): Promise<boolean>;
   renameSession(sessionId: string, title: string): Promise<Session>;
-  compactSession(
-    sessionId: string,
-    model?: SelectedModel,
-    target?: AgentBackendTarget,
-  ): Promise<void>;
+  compactSession(sessionId: string, model?: SelectedModel, target?: HarnessTarget): Promise<void>;
   forkSession(sessionId: string, messageID?: string): Promise<Session>;
   revertSession(sessionId: string, messageID: string, partID?: string): Promise<Session>;
   unrevertSession(sessionId: string): Promise<Session>;
@@ -161,42 +157,42 @@ interface AgentRuntimeBackend {
   }): Promise<void>;
 }
 
-interface AgentPlatformBackend {
+interface HarnessPlatform {
   server?: {
     start(): Promise<{ alreadyRunning?: boolean }>;
     stop(): Promise<{ alreadyStopped?: boolean; pid?: number }>;
     status(): Promise<{ running: boolean }>;
   };
   providers?: {
-    listAll(target?: AgentBackendTarget): Promise<AllProvidersData>;
-    getAuthMethods(target?: AgentBackendTarget): Promise<Record<string, ProviderAuthMethod[]>>;
-    connect(target: AgentBackendTarget, providerID: string, auth: ProviderAuth): Promise<void>;
-    disconnect(target: AgentBackendTarget, providerID: string): Promise<void>;
+    listAll(target?: HarnessTarget): Promise<AllProvidersData>;
+    getAuthMethods(target?: HarnessTarget): Promise<Record<string, ProviderAuthMethod[]>>;
+    connect(target: HarnessTarget, providerID: string, auth: ProviderAuth): Promise<void>;
+    disconnect(target: HarnessTarget, providerID: string): Promise<void>;
     oauthAuthorize(
-      target: AgentBackendTarget,
+      target: HarnessTarget,
       providerID: string,
       method?: number,
     ): Promise<ProviderOAuthAuthorization>;
     oauthCallback(
-      target: AgentBackendTarget,
+      target: HarnessTarget,
       providerID: string,
       method?: number,
       code?: string,
     ): Promise<boolean>;
-    dispose(target?: AgentBackendTarget): Promise<boolean>;
+    dispose(target?: HarnessTarget): Promise<boolean>;
   };
   mcp?: {
-    status(target?: AgentBackendTarget): Promise<Record<string, McpStatus>>;
+    status(target?: HarnessTarget): Promise<Record<string, McpStatus>>;
     add(
-      target: AgentBackendTarget,
+      target: HarnessTarget,
       name: string,
       config: McpLocalConfig | McpRemoteConfig,
     ): Promise<Record<string, McpStatus>>;
-    connect(target: AgentBackendTarget, name: string): Promise<void>;
-    disconnect(target: AgentBackendTarget, name: string): Promise<void>;
+    connect(target: HarnessTarget, name: string): Promise<void>;
+    disconnect(target: HarnessTarget, name: string): Promise<void>;
   };
   skills?: {
-    list(target?: AgentBackendTarget): Promise<InstalledSkillInfo[]>;
+    list(target?: HarnessTarget): Promise<InstalledPluginInfo[]>;
 
     marketplace: {
       list(
@@ -204,11 +200,11 @@ interface AgentPlatformBackend {
         page?: number,
         perPage?: number,
         apiKey?: string,
-      ): Promise<MarketplaceListResponse>;
-      search(query: string, limit?: number, apiKey?: string): Promise<MarketplaceSearchResponse>;
-      detail(source: string, slug: string, apiKey?: string): Promise<MarketplaceDetailResponse>;
-      audit(source: string, slug: string, apiKey?: string): Promise<MarketplaceAuditResponse>;
-      curated(apiKey?: string): Promise<MarketplaceCuratedResponse>;
+      ): Promise<PluginCatalogListResponse>;
+      search(query: string, limit?: number, apiKey?: string): Promise<PluginCatalogSearchResponse>;
+      detail(source: string, slug: string, apiKey?: string): Promise<PluginCatalogDetailResponse>;
+      audit(source: string, slug: string, apiKey?: string): Promise<PluginCatalogAuditResponse>;
+      curated(apiKey?: string): Promise<PluginCatalogCuratedResponse>;
     };
 
     install(
@@ -229,21 +225,21 @@ interface AgentPlatformBackend {
       globalScope?: boolean,
     ): Promise<{ exitCode?: number }>;
 
-    listInstalled(directory?: string): Promise<InstalledSkillInfo[]>;
+    listInstalled(directory?: string): Promise<InstalledPluginInfo[]>;
 
     checkCli(): Promise<{ available: boolean; command: string | null }>;
   };
   config?: {
-    get(target?: AgentBackendTarget): Promise<OpenCodeConfig>;
-    update(target: AgentBackendTarget, config: Partial<OpenCodeConfig>): Promise<OpenCodeConfig>;
+    get(target?: HarnessTarget): Promise<OpenCodeConfig>;
+    update(target: HarnessTarget, config: Partial<OpenCodeConfig>): Promise<OpenCodeConfig>;
   };
 }
 
-export interface AgentBackendDescriptor {
+export interface HarnessDescriptor {
   id: string;
   label: string;
-  workspace: AgentBackendWorkspaceProfile;
-  capabilities: AgentBackendCapabilities;
-  runtime: AgentRuntimeBackend;
-  platform?: AgentPlatformBackend;
+  workspace: HarnessWorkspaceProfile;
+  capabilities: HarnessCapabilities;
+  runtime: HarnessRuntime;
+  platform?: HarnessPlatform;
 }

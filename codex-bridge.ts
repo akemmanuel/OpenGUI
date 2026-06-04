@@ -447,7 +447,7 @@ function normalizeCodexAppServerThread(thread, workspaceId) {
   return {
     id,
     slug: id,
-    _backendId: "codex",
+    _harnessId: "codex",
     _rawId: rawId,
     projectID: directory,
     workspaceID: workspaceId,
@@ -1410,7 +1410,7 @@ class CodexBridgeManager {
     return {
       id: frontendId,
       slug: frontendId,
-      _backendId: "codex",
+      _harnessId: "codex",
       _rawId: rawId,
       projectID: directory,
       workspaceID: workspaceId,

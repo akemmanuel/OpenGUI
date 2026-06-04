@@ -133,10 +133,10 @@ export interface ProvidersData {
 }
 
 // ---------------------------------------------------------------------------
-// Skills Marketplace Types
+// Plugin Catalog Types
 // ---------------------------------------------------------------------------
 
-export interface MarketplaceSkill {
+export interface PluginCatalogEntry {
   id: string;
   slug: string;
   name: string;
@@ -150,8 +150,8 @@ export interface MarketplaceSkill {
   change?: number;
 }
 
-export interface MarketplaceListResponse {
-  data: MarketplaceSkill[];
+export interface PluginCatalogListResponse {
+  data: PluginCatalogEntry[];
   pagination: {
     page: number;
     perPage: number;
@@ -160,15 +160,15 @@ export interface MarketplaceListResponse {
   };
 }
 
-export interface MarketplaceSearchResponse {
-  data: MarketplaceSkill[];
+export interface PluginCatalogSearchResponse {
+  data: PluginCatalogEntry[];
   query: string;
   searchType: "fuzzy" | "semantic";
   count: number;
   durationMs: number;
 }
 
-export interface MarketplaceDetailResponse {
+export interface PluginCatalogDetailResponse {
   id: string;
   source: string;
   slug: string;
@@ -177,7 +177,7 @@ export interface MarketplaceDetailResponse {
   files: Array<{ path: string; contents: string }> | null;
 }
 
-export interface MarketplaceAuditResponse {
+export interface PluginCatalogAuditResponse {
   id: string;
   source: string;
   slug: string;
@@ -191,20 +191,20 @@ export interface MarketplaceAuditResponse {
   }>;
 }
 
-export interface MarketplaceCuratedResponse {
+export interface PluginCatalogCuratedResponse {
   data: Array<{
     owner: string;
     totalInstalls: number;
     featuredRepo: string;
-    featuredSkill: string;
-    skills: MarketplaceSkill[];
+    featuredPlugin: string;
+    skills: PluginCatalogEntry[];
   }>;
   totalOwners: number;
-  totalSkills: number;
+  totalPlugins: number;
   generatedAt: string;
 }
 
-export interface InstalledSkillInfo {
+export interface InstalledPluginInfo {
   name: string;
   slug?: string;
   description: string;
@@ -216,8 +216,8 @@ export interface InstalledSkillInfo {
   pluginName?: string;
   sourceType?: string;
   sourceUrl?: string;
-  skillPath?: string;
-  skillFolderHash?: string;
+  pluginPath?: string;
+  pluginFolderHash?: string;
   computedHash?: string;
 }
 

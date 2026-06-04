@@ -28,7 +28,7 @@ describe("createHttpOpenGuiClient", () => {
               auth: false,
               allowedRoots: true,
             },
-            agentBackends: ["opencode"],
+            harnesses: ["opencode"],
           },
         });
       },
@@ -64,31 +64,6 @@ describe("createHttpOpenGuiClient", () => {
         recoverable: true,
       });
     }
-  });
-
-  test("creates workspace", async () => {
-    const client = createHttpOpenGuiClient({
-      fetchImpl: async (_input, init) => {
-        expect(init?.method).toBe("POST");
-        expect(init?.body).toBe(JSON.stringify({ name: "Remote" }));
-        return json({
-          ok: true,
-          value: {
-            id: "ws_1",
-            name: "Remote",
-            createdAt: "2026-05-12T00:00:00.000Z",
-            updatedAt: "2026-05-12T00:00:00.000Z",
-            settings: {},
-          },
-        });
-      },
-    });
-
-    const workspace = await client.workspaces.create({ name: "Remote" });
-    expect(workspace).toMatchObject({
-      id: "ws_1",
-      name: "Remote",
-    });
   });
 
   test("attaches Workspace presentation state to Backend Project records", async () => {
@@ -144,7 +119,7 @@ describe("createHttpOpenGuiClient", () => {
         if (url.endsWith("/api/projects/project_1/connect") && init?.method === "POST") {
           expect(init.body).toBe(
             JSON.stringify({
-              backendIds: ["opencode", "pi"],
+              harnessIds: ["opencode", "pi"],
               config: {
                 workspaceId: "local",
                 baseUrl: "http://127.0.0.1:4096",
@@ -155,7 +130,7 @@ describe("createHttpOpenGuiClient", () => {
           return json({
             ok: true,
             value: {
-              connectedBackendIds: ["opencode", "pi"],
+              connectedHarnessIds: ["opencode", "pi"],
               errors: [],
             },
           });
@@ -164,17 +139,17 @@ describe("createHttpOpenGuiClient", () => {
       },
     });
 
-    const result = await client.agentBackends.connectProject({
+    const result = await client.harnesses.connectProject({
       config: {
         workspaceId: "local",
         baseUrl: "http://127.0.0.1:4096",
         directory: "/repo",
       },
-      backendIds: ["opencode", "pi"],
+      harnessIds: ["opencode", "pi"],
     });
 
     expect(result).toEqual({
-      connectedBackendIds: ["opencode", "pi"],
+      connectedHarnessIds: ["opencode", "pi"],
       errors: [],
     });
     expect(calls.map((call) => `${call.method ?? "GET"} ${call.input}`)).toEqual([
@@ -226,7 +201,7 @@ describe("createHttpOpenGuiClient", () => {
     });
 
     const session = await client.sessions.create({
-      backendId: "pi",
+      harnessId: "pi",
       title: "Chat",
       target: { directory: "/repo", workspaceId: "local" },
     });
@@ -234,7 +209,7 @@ describe("createHttpOpenGuiClient", () => {
     expect(session).toMatchObject({
       id: "pi:native-1",
       title: "Chat",
-      _backendId: "pi",
+      _harnessId: "pi",
       _rawId: "native-1",
       _projectDir: "/repo",
       _workspaceId: "local",
@@ -283,7 +258,7 @@ describe("createHttpOpenGuiClient", () => {
       eventSourceImpl: MockEventSource,
     });
 
-    const unsubscribe = client.agentBackends.subscribe(() => {});
+    const unsubscribe = client.harnesses.subscribe(() => {});
     unsubscribe();
 
     expect(urls).toEqual(["http://example.test/api/events/v2?token=secret-token"]);
@@ -318,7 +293,7 @@ describe("createHttpOpenGuiClient", () => {
         eventSourceImpl: MockEventSource,
       });
 
-      const unsubscribe = client.agentBackends.subscribe(() => {});
+      const unsubscribe = client.harnesses.subscribe(() => {});
       streams[0]?.onmessage?.({
         data: JSON.stringify({ ok: true }),
         lastEventId: "evt_123",
@@ -390,7 +365,7 @@ describe("createHttpOpenGuiClient", () => {
 
     await client.sessions.delete({
       sessionId: "opencode:native-1",
-      backendId: "opencode",
+      harnessId: "opencode",
       target: { directory: "/repo", workspaceId: "workspace-1" },
     });
 
@@ -436,7 +411,7 @@ describe("createHttpOpenGuiClient", () => {
 
     await client.sessions.abort({
       sessionId: "pi:native-1",
-      backendId: "pi",
+      harnessId: "pi",
       target: { directory: "/repo", workspaceId: "workspace-1" },
     });
 

@@ -1,9 +1,9 @@
 import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
 import type { HarnessId } from "../../src/agents/index.ts";
 import type {
-  BackendResourceBundle,
+  HarnessResourceBundle,
   ProjectConnectResult,
-  ProjectSessionsResult,
+  HarnessProjectSessionsResult,
 } from "../../src/protocol/client.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
 import type { BackendEventBus } from "./event-bus.ts";
@@ -76,12 +76,12 @@ export class HarnessService {
   async connectProject(input: {
     project: ProjectRecord;
     scope: Pick<HarnessScope, "projectId" | "directory">;
-    backendIds?: HarnessId[];
+    harnessIds?: HarnessId[];
     config?: ProjectConnectionConfig;
   }): Promise<ProjectConnectResult> {
-    const backendIds = this.backendIdsOrAll(input.backendIds);
+    const harnessIds = this.harnessIdsOrAll(input.harnessIds);
     const results = await Promise.all(
-      backendIds.map(async (harnessId) => {
+      harnessIds.map(async (harnessId) => {
         try {
           await this.backendRpc(harnessId, "project:add", [
             {
@@ -91,10 +91,10 @@ export class HarnessService {
               password: input.config?.password,
             },
           ]);
-          return { backendId: harnessId, success: true as const };
+          return { harnessId: harnessId, success: true as const };
         } catch (error) {
           return {
-            backendId: harnessId,
+            harnessId: harnessId,
             success: false as const,
             error: error instanceof Error ? error.message : "Project connection failed",
           };
@@ -103,9 +103,9 @@ export class HarnessService {
     );
 
     return {
-      connectedBackendIds: results.flatMap((result) => (result.success ? [result.backendId] : [])),
+      connectedHarnessIds: results.flatMap((result) => (result.success ? [result.harnessId] : [])),
       errors: results.flatMap((result) =>
-        result.success ? [] : [{ backendId: result.backendId, error: result.error }],
+        result.success ? [] : [{ harnessId: result.harnessId, error: result.error }],
       ),
     };
   }
@@ -113,10 +113,10 @@ export class HarnessService {
   async disconnectProject(input: {
     project: ProjectRecord;
     scope: Pick<HarnessScope, "projectId" | "directory">;
-    backendIds?: HarnessId[];
+    harnessIds?: HarnessId[];
   }): Promise<void> {
     await Promise.all(
-      this.backendIdsOrAll(input.backendIds).map((harnessId) =>
+      this.harnessIdsOrAll(input.harnessIds).map((harnessId) =>
         this.backendRpc(harnessId, "project:remove", [input.scope.directory, undefined]),
       ),
     );
@@ -125,7 +125,7 @@ export class HarnessService {
   async getProjectStatus(input: {
     project: ProjectRecord;
     scope: Pick<HarnessScope, "projectId" | "directory">;
-    backendIds?: HarnessId[];
+    harnessIds?: HarnessId[];
   }): Promise<
     Record<
       string,
@@ -133,7 +133,7 @@ export class HarnessService {
     >
   > {
     const entries = await Promise.all(
-      this.backendIdsOrAll(input.backendIds).map(async (harnessId) => {
+      this.harnessIdsOrAll(input.harnessIds).map(async (harnessId) => {
         try {
           const statuses = await this.backendRpc<Record<string, { type: string }>>(
             harnessId,
@@ -159,17 +159,17 @@ export class HarnessService {
   async listProjectSessions(input: {
     project: ProjectRecord;
     scope: Pick<HarnessScope, "projectId" | "directory">;
-    backendIds: HarnessId[];
-  }): Promise<Array<{ backendId: HarnessId; sessions: ProjectSessionsResult["sessions"] }>> {
+    harnessIds: HarnessId[];
+  }): Promise<Array<{ harnessId: HarnessId; sessions: HarnessProjectSessionsResult["sessions"] }>> {
     const results = await Promise.all(
-      input.backendIds.map(async (harnessId) => {
+      input.harnessIds.map(async (harnessId) => {
         try {
-          const sessions = await this.backendRpc<ProjectSessionsResult["sessions"]>(
+          const sessions = await this.backendRpc<HarnessProjectSessionsResult["sessions"]>(
             harnessId,
             "session:list",
             [input.scope.directory, undefined],
           );
-          return { backendId: harnessId, sessions };
+          return { harnessId: harnessId, sessions };
         } catch {
           return null;
         }
@@ -340,16 +340,16 @@ export class HarnessService {
   async loadResources(input: {
     project: ProjectRecord;
     scope: HarnessScope;
-  }): Promise<BackendResourceBundle> {
+  }): Promise<HarnessResourceBundle> {
     const args = [input.scope.directory, undefined];
     const [providersData, agentsData, commandsData] = await Promise.all([
-      this.backendRpc<BackendResourceBundle["providersData"]>(
+      this.backendRpc<HarnessResourceBundle["providersData"]>(
         input.scope.harnessId,
         "providers",
         args,
       ),
-      this.backendRpc<BackendResourceBundle["agentsData"]>(input.scope.harnessId, "agents", args),
-      this.backendRpc<BackendResourceBundle["commandsData"]>(
+      this.backendRpc<HarnessResourceBundle["agentsData"]>(input.scope.harnessId, "agents", args),
+      this.backendRpc<HarnessResourceBundle["commandsData"]>(
         input.scope.harnessId,
         "commands",
         args,
@@ -358,8 +358,8 @@ export class HarnessService {
     return { providersData, agentsData, commandsData };
   }
 
-  private backendIdsOrAll(backendIds?: HarnessId[]) {
-    return backendIds?.length ? backendIds : [...this.managedHarnessIds];
+  private harnessIdsOrAll(harnessIds?: HarnessId[]) {
+    return harnessIds?.length ? harnessIds : [...this.managedHarnessIds];
   }
 
   private async backendRpc<T>(

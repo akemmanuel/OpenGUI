@@ -1,4 +1,4 @@
-import { getAgentBackendIdFromSessionId, type AgentBackendId } from "@/agents";
+import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
 import { getChildSessionId, MESSAGE_PAGE_SIZE } from "@/hooks/agent-message-state";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionProjectTarget, type ProjectTarget } from "@/hooks/agent-session-utils";
@@ -7,7 +7,7 @@ import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 interface SessionsMessagesClient {
   getMessages(input: {
     sessionId: string;
-    backendId?: AgentBackendId;
+    harnessId?: HarnessId;
     options: {
       limit: number;
       before?: string;
@@ -58,7 +58,7 @@ export async function fetchSessionMessagePage({
   const resolvedTarget = projectTarget ?? getSessionProjectTarget(session);
   const data = await sessionsClient.getMessages({
     sessionId,
-    backendId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+    harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
     options: {
       limit: pageSize,
       before: options?.before,
@@ -112,8 +112,8 @@ export function hydrateChildSessionMessages({
   if (messages.length === 0) return;
 
   const childSessionIds = collectChildSessionIds(messages);
-  const backendId = parentSessionId
-    ? (getAgentBackendIdFromSessionId(parentSessionId) ?? undefined)
+  const harnessId = parentSessionId
+    ? (getHarnessIdFromSessionId(parentSessionId) ?? undefined)
     : undefined;
 
   for (const childSessionId of childSessionIds) {
@@ -123,7 +123,7 @@ export function hydrateChildSessionMessages({
     void sessionsClient
       .getMessages({
         sessionId: childSessionId,
-        backendId,
+        harnessId,
         options: {
           limit: 10000,
           directory: projectTarget?.directory,

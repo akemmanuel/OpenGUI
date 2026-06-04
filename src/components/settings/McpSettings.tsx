@@ -1,27 +1,23 @@
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
 import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { useCallback, useEffect, useState } from "react";
-import { AGENT_BACKEND_LABELS, type AgentBackendId } from "@/agents";
+import { HARNESS_LABELS, type HarnessId } from "@/agents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { useConnectionState } from "@/hooks/use-agent-state";
-import {
-  useAgentBackend,
-  useAvailableBackendIds,
-  useCurrentAgentBackendId,
-} from "@/hooks/use-agent-backend";
+import { useHarness, useAvailableHarnessIds, useCurrentHarnessId } from "@/hooks/use-agent-backend";
 
 // ---------------------------------------------------------------------------
 // MCP/Tools tab content (inline)
 // ---------------------------------------------------------------------------
 
 export function McpTabContent() {
-  const initialBackendId = useCurrentAgentBackendId();
-  const availableBackendIds = useAvailableBackendIds();
-  const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
-  const backend = useAgentBackend(backendId);
+  const initialBackendId = useCurrentHarnessId();
+  const availableBackendIds = useAvailableHarnessIds();
+  const [harnessId, setBackendId] = useState<HarnessId>(initialBackendId);
+  const backend = useHarness(harnessId);
   const mcpApi = backend?.platform?.mcp;
   const configApi = backend?.platform?.config;
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
@@ -120,12 +116,12 @@ export function McpTabContent() {
             <Button
               key={id}
               type="button"
-              variant={backendId === id ? "default" : "outline"}
+              variant={harnessId === id ? "default" : "outline"}
               size="sm"
               className="h-7 px-2 text-[11px]"
               onClick={() => setBackendId(id)}
             >
-              {AGENT_BACKEND_LABELS[id]}
+              {HARNESS_LABELS[id]}
             </Button>
           ))}
         </div>

@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useConnectionState } from "@/hooks/use-agent-state";
-import { useSkillsPlatform } from "@/hooks/use-skills-platform";
-import type { InstalledSkillInfo } from "@/types/electron";
+import { usePluginsPlatform } from "@/hooks/use-plugins-platform";
+import type { InstalledPluginInfo } from "@/types/electron";
 
 type PluginScope = "project" | "global";
 type PluginOrigin = "published" | "custom";
@@ -18,14 +18,14 @@ type PluginListItem =
       name: string;
       scope: PluginScope;
       origin: PluginOrigin;
-      capabilities: InstalledSkillInfo[];
+      capabilities: InstalledPluginInfo[];
     }
   | {
       kind: "general";
       name: string;
       scope: PluginScope;
       origin: PluginOrigin;
-      capability: InstalledSkillInfo;
+      capability: InstalledPluginInfo;
     };
 
 export function PluginsTabContent() {
@@ -63,12 +63,12 @@ export function PluginsTabContent() {
   );
 }
 
-function hasExternalSource(plugin: InstalledSkillInfo) {
+function hasExternalSource(plugin: InstalledPluginInfo) {
   if (plugin.sourceType === "local") return false;
   return Boolean(plugin.source || plugin.sourceUrl || plugin.remoteKey);
 }
 
-function pluginOrigin(plugin: InstalledSkillInfo): PluginOrigin {
+function pluginOrigin(plugin: InstalledPluginInfo): PluginOrigin {
   return hasExternalSource(plugin) ? "published" : "custom";
 }
 
@@ -80,10 +80,10 @@ function originLabel(origin: PluginOrigin, t: ReturnType<typeof useTranslation>[
   return origin === "published" ? t("settings.plugins.published") : t("settings.plugins.custom");
 }
 
-function buildPluginItems(skills: InstalledSkillInfo[], scope: PluginScope): PluginListItem[] {
+function buildPluginItems(skills: InstalledPluginInfo[], scope: PluginScope): PluginListItem[] {
   const scoped = skills.filter((skill) => skill.scope === scope);
-  const groups = new Map<string, InstalledSkillInfo[]>();
-  const general: InstalledSkillInfo[] = [];
+  const groups = new Map<string, InstalledPluginInfo[]>();
+  const general: InstalledPluginInfo[] = [];
 
   for (const skill of scoped) {
     if (skill.pluginName) {
@@ -120,11 +120,11 @@ function buildPluginItems(skills: InstalledSkillInfo[], scope: PluginScope): Plu
 
 function InstalledPluginsView() {
   const { t } = useTranslation();
-  const skillsApi = useSkillsPlatform();
+  const skillsApi = usePluginsPlatform();
   const { activeDirectory } = useConnectionState();
   const scopedDirectory = activeDirectory ?? undefined;
 
-  const [installedPlugins, setInstalledPlugins] = useState<InstalledSkillInfo[]>([]);
+  const [installedPlugins, setInstalledPlugins] = useState<InstalledPluginInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
 
@@ -157,7 +157,7 @@ function InstalledPluginsView() {
   );
 
   const handleRemoveOne = useCallback(
-    async (plugin: InstalledSkillInfo) => {
+    async (plugin: InstalledPluginInfo) => {
       if (!skillsApi) return;
       try {
         await skillsApi.remove(plugin.name, scopedDirectory, plugin.scope === "global");
@@ -168,7 +168,7 @@ function InstalledPluginsView() {
   );
 
   const handleUpdateOne = useCallback(
-    async (plugin: InstalledSkillInfo) => {
+    async (plugin: InstalledPluginInfo) => {
       if (!skillsApi) return;
       try {
         await skillsApi.update(plugin.name, scopedDirectory, plugin.scope === "global");
@@ -179,7 +179,7 @@ function InstalledPluginsView() {
   );
 
   const handleGroupAction = useCallback(
-    async (plugins: InstalledSkillInfo[], action: "update" | "remove") => {
+    async (plugins: InstalledPluginInfo[], action: "update" | "remove") => {
       if (!skillsApi) return;
       try {
         for (const plugin of plugins) {
@@ -259,9 +259,9 @@ function PluginScopeSection({
   items: PluginListItem[];
   expandedGroups: Set<string>;
   onToggleGroup: (key: string) => void;
-  onUpdateOne: (plugin: InstalledSkillInfo) => void;
-  onRemoveOne: (plugin: InstalledSkillInfo) => void;
-  onGroupAction: (plugins: InstalledSkillInfo[], action: "update" | "remove") => void;
+  onUpdateOne: (plugin: InstalledPluginInfo) => void;
+  onRemoveOne: (plugin: InstalledPluginInfo) => void;
+  onGroupAction: (plugins: InstalledPluginInfo[], action: "update" | "remove") => void;
 }) {
   const { t } = useTranslation();
   const groups = items.filter((item) => item.kind === "group");
@@ -348,9 +348,9 @@ function PluginGroupCard({
   item: Extract<PluginListItem, { kind: "group" }>;
   expanded: boolean;
   onToggle: () => void;
-  onUpdateOne: (plugin: InstalledSkillInfo) => void;
-  onRemoveOne: (plugin: InstalledSkillInfo) => void;
-  onGroupAction: (plugins: InstalledSkillInfo[], action: "update" | "remove") => void;
+  onUpdateOne: (plugin: InstalledPluginInfo) => void;
+  onRemoveOne: (plugin: InstalledPluginInfo) => void;
+  onGroupAction: (plugins: InstalledPluginInfo[], action: "update" | "remove") => void;
 }) {
   const { t } = useTranslation();
 
@@ -436,8 +436,8 @@ function GeneralPluginCard({
   onRemove,
 }: {
   item: Extract<PluginListItem, { kind: "general" }>;
-  onUpdate: (plugin: InstalledSkillInfo) => void;
-  onRemove: (plugin: InstalledSkillInfo) => void;
+  onUpdate: (plugin: InstalledPluginInfo) => void;
+  onRemove: (plugin: InstalledPluginInfo) => void;
 }) {
   const { t } = useTranslation();
   const plugin = item.capability;

@@ -1,6 +1,6 @@
 import type { Message, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
-import { getAgentBackendIdFromSessionId, type AgentBackendId } from "@/agents";
-import type { AgentBackendEvent } from "@/agents/backend";
+import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
+import type { HarnessEvent } from "@/agents/backend";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 import type { Session } from "@/hooks/agent-state-types";
 import type { ConnectionStatus } from "@/types/electron";
@@ -114,7 +114,7 @@ function migrateReplacedSessionTracking({
   };
 }
 
-export function handleAgentBackendEvent({
+export function handleHarnessEvent({
   event,
   expectedProjectKeys,
   tracking,
@@ -123,14 +123,14 @@ export function handleAgentBackendEvent({
   dispatch,
   warn = console.warn,
 }: {
-  event: AgentBackendEvent;
+  event: HarnessEvent;
   expectedProjectKeys: Set<string>;
   tracking: SessionTitleTrackingState;
   cleanupSessionRefs: (sessionIds?: Iterable<string>) => void;
   renameSession: (input: {
     sessionId: string;
     title: string;
-    backendId?: AgentBackendId;
+    harnessId?: HarnessId;
   }) => Promise<unknown>;
   dispatch: BackendEventDispatch;
   warn?: (message: string, details?: unknown) => void;
@@ -163,11 +163,11 @@ export function handleAgentBackendEvent({
         tracking,
       });
       if (titleToPersist) {
-        const backendId = getAgentBackendIdFromSessionId(event.newId) ?? undefined;
+        const harnessId = getHarnessIdFromSessionId(event.newId) ?? undefined;
         void renameSession({
           sessionId: event.newId,
           title: titleToPersist,
-          backendId,
+          harnessId,
         })
           .then(() => {
             tracking.pendingTitlePersistence.delete(event.newId);

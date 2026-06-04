@@ -8,7 +8,7 @@ import type {
   QuestionRequest,
   Session as BaseSession,
 } from "@opencode-ai/sdk/v2/client";
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import type {
   ProjectMetaMap,
   SessionMetaMap,
@@ -33,7 +33,7 @@ import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electro
 export type Session = BaseSession & {
   _projectDir?: string;
   _workspaceId?: string;
-  _backendId?: AgentBackendId;
+  _harnessId?: HarnessId;
   _rawId?: string;
 };
 
@@ -66,7 +66,7 @@ export interface WorkspaceResourceState {
   /** Per-model variant selections for this workspace. */
   variantSelections: VariantSelections;
   /** Backend that produced this resource catalog. */
-  loadedBackendId: AgentBackendId | null;
+  loadedBackendId: HarnessId | null;
   /** Workspace-scoped project key that produced this resource catalog. */
   loadedProjectKey: string | null;
 }
@@ -133,7 +133,7 @@ export interface InternalAgentState {
   /** Directory selected for the next session before a session exists. */
   activeTargetDirectory: string | null;
   /** Backend selected for the next session before a session exists. */
-  activeTargetBackendId: AgentBackendId | null;
+  activeTargetBackendId: HarnessId | null;
   /** Set of session IDs that are waiting for generated title */
   namingSessionIds: Set<string>;
   /** Set of session IDs that have unread content (finished generating while not active) */
@@ -207,5 +207,5 @@ export interface InternalAgentState {
   _deletedSessionIds: Set<string>;
 }
 
-export type AgentBackendState = InternalAgentState;
+export type HarnessState = InternalAgentState;
 export type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";

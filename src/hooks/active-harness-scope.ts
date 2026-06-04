@@ -1,5 +1,5 @@
-import type { AgentBackendId } from "@/agents";
-import type { AgentBackendDescriptor } from "@/agents/backend";
+import type { HarnessId } from "@/agents";
+import type { HarnessDescriptor } from "@/agents/backend";
 import {
   resolveActiveResourceHarnessRoute,
   type HarnessRoute,
@@ -10,11 +10,11 @@ import type { OpenGuiClient } from "@/protocol/client";
 
 export interface ActiveHarnessScope {
   route: HarnessRoute;
-  harnessId: AgentBackendId;
+  harnessId: HarnessId;
   directory: string | null;
-  backend: AgentBackendDescriptor | undefined;
-  runtime: AgentBackendDescriptor["runtime"] | undefined;
-  workspaceProfile: AgentBackendDescriptor["workspace"] | undefined;
+  backend: HarnessDescriptor | undefined;
+  runtime: HarnessDescriptor["runtime"] | undefined;
+  workspaceProfile: HarnessDescriptor["workspace"] | undefined;
 }
 
 export function resolveActiveHarnessScope({
@@ -28,10 +28,10 @@ export function resolveActiveHarnessScope({
 }: {
   activeSession: Session | null | undefined;
   activeTargetDirectory: string | null;
-  activeTargetBackendId: AgentBackendId | null;
+  activeTargetBackendId: HarnessId | null;
   workspaceDirectory: string | null;
-  preferredBackendId: AgentBackendId;
-  backendsById: Partial<Record<AgentBackendId, AgentBackendDescriptor>>;
+  preferredBackendId: HarnessId;
+  backendsById: Partial<Record<HarnessId, HarnessDescriptor>>;
   openGuiClient: OpenGuiClient;
 }): ActiveHarnessScope {
   const route = resolveActiveResourceHarnessRoute({
@@ -41,7 +41,7 @@ export function resolveActiveHarnessScope({
   });
   const directory =
     getSessionDirectory(activeSession) ?? activeTargetDirectory ?? workspaceDirectory;
-  const backend = backendsById[route.harnessId] ?? openGuiClient.agentBackends.get(route.harnessId);
+  const backend = backendsById[route.harnessId] ?? openGuiClient.harnesses.get(route.harnessId);
 
   return {
     route,

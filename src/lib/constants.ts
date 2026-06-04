@@ -17,7 +17,7 @@ export const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 // ---------------------------------------------------------------------------
 
 export const STORAGE_KEYS = {
-  AGENT_BACKEND: "agent:backend",
+  HARNESS: "harness:selected",
   SERVER_URL: "opencode:serverUrl",
   USERNAME: "opencode:username",
   WORKSPACES: "opencode:workspaces",

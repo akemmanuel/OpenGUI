@@ -7,7 +7,7 @@ import type {
   Provider,
   QuestionRequest,
 } from "@opencode-ai/sdk/v2/client";
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import type {
   InternalAgentState,
   MessageEntry,
@@ -31,7 +31,7 @@ import {
   updateMessageArray,
 } from "@/hooks/agent-message-state";
 import {
-  getSessionBackendId,
+  getSessionHarnessId,
   getSessionSelectedAgent,
   getSessionSelectedModel,
   getSessionSelectedVariant,
@@ -57,25 +57,25 @@ import { prependProjectIfMissing } from "@/lib/sidebar-order";
 import { normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, ProvidersData, SelectedModel, Workspace } from "@/types/electron";
 import {
-  backendSessionIdentity,
+  harnessSessionIdentity,
   rawSessionIdForHarness,
-  sameBackendSessionIdentity,
+  sameHarnessSessionIdentity,
 } from "@/lib/session-identity";
 
 const MAX_DELETED_SESSION_IDS = 200;
 
 function getBackendSessionIdentity(session: Session) {
-  return backendSessionIdentity({
+  return harnessSessionIdentity({
     id: session.id,
-    _backendId: getSessionBackendId(session) ?? undefined,
+    _harnessId: getSessionHarnessId(session) ?? undefined,
     _rawId: session._rawId,
   });
 }
 
 function sameBackendSession(a: Session, b: Session) {
-  return sameBackendSessionIdentity(
-    { id: a.id, _backendId: getSessionBackendId(a) ?? undefined, _rawId: a._rawId },
-    { id: b.id, _backendId: getSessionBackendId(b) ?? undefined, _rawId: b._rawId },
+  return sameHarnessSessionIdentity(
+    { id: a.id, _harnessId: getSessionHarnessId(a) ?? undefined, _rawId: a._rawId },
+    { id: b.id, _harnessId: getSessionHarnessId(b) ?? undefined, _rawId: b._rawId },
   );
 }
 
@@ -186,7 +186,7 @@ type Action =
         projectKey: string;
         directory: string;
         sessions: Session[];
-        backendIds?: AgentBackendId[];
+        harnessIds?: HarnessId[];
       };
     }
   | { type: "SET_ACTIVE_SESSION"; payload: string | null }
@@ -239,7 +239,7 @@ type Action =
       type: "SET_WORKSPACE_RESOURCES";
       payload: {
         workspaceId: string;
-        backendId: AgentBackendId;
+        harnessId: HarnessId;
         projectKey: string | null;
         providersData: ProvidersData;
         agentsData: Agent[];
@@ -306,7 +306,7 @@ type Action =
   | { type: "SET_DEFAULT_CHAT_DIRECTORY"; payload: string | null }
   | {
       type: "SET_ACTIVE_TARGET";
-      payload: { directory: string; backendId: AgentBackendId | null };
+      payload: { directory: string; harnessId: HarnessId | null };
     }
   | { type: "CLEAR_ACTIVE_TARGET" }
   | { type: "SET_SESSION_NAMING"; payload: { sessionId: string; naming: boolean } }
@@ -352,30 +352,30 @@ export function mergeProjectBackendSessions({
   workspaceId,
   directory,
   incoming,
-  backendIds,
+  harnessIds,
 }: {
   current: Session[];
   workspaceId: string;
   directory: string;
   incoming: Session[];
-  backendIds?: AgentBackendId[];
+  harnessIds?: HarnessId[];
 }) {
-  if (backendIds && backendIds.length === 0) return sortSessionsNewestFirst(current);
-  const backendScope = backendIds ? new Set(backendIds) : null;
+  if (harnessIds && harnessIds.length === 0) return sortSessionsNewestFirst(current);
+  const backendScope = harnessIds ? new Set(harnessIds) : null;
   const incomingIds = new Set(incoming.map((session) => session.id));
   const incomingBackendRawKeys = new Set(
     incoming.flatMap((session) => {
-      const backendId = getSessionBackendId(session);
-      const rawId = backendId
-        ? (session._rawId ?? rawSessionIdForHarness(session.id, backendId))
+      const harnessId = getSessionHarnessId(session);
+      const rawId = harnessId
+        ? (session._rawId ?? rawSessionIdForHarness(session.id, harnessId))
         : session.id;
-      return backendId ? [`${backendId}\0${rawId}`] : [];
+      return harnessId ? [`${harnessId}\0${rawId}`] : [];
     }),
   );
   return sortSessionsNewestFirst([
     ...current.filter((session) => {
       if (incomingIds.has(session.id)) return false;
-      const sessionBackendId = getSessionBackendId(session);
+      const sessionBackendId = getSessionHarnessId(session);
       const sessionRawId = sessionBackendId
         ? (session._rawId ?? rawSessionIdForHarness(session.id, sessionBackendId))
         : session.id;
@@ -385,8 +385,8 @@ export function mergeProjectBackendSessions({
       if (getSessionWorkspaceId(session) !== workspaceId) return true;
       if ((session._projectDir ?? session.directory) !== directory) return true;
       if (!backendScope) return false;
-      const backendId = getSessionBackendId(session);
-      return !backendId || !backendScope.has(backendId);
+      const harnessId = getSessionHarnessId(session);
+      return !harnessId || !backendScope.has(harnessId);
     }),
     ...incoming,
   ]);
@@ -663,7 +663,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     }
 
     case "MERGE_PROJECT_SESSIONS": {
-      const { projectKey, directory, sessions, backendIds } = action.payload;
+      const { projectKey, directory, sessions, harnessIds } = action.payload;
       const { workspaceId } = parseProjectKey(projectKey);
       return {
         ...state,
@@ -672,7 +672,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           workspaceId,
           directory,
           incoming: sessions,
-          backendIds,
+          harnessIds,
         }),
       };
     }
@@ -949,7 +949,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     }
 
     case "SET_WORKSPACE_RESOURCES": {
-      const { workspaceId, backendId, projectKey, providersData, agentsData, commandsData } =
+      const { workspaceId, harnessId, projectKey, providersData, agentsData, commandsData } =
         action.payload;
       const resourceState = {
         providers: providersData.providers,
@@ -957,7 +957,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         agents: agentsData,
         commands: commandsData,
         variantSelections: action.payload.variantSelections,
-        loadedBackendId: backendId,
+        loadedBackendId: harnessId,
         loadedProjectKey: projectKey,
       };
       const isActive = workspaceId === state.activeWorkspaceId;
@@ -1842,7 +1842,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         activeTargetDirectory: action.payload.directory,
-        activeTargetBackendId: action.payload.backendId,
+        activeTargetBackendId: action.payload.harnessId,
         activeSessionId: null,
         messages: [],
         messageHistoryHasMore: false,

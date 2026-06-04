@@ -1,10 +1,6 @@
 import type { Agent, Command, QuestionAnswer } from "@opencode-ai/sdk/v2/client";
-import type { AgentBackendId } from "@/agents";
-import type {
-  AgentBackendDescriptor,
-  AgentBackendEvent,
-  AgentBackendTarget,
-} from "@/agents/backend";
+import type { HarnessId } from "@/agents";
+import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/backend";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";
 import type {
@@ -28,29 +24,29 @@ export interface OpenGuiCapabilities {
     auth: boolean;
     allowedRoots: boolean;
   };
-  agentBackends: AgentBackendId[];
+  harnesses: HarnessId[];
 }
 
-export interface OpenGuiWorkspace {
+export interface FrontendWorkspaceRecord {
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
   defaultProjectId?: string;
-  defaultAgentBackendId?: AgentBackendId;
+  defaultHarnessId?: HarnessId;
   settings: Record<string, unknown>;
 }
 
-export interface CreateWorkspaceInput {
+export interface CreateFrontendWorkspaceInput {
   name?: string;
-  defaultAgentBackendId?: AgentBackendId;
+  defaultHarnessId?: HarnessId;
   settings?: Record<string, unknown>;
 }
 
-export interface UpdateWorkspaceInput {
+export interface UpdateFrontendWorkspaceInput {
   name?: string;
   defaultProjectId?: string | null;
-  defaultAgentBackendId?: AgentBackendId | null;
+  defaultHarnessId?: HarnessId | null;
   settings?: Record<string, unknown>;
 }
 
@@ -83,19 +79,19 @@ export interface UpdateProjectInput {
   allowedRootId?: string | null;
 }
 
-export interface BackendResourceBundle {
+export interface HarnessResourceBundle {
   providersData: ProvidersData;
   agentsData: Agent[];
   commandsData: Command[];
 }
 
 export interface ProjectConnectResult {
-  connectedBackendIds: AgentBackendId[];
-  errors: Array<{ backendId: AgentBackendId; error: string }>;
+  connectedHarnessIds: HarnessId[];
+  errors: Array<{ harnessId: HarnessId; error: string }>;
 }
 
-export interface ProjectSessionsResult {
-  backendId: AgentBackendId;
+export interface HarnessProjectSessionsResult {
+  harnessId: HarnessId;
   sessions: Session[];
 }
 
@@ -111,7 +107,7 @@ export interface SessionQueryItem {
   frontendProjectId: string;
   directory: string;
   workspaceId?: string;
-  harnessId: AgentBackendId;
+  harnessId: HarnessId;
   sessions: Session[];
 }
 
@@ -121,7 +117,7 @@ export interface SessionQueryResult {
     frontendProjectId: string;
     directory: string;
     workspaceId?: string;
-    harnessId?: AgentBackendId;
+    harnessId?: HarnessId;
     error: string;
   }>;
 }
@@ -139,13 +135,6 @@ export interface OpenGuiQueueEntry extends QueuedPrompt {
 
 export interface OpenGuiClient {
   capabilities(): Promise<OpenGuiCapabilities>;
-  workspaces: {
-    list(): Promise<OpenGuiWorkspace[]>;
-    get(id: string): Promise<OpenGuiWorkspace | null>;
-    create(input?: CreateWorkspaceInput): Promise<OpenGuiWorkspace>;
-    update(id: string, input: UpdateWorkspaceInput): Promise<OpenGuiWorkspace | null>;
-    delete(id: string): Promise<boolean>;
-  };
   projects: {
     list(workspaceId: string): Promise<OpenGuiProject[]>;
     get(id: string): Promise<OpenGuiProject | null>;
@@ -153,60 +142,57 @@ export interface OpenGuiClient {
     update(id: string, input: UpdateProjectInput): Promise<OpenGuiProject | null>;
     delete(id: string): Promise<boolean>;
   };
-  agentBackends: {
-    list(): AgentBackendDescriptor[];
-    get(backendId?: AgentBackendId): AgentBackendDescriptor | undefined;
-    subscribe(listener: (event: AgentBackendEvent) => void): () => void;
-    restart(): Promise<Record<AgentBackendId, { success: boolean; error?: string }>>;
+  harnesses: {
+    list(): HarnessDescriptor[];
+    get(harnessId?: HarnessId): HarnessDescriptor | undefined;
+    subscribe(listener: (event: HarnessEvent) => void): () => void;
+    restart(): Promise<Record<HarnessId, { success: boolean; error?: string }>>;
     loadResources(input: {
-      backendId: AgentBackendId;
-      target?: AgentBackendTarget;
-    }): Promise<BackendResourceBundle>;
+      harnessId: HarnessId;
+      target?: HarnessTarget;
+    }): Promise<HarnessResourceBundle>;
     connectProject(input: {
       config: ConnectionConfig;
-      backendIds?: AgentBackendId[];
+      harnessIds?: HarnessId[];
     }): Promise<ProjectConnectResult>;
-    disconnectProject(input: {
-      target: AgentBackendTarget;
-      backendIds?: AgentBackendId[];
-    }): Promise<void>;
+    disconnectProject(input: { target: HarnessTarget; harnessIds?: HarnessId[] }): Promise<void>;
     listProjectSessions(input: {
-      backendIds: AgentBackendId[];
-      target: AgentBackendTarget;
+      harnessIds: HarnessId[];
+      target: HarnessTarget;
       sync?: boolean;
-    }): Promise<ProjectSessionsResult[]>;
+    }): Promise<HarnessProjectSessionsResult[]>;
     listProjectSessionStatuses(input: {
-      backendIds: AgentBackendId[];
-      target: AgentBackendTarget;
+      harnessIds: HarnessId[];
+      target: HarnessTarget;
     }): Promise<Record<string, { type: string }>>;
   };
   sessions: {
     query(input: {
       projects: SessionQueryProject[];
-      harnessIds: AgentBackendId[];
+      harnessIds: HarnessId[];
       sync?: boolean;
     }): Promise<SessionQueryResult>;
     create(input: {
-      backendId: AgentBackendId;
+      harnessId: HarnessId;
       title?: string;
-      target?: AgentBackendTarget;
+      target?: HarnessTarget;
     }): Promise<Session>;
     delete(input: {
       sessionId: string;
-      backendId?: AgentBackendId;
-      target?: AgentBackendTarget;
+      harnessId?: HarnessId;
+      target?: HarnessTarget;
       confirmQueue?: boolean;
     }): Promise<boolean>;
     rename(input: {
       sessionId: string;
       title: string;
-      backendId?: AgentBackendId;
-      target?: AgentBackendTarget;
+      harnessId?: HarnessId;
+      target?: HarnessTarget;
     }): Promise<Session>;
     getMessages(input: {
       sessionId: string;
-      backendId?: AgentBackendId;
-      options?: { limit?: number; before?: string } & AgentBackendTarget;
+      harnessId?: HarnessId;
+      options?: { limit?: number; before?: string } & HarnessTarget;
     }): Promise<MessagePageResult>;
     prompt(input: {
       sessionId: string;
@@ -215,36 +201,36 @@ export interface OpenGuiClient {
       agent?: string;
       variant?: string;
       mode?: QueueMode;
-      target?: AgentBackendTarget;
-      backendId?: AgentBackendId;
+      target?: HarnessTarget;
+      harnessId?: HarnessId;
     }): Promise<void>;
     abort(input: {
       sessionId: string;
-      backendId?: AgentBackendId;
-      target?: AgentBackendTarget;
+      harnessId?: HarnessId;
+      target?: HarnessTarget;
     }): Promise<void>;
     respondPermission(input: {
       sessionId: string;
       permissionId: string;
       response: "once" | "always" | "reject";
-      backendId?: AgentBackendId;
-      target?: AgentBackendTarget;
+      harnessId?: HarnessId;
+      target?: HarnessTarget;
     }): Promise<void>;
     replyQuestion(input: {
       requestId: string;
       answers: QuestionAnswer[];
-      backendId?: AgentBackendId;
+      harnessId?: HarnessId;
     }): Promise<void>;
-    rejectQuestion(input: { requestId: string; backendId?: AgentBackendId }): Promise<void>;
+    rejectQuestion(input: { requestId: string; harnessId?: HarnessId }): Promise<void>;
     queue: {
       list(input: {
         sessionId: string;
-        backendId?: AgentBackendId;
-        target?: AgentBackendTarget;
+        harnessId?: HarnessId;
+        target?: HarnessTarget;
       }): Promise<OpenGuiQueueEntry[]>;
       listProject(input: {
-        backendId: AgentBackendId;
-        target: AgentBackendTarget;
+        harnessId: HarnessId;
+        target: HarnessTarget;
       }): Promise<Record<string, OpenGuiQueueEntry[]>>;
       enqueue(input: {
         sessionId: string;
@@ -254,14 +240,14 @@ export interface OpenGuiClient {
         variant?: string;
         mode: QueueMode;
         insertAt?: "front" | "back";
-        backendId?: AgentBackendId;
-        target?: AgentBackendTarget;
+        harnessId?: HarnessId;
+        target?: HarnessTarget;
       }): Promise<OpenGuiQueueEntry[]>;
       remove(input: {
         sessionId: string;
         entryId: string;
-        backendId?: AgentBackendId;
-        target?: AgentBackendTarget;
+        harnessId?: HarnessId;
+        target?: HarnessTarget;
       }): Promise<OpenGuiQueueEntry[]>;
       update(input: {
         sessionId: string;
@@ -271,26 +257,26 @@ export interface OpenGuiClient {
         agent?: string | null;
         variant?: string | null;
         mode?: QueueMode;
-        backendId?: AgentBackendId;
-        target?: AgentBackendTarget;
+        harnessId?: HarnessId;
+        target?: HarnessTarget;
       }): Promise<OpenGuiQueueEntry[]>;
       reorder(input: {
         sessionId: string;
         entryId: string;
         index: number;
-        backendId?: AgentBackendId;
-        target?: AgentBackendTarget;
+        harnessId?: HarnessId;
+        target?: HarnessTarget;
       }): Promise<OpenGuiQueueEntry[]>;
       sendNow(input: {
         sessionId: string;
         entryId: string;
-        backendId?: AgentBackendId;
-        target?: AgentBackendTarget;
+        harnessId?: HarnessId;
+        target?: HarnessTarget;
       }): Promise<OpenGuiQueueEntry[]>;
     };
   };
   files: {
-    find(input: { target: AgentBackendTarget; query: string }): Promise<string[]>;
+    find(input: { target: HarnessTarget; query: string }): Promise<string[]>;
   };
   git: {
     isRepo(directory: string): Promise<boolean>;
@@ -315,7 +301,7 @@ export interface OpenGuiClient {
   runtime: {
     getHomeDir(): Promise<string>;
     detectBackends(): Promise<BackendDetectionResult>;
-    installBackend(backendId: AgentBackendId): Promise<InstallResult>;
+    installBackend(harnessId: HarnessId): Promise<InstallResult>;
   };
   desktop: {
     openDirectory(): Promise<string | null>;

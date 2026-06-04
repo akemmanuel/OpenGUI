@@ -20,7 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useSkillsPlatform } from "@/hooks/use-skills-platform";
+import { usePluginsPlatform } from "@/hooks/use-plugins-platform";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,55 +29,55 @@ import { Spinner } from "@/components/ui/spinner";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { useDesktopShell } from "@/shell/provider";
 import type {
-  InstalledSkillInfo,
-  MarketplaceAuditResponse,
-  MarketplaceDetailResponse,
-  MarketplaceSkill,
+  InstalledPluginInfo,
+  PluginCatalogAuditResponse,
+  PluginCatalogDetailResponse,
+  PluginCatalogEntry,
 } from "@/types/electron";
 
-type SkillInstallState = {
-  exact?: InstalledSkillInfo;
-  conflict?: InstalledSkillInfo;
+type PluginInstallState = {
+  exact?: InstalledPluginInfo;
+  conflict?: InstalledPluginInfo;
 };
 
-function remoteKeyForSkill(skill: MarketplaceSkill) {
-  return `${skill.source?.toLowerCase()}@${skill.slug?.toLowerCase()}`;
+function remoteKeyForPlugin(plugin: PluginCatalogEntry) {
+  return `${plugin.source?.toLowerCase()}@${plugin.slug?.toLowerCase()}`;
 }
 
-interface SkillCardProps {
-  skill: MarketplaceSkill;
-  installState: SkillInstallState;
+interface PluginCardProps {
+  plugin: PluginCatalogEntry;
+  installState: PluginInstallState;
   busy: boolean;
-  onInstall: (skill: MarketplaceSkill) => void;
-  onUpdate: (installed: InstalledSkillInfo) => void;
-  onRemove: (installed: InstalledSkillInfo) => void;
-  onClick: (skill: MarketplaceSkill) => void;
+  onInstall: (plugin: PluginCatalogEntry) => void;
+  onUpdate: (installed: InstalledPluginInfo) => void;
+  onRemove: (installed: InstalledPluginInfo) => void;
+  onClick: (plugin: PluginCatalogEntry) => void;
 }
 
-function SkillCard({
-  skill,
+function PluginCard({
+  plugin,
   installState,
   busy,
   onInstall,
   onUpdate,
   onRemove,
   onClick,
-}: SkillCardProps) {
+}: PluginCardProps) {
   const { t } = useTranslation();
-  const isHot = skill.change != null && skill.change > 0;
+  const isHot = plugin.change != null && plugin.change > 0;
   const installed = installState.exact;
   const conflict = !installed ? installState.conflict : undefined;
 
   return (
     <button
       type="button"
-      onClick={() => onClick(skill)}
+      onClick={() => onClick(plugin)}
       className="group flex flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">{skill.name}</h3>
+            <h3 className="truncate text-sm font-semibold">{plugin.name}</h3>
             {isHot && (
               <Badge
                 variant="default"
@@ -100,18 +100,18 @@ function SkillCard({
               </Badge>
             )}
           </div>
-          {skill.slug && skill.slug !== skill.name && (
-            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{skill.slug}</p>
+          {plugin.slug && plugin.slug !== plugin.name && (
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{plugin.slug}</p>
           )}
           <p className="mt-1.5 text-[11px] text-muted-foreground/60 font-mono truncate">
-            {skill.source}
+            {plugin.source}
           </p>
         </div>
       </div>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-muted-foreground/70">
           <Star className="size-3 inline mr-0.5 -mt-0.5" />
-          {skill.installs.toLocaleString()} {t("settings.marketplace.installsLabel")}
+          {plugin.installs.toLocaleString()} {t("settings.marketplace.installsLabel")}
         </span>
         <div className="flex gap-1.5">
           {installed ? (
@@ -156,7 +156,7 @@ function SkillCard({
               disabled={busy}
               onClick={(e) => {
                 e.stopPropagation();
-                onInstall(skill);
+                onInstall(plugin);
               }}
             >
               {busy ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
@@ -172,7 +172,7 @@ function SkillCard({
 interface InstallFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  skill: MarketplaceSkill | null;
+  plugin: PluginCatalogEntry | null;
   directory: string | undefined;
   onConfirm: (source: string, globalScope: boolean) => void;
 }
@@ -180,14 +180,14 @@ interface InstallFlowDialogProps {
 function InstallFlowDialog({
   open,
   onOpenChange,
-  skill,
+  plugin,
   directory,
   onConfirm,
 }: InstallFlowDialogProps) {
   const { t } = useTranslation();
   const [globalScope, setGlobalScope] = useState(false);
 
-  if (!skill) return null;
+  if (!plugin) return null;
 
   return (
     <BaseDialog
@@ -196,13 +196,13 @@ function InstallFlowDialog({
       title={
         <span className="inline-flex items-center gap-2">
           <PackagePlus className="size-4" />
-          {t("settings.marketplace.install")} {skill.name}
+          {t("settings.marketplace.install")} {plugin.name}
         </span>
       }
       description={
         <span className="inline-flex items-center gap-1.5">
           <Globe className="size-3" />
-          {skill.source}/{skill.slug}
+          {plugin.source}/{plugin.slug}
         </span>
       }
       className="sm:max-w-sm"
@@ -232,7 +232,7 @@ function InstallFlowDialog({
               size="sm"
               onClick={() => {
                 onConfirm(
-                  skill.source ? `${skill.source}@${skill.slug}` : skill.id || skill.slug,
+                  plugin.source ? `${plugin.source}@${plugin.slug}` : plugin.id || plugin.slug,
                   globalScope,
                 );
                 onOpenChange(false);
@@ -267,23 +267,23 @@ function InstallFlowDialog({
 
 export function DiscoverPlugins() {
   const { t } = useTranslation();
-  const skillsApi = useSkillsPlatform();
-  const marketplaceApi = skillsApi?.marketplace;
+  const pluginsApi = usePluginsPlatform();
+  const catalogApi = pluginsApi?.marketplace;
   const { activeDirectory } = useConnectionState();
   const shell = useDesktopShell();
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [skills, setSkills] = useState<MarketplaceSkill[]>([]);
+  const [plugins, setPlugins] = useState<PluginCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [installedSkills, setInstalledSkills] = useState<InstalledSkillInfo[]>([]);
+  const [installedPlugins, setInstalledPlugins] = useState<InstalledPluginInfo[]>([]);
   const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set());
-  const [selectedSkill, setSelectedSkill] = useState<MarketplaceSkill | null>(null);
-  const [detailData, setDetailData] = useState<MarketplaceDetailResponse | null>(null);
-  const [auditData, setAuditData] = useState<MarketplaceAuditResponse | null>(null);
+  const [selectedPlugin, setSelectedPlugin] = useState<PluginCatalogEntry | null>(null);
+  const [detailData, setDetailData] = useState<PluginCatalogDetailResponse | null>(null);
+  const [auditData, setAuditData] = useState<PluginCatalogAuditResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showInstallFlow, setShowInstallFlow] = useState(false);
-  const [installSkill, setInstallSkill] = useState<MarketplaceSkill | null>(null);
+  const [installPlugin, setInstallPlugin] = useState<PluginCatalogEntry | null>(null);
   const [showProgress, setShowProgress] = useState(false);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const progressEndRef = useRef<HTMLDivElement>(null);
@@ -313,41 +313,41 @@ export function DiscoverPlugins() {
     };
   }, [query]);
 
-  // Fetch skills
-  const fetchSkills = useCallback(async () => {
-    if (!marketplaceApi) return;
+  // Fetch plugins
+  const fetchPlugins = useCallback(async () => {
+    if (!catalogApi) return;
     setLoading(true);
     try {
       if (debouncedQuery) {
         if (debouncedQuery.length < 2) {
-          setSkills([]);
+          setPlugins([]);
           return;
         }
-        const res = await marketplaceApi.search(debouncedQuery, 50);
-        setSkills(res.data);
+        const res = await catalogApi.search(debouncedQuery, 50);
+        setPlugins(res.data);
       } else {
-        const res = await marketplaceApi.list(undefined, 0, 50);
-        setSkills(res.data);
+        const res = await catalogApi.list(undefined, 0, 50);
+        setPlugins(res.data);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load plugins");
     } finally {
       setLoading(false);
     }
-  }, [marketplaceApi, debouncedQuery]);
+  }, [catalogApi, debouncedQuery]);
 
-  // Fetch installed skills
+  // Fetch installed plugins
   const fetchInstalled = useCallback(async () => {
-    if (!skillsApi) return;
+    if (!pluginsApi) return;
     try {
-      const installed: InstalledSkillInfo[] = await skillsApi.listInstalled(scopedDirectory);
-      setInstalledSkills(installed);
+      const installed: InstalledPluginInfo[] = await pluginsApi.listInstalled(scopedDirectory);
+      setInstalledPlugins(installed);
     } catch {}
-  }, [skillsApi, scopedDirectory]);
+  }, [pluginsApi, scopedDirectory]);
 
   // Initial load
   useEffect(() => {
-    void fetchSkills();
+    void fetchPlugins();
   }, [debouncedQuery]);
 
   useEffect(() => {
@@ -356,16 +356,16 @@ export function DiscoverPlugins() {
 
   // Open detail
   const openDetail = useCallback(
-    async (skill: MarketplaceSkill) => {
-      setSelectedSkill(skill);
+    async (plugin: PluginCatalogEntry) => {
+      setSelectedPlugin(plugin);
       setDetailLoading(true);
       setDetailData(null);
       setAuditData(null);
-      if (marketplaceApi) {
+      if (catalogApi) {
         try {
           const [detail, audit] = await Promise.all([
-            marketplaceApi.detail(skill.source, skill.slug),
-            marketplaceApi.audit(skill.source, skill.slug).catch(() => null),
+            catalogApi.detail(plugin.source, plugin.slug),
+            catalogApi.audit(plugin.source, plugin.slug).catch(() => null),
           ]);
           setDetailData(detail);
           setAuditData(audit);
@@ -373,26 +373,26 @@ export function DiscoverPlugins() {
       }
       setDetailLoading(false);
     },
-    [marketplaceApi],
+    [catalogApi],
   );
 
   const getInstallState = useCallback(
-    (skill: MarketplaceSkill): SkillInstallState => {
-      const remoteKey = remoteKeyForSkill(skill);
-      const exact = installedSkills.find((installed) => installed.remoteKey === remoteKey);
+    (plugin: PluginCatalogEntry): PluginInstallState => {
+      const remoteKey = remoteKeyForPlugin(plugin);
+      const exact = installedPlugins.find((installed) => installed.remoteKey === remoteKey);
       if (exact) return { exact };
-      const slug = skill.slug?.toLowerCase();
-      const name = skill.name?.toLowerCase();
-      const conflict = installedSkills.find(
+      const slug = plugin.slug?.toLowerCase();
+      const name = plugin.name?.toLowerCase();
+      const conflict = installedPlugins.find(
         (installed) =>
           installed.name?.toLowerCase() === name || installed.slug?.toLowerCase() === slug,
       );
       return { conflict };
     },
-    [installedSkills],
+    [installedPlugins],
   );
 
-  const runSkillAction = useCallback(
+  const runPluginAction = useCallback(
     async (key: string, action: () => Promise<void>) => {
       setBusyKeys((prev) => new Set(prev).add(key));
       setShowProgress(true);
@@ -411,50 +411,50 @@ export function DiscoverPlugins() {
   );
 
   // Install
-  const handleInstall = useCallback((skill: MarketplaceSkill) => {
-    setInstallSkill(skill);
+  const handleInstall = useCallback((plugin: PluginCatalogEntry) => {
+    setInstallPlugin(plugin);
     setShowInstallFlow(true);
   }, []);
 
   const handleUpdate = useCallback(
-    async (installed: InstalledSkillInfo) => {
-      if (!skillsApi) return;
+    async (installed: InstalledPluginInfo) => {
+      if (!pluginsApi) return;
       const key = installed.remoteKey || installed.location;
-      await runSkillAction(key, async () => {
-        await skillsApi.update(installed.name, scopedDirectory, installed.scope === "global");
+      await runPluginAction(key, async () => {
+        await pluginsApi.update(installed.name, scopedDirectory, installed.scope === "global");
       });
     },
-    [skillsApi, scopedDirectory, runSkillAction],
+    [pluginsApi, scopedDirectory, runPluginAction],
   );
 
   const handleRemove = useCallback(
-    async (installed: InstalledSkillInfo) => {
-      if (!skillsApi) return;
+    async (installed: InstalledPluginInfo) => {
+      if (!pluginsApi) return;
       const key = installed.remoteKey || installed.location;
-      await runSkillAction(key, async () => {
-        await skillsApi.remove(installed.name, scopedDirectory, installed.scope === "global");
+      await runPluginAction(key, async () => {
+        await pluginsApi.remove(installed.name, scopedDirectory, installed.scope === "global");
       });
     },
-    [skillsApi, scopedDirectory, runSkillAction],
+    [pluginsApi, scopedDirectory, runPluginAction],
   );
 
   const confirmInstall = useCallback(
     async (source: string, globalScope: boolean) => {
-      if (!skillsApi || !installSkill) return;
-      const key = remoteKeyForSkill(installSkill);
-      await runSkillAction(key, async () => {
-        await skillsApi.install(source, scopedDirectory, globalScope);
+      if (!pluginsApi || !installPlugin) return;
+      const key = remoteKeyForPlugin(installPlugin);
+      await runPluginAction(key, async () => {
+        await pluginsApi.install(source, scopedDirectory, globalScope);
       });
     },
-    [skillsApi, scopedDirectory, runSkillAction, installSkill],
+    [pluginsApi, scopedDirectory, runPluginAction, installPlugin],
   );
 
-  const selectedInstallState = selectedSkill ? getInstallState(selectedSkill) : {};
+  const selectedInstallState = selectedPlugin ? getInstallState(selectedPlugin) : {};
   const selectedBusyKey =
     selectedInstallState.exact?.remoteKey ||
-    (selectedSkill ? remoteKeyForSkill(selectedSkill) : "");
+    (selectedPlugin ? remoteKeyForPlugin(selectedPlugin) : "");
 
-  if (!marketplaceApi) {
+  if (!catalogApi) {
     return (
       <div className="flex items-center justify-center py-8">
         <p className="text-sm text-muted-foreground">{t("settings.skills.cliUnavailable")}</p>
@@ -485,14 +485,14 @@ export function DiscoverPlugins() {
       </div>
 
       {/* Plugin cards grid */}
-      {loading && skills.length === 0 ? (
+      {loading && plugins.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Loader2 className="size-6 animate-spin" />
             <span className="text-xs">{t("settings.marketplace.loading")}</span>
           </div>
         </div>
-      ) : skills.length === 0 ? (
+      ) : plugins.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Globe className="size-8 opacity-30" />
@@ -502,13 +502,13 @@ export function DiscoverPlugins() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {skills.map((skill) => {
-              const installState = getInstallState(skill);
-              const busyKey = installState.exact?.remoteKey || remoteKeyForSkill(skill);
+            {plugins.map((plugin) => {
+              const installState = getInstallState(plugin);
+              const busyKey = installState.exact?.remoteKey || remoteKeyForPlugin(plugin);
               return (
-                <SkillCard
-                  key={skill.id}
-                  skill={skill}
+                <PluginCard
+                  key={plugin.id}
+                  plugin={plugin}
                   installState={installState}
                   busy={busyKeys.has(busyKey)}
                   onInstall={handleInstall}
@@ -520,7 +520,7 @@ export function DiscoverPlugins() {
             })}
           </div>
 
-          {loading && skills.length > 0 && (
+          {loading && plugins.length > 0 && (
             <div className="flex justify-center py-4">
               <Spinner className="size-5" />
             </div>
@@ -530,25 +530,25 @@ export function DiscoverPlugins() {
 
       {/* Detail dialog */}
       <BaseDialog
-        open={selectedSkill !== null && !showInstallFlow}
+        open={selectedPlugin !== null && !showInstallFlow}
         onOpenChange={(open) => {
-          if (!open) setSelectedSkill(null);
+          if (!open) setSelectedPlugin(null);
         }}
-        title={selectedSkill?.name || ""}
-        description={selectedSkill ? `${selectedSkill.source}/${selectedSkill.slug}` : ""}
+        title={selectedPlugin?.name || ""}
+        description={selectedPlugin ? `${selectedPlugin.source}/${selectedPlugin.slug}` : ""}
         className="sm:max-w-2xl max-h-[80vh] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden pr-3"
         headerClassName="border-b pb-4 pr-8"
         bodyClassName="overflow-y-auto pr-3"
         footerClassName="border-t bg-background pt-4"
         footer={
-          selectedSkill && (
+          selectedPlugin && (
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Star className="size-3" />
-                {selectedSkill.installs.toLocaleString()} {t("settings.marketplace.installsLabel")}
-                {selectedSkill.installUrl && (
+                {selectedPlugin.installs.toLocaleString()} {t("settings.marketplace.installsLabel")}
+                {selectedPlugin.installUrl && (
                   <a
-                    href={selectedSkill.installUrl}
+                    href={selectedPlugin.installUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -612,7 +612,7 @@ export function DiscoverPlugins() {
           </div>
         ) : detailData ? (
           <div className="space-y-4">
-            {/* SKILL.md content */}
+            {/* Plugin capability content */}
             {detailData.files?.map((file) => (
               <details key={file.path} className="group rounded-lg border bg-muted/30">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
@@ -671,7 +671,7 @@ export function DiscoverPlugins() {
       <InstallFlowDialog
         open={showInstallFlow}
         onOpenChange={setShowInstallFlow}
-        skill={installSkill}
+        plugin={installPlugin}
         directory={scopedDirectory}
         onConfirm={confirmInstall}
       />

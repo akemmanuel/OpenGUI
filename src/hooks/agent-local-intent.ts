@@ -1,4 +1,4 @@
-import type { AgentBackendDescriptor, AgentBackendTarget } from "@/agents/backend";
+import type { HarnessDescriptor, HarnessTarget } from "@/agents/backend";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { planDirectoryChangePrompt } from "@/hooks/agent-directory-change-notice";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
@@ -28,12 +28,12 @@ interface SessionCreationLock {
 
 interface LocalIntentOptions {
   getState: () => InternalAgentState;
-  getResourceRuntime: () => AgentBackendDescriptor["runtime"] | undefined;
+  getResourceRuntime: () => HarnessDescriptor["runtime"] | undefined;
   getCurrentVariant: () => string | undefined;
   getWorkspaceBaseUrl?: (workspaceId?: string | null) => string | undefined;
   sessionsClient: OpenGuiClient["sessions"];
   createSession: (title?: string, directory?: string) => Promise<Session | null>;
-  scheduleSessionMessageReconcile: (sessionId: string, projectTarget?: AgentBackendTarget) => void;
+  scheduleSessionMessageReconcile: (sessionId: string, projectTarget?: HarnessTarget) => void;
   requestSessionAutoName: (input: {
     sessionId: string;
     sourceText: string;
@@ -385,7 +385,7 @@ export function useLocalIntentOrchestration(
         const session = getState().sessions.find((item) => item.id === input.sessionId);
         return sessionsClient.abort({
           ...input,
-          backendId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
           target: getSessionProjectTarget(session) ?? undefined,
         });
       },

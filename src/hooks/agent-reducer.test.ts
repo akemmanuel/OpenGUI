@@ -1,17 +1,17 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
 import { mergeProjectBackendSessions, reducer } from "./agent-reducer";
 import { createProjectConnectionStatus } from "./agent-project-connection";
 
-function session(id: string, backendId: AgentBackendId, directory = "/repo", updated = 1): Session {
+function session(id: string, harnessId: HarnessId, directory = "/repo", updated = 1): Session {
   return {
     id,
     title: id,
     directory,
     _projectDir: directory,
     _workspaceId: "workspace-1",
-    _backendId: backendId,
+    _harnessId: harnessId,
     time: { created: updated, updated },
   } as Session;
 }
@@ -79,7 +79,7 @@ describe("mergeProjectBackendSessions", () => {
       workspaceId: "workspace-1",
       directory: "/repo",
       incoming,
-      backendIds: ["pi"],
+      harnessIds: ["pi"],
     });
 
     expect(merged.map((item) => item.id).sort()).toEqual(["open-old", "pi-new"]);
@@ -93,7 +93,7 @@ describe("mergeProjectBackendSessions", () => {
       workspaceId: "workspace-1",
       directory: "/repo",
       incoming: [],
-      backendIds: [],
+      harnessIds: [],
     });
 
     expect(merged.map((item) => item.id).sort()).toEqual(["open-old", "pi-old"]);
@@ -108,7 +108,7 @@ describe("mergeProjectBackendSessions", () => {
       workspaceId: "workspace-1",
       directory: "/repo",
       incoming,
-      backendIds: ["opencode"],
+      harnessIds: ["opencode"],
     });
 
     expect(merged).toHaveLength(1);

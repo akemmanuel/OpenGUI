@@ -35,7 +35,7 @@ describe("sendPromptToAgent", () => {
         directory: "/backend",
         _projectDir: "/repo",
         _workspaceId: "workspace-1",
-        _backendId: "pi",
+        _harnessId: "pi",
       } as never,
       sessionId: "pi:session-1",
       text: "hello",
@@ -47,7 +47,7 @@ describe("sendPromptToAgent", () => {
       sessionId: "pi:session-1",
       text: "hello",
       agent: "reviewer",
-      backendId: "pi",
+      harnessId: "pi",
       target: { directory: "/repo", workspaceId: "workspace-1" },
     });
     expect(result).toEqual({

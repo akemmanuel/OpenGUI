@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { useAgentBackend } from "@/hooks/use-agent-backend";
+import { useHarness } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
 
@@ -71,7 +71,7 @@ interface McpDialogProps {
 }
 
 export function McpDialog({ open, onOpenChange }: McpDialogProps) {
-  const backend = useAgentBackend();
+  const backend = useHarness();
   const mcpApi = backend?.platform?.mcp;
   const configApi = backend?.platform?.config;
   const { activeDirectory, activeWorkspaceId } = useConnectionState();

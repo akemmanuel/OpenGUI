@@ -246,8 +246,8 @@ export function registerShellIpcHandlers(input: {
     pi: isHarnessAvailable("pi"),
     codex: isHarnessAvailable("codex"),
   }));
-  ipcMain.handle("backend:install", async (event, backendId) => {
-    const installCommand = getHarnessInstallCommand(backendId);
+  ipcMain.handle("backend:install", async (event, harnessId) => {
+    const installCommand = getHarnessInstallCommand(harnessId);
     if (!installCommand) {
       return { success: false, error: "Unknown backend id or no supported package manager found" };
     }
@@ -301,12 +301,12 @@ export function registerShellIpcHandlers(input: {
 
   ipcMain.handle("agent-backends:restart", async () => {
     const results: Record<string, { success: boolean; error?: string }> = {};
-    for (const backendId of services.harnesses.getManagedHarnessIds()) {
+    for (const harnessId of services.harnesses.getManagedHarnessIds()) {
       try {
-        await services.harnesses.restartHarness(backendId);
-        results[backendId] = { success: true };
+        await services.harnesses.restartHarness(harnessId);
+        results[harnessId] = { success: true };
       } catch (error) {
-        results[backendId] = {
+        results[harnessId] = {
           success: false,
           error: error instanceof Error ? error.message : String(error),
         };

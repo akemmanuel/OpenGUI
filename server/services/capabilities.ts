@@ -12,6 +12,6 @@ export function getBackendCapabilities(): OpenGuiCapabilities {
       auth: false,
       allowedRoots: true,
     },
-    agentBackends: HARNESS_IDS,
+    harnesses: HARNESS_IDS,
   };
 }

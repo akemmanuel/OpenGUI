@@ -11,7 +11,7 @@ export async function syncProjectSessions(
   const runtimeResults = await services.harnesses.listProjectSessions({
     project,
     scope: buildHarnessScope({ project, harnessId }),
-    backendIds: [harnessId],
+    harnessIds: [harnessId],
   });
   const runtimeSessions = runtimeResults[0]?.sessions?.filter((session) =>
     runtimeSessionBelongsToProject(session, project.path),

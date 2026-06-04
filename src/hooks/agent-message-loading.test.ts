@@ -49,7 +49,7 @@ describe("fetchSessionMessagePage", () => {
       sessions: [
         makeSession({
           id: "pi:session-1",
-          _backendId: "pi",
+          _harnessId: "pi",
           _projectDir: "/repo",
           _workspaceId: "workspace-1",
         }),
@@ -60,7 +60,7 @@ describe("fetchSessionMessagePage", () => {
     expect(calls).toEqual([
       {
         sessionId: "pi:session-1",
-        backendId: "pi",
+        harnessId: "pi",
         options: {
           limit: 30,
           before: undefined,
@@ -124,12 +124,12 @@ describe("hydrateChildSessionMessages", () => {
     expect(calls).toEqual([
       {
         sessionId: "child-1",
-        backendId: "pi",
+        harnessId: "pi",
         options: { limit: 10000, directory: "/repo", workspaceId: "workspace-1" },
       },
       {
         sessionId: "child-2",
-        backendId: "pi",
+        harnessId: "pi",
         options: { limit: 10000, directory: "/repo", workspaceId: "workspace-1" },
       },
     ]);

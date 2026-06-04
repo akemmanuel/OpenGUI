@@ -21,13 +21,4 @@ export function getHarnessIdFromSessionId(sessionId: string | null | undefined):
   return HARNESS_IDS.find((harnessId) => HARNESS_ID_CODECS[harnessId].matches(sessionId)) ?? null;
 }
 
-/** @deprecated Use HarnessId. Kept as a compatibility alias while protocol fields migrate. */
-export type AgentBackendId = HarnessId;
-/** @deprecated Use HARNESS_IDS. */
-export const AGENT_BACKEND_IDS = HARNESS_IDS;
-/** @deprecated Use HARNESS_LABELS. */
-export const AGENT_BACKEND_LABELS = HARNESS_LABELS;
-/** @deprecated Use createHarnessIdCodec. */
-export { createBackendIdCodec as createAgentIdCodec } from "./shared.ts";
-/** @deprecated Use getHarnessIdFromSessionId. */
-export const getAgentBackendIdFromSessionId = getHarnessIdFromSessionId;
+export const HARNESS_LABELS_BY_ID = HARNESS_LABELS;

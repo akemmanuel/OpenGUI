@@ -1,7 +1,7 @@
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendEvent, AgentBackendTarget } from "./backend.ts";
-import type { AgentBackendId } from "./index.ts";
+import type { HarnessEvent, HarnessTarget } from "./backend.ts";
+import type { HarnessId } from "./index.ts";
 import { composeFrontendSessionId, rawSessionIdForHarness } from "../lib/session-identity.ts";
 
 function normalizeProjectPath(path: string): string {
@@ -23,7 +23,7 @@ type BridgeResult<T> =
 type SessionTags = {
   _projectDir?: string;
   _workspaceId?: string;
-  _backendId?: AgentBackendId;
+  _harnessId?: HarnessId;
   _rawId?: string;
 };
 
@@ -35,7 +35,7 @@ export function requireSuccess<T>(result: BridgeResult<T>, fallback: string): T 
   throw new Error(result.error ?? fallback);
 }
 
-export function createBackendIdCodec(prefix: AgentBackendId) {
+export function createBackendIdCodec(prefix: HarnessId) {
   const marker = `${prefix}:`;
   return {
     compose: (rawId: string) => composeFrontendSessionId(prefix, rawId),
@@ -44,7 +44,7 @@ export function createBackendIdCodec(prefix: AgentBackendId) {
   };
 }
 
-export function getTarget(target?: AgentBackendTarget) {
+export function getTarget(target?: HarnessTarget) {
   return {
     directory: target?.directory,
     workspaceId: target?.workspaceId,
@@ -52,7 +52,7 @@ export function getTarget(target?: AgentBackendTarget) {
 }
 
 export function tagBackendSession(
-  backendId: AgentBackendId,
+  harnessId: HarnessId,
   session: TaggedSession,
   target?: { directory?: string; workspaceId?: string },
 ): TaggedSession {
@@ -60,7 +60,7 @@ export function tagBackendSession(
   const projectDir = target?.directory ?? session._projectDir ?? session.directory;
   return {
     ...session,
-    id: createBackendIdCodec(backendId).compose(rawId),
+    id: createBackendIdCodec(harnessId).compose(rawId),
     _projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
     _workspaceId:
       target?.workspaceId ??
@@ -68,28 +68,28 @@ export function tagBackendSession(
       ("workspaceID" in session && typeof session.workspaceID === "string"
         ? session.workspaceID
         : undefined),
-    _backendId: backendId,
+    _harnessId: harnessId,
     _rawId: rawId,
   };
 }
 
-export function normalizeMessageSessionId(backendId: AgentBackendId, message: Message): Message {
+export function normalizeMessageSessionId(harnessId: HarnessId, message: Message): Message {
   return {
     ...message,
-    sessionID: createBackendIdCodec(backendId).compose(message.sessionID),
+    sessionID: createBackendIdCodec(harnessId).compose(message.sessionID),
   };
 }
 
-export function normalizePartSessionId(backendId: AgentBackendId, part: Part): Part {
+export function normalizePartSessionId(harnessId: HarnessId, part: Part): Part {
   return "sessionID" in part && typeof part.sessionID === "string"
     ? ({
         ...part,
-        sessionID: createBackendIdCodec(backendId).compose(part.sessionID),
+        sessionID: createBackendIdCodec(harnessId).compose(part.sessionID),
       } as Part)
     : part;
 }
 
-function normalizeBridgeConnectionStatus(event: NativeBackendEvent): AgentBackendEvent | null {
+function normalizeBridgeConnectionStatus(event: NativeBackendEvent): HarnessEvent | null {
   if (event.type !== "connection:status") return null;
   return {
     type: "connection.status",
@@ -100,20 +100,20 @@ function normalizeBridgeConnectionStatus(event: NativeBackendEvent): AgentBacken
 }
 
 export function normalizeTaggedBackendEvent(
-  backendId: AgentBackendId,
+  harnessId: HarnessId,
   event: NativeBackendEvent,
   nativeEventType: string,
-): AgentBackendEvent | null {
+): HarnessEvent | null {
   const connectionStatus = normalizeBridgeConnectionStatus(event);
   if (connectionStatus) return connectionStatus;
   if (event.type !== nativeEventType) return null;
 
-  const payload = (event.payload ?? null) as AgentBackendEvent | null;
+  const payload = (event.payload ?? null) as HarnessEvent | null;
   if (!payload) return null;
 
-  const codec = createBackendIdCodec(backendId);
+  const codec = createBackendIdCodec(harnessId);
   const tagSession = (session: TaggedSession, target: BackendEventTarget) =>
-    tagBackendSession(backendId, session, target);
+    tagBackendSession(harnessId, session, target);
 
   switch (payload.type) {
     case "session.created":
@@ -138,32 +138,29 @@ export function normalizeTaggedBackendEvent(
     case "session.deleted":
       return { ...payload, sessionId: codec.compose(payload.sessionId) };
     default:
-      return normalizeBackendEventPayload(backendId, payload);
+      return normalizeBackendEventPayload(harnessId, payload);
   }
 }
 
-function normalizeBackendEventPayload(
-  backendId: AgentBackendId,
-  payload: AgentBackendEvent,
-): AgentBackendEvent {
-  const codec = createBackendIdCodec(backendId);
+function normalizeBackendEventPayload(harnessId: HarnessId, payload: HarnessEvent): HarnessEvent {
+  const codec = createBackendIdCodec(harnessId);
   switch (payload.type) {
     case "message.updated":
       return {
         ...payload,
-        message: normalizeMessageSessionId(backendId, payload.message),
+        message: normalizeMessageSessionId(harnessId, payload.message),
       };
     case "message.replaced":
       return {
         ...payload,
         sessionID: codec.compose(payload.sessionID),
-        message: normalizeMessageSessionId(backendId, payload.message),
-        parts: payload.parts.map((part) => normalizePartSessionId(backendId, part)),
+        message: normalizeMessageSessionId(harnessId, payload.message),
+        parts: payload.parts.map((part) => normalizePartSessionId(harnessId, part)),
       };
     case "message.part.updated":
       return {
         ...payload,
-        part: normalizePartSessionId(backendId, payload.part),
+        part: normalizePartSessionId(harnessId, payload.part),
       };
     case "message.part.delta":
     case "message.part.removed":

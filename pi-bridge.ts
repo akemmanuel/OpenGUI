@@ -167,7 +167,7 @@ function normalizePiSession(info, target = {}) {
   return {
     id: toFrontendSessionId(rawId),
     slug: rawId,
-    _backendId: "pi",
+    _harnessId: "pi",
     _rawId: rawId,
     projectID: directory,
     workspaceID: target.workspaceId,

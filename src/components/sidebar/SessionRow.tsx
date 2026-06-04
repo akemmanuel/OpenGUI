@@ -1,5 +1,5 @@
 import { BadgeQuestionMark, GitBranch, MessageSquare, ShieldAlert } from "lucide-react";
-import { AGENT_BACKEND_LABELS } from "@/agents";
+import { HARNESS_LABELS } from "@/agents";
 import type { Session } from "@/hooks/agent-state-types";
 import type {
   SessionColor,
@@ -217,9 +217,9 @@ export function SessionRow({
                 {session.title || untitledLabel}
               </span>
             )}
-            {session._backendId && (
+            {session._harnessId && (
               <span className="shrink-0 rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground">
-                {AGENT_BACKEND_LABELS[session._backendId]}
+                {HARNESS_LABELS[session._harnessId]}
               </span>
             )}
             {worktreeBranch && (

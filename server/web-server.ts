@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import type { AgentBackendEvent } from "../src/agents/backend.ts";
+import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
 import {
   BackendEventBus,
@@ -144,7 +144,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function getCanonicalEventType(event: AgentBackendEvent): string {
+function getCanonicalEventType(event: HarnessEvent): string {
   switch (event.type) {
     case "connection.status":
       return "project.connection.status";
@@ -155,7 +155,7 @@ function getCanonicalEventType(event: AgentBackendEvent): string {
   }
 }
 
-function getBridgeEventRefs(event: AgentBackendEvent): {
+function getBridgeEventRefs(event: HarnessEvent): {
   projectId?: string;
   sessionId?: string;
   harnessId?: string;
@@ -574,9 +574,9 @@ async function handleProjectRequest(request: Request) {
     if (child === "connect") {
       if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
       const body = await readJsonBody(request);
-      const backendIds =
-        isPlainObject(body) && Array.isArray(body.backendIds)
-          ? body.backendIds.filter((value): value is HarnessId => typeof value === "string")
+      const harnessIds =
+        isPlainObject(body) && Array.isArray(body.harnessIds)
+          ? body.harnessIds.filter((value): value is HarnessId => typeof value === "string")
           : undefined;
       const config = isPlainObject(body) && isPlainObject(body.config) ? body.config : body;
       const rawBaseUrl = isPlainObject(config)
@@ -592,7 +592,7 @@ async function handleProjectRequest(request: Request) {
         value: await connectProjectToHarnesses({
           services,
           project,
-          backendIds,
+          harnessIds,
           config: {
             directory: project.path,
             baseUrl: harnessBaseUrl,
@@ -610,14 +610,14 @@ async function handleProjectRequest(request: Request) {
     if (child === "disconnect") {
       if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
       const body = await readJsonBody(request);
-      const backendIds =
-        isPlainObject(body) && Array.isArray(body.backendIds)
-          ? body.backendIds.filter((value): value is HarnessId => typeof value === "string")
+      const harnessIds =
+        isPlainObject(body) && Array.isArray(body.harnessIds)
+          ? body.harnessIds.filter((value): value is HarnessId => typeof value === "string")
           : undefined;
       await disconnectProjectFromHarnesses({
         services,
         project,
-        backendIds,
+        harnessIds,
       });
       return Response.json({ ok: true, value: true });
     }
@@ -1100,7 +1100,7 @@ async function handlePermissionRequest(request: Request) {
     const session = await getSessionOrThrow(services, body.sessionId, {
       projectId: toOptionalString(body.projectId, "projectId") ?? undefined,
       harnessId:
-        (toOptionalString(body.backendId, "backendId") as HarnessId | undefined) ?? undefined,
+        (toOptionalString(body.harnessId, "harnessId") as HarnessId | undefined) ?? undefined,
     });
     await respondToHarnessPermission({
       services,
@@ -1128,7 +1128,7 @@ async function handleQuestionRequest(request: Request) {
     const body = await readJsonBody(request);
     const harnessId = (
       isPlainObject(body)
-        ? (toOptionalString(body.backendId, "backendId") ?? "opencode")
+        ? (toOptionalString(body.harnessId, "harnessId") ?? "opencode")
         : "opencode"
     ) as HarnessId;
     if (action === "reply") {

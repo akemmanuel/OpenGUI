@@ -11,16 +11,16 @@ function firstHarnessId(harnessIds?: HarnessId[]): HarnessId {
 export async function connectProjectToHarnesses(input: {
   services: BackendServiceContext;
   project: ProjectRecord;
-  backendIds?: HarnessId[];
+  harnessIds?: HarnessId[];
   config?: ProjectConnectionConfig;
 }) {
   return await input.services.harnesses.connectProject({
     project: input.project,
     scope: buildHarnessScope({
       project: input.project,
-      harnessId: firstHarnessId(input.backendIds),
+      harnessId: firstHarnessId(input.harnessIds),
     }),
-    backendIds: input.backendIds,
+    harnessIds: input.harnessIds,
     config: input.config,
   });
 }
@@ -28,15 +28,15 @@ export async function connectProjectToHarnesses(input: {
 export async function disconnectProjectFromHarnesses(input: {
   services: BackendServiceContext;
   project: ProjectRecord;
-  backendIds?: HarnessId[];
+  harnessIds?: HarnessId[];
 }): Promise<void> {
   await input.services.harnesses.disconnectProject({
     project: input.project,
     scope: buildHarnessScope({
       project: input.project,
-      harnessId: firstHarnessId(input.backendIds),
+      harnessId: firstHarnessId(input.harnessIds),
     }),
-    backendIds: input.backendIds,
+    harnessIds: input.harnessIds,
   });
 }
 
@@ -48,7 +48,7 @@ export async function getProjectHarnessStatus(input: {
   return await input.services.harnesses.getProjectStatus({
     project: input.project,
     scope: buildHarnessScope({ project: input.project, harnessId: input.harnessId ?? "opencode" }),
-    backendIds: input.harnessId ? [input.harnessId] : undefined,
+    harnessIds: input.harnessId ? [input.harnessId] : undefined,
   });
 }
 

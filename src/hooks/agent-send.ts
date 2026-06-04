@@ -1,5 +1,5 @@
 import type { Agent } from "@opencode-ai/sdk/v2/client";
-import type { AgentBackendDescriptor, AgentBackendTarget } from "@/agents/backend";
+import type { HarnessDescriptor, HarnessTarget } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { Session } from "@/hooks/agent-state-types";
@@ -57,13 +57,13 @@ export async function sendPromptToAgent({
   activeWorkspaceId?: string;
   getWorkspaceBaseUrl?: (workspaceId?: string | null) => string | undefined;
   mode?: QueueMode;
-}): Promise<{ projectTarget?: AgentBackendTarget }> {
+}): Promise<{ projectTarget?: HarnessTarget }> {
   const rawProjectTarget = getSessionProjectTarget(session) ?? undefined;
   const workspaceId = rawProjectTarget?.workspaceId ?? activeWorkspaceId;
   const baseUrl = getWorkspaceBaseUrl?.(workspaceId);
   const projectTarget =
     baseUrl || workspaceId ? { ...rawProjectTarget, workspaceId, baseUrl } : rawProjectTarget;
-  const backendId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
+  const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
 
   await sessions.prompt({
     sessionId,
@@ -73,7 +73,7 @@ export async function sendPromptToAgent({
     variant: selection.variant,
     mode,
     target: projectTarget,
-    backendId,
+    harnessId,
   });
 
   return { projectTarget };
@@ -87,13 +87,13 @@ export async function sendCommandToAgent({
   args,
   selection,
 }: {
-  runtime: AgentBackendDescriptor["runtime"];
+  runtime: HarnessDescriptor["runtime"];
   session: Session | null | undefined;
   sessionId: string;
   command: string;
   args: string;
   selection: AgentSendSelection;
-}): Promise<{ projectTarget?: AgentBackendTarget }> {
+}): Promise<{ projectTarget?: HarnessTarget }> {
   const projectTarget = getSessionProjectTarget(session) ?? undefined;
 
   await runtime.sendCommand({

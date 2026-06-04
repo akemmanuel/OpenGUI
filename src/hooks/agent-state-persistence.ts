@@ -8,7 +8,7 @@ import {
 } from "@/lib/safe-storage";
 import { getWorkspaceRootProjectDirectory } from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
-import type { OpenGuiClient, OpenGuiProject, OpenGuiWorkspace } from "@/protocol/client";
+import type { OpenGuiClient, OpenGuiProject, FrontendWorkspaceRecord } from "@/protocol/client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type { SelectedModel, Workspace } from "@/types/electron";
@@ -256,7 +256,9 @@ function normalizeProjectList(projects: string[]): string[] {
   );
 }
 
-function getWorkspaceSettings(workspace: Workspace | OpenGuiWorkspace): WorkspaceSettingsRecord {
+function getWorkspaceSettings(
+  workspace: Workspace | FrontendWorkspaceRecord,
+): WorkspaceSettingsRecord {
   const settings =
     workspace.settings &&
     typeof workspace.settings === "object" &&
@@ -363,7 +365,7 @@ export function workspaceToUpdateInput(workspace: Workspace) {
 }
 
 export function workspaceFromBackend(
-  workspace: OpenGuiWorkspace,
+  workspace: FrontendWorkspaceRecord,
   projects: OpenGuiProject[] = [],
 ): Workspace {
   const settings = getWorkspaceSettings(workspace);

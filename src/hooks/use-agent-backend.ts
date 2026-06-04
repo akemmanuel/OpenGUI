@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AgentBackendId } from "@/agents";
-import { AGENT_BACKEND_IDS } from "@/agents";
+import type { HarnessId } from "@/agents";
+import { HARNESS_IDS } from "@/agents";
 import {
   resolveActiveResourceHarnessRoute,
   type HarnessRoute,
@@ -10,20 +10,20 @@ import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/safe-storage";
 import { useOpenGuiClient } from "@/protocol/provider";
 
-function getStoredAgentBackendId(): AgentBackendId {
-  const stored = storageGet(STORAGE_KEYS.AGENT_BACKEND);
+function getStoredHarnessId(): HarnessId {
+  const stored = storageGet(STORAGE_KEYS.HARNESS);
   if (stored === "claude-code") return "claude-code";
   if (stored === "pi") return "pi";
   if (stored === "codex") return "codex";
   return "opencode";
 }
 
-export function useCurrentAgentBackendId() {
-  const [backendId, setBackendId] = useState<AgentBackendId>(() => getStoredAgentBackendId());
+export function useCurrentHarnessId() {
+  const [harnessId, setBackendId] = useState<HarnessId>(() => getStoredHarnessId());
 
   useEffect(() => {
     return onSettingsChange((change) => {
-      if (change.key !== STORAGE_KEYS.AGENT_BACKEND) return;
+      if (change.key !== STORAGE_KEYS.HARNESS) return;
       if (change.value === "claude-code") {
         setBackendId("claude-code");
         return;
@@ -40,21 +40,22 @@ export function useCurrentAgentBackendId() {
     });
   }, []);
 
-  return backendId;
+  return harnessId;
 }
 
-function useAllAgentBackends() {
+function useAllHarnesses() {
   const openGuiClient = useOpenGuiClient();
   return useMemo(() => {
-    const all = openGuiClient.agentBackends.list();
-    return Object.fromEntries(
-      all.map((backend) => [backend.id as AgentBackendId, backend]),
-    ) as Record<AgentBackendId, NonNullable<(typeof all)[number]>>;
+    const all = openGuiClient.harnesses.list();
+    return Object.fromEntries(all.map((backend) => [backend.id as HarnessId, backend])) as Record<
+      HarnessId,
+      NonNullable<(typeof all)[number]>
+    >;
   }, [openGuiClient]);
 }
 
 export function useActiveResourceHarnessRoute(): HarnessRoute {
-  const preferredBackendId = useCurrentAgentBackendId();
+  const preferredBackendId = useCurrentHarnessId();
   const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   return resolveActiveResourceHarnessRoute({
@@ -64,25 +65,24 @@ export function useActiveResourceHarnessRoute(): HarnessRoute {
   });
 }
 
-export function useRoutedAgentBackend(backendId?: AgentBackendId) {
-  const allBackends = useAllAgentBackends();
+export function useRoutedHarness(harnessId?: HarnessId) {
+  const allBackends = useAllHarnesses();
   const route = useActiveResourceHarnessRoute();
-  const resolvedBackendId = backendId ?? route.harnessId;
+  const resolvedBackendId = harnessId ?? route.harnessId;
   const openGuiClient = useOpenGuiClient();
-  const backend =
-    allBackends[resolvedBackendId] ?? openGuiClient.agentBackends.get(resolvedBackendId);
+  const backend = allBackends[resolvedBackendId] ?? openGuiClient.harnesses.get(resolvedBackendId);
   return { backend, route };
 }
 
-export function useAgentBackend(backendId?: AgentBackendId) {
-  return useRoutedAgentBackend(backendId).backend;
+export function useHarness(harnessId?: HarnessId) {
+  return useRoutedHarness(harnessId).backend;
 }
 
-export function useAvailableBackendIds() {
-  const allBackends = useAllAgentBackends();
-  return AGENT_BACKEND_IDS.filter((backendId) => Boolean(allBackends[backendId]));
+export function useAvailableHarnessIds() {
+  const allBackends = useAllHarnesses();
+  return HARNESS_IDS.filter((harnessId) => Boolean(allBackends[harnessId]));
 }
 
 export function useBackendCapabilities() {
-  return useAgentBackend()?.capabilities;
+  return useHarness()?.capabilities;
 }

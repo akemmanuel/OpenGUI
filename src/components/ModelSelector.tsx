@@ -5,7 +5,7 @@
 
 import { BrainCircuit, Check, Lightbulb, Search, Star } from "lucide-react";
 import { type KeyboardEventHandler, useEffect, useMemo, useRef, useState } from "react";
-import { AGENT_BACKEND_LABELS } from "@/agents";
+import { HARNESS_LABELS } from "@/agents";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useAvailableBackendIds, useRoutedAgentBackend } from "@/hooks/use-agent-backend";
+import { useAvailableHarnessIds, useRoutedHarness } from "@/hooks/use-agent-backend";
 import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
 import {
@@ -135,8 +135,8 @@ function ModelRow({
 export function ModelSelector() {
   const { setModel, setActiveTargetBackend } = useActions();
   const { providers, selectedModel } = useModelState();
-  const availableBackendIds = useAvailableBackendIds();
-  const { backend, route: selectedHarnessRoute } = useRoutedAgentBackend();
+  const availableBackendIds = useAvailableHarnessIds();
+  const { backend, route: selectedHarnessRoute } = useRoutedHarness();
   const capabilities = backend?.capabilities;
   const lockedBackendId = selectedHarnessRoute.locked ? selectedHarnessRoute.harnessId : null;
   const selectedBackendId = selectedHarnessRoute.harnessId;
@@ -442,19 +442,19 @@ export function ModelSelector() {
         {availableBackendIds.length > 1 && (
           <div className="px-4 pb-2">
             <div className="flex flex-wrap gap-1.5">
-              {availableBackendIds.map((backendId) => {
-                const isSelected = selectedBackendId === backendId;
+              {availableBackendIds.map((harnessId) => {
+                const isSelected = selectedBackendId === harnessId;
                 return (
                   <Button
-                    key={backendId}
+                    key={harnessId}
                     type="button"
                     variant={isSelected ? "default" : "outline"}
                     size="sm"
                     className="h-7 px-2 text-[11px]"
                     disabled={!!lockedBackendId}
-                    onClick={() => setActiveTargetBackend(backendId)}
+                    onClick={() => setActiveTargetBackend(harnessId)}
                   >
-                    {AGENT_BACKEND_LABELS[backendId]}
+                    {HARNESS_LABELS[harnessId]}
                   </Button>
                 );
               })}

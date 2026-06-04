@@ -58,7 +58,7 @@ describe("normalizeTaggedBackendEvent", () => {
       session: {
         id: "pi:raw-session",
         _rawId: "raw-session",
-        _backendId: "pi",
+        _harnessId: "pi",
         _projectDir: "/repo",
         _workspaceId: "workspace-1",
       },

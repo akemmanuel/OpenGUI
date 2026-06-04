@@ -1,8 +1,8 @@
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend.ts";
+import type { HarnessCapabilities, HarnessEvent } from "./backend.ts";
 import { normalizeTaggedBackendEvent } from "./shared.ts";
 
-export const CODEX_CAPABILITIES: AgentBackendCapabilities = {
+export const CODEX_CAPABILITIES: HarnessCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: false,
@@ -31,6 +31,6 @@ export const CODEX_WORKSPACE = {
   },
 } as const;
 
-export function normalizeCodexEvent(event: NativeBackendEvent): AgentBackendEvent | null {
+export function normalizeCodexEvent(event: NativeBackendEvent): HarnessEvent | null {
   return normalizeTaggedBackendEvent("codex", event, "codex:event");
 }

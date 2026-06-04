@@ -1,6 +1,6 @@
 import type { Event as OpenCodeEvent } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend.ts";
+import type { HarnessCapabilities, HarnessEvent } from "./backend.ts";
 import {
   createBackendIdCodec,
   normalizeMessageSessionId,
@@ -9,7 +9,7 @@ import {
   type TaggedSession,
 } from "./shared.ts";
 
-export const OPENCODE_CAPABILITIES: AgentBackendCapabilities = {
+export const OPENCODE_CAPABILITIES: HarnessCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: true,
@@ -47,7 +47,7 @@ function tagSession(
   return tagBackendSession("opencode", session, event);
 }
 
-export function normalizeOpenCodeEvent(event: NativeBackendEvent): AgentBackendEvent | null {
+export function normalizeOpenCodeEvent(event: NativeBackendEvent): HarnessEvent | null {
   if (event.type === "connection:status") {
     return {
       type: "connection.status",

@@ -1,8 +1,8 @@
 import type { NativeBackendEvent } from "@/types/electron";
-import type { AgentBackendCapabilities, AgentBackendEvent } from "./backend.ts";
+import type { HarnessCapabilities, HarnessEvent } from "./backend.ts";
 import { normalizeTaggedBackendEvent } from "./shared.ts";
 
-export const PI_CAPABILITIES: AgentBackendCapabilities = {
+export const PI_CAPABILITIES: HarnessCapabilities = {
   sessions: true,
   streaming: true,
   messagePaging: false,
@@ -31,6 +31,6 @@ export const PI_WORKSPACE = {
   },
 } as const;
 
-export function normalizePiEvent(event: NativeBackendEvent): AgentBackendEvent | null {
+export function normalizePiEvent(event: NativeBackendEvent): HarnessEvent | null {
   return normalizeTaggedBackendEvent("pi", event, "pi:event");
 }

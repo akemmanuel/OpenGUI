@@ -379,7 +379,7 @@ _Avoid_: Project in product language, Workspace Project
 
 **Dev**: And when the agent is busy and the user types the next instruction?
 
-**Domain expert**: That becomes a **Queued prompt**. OpenGUI owns it locally until it is sent.
+**Domain expert**: That becomes a **Queued prompt**. The OpenGUI Backend owns it as shared Session intent until Queue dispatch sends it to the Harness.
 
 **Dev**: So both drafting and queuing stay outside the agent transcript?
 

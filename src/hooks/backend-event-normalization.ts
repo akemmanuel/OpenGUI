@@ -1,4 +1,4 @@
-import type { AgentBackendEvent } from "@/agents/backend";
+import type { HarnessEvent } from "@/agents/backend";
 import type { QueuedPrompt } from "@/lib/session-drafts";
 
 export type BackendEventEnvelope = { type: string } & Record<string, unknown>;
@@ -23,6 +23,6 @@ export function isCanonicalSessionNotification(event: BackendEventEnvelope): boo
   );
 }
 
-export function toAgentBackendEvent(event: BackendEventEnvelope): AgentBackendEvent {
-  return event as AgentBackendEvent;
+export function toHarnessEvent(event: BackendEventEnvelope): HarnessEvent {
+  return event as HarnessEvent;
 }

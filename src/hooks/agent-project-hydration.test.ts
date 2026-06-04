@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { AgentBackendId } from "@/agents";
+import type { HarnessId } from "@/agents";
 import {
   buildBootstrapHydrationTasks,
   getPendingProjectHydrationBackendIds,
@@ -51,15 +51,15 @@ describe("project hydration state", () => {
 describe("buildBootstrapHydrationTasks", () => {
   test("stripes backend work across projects instead of exhausting one backend first", () => {
     const items = ["/repo-1", "/repo-2", "/repo-3", "/repo-4"];
-    const backendIds: AgentBackendId[] = ["opencode", "claude-code", "pi", "codex"];
+    const harnessIds: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
 
     const tasks = buildBootstrapHydrationTasks({
       items,
-      backendIds,
+      harnessIds,
       preferredBackendId: "opencode",
     });
 
-    expect(tasks.slice(0, 4).map((task) => task.backendId)).toEqual([
+    expect(tasks.slice(0, 4).map((task) => task.harnessId)).toEqual([
       "opencode",
       "claude-code",
       "pi",

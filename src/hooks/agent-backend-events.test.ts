@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { AgentBackendEvent } from "@/agents/backend";
-import { handleAgentBackendEvent } from "./agent-backend-events";
+import type { HarnessEvent } from "@/agents/backend";
+import { handleHarnessEvent } from "./agent-backend-events";
 
 function createTrackingState() {
   return {
@@ -11,11 +11,11 @@ function createTrackingState() {
   };
 }
 
-describe("handleAgentBackendEvent", () => {
+describe("handleHarnessEvent", () => {
   test("ignores project-scoped events for unexpected project connections", () => {
     const actions: Array<Record<string, unknown>> = [];
 
-    handleAgentBackendEvent({
+    handleHarnessEvent({
       event: {
         type: "connection.status",
         directory: "/repo",
@@ -43,7 +43,7 @@ describe("handleAgentBackendEvent", () => {
   test("dispatches connection status for expected project connections", () => {
     const actions: Array<Record<string, unknown>> = [];
 
-    handleAgentBackendEvent({
+    handleHarnessEvent({
       event: {
         type: "connection.status",
         directory: "/repo",
@@ -90,7 +90,7 @@ describe("handleAgentBackendEvent", () => {
     tracking.pendingTitlePersistence.set("old", "Pinned title");
     tracking.namingRequestIds.set("old", 3);
 
-    handleAgentBackendEvent({
+    handleHarnessEvent({
       event: {
         type: "session.replaced",
         directory: "/repo",
@@ -121,7 +121,7 @@ describe("handleAgentBackendEvent", () => {
       {
         sessionId: "pi:new",
         title: "Pinned title",
-        backendId: "pi",
+        harnessId: "pi",
       },
     ]);
     expect(tracking.forcedTitles.get("pi:new")).toBe("Pinned title");
@@ -144,7 +144,7 @@ describe("handleAgentBackendEvent", () => {
     const actions: Array<Record<string, unknown>> = [];
     const cleaned: string[][] = [];
 
-    handleAgentBackendEvent({
+    handleHarnessEvent({
       event: {
         type: "session.deleted",
         directory: "/repo",
@@ -172,17 +172,17 @@ describe("handleAgentBackendEvent", () => {
       actions.push(action);
     };
 
-    const sessionScoped: AgentBackendEvent = {
+    const sessionScoped: HarnessEvent = {
       type: "session.error",
       error: "hidden",
       sessionID: "session-1",
     };
-    const globalError: AgentBackendEvent = {
+    const globalError: HarnessEvent = {
       type: "session.error",
       error: "visible",
     };
 
-    handleAgentBackendEvent({
+    handleHarnessEvent({
       event: sessionScoped,
       expectedProjectKeys: new Set(),
       tracking: createTrackingState(),
@@ -190,7 +190,7 @@ describe("handleAgentBackendEvent", () => {
       renameSession: async () => undefined,
       dispatch: dispatch as never,
     });
-    handleAgentBackendEvent({
+    handleHarnessEvent({
       event: globalError,
       expectedProjectKeys: new Set(),
       tracking: createTrackingState(),

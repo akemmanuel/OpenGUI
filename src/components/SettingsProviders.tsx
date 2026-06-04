@@ -7,8 +7,8 @@
  * 3. Custom provider + "View all" link
  */
 
-import type { AgentBackendId } from "@/agents";
-import { AGENT_BACKEND_LABELS } from "@/agents";
+import type { HarnessId } from "@/agents";
+import { HARNESS_LABELS } from "@/agents";
 import { Loader2, Plus, Search, Unplug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useAgentBackend, useCurrentAgentBackendId } from "@/hooks/use-agent-backend";
+import { useHarness, useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
@@ -64,9 +64,9 @@ function getProviderBadgeSource(
 export function SettingsProviders() {
   const { refreshProviders } = useActions();
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
-  const initialBackendId = useCurrentAgentBackendId();
-  const [backendId, setBackendId] = useState<AgentBackendId>(initialBackendId);
-  const backend = useAgentBackend(backendId);
+  const initialBackendId = useCurrentHarnessId();
+  const [harnessId, setBackendId] = useState<HarnessId>(initialBackendId);
+  const backend = useHarness(harnessId);
   const providersApi = backend?.platform?.providers;
   const scopedDirectory = activeDirectory ?? undefined;
 
@@ -91,10 +91,10 @@ export function SettingsProviders() {
   const openGuiClient = useOpenGuiClient();
   const providerBackendIds = useMemo(
     () =>
-      openGuiClient.agentBackends
+      openGuiClient.harnesses
         .list()
         .filter((b) => b.capabilities?.providerAuth)
-        .map((b) => b.id as AgentBackendId),
+        .map((b) => b.id as HarnessId),
     [openGuiClient],
   );
 
@@ -202,12 +202,12 @@ export function SettingsProviders() {
               <Button
                 key={id}
                 type="button"
-                variant={backendId === id ? "default" : "outline"}
+                variant={harnessId === id ? "default" : "outline"}
                 size="sm"
                 className="h-7 px-2 text-[11px]"
                 onClick={() => setBackendId(id)}
               >
-                {AGENT_BACKEND_LABELS[id]}
+                {HARNESS_LABELS[id]}
               </Button>
             ))}
           </div>
@@ -453,7 +453,7 @@ export function SettingsProviders() {
           {connectProviderID && (
             <DialogConnectProvider
               directory={scopedDirectory}
-              backendId={backendId}
+              harnessId={harnessId}
               providerID={connectProviderID}
               providerName={connectProvider?.name ?? connectProviderID}
               authMethods={authMethods[connectProviderID] ?? [{ type: "api", label: "API key" }]}
@@ -476,7 +476,7 @@ export function SettingsProviders() {
           <DialogTitle className="sr-only">Custom provider</DialogTitle>
           <DialogCustomProvider
             directory={scopedDirectory}
-            backendId={backendId}
+            harnessId={harnessId}
             onSaved={handleConnected}
             onBack={() => setShowCustom(false)}
           />

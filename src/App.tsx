@@ -11,7 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
-  AgentBackendProvider,
+  HarnessProvider,
   type QueueMode,
   resolveServerDefaultModel,
   useActions,
@@ -664,13 +664,13 @@ export function App() {
   return (
     <DesktopShellProvider>
       <OpenGuiClientProvider>
-        <AgentBackendProvider detachedProject={detachedProject}>
+        <HarnessProvider detachedProject={detachedProject}>
           <SidebarProvider className="!h-dvh">
             <AppContent detachedProject={detachedProject} />
             {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
             <Toaster richColors closeButton />
           </SidebarProvider>
-        </AgentBackendProvider>
+        </HarnessProvider>
       </OpenGuiClientProvider>
     </DesktopShellProvider>
   );

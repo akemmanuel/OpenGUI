@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { AgentBackendDescriptor } from "@/agents/backend";
+import type { HarnessDescriptor } from "@/agents/backend";
 import { resolveActiveHarnessScope } from "@/hooks/active-harness-scope";
 import type { Session } from "@/hooks/agent-state-types";
 import type { OpenGuiClient } from "@/protocol/client";
@@ -14,19 +14,19 @@ function session(overrides: Partial<Session>): Session {
   } as Session;
 }
 
-function backend(id: string): AgentBackendDescriptor {
+function backend(id: string): HarnessDescriptor {
   return {
     id,
     label: id,
     capabilities: {},
     runtime: { id } as never,
     workspace: { kind: "remote" } as never,
-  } as unknown as AgentBackendDescriptor;
+  } as unknown as HarnessDescriptor;
 }
 
-function client(fallbackBackend: AgentBackendDescriptor): OpenGuiClient {
+function client(fallbackBackend: HarnessDescriptor): OpenGuiClient {
   return {
-    agentBackends: {
+    harnesses: {
       get: () => fallbackBackend,
     },
   } as never;
@@ -36,7 +36,7 @@ describe("resolveActiveHarnessScope", () => {
   test("locks scope to the active Session Harness and directory", () => {
     const codex = backend("codex");
     const scope = resolveActiveHarnessScope({
-      activeSession: session({ _backendId: "codex", _projectDir: "/session-repo" }),
+      activeSession: session({ _harnessId: "codex", _projectDir: "/session-repo" }),
       activeTargetDirectory: "/target-repo",
       activeTargetBackendId: "pi",
       workspaceDirectory: "/workspace-repo",

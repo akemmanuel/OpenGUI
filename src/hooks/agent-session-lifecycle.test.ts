@@ -23,7 +23,7 @@ describe("createSessionDeletionPlan", () => {
   test("blocks deleting busy Pi sessions", () => {
     const plan = createSessionDeletionPlan({
       sessionId: "pi:session-1",
-      sessions: [makeSession({ id: "pi:session-1", _backendId: "pi" })],
+      sessions: [makeSession({ id: "pi:session-1", _harnessId: "pi" })],
       activeSessionId: "pi:session-1",
       busySessionIds: new Set(["pi:session-1"]),
       worktreeParents: {},
@@ -39,13 +39,13 @@ describe("createSessionDeletionPlan", () => {
     const plan = createSessionDeletionPlan({
       sessionId: "session-2",
       sessions: [
-        makeSession({ id: "session-1", _backendId: "claude-code", _projectDir: "/repo" }),
+        makeSession({ id: "session-1", _harnessId: "claude-code", _projectDir: "/repo" }),
         makeSession({
           id: "session-2",
-          _backendId: "claude-code",
+          _harnessId: "claude-code",
           _projectDir: "/repo/feature-a",
         }),
-        makeSession({ id: "session-3", _backendId: "claude-code", _projectDir: "/other" }),
+        makeSession({ id: "session-3", _harnessId: "claude-code", _projectDir: "/other" }),
       ],
       activeSessionId: "session-2",
       busySessionIds: new Set(),
@@ -61,7 +61,7 @@ describe("createSessionDeletionPlan", () => {
 
     expect(plan).toMatchObject({
       type: "delete",
-      backendId: "claude-code",
+      harnessId: "claude-code",
       deletedSession: expect.objectContaining({ id: "session-2" }),
       nextSessionId: "session-3",
       pendingWorktreeCleanup: {
@@ -168,8 +168,8 @@ describe("deleteLifecycleSession", () => {
       sessionId: "session-2",
       state: {
         sessions: [
-          makeSession({ id: "session-1", _backendId: "claude-code" }),
-          makeSession({ id: "session-2", _backendId: "claude-code" }),
+          makeSession({ id: "session-1", _harnessId: "claude-code" }),
+          makeSession({ id: "session-2", _harnessId: "claude-code" }),
         ],
         activeSessionId: "session-2",
         busySessionIds: new Set(),
@@ -200,7 +200,7 @@ describe("deleteLifecycleSession", () => {
     expect(deleted).toEqual([
       {
         sessionId: "session-2",
-        backendId: "claude-code",
+        harnessId: "claude-code",
         target: { directory: "/repo", workspaceId: undefined },
         confirmQueue: false,
       },
