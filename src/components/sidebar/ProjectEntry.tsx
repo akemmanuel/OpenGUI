@@ -51,7 +51,6 @@ export function ProjectEntry({
   refreshGitInfo,
   setProjectPopover,
   toggleCollapsed,
-  collapseProject,
   setActiveTarget,
   closeMobileSidebar,
   setProjectPinned,
@@ -89,7 +88,6 @@ export function ProjectEntry({
     React.SetStateAction<{ directory: string; top: number } | null>
   >;
   toggleCollapsed: (directory: string) => void;
-  collapseProject: (directory: string) => void;
   setActiveTarget: (directory: string) => void;
   closeMobileSidebar: () => void;
   setProjectPinned: (directory: string, pinned: boolean) => void;
@@ -136,13 +134,14 @@ export function ProjectEntry({
 
   const projectMenuProps: React.ComponentProps<typeof ProjectItemMenu> = {
     pinned: isPinned,
+    collapsed: isCollapsed,
     canCreateSession: isProjectConnected,
     onTogglePin: () => setProjectPinned(directory, !isPinned),
     onNewSession: () => {
       setActiveTarget(directory);
       closeMobileSidebar();
     },
-    onMinimize: () => collapseProject(directory),
+    onToggleCollapsed: () => toggleCollapsed(directory),
     canRemove: !detachedProject,
     onRemove: () => {
       if (detachedProject) return;

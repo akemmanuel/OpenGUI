@@ -253,10 +253,11 @@ type ProjectMenuWorktree = { path: string; branch?: string | null };
 type ProjectMenuContentProps = {
   kind: "dropdown" | "context";
   pinned: boolean;
+  collapsed: boolean;
   canCreateSession: boolean;
   onTogglePin: () => void;
   onNewSession: () => void;
-  onMinimize: () => void;
+  onToggleCollapsed: () => void;
   canRemove: boolean;
   onRemove: () => void;
   canCloseOtherProjects: boolean;
@@ -275,10 +276,11 @@ type ProjectMenuContentProps = {
 export function ProjectMenuContent({
   kind,
   pinned,
+  collapsed,
   canCreateSession,
   onTogglePin,
   onNewSession,
-  onMinimize,
+  onToggleCollapsed,
   canRemove,
   onRemove,
   canCloseOtherProjects,
@@ -316,11 +318,13 @@ export function ProjectMenuContent({
         <DropdownMenuItem
           onClick={(event) => {
             event.stopPropagation();
-            onMinimize();
+            onToggleCollapsed();
           }}
         >
           <Minimize2 className="size-4" />
-          <span>{t("projectMenu.minimizeProject")}</span>
+          <span>
+            {collapsed ? t("projectMenu.expandProject") : t("projectMenu.collapseProject")}
+          </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -489,10 +493,10 @@ export function ProjectMenuContent({
       )}
       <ContextMenu.Item
         className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-        onSelect={onMinimize}
+        onSelect={onToggleCollapsed}
       >
         <Minimize2 className="size-4" />
-        <span>{t("projectMenu.minimizeProject")}</span>
+        <span>{collapsed ? t("projectMenu.expandProject") : t("projectMenu.collapseProject")}</span>
       </ContextMenu.Item>
       <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
       <ContextMenu.Item

@@ -195,14 +195,6 @@ export function AppSidebar({
   const toggleCollapsed = useCallback((dir: string) => {
     setCollapsed((prev) => toggleSidebarProjectCollapsed(prev, dir));
   }, []);
-  const collapseProject = useCallback((dir: string) => {
-    const normalizedDirectory = normalizeProjectPath(dir);
-    if (!normalizedDirectory) return;
-    setCollapsed((prev) =>
-      prev[normalizedDirectory] ? prev : { ...prev, [normalizedDirectory]: true },
-    );
-  }, []);
-
   const openDirectories = useMemo(() => Object.keys(connections), [connections]);
   const { isGitRepo, knownWorktrees, remoteUrls, refreshGitInfo } = useProjectGitInfo({
     client,
@@ -395,7 +387,6 @@ export function AppSidebar({
       refreshGitInfo={refreshGitInfo}
       setProjectPopover={setProjectPopover}
       toggleCollapsed={toggleCollapsed}
-      collapseProject={collapseProject}
       setActiveTarget={setActiveTarget}
       closeMobileSidebar={closeMobileSidebar}
       setProjectPinned={setProjectPinned}
