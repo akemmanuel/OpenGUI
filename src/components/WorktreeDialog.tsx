@@ -1,5 +1,6 @@
 import { GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,6 +42,7 @@ export function WorktreeDialog({
   defaultBranch = "",
   onCreated,
 }: WorktreeDialogProps) {
+  const { t } = useTranslation();
   const client = useOpenGuiClient();
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -112,7 +114,7 @@ export function WorktreeDialog({
         onCreated(normalizedWorktreePath, effectiveBranch);
         onOpenChange(false);
       } catch (err) {
-        setUnknownError(err, "Failed to create worktree");
+        setUnknownError(err, t("worktree.createWorktree"));
       }
     }, [
       client,
@@ -134,10 +136,10 @@ export function WorktreeDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitBranch className="size-5" />
-            New Worktree
+            {t("worktree.newWorktree")}
           </DialogTitle>
           <DialogDescription>
-            Create a new git worktree for{" "}
+            {t("worktree.createFor")}{" "}
             <span className="font-medium text-foreground">{repoName}</span>
           </DialogDescription>
         </DialogHeader>
@@ -145,7 +147,7 @@ export function WorktreeDialog({
         <div className="grid gap-4 py-2">
           {/* Mode toggle */}
           <div className="grid gap-2">
-            <Label>Branch</Label>
+            <Label>{t("worktree.branch")}</Label>
             <div className="flex gap-1">
               <Button
                 variant={mode === "new" ? "default" : "outline"}
@@ -153,7 +155,7 @@ export function WorktreeDialog({
                 onClick={() => setMode("new")}
                 className="flex-1"
               >
-                New branch
+                {t("worktree.newBranch")}
               </Button>
               <Button
                 variant={mode === "existing" ? "default" : "outline"}
@@ -161,7 +163,7 @@ export function WorktreeDialog({
                 onClick={() => setMode("existing")}
                 className="flex-1"
               >
-                Existing branch
+                {t("worktree.existingBranch")}
               </Button>
             </div>
           </div>
@@ -169,7 +171,7 @@ export function WorktreeDialog({
           {/* Branch input/selector */}
           {mode === "new" ? (
             <div className="grid gap-2">
-              <Label htmlFor="new-branch">Branch name</Label>
+              <Label htmlFor="new-branch">{t("worktree.branchName")}</Label>
               <Input
                 id="new-branch"
                 placeholder="feature/my-feature"
@@ -184,13 +186,15 @@ export function WorktreeDialog({
             </div>
           ) : (
             <div className="grid gap-2">
-              <Label>Select branch</Label>
+              <Label>{t("worktree.selectBranch")}</Label>
               {loadingBranches ? (
-                <div className="text-sm text-muted-foreground py-2">Loading branches...</div>
+                <div className="text-sm text-muted-foreground py-2">
+                  {t("worktree.loadingBranches")}
+                </div>
               ) : (
                 <Select value={existingBranch} onValueChange={setExistingBranch}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose a branch..." />
+                    <SelectValue placeholder={t("worktree.chooseBranch")} />
                   </SelectTrigger>
                   <SelectContent>
                     {branches.map((branch) => (
@@ -206,29 +210,27 @@ export function WorktreeDialog({
 
           {/* Path */}
           <div className="grid gap-2">
-            <Label htmlFor="wt-path">Worktree path</Label>
+            <Label htmlFor="wt-path">{t("worktree.path")}</Label>
             <Input
               id="wt-path"
               value={worktreePath}
               onChange={(e) => setWorktreePath(e.target.value)}
-              placeholder="/path/to/worktree"
+              placeholder={t("worktree.pathPlaceholder")}
               className="text-xs font-mono"
             />
-            <p className="text-[11px] text-muted-foreground">
-              A new directory will be created at this path.
-            </p>
+            <p className="text-[11px] text-muted-foreground">{t("worktree.pathHelp")}</p>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             onClick={handleCreate}
             disabled={!effectiveBranch || !worktreePath.trim() || creating}
           >
-            {creating ? "Creating..." : "Create worktree"}
+            {creating ? t("worktree.creating") : t("worktree.createWorktree")}
           </Button>
         </DialogFooter>
       </DialogContent>

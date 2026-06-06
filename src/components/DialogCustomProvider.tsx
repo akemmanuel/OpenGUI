@@ -7,6 +7,7 @@
 
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
@@ -72,13 +73,14 @@ function KeyValueListEditor({
   onRemove: (idx: number) => void;
   onUpdate: (idx: number, field: "first" | "second", value: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-xs">{label}</Label>
         <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={onAdd}>
           <Plus className="size-3 mr-1" />
-          Add
+          {t("common.add")}
         </Button>
       </div>
       {entries.map((entry, idx) => (
@@ -137,20 +139,19 @@ function validate(
   baseUrl: string,
   models: ModelEntry[],
 ): string | null {
-  if (!providerId.trim()) return "Provider ID is required";
-  if (!PROVIDER_ID_REGEX.test(providerId))
-    return "Provider ID must be lowercase alphanumeric with hyphens/underscores";
-  if (!name.trim()) return "Display name is required";
-  if (!baseUrl.trim()) return "Base URL is required";
+  if (!providerId.trim()) return "providers.providerIdRequired";
+  if (!PROVIDER_ID_REGEX.test(providerId)) return "providers.providerIdInvalid";
+  if (!name.trim()) return "providers.displayNameRequired";
+  if (!baseUrl.trim()) return "providers.baseUrlRequired";
   if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://"))
-    return "Base URL must start with http:// or https://";
+    return "providers.baseUrlInvalid";
   for (const m of models) {
-    if (!m.id.trim()) return "All model IDs must be filled in";
-    if (!m.name.trim()) return "All model names must be filled in";
+    if (!m.id.trim()) return "providers.modelIdsRequired";
+    if (!m.name.trim()) return "providers.modelNamesRequired";
   }
   // Check duplicate model IDs
   const ids = models.map((m) => m.id.trim());
-  if (new Set(ids).size !== ids.length) return "Duplicate model IDs found";
+  if (new Set(ids).size !== ids.length) return "providers.duplicateModelIds";
   return null;
 }
 
@@ -164,6 +165,7 @@ export function DialogCustomProvider({
   onSaved,
   onBack,
 }: DialogCustomProviderProps) {
+  const { t } = useTranslation();
   const backend = useHarness(harnessId);
   const providersApi = backend?.platform?.providers;
   const configApi = backend?.platform?.config;
@@ -194,7 +196,7 @@ export function DialogCustomProvider({
 
       const validationError = validate(providerId, name, baseUrl, models);
       if (validationError) {
-        toast.error(validationError);
+        toast.error(t(validationError));
         return;
       }
 
@@ -274,13 +276,13 @@ export function DialogCustomProvider({
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Header */}
       <SubDialogHeader onBack={onBack}>
-        <span className="text-sm font-medium">Custom provider</span>
+        <span className="text-sm font-medium">{t("providers.customProvider")}</span>
       </SubDialogHeader>
 
       {/* Provider ID */}
       <div className="space-y-1.5">
         <Label htmlFor="custom-id" className="text-xs">
-          Provider ID
+          {t("providers.providerId")}
         </Label>
         <Input
           id="custom-id"
@@ -295,7 +297,7 @@ export function DialogCustomProvider({
       {/* Display name */}
       <div className="space-y-1.5">
         <Label htmlFor="custom-name" className="text-xs">
-          Display name
+          {t("providers.displayName")}
         </Label>
         <Input
           id="custom-name"
@@ -310,7 +312,7 @@ export function DialogCustomProvider({
       {/* Base URL */}
       <div className="space-y-1.5">
         <Label htmlFor="custom-url" className="text-xs">
-          Base URL
+          {t("providers.baseUrl")}
         </Label>
         <Input
           id="custom-url"
@@ -325,7 +327,7 @@ export function DialogCustomProvider({
       {/* API Key */}
       <div className="space-y-1.5">
         <Label htmlFor="custom-key" className="text-xs">
-          API Key
+          {t("providers.apiKey")}
         </Label>
         <Input
           id="custom-key"
@@ -335,14 +337,12 @@ export function DialogCustomProvider({
           placeholder="sk-... or {env:MY_API_KEY}"
           className="font-mono text-sm"
         />
-        <p className="text-[10px] text-muted-foreground">
-          Use {"{env:VAR_NAME}"} to reference an environment variable.
-        </p>
+        <p className="text-[10px] text-muted-foreground">{t("providers.envReferenceHelp")}</p>
       </div>
 
       {/* Models */}
       <KeyValueListEditor
-        label="Models"
+        label={t("providers.models")}
         entries={models.map((m) => ({
           _key: m._key,
           first: m.id,
@@ -361,7 +361,8 @@ export function DialogCustomProvider({
       <KeyValueListEditor
         label={
           <>
-            Custom headers <span className="text-muted-foreground">(optional)</span>
+            {t("providers.customHeaders")}{" "}
+            <span className="text-muted-foreground">({t("workspace.optional")})</span>
           </>
         }
         entries={headers.map((h) => ({
@@ -385,7 +386,7 @@ export function DialogCustomProvider({
         ) : (
           <Plus className="size-3.5 mr-1.5" />
         )}
-        Add custom provider
+        {t("providers.addCustomProvider")}
       </Button>
     </form>
   );

@@ -8,6 +8,7 @@
 import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -23,32 +24,33 @@ import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
 const STATUS_CONFIG = {
   connected: {
     variant: "default" as const,
-    label: "Connected",
+    labelKey: "mcp.connected",
     icon: CheckCircle2,
     className: "bg-emerald-600 hover:bg-emerald-600",
   },
-  disabled: { variant: "secondary" as const, label: "Disabled" },
+  disabled: { variant: "secondary" as const, labelKey: "mcp.disabled" },
   failed: {
     variant: "destructive" as const,
-    label: "Failed",
+    labelKey: "mcp.failed",
     icon: AlertCircle,
   },
   needs_auth: {
     variant: "outline" as const,
-    label: "Needs auth",
+    labelKey: "mcp.needsAuth",
     className: "text-amber-500 border-amber-500",
   },
   needs_client_registration: {
     variant: "outline" as const,
-    label: "Needs registration",
+    labelKey: "mcp.needsRegistration",
     className: "text-amber-500 border-amber-500",
   },
 } as const;
 
 function StatusBadge({ status }: { status: McpStatus }) {
+  const { t } = useTranslation();
   const config =
     STATUS_CONFIG[status.status as keyof typeof STATUS_CONFIG] ??
-    ({ variant: "secondary" as const, label: "Unknown" } as const);
+    ({ variant: "secondary" as const, labelKey: "mcp.unknown" } as const);
   const Icon = "icon" in config ? config.icon : undefined;
   return (
     <Badge
@@ -56,7 +58,7 @@ function StatusBadge({ status }: { status: McpStatus }) {
       className={`text-xs${Icon ? " gap-1" : ""}${"className" in config ? ` ${config.className}` : ""}`}
     >
       {Icon && <Icon className="size-3" />}
-      {config.label}
+      {t(config.labelKey)}
     </Badge>
   );
 }
@@ -71,6 +73,7 @@ interface McpDialogProps {
 }
 
 export function McpDialog({ open, onOpenChange }: McpDialogProps) {
+  const { t } = useTranslation();
   const backend = useHarness();
   const mcpApi = backend?.platform?.mcp;
   const configApi = backend?.platform?.config;
@@ -137,14 +140,14 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
     <BaseDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="MCPs"
-      description="Toggle MCP servers on or off for this session."
+      title={t("mcp.title")}
+      description={t("mcp.description")}
       className="sm:max-w-md max-h-[70vh] flex flex-col"
     >
       <div className="overflow-y-auto flex-1 space-y-2 pr-1">
         {!mcpApi || !configApi ? (
           <div className="text-center py-6 text-sm text-muted-foreground">
-            Current backend has no MCP management.
+            {t("mcp.noManagement")}
           </div>
         ) : loading ? (
           <div className="flex items-center justify-center py-8">
@@ -152,7 +155,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
           </div>
         ) : entries.length === 0 ? (
           <div className="text-center py-6 text-sm text-muted-foreground">
-            No MCP servers configured.
+            {t("mcp.noneConfigured")}
           </div>
         ) : (
           entries.map(([name, status]) => {

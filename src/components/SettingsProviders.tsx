@@ -11,6 +11,7 @@ import type { HarnessId } from "@/agents";
 import { HARNESS_LABELS } from "@/agents";
 import { Loader2, Plus, Search, Unplug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { DialogConnectProvider } from "@/components/DialogConnectProvider";
 import { DialogCustomProvider } from "@/components/DialogCustomProvider";
@@ -62,6 +63,7 @@ function getProviderBadgeSource(
 // ---------------------------------------------------------------------------
 
 export function SettingsProviders() {
+  const { t } = useTranslation();
   const { refreshProviders } = useActions();
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
   const initialBackendId = useCurrentHarnessId();
@@ -219,7 +221,7 @@ export function SettingsProviders() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search providers..."
+            placeholder={t("providers.searchPlaceholder")}
             className="pl-8 text-sm"
           />
         </div>
@@ -245,7 +247,7 @@ export function SettingsProviders() {
                     ) : isConfirming ? (
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-xs text-muted-foreground mr-1">
-                          Disconnect {provider.name || provider.id}?
+                          {t("providers.disconnectConfirm", { name: provider.name || provider.id })}
                         </span>
                         <Button
                           variant="ghost"
@@ -253,7 +255,7 @@ export function SettingsProviders() {
                           className="h-7 px-2 text-xs"
                           onClick={() => setConfirmingDisconnect(null)}
                         >
-                          Cancel
+                          {t("common.cancel")}
                         </Button>
                         <Button
                           variant="ghost"
@@ -267,7 +269,7 @@ export function SettingsProviders() {
                           ) : (
                             <Unplug className="size-3.5" />
                           )}
-                          <span className="ml-1">Disconnect</span>
+                          <span className="ml-1">{t("providers.disconnect")}</span>
                         </Button>
                       </div>
                     ) : (
@@ -283,7 +285,7 @@ export function SettingsProviders() {
                         ) : (
                           <Unplug className="size-3.5" />
                         )}
-                        <span className="ml-1.5">Disconnect</span>
+                        <span className="ml-1.5">{t("providers.disconnect")}</span>
                       </Button>
                     )
                   ) : (
@@ -293,7 +295,7 @@ export function SettingsProviders() {
                       onClick={() => setConnectProviderID(provider.id)}
                     >
                       <Plus className="size-3.5 mr-1" />
-                      Connect
+                      {t("providers.connect")}
                     </Button>
                   )}
                 </div>
@@ -301,7 +303,7 @@ export function SettingsProviders() {
             })}
             {filteredProviders.length === 0 && (
               <div className="text-center py-6 text-sm text-muted-foreground">
-                No providers found for &quot;{search}&quot;
+                {t("providers.noProvidersFound", { query: search })}
               </div>
             )}
           </div>
@@ -310,7 +312,7 @@ export function SettingsProviders() {
             {connectedProviders.length > 0 && (
               <section className="space-y-2">
                 <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Connected
+                  {t("providers.connected")}
                 </h4>
                 {connectedProviders.map((provider) => {
                   const isEnv = provider.source === "env";
@@ -333,14 +335,16 @@ export function SettingsProviders() {
                       {isEnv ? (
                         <span
                           className="text-[11px] text-muted-foreground shrink-0"
-                          title="Connected from your environment variables"
+                          title={t("providers.fromEnvTitle")}
                         >
-                          from env
+                          {t("providers.fromEnv")}
                         </span>
                       ) : isConfirming ? (
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-xs text-muted-foreground mr-1">
-                            Disconnect {provider.name || provider.id}?
+                            {t("providers.disconnectConfirm", {
+                              name: provider.name || provider.id,
+                            })}
                           </span>
                           <Button
                             variant="ghost"
@@ -348,7 +352,7 @@ export function SettingsProviders() {
                             className="h-7 px-2 text-xs"
                             onClick={() => setConfirmingDisconnect(null)}
                           >
-                            Cancel
+                            {t("common.cancel")}
                           </Button>
                           <Button
                             variant="ghost"
@@ -362,7 +366,7 @@ export function SettingsProviders() {
                             ) : (
                               <Unplug className="size-3.5" />
                             )}
-                            <span className="ml-1">Disconnect</span>
+                            <span className="ml-1">{t("providers.disconnect")}</span>
                           </Button>
                         </div>
                       ) : (
@@ -378,7 +382,7 @@ export function SettingsProviders() {
                           ) : (
                             <Unplug className="size-3.5" />
                           )}
-                          <span className="ml-1.5">Disconnect</span>
+                          <span className="ml-1.5">{t("providers.disconnect")}</span>
                         </Button>
                       )}
                     </div>
@@ -391,7 +395,7 @@ export function SettingsProviders() {
             {popularNotConnected.length > 0 && (
               <section className="space-y-2">
                 <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Popular
+                  {t("providers.popular")}
                 </h4>
                 {popularNotConnected.map((id) => {
                   const provider = allById.get(id);
@@ -403,7 +407,7 @@ export function SettingsProviders() {
                       </span>
                       <Button variant="outline" size="sm" onClick={() => setConnectProviderID(id)}>
                         <Plus className="size-3.5 mr-1" />
-                        Connect
+                        {t("providers.connect")}
                       </Button>
                     </div>
                   );
@@ -414,17 +418,19 @@ export function SettingsProviders() {
             {/* Custom + View all */}
             <section className="space-y-2">
               <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Other
+                {t("providers.other")}
               </h4>
               <div
                 className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => setShowCustom(true)}
               >
                 <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-                <span className="text-sm font-medium truncate flex-1">Custom provider</span>
+                <span className="text-sm font-medium truncate flex-1">
+                  {t("providers.customProvider")}
+                </span>
                 <Button variant="outline" size="sm">
                   <Plus className="size-3.5 mr-1" />
-                  Connect
+                  {t("providers.connect")}
                 </Button>
               </div>
               <div
@@ -432,7 +438,9 @@ export function SettingsProviders() {
                 onClick={() => setShowSelectAll(true)}
               >
                 <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-                <span className="text-sm font-medium truncate flex-1">All providers</span>
+                <span className="text-sm font-medium truncate flex-1">
+                  {t("providers.allProviders")}
+                </span>
               </div>
             </section>
           </>
@@ -473,7 +481,7 @@ export function SettingsProviders() {
         }}
       >
         <DialogContent>
-          <DialogTitle className="sr-only">Custom provider</DialogTitle>
+          <DialogTitle className="sr-only">{t("providers.customProvider")}</DialogTitle>
           <DialogCustomProvider
             directory={scopedDirectory}
             harnessId={harnessId}
@@ -491,7 +499,7 @@ export function SettingsProviders() {
         }}
       >
         <DialogContent>
-          <DialogTitle className="sr-only">All providers</DialogTitle>
+          <DialogTitle className="sr-only">{t("providers.allProviders")}</DialogTitle>
           <DialogSelectProvider
             providers={providerList}
             connectedIds={connectedSet}

@@ -5,6 +5,7 @@
 
 import { BrainCircuit, Check, Lightbulb, Search, Star } from "lucide-react";
 import { type KeyboardEventHandler, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { HARNESS_LABELS } from "@/agents";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,7 @@ function ModelRow({
   onMouseEnter: (value: string) => void;
   showProvider?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -123,7 +125,7 @@ function ModelRow({
             "rounded p-0.5",
             isFavorite ? "text-amber-500" : "text-muted-foreground/50 hover:!text-amber-500",
           )}
-          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+          title={isFavorite ? t("modelSelector.removeFavorite") : t("modelSelector.addFavorite")}
         >
           <Star className={cn("size-3", isFavorite && "fill-current")} />
         </button>
@@ -133,6 +135,7 @@ function ModelRow({
 }
 
 export function ModelSelector() {
+  const { t } = useTranslation();
   const { setModel, setActiveTargetBackend } = useActions();
   const { providers, selectedModel } = useModelState();
   const availableBackendIds = useAvailableHarnessIds();
@@ -416,7 +419,7 @@ export function ModelSelector() {
           type="button"
           variant="ghost"
           size="sm"
-          title="Select model"
+          title={t("modelSelector.selectModel")}
           className="!h-7 min-w-0 shrink gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           {currentModel ? (
@@ -424,7 +427,7 @@ export function ModelSelector() {
           ) : (
             <BrainCircuit className="size-3.5 shrink-0" />
           )}
-          <span className="truncate">{currentModel?.label ?? "Select model"}</span>
+          <span className="truncate">{currentModel?.label ?? t("modelSelector.selectModel")}</span>
         </Button>
       </DialogTrigger>
 
@@ -436,7 +439,7 @@ export function ModelSelector() {
         }}
       >
         <DialogHeader className="px-4 pt-4 pb-2">
-          <DialogTitle className="text-base">Select model</DialogTitle>
+          <DialogTitle className="text-base">{t("modelSelector.selectModel")}</DialogTitle>
         </DialogHeader>
 
         {availableBackendIds.length > 1 && (
@@ -461,7 +464,7 @@ export function ModelSelector() {
             </div>
             {lockedBackendId && (
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Backend locked for this session.
+                {t("modelSelector.backendLocked")}
               </p>
             )}
           </div>
@@ -476,7 +479,7 @@ export function ModelSelector() {
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleInputKeyDown}
               onFocus={(e) => e.target.select()}
-              placeholder="Search provider, model, or id..."
+              placeholder={t("modelSelector.searchPlaceholder")}
               className="h-8 pl-8 text-xs"
             />
           </div>
@@ -486,7 +489,7 @@ export function ModelSelector() {
           {!normalizedQuery && favoriteModels.length > 0 && (
             <div className="space-y-1">
               <div className="px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                Favorites
+                {t("modelSelector.favorites")}
               </div>
               {favoriteModels.map((model) => (
                 <ModelRow
@@ -507,7 +510,7 @@ export function ModelSelector() {
           {!normalizedQuery && recentModels.length > 0 && (
             <div className="space-y-1">
               <div className="px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                Recent
+                {t("modelSelector.recent")}
               </div>
               {recentModels.map((model) => (
                 <ModelRow
@@ -549,7 +552,7 @@ export function ModelSelector() {
             ))
           ) : (
             <div className="px-2 text-xs text-muted-foreground">
-              No models match "{query.trim()}".
+              {t("modelSelector.noModelsMatch", { query: query.trim() })}
             </div>
           )}
         </div>

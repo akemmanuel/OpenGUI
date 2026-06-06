@@ -1,5 +1,6 @@
 import { Loader2, Play, SkipForward, Terminal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ export function WorktreeSetupDialog({
   onOpenChange,
   worktreePath,
 }: WorktreeSetupDialogProps) {
+  const { t } = useTranslation();
   const client = useOpenGuiClient();
   const [step, setStep] = useState<SetupStep>("detecting");
   const [command, setCommand] = useState("");
@@ -79,7 +81,7 @@ export function WorktreeSetupDialog({
         // Auto-close after a brief pause
         autoCloseTimerRef.current = setTimeout(() => onOpenChange(false), 1200);
       } catch (err) {
-        setUnknownError(err, "Setup command failed");
+        setUnknownError(err, t("worktree.setupFailed"));
         setStep("error");
       }
     }, [client, command, worktreePath, onOpenChange, clearError, setError, setUnknownError]),
@@ -99,21 +101,18 @@ export function WorktreeSetupDialog({
       title={
         <span className="flex items-center gap-2">
           <Terminal className="size-4" />
-          Worktree Setup
+          {t("worktree.setupTitle")}
         </span>
       }
       description={
         <>
-          {step === "detecting" && "Detecting project setup..."}
+          {step === "detecting" && t("worktree.detectingSetup")}
           {step === "prompt" && (
-            <>
-              Detected <code className="rounded bg-muted px-1 text-xs">{detectedFile}</code> in{" "}
-              <strong>{projectName}</strong>. Run setup?
-            </>
+            <>{t("worktree.detectedSetup", { file: detectedFile, project: projectName })}</>
           )}
-          {step === "running" && "Running setup command..."}
-          {step === "done" && "Setup completed successfully."}
-          {step === "error" && "Setup command failed."}
+          {step === "running" && t("worktree.runningSetup")}
+          {step === "done" && t("worktree.setupComplete")}
+          {step === "error" && t("worktree.setupFailed")}
         </>
       }
       footer={
@@ -121,11 +120,11 @@ export function WorktreeSetupDialog({
           <>
             <Button variant="ghost" onClick={handleSkip} disabled={isRunning}>
               <SkipForward className="mr-1.5 size-3.5" />
-              Skip
+              {t("worktree.skip")}
             </Button>
             <Button onClick={handleRun} disabled={isRunning || !command.trim()}>
               <Play className="mr-1.5 size-3.5" />
-              Run
+              {t("worktree.run")}
             </Button>
           </>
         )
@@ -135,7 +134,7 @@ export function WorktreeSetupDialog({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <label htmlFor="setup-command" className="text-xs font-medium text-muted-foreground">
-              Detected command
+              {t("worktree.detectedCommand")}
             </label>
             <Input
               id="setup-command"
@@ -163,7 +162,7 @@ export function WorktreeSetupDialog({
 
       {step === "done" && (
         <p className="py-2 text-sm text-green-600 dark:text-green-400">
-          Setup finished - worktree is ready.
+          {t("worktree.setupFinished")}
         </p>
       )}
     </BaseDialog>

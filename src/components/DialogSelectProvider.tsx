@@ -8,6 +8,7 @@
 import type { Provider } from "@opencode-ai/sdk/v2/client";
 import { Check, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,7 @@ export function DialogSelectProvider({
   onCustom,
   onBack,
 }: DialogSelectProviderProps) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const lowerSearch = search.toLowerCase().trim();
 
@@ -73,7 +75,7 @@ export function DialogSelectProvider({
     <div className="space-y-3">
       {/* Header */}
       <SubDialogHeader onBack={onBack}>
-        <span className="text-sm font-medium">All providers</span>
+        <span className="text-sm font-medium">{t("providers.allProviders")}</span>
       </SubDialogHeader>
 
       {/* Search */}
@@ -83,7 +85,7 @@ export function DialogSelectProvider({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search providers..."
+          placeholder={t("providers.searchPlaceholder")}
           className="pl-8 text-sm"
           autoFocus
         />
@@ -99,7 +101,7 @@ export function DialogSelectProvider({
             onClick={onCustom}
           >
             <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-            <span className="text-sm font-medium flex-1">Custom provider</span>
+            <span className="text-sm font-medium flex-1">{t("providers.customProvider")}</span>
             <Plus className="size-3.5 text-muted-foreground" />
           </button>
         )}
@@ -108,7 +110,7 @@ export function DialogSelectProvider({
         {popular.length > 0 && (
           <section className="space-y-1.5">
             <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-1">
-              Popular
+              {t("providers.popular")}
             </h4>
             {popular.map((p) => (
               <ProviderRow
@@ -125,7 +127,7 @@ export function DialogSelectProvider({
         {other.length > 0 && (
           <section className="space-y-1.5">
             <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-1">
-              Other
+              {t("providers.other")}
             </h4>
             {other.map((p) => (
               <ProviderRow
@@ -140,7 +142,7 @@ export function DialogSelectProvider({
 
         {popular.length === 0 && other.length === 0 && (
           <div className="text-center py-6 text-sm text-muted-foreground">
-            No providers found for &quot;{search}&quot;
+            {t("providers.noProvidersFound", { query: search })}
           </div>
         )}
       </div>

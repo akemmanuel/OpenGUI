@@ -1,5 +1,6 @@
 import { ArrowUp, Check, GitBranch, ListEnd, Paperclip, Plus, Square, Wrench } from "lucide-react";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { AgentSelector } from "@/components/AgentSelector";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
 import { McpDialog } from "@/components/McpDialog";
@@ -81,6 +82,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     },
     ref,
   ) => {
+    const { t } = useTranslation();
     const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
@@ -308,7 +310,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     return (
       <section
         ref={containerRef}
-        aria-label="Message input"
+        aria-label={t("prompt.inputLabel")}
         data-slot="prompt-box"
         onDragOver={promptFiles.handleDragOver}
         onDragLeave={promptFiles.handleDragLeave}
@@ -362,7 +364,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         {promptFiles.isUploading && (
           <div className="px-3 pt-2">
             <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Uploading files…</span>
+              <span>{t("prompt.uploadingFiles")}</span>
               {promptFiles.uploadProgress != null && <span>{promptFiles.uploadProgress}%</span>}
             </div>
             <div className="h-1 overflow-hidden rounded-full bg-muted">
@@ -383,14 +385,14 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           onPaste={promptFiles.handlePaste}
           placeholder={
             isDisabled
-              ? "Select or create a session..."
+              ? t("prompt.selectOrCreateSession")
               : isLoading
                 ? queueMode === "interrupt"
-                  ? "Interrupt and send..."
+                  ? t("prompt.interruptAndSend")
                   : queueMode === "after-part"
-                    ? "Steer the model into a direction..."
-                    : "Queue a message..."
-                : "Message..."
+                    ? t("prompt.steerDirection")
+                    : t("prompt.queueMessage")
+                : t("prompt.message")
           }
           className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
           {...props}
@@ -427,12 +429,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                title="Add"
+                title={t("prompt.add")}
                 disabled={isDisabled}
                 onClick={(e) => e.stopPropagation()}
               >
                 <Plus />
-                <span className="sr-only">Add</span>
+                <span className="sr-only">{t("prompt.add")}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start">
@@ -443,7 +445,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 }}
               >
                 <Paperclip className="size-4" />
-                Add file
+                {t("prompt.addFile")}
               </DropdownMenuItem>
               {canManageMcp && (
                 <DropdownMenuItem
@@ -453,7 +455,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                   }}
                 >
                   <Wrench className="size-4" />
-                  MCPs
+                  {t("prompt.mcps")}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -503,7 +505,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                       className="text-xs"
                     >
                       <Plus className="size-3.5" />
-                      <span>New worktree</span>
+                      <span>{t("prompt.newWorktree")}</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -512,7 +514,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                   type="button"
                   variant="ghost"
                   size="sm"
-                  title="Current branch of the root worktree."
+                  title={t("prompt.currentRootWorktree")}
                   className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
                   onClick={(event) => event.stopPropagation()}
                 >
@@ -539,11 +541,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               type="button"
               variant="ghost"
               size="sm"
-              title={
-                queueMode === "after-part"
-                  ? "Steer: wait for current part to finish, then send (Ctrl/Cmd+D to toggle)"
-                  : "Queue: wait for full response, then send (Ctrl/Cmd+D to toggle)"
-              }
+              title={queueMode === "after-part" ? t("prompt.steerTitle") : t("prompt.queueTitle")}
               className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
@@ -552,7 +550,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             >
               <ListEnd className="size-3.5 shrink-0" />
               <span className="truncate max-w-[100px]">
-                {queueMode === "after-part" ? "Steer" : "Queue"}
+                {queueMode === "after-part" ? t("prompt.steer") : t("prompt.queue")}
               </span>
             </Button>
           )}
@@ -579,21 +577,27 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 type="button"
                 size="icon-sm"
                 variant="default"
-                title="Stop"
+                title={t("prompt.stop")}
                 onClick={(e) => {
                   e.stopPropagation();
                   onStop?.();
                 }}
               >
                 <Square className="size-3.5 fill-current" />
-                <span className="sr-only">Stop generating</span>
+                <span className="sr-only">{t("prompt.stopGenerating")}</span>
               </Button>
             ) : (
               <Button
                 type="button"
                 size="icon-sm"
                 variant="default"
-                title={isLoading ? (queueMode === "after-part" ? "Steer" : "Queue") : "Send"}
+                title={
+                  isLoading
+                    ? queueMode === "after-part"
+                      ? t("prompt.steer")
+                      : t("prompt.queue")
+                    : t("prompt.send")
+                }
                 disabled={isDisabled || !promptSubmit.hasValue}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -604,9 +608,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 <span className="sr-only">
                   {isLoading
                     ? queueMode === "after-part"
-                      ? "Steer"
-                      : "Queue message"
-                    : "Send message"}
+                      ? t("prompt.steer")
+                      : t("prompt.queueMessage")
+                    : t("prompt.sendMessage")}
                 </span>
               </Button>
             )}

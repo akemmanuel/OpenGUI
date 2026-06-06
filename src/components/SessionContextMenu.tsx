@@ -2,6 +2,7 @@ import { Check, FolderOpen, Palette, Pencil, Pin, PinOff, Tag, Trash2, X } from 
 import { ContextMenu } from "radix-ui";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SessionColor } from "@/hooks/use-agent-state";
 import { CTX_ITEM_CLASS, CTX_SEPARATOR_CLASS, CTX_SUBTRIGGER_CLASS } from "@/lib/constants";
 import { cn, getProjectName } from "@/lib/utils";
@@ -112,6 +113,7 @@ export function SessionContextMenu({
   onRename,
   onDelete,
 }: SessionContextMenuProps) {
+  const { t } = useTranslation();
   const [tagInputOpen, setTagInputOpen] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -149,7 +151,7 @@ export function SessionContextMenu({
         >
           <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onTogglePin}>
             {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            <span>{pinned ? "Unpin" : "Pin to top"}</span>
+            <span>{pinned ? t("sessionMenu.unpin") : t("sessionMenu.pin")}</span>
           </ContextMenu.Item>
 
           <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
@@ -157,7 +159,7 @@ export function SessionContextMenu({
           {/* Rename */}
           <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onRename}>
             <Pencil className="size-4" />
-            <span>Rename</span>
+            <span>{t("sessionMenu.rename")}</span>
           </ContextMenu.Item>
 
           <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
@@ -166,7 +168,7 @@ export function SessionContextMenu({
           <ContextMenu.Sub>
             <ContextMenu.SubTrigger className={CTX_SUBTRIGGER_CLASS}>
               <Palette className="size-4" />
-              <span>Set color</span>
+              <span>{t("sessionMenu.setColor")}</span>
             </ContextMenu.SubTrigger>
             <ContextMenu.Portal>
               <ContextMenu.SubContent
@@ -192,7 +194,7 @@ export function SessionContextMenu({
           <ContextMenu.Sub open={tagInputOpen} onOpenChange={setTagInputOpen}>
             <ContextMenu.SubTrigger className={CTX_SUBTRIGGER_CLASS}>
               <Tag className="size-4" />
-              <span>Tags</span>
+              <span>{t("sessionMenu.tags")}</span>
               {currentTags.length > 0 && (
                 <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
                   {currentTags.length}
@@ -245,7 +247,7 @@ export function SessionContextMenu({
                           handleAddTag();
                         }
                       }}
-                      placeholder="Add tag..."
+                      placeholder={t("sessionMenu.addTag")}
                       className="h-7 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[2px]"
                     />
                   </div>
@@ -260,11 +262,11 @@ export function SessionContextMenu({
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={CTX_SUBTRIGGER_CLASS}>
                   <FolderOpen className="size-4" />
-                  <span>Move to project</span>
+                  <span>{t("sessionMenu.moveToProject")}</span>
                 </ContextMenu.SubTrigger>
                 <ContextMenu.Portal>
                   <ContextMenu.SubContent
-                    className="z-50 min-w-[12rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+                    className="z-50 max-h-[min(24rem,calc(100vh-2rem))] min-w-[12rem] overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
                     sideOffset={4}
                   >
                     {availableProjects.map((directory) => (
@@ -291,7 +293,7 @@ export function SessionContextMenu({
             onSelect={onDelete}
           >
             <Trash2 className="size-4" />
-            <span>Delete session</span>
+            <span>{t("sessionMenu.deleteSession")}</span>
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>

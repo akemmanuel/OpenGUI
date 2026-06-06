@@ -8,6 +8,7 @@
 
 import { Check, ExternalLink, Key, Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
@@ -49,6 +50,7 @@ export function DialogConnectProvider({
   onConnected,
   onBack,
 }: DialogConnectProviderProps) {
+  const { t } = useTranslation();
   const backend = useHarness(harnessId);
   const providersApi = backend?.platform?.providers;
   const { activeWorkspaceId } = useConnectionState();
@@ -150,7 +152,7 @@ export function DialogConnectProvider({
         if (!pollingRef.current || attempts >= maxAttempts) {
           setOauthPolling(false);
           if (attempts >= maxAttempts) {
-            toast.error("OAuth timeout - please try again");
+            toast.error(t("providers.oauthTimeout"));
           }
           return;
         }
@@ -222,7 +224,7 @@ export function DialogConnectProvider({
         setSuccess(true);
         scheduleConnected();
       } else {
-        toast.error("Invalid code");
+        toast.error(t("providers.invalidCode"));
       }
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -260,7 +262,9 @@ export function DialogConnectProvider({
         <div className="size-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
           <Check className="size-5 text-emerald-500" />
         </div>
-        <p className="text-sm font-medium">{providerName} connected</p>
+        <p className="text-sm font-medium">
+          {t("providers.connectedMessage", { name: providerName })}
+        </p>
       </div>
     );
   }
@@ -275,7 +279,7 @@ export function DialogConnectProvider({
         </SubDialogHeader>
         <div className="flex flex-col items-center justify-center py-8 gap-3">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">{t("providers.loading")}</p>
         </div>
       </div>
     );
@@ -292,7 +296,7 @@ export function DialogConnectProvider({
       {/* Method selection (when multiple methods) */}
       {!selectedMethod && authMethods.length > 1 && (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">Choose how to connect:</p>
+          <p className="text-xs text-muted-foreground">{t("providers.chooseConnectMethod")}</p>
           {authMethods.map((method, idx) => (
             <button
               key={`${method.type}-${idx}`}
@@ -320,7 +324,7 @@ export function DialogConnectProvider({
       {selectedMethod === "api" && (
         <div className="space-y-3">
           <div className="space-y-2">
-            <Label htmlFor="api-key-input">API Key</Label>
+            <Label htmlFor="api-key-input">{t("providers.apiKey")}</Label>
             <Input
               id="api-key-input"
               type="password"
@@ -346,7 +350,7 @@ export function DialogConnectProvider({
             ) : (
               <Key className="size-3.5 mr-1.5" />
             )}
-            Connect
+            {t("providers.connect")}
           </Button>
           {authMethods.length > 1 && (
             <button
@@ -354,7 +358,7 @@ export function DialogConnectProvider({
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => setSelectedMethodIndex(null)}
             >
-              Use a different method
+              {t("providers.useDifferentMethod")}
             </button>
           )}
         </div>
@@ -385,18 +389,18 @@ export function DialogConnectProvider({
             }}
           >
             <ExternalLink className="size-3.5 mr-1.5" />
-            Open authorization page
+            {t("providers.openAuthorizationPage")}
           </Button>
 
           {oauthData.method === "code" && (
             <div className="space-y-2">
-              <Label htmlFor="oauth-code">Authorization code</Label>
+              <Label htmlFor="oauth-code">{t("providers.authorizationCode")}</Label>
               <Input
                 id="oauth-code"
                 type="text"
                 value={oauthCode}
                 onChange={(e) => setOauthCode(e.target.value)}
-                placeholder="Paste the code here"
+                placeholder={t("providers.authorizationCodePlaceholder")}
                 disabled={connecting}
                 className="font-mono text-sm"
                 onKeyDown={(e) => {
@@ -414,7 +418,7 @@ export function DialogConnectProvider({
                 ) : (
                   <Check className="size-3.5 mr-1.5" />
                 )}
-                Submit code
+                {t("providers.submitCode")}
               </Button>
             </div>
           )}
@@ -422,7 +426,7 @@ export function DialogConnectProvider({
           {oauthData.method === "auto" && oauthPolling && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
-              <span>Waiting for authorization...</span>
+              <span>{t("providers.waitingAuthorization")}</span>
             </div>
           )}
 
@@ -437,7 +441,7 @@ export function DialogConnectProvider({
                 setSelectedMethodIndex(null);
               }}
             >
-              Use a different method
+              {t("providers.useDifferentMethod")}
             </button>
           )}
         </div>
@@ -447,7 +451,7 @@ export function DialogConnectProvider({
       {selectedMethod === "oauth" && !oauthData && connecting && (
         <div className="flex items-center justify-center py-6 gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
-          <span>Starting authorization...</span>
+          <span>{t("providers.startingAuthorization")}</span>
         </div>
       )}
 

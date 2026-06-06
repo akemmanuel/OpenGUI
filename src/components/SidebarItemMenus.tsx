@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ContextMenu } from "radix-ui";
 import type { SessionColor } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
@@ -78,6 +79,7 @@ export function SessionItemMenu({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const [tagInput, setTagInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const handleAddTag = useCallback(() => {
@@ -116,7 +118,7 @@ export function SessionItemMenu({
           }}
         >
           {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-          <span>{pinned ? "Unpin" : "Pin to top"}</span>
+          <span>{pinned ? t("sessionMenu.unpin") : t("sessionMenu.pin")}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -126,13 +128,13 @@ export function SessionItemMenu({
           }}
         >
           <Pencil className="size-4" />
-          <span>Rename</span>
+          <span>{t("sessionMenu.rename")}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Palette className="size-4" />
-            <span>Set color</span>
+            <span>{t("sessionMenu.setColor")}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             {SESSION_COLORS.map((color) => (
@@ -158,7 +160,7 @@ export function SessionItemMenu({
         >
           <DropdownMenuSubTrigger>
             <Tag className="size-4" />
-            <span>Tags</span>
+            <span>{t("sessionMenu.tags")}</span>
             {currentTags.length > 0 && (
               <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
                 {currentTags.length}
@@ -198,7 +200,7 @@ export function SessionItemMenu({
                 value={tagInput}
                 onChange={(event) => setTagInput(event.target.value)}
                 onKeyDown={handleTagKeyDown}
-                placeholder="Add tag..."
+                placeholder={t("sessionMenu.addTag")}
                 className="h-7 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[2px]"
               />
             </div>
@@ -210,9 +212,9 @@ export function SessionItemMenu({
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <FolderOpen className="size-4" />
-                <span>Move to project</span>
+                <span>{t("sessionMenu.moveToProject")}</span>
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
+              <DropdownMenuSubContent className="max-h-[min(24rem,calc(100vh-2rem))] overflow-y-auto overscroll-contain">
                 {availableProjects.map((directory) => (
                   <DropdownMenuItem
                     key={directory}
@@ -238,7 +240,7 @@ export function SessionItemMenu({
           }}
         >
           <Trash2 className="size-4" />
-          <span>Delete session</span>
+          <span>{t("sessionMenu.deleteSession")}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -284,6 +286,7 @@ export function ProjectMenuContent({
   onOpenWorktreePr,
   onRemoveWorktree,
 }: ProjectMenuContentProps) {
+  const { t } = useTranslation();
   const shell = useDesktopShell();
   const extraWorktrees = [...worktrees]
     .filter((worktree) => worktree.path !== directory)
@@ -299,7 +302,7 @@ export function ProjectMenuContent({
           }}
         >
           {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-          <span>{pinned ? "Unpin" : "Pin to top"}</span>
+          <span>{pinned ? t("projectMenu.unpinProject") : t("projectMenu.pinProject")}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -309,7 +312,7 @@ export function ProjectMenuContent({
           }}
         >
           <Copy className="size-4" />
-          <span>Copy absolute path</span>
+          <span>{t("projectMenu.copyAbsolutePath")}</span>
         </DropdownMenuItem>
         {isLocalWorkspace && (
           <>
@@ -323,7 +326,7 @@ export function ProjectMenuContent({
               }}
             >
               <FolderOpen className="size-4" />
-              <span>Open in file browser</span>
+              <span>{t("projectMenu.openInFileBrowser")}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={(event) => {
@@ -335,7 +338,7 @@ export function ProjectMenuContent({
               }}
             >
               <Terminal className="size-4" />
-              <span>Open in terminal</span>
+              <span>{t("projectMenu.openInTerminal")}</span>
             </DropdownMenuItem>
           </>
         )}
@@ -347,7 +350,7 @@ export function ProjectMenuContent({
             }}
           >
             <SquarePen className="size-4" />
-            <span>New session</span>
+            <span>{t("projectMenu.newSession")}</span>
           </DropdownMenuItem>
         )}
         {isLocalWorkspace && isGitRepo && (
@@ -360,13 +363,13 @@ export function ProjectMenuContent({
               }}
             >
               <GitBranch className="size-4" />
-              <span>New worktree...</span>
+              <span>{t("projectMenu.newWorktree")}</span>
             </DropdownMenuItem>
             {extraWorktrees.length > 0 && (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <GitBranch className="size-4" />
-                  <span>Worktrees</span>
+                  <span>{t("projectMenu.worktrees")}</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
                   {extraWorktrees.map((worktree) => {
@@ -394,7 +397,7 @@ export function ProjectMenuContent({
                               }}
                             >
                               <GitMerge className="size-4" />
-                              Merge
+                              {t("projectMenu.merge")}
                             </DropdownMenuItem>
                           )}
                           {worktree.branch && (
@@ -405,7 +408,7 @@ export function ProjectMenuContent({
                               }}
                             >
                               <ExternalLink className="size-4" />
-                              Open pull request
+                              {t("projectMenu.openPullRequest")}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
@@ -416,7 +419,7 @@ export function ProjectMenuContent({
                               void onRemoveWorktree(worktree);
                             }}
                           >
-                            Remove
+                            {t("common.remove")}
                           </DropdownMenuItem>
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
@@ -438,7 +441,7 @@ export function ProjectMenuContent({
               }}
             >
               <X className="size-4" />
-              <span>Remove project</span>
+              <span>{t("projectMenu.removeProject")}</span>
             </DropdownMenuItem>
           </>
         )}
@@ -453,7 +456,7 @@ export function ProjectMenuContent({
         onSelect={onTogglePin}
       >
         {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-        <span>{pinned ? "Unpin" : "Pin to top"}</span>
+        <span>{pinned ? t("projectMenu.unpinProject") : t("projectMenu.pinProject")}</span>
       </ContextMenu.Item>
       <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
       <ContextMenu.Item
@@ -463,7 +466,7 @@ export function ProjectMenuContent({
         }}
       >
         <Copy className="size-4" />
-        <span>Copy absolute path</span>
+        <span>{t("projectMenu.copyAbsolutePath")}</span>
       </ContextMenu.Item>
       {isLocalWorkspace && (
         <>
@@ -477,7 +480,7 @@ export function ProjectMenuContent({
             }}
           >
             <FolderOpen className="size-4" />
-            <span>Open in file browser</span>
+            <span>{t("projectMenu.openInFileBrowser")}</span>
           </ContextMenu.Item>
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
@@ -486,7 +489,7 @@ export function ProjectMenuContent({
             }}
           >
             <Terminal className="size-4" />
-            <span>Open in terminal</span>
+            <span>{t("projectMenu.openInTerminal")}</span>
           </ContextMenu.Item>
         </>
       )}
@@ -496,7 +499,7 @@ export function ProjectMenuContent({
           onSelect={onNewSession}
         >
           <SquarePen className="size-4" />
-          <span>New session</span>
+          <span>{t("projectMenu.newSession")}</span>
         </ContextMenu.Item>
       )}
       {isLocalWorkspace && isGitRepo && (
@@ -507,13 +510,13 @@ export function ProjectMenuContent({
             onSelect={onNewWorktree}
           >
             <GitBranch className="size-4" />
-            <span>New worktree...</span>
+            <span>{t("projectMenu.newWorktree")}</span>
           </ContextMenu.Item>
           {extraWorktrees.length > 0 && (
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
                 <GitBranch className="size-4" />
-                <span>Worktrees</span>
+                <span>{t("projectMenu.worktrees")}</span>
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent
@@ -547,7 +550,7 @@ export function ProjectMenuContent({
                                 onSelect={() => onMergeWorktree(worktree)}
                               >
                                 <GitMerge className="size-4" />
-                                Merge
+                                {t("projectMenu.merge")}
                               </ContextMenu.Item>
                             )}
                             {worktree.branch && (
@@ -556,7 +559,7 @@ export function ProjectMenuContent({
                                 onSelect={() => onOpenWorktreePr(worktree)}
                               >
                                 <ExternalLink className="size-4" />
-                                Open pull request
+                                {t("projectMenu.openPullRequest")}
                               </ContextMenu.Item>
                             )}
                             <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
@@ -566,7 +569,7 @@ export function ProjectMenuContent({
                                 void onRemoveWorktree(worktree);
                               }}
                             >
-                              Remove
+                              {t("common.remove")}
                             </ContextMenu.Item>
                           </ContextMenu.SubContent>
                         </ContextMenu.Portal>
@@ -587,7 +590,7 @@ export function ProjectMenuContent({
             onSelect={onRemove}
           >
             <X className="size-4" />
-            <span>Remove project</span>
+            <span>{t("projectMenu.removeProject")}</span>
           </ContextMenu.Item>
         </>
       )}
@@ -596,12 +599,13 @@ export function ProjectMenuContent({
 }
 
 export function ProjectItemMenu(props: Omit<ProjectMenuContentProps, "kind">) {
+  const { t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={props.pinned ? "Unpin project" : "Pin project"}
+          aria-label={props.pinned ? t("projectMenu.unpinProject") : t("projectMenu.pinProject")}
           className="opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
           data-project-action
           onClick={(event) => event.stopPropagation()}

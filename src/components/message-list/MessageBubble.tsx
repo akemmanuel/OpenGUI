@@ -1,5 +1,6 @@
 import { AlertTriangle, GitFork, Layers, Undo2 } from "lucide-react";
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { ProviderIcon } from "@/components/provider-icons";
 import type { MessageEntry } from "@/hooks/use-agent-state";
 import { USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
@@ -29,6 +30,7 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleUserMessage?: (messageId: string) => void;
   onToggleToolPart?: (partId: string, expanded: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const { info, parts } = entry;
   const isUser = info.role === "user";
   const expanded = expandedUserMessages?.has(info.id) ?? false;
@@ -46,7 +48,7 @@ export const MessageBubble = memo(function MessageBubble({
           <div className="flex-1 h-px bg-amber-500/30" />
           <div className="flex items-center gap-1.5 text-[11px] text-amber-500/80 font-mono">
             <Layers className="size-3" />
-            <span>Context compacted</span>
+            <span>{t("messageActions.contextCompacted")}</span>
           </div>
           <div className="flex-1 h-px bg-amber-500/30" />
         </div>
@@ -65,7 +67,7 @@ export const MessageBubble = memo(function MessageBubble({
               <button
                 type="button"
                 onClick={onRevert}
-                title="Revert to this message"
+                title={t("messageActions.revertToMessage")}
                 className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <Undo2 className="size-3.5" />
@@ -75,7 +77,7 @@ export const MessageBubble = memo(function MessageBubble({
               <button
                 type="button"
                 onClick={onFork}
-                title="Fork from this message"
+                title={t("messageActions.forkFromMessage")}
                 className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <GitFork className="size-3.5" />
@@ -111,7 +113,7 @@ export const MessageBubble = memo(function MessageBubble({
                 onClick={() => onToggleUserMessage?.(info.id)}
                 className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
               >
-                {expanded ? "Show less" : "Show more"}
+                {expanded ? t("messageActions.showLess") : t("messageActions.showMore")}
               </button>
             )}
           </div>

@@ -27,6 +27,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 
 import {
@@ -146,6 +147,7 @@ function WorkspaceDialog({
   onSubmit: (data: { name: string; serverUrl: string; authToken?: string }) => void;
   onRemove?: () => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(initial.name);
   const [serverUrl, setServerUrl] = useState(initial.serverUrl);
   const [authToken, setAuthToken] = useState(initial.authToken);
@@ -177,22 +179,22 @@ function WorkspaceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{mode === "add" ? "Add workspace" : "Edit workspace"}</DialogTitle>
+          <DialogTitle>
+            {mode === "add" ? t("workspace.addTitle") : t("workspace.editTitle")}
+          </DialogTitle>
           <DialogDescription>
-            {mode === "add"
-              ? "Connect to an OpenGUI Backend as a new workspace."
-              : "Rename this workspace or update its access token. Create a new workspace to use a different Backend URL."}
+            {mode === "add" ? t("workspace.addDescription") : t("workspace.editDescription")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="ws-name">Name</Label>
+            <Label htmlFor="ws-name">{t("workspace.name")}</Label>
             <Input
               id="ws-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Cloud Production"
+              placeholder={t("workspace.namePlaceholder")}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
@@ -202,12 +204,12 @@ function WorkspaceDialog({
 
           {showServerUrlField ? (
             <div className="space-y-2">
-              <Label htmlFor="ws-url">Backend URL</Label>
+              <Label htmlFor="ws-url">{t("workspace.backendUrl")}</Label>
               <Input
                 id="ws-url"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="https://your-server.example.com"
+                placeholder={t("workspace.backendUrlPlaceholder")}
                 className="font-mono text-sm"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSubmit();
@@ -216,7 +218,7 @@ function WorkspaceDialog({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>Backend URL</Label>
+              <Label>{t("workspace.backendUrl")}</Label>
               <div className="border-input bg-muted/40 text-muted-foreground rounded-md border px-3 py-2 font-mono text-sm">
                 {initial.serverUrl}
               </div>
@@ -225,14 +227,15 @@ function WorkspaceDialog({
 
           <div className="space-y-2">
             <Label htmlFor="ws-token">
-              Access token <span className="text-muted-foreground font-normal">(optional)</span>
+              {t("workspace.accessToken")}{" "}
+              <span className="text-muted-foreground font-normal">({t("workspace.optional")})</span>
             </Label>
             <Input
               id="ws-token"
               type="password"
               value={authToken}
               onChange={(e) => setAuthToken(e.target.value)}
-              placeholder="Paste OPENGUI_AUTH_TOKEN"
+              placeholder={t("workspace.accessTokenPlaceholder")}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
               }}
@@ -251,17 +254,17 @@ function WorkspaceDialog({
               }}
             >
               <Trash2 className="size-4 mr-1.5" />
-              Remove
+              {t("common.remove")}
             </Button>
           ) : (
             <div />
           )}
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button disabled={!canSubmit} onClick={handleSubmit}>
-              {mode === "add" ? "Add" : "Save"}
+              {mode === "add" ? t("common.add") : t("common.save")}
             </Button>
           </div>
         </DialogFooter>
@@ -275,6 +278,7 @@ function WorkspaceDialog({
 // ---------------------------------------------------------------------------
 
 export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => void }) {
+  const { t } = useTranslation();
   const { createWorkspace, removeWorkspace, switchWorkspace, updateWorkspace, reorderWorkspaces } =
     useActions();
   const { activeWorkspaceId, supportsMultipleWorkspaces, workspaceStatuses, workspaces } =
@@ -382,7 +386,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
               onClick={onToggleLeftSidebar}
             >
               <PanelLeftIcon />
-              <span className="sr-only">Toggle Sidebar</span>
+              <span className="sr-only">{t("workspace.toggleSidebar")}</span>
             </Button>
           )}
         </div>
@@ -454,7 +458,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
                 style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
               >
                 <Plus className="size-4" />
-                <span className="sr-only">Add workspace</span>
+                <span className="sr-only">{t("workspace.addWorkspace")}</span>
               </Button>
             )}
           </div>

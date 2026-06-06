@@ -2,15 +2,14 @@
 
 import { AlertCircle, ArrowRight, Check, Folder, LoaderCircle, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AppearanceSetting } from "@/components/AppearanceSetting";
 import { Button } from "@/components/ui/button";
-import { detectSystemLanguage } from "@/i18n";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/safe-storage";
+import { storageSet } from "@/lib/safe-storage";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { useDesktopShell } from "@/shell/provider";
 import type { BackendDetectionResult } from "@/types/electron";
-import { useTranslation } from "react-i18next";
 
 type Step = "harness" | "opencode" | "folder" | "appearance" | "finish";
 type HarnessState = "detecting" | "ready" | "none" | "error";
@@ -38,7 +37,7 @@ function stepNumber(step: Step) {
 }
 
 export function SetupWizard({ onComplete }: Props) {
-  const { i18n } = useTranslation();
+  const { t } = useTranslation();
   const client = useOpenGuiClient();
   const shell = useDesktopShell();
   const [step, setStep] = useState<Step>("harness");
@@ -54,17 +53,17 @@ export function SetupWizard({ onComplete }: Props) {
   const title = useMemo(() => {
     switch (step) {
       case "harness":
-        return "Set up coding agents";
+        return t("setupWizard.setupAgentsTitle");
       case "opencode":
-        return "Set up OpenCode";
+        return t("setupWizard.setupOpenCodeTitle");
       case "folder":
-        return "Choose where new chats start";
+        return t("setupWizard.chooseStartTitle");
       case "appearance":
-        return "Make OpenGUI yours";
+        return t("setupWizard.appearanceTitle");
       case "finish":
-        return canUseAnyHarness ? "You're ready" : "Setup saved";
+        return canUseAnyHarness ? t("setupWizard.readyTitle") : t("setupWizard.setupSavedTitle");
     }
-  }, [canUseAnyHarness, step]);
+  }, [canUseAnyHarness, step, t]);
 
   async function refreshHarnessStatus() {
     setHarnessState("detecting");
@@ -84,19 +83,6 @@ export function SetupWizard({ onComplete }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-
-    void (async () => {
-      try {
-        if (!storageGet(STORAGE_KEYS.LANGUAGE)) {
-          const detectedLanguage = await detectSystemLanguage();
-          if (!cancelled && i18n.resolvedLanguage !== detectedLanguage) {
-            await i18n.changeLanguage(detectedLanguage);
-          }
-        }
-      } catch {
-        // Locale detection is non-critical.
-      }
-    })();
 
     void (async () => {
       const result = await refreshHarnessStatus();
@@ -146,7 +132,7 @@ export function SetupWizard({ onComplete }: Props) {
               {Math.max(currentStepNumber, 0) + 1} / 4
             </div>
             <h1 className="mb-1.5 text-xl font-semibold tracking-tight">{title}</h1>
-            <p className="text-sm text-muted-foreground">OpenGUI only asks for what it needs.</p>
+            <p className="text-sm text-muted-foreground">{t("setupWizard.privacyNote")}</p>
           </div>
 
           <div className="mb-5 flex justify-center gap-1.5">
@@ -170,47 +156,47 @@ export function SetupWizard({ onComplete }: Props) {
               {harnessState === "detecting" && (
                 <StatusRow
                   icon={<LoaderCircle className="size-5 animate-spin" />}
-                  title="Checking this computer"
-                  description="Looking for installed Harness CLIs."
+                  title={t("setupWizard.checkingComputer")}
+                  description={t("setupWizard.lookingForHarnesses")}
                 />
               )}
               {harnessState === "ready" && (
                 <StatusRow
                   icon={<Check className="size-5 text-emerald-500" />}
-                  title="Coding agent found"
-                  description="OpenGUI found a coding agent on this computer."
+                  title={t("setupWizard.codingAgentFound")}
+                  description={t("setupWizard.codingAgentFoundDescription")}
                 />
               )}
               {harnessState === "none" && (
                 <StatusRow
                   icon={<AlertCircle className="size-5 text-amber-500" />}
-                  title="No Harness installed"
-                  description="OpenGUI needs a coding agent before it can work on your files."
+                  title={t("setupWizard.noHarnessInstalledTitle")}
+                  description={t("setupWizard.noHarnessInstalledDescription")}
                 />
               )}
               {harnessState === "error" && (
                 <StatusRow
                   icon={<AlertCircle className="size-5 text-destructive" />}
-                  title="Could not check Harnesses"
-                  description="You can continue setup and check again later."
+                  title={t("setupWizard.checkHarnessesFailedTitle")}
+                  description={t("setupWizard.checkHarnessesFailedDescription")}
                 />
               )}
 
               <div className="mt-5 flex flex-wrap justify-end gap-2">
                 <Button variant="outline" onClick={() => void refreshHarnessStatus()}>
                   <RotateCw className="mr-1.5 size-4" />
-                  Check again
+                  {t("setupWizard.checkAgain")}
                 </Button>
                 {harnessState === "none" && (
                   <Button variant="outline" onClick={() => setStep("folder")}>
-                    I want to use another Harness
+                    {t("setupWizard.useAnotherHarness")}
                   </Button>
                 )}
                 {harnessState === "none" ? (
-                  <Button onClick={() => setStep("opencode")}>Setup</Button>
+                  <Button onClick={() => setStep("opencode")}>{t("setupWizard.setup")}</Button>
                 ) : (
                   <Button onClick={() => setStep("folder")} disabled={harnessState === "detecting"}>
-                    Continue
+                    {t("setupWizard.continue")}
                     <ArrowRight className="ml-1.5 size-4" />
                   </Button>
                 )}
@@ -228,15 +214,19 @@ export function SetupWizard({ onComplete }: Props) {
                     <AlertCircle className="size-5 text-amber-500" />
                   )
                 }
-                title={opencodeInstalled ? "OpenCode is installed" : "Install OpenCode"}
-                description="OpenCode is the guided setup path. Other Harnesses can still be installed manually."
+                title={
+                  opencodeInstalled
+                    ? t("setupWizard.openCodeInstalled")
+                    : t("setupWizard.installOpenCode")
+                }
+                description={t("setupWizard.openCodeDescription")}
               />
               <div className="mt-5 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                Provider connection will happen in OpenGUI after OpenCode is available.
+                {t("setupWizard.providerConnectionAfterOpenCode")}
               </div>
               <div className="mt-5 flex flex-wrap justify-between gap-2">
                 <Button variant="ghost" onClick={() => setStep("harness")}>
-                  Back
+                  {t("common.back")}
                 </Button>
                 <div className="flex gap-2">
                   {!opencodeInstalled && (
@@ -247,14 +237,14 @@ export function SetupWizard({ onComplete }: Props) {
                       {installState === "installing" && (
                         <LoaderCircle className="mr-1.5 size-4 animate-spin" />
                       )}
-                      Install OpenCode
+                      {t("setupWizard.installOpenCode")}
                     </Button>
                   )}
                   <Button
                     variant={opencodeInstalled ? "default" : "outline"}
                     onClick={() => setStep("folder")}
                   >
-                    Continue
+                    {t("setupWizard.continue")}
                     <ArrowRight className="ml-1.5 size-4" />
                   </Button>
                 </div>
@@ -266,19 +256,19 @@ export function SetupWizard({ onComplete }: Props) {
             <div className="rounded-xl border bg-card p-5 shadow-sm">
               <StatusRow
                 icon={<Folder className="size-5 text-muted-foreground" />}
-                title="Default chat directory"
-                description="Optional. New chats can start in this folder when no project is selected."
+                title={t("setupWizard.defaultChatDirectoryTitle")}
+                description={t("setupWizard.defaultChatDirectoryDescription")}
               />
               <div className="mt-4 flex gap-2">
                 <input
                   value={folder}
                   onChange={(event) => setFolder(event.target.value)}
-                  placeholder="Choose a folder or leave empty"
+                  placeholder={t("setupWizard.folderPlaceholder")}
                   className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                 />
                 <Button type="button" variant="outline" onClick={browseFolder}>
                   <Folder className="mr-1.5 size-4" />
-                  Browse
+                  {t("common.browse")}
                 </Button>
               </div>
               <StepNav onBack={() => setStep("harness")} onNext={() => setStep("appearance")} />
@@ -297,19 +287,21 @@ export function SetupWizard({ onComplete }: Props) {
               <StatusRow
                 icon={<Check className="size-5 text-emerald-500" />}
                 title={
-                  canUseAnyHarness ? "OpenGUI is ready to work" : "You can set up a Harness later"
+                  canUseAnyHarness
+                    ? t("setupWizard.readyToWorkTitle")
+                    : t("setupWizard.setupHarnessLaterTitle")
                 }
                 description={
                   canUseAnyHarness
-                    ? "Start by connecting a project or opening a session."
-                    : "OpenGUI will open now. Agent sends need a Harness before they can run."
+                    ? t("setupWizard.readyToWorkDescription")
+                    : t("setupWizard.setupHarnessLaterDescription")
                 }
               />
               <div className="mt-5 flex justify-between gap-2">
                 <Button variant="outline" onClick={() => setStep("appearance")}>
-                  Back
+                  {t("common.back")}
                 </Button>
-                <Button onClick={complete}>Open OpenGUI</Button>
+                <Button onClick={complete}>{t("setupWizard.openOpenGui")}</Button>
               </div>
             </div>
           )}
@@ -342,13 +334,15 @@ function StatusRow({
 }
 
 function StepNav({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const { t } = useTranslation();
+
   return (
     <div className="mt-5 flex justify-between gap-2">
       <Button variant="outline" onClick={onBack}>
-        Back
+        {t("common.back")}
       </Button>
       <Button onClick={onNext}>
-        Continue
+        {t("setupWizard.continue")}
         <ArrowRight className="ml-1.5 size-4" />
       </Button>
     </div>

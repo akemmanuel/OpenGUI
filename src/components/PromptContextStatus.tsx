@@ -1,4 +1,5 @@
 import { Loader2, Minimize2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ export function PromptContextStatus({
   isCompactingInProgress: boolean;
   onCompact: () => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   const isCompactingOrInProgress = isCompacting || isCompactingInProgress;
 
   return (
@@ -74,7 +76,7 @@ export function PromptContextStatus({
               </svg>
             )}
             {isCompactingOrInProgress
-              ? "Compacting"
+              ? t("contextStatus.compacting")
               : contextPercent === 0
                 ? "0%"
                 : contextPercent < 1
@@ -84,17 +86,21 @@ export function PromptContextStatus({
         </div>
       </PopoverTrigger>
       <PopoverContent side="top" align="center" className="w-48 p-3 text-xs z-50">
-        <div className="font-semibold mb-2">Context window</div>
+        <div className="font-semibold mb-2">{t("contextStatus.contextWindow")}</div>
         {contextTokens != null && contextLimit != null ? (
           <div className="text-muted-foreground mb-1">
-            {contextTokens.toLocaleString()} / {contextLimit.toLocaleString()} tokens
+            {contextTokens.toLocaleString()} / {contextLimit.toLocaleString()}{" "}
+            {t("contextStatus.tokens")}
           </div>
         ) : contextTokens != null ? (
-          <div className="text-muted-foreground mb-1">{contextTokens.toLocaleString()} tokens</div>
+          <div className="text-muted-foreground mb-1">
+            {contextTokens.toLocaleString()} {t("contextStatus.tokens")}
+          </div>
         ) : null}
         {contextCost != null && contextCost > 0 && (
           <div className="text-muted-foreground mb-2">
-            Cost: ${contextCost < 0.01 ? contextCost.toFixed(6) : contextCost.toFixed(4)}
+            {t("contextStatus.cost")}: $
+            {contextCost < 0.01 ? contextCost.toFixed(6) : contextCost.toFixed(4)}
           </div>
         )}
         <Button
@@ -106,7 +112,7 @@ export function PromptContextStatus({
           onClick={onCompact}
         >
           <Minimize2 className="size-3" />
-          Compact
+          {t("contextStatus.compact")}
         </Button>
       </PopoverContent>
     </Popover>

@@ -5,19 +5,21 @@
 
 import { Sparkles } from "lucide-react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { findModel } from "@/lib/utils";
 
-function formatVariantLabel(value: string | undefined) {
+function formatVariantLabel(value: string | undefined, offLabel: string) {
   if (!value) return "—";
-  if (value === "none") return "off";
+  if (value === "none") return offLabel;
   return value;
 }
 
 export function VariantSelector() {
+  const { t } = useTranslation();
   const { cycleVariant } = useActions();
   const { providers, selectedModel, currentVariant } = useModelState();
   const capabilities = useBackendCapabilities();
@@ -37,8 +39,8 @@ export function VariantSelector() {
   const supportsReasoning = variantKeys.length > 0;
   if (!supportsReasoning) return null;
 
-  const label = formatVariantLabel(currentVariant);
-  const tooltipText = `Thinking effort: ${label} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)`;
+  const label = formatVariantLabel(currentVariant, t("variantSelector.off"));
+  const tooltipText = t("variantSelector.thinkingEffort", { level: label });
 
   return (
     <Tooltip>
