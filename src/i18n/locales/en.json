@@ -143,11 +143,13 @@
     "openInFileBrowser": "Open in file browser",
     "openInTerminal": "Open in terminal",
     "newSession": "New session",
+    "minimizeProject": "Minimize project",
     "newWorktree": "New worktree...",
     "worktrees": "Worktrees",
     "merge": "Merge",
     "openPullRequest": "Open pull request",
-    "removeProject": "Remove project"
+    "removeProject": "Close project",
+    "closeOtherProjects": "Close other projects"
   },
   "prompt": {
     "inputLabel": "Message input",

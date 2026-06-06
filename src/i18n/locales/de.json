@@ -142,12 +142,14 @@
     "copyAbsolutePath": "Absoluten Pfad kopieren",
     "openInFileBrowser": "Im Dateimanager öffnen",
     "openInTerminal": "Im Terminal öffnen",
-    "newSession": "Neue Sitzung",
+    "newSession": "Neue Session",
+    "minimizeProject": "Projekt minimieren",
     "newWorktree": "Neuer Worktree...",
     "worktrees": "Worktrees",
     "merge": "Zusammenführen",
     "openPullRequest": "Pull Request öffnen",
-    "removeProject": "Projekt entfernen"
+    "removeProject": "Projekt schließen",
+    "closeOtherProjects": "Andere Projekte schließen"
   },
   "prompt": {
     "inputLabel": "Nachrichteneingabe",

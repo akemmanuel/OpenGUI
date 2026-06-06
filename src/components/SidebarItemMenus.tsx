@@ -4,6 +4,7 @@ import {
   FolderOpen,
   GitBranch,
   GitMerge,
+  Minimize2,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -255,8 +256,11 @@ type ProjectMenuContentProps = {
   canCreateSession: boolean;
   onTogglePin: () => void;
   onNewSession: () => void;
+  onMinimize: () => void;
   canRemove: boolean;
   onRemove: () => void;
+  canCloseOtherProjects: boolean;
+  onCloseOtherProjects: () => void;
   directory: string;
   isLocalWorkspace: boolean;
   isGitRepo: boolean;
@@ -274,8 +278,11 @@ export function ProjectMenuContent({
   canCreateSession,
   onTogglePin,
   onNewSession,
+  onMinimize,
   canRemove,
   onRemove,
+  canCloseOtherProjects,
+  onCloseOtherProjects,
   directory,
   isLocalWorkspace,
   isGitRepo,
@@ -295,6 +302,27 @@ export function ProjectMenuContent({
   if (kind === "dropdown") {
     return (
       <>
+        {canCreateSession && (
+          <DropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation();
+              onNewSession();
+            }}
+          >
+            <SquarePen className="size-4" />
+            <span>{t("projectMenu.newSession")}</span>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={(event) => {
+            event.stopPropagation();
+            onMinimize();
+          }}
+        >
+          <Minimize2 className="size-4" />
+          <span>{t("projectMenu.minimizeProject")}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={(event) => {
             event.stopPropagation();
@@ -341,17 +369,6 @@ export function ProjectMenuContent({
               <span>{t("projectMenu.openInTerminal")}</span>
             </DropdownMenuItem>
           </>
-        )}
-        {canCreateSession && (
-          <DropdownMenuItem
-            onClick={(event) => {
-              event.stopPropagation();
-              onNewSession();
-            }}
-          >
-            <SquarePen className="size-4" />
-            <span>{t("projectMenu.newSession")}</span>
-          </DropdownMenuItem>
         )}
         {isLocalWorkspace && isGitRepo && (
           <>
@@ -434,7 +451,6 @@ export function ProjectMenuContent({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              variant="destructive"
               onClick={(event) => {
                 event.stopPropagation();
                 onRemove();
@@ -443,6 +459,17 @@ export function ProjectMenuContent({
               <X className="size-4" />
               <span>{t("projectMenu.removeProject")}</span>
             </DropdownMenuItem>
+            {canCloseOtherProjects && (
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCloseOtherProjects();
+                }}
+              >
+                <X className="size-4" />
+                <span>{t("projectMenu.closeOtherProjects")}</span>
+              </DropdownMenuItem>
+            )}
           </>
         )}
       </>
@@ -451,6 +478,23 @@ export function ProjectMenuContent({
 
   return (
     <>
+      {canCreateSession && (
+        <ContextMenu.Item
+          className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+          onSelect={onNewSession}
+        >
+          <SquarePen className="size-4" />
+          <span>{t("projectMenu.newSession")}</span>
+        </ContextMenu.Item>
+      )}
+      <ContextMenu.Item
+        className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+        onSelect={onMinimize}
+      >
+        <Minimize2 className="size-4" />
+        <span>{t("projectMenu.minimizeProject")}</span>
+      </ContextMenu.Item>
+      <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
       <ContextMenu.Item
         className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
         onSelect={onTogglePin}
@@ -492,15 +536,6 @@ export function ProjectMenuContent({
             <span>{t("projectMenu.openInTerminal")}</span>
           </ContextMenu.Item>
         </>
-      )}
-      {canCreateSession && (
-        <ContextMenu.Item
-          className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-          onSelect={onNewSession}
-        >
-          <SquarePen className="size-4" />
-          <span>{t("projectMenu.newSession")}</span>
-        </ContextMenu.Item>
       )}
       {isLocalWorkspace && isGitRepo && (
         <>
@@ -586,12 +621,21 @@ export function ProjectMenuContent({
         <>
           <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
           <ContextMenu.Item
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none focus:bg-accent focus:text-destructive"
+            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
             onSelect={onRemove}
           >
             <X className="size-4" />
             <span>{t("projectMenu.removeProject")}</span>
           </ContextMenu.Item>
+          {canCloseOtherProjects && (
+            <ContextMenu.Item
+              className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+              onSelect={onCloseOtherProjects}
+            >
+              <X className="size-4" />
+              <span>{t("projectMenu.closeOtherProjects")}</span>
+            </ContextMenu.Item>
+          )}
         </>
       )}
     </>

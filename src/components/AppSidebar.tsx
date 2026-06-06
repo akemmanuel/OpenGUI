@@ -195,6 +195,13 @@ export function AppSidebar({
   const toggleCollapsed = useCallback((dir: string) => {
     setCollapsed((prev) => toggleSidebarProjectCollapsed(prev, dir));
   }, []);
+  const collapseProject = useCallback((dir: string) => {
+    const normalizedDirectory = normalizeProjectPath(dir);
+    if (!normalizedDirectory) return;
+    setCollapsed((prev) =>
+      prev[normalizedDirectory] ? prev : { ...prev, [normalizedDirectory]: true },
+    );
+  }, []);
 
   const openDirectories = useMemo(() => Object.keys(connections), [connections]);
   const { isGitRepo, knownWorktrees, remoteUrls, refreshGitInfo } = useProjectGitInfo({
@@ -258,6 +265,19 @@ export function AppSidebar({
   const hasMoreChats = filteredChatSessions.length > visibleChatCount;
   const canShowLessChats = visibleChatCount > SESSION_PAGE_SIZE;
   const projectLabel = t("sidebar.projects");
+  const closeOtherProjects = useCallback(
+    async (directory: string) => {
+      const normalizedDirectory = normalizeProjectPath(directory);
+      if (!normalizedDirectory || detachedProject) return;
+      const otherDirectories = availableProjectDirectories.filter(
+        (projectDirectory) => normalizeProjectPath(projectDirectory) !== normalizedDirectory,
+      );
+      await Promise.all(
+        otherDirectories.map((projectDirectory) => removeProject(projectDirectory)),
+      );
+    },
+    [availableProjectDirectories, detachedProject, removeProject],
+  );
 
   useEffect(() => {
     const focusSidebarSearch = () => {
@@ -364,6 +384,7 @@ export function AppSidebar({
       isLocalWorkspace={isLocalWorkspace}
       isGitRepo={isGitRepo}
       knownWorktrees={knownWorktrees}
+      availableProjectDirectories={availableProjectDirectories}
       worktreeParents={worktreeParents}
       remoteUrls={remoteUrls}
       worktreeDirs={worktreeDirs}
@@ -374,10 +395,12 @@ export function AppSidebar({
       refreshGitInfo={refreshGitInfo}
       setProjectPopover={setProjectPopover}
       toggleCollapsed={toggleCollapsed}
+      collapseProject={collapseProject}
       setActiveTarget={setActiveTarget}
       closeMobileSidebar={closeMobileSidebar}
       setProjectPinned={setProjectPinned}
       removeProject={removeProject}
+      closeOtherProjects={closeOtherProjects}
       setWorktreeDialogDir={setWorktreeDialogDir}
       setMergeInfo={setMergeInfo}
       unregisterWorktree={unregisterWorktree}

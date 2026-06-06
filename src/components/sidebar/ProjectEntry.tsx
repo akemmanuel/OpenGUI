@@ -40,6 +40,7 @@ export function ProjectEntry({
   isLocalWorkspace,
   isGitRepo,
   knownWorktrees,
+  availableProjectDirectories,
   worktreeParents,
   remoteUrls,
   worktreeDirs,
@@ -50,10 +51,12 @@ export function ProjectEntry({
   refreshGitInfo,
   setProjectPopover,
   toggleCollapsed,
+  collapseProject,
   setActiveTarget,
   closeMobileSidebar,
   setProjectPinned,
   removeProject,
+  closeOtherProjects,
   setWorktreeDialogDir,
   setMergeInfo,
   unregisterWorktree,
@@ -73,6 +76,7 @@ export function ProjectEntry({
   isLocalWorkspace: boolean;
   isGitRepo: Record<string, boolean>;
   knownWorktrees: Record<string, GitWorktree[]>;
+  availableProjectDirectories: string[];
   worktreeParents: WorktreeParentMap;
   remoteUrls: Record<string, string>;
   worktreeDirs: Set<string>;
@@ -85,10 +89,12 @@ export function ProjectEntry({
     React.SetStateAction<{ directory: string; top: number } | null>
   >;
   toggleCollapsed: (directory: string) => void;
+  collapseProject: (directory: string) => void;
   setActiveTarget: (directory: string) => void;
   closeMobileSidebar: () => void;
   setProjectPinned: (directory: string, pinned: boolean) => void;
   removeProject: (directory: string) => void | Promise<void>;
+  closeOtherProjects: (directory: string) => void | Promise<void>;
   setWorktreeDialogDir: (directory: string) => void;
   setMergeInfo: React.Dispatch<
     React.SetStateAction<{ mainDir: string; branch: string; worktreePath: string } | null>
@@ -107,6 +113,9 @@ export function ProjectEntry({
   const canShowLess = visibleCount > SESSION_PAGE_SIZE;
   const normalizedDirectory = normalizeProjectPath(directory);
   const isPinned = !!projectMeta[normalizedDirectory]?.pinnedAt;
+  const canCloseOtherProjects = availableProjectDirectories.some(
+    (projectDirectory) => normalizeProjectPath(projectDirectory) !== normalizedDirectory,
+  );
 
   const openWorktreePr = (wt: { path: string; branch?: string | null }) => {
     if (!wt.branch) return;
@@ -133,10 +142,16 @@ export function ProjectEntry({
       setActiveTarget(directory);
       closeMobileSidebar();
     },
+    onMinimize: () => collapseProject(directory),
     canRemove: !detachedProject,
     onRemove: () => {
       if (detachedProject) return;
       void removeProject(directory);
+    },
+    canCloseOtherProjects: !detachedProject && canCloseOtherProjects,
+    onCloseOtherProjects: () => {
+      if (detachedProject) return;
+      void closeOtherProjects(directory);
     },
     directory,
     isLocalWorkspace,
