@@ -142,10 +142,10 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
       onOpenChange={onOpenChange}
       title={t("mcp.title")}
       description={t("mcp.description")}
-      className="sm:max-w-md max-h-[70vh] flex flex-col"
-      bodyClassName="min-h-0 flex-1 overflow-hidden"
+      className="sm:max-w-md max-h-[70vh] !flex flex-col overflow-hidden"
+      bodyClassName="min-h-0 flex-1 overflow-y-auto pr-1"
     >
-      <div className="h-full overflow-y-auto space-y-2 pr-1">
+      <div className="space-y-2">
         {!mcpApi || !configApi ? (
           <div className="text-center py-6 text-sm text-muted-foreground">
             {t("mcp.noManagement")}
