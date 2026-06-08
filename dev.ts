@@ -50,6 +50,9 @@ const electronEnv = { ...process.env };
 delete electronEnv.ELECTRON_RUN_AS_NODE;
 
 const electronArgs = ["exec", "electron", ".", "--enable-logging=stderr"];
+if (process.platform === "linux") {
+  electronArgs.push("--no-sandbox");
+}
 if (process.env.OPENGUI_REMOTE_DEBUGGING_PORT) {
   electronArgs.push(`--remote-debugging-port=${process.env.OPENGUI_REMOTE_DEBUGGING_PORT}`);
 }

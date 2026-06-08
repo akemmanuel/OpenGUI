@@ -665,7 +665,7 @@ export function App() {
     <DesktopShellProvider>
       <OpenGuiClientProvider>
         <HarnessProvider detachedProject={detachedProject}>
-          <SidebarProvider className="!h-dvh">
+          <SidebarProvider className="!h-dvh capacitor-safe-area">
             <AppContent detachedProject={detachedProject} />
             {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
             <Toaster richColors closeButton />

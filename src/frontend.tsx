@@ -27,6 +27,9 @@ function preventDocumentPinchZoom() {
 preventDocumentPinchZoom();
 installWebElectronAPI();
 initializeRuntimeClients();
+if (window.Capacitor?.isNativePlatform?.() === true) {
+  document.documentElement.classList.add("capacitor-native");
+}
 applyStoredAppearance();
 
 const elem = document.getElementById("root");

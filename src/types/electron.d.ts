@@ -390,6 +390,7 @@ export interface ElectronAPI {
 
 declare global {
   interface Window {
+    Capacitor?: { isNativePlatform?: () => boolean };
     electronAPI?: ElectronAPI;
   }
 }

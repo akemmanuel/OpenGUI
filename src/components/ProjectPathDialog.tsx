@@ -28,6 +28,12 @@ interface ServerDirectoryListing {
   entries: ServerDirectoryEntry[];
 }
 
+interface ApiResponse<T> {
+  ok?: boolean;
+  value?: T;
+  error?: string;
+}
+
 function isWebRuntime() {
   return !navigator.userAgent.includes("Electron");
 }
@@ -97,14 +103,29 @@ export function ProjectPathDialog() {
     try {
       const params = new URLSearchParams();
       if (path) params.set("path", path);
-      const baseUrl = resolveBrowserApiBaseUrl(workspaceServerUrl);
+      const baseUrl = resolveBrowserApiBaseUrl(workspaceServerUrl).replace(/\/+$/, "");
       const headers = new Headers();
       if (activeWorkspace?.authToken) {
         headers.set("authorization", `Bearer ${activeWorkspace.authToken}`);
       }
       const response = await fetch(`${baseUrl}/api/fs/list?${params.toString()}`, { headers });
-      const body = await response.json();
-      if (!response.ok || !body?.ok)
+      const responseText = await response.text();
+      let body: ApiResponse<ServerDirectoryListing> | null = null;
+      try {
+        body = responseText
+          ? (JSON.parse(responseText) as ApiResponse<ServerDirectoryListing>)
+          : null;
+      } catch {
+        body = null;
+      }
+      if (response.status === 404) {
+        throw new Error(
+          body?.error?.includes("API-only")
+            ? "This OpenGUI backend does not provide server folder browsing. Update or restart the backend, or paste the project path manually."
+            : "Server folder browsing is not available on this OpenGUI backend. Update or restart the backend, or paste the project path manually.",
+        );
+      }
+      if (!response.ok || !body?.ok || !body.value)
         throw new Error(body?.error || "Failed to list server folders");
       setServerListing(body.value);
       setValue(body.value.path);
