@@ -130,6 +130,7 @@ describe("createLocalIntentOrchestrator", () => {
     });
     const state = makeState({
       activeSessionId: session.id,
+      selectedModel: { providerID: "openai", modelID: "gpt-5" },
       sessions: [session],
       sessionMeta: {
         [session.id]: {

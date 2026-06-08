@@ -671,10 +671,12 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     if (harnessId) params.set("harnessId", harnessId);
 
     if (directory) {
-      params.set("projectId", directory);
+      const project = input.target ? await ensureProjectForTarget(input.target) : null;
+      params.set("projectId", project?.id ?? directory);
       candidates = candidates.filter(
         (record) =>
-          (record.projectId === directory || record.metadata?.directory === directory) &&
+          (record.projectId === (project?.id ?? directory) ||
+            record.metadata?.directory === directory) &&
           (!harnessId || record.harnessId === harnessId),
       );
       if (candidates.length === 1) {
