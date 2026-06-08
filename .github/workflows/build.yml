@@ -41,9 +41,25 @@ jobs:
             dist-electron
           retention-days: 1
 
-  build-linux:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: preflight
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+
+  build-linux:
+    needs: [preflight, create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -88,6 +104,14 @@ jobs:
             release/*.deb
             release/*.AppImage
           retention-days: 30
+
+      - name: Attach Linux artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.deb
+            release/*.AppImage
 
   build-mac:
     needs: preflight
@@ -149,8 +173,10 @@ jobs:
           retention-days: 30
 
   build-windows:
-    needs: preflight
+    needs: [preflight, create-release]
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -220,6 +246,67 @@ jobs:
             release/latest.yml
           retention-days: 30
 
+      - name: Attach Windows artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+
+  build-android:
+    needs: [preflight, create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore frontend build
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-build
+
+      - name: Sync Capacitor Android
+        run: pnpm exec cap sync android
+
+      - name: Build release APK
+        run: cd android && ./gradlew assembleRelease
+
+      - name: Rename release APK
+        run: |
+          mkdir -p release-android
+          cp android/app/build/outputs/apk/release/*.apk "release-android/OpenGUI-${GITHUB_REF_NAME}-android-release.apk"
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: opengui-android-release-apk
+          path: release-android/*.apk
+          retention-days: 30
+
+      - name: Attach Android APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-android/*.apk
+
   publish-docker:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: preflight
@@ -270,30 +357,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  release:
+  publish-mac:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-linux, build-mac, build-windows, publish-docker]
+    needs: [build-mac, create-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download linux artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: linux-release
-          path: artifacts/linux-release
 
       - name: Download mac x64 artifacts
         uses: actions/download-artifact@v8
@@ -307,22 +378,12 @@ jobs:
           name: mac-release-arm64
           path: artifacts/mac-release-arm64
 
-      - name: Download windows artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: windows-nsis
-          path: artifacts/windows-nsis
-
       - name: List downloaded artifacts
         run: |
-          echo "=== linux-release ==="
-          ls -la artifacts/linux-release/ 2>/dev/null || echo "(empty)"
           echo "=== mac-release ==="
           ls -la artifacts/mac-release/ 2>/dev/null || echo "(empty)"
           echo "=== mac-release-arm64 ==="
           ls -la artifacts/mac-release-arm64/ 2>/dev/null || echo "(empty)"
-          echo "=== windows-nsis ==="
-          ls -la artifacts/windows-nsis/ 2>/dev/null || echo "(empty)"
 
       - name: Merge mac update manifests
         run: |
@@ -331,13 +392,10 @@ jobs:
             --arm64-dir artifacts/mac-release-arm64 \
             --out-dir artifacts/mac-release
 
-      - name: Create GitHub Release
+      - name: Attach mac artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
           files: |
-            artifacts/linux-release/*.deb
-            artifacts/linux-release/*.AppImage
             artifacts/mac-release/*.dmg
             artifacts/mac-release/*.zip
             artifacts/mac-release/*.blockmap
@@ -345,6 +403,3 @@ jobs:
             artifacts/mac-release-arm64/*.zip
             artifacts/mac-release-arm64/*.blockmap
             artifacts/mac-release/latest-mac.yml
-            artifacts/windows-nsis/*.exe
-            artifacts/windows-nsis/*.blockmap
-            artifacts/windows-nsis/latest.yml
