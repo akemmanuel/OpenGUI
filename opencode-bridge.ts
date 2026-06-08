@@ -20,7 +20,6 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 
 class OpencodeProjectRegistry {
   connections = new Map();
-  sessionProjectKeys = new Map();
   questionProjectKeys = new Map();
 
   createProjectKey(_workspaceId, directory) {
@@ -54,21 +53,9 @@ class OpencodeProjectRegistry {
     return connection ? { projectKey, connection } : null;
   }
 
-  getSessionProjectKey(sessionId) {
-    const key = String(sessionId ?? "").trim();
-    return key ? (this.sessionProjectKeys.get(key) ?? null) : null;
-  }
-
   getQuestionProjectKey(requestId) {
     const key = String(requestId ?? "").trim();
     return key ? (this.questionProjectKeys.get(key) ?? null) : null;
-  }
-
-  getMappedSessionConnectionEntry(sessionId) {
-    const projectKey = this.getSessionProjectKey(sessionId);
-    if (!projectKey) return null;
-    const connection = this.connections.get(projectKey);
-    return connection ? { projectKey, connection } : null;
   }
 
   getMappedQuestionConnectionEntry(requestId) {
@@ -76,21 +63,6 @@ class OpencodeProjectRegistry {
     if (!projectKey) return null;
     const connection = this.connections.get(projectKey);
     return connection ? { projectKey, connection } : null;
-  }
-
-  rememberSession(projectKey, sessionId) {
-    const key = String(sessionId ?? "").trim();
-    if (key) this.sessionProjectKeys.set(key, projectKey);
-  }
-
-  rememberSessions(projectKey, sessions) {
-    for (const session of sessions)
-      this.rememberSession(projectKey, session?._rawId ?? session?.id);
-  }
-
-  deleteSession(sessionId) {
-    const key = String(sessionId ?? "").trim();
-    if (key) this.sessionProjectKeys.delete(key);
   }
 
   rememberQuestion(projectKey, requestId) {
@@ -105,19 +77,13 @@ class OpencodeProjectRegistry {
 
   removeProject(projectKey) {
     const connection = this.deleteConnection(projectKey);
-    const removedSessionIds = [];
-    for (const [sessionId, candidateProjectKey] of this.sessionProjectKeys) {
-      if (candidateProjectKey !== projectKey) continue;
-      removedSessionIds.push(sessionId);
-      this.sessionProjectKeys.delete(sessionId);
-    }
     const removedQuestionIds = [];
     for (const [requestId, candidateProjectKey] of this.questionProjectKeys) {
       if (candidateProjectKey !== projectKey) continue;
       removedQuestionIds.push(requestId);
       this.questionProjectKeys.delete(requestId);
     }
-    return { connection, removedSessionIds, removedQuestionIds };
+    return { connection, removedSessionIds: [], removedQuestionIds };
   }
 
   entries() {
@@ -130,7 +96,6 @@ class OpencodeProjectRegistry {
 
   clear() {
     this.connections.clear();
-    this.sessionProjectKeys.clear();
     this.questionProjectKeys.clear();
   }
 
@@ -1269,12 +1234,8 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           props.sessionID ?? props.info?.id ?? props.part?.sessionID ?? "",
         );
         if (rawSessionId) {
-          const mappedProjectKey = windowState.projectRegistry.getSessionProjectKey(rawSessionId);
-          if (mappedProjectKey && mappedProjectKey !== projectKey) return;
-          if (!mappedProjectKey) {
-            const eventDir = normalize(props.info?.directory ?? props.info?.path?.cwd ?? "");
-            if (eventDir && eventDir !== normalize(directory)) return;
-          }
+          const eventDir = normalize(props.info?.directory ?? props.info?.path?.cwd ?? "");
+          if (eventDir && eventDir !== normalize(directory)) return;
         } else if (payload?.type !== "server.connected" && payload?.type !== "sync") {
           return;
         }
@@ -1283,12 +1244,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         }
         if (payload?.type === "question.replied" || payload?.type === "question.rejected") {
           windowState.projectRegistry.deleteQuestion(props?.requestID);
-        }
-        if (payload?.type === "session.created" || payload?.type === "session.updated") {
-          const info = props?.info;
-          if (info?.id) {
-            windowState.projectRegistry.rememberSession(projectKey, toRawSessionId(info.id));
-          }
         }
       }
       sendEvent(sender, { ...event, directory, workspaceId });
@@ -1314,18 +1269,21 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       .map(([projectKey, connection]) => ({ projectKey, connection }));
   }
 
-  /** Find which connection owns a session by looking up the cache. */
-  function getConnectionEntryForSession(windowState, sessionId) {
-    const mapped = windowState.projectRegistry.getMappedSessionConnectionEntry(
-      toRawSessionId(sessionId),
-    );
-    if (mapped) return mapped;
+  /** Resolve a session operation from its explicit Project directory. */
+  function getConnectionEntryForSession(windowState, sessionId, directory, workspaceId) {
+    if (directory) {
+      const exact = getConnectionEntryForDirectory(windowState, directory, workspaceId);
+      if (exact) return exact;
+    }
     const connected = getConnectedConnections(windowState);
     return connected.length === 1 ? connected[0] : null;
   }
 
-  function getConnectionForSession(windowState, sessionId) {
-    return getConnectionEntryForSession(windowState, sessionId)?.connection ?? null;
+  function getConnectionForSession(windowState, sessionId, directory, workspaceId) {
+    return (
+      getConnectionEntryForSession(windowState, sessionId, directory, workspaceId)?.connection ??
+      null
+    );
   }
 
   /** Get any connected connection, optionally scoped to one workspace. */
@@ -1404,7 +1362,11 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     ipcMain.handle(channel, async (event, sessionId, ...args) => {
       try {
         const windowState = getWindowState(event.sender);
-        const conn = getConnectionForSession(windowState, sessionId);
+        const maybeWorkspaceId = args.at(-1);
+        const maybeDirectory = args.at(-2);
+        const workspaceId = typeof maybeWorkspaceId === "string" ? maybeWorkspaceId : undefined;
+        const directory = typeof maybeDirectory === "string" ? maybeDirectory : undefined;
+        const conn = getConnectionForSession(windowState, sessionId, directory, workspaceId);
         if (!conn) return { success: false, error: "Session connection not found" };
         const rawSessionId = toRawSessionId(sessionId);
         const data = await fn(conn, rawSessionId, ...args);
@@ -1670,13 +1632,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   // --- Session operations ---
 
-  /** Tag sessions with their directory and cache the mappings. */
+  /** Tag Sessions with their execution Project directory. */
   async function listAndCacheSessions(conn, dir, workspaceId) {
     return (await conn.listSessions()).map((s) => tagOpenCodeSession(s, dir, workspaceId));
-  }
-
-  function cacheSessions(windowState, sessions, projectKey) {
-    windowState.projectRegistry.rememberSessions(projectKey, sessions);
   }
 
   ipcMain.handle("opencode:session:list", async (event, directory, workspaceId) => {
@@ -1690,9 +1648,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           workspaceId,
         );
         if (!conn) return { success: false, error: "No connection available" };
-        const projectKey = makeProjectKey(windowState, workspaceId, directory);
         const sessions = await listAndCacheSessions(conn, directory, workspaceId);
-        cacheSessions(windowState, sessions, projectKey);
         return {
           success: true,
           data: sessions,
@@ -1706,7 +1662,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
             windowState.projectRegistry.getWorkspaceIdFromProjectKey(projectKey) || undefined;
           const dir = conn.getDirectory() ?? "";
           const sessions = await listAndCacheSessions(conn, dir, currentWorkspaceId);
-          cacheSessions(windowState, sessions, projectKey);
           allSessions.push(...sessions);
         } catch {
           // Skip failed connections
@@ -1728,12 +1683,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const session = await conn.createSession(title);
       const dir = directory || conn.getDirectory();
       const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
-      if (session && dir) {
-        windowState.projectRegistry.rememberSession(
-          makeProjectKey(windowState, workspaceId, dir),
-          session.id,
-        );
-      }
       return { success: true, data: taggedSession };
     } catch (err) {
       return { success: false, error: err.message };
@@ -1744,27 +1693,23 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     try {
       const windowState = getWindowState(event.sender);
       const rawId = toRawSessionId(id);
-      const entry =
-        getConnectionEntryForSession(windowState, rawId) ??
-        (directory
-          ? await (async () => {
-              const conn = await ensureConnectionForDirectory(
-                windowState,
-                event.sender,
-                directory,
-                workspaceId,
-              );
-              const projectKey = makeProjectKey(windowState, workspaceId, directory);
-              return conn ? { projectKey, connection: conn } : null;
-            })()
-          : null) ??
-        getAnyConnectionEntry(windowState, workspaceId);
+      const entry = directory
+        ? await (async () => {
+            const conn = await ensureConnectionForDirectory(
+              windowState,
+              event.sender,
+              directory,
+              workspaceId,
+            );
+            const projectKey = makeProjectKey(windowState, workspaceId, directory);
+            return conn ? { projectKey, connection: conn } : null;
+          })()
+        : getConnectionEntryForSession(windowState, rawId, directory, workspaceId);
       const conn = entry?.connection ?? null;
       if (!conn) {
         return { success: false, error: "Session connection not found" };
       }
       const result = await conn.deleteSession(rawId);
-      windowState.projectRegistry.deleteSession(rawId);
       return { success: true, data: result };
     } catch (err) {
       return { success: false, error: err.message };
@@ -1801,18 +1746,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     tagOpenCodeSession(await conn.unrevertSession(id), conn.getDirectory()),
   );
 
-  ipcMain.handle("opencode:session:fork", async (event, id, messageID) => {
+  ipcMain.handle("opencode:session:fork", async (event, id, messageID, directory, workspaceId) => {
     try {
       const windowState = getWindowState(event.sender);
-      const entry = getConnectionEntryForSession(windowState, id);
+      const entry = getConnectionEntryForSession(windowState, id, directory, workspaceId);
       if (!entry) return { success: false, error: "Session connection not found" };
       const result = await entry.connection.forkSession(toRawSessionId(id), messageID);
       const taggedResult = tagOpenCodeSession(result, entry.connection.getDirectory());
-      // Register the new forked session in the directory map so future
-      // operations can find the correct connection.
-      if (result?.id) {
-        windowState.projectRegistry.rememberSession(entry.projectKey, result.id);
-      }
       return { success: true, data: taggedResult };
     } catch (err) {
       return { success: false, error: err.message };
@@ -1851,15 +1791,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     try {
       const windowState = getWindowState(event.sender);
       const rawSessionId = toRawSessionId(sessionId);
-      let conn = getConnectionForSession(windowState, rawSessionId);
+      let conn = getConnectionForSession(windowState, rawSessionId, directory, workspaceId);
       if (!conn && directory) {
         conn = getConnectionForDirectory(windowState, directory, workspaceId);
-        if (conn) {
-          windowState.projectRegistry.rememberSession(
-            makeProjectKey(windowState, workspaceId, directory),
-            rawSessionId,
-          );
-        }
       }
       if (!conn) {
         return { success: false, error: "Session connection not found" };
@@ -1913,12 +1847,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (!conn) return { success: false, error: "No connection available" };
       const session = await conn.createSession(input.title);
       const dir = directory || conn.getDirectory();
-      if (session?.id && dir) {
-        windowState.projectRegistry.rememberSession(
-          makeProjectKey(windowState, workspaceId, dir),
-          session.id,
-        );
-      }
       await conn.promptAsync(
         session.id,
         input.text ?? "",

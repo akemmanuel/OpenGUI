@@ -11,7 +11,6 @@ export async function createSessionThroughHarness(input: {
   title?: string;
 }): Promise<SessionRecord> {
   const runtimeSession = await input.services.harnesses.createSession({
-    project: input.project,
     scope: buildHarnessScope({ project: input.project, harnessId: input.harnessId }),
     title: input.title,
   });
@@ -19,6 +18,29 @@ export async function createSessionThroughHarness(input: {
     sessions: input.services.sessions,
     runtimeSession,
     projectId: input.project.id,
+    harnessId: input.harnessId,
+  });
+}
+
+export async function createDirectorySessionThroughHarness(input: {
+  services: BackendServiceContext;
+  directory: string;
+  canonicalPath: string;
+  harnessId: HarnessId;
+  title?: string;
+}): Promise<SessionRecord> {
+  const runtimeSession = await input.services.harnesses.createSession({
+    scope: {
+      projectId: input.canonicalPath,
+      harnessId: input.harnessId,
+      directory: input.canonicalPath,
+    },
+    title: input.title,
+  });
+  return await ensureSessionFromRuntime({
+    sessions: input.services.sessions,
+    runtimeSession,
+    projectId: input.canonicalPath,
     harnessId: input.harnessId,
   });
 }
@@ -207,7 +229,15 @@ export async function deleteSessionThroughHarness(input: {
 
 export async function abortSessionThroughHarness(input: {
   services: BackendServiceContext;
+  project: ProjectRecord;
   session: SessionRecord;
 }): Promise<void> {
-  await input.services.harnesses.abortSession({ session: input.session });
+  await input.services.harnesses.abortSession({
+    session: input.session,
+    scope: buildHarnessScope({
+      project: input.project,
+      harnessId: input.session.harnessId,
+      sessionId: input.session.id,
+    }),
+  });
 }

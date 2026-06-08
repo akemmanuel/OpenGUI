@@ -157,7 +157,6 @@ export class HarnessService {
   }
 
   async listProjectSessions(input: {
-    project: ProjectRecord;
     scope: Pick<HarnessScope, "projectId" | "directory">;
     harnessIds: HarnessId[];
   }): Promise<Array<{ harnessId: HarnessId; sessions: HarnessProjectSessionsResult["sessions"] }>> {
@@ -180,11 +179,7 @@ export class HarnessService {
     );
   }
 
-  async createSession(input: {
-    project: ProjectRecord;
-    scope: HarnessScope;
-    title?: string;
-  }): Promise<unknown> {
+  async createSession(input: { scope: HarnessScope; title?: string }): Promise<unknown> {
     return this.backendRpc(input.scope.harnessId, "session:create", [
       input.title,
       input.scope.directory,
@@ -267,8 +262,12 @@ export class HarnessService {
     ]);
   }
 
-  async abortSession(input: { session: SessionRecord }): Promise<void> {
-    await this.backendRpc(input.session.harnessId, "abort", [input.session.rawId]);
+  async abortSession(input: { session: SessionRecord; scope: HarnessScope }): Promise<void> {
+    await this.backendRpc(input.session.harnessId, "abort", [
+      input.session.rawId,
+      input.scope.directory,
+      undefined,
+    ]);
   }
 
   async respondPermission(input: {

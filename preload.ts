@@ -50,6 +50,7 @@ const electronAPI: ElectronAPI = {
   getSystemLocale: invoke("platform:locale"),
   isPackaged: invoke("app:isPackaged"),
   restartBackend: invoke("backend:restart-managed"),
+  backendFetch: invoke("backend:fetch"),
   onMaximizeChange: (callback: Listener<boolean>) => {
     const handler = (_event: IpcRendererEvent, isMaximized: boolean) => callback(isMaximized);
     ipcRenderer.on("window:maximizeChanged", handler);
@@ -62,6 +63,18 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on("backend:status-changed", handler);
     return () => {
       ipcRenderer.removeListener("backend:status-changed", handler);
+    };
+  },
+  subscribeBackendEvents: (callback: Listener<{ channel?: string; data?: unknown }>) => {
+    const handler = (_event: IpcRendererEvent, message: { channel?: string; data?: unknown }) =>
+      callback(message);
+    ipcRenderer.on("backend:event", handler);
+    ipcRenderer.invoke("backend:events-subscribe").catch((error) => {
+      console.error("Failed to subscribe to backend events", error);
+    });
+    return () => {
+      ipcRenderer.removeListener("backend:event", handler);
+      ipcRenderer.invoke("backend:events-unsubscribe").catch(() => undefined);
     };
   },
 

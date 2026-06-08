@@ -130,7 +130,17 @@ export interface MessagePageResult {
 export interface OpenGuiQueueEntry extends QueuedPrompt {
   sessionId: string;
   canonicalSessionId?: string;
+  harnessId: HarnessId;
+  projectDirectory: string;
+  harnessSessionId: string;
   order?: number;
+}
+
+export type QueueHarnessTarget = HarnessTarget & { directory: string };
+
+export interface QueueScopeInput {
+  harnessId: HarnessId;
+  target: QueueHarnessTarget;
 }
 
 export interface OpenGuiClient {
@@ -223,56 +233,56 @@ export interface OpenGuiClient {
     }): Promise<void>;
     rejectQuestion(input: { requestId: string; harnessId?: HarnessId }): Promise<void>;
     queue: {
-      list(input: {
-        sessionId: string;
-        harnessId?: HarnessId;
-        target?: HarnessTarget;
-      }): Promise<OpenGuiQueueEntry[]>;
+      list(
+        input: QueueScopeInput & {
+          sessionId: string;
+        },
+      ): Promise<OpenGuiQueueEntry[]>;
       listProject(input: {
         harnessId: HarnessId;
-        target: HarnessTarget;
+        target: QueueHarnessTarget;
       }): Promise<Record<string, OpenGuiQueueEntry[]>>;
-      enqueue(input: {
-        sessionId: string;
-        text: string;
-        model?: SelectedModel;
-        agent?: string;
-        variant?: string;
-        mode: QueueMode;
-        insertAt?: "front" | "back";
-        harnessId?: HarnessId;
-        target?: HarnessTarget;
-      }): Promise<OpenGuiQueueEntry[]>;
-      remove(input: {
-        sessionId: string;
-        entryId: string;
-        harnessId?: HarnessId;
-        target?: HarnessTarget;
-      }): Promise<OpenGuiQueueEntry[]>;
-      update(input: {
-        sessionId: string;
-        entryId: string;
-        text?: string;
-        model?: SelectedModel;
-        agent?: string | null;
-        variant?: string | null;
-        mode?: QueueMode;
-        harnessId?: HarnessId;
-        target?: HarnessTarget;
-      }): Promise<OpenGuiQueueEntry[]>;
-      reorder(input: {
-        sessionId: string;
-        entryId: string;
-        index: number;
-        harnessId?: HarnessId;
-        target?: HarnessTarget;
-      }): Promise<OpenGuiQueueEntry[]>;
-      sendNow(input: {
-        sessionId: string;
-        entryId: string;
-        harnessId?: HarnessId;
-        target?: HarnessTarget;
-      }): Promise<OpenGuiQueueEntry[]>;
+      enqueue(
+        input: QueueScopeInput & {
+          sessionId: string;
+          text: string;
+          model?: SelectedModel;
+          agent?: string;
+          variant?: string;
+          mode: QueueMode;
+          insertAt?: "front" | "back";
+        },
+      ): Promise<OpenGuiQueueEntry[]>;
+      remove(
+        input: QueueScopeInput & {
+          sessionId: string;
+          entryId: string;
+        },
+      ): Promise<OpenGuiQueueEntry[]>;
+      update(
+        input: QueueScopeInput & {
+          sessionId: string;
+          entryId: string;
+          text?: string;
+          model?: SelectedModel;
+          agent?: string | null;
+          variant?: string | null;
+          mode?: QueueMode;
+        },
+      ): Promise<OpenGuiQueueEntry[]>;
+      reorder(
+        input: QueueScopeInput & {
+          sessionId: string;
+          entryId: string;
+          index: number;
+        },
+      ): Promise<OpenGuiQueueEntry[]>;
+      sendNow(
+        input: QueueScopeInput & {
+          sessionId: string;
+          entryId: string;
+        },
+      ): Promise<OpenGuiQueueEntry[]>;
     };
   };
   files: {

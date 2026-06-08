@@ -3,12 +3,9 @@ import { dirname, join } from "node:path";
 import type { HarnessId } from "../../src/agents/index.ts";
 import type { QueueMode } from "../../src/lib/session-drafts.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
-import type { CreateSessionInput, SessionRecord, UpdateSessionInput } from "./session-types.ts";
 
 const PROJECTS_FILE = "projects.json";
 const SETTINGS_FILE = "settings.json";
-const SESSIONS_FILE = "sessions.json";
-const SESSION_MAPPINGS_FILE = "session-mappings.json";
 const PROMPT_QUEUE_FILE = "prompt-queue.json";
 const SQLITE_FILE = "opengui.sqlite";
 
@@ -26,18 +23,12 @@ export interface ProjectRecord {
   updatedAt: string;
 }
 
-export interface SessionMappingRecord {
-  canonicalSessionId: string;
-  projectId: string;
-  harnessId: HarnessId;
-  rawId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface PromptQueueEntryRecord {
   id: string;
   sessionId: string;
+  harnessId: HarnessId;
+  projectDirectory: string;
+  harnessSessionId: string;
   text: string;
   createdAt: number;
   model?: SelectedModel;
@@ -66,6 +57,9 @@ export interface UpdateProjectInput {
 export interface CreatePromptQueueEntryInput {
   id?: string;
   sessionId: string;
+  harnessId: HarnessId;
+  projectDirectory: string;
+  harnessSessionId: string;
   text: string;
   createdAt?: number;
   model?: SelectedModel;
@@ -90,29 +84,6 @@ export interface StorageService {
   createProject(input: CreateProjectInput): Promise<ProjectRecord>;
   updateProject(id: string, input: UpdateProjectInput): Promise<ProjectRecord | null>;
   deleteProject(id: string): Promise<boolean>;
-  listSessions(): Promise<SessionRecord[]>;
-  getSession(id: string): Promise<SessionRecord | null>;
-  createSession(input: CreateSessionInput): Promise<SessionRecord>;
-  updateSession(
-    id: string,
-    input: UpdateSessionInput & { createdAt?: string; updatedAt?: string },
-  ): Promise<SessionRecord | null>;
-  deleteSession(id: string): Promise<boolean>;
-  deleteSessionsByProject(projectId: string): Promise<SessionRecord[]>;
-
-  listSessionMappings(): Promise<SessionMappingRecord[]>;
-  getSessionMapping(input: {
-    projectId: string;
-    harnessId: HarnessId;
-    rawId: string;
-  }): Promise<SessionMappingRecord | null>;
-  upsertSessionMapping(input: SessionMappingRecord): Promise<SessionMappingRecord>;
-  deleteSessionMapping(input: {
-    projectId: string;
-    harnessId: HarnessId;
-    rawId: string;
-  }): Promise<boolean>;
-  deleteSessionMappingsByCanonicalSessionId(canonicalSessionId: string): Promise<boolean>;
 
   listPromptQueue(sessionId?: string): Promise<PromptQueueEntryRecord[]>;
   createPromptQueueEntry(input: CreatePromptQueueEntryInput): Promise<PromptQueueEntryRecord>;
@@ -140,10 +111,6 @@ function createId(prefix: string): string {
 
 function generateProjectId(): string {
   return createId("project");
-}
-
-function generateSessionId(): string {
-  return createId("session");
 }
 
 function generatePromptQueueEntryId(): string {
@@ -194,13 +161,9 @@ function normalizeQueueEntries(entries: PromptQueueEntryRecord[]): PromptQueueEn
 }
 
 function hasLegacyJsonStorage(dataDir: string): boolean {
-  return [
-    PROJECTS_FILE,
-    SETTINGS_FILE,
-    SESSIONS_FILE,
-    SESSION_MAPPINGS_FILE,
-    PROMPT_QUEUE_FILE,
-  ].some((file) => existsSync(join(dataDir, file)));
+  return [PROJECTS_FILE, SETTINGS_FILE, PROMPT_QUEUE_FILE].some((file) =>
+    existsSync(join(dataDir, file)),
+  );
 }
 
 export function createJsonStorageService(dataDir: string): StorageService {
@@ -208,8 +171,6 @@ export function createJsonStorageService(dataDir: string): StorageService {
 
   const projectsPath = join(dataDir, PROJECTS_FILE);
   const settingsPath = join(dataDir, SETTINGS_FILE);
-  const sessionsPath = join(dataDir, SESSIONS_FILE);
-  const sessionMappingsPath = join(dataDir, SESSION_MAPPINGS_FILE);
   const promptQueuePath = join(dataDir, PROMPT_QUEUE_FILE);
 
   function loadProjects(): ProjectRecord[] {
@@ -218,22 +179,6 @@ export function createJsonStorageService(dataDir: string): StorageService {
 
   function saveProjects(projects: ProjectRecord[]): void {
     writeJson(projectsPath, projects);
-  }
-
-  function loadSessions(): SessionRecord[] {
-    return readJson<SessionRecord[]>(sessionsPath, []);
-  }
-
-  function saveSessions(sessions: SessionRecord[]): void {
-    writeJson(sessionsPath, sessions);
-  }
-
-  function loadSessionMappings(): SessionMappingRecord[] {
-    return readJson<SessionMappingRecord[]>(sessionMappingsPath, []);
-  }
-
-  function saveSessionMappings(mappings: SessionMappingRecord[]): void {
-    writeJson(sessionMappingsPath, mappings);
   }
 
   function loadPromptQueue(): PromptQueueEntryRecord[] {
@@ -310,126 +255,6 @@ export function createJsonStorageService(dataDir: string): StorageService {
       return true;
     },
 
-    async listSessions() {
-      return loadSessions();
-    },
-
-    async getSession(id: string) {
-      return loadSessions().find((session) => session.id === id) ?? null;
-    },
-
-    async createSession(input: CreateSessionInput) {
-      const sessions = loadSessions();
-      const now = new Date().toISOString();
-      const session: SessionRecord = {
-        id: input.id ?? generateSessionId(),
-        rawId: input.rawId,
-        projectId: input.projectId,
-        harnessId: input.harnessId,
-        title: input.title ?? "New session",
-        createdAt: input.createdAt ?? now,
-        updatedAt: input.updatedAt ?? input.createdAt ?? now,
-        status: input.status ?? "unknown",
-        metadata: input.metadata,
-      };
-      sessions.push(session);
-      saveSessions(sessions);
-      return session;
-    },
-
-    async updateSession(
-      id: string,
-      input: UpdateSessionInput & { createdAt?: string; updatedAt?: string },
-    ) {
-      const sessions = loadSessions();
-      const index = sessions.findIndex((session) => session.id === id);
-      if (index === -1) return null;
-      const existing = sessions[index]!;
-      const updated: SessionRecord = {
-        ...existing,
-        title: input.title ?? existing.title,
-        status: input.status ?? existing.status,
-        metadata: input.metadata ?? existing.metadata,
-        createdAt: input.createdAt ?? existing.createdAt,
-        updatedAt: input.updatedAt ?? new Date().toISOString(),
-      };
-      sessions[index] = updated;
-      saveSessions(sessions);
-      return updated;
-    },
-
-    async deleteSession(id: string) {
-      const sessions = loadSessions();
-      const index = sessions.findIndex((session) => session.id === id);
-      if (index === -1) return false;
-      sessions.splice(index, 1);
-      saveSessions(sessions);
-      return true;
-    },
-
-    async deleteSessionsByProject(projectId: string) {
-      const sessions = loadSessions();
-      const removed = sessions.filter((session) => session.projectId === projectId);
-      if (removed.length === 0) return [];
-      saveSessions(sessions.filter((session) => session.projectId !== projectId));
-      return removed;
-    },
-
-    async listSessionMappings() {
-      return loadSessionMappings();
-    },
-
-    async getSessionMapping(input) {
-      return (
-        loadSessionMappings().find(
-          (mapping) =>
-            mapping.projectId === input.projectId &&
-            mapping.harnessId === input.harnessId &&
-            mapping.rawId === input.rawId,
-        ) ?? null
-      );
-    },
-
-    async upsertSessionMapping(input: SessionMappingRecord) {
-      const mappings = loadSessionMappings();
-      const index = mappings.findIndex(
-        (mapping) =>
-          mapping.projectId === input.projectId &&
-          mapping.harnessId === input.harnessId &&
-          mapping.rawId === input.rawId,
-      );
-      if (index === -1) {
-        mappings.push(input);
-      } else {
-        mappings[index] = input;
-      }
-      saveSessionMappings(mappings);
-      return input;
-    },
-
-    async deleteSessionMapping(input) {
-      const mappings = loadSessionMappings();
-      const next = mappings.filter(
-        (mapping) =>
-          !(
-            mapping.projectId === input.projectId &&
-            mapping.harnessId === input.harnessId &&
-            mapping.rawId === input.rawId
-          ),
-      );
-      if (next.length === mappings.length) return false;
-      saveSessionMappings(next);
-      return true;
-    },
-
-    async deleteSessionMappingsByCanonicalSessionId(canonicalSessionId: string) {
-      const mappings = loadSessionMappings();
-      const next = mappings.filter((mapping) => mapping.canonicalSessionId !== canonicalSessionId);
-      if (next.length === mappings.length) return false;
-      saveSessionMappings(next);
-      return true;
-    },
-
     async listPromptQueue(sessionId?: string) {
       const entries = loadPromptQueue();
       return sessionId ? entries.filter((entry) => entry.sessionId === sessionId) : entries;
@@ -442,6 +267,9 @@ export function createJsonStorageService(dataDir: string): StorageService {
       const entry: PromptQueueEntryRecord = {
         id: input.id ?? generatePromptQueueEntryId(),
         sessionId: input.sessionId,
+        harnessId: input.harnessId,
+        projectDirectory: input.projectDirectory,
+        harnessSessionId: input.harnessSessionId,
         text: input.text,
         createdAt: input.createdAt ?? Date.now(),
         model: input.model,
@@ -544,51 +372,289 @@ export function createJsonStorageService(dataDir: string): StorageService {
   };
 }
 
-export function createSqliteStorageService(dataDir: string): StorageService {
-  return createJsonStorageService(dataDir);
+export async function createSqliteStorageService(dataDir: string): Promise<StorageService> {
+  mkdirSync(dataDir, { recursive: true });
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(join(dataDir, SQLITE_FILE));
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      canonical_path TEXT NOT NULL,
+      allowed_root_id TEXT,
+      git_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS prompt_queue (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      harness_id TEXT NOT NULL,
+      project_directory TEXT NOT NULL,
+      harness_session_id TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      model_json TEXT,
+      agent TEXT,
+      variant TEXT,
+      mode TEXT NOT NULL,
+      entry_order INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+
+  const promptQueueColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(prompt_queue)")
+      .all()
+      .map((row) => String((row as Record<string, unknown>).name)),
+  );
+  if (!promptQueueColumns.has("entry_order")) {
+    db.exec("ALTER TABLE prompt_queue ADD COLUMN entry_order INTEGER NOT NULL DEFAULT 0");
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS prompt_queue_session_order
+      ON prompt_queue(session_id, entry_order, created_at);
+  `);
+
+  const parseJson = <T>(value: unknown): T | undefined => {
+    if (typeof value !== "string" || !value) return undefined;
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return undefined;
+    }
+  };
+  const projectFromRow = (row: Record<string, unknown>): ProjectRecord => ({
+    id: String(row.id),
+    displayName: String(row.display_name),
+    path: String(row.path),
+    canonicalPath: String(row.canonical_path),
+    allowedRootId: typeof row.allowed_root_id === "string" ? row.allowed_root_id : undefined,
+    git: parseJson<ProjectRecord["git"]>(row.git_json),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  });
+  const queueFromRow = (row: Record<string, unknown>): PromptQueueEntryRecord => ({
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    harnessId: String(row.harness_id) as HarnessId,
+    projectDirectory: String(row.project_directory),
+    harnessSessionId: String(row.harness_session_id),
+    text: String(row.text),
+    createdAt: Number(row.created_at),
+    model: parseJson<SelectedModel>(row.model_json),
+    agent: typeof row.agent === "string" ? row.agent : undefined,
+    variant: typeof row.variant === "string" ? row.variant : undefined,
+    mode: String(row.mode) as QueueMode,
+    order: Number(row.entry_order),
+  });
+
+  const service: StorageService = {
+    async listProjects() {
+      return db.prepare("SELECT * FROM projects ORDER BY created_at ASC").all().map(projectFromRow);
+    },
+    async getProject(id: string) {
+      const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
+      return row ? projectFromRow(row as Record<string, unknown>) : null;
+    },
+    async createProject(input: CreateProjectInput) {
+      const now = new Date().toISOString();
+      const project: ProjectRecord = {
+        id: generateProjectId(),
+        displayName: input.displayName,
+        path: input.path,
+        canonicalPath: input.canonicalPath ?? input.path,
+        allowedRootId: input.allowedRootId,
+        git: input.git,
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.prepare(
+        `INSERT INTO projects (id, display_name, path, canonical_path, allowed_root_id, git_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        project.id,
+        project.displayName,
+        project.path,
+        project.canonicalPath,
+        project.allowedRootId ?? null,
+        project.git ? JSON.stringify(project.git) : null,
+        project.createdAt,
+        project.updatedAt,
+      );
+      return project;
+    },
+    async updateProject(id: string, input: UpdateProjectInput) {
+      const existing = await service.getProject(id);
+      if (!existing) return null;
+      const updated: ProjectRecord = {
+        ...existing,
+        displayName: input.displayName ?? existing.displayName,
+        path: input.path ?? existing.path,
+        canonicalPath: input.canonicalPath ?? existing.canonicalPath,
+        allowedRootId:
+          input.allowedRootId === undefined
+            ? existing.allowedRootId
+            : (input.allowedRootId ?? undefined),
+        git: input.git ?? existing.git,
+        updatedAt: new Date().toISOString(),
+      };
+      db.prepare(
+        `UPDATE projects SET display_name = ?, path = ?, canonical_path = ?, allowed_root_id = ?, git_json = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        updated.displayName,
+        updated.path,
+        updated.canonicalPath,
+        updated.allowedRootId ?? null,
+        updated.git ? JSON.stringify(updated.git) : null,
+        updated.updatedAt,
+        id,
+      );
+      return updated;
+    },
+    async deleteProject(id: string) {
+      return db.prepare("DELETE FROM projects WHERE id = ?").run(id).changes > 0;
+    },
+    async listPromptQueue(sessionId?: string) {
+      const rows = sessionId
+        ? db
+            .prepare(
+              `SELECT * FROM prompt_queue
+               WHERE session_id = ?
+               ORDER BY entry_order ASC, created_at ASC`,
+            )
+            .all(sessionId)
+        : db
+            .prepare(
+              `SELECT * FROM prompt_queue
+               ORDER BY session_id ASC, entry_order ASC, created_at ASC`,
+            )
+            .all();
+      return normalizeQueueEntries(rows.map((row) => queueFromRow(row as Record<string, unknown>)));
+    },
+    async createPromptQueueEntry(input: CreatePromptQueueEntryInput) {
+      const current = await service.listPromptQueue(input.sessionId);
+      const entry: PromptQueueEntryRecord = {
+        id: input.id ?? generatePromptQueueEntryId(),
+        sessionId: input.sessionId,
+        harnessId: input.harnessId,
+        projectDirectory: input.projectDirectory,
+        harnessSessionId: input.harnessSessionId,
+        text: input.text,
+        createdAt: input.createdAt ?? Date.now(),
+        model: input.model,
+        agent: input.agent,
+        variant: input.variant,
+        mode: input.mode,
+        order: input.order ?? current.length,
+      };
+      db.prepare(
+        `INSERT INTO prompt_queue (id, session_id, harness_id, project_directory, harness_session_id, text, created_at, model_json, agent, variant, mode, entry_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        entry.id,
+        entry.sessionId,
+        entry.harnessId,
+        entry.projectDirectory,
+        entry.harnessSessionId,
+        entry.text,
+        entry.createdAt,
+        entry.model ? JSON.stringify(entry.model) : null,
+        entry.agent ?? null,
+        entry.variant ?? null,
+        entry.mode,
+        entry.order,
+      );
+      return entry;
+    },
+    async updatePromptQueueEntry(id: string, input: UpdatePromptQueueEntryInput) {
+      const row = db.prepare("SELECT * FROM prompt_queue WHERE id = ?").get(id);
+      if (!row) return null;
+      const existing = queueFromRow(row as Record<string, unknown>);
+      const updated = {
+        ...existing,
+        text: input.text ?? existing.text,
+        model: input.model ?? existing.model,
+        agent: input.agent === undefined ? existing.agent : (input.agent ?? undefined),
+        variant: input.variant === undefined ? existing.variant : (input.variant ?? undefined),
+        mode: input.mode ?? existing.mode,
+        order: input.order ?? existing.order,
+      };
+      db.prepare(
+        `UPDATE prompt_queue SET text = ?, model_json = ?, agent = ?, variant = ?, mode = ?, entry_order = ? WHERE id = ?`,
+      ).run(
+        updated.text,
+        updated.model ? JSON.stringify(updated.model) : null,
+        updated.agent ?? null,
+        updated.variant ?? null,
+        updated.mode,
+        updated.order,
+        id,
+      );
+      return updated;
+    },
+    async deletePromptQueueEntry(id: string) {
+      return db.prepare("DELETE FROM prompt_queue WHERE id = ?").run(id).changes > 0;
+    },
+    async deletePromptQueueBySession(sessionId: string) {
+      const removed = await service.listPromptQueue(sessionId);
+      db.prepare("DELETE FROM prompt_queue WHERE session_id = ?").run(sessionId);
+      return removed;
+    },
+    async replacePromptQueue(sessionId: string, entries: PromptQueueEntryRecord[]) {
+      await service.deletePromptQueueBySession(sessionId);
+      for (const entry of normalizeQueueEntries(entries))
+        await service.createPromptQueueEntry(entry);
+      return await service.listPromptQueue(sessionId);
+    },
+    async getSetting(key: string) {
+      const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+        | { value?: string }
+        | undefined;
+      return row?.value ?? null;
+    },
+    async setSetting(key: string, value: string) {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+      return true;
+    },
+    async removeSetting(key: string) {
+      db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+      return true;
+    },
+    async getAllSettings() {
+      return Object.fromEntries(
+        db
+          .prepare("SELECT key, value FROM settings")
+          .all()
+          .map((row) => {
+            const item = row as { key: string; value: string };
+            return [item.key, item.value];
+          }),
+      );
+    },
+    async mergeSettings(entries: Record<string, string>) {
+      for (const [key, value] of Object.entries(entries)) await service.setSetting(key, value);
+      return true;
+    },
+  };
+  return service;
 }
 
 async function migrateJsonStorageToSqlite(dataDir: string, storage: StorageService): Promise<void> {
   const legacy = createJsonStorageService(dataDir);
-  const [projects, sessions, mappings, queue, settings] = await Promise.all([
-    legacy.listProjects(),
-    legacy.listSessions(),
-    legacy.listSessionMappings(),
-    legacy.listPromptQueue(),
-    legacy.getAllSettings(),
-  ]);
+  const [projects, settings] = await Promise.all([legacy.listProjects(), legacy.getAllSettings()]);
 
-  const projectIdMap = new Map<string, string>();
   for (const project of projects) {
-    const created = await storage.createProject({
+    await storage.createProject({
       ...project,
     });
-    await storage.updateProject(created.id, {
-      displayName: project.displayName,
-      path: project.path,
-      canonicalPath: project.canonicalPath,
-      allowedRootId: project.allowedRootId,
-      git: project.git,
-    });
-    projectIdMap.set(project.id, created.id);
   }
 
-  for (const session of sessions) {
-    await storage.createSession({
-      ...session,
-      id: session.id,
-      projectId: projectIdMap.get(session.projectId) ?? session.projectId,
-    });
-  }
-  for (const mapping of mappings) {
-    await storage.upsertSessionMapping({
-      ...mapping,
-      projectId: projectIdMap.get(mapping.projectId) ?? mapping.projectId,
-    });
-  }
-  for (const entry of queue) {
-    await storage.createPromptQueueEntry(entry);
-  }
   await storage.mergeSettings(settings);
 }
 
@@ -598,7 +664,7 @@ export async function createStorageService(dataDir: string): Promise<StorageServ
 
   const sqlitePath = join(dataDir, SQLITE_FILE);
   const sqliteExists = existsSync(sqlitePath);
-  const storage = createSqliteStorageService(dataDir);
+  const storage = await createSqliteStorageService(dataDir);
   if (!sqliteExists && hasLegacyJsonStorage(dataDir)) {
     await migrateJsonStorageToSqlite(dataDir, storage);
   }

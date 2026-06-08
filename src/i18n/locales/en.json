@@ -45,9 +45,9 @@
       "hideOldModels": "Hide old models",
       "months": "months",
       "hideOldModelsHelp": "Selected and favorite models always stay visible. Models without a valid release date also stay visible.",
-      "restartServer": "Restart Harnesses",
-      "restartServerTitle": "Restart Harnesses?",
-      "restartServerDescription": "This will hard-restart OpenCode, Pi, Claude Code, and Codex. Running turns may be interrupted; project connections will be restored automatically."
+      "restartLocalBackend": "Restart Local Backend",
+      "restartLocalBackendTitle": "Restart Local Backend?",
+      "restartLocalBackendDescription": "This reloads OpenGUI's local backend and then refreshes the app. Running turns may be interrupted."
     },
     "skills": {
       "installed": "Installed Plugins",

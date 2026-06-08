@@ -24,16 +24,21 @@ export async function sendQueuedPromptNow(input: {
   session: SessionRecord;
   entryId: string;
 }) {
-  let entries = await input.services.queues.listSessionQueue(input.session.id);
+  const scope = { projectId: input.session.projectId, harnessId: input.session.harnessId };
+  let entries = await input.services.queues.listSessionQueue(input.session.id, scope);
   const index = entries.findIndex((entry) => entry.id === input.entryId);
   if (index === -1) return entries;
 
   if (index > 0) {
-    entries = await input.services.queues.reorder(input.session.id, input.entryId, 0);
+    entries = await input.services.queues.reorder(input.session.id, input.entryId, 0, scope);
   }
 
   if (input.session.status === "running") {
-    await abortSessionThroughHarness({ services: input.services, session: input.session });
+    await abortSessionThroughHarness({
+      services: input.services,
+      project: input.project,
+      session: input.session,
+    });
     return entries;
   }
 
@@ -43,7 +48,7 @@ export async function sendQueuedPromptNow(input: {
     session: input.session,
     entries,
   });
-  return await input.services.queues.listSessionQueue(input.session.id);
+  return await input.services.queues.listSessionQueue(input.session.id, scope);
 }
 
 async function dispatchFirstQueuedPrompt(input: {
@@ -52,11 +57,13 @@ async function dispatchFirstQueuedPrompt(input: {
   session: SessionRecord;
   entries?: Awaited<ReturnType<BackendServiceContext["queues"]["listSessionQueue"]>>;
 }) {
-  const entries = input.entries ?? (await input.services.queues.listSessionQueue(input.session.id));
+  const scope = { projectId: input.session.projectId, harnessId: input.session.harnessId };
+  const entries =
+    input.entries ?? (await input.services.queues.listSessionQueue(input.session.id, scope));
   const next = entries[0];
   if (!next) return false;
 
-  await input.services.queues.remove(input.session.id, next.id);
+  await input.services.queues.remove(input.session.id, next.id, scope);
   await promptSessionThroughHarness({
     services: input.services,
     project: input.project,
@@ -83,16 +90,24 @@ export async function submitSessionPrompt(input: {
   const decision = decideSharedSessionPrompt({ sessionStatus: input.session.status });
 
   if (decision === "queue") {
-    await input.services.queues.enqueue(input.session.id, {
-      text: input.text,
-      model: input.model,
-      agent: input.agent,
-      variant: input.variant,
-      mode,
-      insertAt: queueInsertIndex(mode),
-    });
+    await input.services.queues.enqueue(
+      input.session.id,
+      {
+        text: input.text,
+        model: input.model,
+        agent: input.agent,
+        variant: input.variant,
+        mode,
+        insertAt: queueInsertIndex(mode),
+      },
+      { projectId: input.session.projectId, harnessId: input.session.harnessId },
+    );
     if (mode === "interrupt") {
-      await abortSessionThroughHarness({ services: input.services, session: input.session });
+      await abortSessionThroughHarness({
+        services: input.services,
+        project: input.project,
+        session: input.session,
+      });
     }
     return { dispatched: false };
   }

@@ -5,13 +5,12 @@ import type { InternalAgentState, MessageEntry, Session } from "@/hooks/agent-st
 import { updateVariantSelections, variantKey } from "@/hooks/use-agent-variant-core";
 
 export function deriveSelectionFromMessages(messages: MessageEntry[]) {
-  let selectedAgent: string | null | undefined;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const info = messages[i]?.info;
     if (!info || typeof info !== "object") continue;
-    if (selectedAgent === undefined && "agent" in info && typeof info.agent === "string") {
-      selectedAgent = info.agent;
-    }
+    if (info.role !== "user") continue;
+    const selectedAgent =
+      "agent" in info && typeof info.agent === "string" ? info.agent : undefined;
     const variant =
       "variant" in info && typeof info.variant === "string" ? info.variant : undefined;
     if (
@@ -48,7 +47,7 @@ export function deriveSelectionFromMessages(messages: MessageEntry[]) {
       };
     }
   }
-  return null;
+  return { selectedModel: null, selectedAgent: null, variant: undefined };
 }
 
 export function createBufferedSessionMessages(
@@ -83,7 +82,8 @@ type SessionActivationDispatch = (
           nextCursor?: string | null;
           mode?: "replace" | "prepend" | "append";
         };
-      },
+      }
+    | { type: "SESSION_STATUS"; payload: { sessionID: string; status: { type: string } } },
 ) => void;
 
 type ProjectTarget = { directory?: string; workspaceId?: string };
@@ -98,8 +98,11 @@ type FetchMessagePage = (
   nextCursor: string | null;
 }>;
 
+type RefreshSessionStatus = (sessionId: string, projectTarget?: ProjectTarget) => Promise<void>;
+
 export function useAgentSessionActivation({
   fetchMessagePage,
+  refreshSessionStatus,
   hydrateChildSessionsForMessages,
   dispatch,
   stateRef,
@@ -107,6 +110,7 @@ export function useAgentSessionActivation({
   sessionReconcileRequestRef,
 }: {
   fetchMessagePage: FetchMessagePage;
+  refreshSessionStatus?: RefreshSessionStatus;
   hydrateChildSessionsForMessages: (
     messages: MessageEntry[],
     options?: {
@@ -130,7 +134,6 @@ export function useAgentSessionActivation({
 
       const applySelectionFromMessages = (messages: MessageEntry[]) => {
         const derived = deriveSelectionFromMessages(messages);
-        if (!derived?.selectedModel) return;
         dispatch({ type: "SET_SELECTED_MODEL", payload: derived.selectedModel });
         if (derived.selectedAgent !== undefined) {
           dispatch({ type: "SET_SELECTED_AGENT", payload: derived.selectedAgent ?? null });
@@ -258,13 +261,14 @@ export function useAgentSessionActivation({
           if (stateRef.current.activeSessionId !== sessionId) return;
           try {
             await refreshActiveSessionMessages(sessionId, projectTarget);
+            await refreshSessionStatus?.(sessionId, projectTarget);
           } catch {
             /* best-effort transcript reconcile */
           }
         }
       })();
     },
-    [refreshActiveSessionMessages, sessionReconcileRequestRef, stateRef],
+    [refreshActiveSessionMessages, refreshSessionStatus, sessionReconcileRequestRef, stateRef],
   );
 
   return {

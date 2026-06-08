@@ -908,8 +908,12 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
     case "TURN_RUN_STARTED": {
       const run = action.payload;
+      const busySessionIds = new Set(state.busySessionIds);
+      busySessionIds.add(run.sessionID);
       return {
         ...state,
+        busySessionIds,
+        ...(run.sessionID === state.activeSessionId ? { isBusy: true } : {}),
         turnRuns: {
           ...state.turnRuns,
           [run.id]: { ...run, status: "running" },
@@ -1139,6 +1143,18 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
       const nextBusy = new Set([...state.busySessionIds].map(renameSessionId));
       const nextNaming = new Set([...state.namingSessionIds].map(renameSessionId));
+      const nextActiveTurnRunBySession = Object.fromEntries(
+        Object.entries(state.activeTurnRunBySession).map(([sessionId, turnId]) => [
+          renameSessionId(sessionId),
+          turnId,
+        ]),
+      );
+      const nextTurnRuns = Object.fromEntries(
+        Object.entries(state.turnRuns).map(([turnId, run]) => [
+          turnId,
+          { ...run, sessionID: renameSessionId(run.sessionID) },
+        ]),
+      );
 
       const nextAfterPart = new Set([...state.afterPartPending].map(renameSessionId));
       const nextAfterPartTriggered = new Set([...state._afterPartTriggered].map(renameSessionId));
@@ -1162,6 +1178,8 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         activeSessionId: state.activeSessionId === oldId ? newId : state.activeSessionId,
         messages: nextMessages,
         busySessionIds: nextBusy,
+        activeTurnRunBySession: nextActiveTurnRunBySession,
+        turnRuns: nextTurnRuns,
         namingSessionIds: nextNaming,
         afterPartPending: nextAfterPart,
         _afterPartTriggered: nextAfterPartTriggered,

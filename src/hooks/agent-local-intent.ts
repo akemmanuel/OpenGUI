@@ -8,6 +8,7 @@ import {
   sendCommandToAgent,
   sendPromptToAgent,
 } from "@/hooks/agent-send";
+import { decidePromptIntentDispatch } from "@/hooks/local-intent-orchestration";
 import { createSessionQueueOrchestrator } from "@/hooks/agent-session-queue";
 import { createPromptSendStartActions } from "@/hooks/agent-send-state";
 import {
@@ -183,6 +184,10 @@ export function createLocalIntentOrchestrator(
         variant: overrideVariant,
       },
     );
+    if (!selection.model) {
+      dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+      return;
+    }
     for (const action of createPromptSendStartActions({ sessionId, text, selection })) {
       dispatch(action);
     }
@@ -242,33 +247,42 @@ export function createLocalIntentOrchestrator(
     if (!sessionId) return;
 
     const current = getState();
-    const queueMode = mode ?? "queue";
+    const intent = decidePromptIntentDispatch({
+      entry: { type: "use-session", sessionId, createdFromActiveTarget: !current.activeSessionId },
+      requestedMode: mode,
+      busySessionIds: current.busySessionIds,
+    });
+    if (!intent) return;
 
-    if (queueMode === "after-part" && current.busySessionIds.has(sessionId)) {
+    if (intent.type === "queue-after-part") {
       const selection = resolveAgentSendSelection(getSelectionSnapshot());
+      if (!selection.model) {
+        dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+        return;
+      }
       await sessionQueue.enqueuePrompt({
-        sessionId,
+        sessionId: intent.sessionId,
         text,
         model: selection.model,
         agent: selection.agent,
         variant: selection.variant,
-        mode: queueMode,
-        insertAt: "front",
+        mode: intent.mode,
+        insertAt: intent.insertAt,
       });
       dispatch({
         type: "SET_AFTER_PART_PENDING",
-        payload: { sessionID: sessionId, pending: true },
+        payload: { sessionID: intent.sessionId, pending: true },
       });
       return;
     }
 
     await dispatchPromptDirect(
-      sessionId,
-      prepareDirectoryChangePrompt(sessionId, text),
+      intent.sessionId,
+      prepareDirectoryChangePrompt(intent.sessionId, text),
       undefined,
       undefined,
       undefined,
-      queueMode,
+      intent.mode,
     );
   };
 
@@ -279,11 +293,15 @@ export function createLocalIntentOrchestrator(
 
     const commandRuntime = getResourceRuntime();
     if (!commandRuntime?.sendCommand) return;
+    const current = getState();
+    if (!current.selectedModel) {
+      dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+      return;
+    }
 
     dispatch({ type: "SET_BUSY", payload: true });
     try {
       const latestSession = getState().sessions.find((session) => session.id === sessionId);
-      const current = getState();
       const { projectTarget } = await sendCommandToAgent({
         runtime: commandRuntime,
         session: latestSession,

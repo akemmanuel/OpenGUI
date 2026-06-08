@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -905,16 +905,10 @@ function cloneJSON(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function sanitizeFileName(id) {
-  return encodeURIComponent(id).replace(/%/g, "_");
-}
-
 function makeStoragePaths(userData = join(homedir(), ".config", "OpenGUI")) {
   const root = join(userData, "codex");
   return {
     root,
-    indexFile: join(root, "sessions.json"),
-    transcriptsDir: join(root, "transcripts"),
   };
 }
 
@@ -1287,21 +1281,9 @@ class CodexBridgeManager {
   }
 
   async loadStorage() {
-    await mkdir(this.paths.root, { recursive: true });
-    await mkdir(this.paths.transcriptsDir, { recursive: true });
-    try {
-      const raw = await readFile(this.paths.indexFile, "utf8");
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      for (const entry of parsed) {
-        if (!entry || typeof entry !== "object") continue;
-        if (typeof entry.id !== "string") continue;
-        this.sessionIndex.set(entry.id, entry);
-      }
-      this.pruneSessionIndex();
-    } catch {
-      /* ignore */
-    }
+    // Sessions and transcripts are Harness-owned. Codex-backed Sessions are
+    // discovered from the Codex app-server and tracked here only in memory for
+    // live orchestration.
   }
 
   pruneSessionIndex(maxEntries = MAX_CODEX_SESSION_INDEX_ENTRIES) {
@@ -1317,14 +1299,6 @@ class CodexBridgeManager {
   async persistIndex() {
     await this.storageReady;
     this.pruneSessionIndex();
-    const entries = [...this.sessionIndex.values()].sort(
-      (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0),
-    );
-    await writeFile(this.paths.indexFile, JSON.stringify(entries, null, 2), "utf8");
-  }
-
-  transcriptFile(sessionId) {
-    return join(this.paths.transcriptsDir, `${sanitizeFileName(sessionId)}.json`);
   }
 
   clearSessionMemory(sessionId) {
@@ -1365,18 +1339,9 @@ class CodexBridgeManager {
     if (this.transcriptCache.has(realId)) {
       return this.transcriptCache.get(realId);
     }
-    try {
-      const raw = await readFile(this.transcriptFile(realId), "utf8");
-      const parsed = JSON.parse(raw);
-      const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
-      const cached = { messages };
-      this.transcriptCache.set(realId, cached);
-      return cached;
-    } catch {
-      const empty = { messages: [] };
-      this.transcriptCache.set(realId, empty);
-      return empty;
-    }
+    const empty = { messages: [] };
+    this.transcriptCache.set(realId, empty);
+    return empty;
   }
 
   async persistTranscript(sessionId, messages) {
@@ -1385,7 +1350,6 @@ class CodexBridgeManager {
     const realId = this.resolveSessionId(sessionId);
     const payload = { messages };
     this.transcriptCache.set(realId, payload);
-    await writeFile(this.transcriptFile(realId), JSON.stringify(payload, null, 2), "utf8");
   }
 
   resolveSessionId(sessionId) {

@@ -45,7 +45,6 @@ import {
 } from "@/hooks/agent-session-lifecycle";
 import {
   createWorkspaceLifecyclePlan,
-  createWorkspaceSelectionSyncPlan,
   createWorkspaceSwitchPlan,
   createWorkspaceUpdatePlan,
 } from "@/hooks/agent-workspace-lifecycle";
@@ -97,8 +96,6 @@ import {
 import {
   getSessionProjectTarget,
   getSessionSelectedAgent,
-  getSessionSelectedModel,
-  getSessionSelectedVariant,
   getSessionWorkspaceId,
   isHiddenProject,
   makeProjectKey,
@@ -130,10 +127,8 @@ import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import {
   onSettingsChange,
   storageGet,
-  storageParsed,
   storageRemove,
   storageSet,
-  storageSetJSON,
   storageSetOrRemove,
 } from "@/lib/safe-storage";
 import { createHttpOpenGuiClient } from "@/protocol/http-client";
@@ -197,31 +192,6 @@ function selectedModelsEqual(
 
 function selectedVariantsEqual(a: string | null | undefined, b: string | null | undefined) {
   return (a ?? null) === (b ?? null);
-}
-
-function resolveAvailableModel({
-  providers,
-  providerDefaults,
-  sessionModel,
-  hasSessionModel,
-  currentModel,
-  workspaceModel,
-}: {
-  providers: Provider[];
-  providerDefaults: Record<string, string>;
-  sessionModel?: SelectedModel | null;
-  hasSessionModel: boolean;
-  currentModel: SelectedModel | null;
-  workspaceModel?: SelectedModel | null;
-}) {
-  if (hasSessionModel && isModelAvailable(providers, sessionModel ?? null)) {
-    return sessionModel;
-  }
-  if (isModelAvailable(providers, currentModel)) return currentModel;
-  if (isModelAvailable(providers, workspaceModel ?? null)) {
-    return workspaceModel ?? null;
-  }
-  return resolveServerDefaultModel(providers, providerDefaults);
 }
 
 function resolveAvailableAgent({
@@ -341,9 +311,6 @@ function InternalAgentProvider({
   const sessionIdAliasesRef = useRef<Map<string, string>>(new Map());
   const namingRequestIdsRef = useRef<Map<string, number>>(new Map());
 
-  // Keep refs so selectSession can read current values without stale closures
-  const selectedModelRef = useRef(state.selectedModel);
-  selectedModelRef.current = state.selectedModel;
   const selectSessionRequestRef = useRef(0);
   const childHydrationVersionRef = useRef<Record<string, number>>({});
   const sessionReconcileRequestRef = useRef<Record<string, number>>({});
@@ -561,41 +528,11 @@ function InternalAgentProvider({
     persistWorkspaces(state.workspaces);
   }, [state.workspaces, workspaceStateReady]);
 
-  // Persist selectedModel to localStorage whenever it changes (covers
-  // both explicit setModel calls and implicit updates from the reducer,
-  // e.g. when switching sessions or receiving a new assistant message).
-  // The ref guards against the initial render (selectedModel = null) wiping
-  // the saved value before bootstrap has a chance to restore it.
-  const modelInitialized = useRef(false);
-  useEffect(() => {
-    if (state.selectedModel) {
-      modelInitialized.current = true;
-      storageSetJSON(STORAGE_KEYS.SELECTED_MODEL, state.selectedModel);
-    } else if (modelInitialized.current) {
-      storageRemove(STORAGE_KEYS.SELECTED_MODEL);
-    }
-  }, [state.selectedModel]);
-
-  useEffect(() => {
-    const activeId = state.activeWorkspaceId;
-    if (!activeId) return;
-    const next = createWorkspaceSelectionSyncPlan({
-      workspaces: state.workspaces,
-      activeWorkspaceId: activeId,
-      selection: {
-        selectedModel: state.selectedModel,
-        selectedAgent: state.selectedAgent,
-      },
-    });
-    if (!next) return;
-    dispatch({ type: "SET_WORKSPACES", payload: next });
-  }, [state.activeWorkspaceId, state.selectedAgent, state.selectedModel, state.workspaces]);
-
   useEffect(() => {
     storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, state.activeWorkspaceId);
   }, [state.activeWorkspaceId]);
 
-  // Persist unreadSessionIds to localStorage whenever it changes
+  // Persist unreadSessionIds through the frontend persistence abstraction whenever it changes
   useEffect(() => {
     persistUnreadSessionIds(state.unreadSessionIds);
   }, [state.unreadSessionIds]);
@@ -693,37 +630,24 @@ function InternalAgentProvider({
         loadedResourceProjectKeyRef.current = targetDirectory ? projectKey : null;
         loadedResourceBackendIdRef.current = harnessId;
 
-        const activeSessionId = stateRef.current.activeSessionId;
-        const activeSession = activeSessionId
-          ? stateRef.current.sessions.find((session) => session.id === activeSessionId)
+        const currentSelection = stateRef.current.selectedModel;
+        const nextSelection = isModelAvailable(providersData.providers, currentSelection)
+          ? currentSelection
           : null;
-        const activeSessionModel = getSessionSelectedModel(activeSession);
-        const activeSessionAgent = getSessionSelectedAgent(activeSession);
-        const activeSessionMeta = activeSessionId
-          ? stateRef.current.sessionMeta[activeSessionId]
-          : undefined;
-        const activeWorkspace = stateRef.current.workspaces.find(
-          (workspace) => workspace.id === stateRef.current.activeWorkspaceId,
-        );
-        const nextSelection = resolveAvailableModel({
-          providers: providersData.providers,
-          providerDefaults: providersData.default,
-          sessionModel: activeSessionModel ?? activeSessionMeta?.selectedModel,
-          hasSessionModel: Boolean(
-            activeSessionModel ||
-            (activeSessionMeta && Object.hasOwn(activeSessionMeta, "selectedModel")),
-          ),
-          currentModel: selectedModelRef.current,
-          workspaceModel:
-            activeWorkspace?.selectedModel ??
-            storageParsed<SelectedModel>(STORAGE_KEYS.SELECTED_MODEL),
-        });
         dispatch({
           type: "SET_SELECTED_MODEL",
           payload: nextSelection ?? null,
         });
 
         dispatch({ type: "SET_AGENTS", payload: agentsData });
+        const activeSessionId = stateRef.current.activeSessionId;
+        const activeSession = activeSessionId
+          ? stateRef.current.sessions.find((session) => session.id === activeSessionId)
+          : null;
+        const activeSessionAgent = getSessionSelectedAgent(activeSession);
+        const activeSessionMeta = activeSessionId
+          ? stateRef.current.sessionMeta[activeSessionId]
+          : undefined;
         const nextAgent = resolveAvailableAgent({
           agents: agentsData,
           sessionAgent: activeSessionAgent ?? activeSessionMeta?.selectedAgent,
@@ -731,25 +655,20 @@ function InternalAgentProvider({
             activeSessionAgent ||
             (activeSessionMeta && Object.hasOwn(activeSessionMeta, "selectedAgent")),
           ),
-          workspaceAgent: activeWorkspace?.selectedAgent ?? storageGet(STORAGE_KEYS.SELECTED_AGENT),
+          workspaceAgent: storageGet(STORAGE_KEYS.SELECTED_AGENT),
         });
         dispatch({ type: "SET_SELECTED_AGENT", payload: nextAgent });
 
         let nextVariantSelections = getVariantSelectionsForWorkspace(
           targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
         );
-        const activeSessionVariant = getSessionSelectedVariant(activeSession);
-        const hasSessionVariant =
-          Boolean(activeSessionModel) ||
-          Boolean(activeSessionMeta && Object.hasOwn(activeSessionMeta, "selectedVariant"));
-        if (hasSessionVariant && nextSelection) {
+        if (
+          activeSessionMeta &&
+          Object.hasOwn(activeSessionMeta, "selectedVariant") &&
+          nextSelection
+        ) {
           const key = variantKey(nextSelection.providerID, nextSelection.modelID);
-          const desiredVariant = activeSessionModel
-            ? (activeSessionVariant ??
-              (selectedModelsEqual(activeSessionModel, activeSessionMeta?.selectedModel)
-                ? (activeSessionMeta?.selectedVariant ?? undefined)
-                : undefined))
-            : (activeSessionMeta?.selectedVariant ?? undefined);
+          const desiredVariant = activeSessionMeta.selectedVariant ?? undefined;
           if (nextVariantSelections[key] !== desiredVariant) {
             nextVariantSelections = updateVariantSelections(
               nextVariantSelections,
@@ -863,9 +782,12 @@ function InternalAgentProvider({
         }
 
         try {
+          if (!connection.target.directory) {
+            throw new Error("Queue listing requires a Project directory");
+          }
           const queuedPromptsBySession = await openGuiClient.sessions.queue.listProject({
             harnessId,
-            target: connection.target,
+            target: { ...connection.target, directory: connection.target.directory },
           });
           for (const [sessionId, prompts] of Object.entries(queuedPromptsBySession)) {
             dispatch({
@@ -1425,7 +1347,7 @@ function InternalAgentProvider({
           /* startup session index is best effort */
         });
       } catch {
-        /* ignore localStorage errors */
+        /* ignore frontend persistence errors */
         if (!cancelled) dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
       }
     };
@@ -1891,6 +1813,43 @@ function InternalAgentProvider({
   const { selectSession, refreshActiveSessionMessages, scheduleSessionMessageReconcile } =
     useAgentSessionActivation({
       fetchMessagePage,
+      refreshSessionStatus: async (sessionId, projectTarget) => {
+        const session = stateRef.current.sessions.find((item) => item.id === sessionId);
+        const harnessId = resolveSessionHarnessRoute(session).harnessId;
+        if (!harnessId || !projectTarget?.directory) return;
+        const statuses = await openGuiClient.harnesses.listProjectSessionStatuses({
+          harnessIds: [harnessId],
+          target: projectTarget,
+        });
+        const status = statuses[sessionId];
+        const activeTurnId = stateRef.current.activeTurnRunBySession[sessionId];
+        const activeTurn = activeTurnId ? stateRef.current.turnRuns[activeTurnId] : null;
+        const lastAssistant = stateRef.current.messages.findLast(
+          (message) => message.info.role === "assistant",
+        );
+        const completedAt = lastAssistant
+          ? (lastAssistant.info.time as { completed?: number }).completed
+          : undefined;
+        const hasRunningTool = lastAssistant?.parts.some(
+          (part) =>
+            part.type === "tool" &&
+            (part.state.status === "running" || part.state.status === "pending"),
+        );
+        const transcriptLooksSettled = Boolean(
+          activeTurn?.status === "running" &&
+          typeof completedAt === "number" &&
+          Date.now() - completedAt > 2000 &&
+          !hasRunningTool,
+        );
+        if (!status && !transcriptLooksSettled) return;
+        dispatch({
+          type: "SESSION_STATUS",
+          payload: {
+            sessionID: sessionId,
+            status: transcriptLooksSettled ? { type: "idle" } : status!,
+          },
+        });
+      },
       hydrateChildSessionsForMessages,
       dispatch,
       stateRef,
@@ -2196,6 +2155,10 @@ function InternalAgentProvider({
           ? { ...target, workspaceId, baseUrl: workspace.serverUrl }
           : target,
     });
+    dispatch({
+      type: "SESSION_STATUS",
+      payload: { sessionID: state.activeSessionId, status: { type: "idle" } },
+    });
   }, [
     openGuiClient,
     resolveCurrentSessionId,
@@ -2294,6 +2257,7 @@ function InternalAgentProvider({
           directory,
           harnessId:
             harnessId ??
+            activeSessionBackendId ??
             resolvePendingPromptCreationHarnessRoute({
               activeTargetBackendId: stateRef.current.activeTargetBackendId,
               preferredBackendId,
@@ -2301,7 +2265,7 @@ function InternalAgentProvider({
         },
       });
     },
-    [preferredBackendId],
+    [activeSessionBackendId, preferredBackendId],
   );
 
   const startNewChat = useCallback(async () => {
@@ -2313,13 +2277,15 @@ function InternalAgentProvider({
 
   const setActiveTargetDirectory = useCallback(
     (directory: string) => {
-      const harnessId = resolvePendingPromptCreationHarnessRoute({
-        activeTargetBackendId: stateRef.current.activeTargetBackendId,
-        preferredBackendId,
-      }).harnessId;
+      const harnessId =
+        activeSessionBackendId ??
+        resolvePendingPromptCreationHarnessRoute({
+          activeTargetBackendId: stateRef.current.activeTargetBackendId,
+          preferredBackendId,
+        }).harnessId;
       dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, harnessId } });
     },
-    [preferredBackendId],
+    [activeSessionBackendId, preferredBackendId],
   );
 
   const setActiveTargetBackend = useCallback((harnessId: HarnessId) => {
@@ -2359,10 +2325,33 @@ function InternalAgentProvider({
     [],
   );
 
+  const getQueueTarget = useCallback((sessionId: string) => {
+    const session = stateRef.current.sessions.find((item) => item.id === sessionId);
+    const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
+    const target = getSessionProjectTarget(session) ?? undefined;
+    if (!harnessId || !target?.directory) {
+      throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
+    }
+    return {
+      harnessId,
+      target: { ...target, directory: target.directory },
+    };
+  }, []);
+
   const removeFromQueue = useCallback(
     (sessionId: string, promptId: string) => {
+      let queueTarget: ReturnType<typeof getQueueTarget>;
+      try {
+        queueTarget = getQueueTarget(sessionId);
+      } catch (error) {
+        dispatch({
+          type: "SET_ERROR",
+          payload: getErrorMessage(error) || "Failed to resolve queued prompt target",
+        });
+        return;
+      }
       void openGuiClient.sessions.queue
-        .remove({ sessionId, entryId: promptId })
+        .remove({ sessionId, entryId: promptId, ...queueTarget })
         .then((prompts) => applyQueueSnapshot(sessionId, prompts))
         .catch((error) => {
           dispatch({
@@ -2371,7 +2360,7 @@ function InternalAgentProvider({
           });
         });
     },
-    [applyQueueSnapshot, openGuiClient],
+    [applyQueueSnapshot, getQueueTarget, openGuiClient],
   );
 
   const reorderQueue = useCallback(
@@ -2379,8 +2368,18 @@ function InternalAgentProvider({
       const existing = stateRef.current.queuedPrompts[sessionId] ?? [];
       const entryId = existing[fromIndex]?.id;
       if (!entryId) return;
+      let queueTarget: ReturnType<typeof getQueueTarget>;
+      try {
+        queueTarget = getQueueTarget(sessionId);
+      } catch (error) {
+        dispatch({
+          type: "SET_ERROR",
+          payload: getErrorMessage(error) || "Failed to resolve queued prompt target",
+        });
+        return;
+      }
       void openGuiClient.sessions.queue
-        .reorder({ sessionId, entryId, index: toIndex })
+        .reorder({ sessionId, entryId, index: toIndex, ...queueTarget })
         .then((prompts) => applyQueueSnapshot(sessionId, prompts))
         .catch((error) => {
           dispatch({
@@ -2389,13 +2388,23 @@ function InternalAgentProvider({
           });
         });
     },
-    [applyQueueSnapshot, openGuiClient],
+    [applyQueueSnapshot, getQueueTarget, openGuiClient],
   );
 
   const updateQueuedPrompt = useCallback(
     (sessionId: string, promptId: string, text: string) => {
+      let queueTarget: ReturnType<typeof getQueueTarget>;
+      try {
+        queueTarget = getQueueTarget(sessionId);
+      } catch (error) {
+        dispatch({
+          type: "SET_ERROR",
+          payload: getErrorMessage(error) || "Failed to resolve queued prompt target",
+        });
+        return;
+      }
       void openGuiClient.sessions.queue
-        .update({ sessionId, entryId: promptId, text })
+        .update({ sessionId, entryId: promptId, text, ...queueTarget })
         .then((prompts) => applyQueueSnapshot(sessionId, prompts))
         .catch((error) => {
           dispatch({
@@ -2404,7 +2413,7 @@ function InternalAgentProvider({
           });
         });
     },
-    [applyQueueSnapshot, openGuiClient],
+    [applyQueueSnapshot, getQueueTarget, openGuiClient],
   );
 
   const setSessionDraft = useCallback((key: string, text: string) => {

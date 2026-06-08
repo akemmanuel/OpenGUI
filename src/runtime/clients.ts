@@ -6,6 +6,8 @@ import {
   type DesktopShellClient,
 } from "@/shell/client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
+import { STORAGE_KEYS } from "@/lib/constants";
+import { storageGet, storageParsed } from "@/lib/safe-storage";
 
 interface RuntimeClients {
   openGuiClient: OpenGuiClient;
@@ -41,17 +43,11 @@ interface StoredWorkspaceConnection {
 }
 
 function getStoredWorkspaceConnections() {
-  try {
-    return JSON.parse(
-      localStorage.getItem("opencode:workspaces") || "[]",
-    ) as StoredWorkspaceConnection[];
-  } catch {
-    return [];
-  }
+  return storageParsed<StoredWorkspaceConnection[]>(STORAGE_KEYS.WORKSPACES) ?? [];
 }
 
 function getActiveWorkspaceConnection() {
-  const activeWorkspaceId = localStorage.getItem("opencode:activeWorkspaceId");
+  const activeWorkspaceId = storageGet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID);
   const workspaces = getStoredWorkspaceConnections();
   return workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
 }
@@ -198,12 +194,53 @@ export function initializeRuntimeClients(): RuntimeClients {
             if (workspaceToken && !headers.has("authorization")) {
               headers.set("authorization", `Bearer ${workspaceToken}`);
             }
+            const isLocalBackendRequest = (() => {
+              if (!api?.backendFetch || !localBaseUrl) return false;
+              try {
+                const parsed = new URL(url);
+                const local = new URL(localBaseUrl);
+                return parsed.protocol === local.protocol && parsed.host === local.host;
+              } catch {
+                return false;
+              }
+            })();
+            if (isLocalBackendRequest) {
+              if (init?.body && typeof init.body !== "string") {
+                return await fetch(url, { ...init, headers });
+              }
+              const backendFetch = api?.backendFetch;
+              if (!backendFetch) return await fetch(url, { ...init, headers });
+              const response = await backendFetch({
+                url,
+                method: init?.method ?? "GET",
+                headers: Object.fromEntries(headers.entries()),
+                body: typeof init?.body === "string" ? init.body : null,
+              });
+              return new Response(response.body, {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+              });
+            }
             return await fetch(url, { ...init, headers });
           },
           rpcImpl: async (channel, args = []) => {
             const api = await ensureElectronBackend();
             const baseUrl = api?.backendUrl?.replace(/\/+$/, "");
             if (!baseUrl) throw new Error(`Desktop backend is not available: ${channel}`);
+            if (api?.backendFetch) {
+              const response = await api.backendFetch({
+                url: `${baseUrl}/api/rpc`,
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ channel, args }),
+              });
+              const body = JSON.parse(response.body || "null");
+              if (response.status < 200 || response.status >= 300 || !body?.ok) {
+                throw new Error(body?.error || `RPC failed: ${channel}`);
+              }
+              return body.value;
+            }
             const headers = new Headers({ "content-type": "application/json" });
             if (api?.backendToken) headers.set("authorization", `Bearer ${api.backendToken}`);
             const response = await fetch(`${baseUrl}/api/rpc`, {
@@ -215,6 +252,12 @@ export function initializeRuntimeClients(): RuntimeClients {
             if (!response.ok || !body?.ok) throw new Error(body?.error || `RPC failed: ${channel}`);
             return body.value;
           },
+          subscribeBackendEvents: electronApi.subscribeBackendEvents
+            ? (listener) =>
+                electronApi.subscribeBackendEvents?.((message) =>
+                  listener(message as { channel: string; data: unknown }),
+                ) ?? (() => {})
+            : undefined,
           openDirectory: () => electronApi.openDirectory(),
         })
       : createHttpOpenGuiClient({

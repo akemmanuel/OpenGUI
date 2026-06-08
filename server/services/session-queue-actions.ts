@@ -18,8 +18,13 @@ export async function listProjectSessionQueues(input: {
 export async function listSessionQueue(input: {
   services: BackendServiceContext;
   sessionId: string;
+  projectId: string;
+  harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
-  return await input.services.queues.listSessionQueue(input.sessionId);
+  return await input.services.queues.listSessionQueue(input.sessionId, {
+    projectId: input.projectId,
+    harnessId: input.harnessId,
+  });
 }
 
 export async function enqueueSessionPrompt(input: {
@@ -31,15 +36,21 @@ export async function enqueueSessionPrompt(input: {
   variant?: string;
   mode: QueueMode;
   insertAt?: "front" | "back";
+  projectId: string;
+  harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
-  return await input.services.queues.enqueue(input.sessionId, {
-    text: input.text,
-    model: input.model,
-    agent: input.agent,
-    variant: input.variant,
-    mode: input.mode,
-    insertAt: input.insertAt,
-  });
+  return await input.services.queues.enqueue(
+    input.sessionId,
+    {
+      text: input.text,
+      model: input.model,
+      agent: input.agent,
+      variant: input.variant,
+      mode: input.mode,
+      insertAt: input.insertAt,
+    },
+    { projectId: input.projectId, harnessId: input.harnessId },
+  );
 }
 
 export async function reorderSessionPrompt(input: {
@@ -47,8 +58,13 @@ export async function reorderSessionPrompt(input: {
   sessionId: string;
   entryId: string;
   index: number;
+  projectId: string;
+  harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
-  return await input.services.queues.reorder(input.sessionId, input.entryId, input.index);
+  return await input.services.queues.reorder(input.sessionId, input.entryId, input.index, {
+    projectId: input.projectId,
+    harnessId: input.harnessId,
+  });
 }
 
 export async function updateSessionPrompt(input: {
@@ -60,20 +76,32 @@ export async function updateSessionPrompt(input: {
   agent?: string | null;
   variant?: string | null;
   mode?: QueueMode;
+  projectId: string;
+  harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
-  return await input.services.queues.update(input.sessionId, input.entryId, {
-    text: input.text,
-    model: input.model,
-    agent: input.agent,
-    variant: input.variant,
-    mode: input.mode,
-  });
+  return await input.services.queues.update(
+    input.sessionId,
+    input.entryId,
+    {
+      text: input.text,
+      model: input.model,
+      agent: input.agent,
+      variant: input.variant,
+      mode: input.mode,
+    },
+    { projectId: input.projectId, harnessId: input.harnessId },
+  );
 }
 
 export async function removeSessionPrompt(input: {
   services: BackendServiceContext;
   sessionId: string;
   entryId: string;
+  projectId: string;
+  harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
-  return await input.services.queues.remove(input.sessionId, input.entryId);
+  return await input.services.queues.remove(input.sessionId, input.entryId, {
+    projectId: input.projectId,
+    harnessId: input.harnessId,
+  });
 }

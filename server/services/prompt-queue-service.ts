@@ -1,6 +1,7 @@
 import type { QueueMode } from "../../src/lib/session-drafts.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
 import type { BackendEventBus } from "./event-bus.ts";
+import type { ProjectService } from "./project-service.ts";
 import type { SessionService } from "./session-service.ts";
 import type {
   PromptQueueEntryRecord,
@@ -13,6 +14,9 @@ export interface PromptQueueEntry {
   id: string;
   sessionId: string;
   canonicalSessionId: string;
+  harnessId: SessionRecord["harnessId"];
+  projectDirectory: string;
+  harnessSessionId: string;
   text: string;
   createdAt: number;
   model?: SelectedModel;
@@ -34,17 +38,24 @@ export interface CreatePromptQueueInput {
 export class PromptQueueService {
   private readonly storage: StorageService;
   private readonly sessions: SessionService;
+  private readonly projects: ProjectService;
   private readonly events?: BackendEventBus;
 
-  constructor(storage: StorageService, sessions: SessionService, events?: BackendEventBus) {
+  constructor(
+    storage: StorageService,
+    sessions: SessionService,
+    projects: ProjectService,
+    events?: BackendEventBus,
+  ) {
     this.storage = storage;
     this.sessions = sessions;
+    this.projects = projects;
     this.events = events;
   }
 
   async listSessionQueue(
     sessionIdOrAlias: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const entries = await this.storage.listPromptQueue(session.id);
@@ -72,12 +83,15 @@ export class PromptQueueService {
   async enqueue(
     sessionIdOrAlias: string,
     input: CreatePromptQueueInput,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const current = await this.storage.listPromptQueue(session.id);
     const created = await this.storage.createPromptQueueEntry({
       sessionId: session.id,
+      harnessId: session.harnessId,
+      projectDirectory: await this.getProjectDirectory(session.projectId),
+      harnessSessionId: session.rawId,
       text: input.text,
       model: input.model,
       agent: input.agent,
@@ -112,7 +126,7 @@ export class PromptQueueService {
   async remove(
     sessionIdOrAlias: string,
     entryId: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     await this.storage.deletePromptQueueEntry(entryId);
@@ -138,7 +152,7 @@ export class PromptQueueService {
     sessionIdOrAlias: string,
     entryId: string,
     input: UpdatePromptQueueEntryInput,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     await this.storage.updatePromptQueueEntry(entryId, input);
@@ -164,7 +178,7 @@ export class PromptQueueService {
     sessionIdOrAlias: string,
     entryId: string,
     toIndex: number,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const current = await this.storage.listPromptQueue(session.id);
@@ -207,7 +221,7 @@ export class PromptQueueService {
 
   async clearSessionQueue(
     sessionIdOrAlias: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<boolean> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const removed = await this.storage.deletePromptQueueBySession(session.id);
@@ -229,7 +243,7 @@ export class PromptQueueService {
 
   private async getSessionOrThrow(
     sessionIdOrAlias: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId">,
+    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<SessionRecord> {
     const session = await this.sessions.getSession(sessionIdOrAlias, scope);
     if (!session) throw new Error("Session not found");
@@ -247,6 +261,12 @@ export class PromptQueueService {
       cursor = page.nextCursor;
     } while (cursor);
     return sessions;
+  }
+
+  private async getProjectDirectory(projectId: string): Promise<string> {
+    const project = await this.projects.getProject(projectId);
+    if (!project) throw new Error("Project not found");
+    return project.canonicalPath || project.path;
   }
 
   private async reindex(sessionId: string): Promise<PromptQueueEntryRecord[]> {

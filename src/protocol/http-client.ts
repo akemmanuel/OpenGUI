@@ -440,11 +440,6 @@ function toFrontendProject(project: BackendProjectResponse, workspaceId?: string
   return { ...project, workspaceId: workspaceId ?? project.workspaceId ?? "local" };
 }
 
-interface SessionListResponse {
-  sessions: SessionRecordResponse[];
-  nextCursor: string | null;
-}
-
 interface SessionQueryResponse {
   items: Array<{
     frontendProjectId: string;
@@ -539,16 +534,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
     harnessIds?.length ? harnessIds : HARNESS_IDS;
   const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
-  const backendRpc = async <T>(harnessId: HarnessId, suffix: string, args: unknown[] = []) =>
-    unwrapIpcResult(
-      await rpcCall<IPCResult<T>>(backendChannel(harnessId, suffix), args),
-      `Backend call failed: ${harnessId}:${suffix}`,
-    );
   const projectById = new Map<string, Promise<OpenGuiProject | null>>();
   const workspaceBaseUrls = new Map<string, string>();
   const workspaceTokens = new Map<string, string>();
   const baseUrlTokens = new Map<string, string>();
-  const sessionBaseUrls = new Map<string, string>();
   const sessionRecordByCanonicalId = new Map<string, SessionRecordResponse>();
   const sessionCanonicalIdsByFrontendId = new Map<string, Set<string>>();
 
@@ -586,31 +575,23 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     return resolvedBaseUrl;
   };
 
-  const rememberSessionBaseUrl = (record: SessionRecordResponse, requestBaseUrl: string) => {
-    if (!requestBaseUrl) return;
-    sessionBaseUrls.set(record.id, requestBaseUrl);
-    sessionBaseUrls.set(frontendSessionIdFromRecord(record), requestBaseUrl);
+  const backendRpcForTarget = async <T>(
+    harnessId: HarnessId,
+    suffix: string,
+    target?: HarnessTarget,
+    args: unknown[] = [],
+  ) => {
+    const baseUrl = requestBaseUrlForTarget(target);
+    const token = baseUrlTokens.get(baseUrl.replace(/\/+$/, "")) ?? getToken();
+    return unwrapIpcResult(
+      await (options.rpcImpl?.<IPCResult<T>>(backendChannel(harnessId, suffix), args) ??
+        httpRpc<IPCResult<T>>(baseUrl, token, backendChannel(harnessId, suffix), args)),
+      `Backend call failed: ${harnessId}:${suffix}`,
+    );
   };
 
   const requestBaseUrlForSession = (input: SessionLookupInput) => {
     const target = input.target ?? input;
-    if (target?.baseUrl) return requestBaseUrlForTarget(target);
-
-    const direct = sessionRecordByCanonicalId.get(input.sessionId);
-    if (direct) {
-      const directBaseUrl = sessionBaseUrls.get(direct.id);
-      if (directBaseUrl) return directBaseUrl;
-    }
-
-    const canonicalIds = sessionCanonicalIdsByFrontendId.get(input.sessionId);
-    for (const canonicalId of canonicalIds ?? []) {
-      const sessionBaseUrl = sessionBaseUrls.get(canonicalId);
-      if (sessionBaseUrl) return sessionBaseUrl;
-    }
-
-    const frontendBaseUrl = sessionBaseUrls.get(input.sessionId);
-    if (frontendBaseUrl) return frontendBaseUrl;
-
     return requestBaseUrlForTarget(target);
   };
 
@@ -684,23 +665,20 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       return `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`;
     }
 
-    const workspaceId = input.target?.workspaceId ?? input.workspaceId;
     const directory = input.target?.directory ?? input.directory;
     const harnessId = input.harnessId ?? getHarnessIdFromSessionId(input.sessionId) ?? undefined;
     const params = new URLSearchParams();
     if (harnessId) params.set("harnessId", harnessId);
 
     if (directory) {
-      const project = await ensureProjectForTarget({ directory, workspaceId });
-      if (project) {
-        params.set("projectId", project.id);
-        candidates = candidates.filter(
-          (record) =>
-            record.projectId === project.id && (!harnessId || record.harnessId === harnessId),
-        );
-        if (candidates.length === 1) {
-          return `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`;
-        }
+      params.set("projectId", directory);
+      candidates = candidates.filter(
+        (record) =>
+          (record.projectId === directory || record.metadata?.directory === directory) &&
+          (!harnessId || record.harnessId === harnessId),
+      );
+      if (candidates.length === 1) {
+        return `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`;
       }
     }
 
@@ -712,10 +690,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     record: SessionRecordResponse,
     directory: string,
     workspaceId?: string,
-    requestBaseUrl?: string,
   ): HarnessProjectSessionsResult["sessions"][number] => {
     rememberSessionRecord(record);
-    if (requestBaseUrl) rememberSessionBaseUrl(record, requestBaseUrl);
     const resolvedWorkspaceId = workspaceId ?? "local";
     return {
       id: frontendSessionIdFromRecord(record),
@@ -738,16 +714,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const toFrontendSession = async (
     record: SessionRecordResponse,
     project?: OpenGuiProject | null,
-    requestBaseUrl?: string,
   ): Promise<HarnessProjectSessionsResult["sessions"][number]> => {
     const resolvedProject = project ?? (await getProject(record.projectId));
     const directory = resolvedProject?.path ?? resolvedProject?.canonicalPath ?? "";
-    return toFrontendSessionFromDirectory(
-      record,
-      directory,
-      resolvedProject?.workspaceId,
-      requestBaseUrl,
-    );
+    return toFrontendSessionFromDirectory(record, directory, resolvedProject?.workspaceId);
   };
 
   const getSessionRecord = async (sessionId: string, input: SessionLookupInput = { sessionId }) =>
@@ -761,25 +731,26 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   ): Partial<HarnessDescriptor["runtime"]> => ({
     createSession: async ({ title, directory, workspaceId, baseUrl: targetBaseUrl } = {}) => {
       const target = { directory, workspaceId, baseUrl: targetBaseUrl };
-      const project = await ensureProjectForTarget(target);
-      if (!project) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
+      if (!directory) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
       const requestBaseUrl = requestBaseUrlForTarget(target);
       const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ projectId: project.id, harnessId: harnessId, title }),
+        body: JSON.stringify({ directory, harnessId: harnessId, title }),
       });
-      rememberSessionBaseUrl(record, requestBaseUrl);
-      return await toFrontendSession(record, project);
+      return toFrontendSessionFromDirectory(record, directory, workspaceId);
     },
     startSession: async (input) => {
-      const project = await ensureProjectForTarget(input);
-      if (!project) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
+      if (!input.directory)
+        throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
       const requestBaseUrl = requestBaseUrlForTarget(input);
       const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ projectId: project.id, harnessId: harnessId, title: input.title }),
+        body: JSON.stringify({
+          directory: input.directory,
+          harnessId: harnessId,
+          title: input.title,
+        }),
       });
-      rememberSessionBaseUrl(record, requestBaseUrl);
       await requestAt<boolean>(
         requestBaseUrl,
         `/api/sessions/${encodeURIComponent(record.id)}/prompt`,
@@ -793,7 +764,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           }),
         },
       );
-      return await toFrontendSession(record, project);
+      return toFrontendSessionFromDirectory(record, input.directory, input.workspaceId);
     },
     deleteSession: async (sessionId) =>
       await request<boolean>(await resolveSessionPath({ sessionId, harnessId }, ""), {
@@ -1031,29 +1002,25 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           "Failed to restart agent backends",
         ),
       loadResources: async ({ harnessId, target }) => {
-        if (!target?.directory) {
-          const args = targetArgs(target);
-          const [providersData, agentsData, commandsData] = await Promise.all([
-            backendRpc<HarnessResourceBundle["providersData"]>(harnessId, "providers", args),
-            backendRpc<HarnessResourceBundle["agentsData"]>(harnessId, "agents", args),
-            backendRpc<HarnessResourceBundle["commandsData"]>(harnessId, "commands", args),
-          ]);
-          return { providersData, agentsData, commandsData };
-        }
-        const project = await ensureProjectForTarget(target);
-        if (!project) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
+        const args = targetArgs(target);
         const [providersData, agentsData, commandsData] = await Promise.all([
-          requestAt<HarnessResourceBundle["providersData"]>(
-            requestBaseUrlForTarget(target),
-            `/api/projects/${encodeURIComponent(project.id)}/providers?harnessId=${encodeURIComponent(harnessId)}`,
+          backendRpcForTarget<HarnessResourceBundle["providersData"]>(
+            harnessId,
+            "providers",
+            target,
+            args,
           ),
-          requestAt<HarnessResourceBundle["agentsData"]>(
-            requestBaseUrlForTarget(target),
-            `/api/projects/${encodeURIComponent(project.id)}/agents?harnessId=${encodeURIComponent(harnessId)}`,
+          backendRpcForTarget<HarnessResourceBundle["agentsData"]>(
+            harnessId,
+            "agents",
+            target,
+            args,
           ),
-          requestAt<HarnessResourceBundle["commandsData"]>(
-            requestBaseUrlForTarget(target),
-            `/api/projects/${encodeURIComponent(project.id)}/commands?harnessId=${encodeURIComponent(harnessId)}`,
+          backendRpcForTarget<HarnessResourceBundle["commandsData"]>(
+            harnessId,
+            "commands",
+            target,
+            args,
           ),
         ]);
         return { providersData, agentsData, commandsData };
@@ -1110,37 +1077,50 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
       },
       listProjectSessions: async ({ harnessIds, target }) => {
-        const project = await findProjectForTarget(target);
-        if (!project) return [];
-        const results = await Promise.all(
-          harnessIds.map(async (harnessId) => {
-            const requestBaseUrl = requestBaseUrlForTarget(target);
-            const page = await requestAt<SessionListResponse>(
-              requestBaseUrl,
-              `/api/sessions?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(harnessId)}&sync=true`,
-            );
-            return {
-              harnessId,
-              sessions: await Promise.all(
-                page.sessions.map((session) => toFrontendSession(session, project, requestBaseUrl)),
-              ),
-            };
-          }),
+        if (!target?.directory) return [];
+        const response = await requestAt<SessionQueryResponse>(
+          requestBaseUrlForTarget(target),
+          "/api/sessions/query",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              projects: [
+                {
+                  frontendProjectId: target.directory,
+                  directory: target.directory,
+                  workspaceId: target.workspaceId,
+                },
+              ],
+              harnessIds,
+              sync: true,
+            }),
+          },
         );
-        return results;
+        return response.items.map((item) => ({
+          harnessId: item.harnessId,
+          sessions: item.sessions.map((session) =>
+            toFrontendSessionFromDirectory(session, item.directory, target.workspaceId),
+          ),
+        }));
       },
       listProjectSessionStatuses: async ({ harnessIds, target }) => {
-        const project = await ensureProjectForTarget(target);
-        if (!project) return {};
-        const status = await requestAt<
-          Record<string, { connected: boolean; statuses: Record<string, { type: string }> }>
-        >(
-          requestBaseUrlForTarget(target),
-          `/api/projects/${encodeURIComponent(project.id)}/status`,
+        if (!target?.directory) return {};
+        const entries = await Promise.all(
+          harnessIds.map(async (harnessId) => {
+            try {
+              const statuses = await backendRpcForTarget<Record<string, { type: string }>>(
+                harnessId,
+                "session:statuses",
+                target,
+                targetArgs(target),
+              );
+              return Object.entries(statuses);
+            } catch {
+              return [];
+            }
+          }),
         );
-        return Object.fromEntries(
-          harnessIds.flatMap((harnessId) => Object.entries(status[harnessId]?.statuses ?? {})),
-        );
+        return Object.fromEntries(entries.flat());
       },
     },
     sessions: {
@@ -1174,7 +1154,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
                 ),
               })),
             )
-            .map(({ item, requestBaseUrl, requestProject }) => ({
+            .map(({ item, requestProject }) => ({
               ...item,
               workspaceId: requestProject?.workspaceId,
               sessions: item.sessions.map((session) =>
@@ -1182,7 +1162,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
                   session,
                   item.directory,
                   requestProject?.workspaceId,
-                  requestBaseUrl,
                 ),
               ),
             })),
@@ -1197,15 +1176,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         };
       },
       create: async ({ harnessId, title, target }) => {
-        const project = await ensureProjectForTarget(target);
-        if (!project) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
+        if (!target?.directory)
+          throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
         const requestBaseUrl = requestBaseUrlForTarget(target);
         const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
           method: "POST",
-          body: JSON.stringify({ projectId: project.id, harnessId: harnessId, title }),
+          body: JSON.stringify({ directory: target.directory, harnessId: harnessId, title }),
         });
-        rememberSessionBaseUrl(record, requestBaseUrl);
-        return await toFrontendSession(record, project, requestBaseUrl);
+        return toFrontendSessionFromDirectory(record, target.directory, target.workspaceId);
       },
       delete: async ({ sessionId, harnessId, target, confirmQueue }) => {
         const path = await resolveSessionPath({ sessionId, harnessId, target });
@@ -1229,7 +1207,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             body: JSON.stringify({ title }),
           },
         );
-        return await toFrontendSession(record, null, requestBaseUrl);
+        return await toFrontendSession(record, null);
       },
       getMessages: async ({ sessionId, harnessId, options }) => {
         const path = await resolveSessionPath(
@@ -1403,14 +1381,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     },
     files: {
       find: async ({ target, query }) => {
-        const project = await ensureProjectForTarget(target);
-        if (!project)
-          return target.directory
-            ? await rpcCall<string[]>("files:find", [target.directory, query])
-            : [];
+        if (!target.directory) return [];
         return await requestAt<string[]>(
           requestBaseUrlForTarget(target),
-          `/api/fs/search?projectId=${encodeURIComponent(project.id)}&query=${encodeURIComponent(query)}`,
+          `/api/fs/search?directory=${encodeURIComponent(target.directory)}&query=${encodeURIComponent(query)}`,
         );
       },
     },

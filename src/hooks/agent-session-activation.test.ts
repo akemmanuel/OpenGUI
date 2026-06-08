@@ -6,7 +6,7 @@ import {
 } from "./agent-session-activation";
 
 describe("deriveSelectionFromMessages", () => {
-  test("derives selected model from top-level model fields", () => {
+  test("ignores assistant model fields", () => {
     const derived = deriveSelectionFromMessages([
       {
         info: {
@@ -21,14 +21,10 @@ describe("deriveSelectionFromMessages", () => {
       },
     ]);
 
-    expect(derived).toEqual({
-      selectedModel: { providerID: "openai", modelID: "gpt-5" },
-      selectedAgent: undefined,
-      variant: "high",
-    });
+    expect(derived).toEqual({ selectedModel: null, selectedAgent: null, variant: undefined });
   });
 
-  test("derives selected model from nested model fields", () => {
+  test("derives selected model from latest user message selection", () => {
     const derived = deriveSelectionFromMessages([
       {
         info: {
@@ -36,6 +32,8 @@ describe("deriveSelectionFromMessages", () => {
           role: "user",
           sessionID: "s1",
           agent: "reviewer",
+          model: { providerID: "openai", modelID: "gpt-5" },
+          variant: "high",
         } as never,
         parts: [],
       },
@@ -51,9 +49,9 @@ describe("deriveSelectionFromMessages", () => {
     ]);
 
     expect(derived).toEqual({
-      selectedModel: { providerID: "anthropic", modelID: "sonnet" },
-      selectedAgent: undefined,
-      variant: undefined,
+      selectedModel: { providerID: "openai", modelID: "gpt-5" },
+      selectedAgent: "reviewer",
+      variant: "high",
     });
   });
 });

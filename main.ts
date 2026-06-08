@@ -1,4 +1,4 @@
-import type { BrowserWindow as BrowserWindowType } from "electron";
+import type { BrowserWindow as BrowserWindowType, WebContents } from "electron";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -416,6 +416,98 @@ ipcMain.handle("backend:restart-managed", async () => {
     token: config.token,
     status: backendSidecar.getStatus(),
   };
+});
+
+function assertLocalBackendUrl(rawUrl: string, backendUrl: string) {
+  const requested = new URL(rawUrl, backendUrl);
+  const backend = new URL(backendUrl);
+  if (requested.protocol !== backend.protocol || requested.host !== backend.host) {
+    throw new Error("Refusing to proxy non-local backend request");
+  }
+  return requested;
+}
+
+ipcMain.handle("backend:fetch", async (_event, request) => {
+  const config = backendSidecar.getConfig() ?? (await backendSidecar.start());
+  const url = assertLocalBackendUrl(String(request?.url ?? "/"), config.url);
+  const headers = new Headers(request?.headers ?? {});
+  if (config.token && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${config.token}`);
+  }
+  const response = await fetch(url, {
+    method: typeof request?.method === "string" ? request.method : "GET",
+    headers,
+    body: typeof request?.body === "string" ? request.body : undefined,
+  });
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    headers: Object.fromEntries(response.headers.entries()),
+    body: await response.text(),
+  };
+});
+
+const backendEventSubscriptions = new Map<number, AbortController>();
+
+async function subscribeBackendEventsForWebContents(webContents: WebContents) {
+  const existing = backendEventSubscriptions.get(webContents.id);
+  if (existing) return;
+
+  const config = backendSidecar.getConfig() ?? (await backendSidecar.start());
+  const controller = new AbortController();
+  backendEventSubscriptions.set(webContents.id, controller);
+
+  webContents.once("destroyed", () => {
+    controller.abort();
+    backendEventSubscriptions.delete(webContents.id);
+  });
+
+  void (async () => {
+    try {
+      const url = new URL("/api/events/v2", config.url);
+      const headers = new Headers();
+      if (config.token) headers.set("authorization", `Bearer ${config.token}`);
+      const response = await fetch(url, { headers, signal: controller.signal });
+      const reader = response.body?.getReader();
+      if (!reader) return;
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (!controller.signal.aborted) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary >= 0) {
+          const chunk = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const data = chunk
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith("data: "))
+            .map((line) => line.slice("data: ".length))
+            .join("\n");
+          if (data && !webContents.isDestroyed()) {
+            webContents.send("backend:event", JSON.parse(data));
+          }
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) console.error("Backend IPC event proxy failed", error);
+    } finally {
+      backendEventSubscriptions.delete(webContents.id);
+    }
+  })();
+}
+
+ipcMain.handle("backend:events-subscribe", async (event) => {
+  await subscribeBackendEventsForWebContents(event.sender);
+  return true;
+});
+
+ipcMain.handle("backend:events-unsubscribe", (event) => {
+  backendEventSubscriptions.get(event.sender.id)?.abort();
+  backendEventSubscriptions.delete(event.sender.id);
+  return true;
 });
 
 ipcMain.handle("window:minimize", (event) => {

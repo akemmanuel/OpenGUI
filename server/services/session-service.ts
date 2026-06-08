@@ -5,7 +5,7 @@ import {
   scopedRawSessionKey,
 } from "../../src/lib/session-identity.ts";
 import type { BackendEventBus } from "./event-bus.ts";
-import type { SessionMappingRecord, StorageService } from "./storage-service.ts";
+import type { StorageService } from "./storage-service.ts";
 import type {
   CreateSessionInput,
   ListSessionsInput,
@@ -14,8 +14,19 @@ import type {
   UpdateSessionInput,
 } from "./session-types.ts";
 
-function createCanonicalSessionId(): string {
-  return `session_${crypto.randomUUID()}`;
+interface SessionMappingRecord {
+  canonicalSessionId: string;
+  projectId: string;
+  harnessId: HarnessId;
+  rawId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function createCanonicalSessionId(
+  input: Pick<CreateSessionInput, "projectId" | "harnessId" | "rawId">,
+): string {
+  return `session_${Buffer.from(scopedRawSessionKey(input), "utf8").toString("base64url")}`;
 }
 
 function encodeCursor(offset: number): string {
@@ -60,44 +71,9 @@ export class SessionService {
     if (this.initialized) return;
     if (this.initPromise) return await this.initPromise;
     this.initPromise = (async () => {
-      const [sessions, mappings] = await Promise.all([
-        this.storage.listSessions(),
-        this.storage.listSessionMappings(),
-      ]);
-      for (const session of sessions) {
-        this.sessions.set(session.id, session);
-      }
-      for (const mapping of mappings) {
-        this.storeMapping(mapping, false);
-      }
-      for (const session of sessions) {
-        const mappingKey = scopedRawSessionKey({
-          projectId: session.projectId,
-          harnessId: session.harnessId,
-          rawId: session.rawId,
-        });
-        if (!this.rawToCanonical.has(mappingKey)) {
-          this.storeMapping(
-            {
-              canonicalSessionId: session.id,
-              projectId: session.projectId,
-              harnessId: session.harnessId,
-              rawId: session.rawId,
-              createdAt: session.createdAt,
-              updatedAt: session.updatedAt,
-            },
-            false,
-          );
-          await this.storage.upsertSessionMapping({
-            canonicalSessionId: session.id,
-            projectId: session.projectId,
-            harnessId: session.harnessId,
-            rawId: session.rawId,
-            createdAt: session.createdAt,
-            updatedAt: session.updatedAt,
-          });
-        }
-      }
+      // Sessions and Session transcripts are Harness-owned. This in-memory index is
+      // rebuilt from Harness results during Project hydration and never restored
+      // from backend persistence.
       this.initialized = true;
       this.initPromise = null;
     })();
@@ -149,12 +125,14 @@ export class SessionService {
   async createSession(input: CreateSessionInput): Promise<SessionRecord> {
     await this.ensureInitialized();
     const now = new Date().toISOString();
-    const session = await this.storage.createSession({
+    const session: SessionRecord = {
       ...input,
-      id: input.id ?? createCanonicalSessionId(),
+      id: input.id ?? createCanonicalSessionId(input),
+      title: input.title ?? "Untitled",
+      status: input.status ?? "unknown",
       createdAt: input.createdAt ?? now,
       updatedAt: input.updatedAt ?? input.createdAt ?? now,
-    });
+    };
 
     await this.persistStoredSession(session);
     this.events?.emit(
@@ -192,19 +170,13 @@ export class SessionService {
 
     if (!changed) return existing;
 
-    const updated = (await this.storage.updateSession(existing.id, {
-      title: nextTitle,
-      status: nextStatus,
-      metadata: nextMetadata,
-      createdAt: nextCreatedAt,
-      updatedAt: nextUpdatedAt,
-    })) ?? {
+    const updated = {
       ...existing,
       title: nextTitle,
       status: nextStatus,
       metadata: nextMetadata,
       createdAt: nextCreatedAt,
-      updatedAt: nextUpdatedAt ?? new Date().toISOString(),
+      updatedAt: nextUpdatedAt,
     };
     await this.persistStoredSession(updated);
     const nextSession = this.sessions.get(existing.id) ?? updated;
@@ -229,8 +201,7 @@ export class SessionService {
     const existing = await this.getSession(idOrAlias, scope);
     if (!existing) return null;
 
-    const updated = await this.storage.updateSession(existing.id, input);
-    if (!updated) return null;
+    const updated: SessionRecord = { ...existing, ...input, updatedAt: new Date().toISOString() };
     await this.persistStoredSession(updated);
     this.events?.emit(
       "session.updated",
@@ -251,8 +222,6 @@ export class SessionService {
     await this.ensureInitialized();
     const existing = await this.getSession(idOrAlias, scope);
     if (!existing) return false;
-    await this.storage.deleteSession(existing.id);
-    await this.storage.deleteSessionMappingsByCanonicalSessionId(existing.id);
     await this.storage.deletePromptQueueBySession(existing.id);
     await this.removeStoredSession(existing);
     this.events?.emit(
@@ -360,11 +329,10 @@ export class SessionService {
   }
 
   private async upsertMapping(mapping: SessionMappingRecord) {
-    this.storeMapping(mapping, false);
-    await this.storage.upsertSessionMapping(mapping);
+    this.storeMapping(mapping);
   }
 
-  private storeMapping(mapping: SessionMappingRecord, persist = true) {
+  private storeMapping(mapping: SessionMappingRecord) {
     this.rawToCanonical.set(
       scopedRawSessionKey({
         projectId: mapping.projectId,
@@ -377,9 +345,6 @@ export class SessionService {
     const existing = this.harnessRawToCanonical.get(harnessRawKey) ?? new Set<string>();
     existing.add(mapping.canonicalSessionId);
     this.harnessRawToCanonical.set(harnessRawKey, existing);
-    if (persist) {
-      void this.storage.upsertSessionMapping(mapping);
-    }
   }
 
   private async removeStoredSession(session: SessionRecord) {

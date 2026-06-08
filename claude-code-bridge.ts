@@ -829,7 +829,6 @@ class ClaudeCodeBridgeManager {
   constructor(emit) {
     this.emit = emit;
     this.projects = new Map();
-    this.sessionTargets = new Map();
     this.activeQueries = new Map();
     this.providerCatalogs = new Map();
     this.providerCatalogPromises = new Map();
@@ -842,18 +841,11 @@ class ClaudeCodeBridgeManager {
     const rawId = toRawSessionId(tempSessionId);
     this.pendingTempSessions.delete(rawId);
     this.pendingTempSessions.delete(tempSessionId);
-    this.sessionTargets.delete(rawId);
-    this.sessionTargets.delete(tempSessionId);
     this.activeQueries.delete(rawId);
     this.activeQueries.delete(tempSessionId);
   }
 
   cleanupTargetCaches(directory, workspaceId) {
-    for (const [sessionId, target] of this.sessionTargets.entries()) {
-      if (target.directory === directory && target.workspaceId === workspaceId) {
-        this.sessionTargets.delete(sessionId);
-      }
-    }
     for (const [tempSessionId, state] of this.pendingTempSessions.entries()) {
       if (state?.target?.directory === directory && state?.target?.workspaceId === workspaceId) {
         this.pendingTempSessions.delete(tempSessionId);
@@ -902,7 +894,6 @@ class ClaudeCodeBridgeManager {
       entry.query?.close?.();
     }
     this.activeQueries.clear();
-    this.sessionTargets.clear();
     this.pendingTempSessions.clear();
     this.providerCatalogs.clear();
     this.providerCatalogPromises.clear();
@@ -919,8 +910,16 @@ class ClaudeCodeBridgeManager {
     sessionId = toRawSessionId(sessionId);
     const normalized = normalizeDir(directory);
     if (normalized) return { directory: normalized, workspaceId };
-    if (sessionId && this.sessionTargets.has(sessionId)) {
-      return this.sessionTargets.get(sessionId);
+    const active = sessionId ? this.activeQueries.get(sessionId) : null;
+    if (active) {
+      return { directory: active.directory, workspaceId: active.workspaceId };
+    }
+    const pending = sessionId ? this.pendingTempSessions.get(sessionId) : null;
+    if (pending?.target) {
+      return pending.target;
+    }
+    if (this.projects.size !== 1) {
+      throw new Error("Claude Code operation requires a Project directory");
     }
     const first = this.projects.values().next().value;
     return {
@@ -1022,7 +1021,6 @@ class ClaudeCodeBridgeManager {
           directory: getSessionDirectory(info, target),
           workspaceId: target.workspaceId,
         };
-        this.sessionTargets.set(info.sessionId, sessionTarget);
         let model = info?.model;
         if (!model && info?.sessionId) {
           try {
@@ -1044,7 +1042,6 @@ class ClaudeCodeBridgeManager {
   async getMessages(sessionId, options, directory, workspaceId) {
     sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
-    this.sessionTargets.set(sessionId, target);
 
     // For pending temp sessions (created before system/init arrives), return
     // just the synthetic user message so the renderer has something to show
@@ -1113,7 +1110,6 @@ class ClaudeCodeBridgeManager {
       this.activeQueries.delete(sessionId);
     }
     this.cleanupPendingTempSession(sessionId);
-    this.sessionTargets.delete(sessionId);
     this.emit({
       type: "claude-code:event",
       payload: {
@@ -1139,7 +1135,6 @@ class ClaudeCodeBridgeManager {
       target,
       "Fork",
     );
-    this.sessionTargets.set(result.sessionId, target);
     this.emit({
       type: "claude-code:event",
       payload: {
@@ -1229,7 +1224,6 @@ class ClaudeCodeBridgeManager {
     } else {
       entry.query = queryHandle;
     }
-    this.sessionTargets.set(sessionId, target);
     return entry;
   }
 

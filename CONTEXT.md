@@ -61,6 +61,10 @@ _Avoid_: Agent session context (vague), cwd (too narrow), workspace-scoped harne
 The Node.js server process that owns execution state and backend-facing resources: Harness Adapters, Sessions, Harness Sessions, project access, streaming events, filesystem/git operations, and settings that affect agent execution. It does not define Workspaces, accept Workspace IDs as domain identity, own Project connections, Pending prompts, or Session presentation assignment. Runs as Desktop sidecar, standalone server, or inside Docker. It may run API-only or serve a Hosted Frontend in addition to its API.
 _Avoid_: server, headless backend, daemon
 
+**Backend persistence**:
+The OpenGUI Backend's SQLite-backed storage boundary for OpenGUI-owned shared state that is not canonical Harness state, such as Queued prompts, queue dispatch state, backend execution settings, and uploaded prompt file cleanup records. Backend persistence is scoped to one OpenGUI Backend instance and must not store Frontend Workspace identity, Project navigation membership, Session lists, or Session transcripts.
+_Avoid_: workspace database, session cache, message cache, frontend settings store
+
 **Frontend Host**:
 The deployment surface that serves static OpenGUI Frontend assets for the Web Shell. It may be the same process/container as an OpenGUI Backend or a separate static host configured to connect to an OpenGUI Backend.
 _Avoid_: web backend, frontend backend, bundled app server
@@ -81,9 +85,21 @@ _Avoid_: monolith, web backend
 The React UI layer and primary presentation layer. It owns frontend-local Workspaces, Project connections, Pending prompts, Queued prompts, and Session presentation, and talks only to one OpenGUI Backend via `OpenGuiClient` at a time.
 _Avoid_: renderer, stateless client
 
+**Frontend persistence**:
+The single Frontend-owned storage boundary for durable per-device presentation, connection, and preference state. Frontend persistence stores small typed documents for UI restoration and local intent, not canonical backend data, execution state, Session transcripts, or shared queues. App code should use one storage abstraction rather than scattering direct browser storage mechanisms.
+_Avoid_: localStorage directly, IndexedDB cache, offline backend mirror, transcript cache
+
 **Desktop Shell**:
 The Electron main+preload process. Owns window controls (frame, minimize, maximize, close), native file picker, updater, OS notifications, backend sidecar lifecycle. Does NOT own agent logic, session state, prompt queues, or git operations.
 _Avoid_: Desktop app, main process
+
+**Desktop IPC Backend Transport**:
+The Electron-only transport used by the Desktop Shell for its built-in Local Workspace to call the local OpenGUI Backend through an Electron-controlled private channel instead of an HTTP listener on localhost. It preserves the `OpenGuiClient` boundary while avoiding user-visible local ports, loopback auth tokens, firewall prompts, and duplicate localhost sidecar confusion. HTTP remains the transport for Web, Mobile, Additional Workspaces, and remote OpenGUI Backends.
+_Avoid_: localhost desktop backend, closed protocol, renderer HTTP sidecar, private server port
+
+**Persistent Desktop Backend**:
+The single user-session-local OpenGUI Backend process for Desktop's Local Workspace that may remain running after all Desktop Shell windows close. It is intentionally persistent so long-running Sessions, Queued prompts, and Harness work can continue, but it must be discoverable, reused by later Desktop Shell launches, health-checked, and explicitly stopped or replaced when stale. Persistence must never create multiple unmanaged ghost backends.
+_Avoid_: detached ghost process, per-window backend, one backend per launch, immortal sidecar
 
 **Web Shell**:
 The browser environment. No native desktop APIs. Backend connection is same-origin or user-configured URL. Cannot spawn a backend or open a terminal.
@@ -139,9 +155,17 @@ _Avoid_: workspace chrome in general, project tabs
 A frontend state where the Shell has no saved Workspace and therefore no active OpenGUI Backend connection. Mobile starts here on first launch and offers Connect to OpenGUI Backend as the primary action, which creates an Additional Workspace. Desktop and Web normally do not enter this state because each has a Local Workspace.
 _Avoid_: disconnected workspace, empty local workspace
 
-**Model selection**:
-Frontend-local composition state choosing the model, agent, and variant for future sends. A sent or Queued prompt snapshots model selection as execution intent, but changing the current selection does not rewrite existing prompts.
-_Avoid_: shared session setting, backend default
+**PromptBox selection**:
+Frontend-local composition state choosing the Harness, model, agent, and variant for the next Agent send. When a Frontend loads an existing Session, PromptBox selection is replaced by the latest User message selection in that Session; when a Frontend starts a new Pending prompt target, PromptBox selection is inherited from the immediately previous in-memory PromptBox selection.
+_Avoid_: shared session setting, backend default, assistant model, persisted default, compatibility fallback
+
+**User message selection**:
+The Harness, model, agent, and variant recorded on a User message as the execution intent for that message. For PromptBox selection, the latest User message selection in a Session is the only transcript-derived source of truth; Assistant message models are display facts for history and must not drive PromptBox selection.
+_Avoid_: assistant selection, resolved model default, inferred model
+
+**No PromptBox selection**:
+A Frontend state where PromptBox has no Harness, model, or variant selected and therefore cannot send until the user explicitly chooses a valid selection. OpenGUI uses No PromptBox selection when loading an existing Session with no User message selection, or when starting the first Pending prompt target without an immediately previous in-memory PromptBox selection.
+_Avoid_: server fallback, provider default, implicit model, best effort selection
 
 **Default chat directory**:
 A Workspace-local Project path selected for the next Pending prompt when starting a new chat without choosing a specific Project first. Each Workspace has its own Default chat directory because project paths are meaningful only for that Workspace's OpenGUI Backend connection.
@@ -184,7 +208,7 @@ A Workspace-scoped, Frontend-owned work target rooted at a concrete directory th
 _Avoid_: repo, repository root, backend project, global app project
 
 **Session**:
-The backend-owned canonical conversation record OpenGUI presents for work performed against one Project through one Harness. A Session is identified by its own canonical session ID, is shared across Frontends connected to the same OpenGUI Backend for that Project and Harness, appears to any Frontend currently presenting that Project, can outlive temporary Harness unavailability, and does not switch Harnesses after creation.
+The harness-owned canonical conversation record OpenGUI presents for work performed against one Project through one Harness. OpenGUI discovers Sessions by asking the Harness for the relevant Project and does not maintain a durable Session list cache as a source of truth. A Session is identified by its Harness session ID as routed through OpenGUI, is shared across Frontends connected to the same OpenGUI Backend for that Project and Harness, appears to any Frontend currently presenting that Project, can outlive temporary OpenGUI Frontend unavailability, and does not switch Harnesses after creation.
 _Avoid_: thread only, draft, chat row
 
 **Harness Session**:
@@ -192,7 +216,7 @@ The harness-native conversation or thread that backs an OpenGUI Session inside o
 _Avoid_: Session, canonical session, workspace session
 
 **Session transcript**:
-The shared message history for a Session, sourced from the backing Harness Session through the OpenGUI Backend. Frontends may render or filter it locally but do not mutate canonical transcript content.
+The shared message history for a Session, sourced on demand from the backing Harness Session through the OpenGUI Backend. OpenGUI does not persist a durable transcript cache as a source of truth; when messages for a Session are requested, the Backend asks the Harness. Frontends may render or filter transcript content locally but do not mutate canonical transcript content.
 _Avoid_: frontend transcript, local message history
 
 **Session status**:
@@ -226,6 +250,10 @@ _Avoid_: Draft session, unsent session
 **Queued prompt**:
 A backend-owned, shared Session-level prompt stored in the one shared queue for an existing shared Session. A Queued prompt captures model/agent/variant intent when queued, cannot exist before a Session exists, is visible across connected Frontends, follows shared backend queue order, and is the default result of a normal follow-up sent while the Session is busy. It remains queued during temporary Harness unavailability and is not yet part of the Session transcript until dispatch.
 _Avoid_: pending message, buffered turn, frontend-only queue item
+
+**Queued prompt target**:
+The minimal Harness Scope reference stored with a Queued prompt so the OpenGUI Backend can dispatch it later: Harness, Project directory, and Harness Session ID. This target is part of queued execution intent, not a Session cache, routing hint, or canonical Session record. OpenGUI must not use queued prompt targets to answer Session listing or transcript requests.
+_Avoid_: session cache, routing cache, last seen project, session index
 
 **After-part prompt**:
 A Queued prompt mode that waits until all currently running tools finish, then interrupts the Session and dispatches the prompt. It is for steering immediately after the current tool part completes, not for ordinary queueing.

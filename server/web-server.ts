@@ -17,13 +17,13 @@ import {
   abortSessionThroughHarness,
   asSessionStatus,
   connectProjectToHarnesses,
+  createDirectorySessionThroughHarness,
   createProjectRecord,
   createSessionThroughHarness,
   deleteSessionThroughHarness,
   disconnectProjectFromHarnesses,
   enqueueSessionPrompt,
   findFilesInDirectory,
-  findOrCreateProjectRecordByPath,
   forkSessionThroughHarness,
   getBackendCapabilities,
   getProjectHarnessStatus,
@@ -217,7 +217,7 @@ async function createBackendServiceContext(
   const events = new BackendEventBus();
   const sessions = new SessionService(storage, events);
   const projects = new ProjectService(storage, events);
-  const queues = new PromptQueueService(storage, sessions, events);
+  const queues = new PromptQueueService(storage, sessions, projects, events);
   const bridgeControls = registerHarnessAdapters({ ipcMain, sender, dataDir, broadcast });
 
   const harnesses = new HarnessService(
@@ -504,6 +504,29 @@ async function getProjectOrThrow(
   return await getProjectRecordOrThrow({ services, projectId });
 }
 
+async function getSessionProjectScopeOrThrow(
+  services: BackendServiceContext,
+  session: SessionRecord,
+): Promise<ProjectRecord> {
+  const storedProject = await services.projects.getProject(session.projectId);
+  if (storedProject) return storedProject;
+
+  const metadataDirectory =
+    session.metadata && typeof session.metadata.directory === "string"
+      ? session.metadata.directory
+      : undefined;
+  const directory = await resolveSafeDirectory(metadataDirectory ?? session.projectId);
+  const now = new Date().toISOString();
+  return {
+    id: directory,
+    displayName: basename(directory),
+    path: directory,
+    canonicalPath: directory,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 async function getSessionOrThrow(
   services: BackendServiceContext,
   sessionId: string,
@@ -665,16 +688,15 @@ async function handleProjectRequest(request: Request) {
   }
 }
 
-async function resolveFrontendProjectForSessions(
-  services: BackendServiceContext,
-  input: { directory: string },
-): Promise<ProjectRecord> {
+async function resolveHarnessDirectoryForSessions(input: {
+  directory: string;
+}): Promise<{ directory: string; canonicalPath: string }> {
   const normalized = await normalizeProjectCreateInput(
     parseCreateProjectInput({ path: input.directory, displayName: basename(input.directory) }),
     resolveSafeDirectory,
     realpath,
   );
-  return await findOrCreateProjectRecordByPath({ services, project: normalized });
+  return { directory: normalized.path, canonicalPath: normalized.path };
 }
 
 function parseSessionScopeFromUrl(url: URL): {
@@ -714,8 +736,8 @@ async function handleSessionRequest(request: Request) {
           if (!frontendProjectId || !directory) return null;
 
           try {
-            const project = await resolveFrontendProjectForSessions(services, { directory });
-            return { ok: true as const, frontendProjectId, directory, project };
+            const resolvedDirectory = await resolveHarnessDirectoryForSessions({ directory });
+            return { ok: true as const, frontendProjectId, ...resolvedDirectory };
           } catch (error) {
             return {
               ok: false as const,
@@ -738,7 +760,11 @@ async function handleSessionRequest(request: Request) {
         .filter((result): result is Extract<NonNullable<typeof result>, { ok: true }> =>
           Boolean(result && result.ok),
         )
-        .map(({ frontendProjectId, project }) => ({ frontendProjectId, project }));
+        .map(({ frontendProjectId, directory, canonicalPath }) => ({
+          frontendProjectId,
+          directory,
+          canonicalPath,
+        }));
       const queried = await querySessionsForResolvedProjects({
         services,
         projects: resolved,
@@ -795,9 +821,21 @@ async function handleSessionRequest(request: Request) {
         const body = await readJsonBody(request);
         if (!isPlainObject(body)) throw new Error("Request body must be an object");
         const projectId = toOptionalString(body.projectId, "projectId");
+        const directory = toOptionalString(body.directory, "directory");
         const harnessId = toOptionalString(body.harnessId, "harnessId") as HarnessId | undefined;
-        if (!projectId || !harnessId) throw new Error("projectId and harnessId are required");
-        const project = await getProjectOrThrow(services, projectId);
+        if (!harnessId) throw new Error("harnessId is required");
+        if (!projectId && !directory) throw new Error("projectId or directory is required");
+        if (directory && !projectId) {
+          const resolvedDirectory = await resolveHarnessDirectoryForSessions({ directory });
+          const session = await createDirectorySessionThroughHarness({
+            services,
+            ...resolvedDirectory,
+            harnessId,
+            title: toOptionalString(body.title, "title"),
+          });
+          return Response.json({ ok: true, value: session });
+        }
+        const project = await getProjectOrThrow(services, projectId!);
         const session = await createSessionThroughHarness({
           services,
           project,
@@ -831,7 +869,7 @@ async function handleSessionRequest(request: Request) {
         const body = await readJsonBody(request);
         if (!isPlainObject(body)) throw new Error("Request body must be an object");
         const existing = await getSessionOrThrow(services, sessionId, sessionScope);
-        const project = await getProjectOrThrow(services, existing.projectId);
+        const project = await getSessionProjectScopeOrThrow(services, existing);
         const updated =
           typeof body.title === "string"
             ? await renameSessionThroughHarness({
@@ -854,7 +892,12 @@ async function handleSessionRequest(request: Request) {
       }
       if (request.method === "DELETE") {
         const existing = await getSessionOrThrow(services, sessionId, sessionScope);
-        const queuedPrompts = await listSessionQueue({ services, sessionId: existing.id });
+        const queuedPrompts = await listSessionQueue({
+          services,
+          sessionId: existing.id,
+          projectId: existing.projectId,
+          harnessId: existing.harnessId,
+        });
         const confirmedQueueDelete =
           url.searchParams.get("confirmQueue") === "1" ||
           url.searchParams.get("confirmQueue") === "true";
@@ -866,7 +909,7 @@ async function handleSessionRequest(request: Request) {
         }
         await deleteSessionThroughHarness({
           services,
-          project: await getProjectOrThrow(services, existing.projectId),
+          project: await getSessionProjectScopeOrThrow(services, existing),
           session: existing,
         });
         return Response.json({ ok: true, value: true });
@@ -875,14 +918,19 @@ async function handleSessionRequest(request: Request) {
     }
 
     const existing = await getSessionOrThrow(services, sessionId, sessionScope);
-    const project = await getProjectOrThrow(services, existing.projectId);
+    const project = await getSessionProjectScopeOrThrow(services, existing);
 
     if (child === "queue") {
       if (!grandchild) {
         if (request.method === "GET") {
           return Response.json({
             ok: true,
-            value: await listSessionQueue({ services, sessionId }),
+            value: await listSessionQueue({
+              services,
+              sessionId,
+              projectId: existing.projectId,
+              harnessId: existing.harnessId,
+            }),
           });
         }
         if (request.method === "POST") {
@@ -901,6 +949,8 @@ async function handleSessionRequest(request: Request) {
               variant: toOptionalString(body.variant, "variant"),
               mode: toQueueMode(body.mode, "queue"),
               insertAt: body.insertAt === "front" ? "front" : "back",
+              projectId: existing.projectId,
+              harnessId: existing.harnessId,
             }),
           });
         }
@@ -918,7 +968,14 @@ async function handleSessionRequest(request: Request) {
         }
         return Response.json({
           ok: true,
-          value: await reorderSessionPrompt({ services, sessionId, entryId, index: body.index }),
+          value: await reorderSessionPrompt({
+            services,
+            sessionId,
+            entryId,
+            index: body.index,
+            projectId: existing.projectId,
+            harnessId: existing.harnessId,
+          }),
         });
       }
 
@@ -949,6 +1006,8 @@ async function handleSessionRequest(request: Request) {
             agent: toOptionalNullableString(body.agent, "agent"),
             variant: toOptionalNullableString(body.variant, "variant"),
             mode: toQueueMode(body.mode),
+            projectId: existing.projectId,
+            harnessId: existing.harnessId,
           }),
         });
       }
@@ -956,7 +1015,13 @@ async function handleSessionRequest(request: Request) {
       if (request.method === "DELETE") {
         return Response.json({
           ok: true,
-          value: await removeSessionPrompt({ services, sessionId, entryId }),
+          value: await removeSessionPrompt({
+            services,
+            sessionId,
+            entryId,
+            projectId: existing.projectId,
+            harnessId: existing.harnessId,
+          }),
         });
       }
 
@@ -1021,7 +1086,7 @@ async function handleSessionRequest(request: Request) {
 
     if (child === "abort") {
       if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
-      await abortSessionThroughHarness({ services, session: existing });
+      await abortSessionThroughHarness({ services, project, session: existing });
       return Response.json({ ok: true, value: true });
     }
 
@@ -1276,11 +1341,14 @@ app.get("/api/fs/roots", () => Response.json({ ok: true, value: allowedRoots }))
 app.get("/api/fs/search", async (c) => {
   try {
     const projectId = c.req.query("projectId");
+    const directory = c.req.query("directory");
     const query = c.req.query("query") ?? "";
     const limit = Math.max(1, Math.min(200, Number(c.req.query("limit") ?? 50)));
-    if (!projectId) throw new Error("projectId is required");
-    const project = await getProjectOrThrow(await servicesReady, projectId);
-    const files = await findFilesInDirectory(project.path, query);
+    if (!projectId && !directory) throw new Error("projectId or directory is required");
+    const searchDirectory = directory
+      ? await resolveSafeDirectory(directory)
+      : (await getProjectOrThrow(await servicesReady, projectId!)).path;
+    const files = await findFilesInDirectory(searchDirectory, query);
     return Response.json({ ok: true, value: files.slice(0, limit) });
   } catch (error) {
     return jsonError(error, 400);

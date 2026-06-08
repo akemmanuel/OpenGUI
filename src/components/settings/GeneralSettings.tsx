@@ -29,6 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { NOTIFICATIONS_ENABLED_KEY, useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { detectSystemLanguage } from "@/i18n";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, STORAGE_KEYS } from "@/lib/constants";
+import { getDesktopShellClient } from "@/runtime/clients";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import packageJson from "../../../package.json";
 
@@ -38,19 +39,19 @@ import packageJson from "../../../package.json";
 
 export function GeneralSettings() {
   const { t } = useTranslation();
-  const { restartHarnesses } = useActions();
+  const shell = getDesktopShellClient();
   const [restarting, setRestarting] = useState(false);
 
   const handleRestart = useCallback(async () => {
     setRestarting(true);
     try {
-      await restartHarnesses();
+      await shell.backend?.restart();
+      window.location.reload();
     } catch (error) {
-      console.error("Failed to restart agent backends", error);
-    } finally {
+      console.error("Failed to restart local backend", error);
       setRestarting(false);
     }
-  }, [restartHarnesses]);
+  }, [shell.backend]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -63,20 +64,25 @@ export function GeneralSettings() {
       <NotificationsToggle />
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="outline" size="sm" className="mt-2" disabled={restarting}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            disabled={restarting || !shell.backend}
+          >
             {restarting ? (
               <Spinner className="size-3.5 mr-2" />
             ) : (
               <RotateCcw className="size-3.5 mr-2" />
             )}
-            {t("settings.general.restartServer")}
+            {t("settings.general.restartLocalBackend")}
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("settings.general.restartServerTitle")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("settings.general.restartLocalBackendTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("settings.general.restartServerDescription")}
+              {t("settings.general.restartLocalBackendDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

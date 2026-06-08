@@ -5,7 +5,7 @@ import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { findEnvKeys, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import {
@@ -202,26 +202,31 @@ function extractPiListTextContent(message) {
     .join(" ");
 }
 
-function piListEntryTimestamp(entry, message) {
-  const messageTimestamp = message?.timestamp;
-  if (typeof messageTimestamp === "number" && Number.isFinite(messageTimestamp)) {
-    return messageTimestamp;
-  }
-  if (typeof entry?.timestamp === "string") {
-    const timestamp = Date.parse(entry.timestamp);
-    if (!Number.isNaN(timestamp)) return timestamp;
-  }
-  return null;
-}
-
 async function buildFastPiSessionInfo(filePath, stats) {
   try {
-    const content = await readFile(filePath, "utf8");
+    const maxBytes = Math.min(stats.size, 64 * 1024);
+    const handle = await open(filePath, "r");
+    let content;
+    try {
+      const buffer = Buffer.alloc(maxBytes);
+      const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+      content = buffer.subarray(0, bytesRead).toString("utf8");
+    } finally {
+      await handle.close();
+    }
+
+    // Avoid parsing a truncated JSON line at the end of the head window.
+    // The first user message and session_info are normally near the top; updated
+    // time comes from file stats so listing does not need to scan full transcripts.
+    const lastNewline = content.lastIndexOf("\n");
+    if (lastNewline >= 0 && lastNewline < content.length - 1 && maxBytes < stats.size) {
+      content = content.slice(0, lastNewline + 1);
+    }
+
     let header = null;
     let messageCount = 0;
     let firstMessage = "";
     let name;
-    let lastActivityTime;
 
     for (const line of content.split("\n")) {
       if (!line.trim()) continue;
@@ -248,25 +253,16 @@ async function buildFastPiSessionInfo(filePath, stats) {
       const message = entry.message;
       if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
 
-      const timestamp = piListEntryTimestamp(entry, message);
-      if (typeof timestamp === "number") {
-        lastActivityTime = Math.max(lastActivityTime ?? 0, timestamp);
-      }
-
       if (!firstMessage && message.role === "user") {
         firstMessage = extractPiListTextContent(message);
+        if (name) break;
       }
     }
 
     if (!header) return null;
     const headerTime = typeof header.timestamp === "string" ? Date.parse(header.timestamp) : NaN;
     const created = !Number.isNaN(headerTime) ? new Date(headerTime) : stats.birthtime;
-    const modified =
-      typeof lastActivityTime === "number" && lastActivityTime > 0
-        ? new Date(lastActivityTime)
-        : !Number.isNaN(headerTime)
-          ? new Date(headerTime)
-          : stats.mtime;
+    const modified = stats.mtime;
 
     return {
       path: filePath,
@@ -282,6 +278,19 @@ async function buildFastPiSessionInfo(filePath, stats) {
   } catch {
     return null;
   }
+}
+
+async function mapPiSessionInfoWithConcurrency(items, limit, mapper) {
+  const results = Array.from({ length: items.length });
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 async function listFastPiSessionInfos(directory, agentDir, cache, directoryCache) {
@@ -314,18 +323,16 @@ async function listFastPiSessionInfos(directory, agentDir, cache, directoryCache
   const cachedDirectory = directoryCache.get(sessionDir);
   if (cachedDirectory?.signature === signature) return cachedDirectory.infos;
 
-  const infos = await Promise.all(
-    liveStats.map(async ({ filePath, stats }) => {
-      const cached = cache.get(filePath);
-      if (cached && cached.size === stats.size && Math.abs(cached.mtimeMs - stats.mtimeMs) < 1000) {
-        return cached.info;
-      }
-      const info = await buildFastPiSessionInfo(filePath, stats);
-      if (info) cache.set(filePath, { size: stats.size, mtimeMs: stats.mtimeMs, info });
-      else cache.delete(filePath);
-      return info;
-    }),
-  );
+  const infos = await mapPiSessionInfoWithConcurrency(liveStats, 4, async ({ filePath, stats }) => {
+    const cached = cache.get(filePath);
+    if (cached && cached.size === stats.size && Math.abs(cached.mtimeMs - stats.mtimeMs) < 1000) {
+      return cached.info;
+    }
+    const info = await buildFastPiSessionInfo(filePath, stats);
+    if (info) cache.set(filePath, { size: stats.size, mtimeMs: stats.mtimeMs, info });
+    else cache.delete(filePath);
+    return info;
+  });
   const liveFiles = new Set(files);
   for (const filePath of cache.keys()) {
     if (filePath.startsWith(`${sessionDir}/`) && !liveFiles.has(filePath)) cache.delete(filePath);
@@ -1293,10 +1300,7 @@ export class PiBridgeManager {
   }
 
   async ensureSessionContext(sessionId, target = {}) {
-    const indexed = this.sessionIndex.get(sessionId);
-    const project = indexed
-      ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
-      : await this.ensureProject(target || {});
+    const project = await this.resolveProjectForSession(sessionId, target || {});
     const liveContext = this.getLiveSessionContext(project, sessionId);
     if (liveContext) {
       return {
@@ -1311,16 +1315,16 @@ export class PiBridgeManager {
     if (pending) return await pending;
     const initPromise = (async () => {
       let info = this.sessionIndex.get(sessionId);
-      if (!info) {
+      if (!info || info.projectKey !== project.key) {
         await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
         info = this.sessionIndex.get(sessionId);
       }
-      if (!info?.path) {
+      if (!info?.path || info.projectKey !== project.key) {
         throw new Error("Pi session not found");
       }
       const context = await this.createSessionContext(
         project,
-        SessionManager.open(info.path, undefined, info.directory),
+        SessionManager.open(info.path, undefined, project.directory),
       );
       return { project, runtime: context.runtime, session: context.runtime.session, context };
     })();
@@ -1852,6 +1856,17 @@ export class PiBridgeManager {
     };
   }
 
+  async resolveProjectForSession(sessionId, target = {}) {
+    const directory = normalizeDir(target?.directory);
+    if (directory) {
+      return await this.ensureProject({ directory, workspaceId: target?.workspaceId });
+    }
+    const live = this.findLiveSessionContext(sessionId);
+    if (live) return live.project;
+    if (this.projects.size === 1) return this.projects.values().next().value;
+    throw new Error("Pi operation requires a Project directory");
+  }
+
   async listSessions(target) {
     if (target?.directory) {
       const project = this.getListProject(target);
@@ -1894,17 +1909,18 @@ export class PiBridgeManager {
 
   async getSessionById(sessionId, target) {
     const rawSessionId = toRawSessionId(sessionId);
-    const project = target?.directory ? await this.ensureProject(target) : null;
+    const project = await this.resolveProjectForSession(rawSessionId, target || {});
+    await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
     const indexed = this.sessionIndex.get(rawSessionId);
-    if (indexed?.path) {
-      const manager = SessionManager.open(indexed.path, undefined, indexed.directory);
+    if (indexed?.path && indexed.projectKey === project.key) {
+      const manager = SessionManager.open(indexed.path, undefined, project.directory);
       const firstUserEntry = manager
         .getBranch()
         .find((entry) => entry.type === "message" && entry.message.role === "user");
       return normalizePiSession(
         {
           id: rawSessionId,
-          cwd: indexed.directory,
+          cwd: project.directory,
           name: manager.getSessionName(),
           created: new Date(manager.getHeader().timestamp),
           modified: new Date(),
@@ -1922,12 +1938,11 @@ export class PiBridgeManager {
           model: inferPiSessionModelFromManager(manager),
         },
         {
-          directory: indexed.directory,
-          workspaceId: indexed.workspaceId,
+          directory: project.directory,
+          workspaceId: project.workspaceId,
         },
       );
     }
-    if (!project) return null;
     const sessions = await this.listSessions({
       directory: project.directory,
       workspaceId: project.workspaceId,
@@ -2148,16 +2163,13 @@ export class PiBridgeManager {
 
   async deleteSession(sessionId, target) {
     const rawSessionId = toRawSessionId(sessionId);
-    const indexed = this.sessionIndex.get(rawSessionId);
-    const project = indexed
-      ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
-      : await this.ensureProject(target || {});
+    const project = await this.resolveProjectForSession(rawSessionId, target || {});
     let info = this.sessionIndex.get(rawSessionId);
-    if (!info) {
+    if (!info || info.projectKey !== project.key) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
       info = this.sessionIndex.get(rawSessionId);
     }
-    if (!info?.path) {
+    if (!info?.path || info.projectKey !== project.key) {
       throw new Error("Pi session not found");
     }
     const liveContext = this.getLiveSessionContext(project, rawSessionId);
@@ -2217,27 +2229,24 @@ export class PiBridgeManager {
       return session;
     }
 
-    const indexed = this.sessionIndex.get(rawSessionId);
-    const project = indexed
-      ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
-      : await this.ensureProject(target || {});
+    const project = await this.resolveProjectForSession(rawSessionId, target || {});
     let info = this.sessionIndex.get(rawSessionId);
-    if (!info) {
+    if (!info || info.projectKey !== project.key) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
       info = this.sessionIndex.get(rawSessionId);
     }
-    if (!info?.path) {
+    if (!info?.path || info.projectKey !== project.key) {
       throw new Error("Pi session not found");
     }
     if (!existsSync(info.path)) {
       throw new Error("Pi session file not persisted yet; cannot rename non-live session");
     }
-    const manager = SessionManager.open(info.path, undefined, info.directory);
+    const manager = SessionManager.open(info.path, undefined, project.directory);
     manager.appendSessionInfo(title);
     const session = normalizePiSession(
       {
         id: rawSessionId,
-        cwd: info.directory,
+        cwd: project.directory,
         name: title,
         created: new Date(manager.getHeader().timestamp),
         modified: new Date(),
@@ -2301,22 +2310,19 @@ export class PiBridgeManager {
 
   async forkSession(sessionId, messageID, target) {
     const rawSessionId = toRawSessionId(sessionId);
-    const indexed = this.sessionIndex.get(rawSessionId);
-    const project = indexed
-      ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
-      : await this.ensureProject(target || {});
+    const project = await this.resolveProjectForSession(rawSessionId, target || {});
     let info = this.sessionIndex.get(rawSessionId);
-    if (!info) {
+    if (!info || info.projectKey !== project.key) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
       info = this.sessionIndex.get(rawSessionId);
     }
-    if (!info?.path) {
+    if (!info?.path || info.projectKey !== project.key) {
       throw new Error("Pi session not found");
     }
     const realMessageId = messageID
       ? this.resolveRealMessageId(project, rawSessionId, messageID)
       : undefined;
-    const sourceManager = SessionManager.open(info.path, undefined, info.directory);
+    const sourceManager = SessionManager.open(info.path, undefined, project.directory);
     let targetLeafId = realMessageId ?? sourceManager.getLeafId();
     if (realMessageId) {
       const selectedEntry = sourceManager.getEntry(realMessageId);
@@ -2334,7 +2340,7 @@ export class PiBridgeManager {
     }
     const forkContext = await this.createSessionContext(
       project,
-      SessionManager.open(forkedPath, undefined, info.directory),
+      SessionManager.open(forkedPath, undefined, project.directory),
     );
     const session = normalizePiSession(
       {
@@ -2580,10 +2586,7 @@ export class PiBridgeManager {
 
   async getMessages(sessionId, _options, target) {
     const rawSessionId = toRawSessionId(sessionId);
-    const indexed = this.sessionIndex.get(rawSessionId);
-    const project = indexed
-      ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
-      : await this.ensureProject(target || {});
+    const project = await this.resolveProjectForSession(rawSessionId, target || {});
     const liveContext = this.getLiveSessionContext(project, rawSessionId);
     if (liveContext) {
       const cache = this.getSessionCache(project, rawSessionId);
@@ -2593,16 +2596,16 @@ export class PiBridgeManager {
       };
     }
     await this.disposeIdleLiveSessionsExcept(project, [rawSessionId]);
-    let info = indexed;
-    if (!info) {
+    let info = this.sessionIndex.get(rawSessionId);
+    if (!info || info.projectKey !== project.key) {
       await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
       info = this.sessionIndex.get(rawSessionId);
     }
-    if (!info?.path) {
+    if (!info?.path || info.projectKey !== project.key) {
       throw new Error("Pi session not found");
     }
-    const manager = SessionManager.open(info.path, undefined, info.directory);
-    const cache = buildTranscriptFromSessionManager(manager, info.directory);
+    const manager = SessionManager.open(info.path, undefined, project.directory);
+    const cache = buildTranscriptFromSessionManager(manager, project.directory);
     return {
       messages: cache.messages.map((bundle) => cloneBundle(bundle)),
       nextCursor: null,
@@ -2623,15 +2626,9 @@ export class PiBridgeManager {
     return true;
   }
 
-  async abort(sessionId) {
+  async abort(sessionId, directory, workspaceId) {
     const rawSessionId = toRawSessionId(sessionId);
-    const indexed = this.sessionIndex.get(rawSessionId);
-    const project = indexed
-      ? await this.ensureProject({ directory: indexed.directory, workspaceId: indexed.workspaceId })
-      : null;
-    if (!project) {
-      throw new Error("Pi session not found");
-    }
+    const project = await this.resolveProjectForSession(rawSessionId, { directory, workspaceId });
     const liveContext = this.getLiveSessionContext(project, rawSessionId);
     if (!liveContext) {
       throw new Error("Pi session not active");
@@ -2837,8 +2834,8 @@ class PiDaemonClient {
     ]);
   }
 
-  async abort(sessionId) {
-    return await this.call("abort", [sessionId]);
+  async abort(sessionId, directory, workspaceId) {
+    return await this.call("abort", [sessionId, directory, workspaceId]);
   }
 
   async sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId) {
@@ -3257,9 +3254,9 @@ export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
     },
   );
 
-  ipcMain.handle("pi:abort", async (_event, sessionId) => {
+  ipcMain.handle("pi:abort", async (_event, sessionId, directory, workspaceId) => {
     try {
-      await manager.abort(sessionId);
+      await manager.abort(sessionId, directory, workspaceId);
       return ok(true);
     } catch (error) {
       return fail(error);

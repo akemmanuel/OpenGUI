@@ -14,7 +14,6 @@ export {
 export type {
   StorageService,
   ProjectRecord,
-  SessionMappingRecord,
   PromptQueueEntryRecord,
   CreateProjectInput,
   UpdateProjectInput,
@@ -87,6 +86,7 @@ export {
 export {
   abortSessionThroughHarness,
   compactSessionThroughHarness,
+  createDirectorySessionThroughHarness,
   createSessionThroughHarness,
   deleteSessionThroughHarness,
   forkSessionThroughHarness,

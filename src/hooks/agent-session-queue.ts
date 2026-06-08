@@ -1,14 +1,7 @@
-import type { HarnessId } from "@/agents";
-import type { HarnessTarget } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { InternalAgentState, QueuedPrompt, Session } from "@/hooks/agent-state-types";
-import type { OpenGuiClient } from "@/protocol/client";
-
-interface QueueLookup {
-  harnessId?: HarnessId;
-  target?: HarnessTarget;
-}
+import type { OpenGuiClient, QueueScopeInput } from "@/protocol/client";
 
 interface SessionQueueOptions {
   getState: () => Pick<InternalAgentState, "sessions">;
@@ -32,11 +25,13 @@ export interface SessionQueueOrchestrator {
   sendNow(this: void, sessionId: string, promptId: string): Promise<void>;
 }
 
-function getSessionLookup(session: Session | undefined): QueueLookup {
-  return {
-    harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-    target: getSessionProjectTarget(session) ?? undefined,
-  };
+function getSessionLookup(session: Session | undefined): QueueScopeInput {
+  const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
+  const target = getSessionProjectTarget(session) ?? undefined;
+  if (!harnessId || !target?.directory) {
+    throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
+  }
+  return { harnessId, target: { ...target, directory: target.directory } };
 }
 
 export function createSessionQueueOrchestrator(

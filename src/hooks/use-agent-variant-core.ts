@@ -72,17 +72,13 @@ export function previousVariantSelection(
 export function resolveVariant(
   selectedModel: SelectedModel | null,
   variantSelections: VariantSelections,
-  agents: Agent[],
-  selectedAgent: string | null,
+  _agents: Agent[],
+  _selectedAgent: string | null,
 ): string | undefined {
   if (!selectedModel) return undefined;
   const key = variantKey(selectedModel.providerID, selectedModel.modelID);
   const explicit = variantSelections[key];
   if (explicit !== undefined) return explicit;
-  if (selectedAgent) {
-    const agent = agents.find((a) => a.name === selectedAgent);
-    if (agent?.variant) return agent.variant;
-  }
   return undefined;
 }
 

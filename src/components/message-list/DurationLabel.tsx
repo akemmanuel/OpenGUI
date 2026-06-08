@@ -28,7 +28,7 @@ export function DurationLabel({ footer }: { footer: TurnFooter }) {
     typeof footer.durationMs === "number"
       ? footer.durationMs
       : typeof footer.startedAt === "number"
-        ? (footer.completedAt ?? nowMs) - footer.startedAt
+        ? (footer.running ? nowMs : (footer.completedAt ?? nowMs)) - footer.startedAt
         : null;
   if (typeof elapsed !== "number" || !Number.isFinite(elapsed) || elapsed <= 0) return null;
 

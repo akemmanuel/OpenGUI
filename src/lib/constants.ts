@@ -1,7 +1,7 @@
 /**
  * Shared constants used across the application.
  *
- * Centralises magic strings (localStorage keys, URLs) and magic numbers
+ * Centralises magic strings (frontend persistence keys, URLs) and magic numbers
  * so they are defined in exactly one place.
  */
 
@@ -13,7 +13,7 @@ const DEFAULT_SERVER_PORT = 4096;
 export const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 
 // ---------------------------------------------------------------------------
-// localStorage keys
+// Frontend persistence keys
 // ---------------------------------------------------------------------------
 
 export const STORAGE_KEYS = {
@@ -28,7 +28,6 @@ export const STORAGE_KEYS = {
   WORKSPACE_VARIANT_SELECTIONS: "opencode:workspaceVariantSelections",
   UNREAD_SESSIONS: "opencode:unreadSessionIds",
   SESSION_DRAFTS: "opencode:sessionDrafts",
-  QUEUED_PROMPTS: "opencode:queuedPrompts",
   NOTIFICATIONS_ENABLED: "opencode:notificationsEnabled",
   SESSION_META: "opencode:sessionMeta",
   PROJECT_META: "opencode:projectMeta",

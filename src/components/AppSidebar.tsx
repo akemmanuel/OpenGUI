@@ -209,7 +209,7 @@ export function AppSidebar({
   );
   useEffect(() => {
     // Keep collapsed project state across app startup. Connections hydrate after
-    // localStorage state, so pruning against an empty/partial connection list can
+    // frontend-persisted state, so pruning against an empty/partial connection list can
     // delete saved collapsed projects before they reconnect. Use persisted
     // workspace project list when available, and never let detached windows prune
     // shared sidebar state for other projects.

@@ -1,13 +1,14 @@
 import type { HarnessId } from "../../src/agents/index.ts";
-import type { BackendServiceContext, ProjectRecord } from "./index.ts";
+import type { BackendServiceContext } from "./index.ts";
 import { runJobsWithConcurrency } from "./concurrency.ts";
 import { listSessionRecords } from "./session-record-actions.ts";
-import { syncProjectSessions } from "./session-sync.ts";
+import { syncDirectorySessions, syncProjectSessions } from "./session-sync.ts";
 import { getProjectRecordOrThrow } from "./project-record-actions.ts";
 
 export interface ResolvedSessionQueryProject {
   frontendProjectId: string;
-  project: ProjectRecord;
+  directory: string;
+  canonicalPath: string;
 }
 
 export async function querySessionsForResolvedProjects(input: {
@@ -16,21 +17,21 @@ export async function querySessionsForResolvedProjects(input: {
   harnessIds: HarnessId[];
   sync: boolean;
 }) {
-  const sessionJobs = input.projects.flatMap(({ frontendProjectId, project }) =>
+  const sessionJobs = input.projects.flatMap(({ frontendProjectId, directory, canonicalPath }) =>
     input.harnessIds.map((harnessId) => async () => {
       try {
         const page = input.sync
-          ? await syncProjectSessions(input.services, project, harnessId)
+          ? await syncDirectorySessions(input.services, { directory, canonicalPath }, harnessId)
           : await listSessionRecords({
               services: input.services,
-              projectId: project.id,
+              projectId: canonicalPath,
               harnessId,
             });
         return {
           ok: true as const,
           item: {
             frontendProjectId,
-            directory: project.path,
+            directory,
             harnessId,
             sessions: page.sessions,
           },
@@ -40,7 +41,7 @@ export async function querySessionsForResolvedProjects(input: {
           ok: false as const,
           error: {
             frontendProjectId,
-            directory: project.path,
+            directory,
             harnessId,
             error: error instanceof Error ? error.message : String(error),
           },

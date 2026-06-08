@@ -341,6 +341,20 @@ export interface InstallResult {
 
 export type DesktopBackendStatus = "starting" | "running" | "stopped" | "crashed";
 
+export interface DesktopBackendFetchRequest {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | null;
+}
+
+export interface DesktopBackendFetchResponse {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
 export interface ElectronAPI {
   kind?: "electron" | "web";
   backendUrl?: string | null;
@@ -359,6 +373,10 @@ export interface ElectronAPI {
     token: string | null;
     status: DesktopBackendStatus;
   }>;
+  backendFetch?: (request: DesktopBackendFetchRequest) => Promise<DesktopBackendFetchResponse>;
+  subscribeBackendEvents?: (
+    callback: (message: { channel?: string; data?: unknown } | Record<string, unknown>) => void,
+  ) => () => void;
   onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void;
   onBackendStatusChange?: (callback: (status: DesktopBackendStatus) => void) => () => void;
 
