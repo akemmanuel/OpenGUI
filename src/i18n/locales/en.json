@@ -93,7 +93,14 @@
       "confirmRemoveDesc": "This will uninstall the plugin from your agents.",
       "confirmUpdate": "Update plugin \"{{name}}\"?",
       "confirmUpdateDesc": "This will fetch the latest version from the source.",
-      "sku": "plugin"
+      "sku": "plugin",
+      "progressTitle": "Installing Plugin",
+      "progressComplete": "Installation Complete",
+      "progressFailed": "Installation Failed",
+      "progressStarting": "Preparing installation…",
+      "progressRunning": "Installing plugin…",
+      "progressDone": "Plugin installed successfully.",
+      "progressDetails": "Technical details"
     },
     "plugins": {
       "installed": "Installed",

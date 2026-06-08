@@ -209,6 +209,34 @@
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--foreground) 25%, transparent) transparent;
   }
+
+  .capacitor-safe-area {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .capacitor-native {
+    --capacitor-safe-area-top: 28px;
+    --capacitor-safe-area-bottom: 48px;
+    --capacitor-sidebar-safe-area-bottom: 68px;
+  }
+
+  .capacitor-native .capacitor-safe-area {
+    padding-top: var(--capacitor-safe-area-top);
+    padding-bottom: var(--capacitor-safe-area-bottom);
+  }
+
+  .capacitor-native [data-slot="sidebar-container"] {
+    top: var(--capacitor-safe-area-top) !important;
+    bottom: var(--capacitor-sidebar-safe-area-bottom) !important;
+    height: calc(
+      100dvh - var(--capacitor-safe-area-top) - var(--capacitor-sidebar-safe-area-bottom)
+    ) !important;
+  }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -392,6 +420,19 @@
   & :last-child {
     margin-bottom: 0;
   }
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@utility animate-progress-indeterminate {
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
 }
 
 .terminal-output {

@@ -93,7 +93,14 @@
       "confirmRemoveDesc": "Dies deinstalliert das Plugin von deinen Agenten.",
       "confirmUpdate": "Plugin \"{{name}}\" aktualisieren?",
       "confirmUpdateDesc": "Dies holt die neueste Version von der Quelle.",
-      "sku": "plugin"
+      "sku": "plugin",
+      "progressTitle": "Plugin wird installiert",
+      "progressComplete": "Installation abgeschlossen",
+      "progressFailed": "Installation fehlgeschlagen",
+      "progressStarting": "Installation wird vorbereitet…",
+      "progressRunning": "Plugin wird installiert…",
+      "progressDone": "Plugin erfolgreich installiert.",
+      "progressDetails": "Technische Details"
     },
     "plugins": {
       "installed": "Installiert",

@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   ExternalLink,
   FolderInput,
@@ -39,6 +40,50 @@ type PluginInstallState = {
   exact?: InstalledPluginInfo;
   conflict?: InstalledPluginInfo;
 };
+
+type InstallPhase = "starting" | "running" | "completed" | "failed";
+
+type InstallProgress = {
+  phase: InstallPhase;
+  rawLines: string[];
+  skillName: string;
+};
+
+function parseInstallPhase(line: string, current: InstallPhase): { phase: InstallPhase } | null {
+  const lower = line.toLowerCase();
+
+  // "Installed X skill" = success — takes priority, never downgrade after this
+  if (
+    lower.includes("installation complete") ||
+    (lower.includes("installed") && lower.includes("skill"))
+  ) {
+    return { phase: "completed" };
+  }
+
+  // Partial failure ("Failed to install" for one format) should NOT override
+  // a prior "completed" — the skill itself was installed.
+  if (current !== "completed") {
+    if (lower.includes("failed to install") || lower.includes("error:")) {
+      return { phase: "failed" };
+    }
+    if (lower.includes("process exited with code") && !lower.includes("code 0")) {
+      return { phase: "failed" };
+    }
+  }
+
+  if (
+    lower.includes("process exited with code 0") &&
+    current !== "completed" &&
+    current !== "failed"
+  ) {
+    return { phase: "completed" };
+  }
+
+  if (current === "starting") {
+    return { phase: "running" };
+  }
+  return null;
+}
 
 function remoteKeyForPlugin(plugin: PluginCatalogEntry) {
   return `${plugin.source?.toLowerCase()}@${plugin.slug?.toLowerCase()}`;
@@ -285,8 +330,12 @@ export function DiscoverPlugins() {
   const [showInstallFlow, setShowInstallFlow] = useState(false);
   const [installPlugin, setInstallPlugin] = useState<PluginCatalogEntry | null>(null);
   const [showProgress, setShowProgress] = useState(false);
-  const [progressLines, setProgressLines] = useState<string[]>([]);
-  const progressEndRef = useRef<HTMLDivElement>(null);
+  const [installProgress, setInstallProgress] = useState<InstallProgress>({
+    phase: "starting",
+    rawLines: [],
+    skillName: "",
+  });
+  const [showDetails, setShowDetails] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const scopedDirectory = activeDirectory ?? undefined;
@@ -294,15 +343,18 @@ export function DiscoverPlugins() {
   // Listen for install progress events
   useEffect(() => {
     const unsub = shell.skills.onInstallProgress((data: { chunk: string; type: string }) => {
-      setProgressLines((prev) => [...prev, `[${data.type}] ${data.chunk}`]);
+      const line = `[${data.type}] ${data.chunk}`;
+      setInstallProgress((prev) => {
+        const parsed = parseInstallPhase(line, prev.phase);
+        return {
+          ...prev,
+          phase: parsed?.phase ?? prev.phase,
+          rawLines: [...prev.rawLines, line],
+        };
+      });
     });
     return unsub;
   }, [shell]);
-
-  // Auto-scroll progress
-  useEffect(() => {
-    progressEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [progressLines]);
 
   // Debounce search
   useEffect(() => {
@@ -393,10 +445,15 @@ export function DiscoverPlugins() {
   );
 
   const runPluginAction = useCallback(
-    async (key: string, action: () => Promise<void>) => {
+    async (key: string, action: () => Promise<void>, skillName?: string) => {
       setBusyKeys((prev) => new Set(prev).add(key));
+      setInstallProgress({
+        phase: "starting",
+        rawLines: [],
+        skillName: skillName || key,
+      });
+      setShowDetails(false);
       setShowProgress(true);
-      setProgressLines([]);
       try {
         await action();
         await fetchInstalled();
@@ -442,9 +499,13 @@ export function DiscoverPlugins() {
     async (source: string, globalScope: boolean) => {
       if (!pluginsApi || !installPlugin) return;
       const key = remoteKeyForPlugin(installPlugin);
-      await runPluginAction(key, async () => {
-        await pluginsApi.install(source, scopedDirectory, globalScope);
-      });
+      await runPluginAction(
+        key,
+        async () => {
+          await pluginsApi.install(source, scopedDirectory, globalScope);
+        },
+        installPlugin.name,
+      );
     },
     [pluginsApi, scopedDirectory, runPluginAction, installPlugin],
   );
@@ -682,25 +743,82 @@ export function DiscoverPlugins() {
         onOpenChange={setShowProgress}
         title={
           <span className="inline-flex items-center gap-2">
-            <Terminal className="size-4" />
-            Install Progress
+            {installProgress.phase === "completed" ? (
+              <CheckCircle2 className="size-4 text-emerald-500" />
+            ) : installProgress.phase === "failed" ? (
+              <XCircle className="size-4 text-destructive" />
+            ) : (
+              <PackagePlus className="size-4" />
+            )}
+            {installProgress.phase === "completed"
+              ? t("settings.marketplace.progressComplete")
+              : installProgress.phase === "failed"
+                ? t("settings.marketplace.progressFailed")
+                : t("settings.marketplace.progressTitle")}
           </span>
         }
-        className="sm:max-w-lg"
+        className="sm:max-w-sm"
         footer={
-          <Button type="button" variant="outline" size="sm" onClick={() => setShowProgress(false)}>
-            <XCircle className="size-3.5 mr-1" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowProgress(false)}
+            disabled={installProgress.phase === "starting" || installProgress.phase === "running"}
+          >
             {t("common.close")}
           </Button>
         }
       >
-        <div className="max-h-60 overflow-auto rounded-lg bg-black p-3 font-mono text-[11px] leading-relaxed text-green-400">
-          {progressLines.length === 0 ? (
-            <span className="text-muted-foreground">Starting...</span>
-          ) : (
-            progressLines.map((line, i) => <div key={i}>{line}</div>)
+        <div className="space-y-4">
+          {/* Skill name */}
+          <p className="text-sm font-medium truncate">{installProgress.skillName}</p>
+
+          {/* Progress bar */}
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            {installProgress.phase === "completed" ? (
+              <div className="h-full w-full rounded-full bg-emerald-500 transition-all duration-500" />
+            ) : installProgress.phase === "failed" ? (
+              <div className="h-full w-full rounded-full bg-destructive transition-all duration-500" />
+            ) : (
+              <div className="h-full w-1/2 animate-progress-indeterminate rounded-full bg-primary" />
+            )}
+          </div>
+
+          {/* Status message */}
+          <p className="text-xs text-muted-foreground">
+            {installProgress.phase === "starting" && t("settings.marketplace.progressStarting")}
+            {installProgress.phase === "running" && t("settings.marketplace.progressRunning")}
+            {installProgress.phase === "completed" && t("settings.marketplace.progressDone")}
+            {installProgress.phase === "failed" && (
+              <span className="text-destructive">{t("settings.marketplace.installFailed")}</span>
+            )}
+          </p>
+
+          {/* Collapsible details */}
+          {installProgress.rawLines.length > 0 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowDetails((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+              >
+                {showDetails ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+                {t("settings.marketplace.progressDetails")}
+              </button>
+              {showDetails && (
+                <div className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/50 p-2.5 font-mono text-[10px] leading-relaxed text-muted-foreground break-all whitespace-pre-wrap">
+                  {installProgress.rawLines.map((line, i) => (
+                    <div key={i}>{line}</div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-          <div ref={progressEndRef} />
         </div>
       </BaseDialog>
     </div>
