@@ -1,5 +1,6 @@
 import type { Part } from "@opencode-ai/sdk/v2/client";
 import { memo } from "react";
+import type { ImageMention } from "@/components/ImageMentionPreview";
 import { ToolPartView } from "@/components/message-list/tools/ToolPartView";
 import { FilePartView } from "./FilePartView";
 import { ReasoningPartView } from "./ReasoningPartView";
@@ -11,16 +12,33 @@ export const PartView = memo(function PartView({
   lastReasoningPartId,
   expandedToolParts,
   onToggleToolPart,
+  activeImagePath,
+  onImageHover,
+  onImageOpen,
+  imageBaseDirectory,
 }: {
   part: Part;
   isUser?: boolean;
   lastReasoningPartId?: string;
   expandedToolParts?: ReadonlySet<string>;
   onToggleToolPart?: (partId: string, expanded: boolean) => void;
+  activeImagePath?: string | null;
+  onImageHover?: (path: string | null) => void;
+  onImageOpen?: (image: ImageMention) => void;
+  imageBaseDirectory?: string | null;
 }) {
   switch (part.type) {
     case "text":
-      return <TextPartView part={part} isUser={isUser} />;
+      return (
+        <TextPartView
+          part={part}
+          isUser={isUser}
+          activeImagePath={activeImagePath}
+          onImageHover={onImageHover}
+          onImageOpen={onImageOpen}
+          imageBaseDirectory={imageBaseDirectory}
+        />
+      );
     case "file":
       return <FilePartView part={part} />;
     case "reasoning":

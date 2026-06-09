@@ -384,6 +384,7 @@ async function applyCanonicalEventSideEffects(
     }
 
     if (event.type === "session.error") {
+      if (!event.sessionID) return;
       await services.sessions.updateSession(event.sessionID, { status: "error" }, { harnessId });
     }
   } catch {
@@ -514,6 +515,7 @@ const contentTypes: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
+  ".gif": "image/gif",
 };
 
 async function serveBuiltFile(request: Request) {
@@ -1469,6 +1471,28 @@ app.get("/api/fs/list", async (c) => {
   }
 });
 app.get("/api/fs/roots", () => Response.json({ ok: true, value: allowedRoots }));
+app.get("/api/fs/file", async (c) => {
+  try {
+    const inputPath = c.req.query("path")?.trim();
+    if (!inputPath) throw new Error("path is required");
+    const directory = c.req.query("directory")?.trim() || null;
+    const requestedPath = inputPath.startsWith("/")
+      ? inputPath
+      : join(await resolveSafeDirectory(directory), inputPath);
+    const actual = await realpath(requestedPath);
+    const allowed = allowedRoots.some((root) => actual === root || actual.startsWith(`${root}/`));
+    if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+    const info = await stat(actual);
+    if (!info.isFile()) throw new Error("Path is not a file");
+    return new Response(await readFile(actual), {
+      headers: {
+        "content-type": contentTypes[extname(actual).toLowerCase()] ?? "application/octet-stream",
+      },
+    });
+  } catch (error) {
+    return jsonError(error, 400);
+  }
+});
 app.get("/api/fs/search", async (c) => {
   try {
     const projectId = c.req.query("projectId");

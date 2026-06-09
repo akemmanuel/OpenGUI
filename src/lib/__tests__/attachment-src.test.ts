@@ -7,16 +7,24 @@ describe("resolveAttachmentImageSrc", () => {
     expect(resolveAttachmentImageSrc(url, "http://localhost:4096")).toBe(url);
   });
 
-  test("resolves root-relative urls against server url", () => {
-    expect(resolveAttachmentImageSrc("/session/file/image.png", "http://localhost:4096/")).toBe(
-      "http://localhost:4096/session/file/image.png",
+  test("serves absolute paths through the backend when server url exists", () => {
+    expect(resolveAttachmentImageSrc("/tmp/image.png", "http://localhost:4096/")).toBe(
+      "http://localhost:4096/api/fs/file?path=%2Ftmp%2Fimage.png",
     );
   });
 
-  test("resolves relative urls against server url", () => {
+  test("resolves relative paths against the base directory", () => {
+    expect(resolveAttachmentImageSrc("screenshot.png", null, "/repo/project")).toBe(
+      "file:///repo/project/screenshot.png",
+    );
+  });
+
+  test("serves relative paths through the backend with a base directory", () => {
     expect(
-      resolveAttachmentImageSrc("session/file/image.png", "https://example.com/opencode"),
-    ).toBe("https://example.com/opencode/session/file/image.png");
+      resolveAttachmentImageSrc("screenshot.png", "https://example.com/opencode", "/repo/project"),
+    ).toBe(
+      "https://example.com/opencode/api/fs/file?path=%2Frepo%2Fproject%2Fscreenshot.png&directory=%2Frepo%2Fproject",
+    );
   });
 
   test("keeps unix absolute paths as file urls when no server url exists", () => {

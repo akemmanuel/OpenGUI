@@ -2,6 +2,11 @@ import { ArrowUp, Check, GitBranch, ListEnd, Paperclip, Plus, Square, Wrench } f
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AgentSelector } from "@/components/AgentSelector";
+import {
+  ImageMentionLightbox,
+  ImageMentionThumbnails,
+  type ImageMention,
+} from "@/components/ImageMentionPreview";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
 import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
@@ -38,6 +43,7 @@ import {
   useSessionState,
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
+import { splitImageMentions } from "@/lib/image-mentions";
 import { getSessionDraftKey } from "@/lib/session-drafts";
 import { shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
@@ -161,16 +167,29 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       clearSessionDraft,
     });
 
+    const promptImageServerUrl =
+      window.electronAPI?.kind === "electron" && activeWorkspace?.isLocal
+        ? null
+        : activeWorkspace?.serverUrl;
     const promptFiles = usePromptFiles({
       disabled: isDisabled,
       value,
       setValue,
-      serverUrl:
-        window.electronAPI?.kind === "electron" && activeWorkspace?.isLocal
-          ? null
-          : activeWorkspace?.serverUrl,
+      serverUrl: promptImageServerUrl,
       textareaRef: internalTextareaRef,
     });
+    const [activeImagePath, setActiveImagePath] = React.useState<string | null>(null);
+    const [openImage, setOpenImage] = React.useState<ImageMention | null>(null);
+    const promptImages = React.useMemo(() => {
+      const seen = new Set<string>();
+      const images: ImageMention[] = [];
+      for (const segment of splitImageMentions(value)) {
+        if (segment.type !== "image" || seen.has(segment.path)) continue;
+        seen.add(segment.path);
+        images.push({ path: segment.path, filename: segment.filename });
+      }
+      return images;
+    }, [value]);
 
     const { handleHistoryKeyDown, noteManualInput, resetHistory } = usePromptHistoryNavigation({
       messages,
@@ -375,6 +394,23 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             </div>
           </div>
         )}
+        {promptImages.length > 0 && (
+          <ImageMentionThumbnails
+            images={promptImages}
+            serverUrl={promptImageServerUrl}
+            baseDirectory={projectDir ?? activeTargetDirectory ?? null}
+            activePath={activeImagePath}
+            onHover={setActiveImagePath}
+            onOpen={setOpenImage}
+            className="px-3 pt-2"
+          />
+        )}
+        <ImageMentionLightbox
+          image={openImage}
+          serverUrl={promptImageServerUrl}
+          baseDirectory={projectDir ?? activeTargetDirectory ?? null}
+          onClose={() => setOpenImage(null)}
+        />
         <textarea
           ref={internalTextareaRef}
           data-slot="prompt-box-textarea"
