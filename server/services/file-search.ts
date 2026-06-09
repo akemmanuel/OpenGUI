@@ -36,12 +36,13 @@ export async function findFilesInDirectory(
       if (entry.isDirectory() && SKIPPED_DIRECTORIES.has(entry.name)) continue;
 
       const absolutePath = join(currentDirectory, entry.name);
+      const relativePath = relative(rootDir, absolutePath).replaceAll("\\", "/");
       if (entry.isDirectory()) {
+        if (relativePath.toLowerCase().includes(needleText)) results.push(`${relativePath}/`);
         await visit(absolutePath);
         continue;
       }
 
-      const relativePath = relative(rootDir, absolutePath).replaceAll("\\", "/");
       if (relativePath.toLowerCase().includes(needleText)) results.push(relativePath);
     }
   }
