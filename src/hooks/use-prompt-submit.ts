@@ -50,6 +50,7 @@ export function usePromptSubmit({
   sendCommand,
   onSubmit,
   clearPromptDraft,
+  onAfterSubmit,
   resetSlashCommand,
   resetHistory,
 }: {
@@ -62,6 +63,7 @@ export function usePromptSubmit({
   sendCommand: (command: string, args: string) => Promise<void>;
   onSubmit?: (message: string, mode?: QueueMode) => void | Promise<void>;
   clearPromptDraft: () => void;
+  onAfterSubmit?: () => void;
   resetSlashCommand: () => void;
   resetHistory: () => void;
 }) {
@@ -99,6 +101,7 @@ export function usePromptSubmit({
 
       await onSubmit?.(decision.text, decision.mode);
       clearPromptDraft();
+      onAfterSubmit?.();
       resetHistory();
     } finally {
       submittingRef.current = false;
@@ -110,6 +113,7 @@ export function usePromptSubmit({
     isUploading,
     isLoading,
     onSubmit,
+    onAfterSubmit,
     parseSlashCommand,
     queueMode,
     resetHistory,

@@ -4,6 +4,12 @@ import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 
 type UploadResponse = { ok?: boolean; value?: unknown; error?: string };
 
+export interface PromptFileAttachment {
+  path: string;
+  mime: string;
+  filename: string;
+}
+
 export function getPromptFiles(files: FileList | File[]): File[] {
   return Array.from(files);
 }
@@ -19,6 +25,17 @@ function insertAtSelection(textarea: HTMLTextAreaElement | null, value: string, 
     value: `${before}${nextInsertion}${after}`,
     cursor: before.length + nextInsertion.length,
   };
+}
+
+function getImageMime(file: File): string | null {
+  const mime = file.type.toLowerCase();
+  if (mime.startsWith("image/")) return mime;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".webp")) return "image/webp";
+  if (name.endsWith(".gif")) return "image/gif";
+  return null;
 }
 
 export function usePromptFiles({
@@ -37,6 +54,15 @@ export function usePromptFiles({
   const [isDragging, setIsDragging] = React.useState(false);
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState<number | null>(null);
+  const [attachments, setAttachments] = React.useState<PromptFileAttachment[]>([]);
+
+  const removeAttachment = React.useCallback((path: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.path !== path));
+  }, []);
+
+  const clearAttachments = React.useCallback(() => {
+    setAttachments([]);
+  }, []);
 
   const appendUploadedPaths = React.useCallback(
     (paths: string[]) => {
@@ -99,7 +125,25 @@ export function usePromptFiles({
         xhr.onerror = () => reject(new Error("Failed to upload file"));
         xhr.send(form);
       });
-      appendUploadedPaths(paths);
+      const imageAttachments: PromptFileAttachment[] = [];
+      const nonImagePaths: string[] = [];
+      paths.forEach((path, index) => {
+        const file = files[index];
+        const imageMime = file ? getImageMime(file) : null;
+        if (file && imageMime) {
+          imageAttachments.push({
+            path,
+            mime: imageMime,
+            filename: file.name || path.split(/[\\/]/).pop() || "image",
+          });
+          return;
+        }
+        nonImagePaths.push(path);
+      });
+      if (imageAttachments.length > 0) {
+        setAttachments((current) => [...current, ...imageAttachments]);
+      }
+      appendUploadedPaths(nonImagePaths);
       setUploadProgress(100);
       setIsUploading(false);
     },
@@ -184,7 +228,10 @@ export function usePromptFiles({
     isUploading,
     uploadProgress,
     uploadError: null,
+    attachments,
     appendFiles,
+    removeAttachment,
+    clearAttachments,
     handleFileChange,
     handleDragOver,
     handleDragLeave,

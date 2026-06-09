@@ -14,6 +14,37 @@ type DeltaTrackedPart = Part & { _deltaPositions?: Record<string, number> };
 
 const OPTIMISTIC_USER_PREFIX = "local-user:";
 
+function getImageMimeFromPath(path: string): string | null {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return null;
+}
+
+function splitOptimisticImageMentions(text: string): {
+  text: string;
+  images: Array<{ url: string; mime: string; filename: string }>;
+} {
+  const images: Array<{ url: string; mime: string; filename: string }> = [];
+  const cleaned = text
+    .replace(/(^|\s)@(\S+\.(?:png|jpe?g|webp|gif))(?=\s|$)/gi, (match, prefix, url) => {
+      const mime = getImageMimeFromPath(url);
+      if (!mime) return match;
+      images.push({
+        url,
+        mime,
+        filename: url.split(/[\\/]/).pop() || "image",
+      });
+      return prefix;
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  return { text: cleaned, images };
+}
+
 export function getMessageText(entry: MessageEntry): string {
   return entry.parts
     .flatMap((part) => {
@@ -22,6 +53,13 @@ export function getMessageText(entry: MessageEntry): string {
     })
     .join("\n")
     .trim();
+}
+
+function getMessageFileUrls(entry: MessageEntry): string[] {
+  return entry.parts.flatMap((part) => {
+    const record = part as Record<string, unknown>;
+    return part.type === "file" && typeof record.url === "string" ? [record.url] : [];
+  });
 }
 
 export function isOptimisticUserMessage(entry: MessageEntry): boolean {
@@ -34,13 +72,15 @@ export function removeMatchingOptimisticUserMessage(
 ): MessageEntry[] {
   if (canonical.info.role !== "user" || isOptimisticUserMessage(canonical)) return messages;
   const canonicalText = getMessageText(canonical);
-  if (!canonicalText) return messages;
-  const key = `${canonical.info.sessionID}\0${canonicalText}`;
+  const canonicalFiles = getMessageFileUrls(canonical).join("\0");
+  if (!canonicalText && !canonicalFiles) return messages;
+  const key = `${canonical.info.sessionID}\0${canonicalText}\0${canonicalFiles}`;
   const filtered = messages.filter(
     (message) =>
       !(
         isOptimisticUserMessage(message) &&
-        `${message.info.sessionID}\0${getMessageText(message)}` === key
+        `${message.info.sessionID}\0${getMessageText(message)}\0${getMessageFileUrls(message).join("\0")}` ===
+          key
       ),
   );
   return filtered.length === messages.length ? messages : filtered;
@@ -58,6 +98,31 @@ export function createOptimisticUserMessage({
   createdAt: number;
 }): MessageEntry {
   const messageID = `${OPTIMISTIC_USER_PREFIX}${id}`;
+  const optimisticParts = splitOptimisticImageMentions(text);
+  const parts: Part[] = [];
+  if (optimisticParts.text.length > 0) {
+    parts.push({
+      id: `${messageID}:text`,
+      type: "text",
+      text: optimisticParts.text,
+      sessionID,
+      messageID,
+      time: { start: createdAt, end: createdAt },
+    } as Part);
+  }
+  for (const [index, image] of optimisticParts.images.entries()) {
+    parts.push({
+      id: `${messageID}:file:${index}`,
+      type: "file",
+      url: image.url,
+      mime: image.mime,
+      filename: image.filename,
+      sessionID,
+      messageID,
+      time: { start: createdAt, end: createdAt },
+    } as Part);
+  }
+
   return {
     info: {
       id: messageID,
@@ -65,16 +130,7 @@ export function createOptimisticUserMessage({
       role: "user",
       time: { created: createdAt },
     } as Message,
-    parts: [
-      {
-        id: `${messageID}:text`,
-        type: "text",
-        text,
-        sessionID,
-        messageID,
-        time: { start: createdAt, end: createdAt },
-      } as Part,
-    ],
+    parts,
   };
 }
 

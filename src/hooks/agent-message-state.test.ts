@@ -1,13 +1,30 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { Message, Part } from "@opencode-ai/sdk/v2/client";
 import type { MessageEntry } from "@/hooks/agent-state-types";
-import { mergeMessageSnapshot, removeMatchingOptimisticUserMessage } from "./agent-message-state";
+import {
+  createOptimisticUserMessage,
+  mergeMessageSnapshot,
+  removeMatchingOptimisticUserMessage,
+} from "./agent-message-state";
 
 function textPart(id: string, messageID: string, text: string, start = 1): Part {
   return {
     id,
     type: "text",
     text,
+    sessionID: "session-1",
+    messageID,
+    time: { start },
+  } as Part;
+}
+
+function filePart(id: string, messageID: string, url: string, start = 1): Part {
+  return {
+    id,
+    type: "file",
+    url,
+    mime: "image/png",
+    filename: url.split(/[\\/]/).pop(),
     sessionID: "session-1",
     messageID,
     time: { start },
@@ -104,6 +121,43 @@ describe("mergeMessageSnapshot", () => {
         time: { created: 11 },
       } as Message,
       parts: [textPart("server-user:text", "server-user", "hello", 11)],
+    };
+
+    const merged = removeMatchingOptimisticUserMessage([optimistic, canonical], canonical);
+
+    expect(merged.map((entry) => entry.info.id)).toEqual(["server-user"]);
+  });
+
+  test("optimistic user message renders image mentions as file parts", () => {
+    const optimistic = createOptimisticUserMessage({
+      id: "turn-1",
+      sessionID: "session-1",
+      text: "Bitte anschauen @/tmp/opengui-uploads/image.png",
+      createdAt: 10,
+    });
+
+    expect(optimistic.parts.map((part) => part.type)).toEqual(["text", "file"]);
+    expect((optimistic.parts[0] as Record<string, unknown>).text).toBe("Bitte anschauen");
+    expect((optimistic.parts[1] as Record<string, unknown>).url).toBe(
+      "/tmp/opengui-uploads/image.png",
+    );
+  });
+
+  test("canonical image user message removes matching optimistic user message", () => {
+    const optimistic = createOptimisticUserMessage({
+      id: "turn-1",
+      sessionID: "session-1",
+      text: "@/tmp/opengui-uploads/image.png",
+      createdAt: 10,
+    });
+    const canonical = {
+      info: {
+        id: "server-user",
+        sessionID: "session-1",
+        role: "user",
+        time: { created: 11 },
+      } as Message,
+      parts: [filePart("server-user:file", "server-user", "/tmp/opengui-uploads/image.png", 11)],
     };
 
     const merged = removeMatchingOptimisticUserMessage([optimistic, canonical], canonical);
