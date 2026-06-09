@@ -49,6 +49,9 @@ const electronAPI: ElectronAPI = {
   getPlatform: invoke("platform:get"),
   getSystemLocale: invoke("platform:locale"),
   isPackaged: invoke("app:isPackaged"),
+  getHomeDir: invoke("platform:homeDir"),
+  getHarnessInventories: invoke("platform:harnessInventory"),
+  installBackend: invoke("backend:install"),
   restartBackend: invoke("backend:restart-managed"),
   backendFetch: invoke("backend:fetch"),
   onMaximizeChange: (callback: Listener<boolean>) => {

@@ -294,7 +294,7 @@ export function normalizeMessageEntries(
       for (const part of existing.parts) existingPartsById.set(part.id, part);
     }
 
-    return {
+    const normalized = {
       ...message,
       parts: message.parts.map((part) => {
         const prev = existingPartsById.get(part.id);
@@ -307,7 +307,49 @@ export function normalizeMessageEntries(
         return tagPartWithDeltaPositions(part);
       }),
     };
+
+    return finalizeRunningToolPartsForCompletedMessage(normalized);
   });
+}
+
+export function finalizeRunningToolPartsForCompletedMessage(entry: MessageEntry): MessageEntry {
+  const time = entry.info.time as { completed?: number } | undefined;
+  if (!time?.completed) return entry;
+
+  let changed = false;
+  const parts = entry.parts.map((part) => {
+    if (part.type !== "tool") return part;
+    const status = part.state.status;
+    if (status !== "running" && status !== "pending") return part;
+    changed = true;
+    return {
+      ...part,
+      state: { ...part.state, status: "completed" as const },
+    } as Part;
+  });
+
+  return changed ? { ...entry, parts } : entry;
+}
+
+export function finalizeRunningToolPartsForSession(
+  messages: MessageEntry[],
+  sessionID: string,
+): MessageEntry[] {
+  let changed = false;
+  const next = messages.map((entry) => {
+    if (entry.info.sessionID !== sessionID) return entry;
+    let entryChanged = false;
+    const parts = entry.parts.map((part) => {
+      if (part.type !== "tool") return part;
+      const status = part.state.status;
+      if (status !== "running" && status !== "pending") return part;
+      entryChanged = true;
+      changed = true;
+      return { ...part, state: { ...part.state, status: "completed" as const } } as Part;
+    });
+    return entryChanged ? { ...entry, parts } : entry;
+  });
+  return changed ? next : messages;
 }
 
 export function mergeMessageSnapshot(

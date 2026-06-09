@@ -4,10 +4,10 @@ import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/ba
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";
 import type {
-  BackendDetectionResult,
   ConnectionConfig,
   GitMergeResult,
   GitWorktree,
+  HarnessInventory,
   InstallResult,
   ProvidersData,
   SelectedModel,
@@ -310,7 +310,7 @@ export interface OpenGuiClient {
   };
   runtime: {
     getHomeDir(): Promise<string>;
-    detectBackends(): Promise<BackendDetectionResult>;
+    getHarnessInventories(): Promise<HarnessInventory[]>;
     installBackend(harnessId: HarnessId): Promise<InstallResult>;
   };
   desktop: {

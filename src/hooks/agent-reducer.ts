@@ -20,6 +20,7 @@ import {
   createOptimisticUserMessage,
   createPlaceholderMessageEntry,
   createPlaceholderPart,
+  finalizeRunningToolPartsForSession,
   getChildSessionId,
   limitMessageWindow,
   MAX_SESSION_BUFFER_CACHE,
@@ -1694,6 +1695,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         busySessionIds: newBusy,
         unreadSessionIds: nextUnread,
         _sessionBuffers: nextBuffers,
+        ...(sessionID === state.activeSessionId && !isBusy
+          ? { messages: finalizeRunningToolPartsForSession(state.messages, sessionID) }
+          : {}),
         ...(sessionID === state.activeSessionId ? { isBusy } : {}),
       };
     }

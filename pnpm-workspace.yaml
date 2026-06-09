@@ -4,5 +4,6 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   koffi: false
+  msw: false
   protobufjs: true
   sharp: true

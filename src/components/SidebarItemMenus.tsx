@@ -20,13 +20,12 @@ import {
 import type { KeyboardEvent } from "react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ContextMenu } from "radix-ui";
+import * as ContextMenu from "@/components/ui/context-menu";
 import type { SessionColor } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
 import { compareWorktreesByLabel, getWorktreeLabel } from "@/lib/worktree-placement";
-import { formatTimeAgo, getProjectName } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { cn, copyTextToClipboard, formatTimeAgo, getProjectName } from "@/lib/utils";
 import { useDesktopShell } from "@/shell/provider";
 import {
   DropdownMenu,
@@ -340,7 +339,7 @@ export function ProjectMenuContent({
         <DropdownMenuItem
           onClick={(event) => {
             event.stopPropagation();
-            void navigator.clipboard.writeText(directory);
+            void copyTextToClipboard(directory);
           }}
         >
           <Copy className="size-4" />
@@ -510,7 +509,7 @@ export function ProjectMenuContent({
       <ContextMenu.Item
         className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
         onSelect={() => {
-          void navigator.clipboard.writeText(directory);
+          void copyTextToClipboard(directory);
         }}
       >
         <Copy className="size-4" />

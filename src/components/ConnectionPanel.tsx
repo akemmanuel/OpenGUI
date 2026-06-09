@@ -23,14 +23,15 @@ export function ConnectionPanel({
   const { t } = useTranslation();
 
   return (
-    <SidebarMenu className="group-data-[collapsible=icon]:p-0">
-      <SidebarMenuItem>
+    <SidebarMenu className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:p-0">
+      <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
         <SidebarMenuButton
           tooltip={t("common.settings")}
           isActive={isActive}
           onClick={onOpenSettings}
+          className="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:[&>span]:hidden"
         >
-          <Settings />
+          <Settings className="size-4 shrink-0" />
           <span>{t("common.settings")}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>

@@ -1,5 +1,5 @@
 import { Check, FolderOpen, Palette, Pencil, Pin, PinOff, Tag, Trash2, X } from "lucide-react";
-import { ContextMenu } from "radix-ui";
+import * as ContextMenu from "@/components/ui/context-menu";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";

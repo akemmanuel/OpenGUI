@@ -6,7 +6,7 @@ import {
   GripVertical,
   SquarePen,
 } from "lucide-react";
-import { ContextMenu } from "radix-ui";
+import * as ContextMenu from "@/components/ui/context-menu";
 import type { ReactNode } from "react";
 import type { OpenGuiClient } from "@/protocol/client";
 import type { Session } from "@/hooks/agent-state-types";

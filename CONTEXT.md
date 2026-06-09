@@ -50,8 +50,16 @@ The post-install check where OpenGUI detects whether a Harness CLI became availa
 _Avoid_: assume installed, user-only confirmation, one-shot detection
 
 **Harness Readiness**:
-The user-facing availability state of a Harness: not installed, installed but not authenticated, ready, or broken. A verified CLI install is not ready until the Harness has usable provider credentials or CLI-authenticated provider state.
-_Avoid_: installed means ready, backend available, binary found
+The user-facing availability state of a Harness: not installed, installed but not authenticated, installed but unable to report models, ready, or broken. A verified CLI install is not ready until the Harness has usable provider credentials or CLI-authenticated provider state and at least one runtime-discovered model available for explicit PromptBox selection.
+_Avoid_: installed means ready, backend available, binary found, hidden default model
+
+**Harness Inventory**:
+The backend-produced snapshot of a Harness's current usability: CLI availability, version, authentication state, runtime-discovered models, agents/options when available, diagnostic message, and check time. Harness Inventory is the source for model selection; OpenGUI does not invent fixed model lists when a Harness cannot report models.
+_Avoid_: static model catalog, guessed model list, CLI detection result
+
+**Model-ready Harness**:
+A Harness whose Inventory says it is ready and includes at least one runtime-discovered model. Only Model-ready Harnesses may be selected for an Agent send that requires model selection.
+_Avoid_: usable because installed, send with CLI default, implicit model fallback
 
 **Harness Scope**:
 The project+path/session tuple that scopes a Harness operation inside an OpenGUI Backend. Frontend Workspaces may choose and route that scope, but they are not part of it.

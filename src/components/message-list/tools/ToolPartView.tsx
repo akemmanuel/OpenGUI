@@ -158,6 +158,34 @@ function ToolHeader({
   );
 }
 
+function ToolImages({ presentation }: { presentation: ToolPresentation }) {
+  if (presentation.sideContent.images.length === 0) return null;
+
+  return (
+    <div
+      className={cn(
+        "grid gap-2 pt-1",
+        presentation.sideContent.images.length === 1 ? "grid-cols-1" : "grid-cols-2",
+      )}
+    >
+      {presentation.sideContent.images.map((image, idx) => (
+        <div
+          key={`${image.url}-${idx}`}
+          className="overflow-hidden rounded-md border border-border/60 bg-background/60"
+        >
+          <img
+            src={image.src}
+            alt={image.filename ?? `Image attachment ${idx + 1}`}
+            loading="lazy"
+            className="w-full max-h-52 object-contain bg-black/20"
+          />
+
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ToolBody({
   presentation,
   toolOutputRef,
@@ -168,12 +196,18 @@ function ToolBody({
   taskContentRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const body = presentation.body;
-  if (!body) return null;
+  if (!body) {
+    return (
+      <div className="pl-7 pt-1">
+        <ToolImages presentation={presentation} />
+      </div>
+    );
+  }
 
   switch (body.type) {
     case "terminal":
       return (
-        <div className="pl-7 pt-1">
+        <div className="pl-7 pt-1 space-y-1">
           <TerminalOutput
             content={body.content}
             preRef={toolOutputRef}
@@ -184,10 +218,18 @@ function ToolBody({
                 "text-destructive",
             )}
           />
+          <ToolImages presentation={presentation} />
         </div>
       );
     case "apply-patch":
-      return <ApplyPatchFilesView files={body.files} />;
+      return (
+        <div className="space-y-1">
+          <ApplyPatchFilesView files={body.files} />
+          <div className="pl-7">
+            <ToolImages presentation={presentation} />
+          </div>
+        </div>
+      );
     case "task":
       return (
         <div ref={taskContentRef} className="pl-7 pt-1 space-y-1 max-h-96 overflow-auto">
@@ -222,6 +264,7 @@ function ToolBody({
               )}
             </div>
           )}
+          <ToolImages presentation={presentation} />
         </div>
       );
   }
@@ -294,9 +337,7 @@ export function ToolPartView({
     toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
   }, [presentation.tool.kind, expanded, presentation.bashOutputText]);
 
-  const hasSideContent =
-    (presentation.sideContent.todos && presentation.sideContent.todos.length > 0) ||
-    presentation.sideContent.images.length > 0;
+  const hasSideContent = presentation.sideContent.todos && presentation.sideContent.todos.length > 0;
 
   return (
     <div className="text-xs font-mono text-muted-foreground overflow-hidden">
@@ -316,36 +357,6 @@ export function ToolPartView({
         )}
       {hasSideContent && (
         <div className="pl-5 mt-0.5 space-y-1">
-          {presentation.sideContent.images.length > 0 && (
-            <div
-              className={cn(
-                "grid gap-2 pt-1",
-                presentation.sideContent.images.length === 1 ? "grid-cols-1" : "grid-cols-2",
-              )}
-            >
-              {presentation.sideContent.images.map((image, idx) => (
-                <div
-                  key={`${image.url}-${idx}`}
-                  className="overflow-hidden rounded-md border border-border/60 bg-background/60"
-                >
-                  <img
-                    src={image.src}
-                    alt={image.filename ?? `Image attachment ${idx + 1}`}
-                    loading="lazy"
-                    className="w-full max-h-52 object-contain bg-black/20"
-                  />
-                  {image.filename && (
-                    <div
-                      className="px-2 py-1 text-[10px] text-muted-foreground truncate"
-                      title={image.filename}
-                    >
-                      {image.filename}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
           {presentation.sideContent.todos && presentation.sideContent.todos.length > 0 && (
             <TodoListView todos={presentation.sideContent.todos} />
           )}

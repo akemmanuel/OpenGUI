@@ -77,7 +77,7 @@ export const NEAR_BOTTOM_PX = 80;
 export const USER_MSG_COLLAPSE_CHARS = 500;
 
 // ---------------------------------------------------------------------------
-// Context menu styles (radix-ui ContextMenu)
+// Context menu styles (Base UI ContextMenu)
 // ---------------------------------------------------------------------------
 
 /** Base class for `ContextMenu.Item`. */

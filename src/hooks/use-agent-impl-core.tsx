@@ -379,6 +379,7 @@ function InternalAgentProvider({
   const workspaceBootstrapRef = useRef(false);
   const pendingStartupSessionRestoreRef = useRef<string | null>(null);
   const attemptedStartupSessionRestoreRef = useRef<string | null>(null);
+  const attemptedEmptySessionLoadRef = useRef<string | null>(null);
   useEffect(() => {
     if (workspaceBootstrapRef.current) return;
     workspaceBootstrapRef.current = true;
@@ -1880,8 +1881,10 @@ function InternalAgentProvider({
   useEffect(() => {
     const sessionId = state.activeSessionId;
     if (!sessionId || state.isLoadingMessages || state.messages.length > 0) return;
+    if (attemptedEmptySessionLoadRef.current === sessionId) return;
     const session = state.sessions.find((item) => item.id === sessionId);
     if (!session) return;
+    attemptedEmptySessionLoadRef.current = sessionId;
     void selectSession(sessionId, {
       session,
       force: true,

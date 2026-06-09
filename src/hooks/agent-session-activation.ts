@@ -128,12 +128,18 @@ export function useAgentSessionActivation({
   const selectSession = useCallback(
     async (
       id: string | null,
-      options?: { session?: Session | null; force?: boolean; preserveSelectionOnFailure?: boolean },
+      options?: {
+        session?: Session | null;
+        force?: boolean;
+        preserveSelectionOnFailure?: boolean;
+        preservePromptBoxSelection?: boolean;
+      },
     ) => {
       if (!options?.force && id === stateRef.current.activeSessionId) return;
 
       const applySelectionFromMessages = (messages: MessageEntry[]) => {
         const derived = deriveSelectionFromMessages(messages);
+        if (options?.preservePromptBoxSelection && !derived.selectedModel) return;
         dispatch({ type: "SET_SELECTED_MODEL", payload: derived.selectedModel });
         if (derived.selectedAgent !== undefined) {
           dispatch({ type: "SET_SELECTED_AGENT", payload: derived.selectedAgent ?? null });

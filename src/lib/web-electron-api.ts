@@ -151,7 +151,7 @@ export function installWebElectronAPI() {
     isMaximized: () => invoke("window:isMaximized"),
     getPlatform: () => invoke("platform:get"),
     getSystemLocale: () => invoke("platform:locale"),
-    detectBackends: () => invoke("platform:detectBackends"),
+    getHarnessInventories: () => invoke("platform:harnessInventory"),
     isPackaged: () => invoke("app:isPackaged"),
     onMaximizeChange: () => () => {},
     openDirectory: () => invoke("dialog:openDirectory"),

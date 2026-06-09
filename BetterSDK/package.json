@@ -1,0 +1,23 @@
+{
+  "name": "@opengui/better-sdk",
+  "version": "0.0.1",
+  "description": "Open TypeScript Claude Agent SDK-compatible implementation using local claude CLI only.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  },
+  "license": "MIT",
+  "packageManager": "pnpm@11.5.2"
+}

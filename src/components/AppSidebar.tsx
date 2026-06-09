@@ -544,7 +544,7 @@ export function AppSidebar({
               </span>
             </div>
           )}
-          <div className="p-1">
+          <div className="flex justify-center p-1 group-data-[collapsible=icon]:px-0">
             <ConnectionPanel
               onOpenSettings={() => {
                 onOpenSettings();

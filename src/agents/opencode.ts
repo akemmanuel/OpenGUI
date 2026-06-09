@@ -58,7 +58,17 @@ export function normalizeOpenCodeEvent(event: NativeBackendEvent): HarnessEvent 
   }
 
   if (event.type !== "opencode:event") return null;
-  const oc = event.payload as OpenCodeEvent;
+  const raw = event.payload as
+    | OpenCodeEvent
+    | { type?: string; syncEvent?: { type?: string; data?: unknown; id?: string } };
+  const oc =
+    raw?.type === "sync" && raw.syncEvent?.type && raw.syncEvent.data
+      ? ({
+          id: raw.syncEvent.id,
+          type: raw.syncEvent.type.replace(/\.\d+$/, ""),
+          properties: raw.syncEvent.data,
+        } as OpenCodeEvent)
+      : (raw as OpenCodeEvent);
 
   switch (oc.type) {
     case "session.created":
@@ -94,6 +104,7 @@ export function normalizeOpenCodeEvent(event: NativeBackendEvent): HarnessEvent 
       };
     case "message.part.delta":
       return {
+        id: oc.id,
         type: "message.part.delta",
         sessionID: toCompositeSessionId(oc.properties.sessionID),
         messageID: oc.properties.messageID,

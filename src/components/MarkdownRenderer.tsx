@@ -1,6 +1,7 @@
 import { common, createStarryNight } from "@wooorm/starry-night";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import onigurumaWasmUrl from "vscode-oniguruma/release/onig.wasm?url";
+import { Check, Copy } from "lucide-react";
 import {
   isValidElement,
   memo,
@@ -13,7 +14,8 @@ import {
 import ReactMarkdown from "react-markdown";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
-import { cn, openExternalLink } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { cn, copyTextToClipboard, openExternalLink } from "@/lib/utils";
 
 type StarryNight = Awaited<ReturnType<typeof createStarryNight>>;
 
@@ -69,6 +71,7 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
   const explicitLanguage = /language-([^\s]+)/.exec(className ?? "")?.[1];
   const language = explicitLanguage ?? guessCodeLanguage(code);
   const [highlighted, setHighlighted] = useState<React.ReactNode>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,18 +101,43 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
     };
   }, [code, language]);
 
+  useEffect(() => {
+    if (!copied) return;
+
+    const timeout = window.setTimeout(() => setCopied(false), 1400);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+
+  const handleCopy = async () => {
+    await copyTextToClipboard(code);
+    setCopied(true);
+  };
+
   return (
-    <pre className="my-3 max-w-full overflow-x-auto rounded-lg border border-border/60 bg-muted/60 p-3">
-      <code
-        className={cn(
-          "font-mono text-[var(--code-font-size)] leading-relaxed",
-          className,
-          language && !explicitLanguage && `language-${language}`,
-        )}
+    <div className="group relative my-3 max-w-full">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        className="absolute top-2 right-2 z-10 bg-background/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity focus:opacity-100 group-hover:opacity-100"
+        onClick={handleCopy}
+        aria-label={copied ? "Code copied" : "Copy code to clipboard"}
+        title={copied ? "Copied" : "Copy"}
       >
-        {highlighted ?? code}
-      </code>
-    </pre>
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </Button>
+      <pre className="max-w-full overflow-x-auto rounded-lg border border-border/60 bg-muted/60 p-3">
+        <code
+          className={cn(
+            "font-mono text-[var(--code-font-size)] leading-relaxed",
+            className,
+            language && !explicitLanguage && `language-${language}`,
+          )}
+        >
+          {highlighted ?? code}
+        </code>
+      </pre>
+    </div>
   );
 }
 

@@ -101,6 +101,7 @@ export type HarnessEvent =
     }
   | { type: "message.part.updated"; part: Part }
   | {
+      id?: string;
       type: "message.part.delta";
       sessionID: string;
       messageID: string;

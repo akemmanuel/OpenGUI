@@ -23,6 +23,7 @@ import {
   deleteSessionThroughHarness,
   disconnectProjectFromHarnesses,
   enqueueSessionPrompt,
+  ensureSessionFromRuntime,
   findFilesInDirectory,
   forkSessionThroughHarness,
   getBackendCapabilities,
@@ -52,6 +53,7 @@ import {
   sendCommandThroughHarness,
   sendQueuedPromptNow,
   submitSessionPrompt,
+  syncDirectorySessions,
   toOptionalNullableString,
   toOptionalSelectedModel,
   toOptionalString,
@@ -245,7 +247,19 @@ async function createBackendServiceContext(
 
 const rawClients = new Set<SseClient>();
 const canonicalClients = new Set<SseClient>();
+const sessionAliases = new Map<string, string>();
 let servicesReady!: Promise<BackendServiceContext>;
+
+function makeCanonicalDirectorySessionId(input: {
+  projectId: string;
+  harnessId: HarnessId;
+  rawId: string;
+}) {
+  return `session_${Buffer.from(
+    `${input.projectId}::${input.harnessId}::${input.rawId}`,
+    "utf8",
+  ).toString("base64url")}`;
+}
 
 function formatSseMessage(payload: string, id?: string) {
   const lines = payload.split(/\r?\n/).map((line) => `data: ${line}`);
@@ -261,11 +275,16 @@ function createSseResponse(
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
 
+  let pendingWrite = Promise.resolve();
   const client: SseClient = {
     send: async (payload: string, id?: string) => {
-      await writer.write(encoder.encode(formatSseMessage(payload, id)));
+      pendingWrite = pendingWrite.then(() =>
+        writer.write(encoder.encode(formatSseMessage(payload, id))),
+      );
+      await pendingWrite;
     },
     close: async () => {
+      await pendingWrite.catch(() => undefined);
       await writer.close();
     },
   };
@@ -299,13 +318,78 @@ const broadcast = (channel: string, data: unknown) => {
   if (!normalizedEvent) return;
 
   if (!servicesReady) return;
-  void servicesReady.then((services) => {
+  void servicesReady.then(async (services) => {
+    await applyCanonicalEventSideEffects(services, harnessId, normalizedEvent);
     services.events.publish(getCanonicalEventType(normalizedEvent), normalizedEvent, {
       ...getBridgeEventRefs(normalizedEvent),
       harnessId,
     });
   });
 };
+
+async function applyCanonicalEventSideEffects(
+  services: BackendServiceContext,
+  harnessId: HarnessId,
+  event: HarnessEvent,
+) {
+  try {
+    if ((event.type === "session.created" || event.type === "session.updated") && event.session) {
+      await ensureSessionFromRuntime({
+        sessions: services.sessions,
+        runtimeSession: event.session,
+        projectId: event.directory,
+        harnessId,
+      });
+      return;
+    }
+
+    if (event.type === "session.replaced") {
+      sessionAliases.set(
+        makeCanonicalDirectorySessionId({
+          projectId: event.directory,
+          harnessId,
+          rawId: event.oldId,
+        }),
+        makeCanonicalDirectorySessionId({
+          projectId: event.directory,
+          harnessId,
+          rawId: event.newId,
+        }),
+      );
+      await services.sessions.deleteSession(event.oldId, {
+        projectId: event.directory,
+        harnessId,
+      });
+      await ensureSessionFromRuntime({
+        sessions: services.sessions,
+        runtimeSession: event.session,
+        projectId: event.directory,
+        harnessId,
+      });
+      return;
+    }
+
+    if (event.type === "session.status") {
+      const status =
+        event.status?.type === "busy" || event.status?.type === "running"
+          ? "running"
+          : event.status?.type === "idle"
+            ? "idle"
+            : event.status?.type === "error"
+              ? "error"
+              : undefined;
+      if (!status) return;
+      await services.sessions.updateSession(event.sessionID, { status }, { harnessId });
+      return;
+    }
+
+    if (event.type === "session.error") {
+      await services.sessions.updateSession(event.sessionID, { status: "error" }, { harnessId });
+    }
+  } catch {
+    // Keep SSE delivery independent from the REST session-index cache.
+  }
+}
 
 const ipcMain = new FakeIpcMain();
 const sender = new FakeSender(broadcast);
@@ -532,7 +616,54 @@ async function getSessionOrThrow(
   sessionId: string,
   scope: { projectId?: string; harnessId?: HarnessId } = {},
 ): Promise<SessionRecord> {
-  return await getSessionRecordOrThrow({ services, sessionId, scope });
+  const aliasedSessionId = sessionAliases.get(sessionId);
+  if (aliasedSessionId) {
+    return await getSessionRecordOrThrow({ services, sessionId: aliasedSessionId, scope });
+  }
+  try {
+    return await getSessionRecordOrThrow({ services, sessionId, scope });
+  } catch (error) {
+    const decoded = decodeCanonicalDirectorySessionId(sessionId);
+    if (!decoded) throw error;
+    if (scope.harnessId && scope.harnessId !== decoded.harnessId) throw error;
+    try {
+      const canonicalPath = await resolveSafeDirectory(decoded.projectId);
+      await syncDirectorySessions(
+        services,
+        { directory: canonicalPath, canonicalPath },
+        decoded.harnessId,
+      );
+      return await getSessionRecordOrThrow({ services, sessionId, scope });
+    } catch {
+      const now = new Date().toISOString();
+      return await services.sessions.ensureSession({
+        id: sessionId,
+        rawId: decoded.rawId,
+        projectId: decoded.projectId,
+        harnessId: decoded.harnessId,
+        title: "Claude Code session",
+        status: "unknown",
+        createdAt: now,
+        updatedAt: now,
+        metadata: { directory: decoded.projectId, recovered: true },
+      });
+    }
+  }
+}
+
+function decodeCanonicalDirectorySessionId(
+  sessionId: string,
+): { projectId: string; harnessId: HarnessId; rawId: string } | null {
+  if (!sessionId.startsWith("session_")) return null;
+  try {
+    const decoded = Buffer.from(sessionId.slice("session_".length), "base64url").toString("utf8");
+    const [projectId, harnessId, rawId] = decoded.split("::");
+    if (!projectId || !rawId) return null;
+    if (!MANAGED_HARNESS_IDS.includes(harnessId as HarnessId)) return null;
+    return { projectId, harnessId: harnessId as HarnessId, rawId };
+  } catch {
+    return null;
+  }
 }
 
 async function handleProjectRequest(request: Request) {

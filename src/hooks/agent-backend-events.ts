@@ -65,6 +65,8 @@ type BackendEventDispatch = (
     | { type: "SET_ERROR"; payload: string | null },
 ) => void;
 
+const seenDeltaEventIds = new Set<string>();
+
 interface SessionTitleTrackingState {
   forcedTitles: Map<string, string>;
   pendingTitlePersistence: Map<string, string>;
@@ -217,7 +219,13 @@ export function handleHarnessEvent({
     case "message.part.updated":
       dispatch({ type: "PART_UPDATED", payload: { part: event.part } });
       return;
-    case "message.part.delta":
+    case "message.part.delta": {
+      const eventId = (event as { id?: string }).id;
+      if (eventId) {
+        if (seenDeltaEventIds.has(eventId)) return;
+        seenDeltaEventIds.add(eventId);
+        if (seenDeltaEventIds.size > 1000) seenDeltaEventIds.clear();
+      }
       dispatch({
         type: "PART_DELTA",
         payload: {
@@ -229,6 +237,7 @@ export function handleHarnessEvent({
         },
       });
       return;
+    }
     case "message.part.removed":
       dispatch({
         type: "PART_REMOVED",

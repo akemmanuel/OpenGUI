@@ -9,7 +9,7 @@ import { STORAGE_KEYS } from "@/lib/constants";
 import { storageSet } from "@/lib/safe-storage";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { useDesktopShell } from "@/shell/provider";
-import type { BackendDetectionResult } from "@/types/electron";
+import type { HarnessInventory } from "@/types/electron";
 
 type Step = "harness" | "opencode" | "folder" | "appearance" | "finish";
 type HarnessState = "detecting" | "ready" | "none" | "error";
@@ -19,15 +19,10 @@ interface Props {
   onComplete: () => void;
 }
 
-const EMPTY_BACKEND_STATUS: BackendDetectionResult = {
-  opencode: false,
-  "claude-code": false,
-  pi: false,
-  codex: false,
-};
-
-function hasHarness(status: BackendDetectionResult) {
-  return Object.values(status).some(Boolean);
+function hasModelReadyHarness(inventories: HarnessInventory[]) {
+  return inventories.some(
+    (inventory) => inventory.status === "ready" && inventory.models.length > 0,
+  );
 }
 
 function stepNumber(step: Step) {
@@ -41,14 +36,16 @@ export function SetupWizard({ onComplete }: Props) {
   const client = useOpenGuiClient();
   const shell = useDesktopShell();
   const [step, setStep] = useState<Step>("harness");
-  const [backendStatus, setBackendStatus] = useState<BackendDetectionResult>(EMPTY_BACKEND_STATUS);
+  const [inventories, setInventories] = useState<HarnessInventory[]>([]);
   const [harnessState, setHarnessState] = useState<HarnessState>("detecting");
   const [installState, setInstallState] = useState<OpenCodeInstallState>("idle");
   const [folder, setFolder] = useState("");
 
   const currentStepNumber = stepNumber(step);
-  const opencodeInstalled = backendStatus.opencode;
-  const canUseAnyHarness = hasHarness(backendStatus);
+  const opencodeInstalled = inventories.some(
+    (inventory) => inventory.harnessId === "opencode" && inventory.installed,
+  );
+  const canUseAnyHarness = hasModelReadyHarness(inventories);
 
   const title = useMemo(() => {
     switch (step) {
@@ -68,16 +65,17 @@ export function SetupWizard({ onComplete }: Props) {
   async function refreshHarnessStatus() {
     setHarnessState("detecting");
     try {
-      const result =
-        (await client.runtime.detectBackends().catch(() => null)) ?? EMPTY_BACKEND_STATUS;
-      setBackendStatus(result);
-      setHarnessState(hasHarness(result) ? "ready" : "none");
-      if (result.opencode) setInstallState("installed");
+      const result = await client.runtime.getHarnessInventories().catch(() => []);
+      setInventories(result);
+      setHarnessState(hasModelReadyHarness(result) ? "ready" : "none");
+      if (result.some((inventory) => inventory.harnessId === "opencode" && inventory.installed)) {
+        setInstallState("installed");
+      }
       return result;
     } catch {
-      setBackendStatus(EMPTY_BACKEND_STATUS);
+      setInventories([]);
       setHarnessState("error");
-      return EMPTY_BACKEND_STATUS;
+      return [];
     }
   }
 
@@ -87,8 +85,8 @@ export function SetupWizard({ onComplete }: Props) {
     void (async () => {
       const result = await refreshHarnessStatus();
       if (cancelled) return;
-      setBackendStatus(result);
-      setHarnessState(hasHarness(result) ? "ready" : "none");
+      setInventories(result);
+      setHarnessState(hasModelReadyHarness(result) ? "ready" : "none");
     })();
 
     return () => {
@@ -102,7 +100,12 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       const result = await client.runtime.installBackend("opencode");
       const nextStatus = await refreshHarnessStatus();
-      setInstallState(result?.success && nextStatus.opencode ? "installed" : "error");
+      setInstallState(
+        result?.success &&
+          nextStatus.some((inventory) => inventory.harnessId === "opencode" && inventory.installed)
+          ? "installed"
+          : "error",
+      );
     } catch {
       setInstallState("error");
     }
@@ -201,6 +204,7 @@ export function SetupWizard({ onComplete }: Props) {
                   </Button>
                 )}
               </div>
+              {inventories.length > 0 && <HarnessInventorySummary inventories={inventories} />}
             </div>
           )}
 
@@ -306,6 +310,33 @@ export function SetupWizard({ onComplete }: Props) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function HarnessInventorySummary({ inventories }: { inventories: HarnessInventory[] }) {
+  return (
+    <div className="mt-5 rounded-lg border bg-muted/20 p-3">
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Harness inventory
+      </div>
+      <div className="space-y-2">
+        {inventories.map((inventory) => (
+          <div key={inventory.harnessId} className="flex items-start justify-between gap-3 text-sm">
+            <div>
+              <div className="font-medium">{inventory.displayName}</div>
+              <div className="text-xs text-muted-foreground">{inventory.message}</div>
+            </div>
+            <div className="shrink-0 text-xs text-muted-foreground">
+              {inventory.status === "ready"
+                ? `${inventory.models.length} models`
+                : inventory.installed
+                  ? "not model-ready"
+                  : "not found"}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

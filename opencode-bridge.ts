@@ -17,6 +17,8 @@ import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
 import { basename, dirname, join, normalize, resolve } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
+import { pollUntilEffect, runEffect, sleepEffect } from "./lib/effect-runtime.ts";
+import { resolveHarnessCli } from "./server/harness-inventory.ts";
 
 class OpencodeProjectRegistry {
   connections = new Map();
@@ -176,36 +178,7 @@ async function getOpenCodeProviderAuthKinds(directory, providers, connected) {
 
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {
-  const isWindows = process.platform === "win32";
-  const binaryName = isWindows ? "opencode.exe" : "opencode";
-  // Prefer the canonical install location (~/.opencode/bin/)
-  const preferred = join(homedir(), ".opencode", "bin", binaryName);
-  if (existsSync(preferred)) return preferred;
-  // Fall back to PATH
-  if (isWindows) {
-    // On Windows, `where opencode` may return extensionless bash shims
-    // that spawn() cannot execute. Search for .exe first, then .cmd.
-    for (const ext of [".exe", ".cmd"]) {
-      try {
-        const result = execSync(`where opencode${ext}`, {
-          encoding: "utf-8",
-        })
-          .split(/\r?\n/)[0]
-          .trim();
-        if (result) return result;
-      } catch {
-        // not found with this extension
-      }
-    }
-  } else {
-    try {
-      const fromPath = execSync("which opencode", { encoding: "utf-8" }).split(/\r?\n/)[0].trim();
-      if (fromPath) return fromPath;
-    } catch {
-      // not on PATH
-    }
-  }
-  return null;
+  return resolveHarnessCli("opencode").resolvedPath;
 }
 
 /** Fetch health info from the local server. Returns { healthy, version } or defaults. */
@@ -291,7 +264,7 @@ async function killServerProcess() {
     return false;
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await runEffect(sleepEffect(1000));
 
   if ((await fetchLocalHealth()).healthy) {
     try {
@@ -299,7 +272,7 @@ async function killServerProcess() {
     } catch {
       // already dead
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await runEffect(sleepEffect(500));
     if ((await fetchLocalHealth()).healthy) return false;
   }
 
@@ -307,18 +280,16 @@ async function killServerProcess() {
 }
 
 /** Poll until healthy or timeout. */
-function waitForHealthy(timeoutMs = STARTUP_TIMEOUT) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = async () => {
-      if ((await fetchLocalHealth()).healthy) return resolve(true);
-      if (Date.now() - start > timeoutMs) {
-        return reject(new Error(`Server did not become healthy within ${timeoutMs / 1000}s`));
-      }
-      setTimeout(check, STARTUP_POLL_INTERVAL);
-    };
-    void check();
-  });
+async function waitForHealthy(timeoutMs = STARTUP_TIMEOUT) {
+  await runEffect(
+    pollUntilEffect({
+      attempt: async () => (await fetchLocalHealth()).healthy,
+      intervalMs: STARTUP_POLL_INTERVAL,
+      timeoutMs,
+      timeoutMessage: `Server did not become healthy within ${timeoutMs / 1000}s`,
+    }),
+  );
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -851,35 +822,44 @@ export class OpenCodeConnection {
     this._abortController = abortController;
 
     try {
-      const events = await this._makeGlobalEventClient(this._config).global.event({
+      const response = await fetch(`${this._config.baseUrl.replace(/\/+$/, "")}/global/event`, {
+        headers: { ...this._makeAuthHeaders(this._config), accept: "text/event-stream" },
         signal: abortController.signal,
-        // Disable SDK-level retry - we handle reconnection at the app level
-        // with our own backoff. Without this, the SDK silently retries with
-        // exponential backoff (3s/6s/12s/24s/30s) and the app has no
-        // visibility into the disconnect.
-        sseMaxRetryAttempts: 1,
-        onSseError: (err) => {
-          if (abortController.signal.aborted) return;
-          console.warn("[OpenCodeConnection] SDK SSE error:", err);
-        },
       });
+      if (!response.ok) throw new Error(`OpenCode SSE failed: ${response.status}`);
+      if (!response.body) throw new Error("OpenCode SSE response had no body");
 
-      const stream = events.stream ?? events;
-      for await (const event of stream) {
-        if (
-          abortController.signal.aborted ||
-          this._streamGeneration !== streamGeneration ||
-          !this._isCurrent(lifecycle)
-        ) {
-          break;
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          if (
+            abortController.signal.aborted ||
+            this._streamGeneration !== streamGeneration ||
+            !this._isCurrent(lifecycle)
+          ) {
+            break;
+          }
+          const raw = chunk
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.replace(/^data:\s*/, ""))
+            .join("\n");
+          if (!raw) continue;
+          const event = JSON.parse(raw);
+          const payload = event.payload ?? event;
+          if (payload?.type === "sync") continue;
+          if (payload) {
+            this._emit({ type: "opencode:event", payload });
+            this._status.lastEventAt = Date.now();
+          }
+          this._reconnectAttempt = 0;
         }
-
-        const payload = event.properties ? event : event.payload;
-        if (payload) {
-          this._emit({ type: "opencode:event", payload });
-          this._setStatus({ lastEventAt: Date.now() });
-        }
-        this._reconnectAttempt = 0;
       }
 
       // Global stream should stay open. If it ends, reconnect; otherwise prompts
@@ -1023,7 +1003,7 @@ async function startLocalOpenCodeServer() {
       return {
         success: false,
         error:
-          "Could not find the opencode binary. Make sure it is installed at ~/.opencode/bin/opencode or available on your PATH.",
+          "Could not find the opencode binary. OpenGUI checked the Harness Inventory resolver paths, including Homebrew, user-local bins, OpenCode's bin directory, and your login shell PATH.",
       };
     }
 
@@ -1228,21 +1208,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     const conn = new OpenCodeConnection((event) => {
       if (windowState.projectRegistry.getConnection(projectKey) !== conn) return;
       if (event?.type === "opencode:event") {
-        const payload = event.payload;
-        const props = payload?.properties ?? {};
-        const rawSessionId = toRawSessionId(
-          props.sessionID ?? props.info?.id ?? props.part?.sessionID ?? "",
-        );
-        if (rawSessionId) {
-          const eventDir = normalize(props.info?.directory ?? props.info?.path?.cwd ?? "");
-          if (eventDir && eventDir !== normalize(directory)) return;
-        } else if (payload?.type !== "server.connected" && payload?.type !== "sync") {
-          return;
-        }
-        if (payload?.type === "question.asked") {
+        const props = event.payload?.properties ?? {};
+        if (event.payload?.type === "question.asked") {
           windowState.projectRegistry.rememberQuestion(projectKey, props?.id);
         }
-        if (payload?.type === "question.replied" || payload?.type === "question.rejected") {
+        if (
+          event.payload?.type === "question.replied" ||
+          event.payload?.type === "question.rejected"
+        ) {
           windowState.projectRegistry.deleteQuestion(props?.requestID);
         }
       }

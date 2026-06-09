@@ -28,9 +28,9 @@ import type {
 } from "@/protocol/client";
 import { composeFrontendSessionId } from "@/lib/session-identity";
 import type {
-  BackendDetectionResult,
   GitMergeResult,
   GitWorktree,
+  HarnessInventory,
   InstallResult,
   IPCResult,
   WorktreeSetupDetection,
@@ -1458,7 +1458,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     },
     runtime: {
       getHomeDir: async () => await rpcCall<string>("platform:homeDir"),
-      detectBackends: async () => await rpcCall<BackendDetectionResult>("platform:detectBackends"),
+      getHarnessInventories: async () =>
+        await rpcCall<HarnessInventory[]>("platform:harnessInventory"),
       installBackend: async (harnessId: HarnessId) =>
         await rpcCall<InstallResult>("backend:install", [harnessId]),
     },

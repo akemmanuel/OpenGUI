@@ -9,12 +9,16 @@ const { app, BrowserWindow, dialog, ipcMain, shell, session } =
 import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
-import { existsSync } from "node:fs";
 import { createSettingsStore } from "./settings-store.js";
 import { setupUpdateManager } from "./main/update-manager.js";
 import { createBackendSidecarController } from "./main/backend-sidecar.js";
 import { broadcastToAllWindows } from "./lib/window-broadcast.js";
 import { findFilesInDirectory } from "./server/services/file-search.js";
+import {
+  getHarnessInventories,
+  getHarnessPackageName,
+  isHarnessId,
+} from "./server/harness-inventory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -65,56 +69,6 @@ function isCommandAvailable(cmd: unknown) {
   }
 }
 
-const BACKEND_CLI_DEFS = {
-  opencode: {
-    command: "opencode",
-    packageName: "opencode-ai",
-    knownPaths: () => [
-      path.join(
-        homedir(),
-        ".opencode",
-        "bin",
-        process.platform === "win32" ? "opencode.exe" : "opencode",
-      ),
-    ],
-  },
-  "claude-code": {
-    command: "claude",
-    packageName: "@anthropic-ai/claude-code",
-    knownPaths: () => [
-      path.join(
-        homedir(),
-        ".claude",
-        "local",
-        process.platform === "win32" ? "claude.exe" : "claude",
-      ),
-    ],
-  },
-  pi: {
-    command: "pi",
-    packageName: "@earendil-works/pi-coding-agent",
-    knownPaths: () => [],
-  },
-  codex: {
-    command: "codex",
-    packageName: "@openai/codex",
-    knownPaths: () => [],
-  },
-} satisfies Record<string, { command: string; packageName: string; knownPaths: () => string[] }>;
-
-type BackendCliId = keyof typeof BACKEND_CLI_DEFS;
-
-function isKnownBackendId(backendId: unknown): backendId is BackendCliId {
-  return typeof backendId === "string" && backendId in BACKEND_CLI_DEFS;
-}
-
-function isBackendAvailable(backendId: BackendCliId) {
-  const def = BACKEND_CLI_DEFS[backendId];
-  if (!def) return false;
-  if (isCommandAvailable(def.command)) return true;
-  return def.knownPaths().some((binaryPath) => existsSync(binaryPath));
-}
-
 function resolvePackageManager() {
   const candidates = [
     { command: "pnpm", argsFor: (packageName: string) => ["add", "-g", packageName] },
@@ -125,11 +79,10 @@ function resolvePackageManager() {
 }
 
 function getBackendInstallCommand(backendId: unknown): [string, string[]] | null {
-  if (!isKnownBackendId(backendId)) return null;
-  const def = BACKEND_CLI_DEFS[backendId];
+  if (!isHarnessId(backendId)) return null;
   const packageManager = resolvePackageManager();
   if (!packageManager) return null;
-  return [packageManager.command, packageManager.argsFor(def.packageName)];
+  return [packageManager.command, packageManager.argsFor(getHarnessPackageName(backendId))];
 }
 
 function spawnCustomCommand(command: unknown, options: SpawnOptions = {}) {
@@ -557,14 +510,7 @@ ipcMain.handle("platform:homeDir", () => {
   return homedir();
 });
 
-ipcMain.handle("platform:detectBackends", () => {
-  return {
-    opencode: isBackendAvailable("opencode"),
-    "claude-code": isBackendAvailable("claude-code"),
-    pi: isBackendAvailable("pi"),
-    codex: isBackendAvailable("codex"),
-  };
-});
+ipcMain.handle("platform:harnessInventory", () => getHarnessInventories());
 
 // Open a URL in the system browser (not in Electron)
 ipcMain.handle("shell:openExternal", (_event, url) => {

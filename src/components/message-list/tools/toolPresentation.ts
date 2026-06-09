@@ -212,7 +212,7 @@ export function getToolPresentation(
     grepMatchCount,
     diffSummary: editSummary,
     taskDurationLabel,
-    expandable: body !== null,
+    expandable: body !== null || images.length > 0,
     body,
     sideContent: { todos, images },
     error: state.status === "error" && errorText ? errorText : null,

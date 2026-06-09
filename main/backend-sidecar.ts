@@ -7,6 +7,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App } from "electron";
+import { Effect } from "effect";
+import { pollUntilEffect, runEffect, tryPromiseEffect } from "../lib/effect-runtime.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_PROFILE_KEY = "desktop:backend-profile";
@@ -155,19 +157,19 @@ async function findAvailablePort() {
 }
 
 async function waitForHealth(url: string, token: string | null, timeoutMs = HEALTH_TIMEOUT_MS) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const headers = new Headers();
-      if (token) headers.set("authorization", `Bearer ${token}`);
-      const response = await fetch(`${url.replace(/\/+$/, "")}/api/health`, { headers });
-      if (response.ok) return;
-    } catch {
-      // keep polling
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, HEALTH_POLL_INTERVAL_MS));
-  }
-  throw new Error(`Timed out waiting for backend health at ${url}`);
+  await runEffect(
+    pollUntilEffect({
+      intervalMs: HEALTH_POLL_INTERVAL_MS,
+      timeoutMs,
+      timeoutMessage: `Timed out waiting for backend health at ${url}`,
+      attempt: async () => {
+        const headers = new Headers();
+        if (token) headers.set("authorization", `Bearer ${token}`);
+        const response = await fetch(`${url.replace(/\/+$/, "")}/api/health`, { headers });
+        return response.ok;
+      },
+    }),
+  );
 }
 
 function resolveBackendEntrypoint(app: App) {
@@ -203,19 +205,25 @@ async function stopChild(childState: ManagedChildState | null) {
   if (!childState?.child || childState.child.killed || childState.child.exitCode !== null) return;
 
   const child = childState.child;
-  child.kill("SIGTERM");
+  const waitForExit = tryPromiseEffect(() => once(child, "exit"));
 
-  try {
-    await Promise.race([
-      once(child, "exit"),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timed out stopping backend child")), STOP_TIMEOUT_MS),
-      ),
-    ]);
-  } catch {
-    child.kill("SIGKILL");
-    await once(child, "exit").catch(() => undefined);
-  }
+  await runEffect(
+    Effect.gen(function* () {
+      child.kill("SIGTERM");
+      yield* waitForExit.pipe(
+        Effect.timeoutFail({
+          duration: STOP_TIMEOUT_MS,
+          onTimeout: () => new Error("Timed out stopping backend child"),
+        }),
+        Effect.catchAll(() =>
+          Effect.gen(function* () {
+            child.kill("SIGKILL");
+            yield* waitForExit.pipe(Effect.catchAll(() => Effect.void));
+          }),
+        ),
+      );
+    }),
+  );
 }
 
 export function createBackendSidecarController(options: CreateBackendSidecarControllerOptions) {

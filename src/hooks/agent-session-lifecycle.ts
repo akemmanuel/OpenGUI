@@ -224,7 +224,10 @@ export async function createLifecycleSession({
   ) => Promise<void>;
   sessionsClient: SessionsClient;
   isChatDirectory: (directory?: string | null) => boolean;
-  selectSession: (sessionId: string, options?: { session?: Session }) => Promise<void>;
+  selectSession: (
+    sessionId: string,
+    options?: { session?: Session; preservePromptBoxSelection?: boolean },
+  ) => Promise<void>;
   dispatch: (action: LifecycleAction) => void;
 }): Promise<Session | null> {
   const harnessId = resolvePendingPromptCreationHarnessRoute({
@@ -255,7 +258,7 @@ export async function createLifecycleSession({
         },
       });
     }
-    await selectSession(session.id, { session });
+    await selectSession(session.id, { session, preservePromptBoxSelection: true });
     return session;
   } catch (error) {
     dispatch({

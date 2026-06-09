@@ -132,6 +132,47 @@ export interface ProvidersData {
   default: { [key: string]: string };
 }
 
+export type HarnessInventoryStatus = "ready" | "warning" | "error" | "disabled";
+export type HarnessInventoryAuthStatus = "authenticated" | "unauthenticated" | "unknown";
+
+export interface HarnessInventoryCliDiagnostics {
+  command: string;
+  resolvedPath: string | null;
+  checkedPaths: string[];
+}
+
+export interface HarnessInventoryModel {
+  providerID?: string;
+  modelID: string;
+  name?: string;
+}
+
+export interface HarnessInventoryAgent {
+  id: string;
+  name: string;
+}
+
+export interface HarnessInventory {
+  harnessId: "opencode" | "claude-code" | "pi" | "codex";
+  displayName: string;
+  enabled: boolean;
+  installed: boolean;
+  status: HarnessInventoryStatus;
+  auth: {
+    status: HarnessInventoryAuthStatus;
+    label?: string;
+    email?: string;
+  };
+  version: string | null;
+  models: HarnessInventoryModel[];
+  agents: HarnessInventoryAgent[];
+  message?: string;
+  checkedAt: string;
+  diagnostics: {
+    cli: HarnessInventoryCliDiagnostics;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Plugin Catalog Types
 // ---------------------------------------------------------------------------
@@ -326,8 +367,6 @@ export interface UpdatesBridge {
   onStateChanged(callback: (state: AppUpdateState) => void): () => void;
 }
 
-export type BackendDetectionResult = Record<"opencode" | "claude-code" | "pi" | "codex", boolean>;
-
 export interface InstallProgress {
   chunk: string;
   type: "stdout" | "stderr";
@@ -368,6 +407,9 @@ export interface ElectronAPI {
   getPlatform: () => Promise<string>;
   getSystemLocale: () => Promise<string>;
   isPackaged: () => Promise<boolean>;
+  getHomeDir?: () => Promise<string>;
+  getHarnessInventories?: () => Promise<HarnessInventory[]>;
+  installBackend?: (harnessId: HarnessInventory["harnessId"]) => Promise<InstallResult>;
   restartBackend?: () => Promise<{
     url: string;
     token: string | null;

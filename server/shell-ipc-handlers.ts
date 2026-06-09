@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
 import type { BackendServiceContext } from "./services/index.ts";
+import { getHarnessInventories, getHarnessPackageName, isHarnessId } from "./harness-inventory.ts";
 
 interface IpcSender {
   send(channel: string, data: unknown): void;
@@ -127,48 +127,9 @@ function isCommandAvailable(command: string) {
   }
 }
 
-const HARNESS_CLI_DEFS = {
-  opencode: {
-    command: "opencode",
-    packageName: "opencode-ai",
-    knownPaths: () => [
-      join(
-        homedir(),
-        ".opencode",
-        "bin",
-        process.platform === "win32" ? "opencode.exe" : "opencode",
-      ),
-      process.platform === "win32" ? "" : "/usr/local/bin/opencode",
-    ],
-  },
-  "claude-code": {
-    command: "claude",
-    packageName: "@anthropic-ai/claude-code",
-    knownPaths: () => [
-      join(homedir(), ".claude", "local", process.platform === "win32" ? "claude.exe" : "claude"),
-    ],
-  },
-  pi: { command: "pi", packageName: "@earendil-works/pi-coding-agent", knownPaths: () => [] },
-  codex: { command: "codex", packageName: "@openai/codex", knownPaths: () => [] },
-} as const;
-
-type HarnessCliId = keyof typeof HARNESS_CLI_DEFS;
-
-function isHarnessCliId(value: unknown): value is HarnessCliId {
-  return typeof value === "string" && value in HARNESS_CLI_DEFS;
-}
-
-function isHarnessAvailable(harnessId: HarnessCliId) {
-  const def = HARNESS_CLI_DEFS[harnessId];
-  return (
-    isCommandAvailable(def.command) ||
-    def.knownPaths().some((binaryPath) => !!binaryPath && existsSync(binaryPath))
-  );
-}
-
 function getHarnessInstallCommand(harnessId: unknown): [string, string[]] | null {
-  if (!isHarnessCliId(harnessId)) return null;
-  const packageName = HARNESS_CLI_DEFS[harnessId].packageName;
+  if (!isHarnessId(harnessId)) return null;
+  const packageName = getHarnessPackageName(harnessId);
   const managers = [
     { command: "pnpm", args: ["add", "-g", packageName] },
     { command: "npm", args: ["install", "-g", packageName] },
@@ -240,12 +201,7 @@ export function registerShellIpcHandlers(input: {
   ipcMain.handle("window:getDetachedProjects", () => []);
   ipcMain.handle("platform:get", () => process.platform);
   ipcMain.handle("platform:homeDir", () => homedir());
-  ipcMain.handle("platform:detectBackends", () => ({
-    opencode: isHarnessAvailable("opencode"),
-    "claude-code": isHarnessAvailable("claude-code"),
-    pi: isHarnessAvailable("pi"),
-    codex: isHarnessAvailable("codex"),
-  }));
+  ipcMain.handle("platform:harnessInventory", () => getHarnessInventories());
   ipcMain.handle("backend:install", async (event, harnessId) => {
     const installCommand = getHarnessInstallCommand(harnessId);
     if (!installCommand) {

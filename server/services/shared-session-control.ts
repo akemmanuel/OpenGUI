@@ -1,5 +1,7 @@
+import { Effect } from "effect";
 import type { QueueMode } from "../../src/lib/session-drafts.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
+import { forkEffect, tryPromiseEffect } from "../../lib/effect-runtime.ts";
 import type { BackendServiceContext, ProjectRecord, SessionRecord } from "./index.ts";
 import {
   abortSessionThroughHarness,
@@ -76,6 +78,15 @@ async function dispatchFirstQueuedPrompt(input: {
   return true;
 }
 
+function dispatchFirstQueuedPromptEffect(input: {
+  services: BackendServiceContext;
+  project: ProjectRecord;
+  session: SessionRecord;
+  entries?: Awaited<ReturnType<BackendServiceContext["queues"]["listSessionQueue"]>>;
+}) {
+  return tryPromiseEffect(() => dispatchFirstQueuedPrompt(input));
+}
+
 export async function submitSessionPrompt(input: {
   services: BackendServiceContext;
   project: ProjectRecord;
@@ -134,28 +145,33 @@ export function registerSharedSessionControl(input: {
     if (dispatching.has(session.id)) return;
 
     dispatching.add(session.id);
-    void (async () => {
-      try {
-        const project = await input.services.projects.getProject(session.projectId);
+    forkEffect(
+      Effect.gen(function* () {
+        const project = yield* tryPromiseEffect(() =>
+          input.services.projects.getProject(session.projectId),
+        );
         if (!project) return;
 
-        await dispatchFirstQueuedPrompt({
+        yield* dispatchFirstQueuedPromptEffect({
           services: input.services,
           project,
           session,
         });
-      } catch (error) {
-        input.services.events.emit(
-          "runtime.error",
-          {
-            message: "Failed to dispatch queued prompt",
-            error: error instanceof Error ? error.message : String(error),
-          },
-          { projectId: session.projectId, sessionId: session.id, harnessId: session.harnessId },
-        );
-      } finally {
-        dispatching.delete(session.id);
-      }
-    })();
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            input.services.events.emit(
+              "runtime.error",
+              {
+                message: "Failed to dispatch queued prompt",
+                error: error instanceof Error ? error.message : String(error),
+              },
+              { projectId: session.projectId, sessionId: session.id, harnessId: session.harnessId },
+            );
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => dispatching.delete(session.id))),
+      ),
+    );
   });
 }

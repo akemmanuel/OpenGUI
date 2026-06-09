@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { mkdir, open, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -23,6 +23,13 @@ import {
   nowHarnessConnection,
   ok,
 } from "./lib/harness-adapter-kit.ts";
+import {
+  pollUntilEffect,
+  runEffect,
+  sleepEffect,
+  timeoutEffect,
+  tryPromiseEffect,
+} from "./lib/effect-runtime.ts";
 
 const PROVIDER_ENVS = {
   anthropic: ["ANTHROPIC_API_KEY"],
@@ -117,7 +124,25 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-function piImageBlockToFilePart(block, messageId, index) {
+function defaultImageFilename(block, index) {
+  return `image-${index + 1}.${(block.mimeType || "application/octet-stream").split("/")[1] || "bin"}`;
+}
+
+function imageFilenameFromToolInput(input, block, index) {
+  const path =
+    input && typeof input === "object"
+      ? input.filePath || input.path || input.file_path || input.filename
+      : null;
+  if (typeof path !== "string" || !path.trim()) return defaultImageFilename(block, index);
+  const name = path.trim().split(/[\\/]/).pop();
+  if (!name || name === "." || name === "/") return defaultImageFilename(block, index);
+  if (index === 0) return name;
+  const ext = extname(name);
+  const stem = ext ? name.slice(0, -ext.length) : name;
+  return `${stem}-${index + 1}${ext}`;
+}
+
+function piImageBlockToFilePart(block, messageId, index, filename) {
   if (!block || block.type !== "image") return null;
   return {
     id: makeFilePartId(messageId, index),
@@ -125,7 +150,7 @@ function piImageBlockToFilePart(block, messageId, index) {
     messageID: messageId,
     type: "file",
     mime: block.mimeType || "application/octet-stream",
-    filename: `image-${index + 1}.${(block.mimeType || "application/octet-stream").split("/")[1] || "bin"}`,
+    filename: filename || defaultImageFilename(block, index),
     url: `data:${block.mimeType || "application/octet-stream"};base64,${block.data}`,
   };
 }
@@ -1008,7 +1033,12 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
       let imageIndex = 0;
       for (const block of Array.isArray(message.content) ? message.content : []) {
         if (block?.type === "image") {
-          const filePart = piImageBlockToFilePart(block, toolPart.messageID, imageIndex);
+          const filePart = piImageBlockToFilePart(
+            block,
+            toolPart.messageID,
+            imageIndex,
+            imageFilenameFromToolInput(toolPart.state.input, block, imageIndex),
+          );
           if (filePart) {
             filePart.sessionID = sessionId;
             attachments.push(filePart);
@@ -1023,6 +1053,7 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
             status: "error",
             input: toolPart.state.input,
             error: toolResultContentToText(message.content) || "Tool failed",
+            attachments: attachments.length > 0 ? attachments : undefined,
             time: {
               start: toolPart.state.time?.start ?? fallbackStart,
               end: toolResultTimestamp,
@@ -1767,6 +1798,23 @@ export class PiBridgeManager {
         (item) => item.type === "tool" && item.callID === event.toolCallId,
       );
       if (!part) return;
+      const attachments = [];
+      let imageIndex = 0;
+      for (const block of Array.isArray(event.result?.content) ? event.result.content : []) {
+        if (block?.type === "image") {
+          const filePart = piImageBlockToFilePart(
+            block,
+            part.messageID,
+            imageIndex,
+            imageFilenameFromToolInput(part.state.input, block, imageIndex),
+          );
+          if (filePart) {
+            filePart.sessionID = sessionId;
+            attachments.push(filePart);
+          }
+          imageIndex += 1;
+        }
+      }
       part.state = event.isError
         ? {
             status: "error",
@@ -1774,6 +1822,7 @@ export class PiBridgeManager {
             error: event.result?.content
               ? toolResultContentToText(event.result.content)
               : stringifyUnknown(event.result?.details) || "Tool failed",
+            attachments: attachments.length > 0 ? attachments : undefined,
             time: {
               start: part.state.time?.start ?? Date.now(),
               end: Date.now(),
@@ -1790,6 +1839,7 @@ export class PiBridgeManager {
               event.result?.details && typeof event.result.details === "object"
                 ? event.result.details
                 : {},
+            attachments: attachments.length > 0 ? attachments : undefined,
             time: {
               start: part.state.time?.start ?? Date.now(),
               end: Date.now(),
@@ -2506,7 +2556,7 @@ export class PiBridgeManager {
 
     const startedAt = Date.now();
     while (!flow.authorization && !flow.error && Date.now() - startedAt < 15_000) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await runEffect(sleepEffect(50));
     }
     if (flow.error) throw flow.error;
     if (!flow.authorization) {
@@ -2691,23 +2741,28 @@ async function writeDaemonInfo(path, info) {
 }
 
 async function fetchDaemonJson(baseUrl, token, path, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeout ?? PI_DAEMON_HEALTH_TIMEOUT);
-  try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        "x-opengui-pi-token": token,
-        ...options.headers,
+  const response = await runEffect(
+    timeoutEffect(
+      tryPromiseEffect((signal) =>
+        fetch(`${baseUrl}${path}`, {
+          ...options,
+          signal,
+          headers: {
+            "content-type": "application/json",
+            "x-opengui-pi-token": token,
+            ...options.headers,
+          },
+        }),
+      ),
+      {
+        timeoutMs: options.timeout ?? PI_DAEMON_HEALTH_TIMEOUT,
+        timeoutMessage: `Timed out calling Pi daemon ${path}`,
       },
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
+    ),
+  );
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return await response.json();
 }
 
 class PiDaemonClient {
@@ -2907,11 +2962,14 @@ class PiDaemonClient {
 
   async waitForDaemonStopped(info) {
     if (!info?.baseUrl || !info?.token) return;
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < 3_000) {
-      if (!(await this.getHealth(info))) return;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    await runEffect(
+      pollUntilEffect({
+        attempt: async () => !(await this.getHealth(info)),
+        intervalMs: 100,
+        timeoutMs: 3_000,
+        timeoutMessage: "Pi daemon did not stop in time",
+      }),
+    ).catch(() => undefined);
   }
 
   async startDaemon(preferredInfo = null) {
@@ -2959,18 +3017,20 @@ class PiDaemonClient {
 
     const startedAt = Date.now();
     const info = { pid: child.pid, port, token, baseUrl, startedAt };
-    while (Date.now() - startedAt < PI_DAEMON_STARTUP_TIMEOUT) {
-      if (await this.isHealthy(info)) {
-        child.stdout?.removeAllListeners("data");
-        child.stderr?.removeAllListeners("data");
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        await writeDaemonInfo(this.infoPath, info);
-        return info;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    throw new Error(`Pi daemon did not become healthy. ${logs.trim()}`.trim());
+    await runEffect(
+      pollUntilEffect({
+        attempt: async () => await this.isHealthy(info),
+        intervalMs: 200,
+        timeoutMs: PI_DAEMON_STARTUP_TIMEOUT,
+        timeoutMessage: () => `Pi daemon did not become healthy. ${logs.trim()}`.trim(),
+      }),
+    );
+    child.stdout?.removeAllListeners("data");
+    child.stderr?.removeAllListeners("data");
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    await writeDaemonInfo(this.infoPath, info);
+    return info;
   }
 
   startEvents() {
