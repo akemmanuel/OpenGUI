@@ -48,10 +48,11 @@ export function FileMentionPopover({
         <div className="px-2.5 py-2 text-xs text-muted-foreground">{emptyMessage}</div>
       )}
       {files.map((filePath, i) => {
-        const parts = filePath.split("/");
-        const fileName = parts[parts.length - 1] ?? filePath;
-        const dir = parts.length > 1 ? parts.slice(0, -1).join("/") : null;
         const isDir = filePath.endsWith("/");
+        const displayPath = isDir ? filePath.slice(0, -1) : filePath;
+        const parts = displayPath.split("/");
+        const fileName = parts[parts.length - 1] ?? displayPath;
+        const dir = parts.length > 1 ? parts.slice(0, -1).join("/") : null;
 
         return (
           <button
