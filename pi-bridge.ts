@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
-import { dirname, extname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { mkdir, open, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -124,25 +124,7 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-function defaultImageFilename(block, index) {
-  return `image-${index + 1}.${(block.mimeType || "application/octet-stream").split("/")[1] || "bin"}`;
-}
-
-function imageFilenameFromToolInput(input, block, index) {
-  const path =
-    input && typeof input === "object"
-      ? input.filePath || input.path || input.file_path || input.filename
-      : null;
-  if (typeof path !== "string" || !path.trim()) return defaultImageFilename(block, index);
-  const name = path.trim().split(/[\\/]/).pop();
-  if (!name || name === "." || name === "/") return defaultImageFilename(block, index);
-  if (index === 0) return name;
-  const ext = extname(name);
-  const stem = ext ? name.slice(0, -ext.length) : name;
-  return `${stem}-${index + 1}${ext}`;
-}
-
-function piImageBlockToFilePart(block, messageId, index, filename) {
+function piImageBlockToFilePart(block, messageId, index) {
   if (!block || block.type !== "image") return null;
   return {
     id: makeFilePartId(messageId, index),
@@ -150,7 +132,7 @@ function piImageBlockToFilePart(block, messageId, index, filename) {
     messageID: messageId,
     type: "file",
     mime: block.mimeType || "application/octet-stream",
-    filename: filename || defaultImageFilename(block, index),
+    filename: `image-${index + 1}.${(block.mimeType || "application/octet-stream").split("/")[1] || "bin"}`,
     url: `data:${block.mimeType || "application/octet-stream"};base64,${block.data}`,
   };
 }
@@ -1033,12 +1015,7 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
       let imageIndex = 0;
       for (const block of Array.isArray(message.content) ? message.content : []) {
         if (block?.type === "image") {
-          const filePart = piImageBlockToFilePart(
-            block,
-            toolPart.messageID,
-            imageIndex,
-            imageFilenameFromToolInput(toolPart.state.input, block, imageIndex),
-          );
+          const filePart = piImageBlockToFilePart(block, toolPart.messageID, imageIndex);
           if (filePart) {
             filePart.sessionID = sessionId;
             attachments.push(filePart);
@@ -1802,12 +1779,7 @@ export class PiBridgeManager {
       let imageIndex = 0;
       for (const block of Array.isArray(event.result?.content) ? event.result.content : []) {
         if (block?.type === "image") {
-          const filePart = piImageBlockToFilePart(
-            block,
-            part.messageID,
-            imageIndex,
-            imageFilenameFromToolInput(part.state.input, block, imageIndex),
-          );
+          const filePart = piImageBlockToFilePart(block, part.messageID, imageIndex);
           if (filePart) {
             filePart.sessionID = sessionId;
             attachments.push(filePart);

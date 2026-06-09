@@ -129,6 +129,10 @@ export class PromptQueueService {
     scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
+    const current = await this.storage.listPromptQueue(session.id);
+    if (!current.some((entry) => entry.id === entryId)) {
+      return current.map((entry) => this.toPublicEntry(session, entry));
+    }
     await this.storage.deletePromptQueueEntry(entryId);
     const next = await this.reindex(session.id);
     this.events?.emit(
@@ -155,6 +159,10 @@ export class PromptQueueService {
     scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
+    const current = await this.storage.listPromptQueue(session.id);
+    if (!current.some((entry) => entry.id === entryId)) {
+      return current.map((entry) => this.toPublicEntry(session, entry));
+    }
     await this.storage.updatePromptQueueEntry(entryId, input);
     const next = await this.reindex(session.id);
     this.events?.emit(

@@ -262,7 +262,7 @@ export function createLocalIntentOrchestrator(
       }
       await sessionQueue.enqueuePrompt({
         sessionId: intent.sessionId,
-        text,
+        text: prepareDirectoryChangePrompt(intent.sessionId, text),
         model: selection.model,
         agent: selection.agent,
         variant: selection.variant,
@@ -273,6 +273,32 @@ export function createLocalIntentOrchestrator(
         type: "SET_AFTER_PART_PENDING",
         payload: { sessionID: intent.sessionId, pending: true },
       });
+      return;
+    }
+
+    if (current.busySessionIds.has(intent.sessionId)) {
+      const selection = resolveAgentSendSelection(getSelectionSnapshot());
+      if (!selection.model) {
+        dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+        return;
+      }
+      await sessionQueue.enqueuePrompt({
+        sessionId: intent.sessionId,
+        text: prepareDirectoryChangePrompt(intent.sessionId, text),
+        model: selection.model,
+        agent: selection.agent,
+        variant: selection.variant,
+        mode: intent.mode,
+        insertAt: intent.mode === "interrupt" ? "front" : "back",
+      });
+      if (intent.mode === "interrupt") {
+        const session = getState().sessions.find((item) => item.id === intent.sessionId);
+        await sessionsClient.abort({
+          sessionId: intent.sessionId,
+          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+          target: getSessionProjectTarget(session) ?? undefined,
+        });
+      }
       return;
     }
 

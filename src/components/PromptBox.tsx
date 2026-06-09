@@ -1,14 +1,4 @@
-import {
-  ArrowUp,
-  Check,
-  GitBranch,
-  ListEnd,
-  Paperclip,
-  Plus,
-  Square,
-  Wrench,
-  X,
-} from "lucide-react";
+import { ArrowUp, Check, GitBranch, ListEnd, Paperclip, Plus, Square, Wrench } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AgentSelector } from "@/components/AgentSelector";
@@ -48,7 +38,6 @@ import {
   useSessionState,
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
-import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { getSessionDraftKey } from "@/lib/session-drafts";
 import { shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
@@ -183,21 +172,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       textareaRef: internalTextareaRef,
     });
 
-    const attachmentMentions = React.useMemo(
-      () => promptFiles.attachments.map((attachment) => `@${attachment.path}`).join(" "),
-      [promptFiles.attachments],
-    );
-    const submitValue = React.useMemo(() => {
-      const trimmedValue = value.trim();
-      if (!attachmentMentions) return value;
-      return trimmedValue ? `${value} ${attachmentMentions}` : attachmentMentions;
-    }, [attachmentMentions, value]);
-
     const { handleHistoryKeyDown, noteManualInput, resetHistory } = usePromptHistoryNavigation({
       messages,
       value,
       setValue,
-      imageCount: promptFiles.attachments.length,
+      imageCount: 0,
       draftKey: currentDraftKey,
       textareaRef: internalTextareaRef,
     });
@@ -274,7 +253,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     };
 
     const promptSubmit = usePromptSubmit({
-      value: submitValue,
+      value,
       isUploading: promptFiles.isUploading,
       disabled: isDisabled,
       isLoading,
@@ -283,7 +262,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       sendCommand,
       onSubmit,
       clearPromptDraft,
-      onAfterSubmit: promptFiles.clearAttachments,
       resetSlashCommand: slashCommand.reset,
       resetHistory,
     });
@@ -395,34 +373,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 style={{ width: `${promptFiles.uploadProgress ?? 0}%` }}
               />
             </div>
-          </div>
-        )}
-        {promptFiles.attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-3 pt-2">
-            {promptFiles.attachments.map((attachment) => (
-              <div
-                key={attachment.path}
-                className="group relative overflow-hidden rounded-lg border bg-muted/40"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <img
-                  src={resolveAttachmentImageSrc(
-                    attachment.path,
-                    activeWorkspace?.isLocal ? null : activeWorkspace?.serverUrl,
-                  )}
-                  alt={attachment.filename}
-                  className="h-20 w-20 object-cover"
-                />
-                <button
-                  type="button"
-                  className="absolute right-1 top-1 rounded-full bg-background/90 p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover:opacity-100"
-                  aria-label={t("common.remove", { defaultValue: "Remove" })}
-                  onClick={() => promptFiles.removeAttachment(attachment.path)}
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            ))}
           </div>
         )}
         <textarea
@@ -622,11 +572,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             {shouldShowStopButton({
               isLoading,
               isCompactingInProgress: promptCompaction.isCompactingInProgress,
-            }) ? (
+            }) && (
               <Button
                 type="button"
                 size="icon-sm"
-                variant="default"
+                variant="secondary"
                 title={t("prompt.stop")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -636,34 +586,33 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 <Square className="size-3.5 fill-current" />
                 <span className="sr-only">{t("prompt.stopGenerating")}</span>
               </Button>
-            ) : (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="default"
-                title={
-                  isLoading
-                    ? queueMode === "after-part"
-                      ? t("prompt.steer")
-                      : t("prompt.queue")
-                    : t("prompt.send")
-                }
-                disabled={isDisabled || !promptSubmit.hasValue}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void promptSubmit.submit();
-                }}
-              >
-                <ArrowUp />
-                <span className="sr-only">
-                  {isLoading
-                    ? queueMode === "after-part"
-                      ? t("prompt.steer")
-                      : t("prompt.queueMessage")
-                    : t("prompt.sendMessage")}
-                </span>
-              </Button>
             )}
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="default"
+              title={
+                isLoading
+                  ? queueMode === "after-part"
+                    ? t("prompt.steer")
+                    : t("prompt.queue")
+                  : t("prompt.send")
+              }
+              disabled={isDisabled || !promptSubmit.hasValue}
+              onClick={(e) => {
+                e.stopPropagation();
+                void promptSubmit.submit();
+              }}
+            >
+              <ArrowUp />
+              <span className="sr-only">
+                {isLoading
+                  ? queueMode === "after-part"
+                    ? t("prompt.steer")
+                    : t("prompt.queueMessage")
+                  : t("prompt.sendMessage")}
+              </span>
+            </Button>
           </div>
         </div>
       </section>

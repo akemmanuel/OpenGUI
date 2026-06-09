@@ -65,7 +65,6 @@ async function dispatchFirstQueuedPrompt(input: {
   const next = entries[0];
   if (!next) return false;
 
-  await input.services.queues.remove(input.session.id, next.id, scope);
   await promptSessionThroughHarness({
     services: input.services,
     project: input.project,
@@ -75,6 +74,7 @@ async function dispatchFirstQueuedPrompt(input: {
     agent: next.agent,
     variant: next.variant,
   });
+  await input.services.queues.remove(input.session.id, next.id, scope);
   return true;
 }
 

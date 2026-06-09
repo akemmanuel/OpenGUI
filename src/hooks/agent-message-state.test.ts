@@ -18,19 +18,6 @@ function textPart(id: string, messageID: string, text: string, start = 1): Part 
   } as Part;
 }
 
-function filePart(id: string, messageID: string, url: string, start = 1): Part {
-  return {
-    id,
-    type: "file",
-    url,
-    mime: "image/png",
-    filename: url.split(/[\\/]/).pop(),
-    sessionID: "session-1",
-    messageID,
-    time: { start },
-  } as Part;
-}
-
 function message(id: string, created: number, parts: Part[]): MessageEntry {
   return {
     info: {
@@ -128,7 +115,7 @@ describe("mergeMessageSnapshot", () => {
     expect(merged.map((entry) => entry.info.id)).toEqual(["server-user"]);
   });
 
-  test("optimistic user message renders image mentions as file parts", () => {
+  test("optimistic user message preserves image mentions as visible text", () => {
     const optimistic = createOptimisticUserMessage({
       id: "turn-1",
       sessionID: "session-1",
@@ -136,32 +123,9 @@ describe("mergeMessageSnapshot", () => {
       createdAt: 10,
     });
 
-    expect(optimistic.parts.map((part) => part.type)).toEqual(["text", "file"]);
-    expect((optimistic.parts[0] as Record<string, unknown>).text).toBe("Bitte anschauen");
-    expect((optimistic.parts[1] as Record<string, unknown>).url).toBe(
-      "/tmp/opengui-uploads/image.png",
+    expect(optimistic.parts.map((part) => part.type)).toEqual(["text"]);
+    expect((optimistic.parts[0] as Record<string, unknown>).text).toBe(
+      "Bitte anschauen @/tmp/opengui-uploads/image.png",
     );
-  });
-
-  test("canonical image user message removes matching optimistic user message", () => {
-    const optimistic = createOptimisticUserMessage({
-      id: "turn-1",
-      sessionID: "session-1",
-      text: "@/tmp/opengui-uploads/image.png",
-      createdAt: 10,
-    });
-    const canonical = {
-      info: {
-        id: "server-user",
-        sessionID: "session-1",
-        role: "user",
-        time: { created: 11 },
-      } as Message,
-      parts: [filePart("server-user:file", "server-user", "/tmp/opengui-uploads/image.png", 11)],
-    };
-
-    const merged = removeMatchingOptimisticUserMessage([optimistic, canonical], canonical);
-
-    expect(merged.map((entry) => entry.info.id)).toEqual(["server-user"]);
   });
 });

@@ -183,8 +183,14 @@ describe("createLocalIntentOrchestrator", () => {
     );
   });
 
-  test("submits busy-session prompts to backend Shared Session control", async () => {
-    const session = makeSession({ id: "session-1" });
+  test("queues busy-session prompts without creating an optimistic turn", async () => {
+    const session = makeSession({
+      id: "opencode:session-1",
+      _harnessId: "opencode",
+      _rawId: "session-1",
+      _projectDir: "/repo",
+      _workspaceId: "workspace-1",
+    });
     const model: SelectedModel = { providerID: "openai", modelID: "gpt-5" };
     const state = makeState({
       activeSessionId: session.id,
@@ -194,6 +200,7 @@ describe("createLocalIntentOrchestrator", () => {
     });
     const actions: Array<Record<string, unknown>> = [];
     const prompts: Array<Record<string, unknown>> = [];
+    const queued: Array<Record<string, unknown>> = [];
 
     const orchestrator = createLocalIntentOrchestrator({
       getState: () => state,
@@ -204,7 +211,12 @@ describe("createLocalIntentOrchestrator", () => {
           prompts.push(input);
         },
         abort: async () => undefined,
-        queue: {},
+        queue: {
+          enqueue: async (input: Record<string, unknown>) => {
+            queued.push(input);
+            return [{ id: "queue-1", text: String(input.text), mode: "queue" }];
+          },
+        },
       } as never,
       createSession: async () => null,
       scheduleSessionMessageReconcile: () => undefined,
@@ -217,20 +229,27 @@ describe("createLocalIntentOrchestrator", () => {
 
     await orchestrator.sendPrompt("Queue this");
 
-    expect(prompts).toEqual([
+    expect(prompts).toEqual([]);
+    expect(queued).toEqual([
       expect.objectContaining({
-        sessionId: "session-1",
+        sessionId: "opencode:session-1",
         text: "Queue this",
         model,
         mode: "queue",
+        insertAt: "back",
+        harnessId: "opencode",
+        target: { directory: "/repo", workspaceId: "workspace-1" },
       }),
     ]);
-    expect(actions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "SET_BUSY" }),
-        expect.objectContaining({ type: "PROMPT_SUBMITTED" }),
-      ]),
-    );
+    expect(actions).toEqual([
+      {
+        type: "SET_SESSION_QUEUE",
+        payload: {
+          sessionID: "opencode:session-1",
+          prompts: [{ id: "queue-1", text: "Queue this", mode: "queue" }],
+        },
+      },
+    ]);
   });
 
   test("sends commands through the active backend runtime and reconciles afterward", async () => {
