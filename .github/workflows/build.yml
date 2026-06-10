@@ -367,6 +367,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install script dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Download mac x64 artifacts
         uses: actions/download-artifact@v8
         with:
