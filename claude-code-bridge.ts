@@ -15,7 +15,7 @@ import {
   listSessions,
   query,
   renameSession,
-} from "./BetterSDK/dist/index.js";
+} from "./BetterSDK/src/index.ts";
 import {
   fail,
   makeHarnessProjectKey,
