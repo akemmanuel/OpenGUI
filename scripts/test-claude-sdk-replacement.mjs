@@ -134,12 +134,14 @@ try {
         PreToolUse: [
           {
             matcher: "Write",
-            hooks: [async (input, toolUseID) => {
-              hookCalled = true;
-              assert.equal(toolUseID, "tool_1");
-              assert.equal(input.tool_name, "Write");
-              return { continue: true };
-            }],
+            hooks: [
+              async (input, toolUseID) => {
+                hookCalled = true;
+                assert.equal(toolUseID, "tool_1");
+                assert.equal(input.tool_name, "Write");
+                return { continue: true };
+              },
+            ],
           },
         ],
       },
@@ -159,12 +161,20 @@ try {
 
   assert.equal(permissionCalled, true);
   assert.equal(hookCalled, true);
-  assert.equal(messages.some((m) => m.type === "system" && m.subtype === "init"), true);
-  assert.equal(messages.some((m) => m.type === "assistant"), true);
-  assert.equal(messages.some((m) => m.type === "result"), true);
+  assert.equal(
+    messages.some((m) => m.type === "system" && m.subtype === "init"),
+    true,
+  );
+  assert.equal(
+    messages.some((m) => m.type === "assistant"),
+    true,
+  );
+  assert.equal(
+    messages.some((m) => m.type === "result"),
+    true,
+  );
 
   console.log("✅ OpenGUI Claude SDK replacement smoke test passed");
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
-

@@ -11,7 +11,7 @@ import { query } from "claude-agent-sdk-lite";
 
 for await (const message of query({
   prompt: "Say hello in one sentence",
-  options: { cwd: process.cwd(), permissionMode: "plan" }
+  options: { cwd: process.cwd(), permissionMode: "plan" },
 })) {
   console.log(message);
 }
@@ -20,4 +20,3 @@ for await (const message of query({
 Install Claude Code separately and ensure `claude` is on `PATH`, or pass `options.cliPath`.
 
 This is intentionally tiny. Advanced Python SDK features like MCP SDK servers, hooks, permission callbacks, session stores, and the full control protocol are not implemented yet.
-

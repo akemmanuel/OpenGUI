@@ -5,7 +5,7 @@ describe("decidePromptIntentDispatch", () => {
   test("returns no dispatch when there is no Session entry", () => {
     expect(
       decidePromptIntentDispatch({
-        entry: { type: "missing-session" },
+        sessionId: null,
         busySessionIds: new Set(),
       }),
     ).toBeNull();
@@ -14,16 +14,49 @@ describe("decidePromptIntentDispatch", () => {
   test("prompts now by default", () => {
     expect(
       decidePromptIntentDispatch({
-        entry: { type: "use-session", sessionId: "session-1", createdFromActiveTarget: false },
+        sessionId: "session-1",
         busySessionIds: new Set(),
       }),
-    ).toEqual({ type: "prompt-now", sessionId: "session-1", mode: "queue" });
+    ).toEqual({
+      type: "prompt-now",
+      sessionId: "session-1",
+      mode: "queue",
+    });
+  });
+
+  test("queues ordinary prompts at the back when the Session is busy", () => {
+    expect(
+      decidePromptIntentDispatch({
+        sessionId: "session-1",
+        busySessionIds: new Set(["session-1"]),
+      }),
+    ).toEqual({
+      type: "queue-prompt",
+      sessionId: "session-1",
+      mode: "queue",
+      insertAt: "back",
+    });
+  });
+
+  test("queues interrupt prompts at the front when the Session is busy", () => {
+    expect(
+      decidePromptIntentDispatch({
+        sessionId: "session-1",
+        requestedMode: "interrupt",
+        busySessionIds: new Set(["session-1"]),
+      }),
+    ).toEqual({
+      type: "queue-prompt",
+      sessionId: "session-1",
+      mode: "interrupt",
+      insertAt: "front",
+    });
   });
 
   test("queues after-part prompts at the front when the Session is busy", () => {
     expect(
       decidePromptIntentDispatch({
-        entry: { type: "use-session", sessionId: "session-1", createdFromActiveTarget: false },
+        sessionId: "session-1",
         requestedMode: "after-part",
         busySessionIds: new Set(["session-1"]),
       }),
@@ -38,10 +71,14 @@ describe("decidePromptIntentDispatch", () => {
   test("sends after-part prompts immediately when the Session is idle", () => {
     expect(
       decidePromptIntentDispatch({
-        entry: { type: "use-session", sessionId: "session-1", createdFromActiveTarget: false },
+        sessionId: "session-1",
         requestedMode: "after-part",
         busySessionIds: new Set(),
       }),
-    ).toEqual({ type: "prompt-now", sessionId: "session-1", mode: "after-part" });
+    ).toEqual({
+      type: "prompt-now",
+      sessionId: "session-1",
+      mode: "after-part",
+    });
   });
 });

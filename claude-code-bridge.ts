@@ -168,7 +168,6 @@ function makeClaudeQueryOptions({
   permissionMode = "default",
   includePartialMessages = true,
   canUseTool,
-  title,
   variant,
   modelInfo,
   resume,
@@ -1035,7 +1034,7 @@ class ClaudeCodeBridgeManager {
           this.providerCatalogs.set(key, catalog);
           return catalog;
         } finally {
-          probe.close();
+          void probe.close();
         }
       } catch {
         const catalog = {
@@ -1435,7 +1434,8 @@ class ClaudeCodeBridgeManager {
       this.replacementAliases.set(prevTempId, sessionId);
       state.replacedFromSessionId = prevTempId;
       const tempCache = this.messageCache.get(prevTempId);
-      if (tempCache && !this.messageCache.has(sessionId)) this.messageCache.set(sessionId, tempCache);
+      if (tempCache && !this.messageCache.has(sessionId))
+        this.messageCache.set(sessionId, tempCache);
       state.tempSessionId = null;
     }
 
@@ -1749,7 +1749,8 @@ class ClaudeCodeBridgeManager {
     // can emit session.created + the synthetic user message immediately, letting
     // the IPC call return right away instead of blocking for ~8 s until the
     // Claude Code subprocess sends its first system/init message.
-    const tempSessionId = !sessionId || placeholder ? (placeholder?.id ?? sessionId ?? crypto.randomUUID()) : null;
+    const tempSessionId =
+      !sessionId || placeholder ? (placeholder?.id ?? sessionId ?? crypto.randomUUID()) : null;
     const effectiveSessionId = sessionId ?? tempSessionId;
 
     state = {

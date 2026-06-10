@@ -8,7 +8,7 @@
  * Uses v2 SDK types which include variant support on models.
  */
 
-import type { Agent, Provider, QuestionAnswer } from "@opencode-ai/sdk/v2/client";
+import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
 
 import {
   type ReactNode,
@@ -52,10 +52,7 @@ import { updateVariantSelections, useVariant, variantKey } from "@/hooks/use-age
 import {
   getActiveWorkspaceId,
   getLegacyStoredDefaultChatDirectory,
-  getProjectMetaMap,
-  getSessionMetaMap,
   getVariantSelectionsForWorkspace,
-  getUnreadSessionIds,
   getWorkspaceDefaultChatDirectory,
   getWorkspaceRootDirectory,
   getWorktreeParents,
@@ -68,6 +65,13 @@ import {
   persistWorktreeParents,
   type SessionColor,
 } from "@/hooks/agent-state-persistence";
+import { initialAgentState } from "@/hooks/agent-initial-state";
+import {
+  isModelAvailable,
+  resolveAvailableAgent,
+  selectedModelsEqual,
+  selectedVariantsEqual,
+} from "@/hooks/agent-model-selection";
 import {
   buildBootstrapProjectConfigs,
   createProjectConnectionDescriptor,
@@ -123,6 +127,7 @@ export {
   NOTIFICATIONS_ENABLED_KEY,
   type SessionColor,
 } from "@/hooks/agent-state-persistence";
+export { resolveServerDefaultModel } from "@/hooks/agent-model-selection";
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import {
   onSettingsChange,
@@ -133,137 +138,14 @@ import {
 } from "@/lib/safe-storage";
 import { createHttpOpenGuiClient } from "@/protocol/http-client";
 import { useOpenGuiClient } from "@/protocol/provider";
-import { getSessionDrafts, persistSessionDrafts } from "@/lib/session-drafts";
+import { persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
-import type {
-  ConnectionConfig,
-  ConnectionStatus,
-  SelectedModel,
-  Workspace,
-} from "@/types/electron";
-
-/**
- * Given the list of providers and a `provider -> modelID` default map from the
- * server, resolve the first valid `SelectedModel` that exists.
- */
-export function resolveServerDefaultModel(
-  providers: Provider[],
-  providerDefaults: Record<string, string>,
-): SelectedModel | null {
-  for (const provider of providers) {
-    const modelID = providerDefaults[provider.id];
-    if (typeof modelID !== "string") continue;
-    if (!(modelID in provider.models)) continue;
-    return { providerID: provider.id, modelID };
-  }
-
-  for (const raw of Object.values(providerDefaults)) {
-    if (typeof raw !== "string") continue;
-    const splitIdx = raw.indexOf("/");
-    if (splitIdx <= 0 || splitIdx >= raw.length - 1) continue;
-    const providerID = raw.slice(0, splitIdx);
-    const modelID = raw.slice(splitIdx + 1);
-    const provider = providers.find((p) => p.id === providerID);
-    if (!provider || !(modelID in provider.models)) continue;
-    return { providerID, modelID };
-  }
-
-  return null;
-}
-
-function isModelAvailable(providers: Provider[], model: SelectedModel | null) {
-  if (!model) return false;
-  const provider = providers.find((p) => p.id === model.providerID);
-  return !!provider && model.modelID in provider.models;
-}
-
-function isAgentAvailable(agents: Agent[], agent: string | null | undefined) {
-  if (agent == null) return true;
-  return agents.some((candidate) => candidate.name === agent);
-}
-
-function selectedModelsEqual(
-  a: SelectedModel | null | undefined,
-  b: SelectedModel | null | undefined,
-) {
-  return a?.providerID === b?.providerID && a?.modelID === b?.modelID;
-}
-
-function selectedVariantsEqual(a: string | null | undefined, b: string | null | undefined) {
-  return (a ?? null) === (b ?? null);
-}
-
-function resolveAvailableAgent({
-  agents,
-  sessionAgent,
-  hasSessionAgent,
-  workspaceAgent,
-}: {
-  agents: Agent[];
-  sessionAgent?: string | null;
-  hasSessionAgent: boolean;
-  workspaceAgent?: string | null;
-}) {
-  const preferred = hasSessionAgent ? sessionAgent : workspaceAgent;
-  return preferred && isAgentAvailable(agents, preferred) ? preferred : null;
-}
+import type { ConnectionConfig, ConnectionStatus, Workspace } from "@/types/electron";
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-
-const initialWorkspaces: Workspace[] = [];
-
-const initialState: InternalAgentState = {
-  workspaces: initialWorkspaces,
-  activeWorkspaceId: getActiveWorkspaceId(initialWorkspaces),
-  projectWorkspaceMap: {},
-  connections: {},
-  sessions: [],
-  activeSessionId: null,
-  messages: [],
-  messageHistoryHasMore: false,
-  messageHistoryCursor: null,
-  isLoadingMessages: false,
-  isLoadingOlderMessages: false,
-  isBusy: false,
-  pendingPermissions: {},
-  pendingQuestions: {},
-  lastError: null,
-  bootState: "idle",
-  bootError: null,
-  bootLogs: null,
-  workspaceResources: {},
-  providers: [],
-  providerDefaults: {},
-  selectedModel: null,
-  busySessionIds: new Set(),
-  agents: [],
-  selectedAgent: null,
-  variantSelections: {},
-  commands: [],
-  queuedPrompts: {},
-  defaultChatDirectory: null,
-  activeTargetDirectory: null,
-  activeTargetBackendId: null,
-  namingSessionIds: new Set(),
-  unreadSessionIds: getUnreadSessionIds(),
-  sessionDrafts: getSessionDrafts(),
-  sessionMeta: getSessionMetaMap(),
-  projectMeta: getProjectMetaMap(),
-  worktreeParents: getWorktreeParents(),
-  pendingWorktreeCleanup: null,
-  turnRuns: {},
-  activeTurnRunBySession: {},
-  childSessions: {},
-  trackedChildSessionIds: new Set(),
-  _pendingSnapshots: [],
-  _sessionBuffers: {},
-  afterPartPending: new Set(),
-  _afterPartTriggered: new Set(),
-  _deletedSessionIds: new Set(),
-};
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -276,7 +158,7 @@ function InternalAgentProvider({
   children: ReactNode;
   detachedProject?: string;
 }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, initialAgentState);
   const [workspaceStateReady, setWorkspaceStateReady] = useState(false);
   const shellWorkspacePolicy = useMemo(() => getShellWorkspacePolicy(), []);
   const [preferredBackendId, setPreferredBackendId] = useState<HarnessId>(() => {
@@ -605,6 +487,9 @@ function InternalAgentProvider({
     async (harnessId: HarnessId, directory?: string | null, workspaceId?: string | null) => {
       const targetDirectory = directory?.trim() || undefined;
       const targetWorkspaceId = workspaceId?.trim() || undefined;
+      const targetWorkspace = targetWorkspaceId
+        ? stateRef.current.workspaces.find((workspace) => workspace.id === targetWorkspaceId)
+        : null;
       const projectKey = targetDirectory ? makeProjectKey(targetWorkspaceId, targetDirectory) : "";
       const loadKey = `${harnessId}\u0000${projectKey}`;
       if (
@@ -623,6 +508,8 @@ function InternalAgentProvider({
             target: {
               directory: targetDirectory,
               workspaceId: targetWorkspaceId,
+              baseUrl: targetWorkspace?.isLocal ? undefined : targetWorkspace?.serverUrl,
+              authToken: targetWorkspace?.isLocal ? undefined : targetWorkspace?.authToken,
             },
           });
 
@@ -1344,6 +1231,18 @@ function InternalAgentProvider({
           );
         }
 
+        const activeWorkspaceId = stateRef.current.activeWorkspaceId;
+        const activeWorkspaceProject = allProjectConfigs.find(
+          (config) => config.workspaceId === activeWorkspaceId,
+        );
+        if (activeWorkspaceProject) {
+          void loadServerResources(
+            preferredBackendId,
+            activeWorkspaceProject.directory,
+            activeWorkspaceProject.workspaceId,
+          );
+        }
+
         void loadSessionIndex(allProjectConfigs, discoveryBackendIds).catch(() => {
           /* startup session index is best effort */
         });
@@ -1362,7 +1261,9 @@ function InternalAgentProvider({
     allBackends,
     detachedProject,
     discoveryBackendIds,
+    loadServerResources,
     loadSessionIndex,
+    preferredBackendId,
     updateProjectHydration,
     workspaceStateReady,
     shellWorkspacePolicy.localWorkspaceMode,
@@ -1539,6 +1440,21 @@ function InternalAgentProvider({
   const resourceBridge = activeHarnessScope.backend;
   const workspaceProfile = activeHarnessScope.workspaceProfile;
   const runtime = activeHarnessScope.runtime;
+  useEffect(() => {
+    if (!state.activeTargetBackendId) return;
+    if (backendsById[state.activeTargetBackendId]) return;
+    if (!activeResourceDirectory || !backendsById[preferredBackendId]) return;
+    dispatch({
+      type: "SET_ACTIVE_TARGET",
+      payload: { directory: activeResourceDirectory, harnessId: preferredBackendId },
+    });
+  }, [
+    activeResourceDirectory,
+    backendsById,
+    dispatch,
+    preferredBackendId,
+    state.activeTargetBackendId,
+  ]);
   useEffect(() => {
     if (!resourceBridge || !activeResourceDirectory) return;
     const activeProjectKey = makeProjectKey(activeWorkspace?.id, activeResourceDirectory);

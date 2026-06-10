@@ -21,21 +21,37 @@ export class SubprocessCLITransport implements Transport {
 
   async connect(): Promise<void> {
     if (this.child) return;
-    const cli = this.options.cliPath ?? this.options.pathToClaudeCodeExecutable ?? await findClaude();
+    const cli =
+      this.options.cliPath ?? this.options.pathToClaudeCodeExecutable ?? (await findClaude());
     const args = buildArgs(this.options);
-    const env = { ...process.env, CLAUDE_CODE_ENTRYPOINT: this.options.entrypoint ?? "sdk-ts-lite", CLAUDE_AGENT_SDK_VERSION: "0.0.1", ...this.options.env } as NodeJS.ProcessEnv;
+    const env = {
+      ...process.env,
+      CLAUDE_CODE_ENTRYPOINT: this.options.entrypoint ?? "sdk-ts-lite",
+      CLAUDE_AGENT_SDK_VERSION: "0.0.1",
+      ...this.options.env,
+    } as NodeJS.ProcessEnv;
     delete env.CLAUDECODE;
     this.child = spawn(cli, args, { cwd: this.options.cwd, env, stdio: "pipe" });
     this.child.on("error", (e) => this.finish(new CLIConnectionError(String(e))));
     this.child.on("exit", (code, signal) => {
-      if (code && code !== 0) this.finish(new CLIConnectionError(`claude exited with code ${code}${signal ? ` (${signal})` : ""}`));
+      if (code && code !== 0)
+        this.finish(
+          new CLIConnectionError(`claude exited with code ${code}${signal ? ` (${signal})` : ""}`),
+        );
       else this.finish();
     });
     this.child.stderr.on("data", (b) => this.options.stderr?.(b.toString()));
     createInterface({ input: this.child.stdout }).on("line", (line) => {
       if (!line.trim()) return;
-      try { this.push(JSON.parse(line)); }
-      catch (e) { this.finish(new CLIJSONDecodeError(`Invalid JSON from claude: ${line}\n${e}`)); }
+      try {
+        this.push(JSON.parse(line));
+      } catch (e) {
+        this.finish(
+          new CLIJSONDecodeError(
+            `Invalid JSON from claude: ${line}\n${e instanceof Error ? e.message : String(e)}`,
+          ),
+        );
+      }
     });
   }
 
@@ -48,7 +64,9 @@ export class SubprocessCLITransport implements Transport {
     this.child.stdin.write(data);
   }
 
-  async endInput(): Promise<void> { this.child?.stdin.end(); }
+  async endInput(): Promise<void> {
+    this.child?.stdin.end();
+  }
 
   async disconnect(): Promise<void> {
     if (!this.child) return;
@@ -57,7 +75,9 @@ export class SubprocessCLITransport implements Transport {
     setTimeout(() => !child.killed && child.kill("SIGTERM"), 250).unref();
   }
 
-  async interrupt(): Promise<void> { await this.write({ type: "interrupt" }); }
+  async interrupt(): Promise<void> {
+    await this.write({ type: "interrupt" });
+  }
 
   read(): AsyncIterable<Message> {
     return { [Symbol.asyncIterator]: () => ({ next: () => this.next() }) };
@@ -69,21 +89,51 @@ export class SubprocessCLITransport implements Transport {
     if (this.done) return Promise.resolve({ value: undefined, done: true });
     return new Promise((resolve) => this.waiters.push(resolve));
   }
-  private push(m: Message): void { const w = this.waiters.shift(); w ? w({ value: m, done: false }) : this.queue.push(m); }
-  private finish(error?: Error): void { this.error ??= error; this.done = true; while (this.waiters.length) this.waiters.shift()!({ value: undefined, done: true }); }
+  private push(m: Message): void {
+    const w = this.waiters.shift();
+    if (w) w({ value: m, done: false });
+    else this.queue.push(m);
+  }
+  private finish(error?: Error): void {
+    this.error ??= error;
+    this.done = true;
+    while (this.waiters.length) this.waiters.shift()!({ value: undefined, done: true });
+  }
 }
 
 export async function findClaude(): Promise<string> {
-  const paths = ["claude", join(homedir(), ".local/bin/claude"), join(homedir(), ".npm-global/bin/claude"), "/usr/local/bin/claude", join(homedir(), "node_modules/.bin/claude"), join(homedir(), ".yarn/bin/claude"), join(homedir(), ".claude/local/claude")];
+  const paths = [
+    "claude",
+    join(homedir(), ".local/bin/claude"),
+    join(homedir(), ".npm-global/bin/claude"),
+    "/usr/local/bin/claude",
+    join(homedir(), "node_modules/.bin/claude"),
+    join(homedir(), ".yarn/bin/claude"),
+    join(homedir(), ".claude/local/claude"),
+  ];
   for (const p of paths) {
     const found = p === "claude" ? await which(p) : await executable(p);
     if (found) return found;
   }
-  throw new CLINotFoundError("Claude Code not found. Install with `npm install -g @anthropic-ai/claude-code`, ensure `claude` is on PATH, or pass { cliPath }.");
+  throw new CLINotFoundError(
+    "Claude Code not found. Install with `npm install -g @anthropic-ai/claude-code`, ensure `claude` is on PATH, or pass { cliPath }.",
+  );
 }
 
-async function executable(path: string): Promise<string | undefined> { try { await access(path, constants.X_OK); return path; } catch { return undefined; } }
-async function which(bin: string): Promise<string | undefined> { for (const dir of (process.env.PATH ?? "").split(":")) { const p = join(dir, bin); if (await executable(p)) return p; } }
+async function executable(path: string): Promise<string | undefined> {
+  try {
+    await access(path, constants.X_OK);
+    return path;
+  } catch {
+    return undefined;
+  }
+}
+async function which(bin: string): Promise<string | undefined> {
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    const p = join(dir, bin);
+    if (await executable(p)) return p;
+  }
+}
 
 export function buildArgs(o: ClaudeAgentOptions): string[] {
   const args = ["--output-format", "stream-json", "--verbose"];
@@ -103,19 +153,29 @@ export function buildArgs(o: ClaudeAgentOptions): string[] {
   if (o.sessionId) args.push("--session-id", o.sessionId);
   if (o.settings) args.push("--settings", o.settings);
   for (const d of o.addDirs ?? []) args.push("--add-dir", d);
-  if (o.mcpServers) args.push("--mcp-config", typeof o.mcpServers === "string" ? o.mcpServers : JSON.stringify({ mcpServers: o.mcpServers }));
+  if (o.mcpServers)
+    args.push(
+      "--mcp-config",
+      typeof o.mcpServers === "string"
+        ? o.mcpServers
+        : JSON.stringify({ mcpServers: o.mcpServers }),
+    );
   if (o.includePartialMessages) args.push("--include-partial-messages");
   if (o.includeHookEvents) args.push("--include-hook-events");
   if (o.strictMcpConfig) args.push("--strict-mcp-config");
   if (o.settingSources?.length) args.push(`--setting-sources=${o.settingSources.join(",")}`);
   if (o.enableFileCheckpointing) args.push("--enable-file-checkpointing");
   if (o.title) args.push("--title", o.title);
-  if (o.maxThinkingTokens !== undefined) args.push("--max-thinking-tokens", String(o.maxThinkingTokens));
+  if (o.maxThinkingTokens !== undefined)
+    args.push("--max-thinking-tokens", String(o.maxThinkingTokens));
   if (o.thinking?.type === "disabled") args.push("--thinking", "disabled");
   if (o.thinking?.type === "adaptive") args.push("--thinking", "adaptive");
-  if (o.thinking?.type === "enabled" && typeof o.thinking.budgetTokens === "number") args.push("--max-thinking-tokens", String(o.thinking.budgetTokens));
-  for (const [k, v] of Object.entries(o.extraArgs ?? {})) v == null || v === true ? args.push(`--${k}`) : v !== false && args.push(`--${k}`, String(v));
+  if (o.thinking?.type === "enabled" && typeof o.thinking.budgetTokens === "number")
+    args.push("--max-thinking-tokens", String(o.thinking.budgetTokens));
+  for (const [k, v] of Object.entries(o.extraArgs ?? {})) {
+    if (v == null || v === true) args.push(`--${k}`);
+    else if (v !== false) args.push(`--${k}`, String(v));
+  }
   args.push("--input-format", "stream-json");
   return args;
 }
-

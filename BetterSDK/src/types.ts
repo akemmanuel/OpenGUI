@@ -1,4 +1,10 @@
-export type PermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions" | "dontAsk" | "auto";
+export type PermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "plan"
+  | "bypassPermissions"
+  | "dontAsk"
+  | "auto";
 export type SettingSource = "user" | "project" | "local";
 
 export type SystemPrompt =
@@ -31,7 +37,11 @@ export interface ClaudeAgentOptions {
   strictMcpConfig?: boolean;
   settingSources?: SettingSource[];
   extraArgs?: Record<string, string | number | boolean | null | undefined>;
-  canUseTool?: (toolName: string, input: Record<string, unknown>, context: ToolPermissionContext) => Promise<PermissionResult> | PermissionResult;
+  canUseTool?: (
+    toolName: string,
+    input: Record<string, unknown>,
+    context: ToolPermissionContext,
+  ) => Promise<PermissionResult> | PermissionResult;
   hooks?: Record<string, Array<{ matcher?: string; hooks?: HookCallback[]; timeout?: number }>>;
   enableFileCheckpointing?: boolean;
   title?: string;
@@ -42,7 +52,12 @@ export interface ClaudeAgentOptions {
 
 export type PermissionUpdate = Record<string, unknown>;
 export type PermissionResult =
-  | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: PermissionUpdate[]; toolUseID?: string }
+  | {
+      behavior: "allow";
+      updatedInput?: Record<string, unknown>;
+      updatedPermissions?: PermissionUpdate[];
+      toolUseID?: string;
+    }
   | { behavior: "deny"; message?: string; interrupt?: boolean };
 export interface ToolPermissionContext {
   signal?: AbortSignal | null;
@@ -60,7 +75,11 @@ export interface ToolPermissionContext {
   display_name?: string;
   description?: string;
 }
-export type HookCallback = (input: unknown, toolUseID?: string, context?: { signal?: AbortSignal | null }) => Promise<Record<string, unknown>> | Record<string, unknown>;
+export type HookCallback = (
+  input: unknown,
+  toolUseID?: string,
+  context?: { signal?: AbortSignal | null },
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
 export type SDKUserMessage = {
   type: "user";
@@ -80,4 +99,3 @@ export interface Transport {
   read(): AsyncIterable<Message>;
   interrupt?(): Promise<void>;
 }
-

@@ -227,6 +227,29 @@ export function createLocalIntentOrchestrator(
     };
   };
 
+  const enqueueSelectedPrompt = async (input: {
+    sessionId: string;
+    text: string;
+    mode: QueueMode;
+    insertAt: "front" | "back";
+  }) => {
+    const selection = resolveAgentSendSelection(getSelectionSnapshot());
+    if (!selection.model) {
+      dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+      return false;
+    }
+    await sessionQueue.enqueuePrompt({
+      sessionId: input.sessionId,
+      text: prepareDirectoryChangePrompt(input.sessionId, input.text),
+      model: selection.model,
+      agent: selection.agent,
+      variant: selection.variant,
+      mode: input.mode,
+      insertAt: input.insertAt,
+    });
+    return true;
+  };
+
   const resolveNamedSession = async (sourceText: string): Promise<string | null> => {
     const hadActiveSession = Boolean(getState().activeSessionId);
     const sessionId = await resolveSessionEntry(sourceText);
@@ -248,50 +271,30 @@ export function createLocalIntentOrchestrator(
 
     const current = getState();
     const intent = decidePromptIntentDispatch({
-      entry: { type: "use-session", sessionId, createdFromActiveTarget: !current.activeSessionId },
+      sessionId,
       requestedMode: mode,
       busySessionIds: current.busySessionIds,
     });
     if (!intent) return;
 
-    if (intent.type === "queue-after-part") {
-      const selection = resolveAgentSendSelection(getSelectionSnapshot());
-      if (!selection.model) {
-        dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
-        return;
-      }
-      await sessionQueue.enqueuePrompt({
+    if (intent.type === "queue-after-part" || intent.type === "queue-prompt") {
+      const queued = await enqueueSelectedPrompt({
         sessionId: intent.sessionId,
-        text: prepareDirectoryChangePrompt(intent.sessionId, text),
-        model: selection.model,
-        agent: selection.agent,
-        variant: selection.variant,
+        text,
         mode: intent.mode,
         insertAt: intent.insertAt,
       });
-      dispatch({
-        type: "SET_AFTER_PART_PENDING",
-        payload: { sessionID: intent.sessionId, pending: true },
-      });
-      return;
-    }
+      if (!queued) return;
 
-    if (current.busySessionIds.has(intent.sessionId)) {
-      const selection = resolveAgentSendSelection(getSelectionSnapshot());
-      if (!selection.model) {
-        dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+      if (intent.type === "queue-after-part") {
+        dispatch({
+          type: "SET_AFTER_PART_PENDING",
+          payload: { sessionID: intent.sessionId, pending: true },
+        });
         return;
       }
-      await sessionQueue.enqueuePrompt({
-        sessionId: intent.sessionId,
-        text: prepareDirectoryChangePrompt(intent.sessionId, text),
-        model: selection.model,
-        agent: selection.agent,
-        variant: selection.variant,
-        mode: intent.mode,
-        insertAt: intent.mode === "interrupt" ? "front" : "back",
-      });
-      if (intent.mode === "interrupt") {
+
+      if (intent.type === "queue-prompt" && intent.mode === "interrupt") {
         const session = getState().sessions.find((item) => item.id === intent.sessionId);
         await sessionsClient.abort({
           sessionId: intent.sessionId,

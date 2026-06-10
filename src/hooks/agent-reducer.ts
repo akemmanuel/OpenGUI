@@ -1,11 +1,10 @@
 import type {
-  Agent,
   Command,
   Message,
   Part,
   PermissionRequest,
-  Provider,
   QuestionRequest,
+  Agent,
 } from "@opencode-ai/sdk/v2/client";
 import type { HarnessId } from "@/agents";
 import type {
@@ -62,6 +61,11 @@ import {
   rawSessionIdForHarness,
   sameHarnessSessionIdentity,
 } from "@/lib/session-identity";
+import {
+  isAgentAvailable,
+  isModelAvailable,
+  selectedModelsEqual,
+} from "@/hooks/agent-model-selection";
 
 const MAX_DELETED_SESSION_IDS = 200;
 
@@ -128,24 +132,6 @@ function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Messag
       },
     },
   } satisfies Partial<InternalAgentState>;
-}
-
-function isModelAvailable(providers: Provider[], model: SelectedModel | null) {
-  if (!model) return false;
-  const provider = providers.find((item) => item.id === model.providerID);
-  return Boolean(provider?.models?.[model.modelID]);
-}
-
-function isAgentAvailable(agents: Agent[], agent: string | null | undefined) {
-  if (!agent) return true;
-  return agents.some((item) => item.name === agent);
-}
-
-function selectedModelsEqual(
-  a: SelectedModel | null | undefined,
-  b: SelectedModel | null | undefined,
-) {
-  return a?.providerID === b?.providerID && a?.modelID === b?.modelID;
 }
 
 type Action =

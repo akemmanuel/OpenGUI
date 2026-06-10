@@ -15,96 +15,12 @@ import { readdir, readFile } from "node:fs/promises";
 import { Agent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
-import { basename, dirname, join, normalize, resolve } from "node:path";
+import { basename, join, normalize } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { pollUntilEffect, runEffect, sleepEffect } from "./lib/effect-runtime.ts";
+import { getOpenCodeProviderAuthKinds } from "./opencode-config.ts";
+import { OpencodeProjectRegistry } from "./opencode-project-registry.ts";
 import { resolveHarnessCli } from "./server/harness-inventory.ts";
-
-class OpencodeProjectRegistry {
-  connections = new Map();
-  questionProjectKeys = new Map();
-
-  createProjectKey(_workspaceId, directory) {
-    return normalize(String(directory || "").trim());
-  }
-
-  getWorkspaceIdFromProjectKey(_projectKey) {
-    return "";
-  }
-
-  setConnection(target, connection) {
-    const projectKey = this.createProjectKey(null, target.directory);
-    this.connections.set(projectKey, connection);
-    return { projectKey, connection };
-  }
-
-  getConnection(projectKey) {
-    return this.connections.get(projectKey) ?? null;
-  }
-
-  deleteConnection(projectKey) {
-    const connection = this.connections.get(projectKey) ?? null;
-    if (connection) this.connections.delete(projectKey);
-    return connection;
-  }
-
-  getExactConnectionEntry(target) {
-    if (typeof target.directory !== "string" || !target.directory.trim()) return null;
-    const projectKey = this.createProjectKey(null, target.directory);
-    const connection = this.connections.get(projectKey);
-    return connection ? { projectKey, connection } : null;
-  }
-
-  getQuestionProjectKey(requestId) {
-    const key = String(requestId ?? "").trim();
-    return key ? (this.questionProjectKeys.get(key) ?? null) : null;
-  }
-
-  getMappedQuestionConnectionEntry(requestId) {
-    const projectKey = this.getQuestionProjectKey(requestId);
-    if (!projectKey) return null;
-    const connection = this.connections.get(projectKey);
-    return connection ? { projectKey, connection } : null;
-  }
-
-  rememberQuestion(projectKey, requestId) {
-    const key = String(requestId ?? "").trim();
-    if (key) this.questionProjectKeys.set(key, projectKey);
-  }
-
-  deleteQuestion(requestId) {
-    const key = String(requestId ?? "").trim();
-    if (key) this.questionProjectKeys.delete(key);
-  }
-
-  removeProject(projectKey) {
-    const connection = this.deleteConnection(projectKey);
-    const removedQuestionIds = [];
-    for (const [requestId, candidateProjectKey] of this.questionProjectKeys) {
-      if (candidateProjectKey !== projectKey) continue;
-      removedQuestionIds.push(requestId);
-      this.questionProjectKeys.delete(requestId);
-    }
-    return { connection, removedSessionIds: [], removedQuestionIds };
-  }
-
-  entries() {
-    return this.connections.entries();
-  }
-
-  values() {
-    return this.connections.values();
-  }
-
-  clear() {
-    this.connections.clear();
-    this.questionProjectKeys.clear();
-  }
-
-  get size() {
-    return this.connections.size;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Local server management
@@ -115,66 +31,6 @@ const LOCAL_SERVER_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}`;
 const STARTUP_POLL_INTERVAL = 500; // ms
 const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
 const DETACHED_LAUNCH_GRACE_TIMEOUT = 10_000; // ms
-const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json");
-const OPENCODE_CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json");
-
-async function readJsonIfExists(path) {
-  try {
-    return JSON.parse(await readFile(path, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
-async function getOpenCodeConfigPaths(directory) {
-  const paths = [];
-  if (directory) {
-    let current = resolve(directory);
-    while (true) {
-      paths.push(join(current, "opencode.json"));
-      const parent = dirname(current);
-      if (parent === current) break;
-      current = parent;
-    }
-  }
-  paths.push(join(homedir(), "opencode.json"));
-  paths.push(OPENCODE_CONFIG_PATH);
-  return Array.from(new Set(paths));
-}
-
-async function getOpenCodeProviderAuthKinds(directory, providers, connected) {
-  const authKindByProvider = {};
-  const connectedSet = new Set(Array.isArray(connected) ? connected : []);
-  for (const provider of providers || []) {
-    if (provider?.source === "env") authKindByProvider[provider.id] = "env";
-  }
-
-  const authData = (await readJsonIfExists(OPENCODE_AUTH_PATH)) || {};
-  for (const [providerID, auth] of Object.entries(authData)) {
-    if (!connectedSet.has(providerID)) continue;
-    if (auth?.type === "oauth") authKindByProvider[providerID] = "subscription";
-    else if (auth?.type === "api" || auth?.type === "wellknown")
-      authKindByProvider[providerID] = "api";
-  }
-
-  for (const path of await getOpenCodeConfigPaths(directory)) {
-    const config = await readJsonIfExists(path);
-    const providerConfig = config?.provider;
-    if (!providerConfig || typeof providerConfig !== "object") continue;
-    for (const [providerID, entry] of Object.entries(providerConfig)) {
-      if (!connectedSet.has(providerID) || authKindByProvider[providerID]) continue;
-      const options = entry?.options;
-      const hasLiteralApiKey =
-        typeof options?.apiKey === "string" && options.apiKey.trim().length > 0;
-      const hasConfiguredEnv = Array.isArray(entry?.env) && entry.env.length > 0;
-      if (hasLiteralApiKey) authKindByProvider[providerID] = "api";
-      else if (hasConfiguredEnv) authKindByProvider[providerID] = "env";
-      else authKindByProvider[providerID] = "config";
-    }
-  }
-
-  return authKindByProvider;
-}
 
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {

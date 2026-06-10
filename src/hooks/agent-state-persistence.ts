@@ -403,6 +403,7 @@ function getLegacyStoredWorkspaces(): Workspace[] {
   const workspacesWithLegacyDefault = legacyDefaultChatDirectory
     ? workspaces.map((workspace) => {
         if (workspace.id !== legacyDefaultWorkspaceId) return workspace;
+        if (workspace.id !== LOCAL_WORKSPACE_ID && !workspace.isLocal) return workspace;
         const settings = getWorkspaceSettings(workspace);
         if (settings.defaultChatDirectory) return workspace;
         return normalizeWorkspace({

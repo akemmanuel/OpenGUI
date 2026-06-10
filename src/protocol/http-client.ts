@@ -35,29 +35,8 @@ import type {
   IPCResult,
   WorktreeSetupDetection,
 } from "@/types/electron";
-
-interface RpcEnvelope<T> {
-  ok: boolean;
-  value?: T;
-  error?: string;
-  code?: string;
-  recoverable?: boolean;
-}
-
-export class OpenGuiRpcError extends Error {
-  constructor(
-    message: string,
-    readonly code = "UNKNOWN",
-    readonly recoverable = false,
-  ) {
-    super(message);
-    this.name = "OpenGuiRpcError";
-  }
-}
-
-function throwRpcError<T>(body: RpcEnvelope<T> | null, fallback: string): never {
-  throw new OpenGuiRpcError(body?.error || fallback, body?.code, body?.recoverable);
-}
+import { OpenGuiRpcError, type RpcEnvelope, throwRpcError } from "@/protocol/http-rpc";
+export { OpenGuiRpcError } from "@/protocol/http-rpc";
 
 interface EventSourceLike {
   onopen: ((event: Event) => void) | null;
@@ -82,6 +61,7 @@ export interface HttpOpenGuiClientOptions {
   eventSourceImpl?: EventSourceConstructorLike;
   location?: Pick<Location, "protocol" | "host">;
   resolveBaseUrl?: () => string | undefined;
+  resolveHarnessIds?: () => HarnessId[] | undefined;
   openDirectory?: () => Promise<string | null>;
   localCapabilities?: boolean;
 }
@@ -93,15 +73,26 @@ function joinUrl(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
 
+function isLoopbackBaseUrl(value: string | undefined) {
+  if (!value) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  } catch {
+    return false;
+  }
+}
+
 async function httpRpc<T>(
   path: string,
   token: string | undefined,
   channel: string,
   args: unknown[] = [],
+  fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
 ): Promise<T> {
   const headers = new Headers({ "content-type": "application/json" });
   if (token) headers.set("authorization", `Bearer ${token}`);
-  const response = await fetch(joinUrl(path, "/api/rpc"), {
+  const response = await fetchImpl(joinUrl(path, "/api/rpc"), {
     method: "POST",
     headers,
     body: JSON.stringify({ channel, args }),
@@ -530,7 +521,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
 
   const rpcCall = <T>(channel: string, args: unknown[] = []) =>
     options.rpcImpl?.<T>(channel, args) ??
-    httpRpc<T>(getDefaultBaseUrl(), getToken(), channel, args);
+    httpRpc<T>(getDefaultBaseUrl(), getToken(), channel, args, fetchImpl);
   const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
     harnessIds?.length ? harnessIds : HARNESS_IDS;
   const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
@@ -582,10 +573,21 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     args: unknown[] = [],
   ) => {
     const baseUrl = requestBaseUrlForTarget(target);
+    const explicitTargetBaseUrl = target?.baseUrl?.replace(/\/+$/, "");
+    const useRemoteHttp = Boolean(
+      explicitTargetBaseUrl && !isLoopbackBaseUrl(explicitTargetBaseUrl),
+    );
     const token = baseUrlTokens.get(baseUrl.replace(/\/+$/, "")) ?? getToken();
     return unwrapIpcResult(
-      await (options.rpcImpl?.<IPCResult<T>>(backendChannel(harnessId, suffix), args) ??
-        httpRpc<IPCResult<T>>(baseUrl, token, backendChannel(harnessId, suffix), args)),
+      await (!useRemoteHttp && options.rpcImpl
+        ? options.rpcImpl<IPCResult<T>>(backendChannel(harnessId, suffix), args)
+        : httpRpc<IPCResult<T>>(
+            baseUrl,
+            token,
+            backendChannel(harnessId, suffix),
+            args,
+            fetchImpl,
+          )),
       `Backend call failed: ${harnessId}:${suffix}`,
     );
   };
@@ -850,9 +852,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const webBackends = HARNESS_IDS.map((harnessId) =>
     createWebBackendDescriptor(harnessId, rpcCall, runtimeOverridesForBackend(harnessId)),
   );
-  const list = () => webBackends;
+  const list = () => {
+    const resolvedHarnessIds = options.resolveHarnessIds?.();
+    if (!resolvedHarnessIds?.length) return webBackends;
+    const allowed = new Set(resolvedHarnessIds);
+    return webBackends.filter((backend) => allowed.has(backend.id as HarnessId));
+  };
   const get = (harnessId: HarnessId = "opencode") =>
-    webBackends.find((backend) => backend.id === harnessId);
+    list().find((backend) => backend.id === harnessId);
 
   return {
     capabilities: () =>
