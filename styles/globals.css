@@ -135,7 +135,19 @@
   --card: oklch(var(--dynamic-card-l) 0 0);
   --popover: oklch(var(--dynamic-card-l) 0 0);
   --sidebar: oklch(var(--dynamic-bg-l) 0 0);
+  --primary: var(--dynamic-primary, oklch(0.205 0 0));
+  --primary-foreground: var(--dynamic-primary-foreground, oklch(0.985 0 0));
+  --ring: var(--dynamic-primary, oklch(0.708 0 0));
   --sidebar-primary: var(--dynamic-primary, oklch(0.205 0 0));
+  --sidebar-ring: var(--dynamic-primary, oklch(0.708 0 0));
+}
+
+.dark {
+  --primary: var(--dynamic-primary, oklch(0.922 0 0));
+  --primary-foreground: var(--dynamic-primary-foreground, oklch(0.205 0 0));
+  --ring: var(--dynamic-primary, oklch(0.556 0 0));
+  --sidebar-primary: var(--dynamic-primary, oklch(0.488 0.243 264.376));
+  --sidebar-ring: var(--dynamic-primary, oklch(0.556 0 0));
 }
 
 /*

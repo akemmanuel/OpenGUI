@@ -77,17 +77,33 @@ function hexToRgb(hex: string) {
   };
 }
 
+function getReadableForeground({ r, g, b }: ReturnType<typeof hexToRgb>) {
+  const toLinear = (channel: number) => {
+    const srgb = channel / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  return luminance > 0.45 ? "oklch(0.145 0 0)" : "oklch(0.985 0 0)";
+}
+
 function applyAccentColor(color: string) {
   const root = document.documentElement;
+  const dynamicVars = [
+    "--dynamic-primary",
+    "--dynamic-primary-foreground",
+    "--dynamic-primary-rgb",
+  ];
+
   if (color === "default") {
-    // Remove custom primary → CSS fallback to original neutral values
-    root.style.removeProperty("--dynamic-primary");
-    root.style.removeProperty("--dynamic-primary-rgb");
-  } else {
-    const { r, g, b } = hexToRgb(color);
-    root.style.setProperty("--dynamic-primary", color);
-    root.style.setProperty("--dynamic-primary-rgb", `${r} ${g} ${b}`);
+    // Remove custom tokens → CSS falls back to theme-native neutral values.
+    for (const name of dynamicVars) root.style.removeProperty(name);
+    return;
   }
+
+  const rgb = hexToRgb(color);
+  root.style.setProperty("--dynamic-primary", color);
+  root.style.setProperty("--dynamic-primary-foreground", getReadableForeground(rgb));
+  root.style.setProperty("--dynamic-primary-rgb", `${rgb.r} ${rgb.g} ${rgb.b}`);
 }
 
 function applyCodeFontSize(size: number) {
