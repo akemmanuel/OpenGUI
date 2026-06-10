@@ -288,10 +288,7 @@ export function SessionContextMenu({
           <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
 
           {/* Delete */}
-          <ContextMenu.Item
-            className={`${CTX_ITEM_CLASS} text-destructive focus:text-destructive`}
-            onSelect={onDelete}
-          >
+          <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onDelete}>
             <Trash2 className="size-4" />
             <span>{t("sessionMenu.deleteSession")}</span>
           </ContextMenu.Item>

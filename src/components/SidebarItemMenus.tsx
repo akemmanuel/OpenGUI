@@ -233,7 +233,6 @@ export function SessionItemMenu({
           </>
         )}
         <DropdownMenuItem
-          variant="destructive"
           onClick={(event) => {
             event.stopPropagation();
             onDelete();
