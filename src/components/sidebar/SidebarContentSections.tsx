@@ -84,7 +84,11 @@ export function SidebarContentSections({
     sessions: Session[],
     options?: { canDrag?: boolean; dragHandleProps?: Record<string, unknown> },
   ) => ReactNode;
-  renderSessionRow: (session: Session, directory: string) => ReactNode;
+  renderSessionRow: (
+    session: Session,
+    directory: string,
+    options?: { currentProjectDir?: string | null },
+  ) => ReactNode;
   startNewChat: () => void | Promise<void>;
   closeMobileSidebar: () => void;
   setVisibleChatCount: React.Dispatch<React.SetStateAction<number>>;
@@ -116,7 +120,9 @@ export function SidebarContentSections({
             {pinnedEntries.map((entry) =>
               entry.kind === "project"
                 ? renderProjectEntry(entry.directory, entry.sessions)
-                : renderSessionRow(entry.session, entry.projectDirectory),
+                : renderSessionRow(entry.session, entry.projectDirectory, {
+                    currentProjectDir: entry.projectDirectory,
+                  }),
             )}
           </SidebarGroupContent>
         </SidebarGroup>
@@ -156,6 +162,7 @@ export function SidebarContentSections({
                       worktreeParents,
                       sessionMeta[session.id]?.assignedProjectDir ?? null,
                     )?.displayDirectory ?? getSessionExecutionDirectory(session),
+                    { currentProjectDir: null },
                   ),
                 )}
                 {hasMoreChats && (

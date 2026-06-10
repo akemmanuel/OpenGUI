@@ -141,6 +141,7 @@
     "tags": "Tags",
     "addTag": "Add tag...",
     "moveToProject": "Move to project",
+    "removeFromProject": "Remove from {{project}}",
     "deleteSession": "Delete session"
   },
   "projectMenu": {

@@ -141,6 +141,7 @@
     "tags": "Etiquetas",
     "addTag": "Añadir etiqueta...",
     "moveToProject": "Mover al proyecto",
+    "removeFromProject": "Quitar de {{project}}",
     "deleteSession": "Eliminar sesión"
   },
   "projectMenu": {

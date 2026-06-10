@@ -82,7 +82,11 @@ export function ProjectEntry({
   projectMeta: ProjectMetaMap;
   client: OpenGuiClient;
   t: (key: string, options?: Record<string, unknown>) => string;
-  renderSessionRow: (session: Session, directory: string) => ReactNode;
+  renderSessionRow: (
+    session: Session,
+    directory: string,
+    options?: { currentProjectDir?: string | null },
+  ) => ReactNode;
   refreshGitInfo: (directory: string) => void | Promise<void>;
   setProjectPopover: React.Dispatch<
     React.SetStateAction<{ directory: string; top: number } | null>
@@ -283,7 +287,9 @@ export function ProjectEntry({
             </div>
           ) : (
             <>
-              {visibleSessions.map((session) => renderSessionRow(session, directory))}
+              {visibleSessions.map((session) =>
+                renderSessionRow(session, directory, { currentProjectDir: directory }),
+              )}
               {hasMoreSessions && (
                 <SidebarMenuItem>
                   <SidebarMenuButton

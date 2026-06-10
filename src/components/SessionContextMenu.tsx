@@ -1,4 +1,15 @@
-import { Check, FolderOpen, Palette, Pencil, Pin, PinOff, Tag, Trash2, X } from "lucide-react";
+import {
+  Check,
+  FolderOpen,
+  FolderX,
+  Palette,
+  Pencil,
+  Pin,
+  PinOff,
+  Tag,
+  Trash2,
+  X,
+} from "lucide-react";
 import * as ContextMenu from "@/components/ui/context-menu";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -90,9 +101,11 @@ interface SessionContextMenuProps {
   currentTags: string[];
   availableProjects: string[];
   assignedProjectDir: string | null;
+  currentProjectDir: string | null;
   onSetColor: (color: SessionColor) => void;
   onSetTags: (tags: string[]) => void;
   onMoveToProject: (directory: string) => void;
+  onRemoveFromProject: (() => void) | null;
   pinned: boolean;
   onTogglePin: () => void;
   onRename: () => void;
@@ -105,9 +118,11 @@ export function SessionContextMenu({
   currentTags,
   availableProjects,
   assignedProjectDir,
+  currentProjectDir,
   onSetColor,
   onSetTags,
   onMoveToProject,
+  onRemoveFromProject,
   pinned,
   onTogglePin,
   onRename,
@@ -282,6 +297,20 @@ export function SessionContextMenu({
                   </ContextMenu.SubContent>
                 </ContextMenu.Portal>
               </ContextMenu.Sub>
+            </>
+          )}
+
+          {currentProjectDir && onRemoveFromProject && (
+            <>
+              <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
+              <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onRemoveFromProject}>
+                <FolderX className="size-4" />
+                <span>
+                  {t("sessionMenu.removeFromProject", {
+                    project: getProjectName(currentProjectDir),
+                  })}
+                </span>
+              </ContextMenu.Item>
             </>
           )}
 

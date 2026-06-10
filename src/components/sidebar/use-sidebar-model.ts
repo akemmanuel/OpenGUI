@@ -68,13 +68,17 @@ export function useSidebarModel({
         const aMeta = sessionMeta[a.id];
         const bMeta = sessionMeta[b.id];
         const aTime =
-          aMeta?.assignedProjectDir && typeof aMeta.assignedProjectMovedAt === "number"
-            ? aMeta.assignedProjectMovedAt
-            : (a.time.updated ?? a.time.created ?? 0);
+          aMeta?.detachedFromProject && typeof aMeta.detachedFromProjectAt === "number"
+            ? aMeta.detachedFromProjectAt
+            : aMeta?.assignedProjectDir && typeof aMeta.assignedProjectMovedAt === "number"
+              ? aMeta.assignedProjectMovedAt
+              : (a.time.updated ?? a.time.created ?? 0);
         const bTime =
-          bMeta?.assignedProjectDir && typeof bMeta.assignedProjectMovedAt === "number"
-            ? bMeta.assignedProjectMovedAt
-            : (b.time.updated ?? b.time.created ?? 0);
+          bMeta?.detachedFromProject && typeof bMeta.detachedFromProjectAt === "number"
+            ? bMeta.detachedFromProjectAt
+            : bMeta?.assignedProjectDir && typeof bMeta.assignedProjectMovedAt === "number"
+              ? bMeta.assignedProjectMovedAt
+              : (b.time.updated ?? b.time.created ?? 0);
         const byUpdated = bTime - aTime;
         if (byUpdated !== 0) return byUpdated;
         return b.id.localeCompare(a.id);
@@ -114,10 +118,11 @@ export function useSidebarModel({
     for (const dir of orderedRootDirectories) groups.set(dir, []);
 
     for (const session of sessions) {
-      if (session.parentID || sessionMeta[session.id]?.movedToSessionId) continue;
-      const assignedProjectDir = normalizeProjectPath(
-        sessionMeta[session.id]?.assignedProjectDir ?? "",
-      );
+      const meta = sessionMeta[session.id];
+      if (session.parentID || meta?.movedToSessionId || meta?.detachedFromProject === true) {
+        continue;
+      }
+      const assignedProjectDir = normalizeProjectPath(meta?.assignedProjectDir ?? "");
       const effectiveAssignedProjectDir =
         assignedProjectDir && projectDirectorySet.has(assignedProjectDir)
           ? assignedProjectDir
@@ -172,7 +177,8 @@ export function useSidebarModel({
           (session) =>
             !session.parentID &&
             !sessionMeta[session.id]?.movedToSessionId &&
-            isDefaultChatDirectory(session._projectDir ?? session.directory),
+            (sessionMeta[session.id]?.detachedFromProject === true ||
+              isDefaultChatDirectory(session._projectDir ?? session.directory)),
         ),
       ),
     [sessions, isDefaultChatDirectory, sessionMeta, sortSessionsForSidebar],

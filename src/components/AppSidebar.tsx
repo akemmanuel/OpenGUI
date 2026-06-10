@@ -62,6 +62,7 @@ export function AppSidebar({
     setSessionTags,
     setSessionPinned,
     moveSessionToProject,
+    removeSessionFromProject,
     setProjectPinned,
     registerWorktree,
     unregisterWorktree,
@@ -320,7 +321,11 @@ export function AppSidebar({
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
 
-  const renderSessionRow = (session: (typeof sessions)[number], _directory: string) => (
+  const renderSessionRow = (
+    session: (typeof sessions)[number],
+    _directory: string,
+    options?: { currentProjectDir?: string | null },
+  ) => (
     <SessionRow
       key={session.id}
       session={session}
@@ -351,6 +356,8 @@ export function AppSidebar({
       setSessionTags={setSessionTags}
       revealSessionInProject={revealSessionInProject}
       moveSessionToProject={moveSessionToProject}
+      removeSessionFromProject={removeSessionFromProject}
+      currentProjectDir={options?.currentProjectDir ?? null}
       deleteSession={deleteSession}
     />
   );

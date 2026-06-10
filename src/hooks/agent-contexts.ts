@@ -140,6 +140,7 @@ export interface ActionsContextValue {
   setSessionTags: (sessionId: string, tags: string[]) => void;
   setSessionPinned: (sessionId: string, pinned: boolean) => void;
   moveSessionToProject: (sessionId: string, directory: string) => Promise<void>;
+  removeSessionFromProject: (sessionId: string) => Promise<void>;
   setProjectPinned: (directory: string, pinned: boolean) => void;
   registerWorktree: (worktreeDir: string, parentDir: string, branch: string) => void;
   unregisterWorktree: (worktreeDir: string) => void;
