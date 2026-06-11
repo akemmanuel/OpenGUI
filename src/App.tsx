@@ -471,6 +471,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
     <>
       <AppSidebar
         detachedProject={detachedProject}
+        highlightedSessionId={activeView === "chat" ? sessionActiveId : null}
         onOpenSettings={() => setActiveView("settings")}
         onOpenChat={() => setActiveView("chat")}
         settingsActive={activeView === "settings"}
