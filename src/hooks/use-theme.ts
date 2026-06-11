@@ -10,6 +10,12 @@ const DEFAULT_CONTRAST = 50;
 const DEFAULT_ACCENT_COLOR = "default";
 const DEFAULT_CODE_FONT_SIZE = 13;
 
+interface RGB {
+  r: number;
+  g: number;
+  b: number;
+}
+
 function getStoredMode(): ThemeMode {
   const stored = storageGet(STORAGE_KEYS.THEME);
   if (stored === "dark" || stored === "light" || stored === "system") return stored;
@@ -67,7 +73,7 @@ function applyContrast(contrast: number, theme: Theme) {
   }
 }
 
-function hexToRgb(hex: string) {
+function hexToRgb(hex: string): RGB {
   const normalized = hex.replace("#", "");
   const value = Number.parseInt(normalized, 16);
   return {
@@ -77,7 +83,7 @@ function hexToRgb(hex: string) {
   };
 }
 
-function getReadableForeground({ r, g, b }: ReturnType<typeof hexToRgb>) {
+function getReadableForeground({ r, g, b }: RGB) {
   const toLinear = (channel: number) => {
     const srgb = channel / 255;
     return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
