@@ -453,6 +453,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
 
   return (
     <VirtualMessageScroller
+      key={activeSessionId}
       scrollKey={activeSessionId}
       scrollSnapshotsRef={scrollSnapshotsRef}
       messages={visibleMessages}
