@@ -5,7 +5,7 @@ import { DiscoverPlugins } from "@/components/DiscoverPlugins";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useConnectionState } from "@/hooks/use-agent-state";
+import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { usePluginsPlatform } from "@/hooks/use-plugins-platform";
 import type { InstalledPluginInfo } from "@/types/electron";
 
@@ -122,6 +122,7 @@ function InstalledPluginsView() {
   const { t } = useTranslation();
   const skillsApi = usePluginsPlatform();
   const { activeDirectory } = useConnectionState();
+  const { refreshProviders } = useActions();
   const scopedDirectory = activeDirectory ?? undefined;
 
   const [installedPlugins, setInstalledPlugins] = useState<InstalledPluginInfo[]>([]);
@@ -162,9 +163,10 @@ function InstalledPluginsView() {
       try {
         await skillsApi.remove(plugin.name, scopedDirectory, plugin.scope === "global");
         await refresh();
+        await refreshProviders();
       } catch {}
     },
-    [skillsApi, scopedDirectory, refresh],
+    [skillsApi, scopedDirectory, refresh, refreshProviders],
   );
 
   const handleUpdateOne = useCallback(
@@ -173,9 +175,10 @@ function InstalledPluginsView() {
       try {
         await skillsApi.update(plugin.name, scopedDirectory, plugin.scope === "global");
         await refresh();
+        await refreshProviders();
       } catch {}
     },
-    [skillsApi, scopedDirectory, refresh],
+    [skillsApi, scopedDirectory, refresh, refreshProviders],
   );
 
   const handleGroupAction = useCallback(
@@ -190,9 +193,10 @@ function InstalledPluginsView() {
           }
         }
         await refresh();
+        await refreshProviders();
       } catch {}
     },
-    [skillsApi, scopedDirectory, refresh],
+    [skillsApi, scopedDirectory, refresh, refreshProviders],
   );
 
   const toggleGroup = useCallback((key: string) => {

@@ -502,8 +502,26 @@ export class OpenCodeConnection {
 
   async listCommands() {
     this._requireClient();
-    const res = await this._client.command.list();
-    return res.data ?? [];
+    const [commandsRes, skillsRes] = await Promise.allSettled([
+      this._client.command.list(),
+      this._client.app.skills(),
+    ]);
+    const commands = commandsRes.status === "fulfilled" ? (commandsRes.value.data ?? []) : [];
+    const skills = skillsRes.status === "fulfilled" ? (skillsRes.value.data ?? []) : [];
+    const seen = new Set(commands.map((command) => command.name));
+
+    for (const skill of skills) {
+      if (!skill?.name || seen.has(skill.name)) continue;
+      seen.add(skill.name);
+      commands.push({
+        name: skill.name,
+        description: skill.description,
+        source: "skill",
+        template: `/${skill.name}`,
+      });
+    }
+
+    return commands;
   }
 
   async sendCommand(sessionId, command, args, model, agent, variant) {
@@ -1054,6 +1072,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (!sender.isDestroyed()) {
       sender.send("opencode:bridge-event", event);
     }
+  }
+
+  async function refreshLocalOpenCodeAfterSkillsChange() {
+    for (const state of windowStates.values()) {
+      for (const conn of state.projectRegistry.values()) conn.teardown();
+      state.projectRegistry.clear();
+    }
+    const stopped = await stopLocalOpenCodeServer();
+    if (!stopped.success) return stopped;
+    return await startLocalOpenCodeServer();
   }
 
   function makeProjectKey(windowState, workspaceId, directory) {
@@ -2149,7 +2177,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           success: false,
           error: "npx not found. Install Node.js first.",
         };
-      return await spawnSkillsInstall(event, cli, source, directory, !!globalScope);
+      const result = await spawnSkillsInstall(event, cli, source, directory, !!globalScope);
+      if (result.success) await refreshLocalOpenCodeAfterSkillsChange();
+      return result;
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -2189,7 +2219,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           resolve(null);
         });
       });
-      return { success: code === 0, exitCode: code };
+      const result = { success: code === 0, exitCode: code };
+      if (result.success) await refreshLocalOpenCodeAfterSkillsChange();
+      return result;
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -2231,7 +2263,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           resolve(null);
         });
       });
-      return { success: code === 0, exitCode: code };
+      const result = { success: code === 0, exitCode: code };
+      if (result.success) await refreshLocalOpenCodeAfterSkillsChange();
+      return result;
     } catch (err) {
       return { success: false, error: err.message };
     }

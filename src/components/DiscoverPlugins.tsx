@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { usePluginsPlatform } from "@/hooks/use-plugins-platform";
-import { useConnectionState } from "@/hooks/use-agent-state";
+import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -315,6 +315,7 @@ export function DiscoverPlugins() {
   const pluginsApi = usePluginsPlatform();
   const catalogApi = pluginsApi?.marketplace;
   const { activeDirectory } = useConnectionState();
+  const { refreshProviders } = useActions();
   const shell = useDesktopShell();
 
   const [query, setQuery] = useState("");
@@ -457,6 +458,7 @@ export function DiscoverPlugins() {
       try {
         await action();
         await fetchInstalled();
+        await refreshProviders();
       } catch {}
       setBusyKeys((prev) => {
         const next = new Set(prev);
@@ -464,7 +466,7 @@ export function DiscoverPlugins() {
         return next;
       });
     },
-    [fetchInstalled],
+    [fetchInstalled, refreshProviders],
   );
 
   // Install
