@@ -19,6 +19,25 @@ function invoke<T extends (...args: never[]) => Promise<unknown>>(channel: strin
 
 const backendConfig = ipcRenderer.sendSync("backend:get-config-sync") as BackendConfigSync;
 
+const disabledUpdateState: AppUpdateState = {
+  status: "disabled",
+  platformSupported: false,
+  currentVersion: "0.0.0",
+  latestVersion: null,
+  releaseDate: null,
+  releaseNotes: null,
+  releaseName: null,
+  releaseUrl: null,
+  progressPercent: null,
+  bytesPerSecond: null,
+  transferred: null,
+  total: null,
+  errorMessage: null,
+  downloaded: false,
+  autoDownload: false,
+  updateInfoFetched: false,
+};
+
 const electronAPI: ElectronAPI = {
   kind: backendConfig.kind ?? "electron",
   backendUrl: backendConfig.backendUrl ?? null,
@@ -51,7 +70,6 @@ const electronAPI: ElectronAPI = {
   isPackaged: invoke("app:isPackaged"),
   getHomeDir: invoke("platform:homeDir"),
   getHarnessInventories: invoke("platform:harnessInventory"),
-  installBackend: invoke("backend:install"),
   restartBackend: invoke("backend:restart-managed"),
   backendFetch: invoke("backend:fetch"),
   onMaximizeChange: (callback: Listener<boolean>) => {
@@ -96,17 +114,11 @@ const electronAPI: ElectronAPI = {
 
   openExternal: invoke("shell:openExternal"),
   updates: {
-    getState: invoke("updates:getState"),
-    check: invoke("updates:check"),
-    download: invoke("updates:download"),
-    install: invoke("updates:install"),
-    onStateChanged: (callback: Listener<AppUpdateState>) => {
-      const handler = (_event: IpcRendererEvent, nextState: AppUpdateState) => callback(nextState);
-      ipcRenderer.on("updates:state-changed", handler);
-      return () => {
-        ipcRenderer.removeListener("updates:state-changed", handler);
-      };
-    },
+    getState: async () => disabledUpdateState,
+    check: async () => disabledUpdateState,
+    download: async () => disabledUpdateState,
+    install: async () => false,
+    onStateChanged: () => () => {},
   },
 
   openInFileBrowser: invoke("shell:openInFileBrowser"),

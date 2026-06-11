@@ -372,12 +372,6 @@ export interface InstallProgress {
   type: "stdout" | "stderr";
 }
 
-export interface InstallResult {
-  success: boolean;
-  exitCode?: number | null;
-  error?: string;
-}
-
 export type DesktopBackendStatus = "starting" | "running" | "stopped" | "crashed";
 
 export interface DesktopBackendFetchRequest {
@@ -409,7 +403,6 @@ export interface ElectronAPI {
   isPackaged: () => Promise<boolean>;
   getHomeDir?: () => Promise<string>;
   getHarnessInventories?: () => Promise<HarnessInventory[]>;
-  installBackend?: (harnessId: HarnessInventory["harnessId"]) => Promise<InstallResult>;
   restartBackend?: () => Promise<{
     url: string;
     token: string | null;

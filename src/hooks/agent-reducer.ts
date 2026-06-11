@@ -134,7 +134,7 @@ function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Messag
   } satisfies Partial<InternalAgentState>;
 }
 
-type Action =
+export type Action =
   | { type: "SET_WORKSPACES"; payload: Workspace[] }
   | {
       type: "ADD_WORKSPACE_PROJECT";

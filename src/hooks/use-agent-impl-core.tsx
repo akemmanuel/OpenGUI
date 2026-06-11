@@ -22,6 +22,7 @@ import {
 } from "react";
 import type { HarnessId } from "@/agents";
 import { resolveActiveHarnessScope } from "@/hooks/active-harness-scope";
+import { useBackendEventSubscription } from "@/hooks/agent-backend-event-subscription";
 import {
   resolvePendingPromptCreationHarnessRoute,
   resolveSessionHarnessRoute,
@@ -29,13 +30,6 @@ import {
 import { useLocalIntentOrchestration } from "@/hooks/agent-local-intent";
 import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
-import { handleHarnessEvent } from "@/hooks/agent-backend-events";
-import {
-  isCanonicalSessionNotification,
-  isQueueEvent,
-  toHarnessEvent,
-  type BackendEventEnvelope,
-} from "@/hooks/backend-event-normalization";
 import {
   createLifecycleSession,
   createSessionRenamePlan,
@@ -136,7 +130,6 @@ import {
   storageSet,
   storageSetOrRemove,
 } from "@/lib/safe-storage";
-import { createHttpOpenGuiClient } from "@/protocol/http-client";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
@@ -296,115 +289,20 @@ function InternalAgentProvider({
     };
   }, [openGuiClient]);
 
-  const reloadWorkspaceState = useCallback(
-    async (preferredWorkspaceId?: string | null) => {
-      const workspaces = await initializeBackendWorkspaceState(openGuiClient);
-      dispatch({ type: "SET_WORKSPACES", payload: workspaces });
-      const nextActiveWorkspaceId =
-        preferredWorkspaceId &&
-        workspaces.some((workspace) => workspace.id === preferredWorkspaceId)
-          ? preferredWorkspaceId
-          : getActiveWorkspaceId(workspaces);
-      const nextActiveWorkspace =
-        workspaces.find((workspace) => workspace.id === nextActiveWorkspaceId) ??
-        workspaces[0] ??
-        null;
-      dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: nextActiveWorkspaceId });
-      dispatch({
-        type: "SET_DEFAULT_CHAT_DIRECTORY",
-        payload: getWorkspaceDefaultChatDirectory(nextActiveWorkspace),
-      });
-      return {
-        workspaces,
-        activeWorkspace: nextActiveWorkspace,
-      };
+  useBackendEventSubscription({
+    allBackendsCount: allBackends.length,
+    cleanupSessionRefs,
+    dispatch,
+    openGuiClient,
+    tracking: {
+      expectedProjectKeys: expectedDirectoriesRef,
+      forcedTitles: forcedSessionTitlesRef,
+      pendingTitlePersistence: pendingTitlePersistenceRef,
+      sessionIdAliases: sessionIdAliasesRef,
+      namingRequestIds: namingRequestIdsRef,
     },
-    [openGuiClient],
-  );
-
-  const seenBackendEventIdsRef = useRef<string[]>([]);
-  const seenBackendEventIdSetRef = useRef(new Set<string>());
-
-  // --- Backend event handler ---
-  const handleBackendEvent = useCallback(
-    (event: BackendEventEnvelope) => {
-      // Remote workspaces deliver events through the canonical SSE stream.  A reconnect or
-      // overlapping subscription can surface the same canonical event more than once; streaming
-      // text events are mutations, so applying a duplicate delta duplicates visible text.
-      if (typeof event.id === "string") {
-        const seenIds = seenBackendEventIdSetRef.current;
-        if (seenIds.has(event.id)) return;
-        seenIds.add(event.id);
-        const order = seenBackendEventIdsRef.current;
-        order.push(event.id);
-        while (order.length > 1000) {
-          const expired = order.shift();
-          if (expired) seenIds.delete(expired);
-        }
-      }
-      if (isQueueEvent(event)) {
-        if (Array.isArray(event.entries)) {
-          dispatch({
-            type: "SET_SESSION_QUEUE",
-            payload: { sessionID: event.sessionId, prompts: event.entries },
-          });
-        } else if (event.type === "queue.cleared") {
-          dispatch({ type: "QUEUE_CLEAR", payload: { sessionID: event.sessionId } });
-        }
-        return;
-      }
-      if (isCanonicalSessionNotification(event)) {
-        // Canonical backend session events are notifications, not a reason to resync every
-        // Project/Harness scope. Runtime bridge events carry directory/session payloads and
-        // are handled below. Explicit refresh/open/send paths do any needed reconciliation.
-        return;
-      }
-      handleHarnessEvent({
-        event: toHarnessEvent(event),
-        expectedProjectKeys: expectedDirectoriesRef.current,
-        tracking: {
-          forcedTitles: forcedSessionTitlesRef.current,
-          pendingTitlePersistence: pendingTitlePersistenceRef.current,
-          sessionIdAliases: sessionIdAliasesRef.current,
-          namingRequestIds: namingRequestIdsRef.current,
-        },
-        cleanupSessionRefs,
-        renameSession: (input) => openGuiClient.sessions.rename(input),
-        dispatch,
-      });
-    },
-    [cleanupSessionRefs, openGuiClient, reloadWorkspaceState],
-  );
-
-  const remoteWorkspaceEventSources = useMemo(() => {
-    const unique = new Map<string, { baseUrl: string; authToken?: string }>();
-    for (const workspace of state.workspaces) {
-      if (workspace.isLocal || !workspace.serverUrl.trim()) continue;
-      const baseUrl = workspace.serverUrl.trim().replace(/\/+$/, "");
-      const key = `${baseUrl}\u0000${workspace.authToken ?? ""}`;
-      unique.set(key, { baseUrl, authToken: workspace.authToken });
-    }
-    return [...unique.values()];
-  }, [state.workspaces]);
-
-  // Subscribe to backend events for the local/default Backend and every remote
-  // Workspace Backend. HTTP calls can target a remote Workspace, so the SSE
-  // stream that marks turns idle must target the same remote Backend too.
-  useEffect(() => {
-    if (allBackends.length === 0) return;
-    const unsubscribers = [openGuiClient.harnesses.subscribe(handleBackendEvent)];
-    for (const remote of remoteWorkspaceEventSources) {
-      unsubscribers.push(
-        createHttpOpenGuiClient({
-          baseUrl: remote.baseUrl,
-          token: remote.authToken,
-        }).harnesses.subscribe(handleBackendEvent),
-      );
-    }
-    return () => {
-      for (const unsubscribe of unsubscribers) unsubscribe();
-    };
-  }, [allBackends.length, handleBackendEvent, openGuiClient, remoteWorkspaceEventSources]);
+    workspaces: state.workspaces,
+  });
 
   useEffect(() => {
     if (!workspaceStateReady) return;

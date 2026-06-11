@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { NoProjectConnected, NoSessionSelected } from "@/components/EmptyChatStates";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -13,7 +14,6 @@ import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
   HarnessProvider,
   type QueueMode,
-  resolveServerDefaultModel,
   useActions,
   useConnectionState,
   useMessages,
@@ -28,6 +28,7 @@ import {
   type KeyboardShortcut,
 } from "@/hooks/use-keyboard-shortcuts";
 import { useUpdateCheck } from "@/hooks/use-update-check";
+import { useContextInfo } from "@/hooks/use-context-info";
 import { POST_MERGE_DELAY_MS, STORAGE_KEYS } from "@/lib/constants";
 import { getChatSurfaceState, hasProjectConnectedPrompt } from "@/lib/chat-surface";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
@@ -38,7 +39,6 @@ import { DesktopShellProvider } from "@/shell/provider";
 import { getDirectoryPlacementInfo, getWorktreePlacementMeta } from "@/lib/worktree-placement";
 import {
   buildPRUrl,
-  computeTokenTotal,
   normalizeProjectPath,
   normalizeTerminalOutput,
   openExternalLink,
@@ -50,143 +50,6 @@ import { PromptBox } from "./components/PromptBox";
 import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
-
-type ContextInfo = {
-  percent: number | null;
-  tokens: number | null;
-  cost: number | null;
-  contextLimit: number | null;
-};
-
-function NoProjectConnected({
-  canStartChat,
-  onStartChat,
-}: {
-  canStartChat: boolean;
-  onStartChat: () => void;
-}) {
-  return (
-    <div className="flex-1 flex items-center justify-center px-6">
-      <div className="max-w-md text-center space-y-4">
-        <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">No project connected</h2>
-          <p className="text-sm text-muted-foreground">
-            {canStartChat
-              ? "Connect a project now or start a chat."
-              : "Connect a project to start chatting."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {canStartChat && (
-            <Button type="button" onClick={onStartChat}>
-              Start a chat
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NoSessionSelected() {
-  return (
-    <div className="flex-1 flex items-center justify-center px-6">
-      <div className="max-w-md text-center space-y-1.5">
-        <h2 className="text-lg font-semibold tracking-tight">No session selected</h2>
-        <p className="text-sm text-muted-foreground">
-          Select a session or start a new one from a connected project.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function useContextInfo({
-  activeSessionId,
-  messages,
-  providers,
-  selectedModel,
-  providerDefaults,
-}: {
-  activeSessionId: string | null;
-  messages: ReturnType<typeof useMessages>["messages"];
-  providers: ReturnType<typeof useModelState>["providers"];
-  selectedModel: ReturnType<typeof useModelState>["selectedModel"];
-  providerDefaults: ReturnType<typeof useModelState>["providerDefaults"];
-}): ContextInfo {
-  return useMemo(() => {
-    const none: ContextInfo = {
-      percent: null,
-      tokens: null,
-      cost: null,
-      contextLimit: null,
-    };
-    if (!activeSessionId) return none;
-
-    type TokenSnapshot = {
-      providerID: string;
-      modelID: string;
-      total: number;
-      cost: number | null;
-    };
-    let last: TokenSnapshot | null = null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]?.info;
-      if (msg?.role === "assistant" && "providerID" in msg && "modelID" in msg) {
-        const t = "tokens" in msg ? msg.tokens : undefined;
-        let total = t ? computeTokenTotal(t) : 0;
-        const msgCost = "cost" in msg && typeof msg.cost === "number" ? msg.cost : null;
-
-        if (total <= 0) {
-          const parts = messages[i]?.parts;
-          if (parts) {
-            for (const part of parts) {
-              if (part.type === "step-finish" && "tokens" in part) {
-                total += computeTokenTotal(part.tokens);
-              }
-            }
-          }
-        }
-
-        if (total > 0) {
-          last = {
-            providerID: msg.providerID,
-            modelID: msg.modelID,
-            total,
-            cost: msgCost,
-          };
-          break;
-        }
-      }
-    }
-
-    let provID = last?.providerID ?? selectedModel?.providerID;
-    let modID = last?.modelID ?? selectedModel?.modelID;
-    if (!provID || !modID) {
-      const fallback = resolveServerDefaultModel(providers, providerDefaults);
-      if (fallback) {
-        provID = fallback.providerID;
-        modID = fallback.modelID;
-      }
-    }
-    if (!provID || !modID) return none;
-
-    const provider = providers.find((p) => p.id === provID);
-    if (!provider) return none;
-    const model = provider.models[modID];
-    if (!model?.limit?.context) return none;
-    const contextLimit = model.limit.context;
-
-    if (!last) return { percent: 0, tokens: null, cost: null, contextLimit };
-
-    return {
-      percent: Math.min(100, Math.max(0, Math.round((last.total / contextLimit) * 100))),
-      tokens: last.total,
-      cost: last.cost,
-      contextLimit,
-    };
-  }, [activeSessionId, messages, providers, selectedModel, providerDefaults]);
-}
 
 function AppContent({ detachedProject }: { detachedProject?: string }) {
   const client = useOpenGuiClient();

@@ -1,39 +1,26 @@
-import { ArrowUp, Check, GitBranch, ListEnd, Paperclip, Plus, Square, Wrench } from "lucide-react";
+import { ArrowUp, ListEnd, Square } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AgentSelector } from "@/components/AgentSelector";
-import {
-  ImageMentionLightbox,
-  ImageMentionThumbnails,
-  type ImageMention,
-} from "@/components/ImageMentionPreview";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
+import { PromptImageMentions, usePromptImages } from "@/components/PromptImageMentions";
 import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
+import { PromptAddMenu } from "@/components/PromptAddMenu";
 import { PromptContextStatus } from "@/components/PromptContextStatus";
+import { PromptWorktreeSelector } from "@/components/PromptWorktreeSelector";
 import { SlashCommandPopover } from "@/components/SlashCommandPopover";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { VariantSelector } from "@/components/VariantSelector";
 import { WorktreeDialog } from "@/components/WorktreeDialog";
 import { WorktreeSetupDialog } from "@/components/WorktreeSetupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
-import { useFileMention } from "@/hooks/use-file-mention";
-import { useListKeyboardNavigation } from "@/hooks/use-list-keyboard-navigation";
 import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigation";
 import { usePromptCompaction } from "@/hooks/use-prompt-compaction";
 import { usePromptDraft } from "@/hooks/use-prompt-draft";
-import { getNextPrimaryAgent } from "@/hooks/use-primary-agent-cycle";
 import { usePromptFiles } from "@/hooks/use-prompt-files";
-import { usePromptSubmit } from "@/hooks/use-prompt-submit";
 import { usePromptWorktreeSelector } from "@/hooks/use-prompt-worktree-selector";
-import { useSlashCommandInput } from "@/hooks/use-slash-command-input";
+import { usePromptInputInteractions } from "@/components/use-prompt-input-interactions";
 import {
   type QueueMode,
   useActions,
@@ -43,7 +30,6 @@ import {
   useSessionState,
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
-import { splitImageMentions } from "@/lib/image-mentions";
 import { getSessionDraftKey } from "@/lib/session-drafts";
 import { shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
@@ -178,18 +164,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       serverUrl: promptImageServerUrl,
       textareaRef: internalTextareaRef,
     });
-    const [activeImagePath, setActiveImagePath] = React.useState<string | null>(null);
-    const [openImage, setOpenImage] = React.useState<ImageMention | null>(null);
-    const promptImages = React.useMemo(() => {
-      const seen = new Set<string>();
-      const images: ImageMention[] = [];
-      for (const segment of splitImageMentions(value)) {
-        if (segment.type !== "image" || seen.has(segment.path)) continue;
-        seen.add(segment.path);
-        images.push({ path: segment.path, filename: segment.filename });
-      }
-      return images;
-    }, [value]);
+    const promptImages = usePromptImages(value);
 
     const { handleHistoryKeyDown, noteManualInput, resetHistory } = usePromptHistoryNavigation({
       messages,
@@ -222,109 +197,39 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       }
     }, [autoFocus, activeSessionId, props.disabled]);
 
-    // Helper to determine which backend target to search.
-    const getActiveTarget = React.useCallback(() => {
-      if (activeSessionId) {
-        const activeSession = sessions.find((s) => s.id === activeSessionId);
-        const directory = activeSession?._projectDir ?? activeSession?.directory ?? undefined;
-        const workspaceId = activeSession?._workspaceId ?? activeWorkspaceId ?? undefined;
-        return {
-          directory,
-          workspaceId,
-          baseUrl: workspaceServerUrl ?? undefined,
-        };
-      }
-      return {
-        directory: activeTargetDirectory ?? undefined,
-        workspaceId: activeWorkspaceId ?? undefined,
-        baseUrl: workspaceServerUrl ?? undefined,
-      };
-    }, [activeSessionId, sessions, activeTargetDirectory, activeWorkspaceId, workspaceServerUrl]);
-
-    const fileMention = useFileMention({
-      value,
-      setValue,
-      textareaRef: internalTextareaRef,
-      findFiles,
-      getActiveTarget,
-    });
-    const slashCommand = useSlashCommandInput({
-      enabled: Boolean(capabilities?.commands),
-      commands,
-      setValue,
-      textareaRef: internalTextareaRef,
-    });
+    const { fileMention, slashCommand, promptSubmit, handleInputChange, handleKeyDown } =
+      usePromptInputInteractions({
+        value,
+        setValue,
+        textareaRef: internalTextareaRef,
+        findFiles,
+        activeSessionId,
+        sessions,
+        activeTargetDirectory,
+        activeWorkspaceId,
+        workspaceServerUrl,
+        capabilities,
+        commands,
+        propsOnChange: props.onChange,
+        noteManualInput,
+        promptFiles,
+        isDisabled,
+        isLoading,
+        queueMode,
+        sendCommand,
+        onSubmit,
+        clearPromptDraft,
+        resetHistory,
+        handleHistoryKeyDown,
+        primaryAgents,
+        selectedAgent,
+        setAgent,
+      });
 
     React.useEffect(() => {
       fileMention.reset();
       slashCommand.reset();
     }, [currentDraftKey, fileMention.reset, slashCommand.reset]);
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newValue = e.target.value;
-      setValue(newValue);
-      if (props.onChange) props.onChange(e);
-
-      noteManualInput();
-
-      slashCommand.updateForInput(newValue);
-      fileMention.updateForInput(newValue, e.target.selectionStart);
-    };
-
-    const promptSubmit = usePromptSubmit({
-      value,
-      isUploading: promptFiles.isUploading,
-      disabled: isDisabled,
-      isLoading,
-      queueMode,
-      parseSlashCommand: slashCommand.parse,
-      sendCommand,
-      onSubmit,
-      clearPromptDraft,
-      resetSlashCommand: slashCommand.reset,
-      resetHistory,
-    });
-
-    const handleFileMentionKeyboard = useListKeyboardNavigation({
-      open: fileMention.open,
-      items: fileMention.results,
-      activeIndex: fileMention.activeIndex,
-      setActiveIndex: fileMention.setActiveIndex,
-      onSelect: fileMention.select,
-      onDismiss: fileMention.dismiss,
-    });
-
-    const handleSlashKeyboard = useListKeyboardNavigation({
-      open: slashCommand.open,
-      items: slashCommand.filteredCommands,
-      activeIndex: slashCommand.activeIndex,
-      setActiveIndex: slashCommand.setActiveIndex,
-      onSelect: slashCommand.select,
-      onDismiss: slashCommand.reset,
-    });
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (handleFileMentionKeyboard(e)) return;
-      if (handleSlashKeyboard(e)) return;
-
-      if (handleHistoryKeyDown(e)) return;
-
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        if (isDisabled) return;
-        void promptSubmit.submit();
-      }
-      if (capabilities?.agents && e.key === "Tab" && primaryAgents.length > 1) {
-        e.preventDefault();
-        setAgent(
-          getNextPrimaryAgent({
-            primaryAgents,
-            selectedAgent,
-            shiftKey: e.shiftKey,
-          }),
-        );
-      }
-    };
 
     return (
       <section
@@ -394,22 +299,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             </div>
           </div>
         )}
-        {promptImages.length > 0 && (
-          <ImageMentionThumbnails
-            images={promptImages}
-            serverUrl={promptImageServerUrl}
-            baseDirectory={projectDir ?? activeTargetDirectory ?? null}
-            activePath={activeImagePath}
-            onHover={setActiveImagePath}
-            onOpen={setOpenImage}
-            className="px-3 pt-2"
-          />
-        )}
-        <ImageMentionLightbox
-          image={openImage}
+        <PromptImageMentions
+          images={promptImages}
           serverUrl={promptImageServerUrl}
           baseDirectory={projectDir ?? activeTargetDirectory ?? null}
-          onClose={() => setOpenImage(null)}
         />
         <textarea
           ref={internalTextareaRef}
@@ -459,118 +352,29 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         />
 
         <div className="flex min-w-0 items-center gap-1 px-1.5 pb-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                title={t("prompt.add")}
-                disabled={isDisabled}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Plus />
-                <span className="sr-only">{t("prompt.add")}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="start">
-              <DropdownMenuItem
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-              >
-                <Paperclip className="size-4" />
-                {t("prompt.addFile")}
-              </DropdownMenuItem>
-              {canManageMcp && (
-                <DropdownMenuItem
-                  onClick={(e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    setMcpDialogOpen(true);
-                  }}
-                >
-                  <Wrench className="size-4" />
-                  {t("prompt.mcps")}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <PromptAddMenu
+            disabled={isDisabled}
+            canManageMcp={canManageMcp}
+            fileInputRef={fileInputRef}
+            onOpenMcp={() => setMcpDialogOpen(true)}
+          />
 
           <ModelSelector />
           <AgentSelector />
           <VariantSelector />
 
-          {shouldShowWorktreeSelector && selectedWorktreeOption && (
-            <div className="flex min-w-0 items-center gap-1">
-              {worktreeSelector.isPendingTargetSelection ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="!h-7 w-auto max-w-[220px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0"
-                    >
-                      <GitBranch className="size-3.5 shrink-0" />
-                      <span className="truncate">{selectedWorktreeOption.label}</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-80 w-56">
-                    {worktreeOptions.map((option) => (
-                      <DropdownMenuItem
-                        key={option.path}
-                        onClick={() => {
-                          if (option.path !== projectDir && !worktreeParents[option.path]) {
-                            registerWorktree(option.path, projectDir!, option.branch ?? "unknown");
-                          }
-                          setActiveTargetDirectory(option.path);
-                        }}
-                        className="text-xs"
-                      >
-                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                          <span className="truncate">{option.label}</span>
-                        </span>
-                        {option.path === selectedWorktreeDirectory && (
-                          <Check className="ml-auto size-3 shrink-0" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => setWorktreeDialogDir(projectDir)}
-                      className="text-xs"
-                    >
-                      <Plus className="size-3.5" />
-                      <span>{t("prompt.newWorktree")}</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : selectedWorktreeOption.isRoot ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  title={t("prompt.currentRootWorktree")}
-                  className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <GitBranch className="size-3.5 shrink-0" />
-                  <span className="truncate">{selectedWorktreeOption.label}</span>
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="!h-7 w-auto max-w-[220px] cursor-default gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-muted-foreground focus:ring-0"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <GitBranch className="size-3.5 shrink-0" />
-                  <span className="truncate">{selectedWorktreeOption.label}</span>
-                </Button>
-              )}
-            </div>
-          )}
+          <PromptWorktreeSelector
+            shouldShow={shouldShowWorktreeSelector}
+            selectedOption={selectedWorktreeOption}
+            isPendingTargetSelection={worktreeSelector.isPendingTargetSelection}
+            options={worktreeOptions}
+            selectedDirectory={selectedWorktreeDirectory}
+            projectDir={projectDir}
+            worktreeParents={worktreeParents}
+            registerWorktree={registerWorktree}
+            setActiveTargetDirectory={setActiveTargetDirectory}
+            onNewWorktree={() => setWorktreeDialogDir(projectDir)}
+          />
 
           {isLoading && (
             <Button

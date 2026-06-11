@@ -1,38 +1,25 @@
-import { FolderOpen } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Input } from "@/components/ui/input";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarRail,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, SidebarRail, useSidebar } from "@/components/ui/sidebar";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import { POST_MERGE_DELAY_MS, SESSION_PAGE_SIZE } from "@/lib/constants";
-import {
-  getSidebarCollapsedProjects,
-  persistSidebarCollapsedProjects,
-  pruneSidebarCollapsedProjects,
-  toggleSidebarProjectCollapsed,
-  type SidebarCollapsedProjects,
-} from "@/lib/sidebar-collapsed";
-import { abbreviatePath, normalizeProjectPath } from "@/lib/utils";
-import { ConnectionPanel } from "./ConnectionPanel";
+import { normalizeProjectPath } from "@/lib/utils";
 import { MergeDialog } from "./MergeDialog";
 import { ProjectPathDialog } from "./ProjectPathDialog";
 import { WorktreeDialog } from "./WorktreeDialog";
 import { WorktreeSetupDialog } from "./WorktreeSetupDialog";
 import { CollapsedProjectPopover } from "./sidebar/CollapsedProjectPopover";
-import { ProjectEntry } from "./sidebar/ProjectEntry";
-import { SessionRow } from "./sidebar/SessionRow";
 import { SidebarContentSections } from "./sidebar/SidebarContentSections";
+import { SidebarFooterContent } from "./sidebar/SidebarFooterContent";
 import { SidebarHeaderContent } from "./sidebar/SidebarHeaderContent";
+import { RemoteProjectInput } from "./sidebar/RemoteProjectInput";
+import { useSidebarCollapsedProjects } from "./sidebar/use-sidebar-collapsed-projects";
 import { useProjectGitInfo } from "./sidebar/use-project-git-info";
+import { useSidebarRename } from "./sidebar/use-sidebar-rename";
+import { useSidebarRenderers } from "./sidebar/use-sidebar-renderers";
 import { useSidebarModel } from "./sidebar/use-sidebar-model";
 
 export function AppSidebar({
@@ -96,38 +83,19 @@ export function AppSidebar({
   } = useConnectionState();
 
   // Inline rename state
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
   const [showRemoteProjectInput, setShowRemoteProjectInput] = useState(false);
   const [remoteProjectPath, setRemoteProjectPath] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const editInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  const startEditing = useCallback((sessionId: string, currentTitle: string) => {
-    setEditingSessionId(sessionId);
-    setEditValue(currentTitle);
-  }, []);
-
-  const commitRename = useCallback(() => {
-    if (editingSessionId) {
-      const trimmed = editValue.trim();
-      if (trimmed && trimmed !== editingSessionId) {
-        // Find the session to compare with its current title
-        const session = sessions.find((s) => s.id === editingSessionId);
-        if (trimmed !== (session?.title || "")) {
-          void renameSession(editingSessionId, trimmed);
-        }
-      }
-    }
-    setEditingSessionId(null);
-    setEditValue("");
-  }, [editingSessionId, editValue, sessions, renameSession]);
-
-  const cancelEditing = useCallback(() => {
-    setEditingSessionId(null);
-    setEditValue("");
-  }, []);
+  const {
+    editingSessionId,
+    editValue,
+    setEditValue,
+    editInputRef,
+    startEditing,
+    commitRename,
+    cancelEditing,
+  } = useSidebarRename({ sessions, renameSession });
 
   const homeDir = useHomeDir();
   const normalizedRemoteProjectPath = normalizeProjectPath(remoteProjectPath);
@@ -188,13 +156,6 @@ export function AppSidebar({
     };
   }, []);
 
-  // Track collapsed state per project
-  const [collapsed, setCollapsed] = useState<SidebarCollapsedProjects>(() =>
-    getSidebarCollapsedProjects(),
-  );
-  const toggleCollapsed = useCallback((dir: string) => {
-    setCollapsed((prev) => toggleSidebarProjectCollapsed(prev, dir));
-  }, []);
   const openDirectories = useMemo(() => Object.keys(connections), [connections]);
   const { isGitRepo, knownWorktrees, remoteUrls, refreshGitInfo } = useProjectGitInfo({
     client,
@@ -207,32 +168,11 @@ export function AppSidebar({
     () => activeWorkspace?.projects ?? [],
     [activeWorkspace?.projects],
   );
-  useEffect(() => {
-    // Keep collapsed project state across app startup. Connections hydrate after
-    // frontend-persisted state, so pruning against an empty/partial connection list can
-    // delete saved collapsed projects before they reconnect. Use persisted
-    // workspace project list when available, and never let detached windows prune
-    // shared sidebar state for other projects.
-    if (detachedProject) return;
-    const collapsedPruneDirectories =
-      activeWorkspaceProjectDirectories.length > 0
-        ? activeWorkspaceProjectDirectories
-        : openDirectories;
-    if (collapsedPruneDirectories.length === 0) return;
-
-    setCollapsed((prev) => {
-      const next = pruneSidebarCollapsedProjects(prev, collapsedPruneDirectories);
-      const prevKeys = Object.keys(prev);
-      const nextKeys = Object.keys(next);
-      if (prevKeys.length === nextKeys.length && nextKeys.every((directory) => prev[directory])) {
-        return prev;
-      }
-      return next;
-    });
-  }, [activeWorkspaceProjectDirectories, detachedProject, openDirectories]);
-  useEffect(() => {
-    persistSidebarCollapsedProjects(collapsed);
-  }, [collapsed]);
+  const { collapsed, toggleCollapsed, revealCollapsedProject } = useSidebarCollapsedProjects({
+    activeWorkspaceProjectDirectories,
+    detachedProject,
+    openDirectories,
+  });
   const [visibleByProject, setVisibleByProject] = useState<Record<string, number>>({});
   const [visibleChatCount, setVisibleChatCount] = useState(SESSION_PAGE_SIZE);
   const [projectPopover, setProjectPopover] = useState<{
@@ -306,98 +246,73 @@ export function AppSidebar({
     [sessionDrafts],
   );
 
-  const revealSessionInProject = useCallback((directory: string) => {
-    const normalizedDirectory = normalizeProjectPath(directory);
-    if (!normalizedDirectory) return;
-    setCollapsed((prev) => {
-      if (!prev[normalizedDirectory]) return prev;
-      const { [normalizedDirectory]: _removed, ...rest } = prev;
-      return rest;
-    });
-  }, []);
+  const revealSessionInProject = useCallback(
+    (directory: string) => {
+      const normalizedDirectory = normalizeProjectPath(directory);
+      if (!normalizedDirectory) return;
+      revealCollapsedProject(normalizedDirectory);
+    },
+    [revealCollapsedProject],
+  );
 
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
 
-  const renderSessionRow = (session: (typeof sessions)[number], _directory: string) => (
-    <SessionRow
-      key={session.id}
-      session={session}
-      activeSessionId={activeSessionId}
-      busySessionIds={busySessionIds}
-      unreadSessionIds={unreadSessionIds}
-      queuedPrompts={queuedPrompts}
-      pendingQuestions={pendingQuestions}
-      pendingPermissions={pendingPermissions}
-      sessionMeta={sessionMeta}
-      namingSessionIds={namingSessionIds}
-      worktreeParents={worktreeParents}
-      knownWorktrees={knownWorktrees}
-      availableProjectDirectories={availableProjectDirectories}
-      editingSessionId={editingSessionId}
-      editValue={editValue}
-      editInputRef={editInputRef}
-      untitledLabel={t("sidebar.untitled")}
-      hasUnsentDraft={hasUnsentDraft}
-      selectSession={selectSession}
-      closeMobileSidebar={closeMobileSidebar}
-      setEditValue={setEditValue}
-      commitRename={commitRename}
-      cancelEditing={cancelEditing}
-      startEditing={startEditing}
-      setSessionPinned={setSessionPinned}
-      setSessionColor={setSessionColor}
-      setSessionTags={setSessionTags}
-      revealSessionInProject={revealSessionInProject}
-      moveSessionToProject={moveSessionToProject}
-      deleteSession={deleteSession}
-    />
-  );
-
-  const renderProjectEntry = (
-    directory: string,
-    dirSessions: typeof sessions,
-    options?: { canDrag?: boolean; dragHandleProps?: Record<string, unknown> },
-  ) => (
-    <ProjectEntry
-      key={directory}
-      directory={directory}
-      dirSessions={dirSessions}
-      canDrag={options?.canDrag}
-      dragHandleProps={options?.dragHandleProps}
-      hasActiveSearch={hasActiveSearch}
-      collapsed={collapsed}
-      connections={connections}
-      visibleByProject={visibleByProject}
-      sidebarState={sidebarState}
-      homeDir={homeDir}
-      detachedProject={detachedProject}
-      isLocalWorkspace={isLocalWorkspace}
-      isGitRepo={isGitRepo}
-      knownWorktrees={knownWorktrees}
-      availableProjectDirectories={availableProjectDirectories}
-      worktreeParents={worktreeParents}
-      remoteUrls={remoteUrls}
-      worktreeDirs={worktreeDirs}
-      projectMeta={projectMeta}
-      client={client}
-      t={t}
-      renderSessionRow={renderSessionRow}
-      refreshGitInfo={refreshGitInfo}
-      setProjectPopover={setProjectPopover}
-      toggleCollapsed={toggleCollapsed}
-      setActiveTarget={setActiveTarget}
-      closeMobileSidebar={closeMobileSidebar}
-      setProjectPinned={setProjectPinned}
-      removeProject={removeProject}
-      closeOtherProjects={closeOtherProjects}
-      setWorktreeDialogDir={setWorktreeDialogDir}
-      setMergeInfo={setMergeInfo}
-      unregisterWorktree={unregisterWorktree}
-      setVisibleByProject={setVisibleByProject}
-    />
-  );
+  const { renderSessionRow, renderProjectEntry } = useSidebarRenderers({
+    activeSessionId,
+    availableProjectDirectories,
+    busySessionIds,
+    cancelEditing,
+    client,
+    closeMobileSidebar,
+    closeOtherProjects,
+    collapsed,
+    commitRename,
+    connections,
+    deleteSession,
+    detachedProject,
+    editInputRef,
+    editValue,
+    editingSessionId,
+    hasActiveSearch,
+    hasUnsentDraft,
+    homeDir,
+    isGitRepo,
+    isLocalWorkspace,
+    knownWorktrees,
+    moveSessionToProject,
+    namingSessionIds,
+    pendingPermissions,
+    pendingQuestions,
+    projectMeta,
+    queuedPrompts,
+    refreshGitInfo,
+    remoteUrls,
+    removeProject,
+    revealSessionInProject,
+    selectSession,
+    sessionMeta,
+    setActiveTarget,
+    setEditValue,
+    setMergeInfo,
+    setProjectPinned,
+    setProjectPopover,
+    setSessionColor,
+    setSessionPinned,
+    setSessionTags,
+    setVisibleByProject,
+    setWorktreeDialogDir,
+    sidebarState,
+    startEditing,
+    t,
+    toggleCollapsed,
+    unreadSessionIds,
+    unregisterWorktree,
+    visibleByProject,
+    worktreeDirs,
+    worktreeParents,
+  });
 
   return (
     <Sidebar collapsible="icon" className="select-none relative">
@@ -480,80 +395,34 @@ export function AppSidebar({
 
         {/* Remote path input (shown for remote workspaces, independent of project list) */}
         {showRemoteProjectInput && !isLocalWorkspace && !detachedProject && (
-          <div className="mx-3 mt-3 space-y-2 rounded-lg border bg-sidebar-accent/30 p-2 group-data-[collapsible=icon]:hidden">
-            <div className="text-[11px] text-muted-foreground">
-              Remote path on {activeWorkspace?.name}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                autoFocus
-                value={remoteProjectPath}
-                onChange={(event) => setRemoteProjectPath(event.target.value)}
-                placeholder="/remote/path/to/project"
-                className="h-8 font-mono text-xs"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setRemoteProjectPath("");
-                    setShowRemoteProjectInput(false);
-                  }
-                  if (event.key === "Enter" && normalizedRemoteProjectPath) {
-                    event.preventDefault();
-                    void connectToProject(normalizedRemoteProjectPath);
-                    setRemoteProjectPath("");
-                    setShowRemoteProjectInput(false);
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!normalizedRemoteProjectPath) return;
-                  void connectToProject(normalizedRemoteProjectPath);
-                  setRemoteProjectPath("");
-                  setShowRemoteProjectInput(false);
-                }}
-                className="flex h-8 items-center rounded-md bg-primary px-3 text-xs text-primary-foreground"
-              >
-                Open
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRemoteProjectPath("");
-                  setShowRemoteProjectInput(false);
-                }}
-                className="flex h-8 items-center rounded-md border px-3 text-xs"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+          <RemoteProjectInput
+            workspaceName={activeWorkspace?.name}
+            value={remoteProjectPath}
+            normalizedValue={normalizedRemoteProjectPath}
+            onChange={setRemoteProjectPath}
+            onCancel={() => {
+              setRemoteProjectPath("");
+              setShowRemoteProjectInput(false);
+            }}
+            onOpen={(path) => {
+              void connectToProject(path);
+              setRemoteProjectPath("");
+              setShowRemoteProjectInput(false);
+            }}
+          />
         )}
       </SidebarContent>
 
       {!detachedProject && (
-        <SidebarFooter className="border-t border-sidebar-border p-0 gap-0">
-          {activeSessionDirectory && (
-            <div
-              title={activeSessionDirectory}
-              className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground border-b border-sidebar-border group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-b-0 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-2"
-            >
-              <FolderOpen className="size-3.5 shrink-0" />
-              <span className="truncate min-w-0 group-data-[collapsible=icon]:hidden">
-                {abbreviatePath(activeSessionDirectory, homeDir)}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-center p-1 group-data-[collapsible=icon]:px-0">
-            <ConnectionPanel
-              onOpenSettings={() => {
-                onOpenSettings();
-                closeMobileSidebar();
-              }}
-              isActive={settingsActive}
-            />
-          </div>
-        </SidebarFooter>
+        <SidebarFooterContent
+          activeSessionDirectory={activeSessionDirectory}
+          homeDir={homeDir}
+          settingsActive={settingsActive}
+          onOpenSettings={() => {
+            onOpenSettings();
+            closeMobileSidebar();
+          }}
+        />
       )}
 
       <SidebarRail />

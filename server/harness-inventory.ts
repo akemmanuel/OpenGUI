@@ -12,13 +12,6 @@ const BINARY_BY_HARNESS: Record<HarnessId, string> = {
   codex: "codex",
 };
 
-const PACKAGE_BY_HARNESS: Record<HarnessId, string> = {
-  opencode: "opencode-ai",
-  "claude-code": "@anthropic-ai/claude-code",
-  pi: "@earendil-works/pi-coding-agent",
-  codex: "@openai/codex",
-};
-
 const LABEL_BY_HARNESS: Record<HarnessId, string> = {
   opencode: "OpenCode",
   "claude-code": "Claude",
@@ -30,10 +23,6 @@ const HARNESS_IDS: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
 
 export function isHarnessId(value: unknown): value is HarnessId {
   return typeof value === "string" && HARNESS_IDS.includes(value as HarnessId);
-}
-
-export function getHarnessPackageName(harnessId: HarnessId): string {
-  return PACKAGE_BY_HARNESS[harnessId];
 }
 
 function binaryName(command: string) {

@@ -9,15 +9,15 @@
 
 import type { HarnessId } from "@/agents";
 import { HARNESS_LABELS } from "@/agents";
-import { Loader2, Plus, Search, Unplug } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { DialogConnectProvider } from "@/components/DialogConnectProvider";
 import { DialogCustomProvider } from "@/components/DialogCustomProvider";
 import { DialogSelectProvider } from "@/components/DialogSelectProvider";
+import { getProviderBadgeSource, ProviderRow } from "@/components/ProviderManagementRows";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -28,35 +28,6 @@ import { useOpenGuiClient } from "@/protocol/provider";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/utils";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
-
-// ---------------------------------------------------------------------------
-// Source badge
-// ---------------------------------------------------------------------------
-
-function SourceBadge({ source }: { source: string }) {
-  if (source === "custom") {
-    return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-        custom
-      </Badge>
-    );
-  }
-  if (source === "env" || source === "api" || source === "config" || source === "subscription") {
-    return (
-      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-        {source === "api" ? "api key" : source === "subscription" ? "subscription" : source}
-      </Badge>
-    );
-  }
-  return null;
-}
-
-function getProviderBadgeSource(
-  allProviders: AllProvidersData,
-  provider: { id: string; source: string },
-): string {
-  return allProviders.authKindByProvider?.[provider.id] ?? provider.source;
-}
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -229,76 +200,20 @@ export function SettingsProviders() {
           <div className="space-y-1.5">
             {filteredProviders.map((provider) => {
               const isConnected = connectedSet.has(provider.id);
-              const isEnv = provider.source === "env";
               const isDisconnecting = disconnecting === provider.id;
               const isConfirming = confirmingDisconnect === provider.id;
               return (
-                <div
+                <ProviderRow
                   key={provider.id}
-                  className="flex items-center gap-3 rounded-lg border p-3 bg-card"
-                >
-                  <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
-                  <span className="text-sm font-medium truncate flex-1">
-                    {provider.name || provider.id}
-                  </span>
-                  {isConnected ? (
-                    isEnv ? (
-                      <span className="text-[11px] text-muted-foreground shrink-0">from env</span>
-                    ) : isConfirming ? (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-xs text-muted-foreground mr-1">
-                          {t("providers.disconnectConfirm", { name: provider.name || provider.id })}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => setConfirmingDisconnect(null)}
-                        >
-                          {t("common.cancel")}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs text-destructive"
-                          disabled={isDisconnecting}
-                          onClick={() => handleDisconnect(provider.id)}
-                        >
-                          {isDisconnecting ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Unplug className="size-3.5" />
-                          )}
-                          <span className="ml-1">{t("providers.disconnect")}</span>
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive shrink-0"
-                        disabled={isDisconnecting}
-                        onClick={() => setConfirmingDisconnect(provider.id)}
-                      >
-                        {isDisconnecting ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Unplug className="size-3.5" />
-                        )}
-                        <span className="ml-1.5">{t("providers.disconnect")}</span>
-                      </Button>
-                    )
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setConnectProviderID(provider.id)}
-                    >
-                      <Plus className="size-3.5 mr-1" />
-                      {t("providers.connect")}
-                    </Button>
-                  )}
-                </div>
+                  provider={provider}
+                  connected={isConnected}
+                  disconnecting={isDisconnecting}
+                  confirming={isConfirming}
+                  onConnect={() => setConnectProviderID(provider.id)}
+                  onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
+                  onCancelDisconnect={() => setConfirmingDisconnect(null)}
+                  onDisconnect={() => handleDisconnect(provider.id)}
+                />
               );
             })}
             {filteredProviders.length === 0 && (
@@ -315,77 +230,21 @@ export function SettingsProviders() {
                   {t("providers.connected")}
                 </h4>
                 {connectedProviders.map((provider) => {
-                  const isEnv = provider.source === "env";
                   const isDisconnecting = disconnecting === provider.id;
                   const isConfirming = confirmingDisconnect === provider.id;
                   return (
-                    <div
+                    <ProviderRow
                       key={provider.id}
-                      className="flex items-center gap-3 rounded-lg border p-3 bg-card"
-                    >
-                      <ProviderIcon provider={provider.id} className="size-5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">
-                            {provider.name || provider.id}
-                          </span>
-                          <SourceBadge source={getProviderBadgeSource(allProviders, provider)} />
-                        </div>
-                      </div>
-                      {isEnv ? (
-                        <span
-                          className="text-[11px] text-muted-foreground shrink-0"
-                          title={t("providers.fromEnvTitle")}
-                        >
-                          {t("providers.fromEnv")}
-                        </span>
-                      ) : isConfirming ? (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-xs text-muted-foreground mr-1">
-                            {t("providers.disconnectConfirm", {
-                              name: provider.name || provider.id,
-                            })}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => setConfirmingDisconnect(null)}
-                          >
-                            {t("common.cancel")}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-destructive"
-                            disabled={isDisconnecting}
-                            onClick={() => handleDisconnect(provider.id)}
-                          >
-                            {isDisconnecting ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Unplug className="size-3.5" />
-                            )}
-                            <span className="ml-1">{t("providers.disconnect")}</span>
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive shrink-0"
-                          disabled={isDisconnecting}
-                          onClick={() => setConfirmingDisconnect(provider.id)}
-                        >
-                          {isDisconnecting ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Unplug className="size-3.5" />
-                          )}
-                          <span className="ml-1.5">{t("providers.disconnect")}</span>
-                        </Button>
-                      )}
-                    </div>
+                      provider={provider}
+                      connected
+                      showSource
+                      badgeSource={getProviderBadgeSource(allProviders, provider)}
+                      disconnecting={isDisconnecting}
+                      confirming={isConfirming}
+                      onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
+                      onCancelDisconnect={() => setConfirmingDisconnect(null)}
+                      onDisconnect={() => handleDisconnect(provider.id)}
+                    />
                   );
                 })}
               </section>
@@ -400,16 +259,11 @@ export function SettingsProviders() {
                 {popularNotConnected.map((id) => {
                   const provider = allById.get(id);
                   return (
-                    <div key={id} className="flex items-center gap-3 rounded-lg border p-3 bg-card">
-                      <ProviderIcon provider={id} className="size-5 shrink-0" />
-                      <span className="text-sm font-medium truncate flex-1">
-                        {provider?.name || id}
-                      </span>
-                      <Button variant="outline" size="sm" onClick={() => setConnectProviderID(id)}>
-                        <Plus className="size-3.5 mr-1" />
-                        {t("providers.connect")}
-                      </Button>
-                    </div>
+                    <ProviderRow
+                      key={id}
+                      provider={{ id, name: provider?.name }}
+                      onConnect={() => setConnectProviderID(id)}
+                    />
                   );
                 })}
               </section>
