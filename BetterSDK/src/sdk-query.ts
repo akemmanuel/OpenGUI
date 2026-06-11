@@ -28,11 +28,12 @@ export class SDKQuery implements AsyncIterable<Message> {
     this.initResolve = resolve;
   });
   private readerDone: Promise<void>;
+  private transport: Transport;
+  private options: ClaudeAgentOptions;
 
-  constructor(
-    private transport: Transport,
-    private options: ClaudeAgentOptions = {},
-  ) {
+  constructor(transport: Transport, options: ClaudeAgentOptions = {}) {
+    this.transport = transport;
+    this.options = options;
     this.readerDone = this.readLoop();
   }
 

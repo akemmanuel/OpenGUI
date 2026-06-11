@@ -4,10 +4,13 @@ import type { ClaudeAgentOptions, Message, SDKUserMessage, Transport } from "./t
 
 export class ClaudeSDKClient implements AsyncIterable<Message> {
   private transport?: Transport;
-  constructor(
-    public options: ClaudeAgentOptions = {},
-    private customTransport?: Transport,
-  ) {}
+  public options: ClaudeAgentOptions;
+  private customTransport?: Transport;
+
+  constructor(options: ClaudeAgentOptions = {}, customTransport?: Transport) {
+    this.options = options;
+    this.customTransport = customTransport;
+  }
 
   async connect(
     prompt?: string | AsyncIterable<SDKUserMessage | Record<string, unknown>>,

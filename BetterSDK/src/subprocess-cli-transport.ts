@@ -16,8 +16,11 @@ export class SubprocessCLITransport implements Transport {
   private waiters: Array<(v: IteratorResult<Message>) => void> = [];
   private done = false;
   private error?: Error;
+  private options: ClaudeAgentOptions;
 
-  constructor(private options: ClaudeAgentOptions = {}) {}
+  constructor(options: ClaudeAgentOptions = {}) {
+    this.options = options;
+  }
 
   async connect(): Promise<void> {
     if (this.child) return;
