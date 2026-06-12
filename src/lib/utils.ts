@@ -3,6 +3,8 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { getDesktopShellClient } from "@/runtime/clients";
 
+export { getProjectName, normalizeProjectPath } from "./path";
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -65,24 +67,6 @@ export function getPrimaryAgents(agents: Agent[]): Agent[] {
     const bIsDefault = b.name === DEFAULT_AGENT_NAME ? 1 : 0;
     return bIsDefault - aIsDefault;
   });
-}
-
-/** Normalize project path for stable workspace/session keys. */
-export function normalizeProjectPath(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) return "";
-  if (/^[/\\]+$/.test(trimmed)) return trimmed[0] ?? trimmed;
-  const windowsDriveRoot = trimmed.match(/^([A-Za-z]:)([/\\]+)$/);
-  if (windowsDriveRoot) {
-    return `${windowsDriveRoot[1]}${trimmed.includes("\\") ? "\\" : "/"}`;
-  }
-  return trimmed.replace(/[/\\]+$/, "");
-}
-
-/** Extract the trailing directory name from an absolute path (cross-platform). */
-export function getProjectName(directory: string, fallback = "repo"): string {
-  const parts = normalizeProjectPath(directory).split(/[/\\]/);
-  return parts[parts.length - 1] || fallback;
 }
 
 /** Safely extract an error message from an unknown catch value. */

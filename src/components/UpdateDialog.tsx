@@ -1,4 +1,4 @@
-import { BaseDialog } from "@/components/ui/base-dialog";
+import { DialogShell } from "@/components/ui/DialogShell";
 import { Button } from "@/components/ui/button";
 import type { UpdateCheckResult } from "@/hooks/use-update-check";
 import { openExternalLink } from "@/lib/utils";
@@ -23,7 +23,7 @@ export function UpdateDialog({ update }: UpdateDialogProps) {
   const description = buildDescription(update);
 
   return (
-    <BaseDialog
+    <DialogShell
       open={open}
       onOpenChange={(nextOpen) => !nextOpen && dismiss()}
       title="Update Available"

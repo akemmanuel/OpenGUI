@@ -2,16 +2,10 @@ import { GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ButtonGroup } from "@/components/ui/ButtonGroup";
+import { DialogShell } from "@/components/ui/DialogShell";
+import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -131,98 +125,19 @@ export function WorktreeDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GitBranch className="size-5" />
-            {t("worktree.newWorktree")}
-          </DialogTitle>
-          <DialogDescription>
-            {t("worktree.createFor")}{" "}
-            <span className="font-medium text-foreground">{repoName}</span>
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-2">
-          {/* Mode toggle */}
-          <div className="grid gap-2">
-            <Label>{t("worktree.branch")}</Label>
-            <div className="flex gap-1">
-              <Button
-                variant={mode === "new" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMode("new")}
-                className="flex-1"
-              >
-                {t("worktree.newBranch")}
-              </Button>
-              <Button
-                variant={mode === "existing" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMode("existing")}
-                className="flex-1"
-              >
-                {t("worktree.existingBranch")}
-              </Button>
-            </div>
-          </div>
-
-          {/* Branch input/selector */}
-          {mode === "new" ? (
-            <div className="grid gap-2">
-              <Label htmlFor="new-branch">{t("worktree.branchName")}</Label>
-              <Input
-                id="new-branch"
-                placeholder="feature/my-feature"
-                value={newBranch}
-                onChange={(e) => setNewBranch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && effectiveBranch && worktreePath) {
-                    void handleCreate();
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              <Label>{t("worktree.selectBranch")}</Label>
-              {loadingBranches ? (
-                <div className="text-sm text-muted-foreground py-2">
-                  {t("worktree.loadingBranches")}
-                </div>
-              ) : (
-                <Select value={existingBranch} onValueChange={setExistingBranch}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("worktree.chooseBranch")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch} value={branch}>
-                        {branch}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          )}
-
-          {/* Path */}
-          <div className="grid gap-2">
-            <Label htmlFor="wt-path">{t("worktree.path")}</Label>
-            <Input
-              id="wt-path"
-              value={worktreePath}
-              onChange={(e) => setWorktreePath(e.target.value)}
-              placeholder={t("worktree.pathPlaceholder")}
-              className="text-xs font-mono"
-            />
-            <p className="text-[11px] text-muted-foreground">{t("worktree.pathHelp")}</p>
-          </div>
-        </div>
-
-        <DialogFooter>
+    <DialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      className="sm:max-w-md"
+      icon={<GitBranch className="size-5" />}
+      title={t("worktree.newWorktree")}
+      description={
+        <>
+          {t("worktree.createFor")} <span className="font-medium text-foreground">{repoName}</span>
+        </>
+      }
+      footer={
+        <>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
@@ -232,8 +147,83 @@ export function WorktreeDialog({
           >
             {creating ? t("worktree.creating") : t("worktree.createWorktree")}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <div className="grid gap-4 py-2">
+        {/* Mode toggle */}
+        <FormField label={t("worktree.branch")}>
+          <ButtonGroup stretch>
+            <Button
+              variant={mode === "new" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMode("new")}
+            >
+              {t("worktree.newBranch")}
+            </Button>
+            <Button
+              variant={mode === "existing" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMode("existing")}
+            >
+              {t("worktree.existingBranch")}
+            </Button>
+          </ButtonGroup>
+        </FormField>
+
+        {/* Branch input/selector */}
+        {mode === "new" ? (
+          <FormField label={t("worktree.branchName")} htmlFor="new-branch">
+            <Input
+              id="new-branch"
+              placeholder="feature/my-feature"
+              value={newBranch}
+              onChange={(e) => setNewBranch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && effectiveBranch && worktreePath) {
+                  void handleCreate();
+                }
+              }}
+            />
+          </FormField>
+        ) : (
+          <FormField label={t("worktree.selectBranch")}>
+            {loadingBranches ? (
+              <div className="text-sm text-muted-foreground py-2">
+                {t("worktree.loadingBranches")}
+              </div>
+            ) : (
+              <Select value={existingBranch} onValueChange={setExistingBranch}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t("worktree.chooseBranch")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </FormField>
+        )}
+
+        {/* Path */}
+        <FormField
+          label={t("worktree.path")}
+          htmlFor="wt-path"
+          description={t("worktree.pathHelp")}
+        >
+          <Input
+            id="wt-path"
+            value={worktreePath}
+            onChange={(e) => setWorktreePath(e.target.value)}
+            placeholder={t("worktree.pathPlaceholder")}
+            className="text-xs font-mono"
+          />
+        </FormField>
+      </div>
+    </DialogShell>
   );
 }

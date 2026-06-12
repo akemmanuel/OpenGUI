@@ -1,36 +1,17 @@
-import type { NativeBackendEvent } from "@/types/electron";
-import type { HarnessCapabilities, HarnessEvent } from "./backend.ts";
-import { normalizeTaggedBackendEvent } from "./shared.ts";
+import {
+  createCliHarnessNormalizer,
+  LOCAL_CLI_WORKSPACE,
+  makeLocalCliCapabilities,
+} from "./cli-harness-factory.ts";
 
-export const PI_CAPABILITIES: HarnessCapabilities = {
-  sessions: true,
-  streaming: true,
+export const PI_CAPABILITIES = makeLocalCliCapabilities({
   messagePaging: false,
-  models: true,
-  agents: false,
   commands: true,
   compact: true,
   fork: true,
-  revert: false,
-  permissions: false,
-  questions: false,
   providerAuth: true,
-  mcp: false,
-  skills: false,
-  config: false,
-  localServer: false,
-};
+});
 
-export const PI_WORKSPACE = {
-  kind: "local-cli",
-  fields: {
-    serverUrl: false,
-    username: false,
-    password: false,
-    directory: true,
-  },
-} as const;
+export const PI_WORKSPACE = LOCAL_CLI_WORKSPACE;
 
-export function normalizePiEvent(event: NativeBackendEvent): HarnessEvent | null {
-  return normalizeTaggedBackendEvent("pi", event, "pi:event");
-}
+export const normalizePiEvent = createCliHarnessNormalizer("pi");
