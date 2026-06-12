@@ -8,6 +8,8 @@ export type SessionIdentityScope = {
 export type SessionIdentityLike = {
   id: string;
   _harnessId?: HarnessId;
+  /** Legacy name used by releases before the Harness terminology migration. */
+  _backendId?: HarnessId;
   _rawId?: string;
 };
 
@@ -34,7 +36,8 @@ export function rawSessionIdForHarness(sessionId: string, harnessId: HarnessId):
 }
 
 export function harnessSessionIdentity(session: SessionIdentityLike): string {
-  const harnessId = session._harnessId ?? parseFrontendSessionId(session.id)?.harnessId;
+  const harnessId =
+    session._harnessId ?? session._backendId ?? parseFrontendSessionId(session.id)?.harnessId;
   if (!harnessId) return session.id;
   const rawId = session._rawId ?? rawSessionIdForHarness(session.id, harnessId);
   return composeFrontendSessionId(harnessId, rawId);

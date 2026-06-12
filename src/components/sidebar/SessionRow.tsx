@@ -1,6 +1,7 @@
 import { BadgeQuestionMark, GitBranch, MessageSquare, ShieldAlert } from "lucide-react";
 import { HARNESS_LABELS } from "@/agents";
 import type { Session } from "@/hooks/agent-state-types";
+import { getSessionHarnessId } from "@/hooks/agent-session-utils";
 import type {
   SessionColor,
   SessionMetaMap,
@@ -14,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { getColorBorderClass, SessionContextMenu } from "@/components/SessionContextMenu";
 import { SessionItemMenu } from "@/components/SidebarItemMenus";
+import { cleanSessionTitle } from "@/lib/session-title";
 
 export function SessionRow({
   session,
@@ -91,6 +93,8 @@ export function SessionRow({
   const tags = meta?.tags ?? [];
   const isPinned = !!meta?.pinnedAt;
   const isNaming = namingSessionIds.has(session.id);
+  const harnessId = getSessionHarnessId(session);
+  const displayTitle = cleanSessionTitle(session.title) || untitledLabel;
   const placement = getSessionPlacementInfo(
     session,
     worktreeParents,
@@ -139,7 +143,7 @@ export function SessionRow({
             isNaming
               ? undefined
               : {
-                  children: session.title || untitledLabel,
+                  children: displayTitle,
                   side: "right",
                   align: "center",
                   hidden: editingSessionId === session.id || isNaming,
@@ -214,12 +218,12 @@ export function SessionRow({
                   startEditing(session.id, session.title || "");
                 }}
               >
-                {session.title || untitledLabel}
+                {displayTitle}
               </span>
             )}
-            {session._harnessId && (
+            {harnessId && (
               <span className="shrink-0 rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground">
-                {HARNESS_LABELS[session._harnessId]}
+                {HARNESS_LABELS[harnessId]}
               </span>
             )}
             {worktreeBranch && (
