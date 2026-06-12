@@ -136,9 +136,9 @@ export function SetupWizard({ onComplete }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-background/90 backdrop-blur-md">
-      <div className="flex min-h-full items-start justify-center px-4 py-4 sm:items-center sm:py-6">
-        <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-[560px] overflow-y-auto rounded-2xl border bg-background p-4 shadow-xl sm:max-h-[calc(100dvh-3rem)] sm:p-5">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-transparent">
+      <div className="flex min-h-full items-start justify-center px-4 py-14 sm:items-center sm:py-16">
+        <div className="relative max-h-[calc(100dvh-7rem)] w-full max-w-[520px] overflow-y-auto rounded-2xl border bg-background/90 p-4 shadow-2xl backdrop-blur-sm sm:max-h-[calc(100dvh-8rem)]">
           <Button
             type="button"
             variant="ghost"
@@ -149,15 +149,14 @@ export function SetupWizard({ onComplete }: Props) {
           >
             <X className="size-4" />
           </Button>
-          <div className="mb-5 text-center">
-            <div className="mb-2 text-xs text-muted-foreground">
+          <div className="mb-4 text-center">
+            <div className="mb-1.5 text-xs text-muted-foreground">
               {Math.max(currentStepNumber, 0) + 1} / 4
             </div>
-            <h1 className="mb-1.5 text-xl font-semibold tracking-tight">{title}</h1>
-            <p className="text-sm text-muted-foreground">{t("setupWizard.privacyNote")}</p>
+            <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
           </div>
 
-          <div className="mb-5 flex justify-center gap-1.5">
+          <div className="mb-4 flex justify-center gap-1.5">
             {[0, 1, 2, 3].map((idx) => (
               <div
                 key={idx}
@@ -174,7 +173,7 @@ export function SetupWizard({ onComplete }: Props) {
           </div>
 
           {step === "harness" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+            <div className="space-y-4">
               {harnessState === "detecting" && (
                 <StatusRow
                   icon={<LoaderCircle className="size-5 animate-spin" />}
@@ -204,7 +203,7 @@ export function SetupWizard({ onComplete }: Props) {
                 />
               )}
 
-              <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="outline" onClick={() => void refreshHarnessStatus()}>
                   <RotateCw className="mr-1.5 size-4" />
                   {t("setupWizard.checkAgain")}
@@ -228,7 +227,7 @@ export function SetupWizard({ onComplete }: Props) {
           )}
 
           {step === "opencode" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+            <div className="space-y-4">
               <StatusRow
                 icon={
                   opencodeInstalled ? (
@@ -244,11 +243,11 @@ export function SetupWizard({ onComplete }: Props) {
                 }
                 description={t("setupWizard.openCodeDescription")}
               />
-              <div className="mt-5 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
                 {t("setupWizard.providerConnectionAfterOpenCode")}
               </div>
               {!opencodeInstalled && (
-                <div className="mt-4 rounded-lg border bg-background p-4">
+                <div className="rounded-lg border bg-background/70 p-3">
                   <div className="mb-2 text-sm font-medium">
                     {t("setupWizard.officialOpenCodeInstaller")}
                   </div>
@@ -260,7 +259,7 @@ export function SetupWizard({ onComplete }: Props) {
                   </p>
                 </div>
               )}
-              <div className="mt-5 flex flex-wrap justify-between gap-2">
+              <div className="flex flex-wrap justify-between gap-2">
                 <Button variant="ghost" onClick={() => setStep("harness")}>
                   {t("common.back")}
                 </Button>
@@ -298,13 +297,13 @@ export function SetupWizard({ onComplete }: Props) {
           )}
 
           {step === "folder" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+            <div className="space-y-4">
               <StatusRow
                 icon={<Folder className="size-5 text-muted-foreground" />}
                 title={t("setupWizard.defaultChatDirectoryTitle")}
                 description={t("setupWizard.defaultChatDirectoryDescription")}
               />
-              <div className="mt-4 flex gap-2">
+              <div className="flex gap-2">
                 <input
                   value={folder}
                   onChange={(event) => setFolder(event.target.value)}
@@ -321,14 +320,14 @@ export function SetupWizard({ onComplete }: Props) {
           )}
 
           {step === "appearance" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+            <div className="space-y-4">
               <AppearanceSetting />
               <StepNav onBack={() => setStep("folder")} onNext={() => setStep("finish")} />
             </div>
           )}
 
           {step === "finish" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+            <div className="space-y-4">
               <StatusRow
                 icon={<Check className="size-5 text-emerald-500" />}
                 title={
@@ -342,7 +341,7 @@ export function SetupWizard({ onComplete }: Props) {
                     : t("setupWizard.setupHarnessLaterDescription")
                 }
               />
-              <div className="mt-5 flex justify-between gap-2">
+              <div className="flex justify-between gap-2">
                 <Button variant="outline" onClick={() => setStep("appearance")}>
                   {t("common.back")}
                 </Button>
@@ -357,24 +356,42 @@ export function SetupWizard({ onComplete }: Props) {
 }
 
 function HarnessInventorySummary({ inventories }: { inventories: HarnessInventory[] }) {
+  const { t } = useTranslation();
+
   return (
-    <div className="mt-5 rounded-lg border bg-muted/20 p-3">
+    <div className="rounded-xl border bg-background/60 p-3">
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Harness inventory
+        {t("setupWizard.agentStatus")}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {inventories.map((inventory) => (
-          <div key={inventory.harnessId} className="flex items-start justify-between gap-3 text-sm">
-            <div>
+          <div
+            key={inventory.harnessId}
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <div className="min-w-0">
               <div className="font-medium">{inventory.displayName}</div>
-              <div className="text-xs text-muted-foreground">{inventory.message}</div>
+              {inventory.status === "ready" && inventory.models.length > 0 ? (
+                <div className="truncate text-xs text-muted-foreground">
+                  {t("setupWizard.modelsAvailable", { count: inventory.models.length })}
+                </div>
+              ) : null}
             </div>
-            <div className="shrink-0 text-xs text-muted-foreground">
-              {inventory.status === "ready"
-                ? `${inventory.models.length} models`
+            <div
+              className={[
+                "shrink-0 rounded-full px-2 py-0.5 text-xs",
+                inventory.status === "ready" && inventory.models.length > 0
+                  ? "bg-emerald-500/10 text-emerald-600"
+                  : inventory.installed
+                    ? "bg-amber-500/10 text-amber-600"
+                    : "bg-muted text-muted-foreground",
+              ].join(" ")}
+            >
+              {inventory.status === "ready" && inventory.models.length > 0
+                ? t("setupWizard.ready")
                 : inventory.installed
-                  ? "not model-ready"
-                  : "not found"}
+                  ? t("setupWizard.needsModels")
+                  : t("setupWizard.notFound")}
             </div>
           </div>
         ))}
@@ -394,12 +411,12 @@ function StatusRow({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{title}</div>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
       </div>
     </div>
   );
@@ -409,7 +426,7 @@ function StepNav({ onBack, onNext }: { onBack: () => void; onNext: () => void })
   const { t } = useTranslation();
 
   return (
-    <div className="mt-5 flex justify-between gap-2">
+    <div className="flex justify-between gap-2">
       <Button variant="outline" onClick={onBack}>
         {t("common.back")}
       </Button>

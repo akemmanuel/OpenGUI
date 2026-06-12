@@ -1355,12 +1355,15 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   }
 
   async function ensureConnectionForDirectory(windowState, sender, directory, workspaceId) {
-    if (typeof directory !== "string" || !directory.trim()) return null;
+    const effectiveDirectory =
+      typeof directory === "string" && directory.trim() && directory.trim() !== "/"
+        ? directory.trim()
+        : homedir();
     const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
     return await connectConnectionForDirectory(
       windowState,
       sender,
-      directory,
+      effectiveDirectory,
       workspaceId,
       baseConfig,
     );
