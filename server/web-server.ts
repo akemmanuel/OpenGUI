@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
 import {
@@ -425,6 +425,13 @@ function parseAllowedRoots() {
 
 const allowedRoots = parseAllowedRoots();
 
+function isWithinAllowedRoot(path: string) {
+  return allowedRoots.some((root) => {
+    const relativePath = relative(root, path);
+    return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+  });
+}
+
 function parsePositiveIntegerEnv(name: string, fallback: number) {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -488,8 +495,7 @@ async function resolveSafeDirectory(inputPath: string | null) {
   const actual = await realpath(requested);
   const info = await stat(actual);
   if (!info.isDirectory()) throw new Error("Path is not a directory");
-  const allowed = allowedRoots.some((root) => actual === root || actual.startsWith(`${root}/`));
-  if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+  if (!isWithinAllowedRoot(actual)) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
   return actual;
 }
 
@@ -501,7 +507,7 @@ async function listServerDirectories(inputPath: string | null) {
     .map((entry) => ({ name: entry.name, path: join(path, entry.name), type: "dir" as const }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const parent = dirname(path);
-  const canGoUp = allowedRoots.some((root) => parent === root || parent.startsWith(`${root}/`));
+  const canGoUp = isWithinAllowedRoot(parent);
   return { path, parent: canGoUp ? parent : null, roots: allowedRoots, entries: dirs };
 }
 

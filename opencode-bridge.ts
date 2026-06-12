@@ -2305,9 +2305,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   // -----------------------------------------------------------------------
 
   function getSkillsCli() {
+    const command = process.platform === "win32" ? "npx.cmd" : "npx";
     try {
-      execSync("npx skills --version", { stdio: "ignore", timeout: 10_000 });
-      return "npx";
+      execSync(`${command} skills --version`, { stdio: "ignore", timeout: 10_000 });
+      return command;
     } catch {
       return null;
     }
@@ -2323,10 +2324,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const args = ["skills", "add", source, "-y"];
       if (globalScope) args.push("-g");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const workingDirectory = globalScope || !cwd || cwd === "/" ? homedir() : cwd;
       const child = spawn(cli, args, {
-        cwd: globalScope ? homedir() : cwd,
+        cwd: workingDirectory,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        shell: process.platform === "win32",
         windowsHide: true,
       });
 
@@ -2375,10 +2378,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const args = ["skills", "rm", skillName, "-y"];
       if (globalScope) args.push("-g");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const workingDirectory =
+        globalScope || !directory || directory === "/" ? homedir() : directory;
       const child = spawn(cli, args, {
-        cwd: globalScope ? homedir() : directory,
+        cwd: workingDirectory,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        shell: process.platform === "win32",
         windowsHide: true,
       });
 
@@ -2417,10 +2423,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (globalScope) args.push("-g");
       args.push("-y");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const workingDirectory =
+        globalScope || !directory || directory === "/" ? homedir() : directory;
       const child = spawn(cli, args, {
-        cwd: globalScope ? homedir() : directory,
+        cwd: workingDirectory,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        shell: process.platform === "win32",
         windowsHide: true,
       });
 
