@@ -39,6 +39,14 @@ function hasInstalledHarness(inventories: HarnessInventory[]) {
   return inventories.some((inventory) => inventory.installed);
 }
 
+function hasUsableHarness(inventories: HarnessInventory[]) {
+  return hasModelReadyHarness(inventories) || hasInstalledHarness(inventories);
+}
+
+function harnessStateFromInventories(inventories: HarnessInventory[]): HarnessState {
+  return hasUsableHarness(inventories) ? "ready" : "none";
+}
+
 function stepNumber(step: Step) {
   return ["harness", "folder", "finish"].indexOf(step === "opencode" ? "harness" : step);
 }
@@ -57,7 +65,7 @@ export function SetupWizard({ onComplete }: Props) {
   const opencodeInstalled = inventories.some(
     (inventory) => inventory.harnessId === "opencode" && inventory.installed,
   );
-  const canUseAnyHarness = hasModelReadyHarness(inventories) || hasInstalledHarness(inventories);
+  const canUseAnyHarness = hasUsableHarness(inventories);
 
   const title = useMemo(() => {
     switch (step) {
@@ -77,9 +85,7 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       const result = await client.runtime.getHarnessInventories().catch(() => []);
       setInventories(result);
-      setHarnessState(
-        hasModelReadyHarness(result) || hasInstalledHarness(result) ? "ready" : "none",
-      );
+      setHarnessState(harnessStateFromInventories(result));
       return result;
     } catch {
       setInventories([]);
