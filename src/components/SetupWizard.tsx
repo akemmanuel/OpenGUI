@@ -40,7 +40,13 @@ function hasInstalledHarness(inventories: HarnessInventory[]) {
 }
 
 function stepNumber(step: Step) {
-  return ["harness", "folder", "finish"].indexOf(step === "opencode" ? "harness" : step);
+  const stepToProgressDot: Record<Step, number> = {
+    harness: 0,
+    opencode: 0,
+    folder: 1,
+    finish: 2,
+  };
+  return stepToProgressDot[step];
 }
 
 export function SetupWizard({ onComplete }: Props) {
@@ -72,16 +78,18 @@ export function SetupWizard({ onComplete }: Props) {
     }
   }, [canUseAnyHarness, step, t]);
 
-  async function refreshHarnessStatus() {
+  async function refreshHarnessStatus(shouldUpdate = () => true) {
     setHarnessState("detecting");
     try {
       const result = await client.runtime.getHarnessInventories().catch(() => []);
+      if (!shouldUpdate()) return result;
       setInventories(result);
       setHarnessState(
         hasModelReadyHarness(result) || hasInstalledHarness(result) ? "ready" : "none",
       );
       return result;
     } catch {
+      if (!shouldUpdate()) return [];
       setInventories([]);
       setHarnessState("error");
       return [];
@@ -91,14 +99,7 @@ export function SetupWizard({ onComplete }: Props) {
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
-      const result = await refreshHarnessStatus();
-      if (cancelled) return;
-      setInventories(result);
-      setHarnessState(
-        hasModelReadyHarness(result) || hasInstalledHarness(result) ? "ready" : "none",
-      );
-    })();
+    void refreshHarnessStatus(() => !cancelled);
 
     return () => {
       cancelled = true;
