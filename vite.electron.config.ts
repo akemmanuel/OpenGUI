@@ -11,7 +11,6 @@ const entries = {
   main: "main.ts",
   preload: "preload.ts",
   "settings-store": "settings-store.ts",
-  "main/update-manager": "main/update-manager.ts",
   "lib/window-broadcast": "lib/window-broadcast.ts",
 };
 

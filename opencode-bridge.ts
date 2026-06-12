@@ -15,96 +15,12 @@ import { readdir, readFile } from "node:fs/promises";
 import { Agent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import { homedir } from "node:os";
-import { basename, dirname, join, normalize, resolve } from "node:path";
+import { basename, join, normalize } from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { pollUntilEffect, runEffect, sleepEffect } from "./lib/effect-runtime.ts";
+import { getOpenCodeProviderAuthKinds } from "./opencode-config.ts";
+import { OpencodeProjectRegistry } from "./opencode-project-registry.ts";
 import { resolveHarnessCli } from "./server/harness-inventory.ts";
-
-class OpencodeProjectRegistry {
-  connections = new Map();
-  questionProjectKeys = new Map();
-
-  createProjectKey(_workspaceId, directory) {
-    return normalize(String(directory || "").trim());
-  }
-
-  getWorkspaceIdFromProjectKey(_projectKey) {
-    return "";
-  }
-
-  setConnection(target, connection) {
-    const projectKey = this.createProjectKey(null, target.directory);
-    this.connections.set(projectKey, connection);
-    return { projectKey, connection };
-  }
-
-  getConnection(projectKey) {
-    return this.connections.get(projectKey) ?? null;
-  }
-
-  deleteConnection(projectKey) {
-    const connection = this.connections.get(projectKey) ?? null;
-    if (connection) this.connections.delete(projectKey);
-    return connection;
-  }
-
-  getExactConnectionEntry(target) {
-    if (typeof target.directory !== "string" || !target.directory.trim()) return null;
-    const projectKey = this.createProjectKey(null, target.directory);
-    const connection = this.connections.get(projectKey);
-    return connection ? { projectKey, connection } : null;
-  }
-
-  getQuestionProjectKey(requestId) {
-    const key = String(requestId ?? "").trim();
-    return key ? (this.questionProjectKeys.get(key) ?? null) : null;
-  }
-
-  getMappedQuestionConnectionEntry(requestId) {
-    const projectKey = this.getQuestionProjectKey(requestId);
-    if (!projectKey) return null;
-    const connection = this.connections.get(projectKey);
-    return connection ? { projectKey, connection } : null;
-  }
-
-  rememberQuestion(projectKey, requestId) {
-    const key = String(requestId ?? "").trim();
-    if (key) this.questionProjectKeys.set(key, projectKey);
-  }
-
-  deleteQuestion(requestId) {
-    const key = String(requestId ?? "").trim();
-    if (key) this.questionProjectKeys.delete(key);
-  }
-
-  removeProject(projectKey) {
-    const connection = this.deleteConnection(projectKey);
-    const removedQuestionIds = [];
-    for (const [requestId, candidateProjectKey] of this.questionProjectKeys) {
-      if (candidateProjectKey !== projectKey) continue;
-      removedQuestionIds.push(requestId);
-      this.questionProjectKeys.delete(requestId);
-    }
-    return { connection, removedSessionIds: [], removedQuestionIds };
-  }
-
-  entries() {
-    return this.connections.entries();
-  }
-
-  values() {
-    return this.connections.values();
-  }
-
-  clear() {
-    this.connections.clear();
-    this.questionProjectKeys.clear();
-  }
-
-  get size() {
-    return this.connections.size;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Local server management
@@ -112,80 +28,29 @@ class OpencodeProjectRegistry {
 
 const LOCAL_SERVER_PORT = Number.parseInt(process.env.OPENGUI_OPENCODE_PORT ?? "4096", 10);
 const LOCAL_SERVER_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}`;
+const LOCAL_HEALTH_TIMEOUT = 3000; // ms
 const STARTUP_POLL_INTERVAL = 500; // ms
 const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
 const DETACHED_LAUNCH_GRACE_TIMEOUT = 10_000; // ms
-const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json");
-const OPENCODE_CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json");
+const UNHEALTHY_LISTENER_GRACE_TIMEOUT = 5_000; // ms
 
-async function readJsonIfExists(path) {
-  try {
-    return JSON.parse(await readFile(path, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
-async function getOpenCodeConfigPaths(directory) {
-  const paths = [];
-  if (directory) {
-    let current = resolve(directory);
-    while (true) {
-      paths.push(join(current, "opencode.json"));
-      const parent = dirname(current);
-      if (parent === current) break;
-      current = parent;
-    }
-  }
-  paths.push(join(homedir(), "opencode.json"));
-  paths.push(OPENCODE_CONFIG_PATH);
-  return Array.from(new Set(paths));
-}
-
-async function getOpenCodeProviderAuthKinds(directory, providers, connected) {
-  const authKindByProvider = {};
-  const connectedSet = new Set(Array.isArray(connected) ? connected : []);
-  for (const provider of providers || []) {
-    if (provider?.source === "env") authKindByProvider[provider.id] = "env";
-  }
-
-  const authData = (await readJsonIfExists(OPENCODE_AUTH_PATH)) || {};
-  for (const [providerID, auth] of Object.entries(authData)) {
-    if (!connectedSet.has(providerID)) continue;
-    if (auth?.type === "oauth") authKindByProvider[providerID] = "subscription";
-    else if (auth?.type === "api" || auth?.type === "wellknown")
-      authKindByProvider[providerID] = "api";
-  }
-
-  for (const path of await getOpenCodeConfigPaths(directory)) {
-    const config = await readJsonIfExists(path);
-    const providerConfig = config?.provider;
-    if (!providerConfig || typeof providerConfig !== "object") continue;
-    for (const [providerID, entry] of Object.entries(providerConfig)) {
-      if (!connectedSet.has(providerID) || authKindByProvider[providerID]) continue;
-      const options = entry?.options;
-      const hasLiteralApiKey =
-        typeof options?.apiKey === "string" && options.apiKey.trim().length > 0;
-      const hasConfiguredEnv = Array.isArray(entry?.env) && entry.env.length > 0;
-      if (hasLiteralApiKey) authKindByProvider[providerID] = "api";
-      else if (hasConfiguredEnv) authKindByProvider[providerID] = "env";
-      else authKindByProvider[providerID] = "config";
-    }
-  }
-
-  return authKindByProvider;
-}
+let localServerStartPromise = null;
+let localServerStopPromise = null;
 
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {
   return resolveHarnessCli("opencode").resolvedPath;
 }
 
+function isLocalOpenCodeServerUrl(baseUrl) {
+  return baseUrl?.replace(/\/+$/, "") === LOCAL_SERVER_URL;
+}
+
 /** Fetch health info from the local server. Returns { healthy, version } or defaults. */
-async function fetchLocalHealth() {
+async function fetchLocalHealth(timeoutMs = LOCAL_HEALTH_TIMEOUT) {
   try {
     const res = await fetch(`${LOCAL_SERVER_URL}/global/health`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return { healthy: false, version: null };
     const data = await res.json();
@@ -207,8 +72,28 @@ function getBinaryVersion(binaryPath) {
   }
 }
 
-/** Kill the opencode server process listening on LOCAL_SERVER_PORT. Returns true if killed. */
-async function killServerProcess() {
+function getServerProcessCommand(pid) {
+  if (!pid || Number.isNaN(pid)) return null;
+  try {
+    if (process.platform === "win32") {
+      const out = execSync(`wmic process where processid=${pid} get CommandLine /value`, {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      return out.match(/CommandLine=(.*)/i)?.[1]?.trim() || null;
+    }
+
+    const out = execSync(`ps -p ${pid} -o command=`, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function findServerProcess() {
   const isWindows = process.platform === "win32";
   let pid = null;
 
@@ -256,24 +141,42 @@ async function killServerProcess() {
     }
   }
 
-  if (!pid || Number.isNaN(pid)) return false;
+  if (!pid || Number.isNaN(pid)) return null;
+  return { pid, command: getServerProcessCommand(pid) };
+}
+
+function isLikelyOpenCodeProcess(processInfo) {
+  return /(^|[\\/\s])opencode(\.exe)?([\s]|$)/i.test(processInfo?.command ?? "");
+}
+
+function formatServerProcess(processInfo) {
+  if (!processInfo) return `port ${LOCAL_SERVER_PORT}`;
+  const command = processInfo.command ? ` (${processInfo.command})` : "";
+  return `PID ${processInfo.pid}${command}`;
+}
+
+/** Kill the opencode server process listening on LOCAL_SERVER_PORT. Returns true if killed. */
+async function killServerProcess(pid = null) {
+  const isWindows = process.platform === "win32";
+  const processInfo = pid ? { pid, command: getServerProcessCommand(pid) } : findServerProcess();
+  if (!processInfo?.pid || Number.isNaN(processInfo.pid)) return false;
 
   try {
-    process.kill(pid, isWindows ? "SIGKILL" : "SIGTERM");
+    process.kill(processInfo.pid, isWindows ? "SIGKILL" : "SIGTERM");
   } catch {
     return false;
   }
 
   await runEffect(sleepEffect(1000));
 
-  if ((await fetchLocalHealth()).healthy) {
+  if ((await fetchLocalHealth(1000)).healthy) {
     try {
-      process.kill(pid, "SIGKILL");
+      process.kill(processInfo.pid, "SIGKILL");
     } catch {
       // already dead
     }
     await runEffect(sleepEffect(500));
-    if ((await fetchLocalHealth()).healthy) return false;
+    if ((await fetchLocalHealth(1000)).healthy) return false;
   }
 
   return true;
@@ -283,7 +186,7 @@ async function killServerProcess() {
 async function waitForHealthy(timeoutMs = STARTUP_TIMEOUT) {
   await runEffect(
     pollUntilEffect({
-      attempt: async () => (await fetchLocalHealth()).healthy,
+      attempt: async () => (await fetchLocalHealth(1000)).healthy,
       intervalMs: STARTUP_POLL_INTERVAL,
       timeoutMs,
       timeoutMessage: `Server did not become healthy within ${timeoutMs / 1000}s`,
@@ -975,11 +878,11 @@ export class OpenCodeConnection {
   }
 }
 
-async function startLocalOpenCodeServer() {
+async function doStartLocalOpenCodeServer() {
   try {
     const binary = resolveOpencodeBinary();
 
-    // If already running, check version matches the local binary
+    // If already running, check version matches the local binary.
     const health = await fetchLocalHealth();
     if (health.healthy) {
       const serverVer = health.version;
@@ -987,7 +890,7 @@ async function startLocalOpenCodeServer() {
       if (!serverVer || !binaryVer || serverVer === binaryVer) {
         return { success: true, data: { alreadyRunning: true } };
       }
-      // Version mismatch - kill the old server and respawn below
+      // Version mismatch - kill the old server and respawn below.
       const killed = await killServerProcess();
       if (!killed) {
         return {
@@ -995,7 +898,46 @@ async function startLocalOpenCodeServer() {
           error: `A stale OpenCode server is already running on port ${LOCAL_SERVER_PORT} with version ${serverVer}, but it could not be stopped so version ${binaryVer} can start. Please stop the existing server and try again.`,
         };
       }
+    } else {
+      const listener = findServerProcess();
+      if (listener) {
+        if (!isLikelyOpenCodeProcess(listener)) {
+          return {
+            success: false,
+            error: `Port ${LOCAL_SERVER_PORT} is already in use by ${formatServerProcess(listener)}, but it is not a healthy OpenCode server. Stop that process or set OPENGUI_OPENCODE_PORT to a free port.`,
+          };
+        }
+
+        console.warn(
+          `[opencode-bridge] Found an OpenCode process listening on port ${LOCAL_SERVER_PORT} before the health endpoint was ready (${formatServerProcess(listener)}). Waiting briefly before deciding it is stale...`,
+        );
+        try {
+          await waitForHealthy(UNHEALTHY_LISTENER_GRACE_TIMEOUT);
+          const recoveredHealth = await fetchLocalHealth(1000);
+          if (recoveredHealth.healthy) {
+            const serverVer = recoveredHealth.version;
+            const binaryVer = binary ? getBinaryVersion(binary) : null;
+            if (!serverVer || !binaryVer || serverVer === binaryVer) {
+              return { success: true, data: { alreadyRunning: true } };
+            }
+          }
+        } catch {
+          // Fall through and stop the stale listener below.
+        }
+
+        console.warn(
+          `[opencode-bridge] Stopping stale OpenCode process on port ${LOCAL_SERVER_PORT}: ${formatServerProcess(listener)}`,
+        );
+        const killed = await killServerProcess(listener.pid);
+        if (!killed) {
+          return {
+            success: false,
+            error: `An unhealthy OpenCode process is already listening on port ${LOCAL_SERVER_PORT} (${formatServerProcess(listener)}), but OpenGUI could not stop it. Stop it manually and try again.`,
+          };
+        }
+      }
     }
+
     console.info(
       `[opencode-bridge] Resolved binary: ${binary ?? "(not found)"} (platform: ${process.platform})`,
     );
@@ -1024,7 +966,7 @@ async function startLocalOpenCodeServer() {
       }
     };
 
-    // .cmd files on Windows require shell:true for spawn() to execute them
+    // .cmd files on Windows require shell:true for spawn() to execute them.
     const needsShell = process.platform === "win32" && binary.toLowerCase().endsWith(".cmd");
     const child = spawn(binary, serverArgs, {
       detached: process.platform !== "win32",
@@ -1043,14 +985,14 @@ async function startLocalOpenCodeServer() {
 
     child.unref();
 
-    // If spawn itself errors (e.g. ENOENT)
+    // If spawn itself errors (e.g. ENOENT).
     let spawnError = null;
     child.on("error", (err) => {
       spawnError = err;
       console.error("[opencode-bridge] Failed to spawn opencode server:", err);
     });
 
-    // Wait for the server to become healthy
+    // Wait for the server to become healthy.
     console.info(
       `[opencode-bridge] Waiting for server to become healthy (timeout: ${STARTUP_TIMEOUT / 1000}s)...`,
     );
@@ -1084,7 +1026,7 @@ async function startLocalOpenCodeServer() {
         return { success: true, data: { alreadyRunning: false } };
       }
 
-      // Detach the stdio streams before returning the error
+      // Detach the stdio streams before returning the error.
       if (child.stdout) {
         child.stdout.removeAllListeners("data");
         child.stdout.destroy();
@@ -1125,11 +1067,46 @@ async function startLocalOpenCodeServer() {
   }
 }
 
-async function stopLocalOpenCodeServer() {
+async function startLocalOpenCodeServer() {
+  if (localServerStopPromise) {
+    console.info("[opencode-bridge] Waiting for in-flight OpenCode stop before starting...");
+    await localServerStopPromise.catch(() => {});
+  }
+
+  if (localServerStartPromise) {
+    console.info("[opencode-bridge] Joining in-flight OpenCode server start...");
+    return await localServerStartPromise;
+  }
+
+  localServerStartPromise = doStartLocalOpenCodeServer().finally(() => {
+    localServerStartPromise = null;
+  });
+  return await localServerStartPromise;
+}
+
+async function doStopLocalOpenCodeServer() {
   try {
-    if (!(await fetchLocalHealth()).healthy) {
-      return { success: true, data: { alreadyStopped: true } };
+    const health = await fetchLocalHealth();
+    if (!health.healthy) {
+      const listener = findServerProcess();
+      if (!listener) return { success: true, data: { alreadyStopped: true } };
+      if (!isLikelyOpenCodeProcess(listener)) {
+        return {
+          success: false,
+          error: `Port ${LOCAL_SERVER_PORT} is in use by ${formatServerProcess(listener)}, but it is not a healthy OpenCode server. Stop that process manually or set OPENGUI_OPENCODE_PORT to a free port.`,
+        };
+      }
+
+      const killedUnhealthy = await killServerProcess(listener.pid);
+      if (!killedUnhealthy) {
+        return {
+          success: false,
+          error: `Unhealthy OpenCode process could not be stopped: ${formatServerProcess(listener)}`,
+        };
+      }
+      return { success: true, data: { stoppedUnhealthy: true } };
     }
+
     const killed = await killServerProcess();
     if (!killed) {
       return {
@@ -1143,6 +1120,20 @@ async function stopLocalOpenCodeServer() {
   }
 }
 
+async function stopLocalOpenCodeServer() {
+  if (localServerStartPromise) {
+    console.info("[opencode-bridge] Waiting for in-flight OpenCode start before stopping...");
+    await localServerStartPromise.catch(() => {});
+  }
+
+  if (localServerStopPromise) return await localServerStopPromise;
+
+  localServerStopPromise = doStopLocalOpenCodeServer().finally(() => {
+    localServerStopPromise = null;
+  });
+  return await localServerStopPromise;
+}
+
 // ---------------------------------------------------------------------------
 // Setup: called from main.ts with (ipcMain, mainWindow)
 // ---------------------------------------------------------------------------
@@ -1150,6 +1141,7 @@ async function stopLocalOpenCodeServer() {
 export function setupOpenCodeBridge(ipcMain, _getWindows) {
   /** @type {Map<number, {
    *   projectRegistry: OpencodeProjectRegistry<OpenCodeConnection>,
+   *   pendingConnections: Map<string, Promise<OpenCodeConnection>>,
    *   serverConfig: { baseUrl: string, username?: string, password?: string } | null,
    * }>} */
   const windowStates = new Map();
@@ -1160,12 +1152,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (state) return state;
     state = {
       projectRegistry: new OpencodeProjectRegistry(),
+      pendingConnections: new Map(),
       serverConfig: null,
     };
     windowStates.set(key, state);
     sender.once("destroyed", () => {
       const current = windowStates.get(key);
       if (!current) return;
+      current.pendingConnections.clear();
       for (const conn of current.projectRegistry.values()) {
         conn.teardown();
       }
@@ -1205,6 +1199,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   }
 
   function createConnection(windowState, sender, directory, workspaceId) {
+    const projectKey = makeProjectKey(windowState, workspaceId, directory);
     const conn = new OpenCodeConnection((event) => {
       if (windowState.projectRegistry.getConnection(projectKey) !== conn) return;
       if (event?.type === "opencode:event") {
@@ -1221,10 +1216,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       }
       sendEvent(sender, { ...event, directory, workspaceId });
     });
-    const { projectKey } = windowState.projectRegistry.setConnection(
-      { directory, workspaceId },
-      conn,
-    );
+    windowState.projectRegistry.setConnection({ directory, workspaceId }, conn);
     return conn;
   }
 
@@ -1280,23 +1272,98 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     return getConnectionEntryForDirectory(windowState, directory, workspaceId)?.connection ?? null;
   }
 
-  async function ensureConnectionForDirectory(windowState, sender, directory, workspaceId) {
-    const existing = getConnectionEntryForDirectory(windowState, directory, workspaceId);
-    if (existing) return existing.connection;
+  function teardownConnectionIfCurrent(windowState, projectKey, conn) {
+    if (!conn) return;
+    if (windowState.projectRegistry.getConnection(projectKey) === conn) {
+      windowState.projectRegistry.deleteConnection(projectKey);
+    }
+    conn.teardown();
+  }
+
+  async function connectConnectionForDirectory(
+    windowState,
+    sender,
+    directory,
+    workspaceId,
+    config,
+    { replaceExisting = false } = {},
+  ) {
     if (typeof directory !== "string" || !directory.trim()) return null;
 
-    const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
-    const config = normalizeServerConfig({ ...baseConfig, directory });
-    if (config.baseUrl?.replace(/\/+$/, "") === LOCAL_SERVER_URL) {
-      const started = await startLocalOpenCodeServer();
-      if (!started?.success) {
-        throw new Error(started?.error || "Failed to start local OpenCode server");
+    const normalizedDirectory = directory.trim();
+    const projectKey = makeProjectKey(windowState, workspaceId, normalizedDirectory);
+
+    if (!replaceExisting) {
+      const pending = windowState.pendingConnections.get(projectKey);
+      if (pending) return await pending;
+
+      const existing = getConnectionEntryForDirectory(
+        windowState,
+        normalizedDirectory,
+        workspaceId,
+      );
+      if (existing) return existing.connection;
+    } else {
+      const pending = windowState.pendingConnections.get(projectKey);
+      if (pending) await pending.catch(() => {});
+    }
+
+    const connectionPromise = (async () => {
+      let conn = null;
+      try {
+        if (replaceExisting) {
+          const existing = windowState.projectRegistry.deleteConnection(projectKey);
+          if (existing) existing.teardown();
+        } else {
+          const existing = getConnectionEntryForDirectory(
+            windowState,
+            normalizedDirectory,
+            workspaceId,
+          );
+          if (existing) return existing.connection;
+        }
+
+        const normalizedConfig = normalizeServerConfig({
+          ...config,
+          directory: normalizedDirectory,
+        });
+        if (isLocalOpenCodeServerUrl(normalizedConfig.baseUrl)) {
+          const started = await startLocalOpenCodeServer();
+          if (!started?.success) {
+            throw new Error(started?.error || "Failed to start local OpenCode server");
+          }
+        }
+
+        conn = createConnection(windowState, sender, normalizedDirectory, workspaceId);
+        await conn.connect(normalizedConfig);
+        windowState.serverConfig = normalizedConfig;
+        return conn;
+      } catch (err) {
+        teardownConnectionIfCurrent(windowState, projectKey, conn);
+        throw err;
+      }
+    })();
+
+    windowState.pendingConnections.set(projectKey, connectionPromise);
+    try {
+      return await connectionPromise;
+    } finally {
+      if (windowState.pendingConnections.get(projectKey) === connectionPromise) {
+        windowState.pendingConnections.delete(projectKey);
       }
     }
-    const conn = createConnection(windowState, sender, directory, workspaceId);
-    await conn.connect(config);
-    windowState.serverConfig = config;
-    return conn;
+  }
+
+  async function ensureConnectionForDirectory(windowState, sender, directory, workspaceId) {
+    if (typeof directory !== "string" || !directory.trim()) return null;
+    const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
+    return await connectConnectionForDirectory(
+      windowState,
+      sender,
+      directory,
+      workspaceId,
+      baseConfig,
+    );
   }
 
   // --- IPC handler factories (DRY helpers to eliminate boilerplate) ---
@@ -1557,32 +1624,30 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (!directory) {
       return { success: false, error: "Directory is required" };
     }
-    const normalizedConfig = normalizeServerConfig(config);
-    const projectKey = makeProjectKey(windowState, config.workspaceId, directory);
+    const normalizedConfig = normalizeServerConfig({ ...config, directory });
     try {
-      const existing = windowState.projectRegistry.deleteConnection(projectKey);
-      if (existing) {
-        existing.teardown();
-      }
-      const conn = createConnection(windowState, event.sender, directory, config.workspaceId);
-      await conn.connect(normalizedConfig);
-      windowState.serverConfig = normalizedConfig;
+      const conn = await connectConnectionForDirectory(
+        windowState,
+        event.sender,
+        directory,
+        config.workspaceId,
+        normalizedConfig,
+        { replaceExisting: true },
+      );
       return { success: true, status: conn.getStatus() };
     } catch (err) {
-      const failed = windowState.projectRegistry.deleteConnection(projectKey);
-      if (failed) {
-        failed.teardown();
-      }
       return { success: false, error: err.message ?? String(err) };
     }
   });
 
-  ipcMain.handle("opencode:project:remove", (event, directory, workspaceId) => {
+  ipcMain.handle("opencode:project:remove", async (event, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
     if (typeof directory !== "string" || !directory.trim()) {
       return { success: false, error: "Directory is required" };
     }
     const projectKey = makeProjectKey(windowState, workspaceId, directory);
+    const pending = windowState.pendingConnections.get(projectKey);
+    if (pending) await pending.catch(() => {});
     const { connection } = windowState.projectRegistry.removeProject(projectKey);
     if (connection) {
       connection.teardown();
@@ -1593,8 +1658,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     return { success: true };
   });
 
-  ipcMain.handle("opencode:disconnect", (event) => {
+  ipcMain.handle("opencode:disconnect", async (event) => {
     const windowState = getWindowState(event.sender);
+    await Promise.all(
+      [...windowState.pendingConnections.values()].map((pending) => pending.catch(() => {})),
+    );
+    windowState.pendingConnections.clear();
     for (const conn of windowState.projectRegistry.values()) {
       conn.teardown();
     }
@@ -2236,9 +2305,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   // -----------------------------------------------------------------------
 
   function getSkillsCli() {
+    const command = process.platform === "win32" ? "npx.cmd" : "npx";
     try {
-      execSync("npx skills --version", { stdio: "ignore", timeout: 10_000 });
-      return "npx";
+      execSync(`${command} skills --version`, { stdio: "ignore", timeout: 10_000 });
+      return command;
     } catch {
       return null;
     }
@@ -2254,10 +2324,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const args = ["skills", "add", source, "-y"];
       if (globalScope) args.push("-g");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const workingDirectory = globalScope || !cwd || cwd === "/" ? homedir() : cwd;
       const child = spawn(cli, args, {
-        cwd: globalScope ? homedir() : cwd,
+        cwd: workingDirectory,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        shell: process.platform === "win32",
         windowsHide: true,
       });
 
@@ -2306,10 +2378,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       const args = ["skills", "rm", skillName, "-y"];
       if (globalScope) args.push("-g");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const workingDirectory =
+        globalScope || !directory || directory === "/" ? homedir() : directory;
       const child = spawn(cli, args, {
-        cwd: globalScope ? homedir() : directory,
+        cwd: workingDirectory,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        shell: process.platform === "win32",
         windowsHide: true,
       });
 
@@ -2348,10 +2423,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (globalScope) args.push("-g");
       args.push("-y");
       const env = { ...process.env, DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+      const workingDirectory =
+        globalScope || !directory || directory === "/" ? homedir() : directory;
       const child = spawn(cli, args, {
-        cwd: globalScope ? homedir() : directory,
+        cwd: workingDirectory,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        shell: process.platform === "win32",
         windowsHide: true,
       });
 
@@ -2497,6 +2575,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   return {
     async restart() {
       for (const state of windowStates.values()) {
+        await Promise.all(
+          [...state.pendingConnections.values()].map((pending) => pending.catch(() => {})),
+        );
+        state.pendingConnections.clear();
         for (const conn of state.projectRegistry.values()) conn.teardown();
         state.projectRegistry.clear();
       }

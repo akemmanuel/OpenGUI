@@ -8,7 +8,6 @@ import type {
   GitMergeResult,
   GitWorktree,
   HarnessInventory,
-  InstallResult,
   ProvidersData,
   SelectedModel,
   WorktreeSetupDetection,
@@ -311,7 +310,6 @@ export interface OpenGuiClient {
   runtime: {
     getHomeDir(): Promise<string>;
     getHarnessInventories(): Promise<HarnessInventory[]>;
-    installBackend(harnessId: HarnessId): Promise<InstallResult>;
   };
   desktop: {
     openDirectory(): Promise<string | null>;

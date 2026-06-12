@@ -1,9 +1,10 @@
 import { ExternalLink, GitMerge } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { NoProjectConnected, NoSessionSelected } from "@/components/EmptyChatStates";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -12,37 +13,24 @@ import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
   HarnessProvider,
-  type QueueMode,
-  resolveServerDefaultModel,
   useActions,
   useConnectionState,
   useMessages,
   useModelState,
   useSessionState,
 } from "@/hooks/use-agent-state";
-import {
-  isEditableTarget,
-  isInDialog,
-  isModKey,
-  useKeyboardShortcuts,
-  type KeyboardShortcut,
-} from "@/hooks/use-keyboard-shortcuts";
 import { useUpdateCheck } from "@/hooks/use-update-check";
-import { POST_MERGE_DELAY_MS, STORAGE_KEYS } from "@/lib/constants";
-import { getChatSurfaceState, hasProjectConnectedPrompt } from "@/lib/chat-surface";
-import { parseProjectKey } from "@/hooks/agent-session-utils";
+import { useContextInfo } from "@/hooks/use-context-info";
+import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
 import { OpenGuiClientProvider, useOpenGuiClient } from "@/protocol/provider";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { DesktopShellProvider } from "@/shell/provider";
-import { getDirectoryPlacementInfo, getWorktreePlacementMeta } from "@/lib/worktree-placement";
-import {
-  buildPRUrl,
-  computeTokenTotal,
-  normalizeProjectPath,
-  normalizeTerminalOutput,
-  openExternalLink,
-} from "@/lib/utils";
+import { normalizeTerminalOutput } from "@/lib/utils";
+import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShortcuts";
+import { useActiveSessionQueue } from "@/features/session/useActiveSessionQueue";
+import { useChatSessionSurface } from "@/features/session/useChatSessionSurface";
+import { useActiveWorktreeMerge } from "@/features/worktree/useActiveWorktreeMerge";
 import { AppSidebar } from "./components/AppSidebar";
 import { SettingsView } from "./components/ConnectionPanel";
 import { MessageList } from "./components/MessageList";
@@ -51,147 +39,14 @@ import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
-type ContextInfo = {
-  percent: number | null;
-  tokens: number | null;
-  cost: number | null;
-  contextLimit: number | null;
-};
-
-function NoProjectConnected({
-  canStartChat,
-  onStartChat,
+function AppContent({
+  detachedProject,
+  suppressBootErrors,
 }: {
-  canStartChat: boolean;
-  onStartChat: () => void;
+  detachedProject?: string;
+  suppressBootErrors?: boolean;
 }) {
-  return (
-    <div className="flex-1 flex items-center justify-center px-6">
-      <div className="max-w-md text-center space-y-4">
-        <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">No project connected</h2>
-          <p className="text-sm text-muted-foreground">
-            {canStartChat
-              ? "Connect a project now or start a chat."
-              : "Connect a project to start chatting."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {canStartChat && (
-            <Button type="button" onClick={onStartChat}>
-              Start a chat
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NoSessionSelected() {
-  return (
-    <div className="flex-1 flex items-center justify-center px-6">
-      <div className="max-w-md text-center space-y-1.5">
-        <h2 className="text-lg font-semibold tracking-tight">No session selected</h2>
-        <p className="text-sm text-muted-foreground">
-          Select a session or start a new one from a connected project.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function useContextInfo({
-  activeSessionId,
-  messages,
-  providers,
-  selectedModel,
-  providerDefaults,
-}: {
-  activeSessionId: string | null;
-  messages: ReturnType<typeof useMessages>["messages"];
-  providers: ReturnType<typeof useModelState>["providers"];
-  selectedModel: ReturnType<typeof useModelState>["selectedModel"];
-  providerDefaults: ReturnType<typeof useModelState>["providerDefaults"];
-}): ContextInfo {
-  return useMemo(() => {
-    const none: ContextInfo = {
-      percent: null,
-      tokens: null,
-      cost: null,
-      contextLimit: null,
-    };
-    if (!activeSessionId) return none;
-
-    type TokenSnapshot = {
-      providerID: string;
-      modelID: string;
-      total: number;
-      cost: number | null;
-    };
-    let last: TokenSnapshot | null = null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]?.info;
-      if (msg?.role === "assistant" && "providerID" in msg && "modelID" in msg) {
-        const t = "tokens" in msg ? msg.tokens : undefined;
-        let total = t ? computeTokenTotal(t) : 0;
-        const msgCost = "cost" in msg && typeof msg.cost === "number" ? msg.cost : null;
-
-        if (total <= 0) {
-          const parts = messages[i]?.parts;
-          if (parts) {
-            for (const part of parts) {
-              if (part.type === "step-finish" && "tokens" in part) {
-                total += computeTokenTotal(part.tokens);
-              }
-            }
-          }
-        }
-
-        if (total > 0) {
-          last = {
-            providerID: msg.providerID,
-            modelID: msg.modelID,
-            total,
-            cost: msgCost,
-          };
-          break;
-        }
-      }
-    }
-
-    let provID = last?.providerID ?? selectedModel?.providerID;
-    let modID = last?.modelID ?? selectedModel?.modelID;
-    if (!provID || !modID) {
-      const fallback = resolveServerDefaultModel(providers, providerDefaults);
-      if (fallback) {
-        provID = fallback.providerID;
-        modID = fallback.modelID;
-      }
-    }
-    if (!provID || !modID) return none;
-
-    const provider = providers.find((p) => p.id === provID);
-    if (!provider) return none;
-    const model = provider.models[modID];
-    if (!model?.limit?.context) return none;
-    const contextLimit = model.limit.context;
-
-    if (!last) return { percent: 0, tokens: null, cost: null, contextLimit };
-
-    return {
-      percent: Math.min(100, Math.max(0, Math.round((last.total / contextLimit) * 100))),
-      tokens: last.total,
-      cost: last.cost,
-      contextLimit,
-    };
-  }, [activeSessionId, messages, providers, selectedModel, providerDefaults]);
-}
-
-function AppContent({ detachedProject }: { detachedProject?: string }) {
   const client = useOpenGuiClient();
-  const lastEscapeAtRef = useRef(0);
-  const [queueMode, setQueueMode] = useState<QueueMode>("queue");
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const leftSidebar = useSidebar();
   const {
@@ -230,70 +85,41 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
     defaultChatDirectory,
     connections,
   } = useConnectionState();
-  const [mergeInfo, setMergeInfo] = useState<{
-    mainDir: string;
-    branch: string;
-    worktreePath: string;
-  } | null>(null);
-  const [activeWorktreeRemoteUrl, setActiveWorktreeRemoteUrl] = useState<string | null>(null);
   const normalizedBootLogs = useMemo(
     () => (bootLogs ? normalizeTerminalOutput(bootLogs) : null),
     [bootLogs],
   );
-  const fixWithAiTimeoutRef = useRef<number | null>(null);
-
-  // Find the active session object (for revert state)
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === sessionActiveId),
-    [sessions, sessionActiveId],
-  );
-
-  const activeSessionDirectory =
-    activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
-  const connectedTargetDirectories = useMemo(
-    () =>
-      Object.entries(connections)
-        .filter(([, status]) => status.state === "connected")
-        .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory)),
-    [connections],
-  );
-  const connectedProjectDirectories = useMemo(
-    () =>
-      Object.entries(connections)
-        .filter(([, status]) => status.state === "connected" && status.kind !== "chat-infra")
-        .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory)),
-    [connections],
-  );
-  const connectedActiveTargetDirectory = (() => {
-    if (!activeTargetDirectory) return null;
-    const normalizedActiveTarget = normalizeProjectPath(activeTargetDirectory);
-    if (connectedTargetDirectories.includes(normalizedActiveTarget)) return activeTargetDirectory;
-    if (normalizedActiveTarget === normalizeProjectPath(defaultChatDirectory ?? "")) {
-      return activeTargetDirectory;
-    }
-    return null;
-  })();
-  const chatSurfaceState = useMemo(
-    () =>
-      getChatSurfaceState({
-        activeSessionId: sessionActiveId,
-        activeTargetDirectory: connectedActiveTargetDirectory,
-        defaultChatDirectory,
-      }),
-    [connectedActiveTargetDirectory, defaultChatDirectory, sessionActiveId],
-  );
-  const hasConnectedProjects = connectedProjectDirectories.length > 0;
-  const showPromptBox = hasProjectConnectedPrompt(chatSurfaceState);
-  const activeWorktreeInfo = useMemo(() => {
-    const placement = getDirectoryPlacementInfo(activeSessionDirectory, worktreeParents);
-    if (!placement?.isKnownWorktree) return null;
-    return {
-      mainDir: placement.rootDirectory,
-      branch:
-        getWorktreePlacementMeta(activeSessionDirectory, worktreeParents)?.branch ?? "unknown",
-      worktreePath: placement.executionDirectory,
-    };
-  }, [activeSessionDirectory, worktreeParents]);
+  const activeSessionId = sessionActiveId;
+  const {
+    activeSession,
+    activeSessionDirectory,
+    chatSurfaceState,
+    hasConnectedProjects,
+    showPromptBox,
+  } = useChatSessionSurface({
+    sessions,
+    activeSessionId,
+    activeTargetDirectory,
+    connections,
+    defaultChatDirectory,
+  });
+  const {
+    activeWorktreeInfo,
+    activeWorktreeRemoteUrl,
+    mergeInfo,
+    setMergeInfo,
+    openPullRequest,
+    handleMerged,
+    handleFixWithAI,
+  } = useActiveWorktreeMerge({
+    activeSessionDirectory,
+    worktreeParents,
+    client,
+    sendPrompt,
+    setActiveTarget,
+    removeProject,
+    unregisterWorktree,
+  });
 
   // Find the last user message (for undo keybind), respecting revert state
   const revertToLastMessage = useCallback(() => {
@@ -307,124 +133,28 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
     if (target) void revertToMessage(target.info.id);
   }, [capabilities?.revert, activeSession, messages, revertToMessage]);
 
-  useEffect(() => {
-    return () => {
-      if (fixWithAiTimeoutRef.current !== null) {
-        window.clearTimeout(fixWithAiTimeoutRef.current);
-        fixWithAiTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  const keyboardShortcuts = useMemo<KeyboardShortcut[]>(
-    () => [
-      (e) => {
-        if (!capabilities?.revert) return;
-        if (e.key.toLowerCase() !== "z" || !isModKey(e)) return;
-        if (isEditableTarget(e.target)) return;
-        e.preventDefault();
-        if (e.shiftKey) void unrevert();
-        else revertToLastMessage();
-        return true;
-      },
-      (e) => {
-        if (!capabilities?.models) return;
-        if (e.key.toLowerCase() !== "t" || !isModKey(e)) return;
-        e.preventDefault();
-        if (e.shiftKey) revertVariant();
-        else cycleVariant();
-        return true;
-      },
-      (e) => {
-        if (e.key.toLowerCase() !== "k" || !isModKey(e)) return;
-        if (isEditableTarget(e.target)) return;
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("focus-sidebar-search"));
-        return true;
-      },
-      (e) => {
-        if (e.key !== "Escape" || e.repeat) return;
-        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-        if (isInDialog(e.target)) return;
-
-        const now = Date.now();
-        const isDoubleEscape = now - lastEscapeAtRef.current <= 450;
-        lastEscapeAtRef.current = now;
-        if (!isDoubleEscape || !isBusy) return;
-
-        e.preventDefault();
-        void abortSession();
-        return true;
-      },
-      (e) => {
-        if (e.key !== "d" || !isModKey(e)) return;
-        if (!isBusy || isInDialog(e.target)) return;
-        e.preventDefault();
-        setQueueMode((prev) => (prev === "queue" ? "after-part" : "queue"));
-        return true;
-      },
-    ],
-    [
-      capabilities?.models,
-      capabilities?.revert,
-      revertToLastMessage,
-      unrevert,
-      cycleVariant,
-      revertVariant,
-      abortSession,
-      isBusy,
-    ],
-  );
-  useKeyboardShortcuts(keyboardShortcuts);
-
-  // Ctrl+X then M (within 2s): open model selector
-  useEffect(() => {
-    let chordActive = false;
-    let chordTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!capabilities?.models) return;
-      if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
-        // Let native cut work when text is selected
-        const sel = window.getSelection();
-        if (sel && sel.toString().length > 0) return;
-        e.preventDefault();
-        chordActive = true;
-        if (chordTimer) clearTimeout(chordTimer);
-        chordTimer = setTimeout(() => {
-          chordActive = false;
-          chordTimer = null;
-        }, 2000);
-      } else if (chordActive && e.key.toLowerCase() === "m") {
-        e.preventDefault();
-        chordActive = false;
-        if (chordTimer) {
-          clearTimeout(chordTimer);
-          chordTimer = null;
-        }
-        window.dispatchEvent(new CustomEvent("open-model-selector"));
-      } else if (chordActive) {
-        chordActive = false;
-        if (chordTimer) {
-          clearTimeout(chordTimer);
-          chordTimer = null;
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      if (chordTimer) clearTimeout(chordTimer);
-    };
-  }, [capabilities?.models]);
-
-  const activeSessionId = sessionActiveId;
-  const queuedPrompts = activeSessionId ? getQueuedPrompts(activeSessionId) : [];
+  const { queueMode, setQueueMode } = useAppKeyboardShortcuts({
+    capabilities,
+    isBusy,
+    abortSession,
+    cycleVariant,
+    revertVariant,
+    unrevert,
+    revertToLastMessage,
+  });
+  const { queuedPrompts, queueHandlers } = useActiveSessionQueue({
+    activeSessionId,
+    getQueuedPrompts,
+    removeFromQueue,
+    reorderQueue,
+    updateQueuedPrompt,
+    sendQueuedNow,
+  });
 
   const isBooting = bootState === "checking-server" || bootState === "starting-server";
 
   useEffect(() => {
+    if (suppressBootErrors) return;
     if (isBooting) return;
     const message = bootState === "error" ? bootError : lastError;
     if (!message) return;
@@ -432,27 +162,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
       description: bootState === "error" && normalizedBootLogs ? normalizedBootLogs : undefined,
       duration: 8000,
     });
-  }, [bootState, bootError, isBooting, lastError, normalizedBootLogs]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const mainDir = activeWorktreeInfo?.mainDir;
-    if (!mainDir) {
-      setActiveWorktreeRemoteUrl(null);
-      return;
-    }
-    void client.git
-      .getRemoteUrl(mainDir)
-      .then((remoteUrl) => {
-        if (!cancelled) setActiveWorktreeRemoteUrl(remoteUrl || null);
-      })
-      .catch(() => {
-        if (!cancelled) setActiveWorktreeRemoteUrl(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeWorktreeInfo?.mainDir, client]);
+  }, [bootState, bootError, isBooting, lastError, normalizedBootLogs, suppressBootErrors]);
 
   const contextInfo = useContextInfo({
     activeSessionId,
@@ -513,14 +223,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
                         variant="outline"
                         size="sm"
                         disabled={!activeWorktreeRemoteUrl}
-                        onClick={() => {
-                          if (!activeWorktreeRemoteUrl) return;
-                          const url = buildPRUrl(
-                            activeWorktreeRemoteUrl,
-                            activeWorktreeInfo.branch,
-                          );
-                          if (url) openExternalLink(url);
-                        }}
+                        onClick={openPullRequest}
                       >
                         <ExternalLink className="size-4" />
                         Create PR
@@ -552,38 +255,14 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
                         <div className="mb-1.5">
                           <QueueList
                             items={queuedPrompts}
-                            onRemove={(id) => {
-                              if (!activeSessionId) return;
-                              removeFromQueue(activeSessionId, id);
-                            }}
-                            onMoveUp={(index) => {
-                              if (!activeSessionId) return;
-                              reorderQueue(activeSessionId, index, index - 1);
-                            }}
-                            onMoveDown={(index) => {
-                              if (!activeSessionId) return;
-                              reorderQueue(activeSessionId, index, index + 1);
-                            }}
-                            onMoveToTop={(index) => {
-                              if (!activeSessionId) return;
-                              reorderQueue(activeSessionId, index, 0);
-                            }}
-                            onMoveToBottom={(index) => {
-                              if (!activeSessionId) return;
-                              reorderQueue(activeSessionId, index, queuedPrompts.length - 1);
-                            }}
-                            onEdit={(id, newText) => {
-                              if (!activeSessionId) return;
-                              updateQueuedPrompt(activeSessionId, id, newText);
-                            }}
-                            onSendNow={(id) => {
-                              if (!activeSessionId) return;
-                              void sendQueuedNow(activeSessionId, id);
-                            }}
-                            onReorder={(fromIndex, toIndex) => {
-                              if (!activeSessionId) return;
-                              reorderQueue(activeSessionId, fromIndex, toIndex);
-                            }}
+                            onRemove={queueHandlers.remove}
+                            onMoveUp={queueHandlers.moveUp}
+                            onMoveDown={queueHandlers.moveDown}
+                            onMoveToTop={queueHandlers.moveToTop}
+                            onMoveToBottom={queueHandlers.moveToBottom}
+                            onEdit={queueHandlers.edit}
+                            onSendNow={queueHandlers.sendNow}
+                            onReorder={queueHandlers.reorder}
                           />
                         </div>
                       )}
@@ -617,36 +296,8 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
         }}
         mainDirectory={mergeInfo?.mainDir ?? ""}
         branch={mergeInfo?.branch ?? ""}
-        onMerged={async (deleteWt) => {
-          if (!mergeInfo) return;
-          if (deleteWt) {
-            unregisterWorktree(mergeInfo.worktreePath);
-            await removeProject(mergeInfo.worktreePath);
-            await client.git.removeWorktree(mergeInfo.mainDir, mergeInfo.worktreePath);
-          }
-          if (activeWorktreeInfo?.mainDir === mergeInfo.mainDir) {
-            try {
-              const remoteUrl = await client.git.getRemoteUrl(mergeInfo.mainDir);
-              setActiveWorktreeRemoteUrl(remoteUrl || null);
-            } catch {
-              setActiveWorktreeRemoteUrl(null);
-            }
-          }
-        }}
-        onFixWithAI={(conflicts) => {
-          if (!mergeInfo) return;
-          setActiveTarget(mergeInfo.mainDir);
-          if (fixWithAiTimeoutRef.current !== null) {
-            window.clearTimeout(fixWithAiTimeoutRef.current);
-          }
-          fixWithAiTimeoutRef.current = window.setTimeout(() => {
-            const fileList = conflicts.map((f) => `- ${f}`).join("\n");
-            void sendPrompt(
-              `There are git merge conflicts from merging branch "${mergeInfo.branch}" into the current branch.\n\nThe following files have unresolved conflicts:\n${fileList}\n\nPlease resolve all merge conflicts in these files. Remove all conflict markers (<<<<<<, ======, >>>>>>) and produce the correct merged code. After resolving all conflicts, stage the resolved files with \`git add\` for each file.`,
-            );
-            fixWithAiTimeoutRef.current = null;
-          }, POST_MERGE_DELAY_MS);
-        }}
+        onMerged={handleMerged}
+        onFixWithAI={handleFixWithAI}
       />
       <UpdateDialog update={updateCheck} />
       <WorktreeCleanupDialog />
@@ -666,7 +317,7 @@ export function App() {
       <OpenGuiClientProvider>
         <HarnessProvider detachedProject={detachedProject}>
           <SidebarProvider className="!h-dvh capacitor-safe-area">
-            <AppContent detachedProject={detachedProject} />
+            <AppContent detachedProject={detachedProject} suppressBootErrors={showWizard} />
             {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
             <Toaster richColors closeButton />
           </SidebarProvider>

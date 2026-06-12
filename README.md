@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Desktop + web command center for coding agents. Run <a href="https://opencode.ai">OpenCode</a>, Claude Code, Codex, and Pi across multiple projects with streaming chat, prompt queue, model switching, voice input, and MCP tools.
+  Desktop + web command center for coding-agent Harnesses. Run <a href="https://opencode.ai">OpenCode</a>, Claude Code, Codex, and Pi across multiple projects with streaming chat, prompt queue, model switching, voice input, and MCP tools.
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
   ·
   <a href="#why-opengui">Why OpenGUI</a>
   ·
-  <a href="#supported-agent-backends">Supported backends</a>
+  <a href="#supported-harnesses">Supported Harnesses</a>
   ·
   <a href="#build-from-source">Build from source</a>
 </p>
@@ -29,7 +29,7 @@
   <img src="demo.gif" alt="OpenGUI Demo" width="800" />
 </p>
 
-OpenGUI gives coding-agent users desktop and browser workflow for long sessions. Manage multiple projects visually, run different agent backends from one UI, watch responses stream live, queue prompts while agent works, and switch models or agents without terminal juggling.
+OpenGUI gives coding-agent users desktop and browser workflow for long sessions. Manage multiple projects visually, run different Harnesses from one UI, watch responses stream live, queue prompts while agent works, and switch models or agents without terminal juggling.
 
 > Early but usable. Bug reports and PRs welcome.
 
@@ -37,7 +37,7 @@ OpenGUI gives coding-agent users desktop and browser workflow for long sessions.
 
 OpenGUI is for people who like coding agents but want stronger workflow than terminal tabs alone:
 
-- **Run multiple agent backends in one app** instead of juggling separate tools
+- **Run multiple Harnesses in one app** instead of juggling separate tools
 - **Manage multiple projects at once** with separate sessions per workspace
 - **See streaming responses live** with token and context usage
 - **Queue prompts while agent is busy** instead of waiting to type next step
@@ -58,9 +58,9 @@ OpenGUI is for people who like coding agents but want stronger workflow than ter
 - **Desktop, web, and Docker deployment options**
 - **Cross-platform builds** for Linux, macOS, and Windows
 
-## Supported agent backends
+## Supported Harnesses
 
-OpenGUI currently supports these coding-agent backends:
+OpenGUI currently supports these coding-agent Harnesses:
 
 - **OpenCode**
 - **Claude Code**
@@ -81,8 +81,8 @@ Grab prebuilt app from [latest release](https://github.com/akemmanuel/OpenGUI/re
 
 Backend requirements depend on what you use:
 
-- **OpenCode backend:** [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
-- **Other backends:** local CLI/auth/config for that backend available on your machine
+- **OpenCode Harness:** [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+- **Other Harnesses:** local CLI/auth/config for that Harness available on your machine
 
 > **Windows prerequisite for OpenCode:** OpenCode must be available on your `PATH` or at `%USERPROFILE%\.opencode\bin\opencode.exe`.
 
@@ -94,7 +94,7 @@ Backend requirements depend on what you use:
 
 - [Node.js](https://nodejs.org/) 24+
 - [pnpm](https://pnpm.io/) 11+ package manager
-- At least one supported backend configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
+- At least one supported Harness configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
 - [Electron](https://www.electronjs.org/) installed through project dependencies
 
 OpenGUI uses Node.js as the runtime for the Electron/web backend, pnpm for dependency management, and Vite+ (`vp`) as the development/build/check task runner.
@@ -105,17 +105,17 @@ Install dependencies:
 pnpm install
 ```
 
-No manual config file needed. Connection settings live in UI. Pick backend, connect workspace, start prompting.
+No manual config file needed. Connection settings live in UI. Pick a Harness, connect a workspace, start prompting.
 
 ### Development
 
-Run Electron app with HMR:
+Run the development app:
 
 ```bash
-vp run dev
+vp dev
 ```
 
-Run web app with local backend API (projects, git, agents):
+Run web app with local backend API (projects, git, Harnesses):
 
 ```bash
 vp run dev:web
@@ -175,25 +175,30 @@ vp run dist:win
 
 ## Architecture
 
+OpenGUI has three layers: an **OpenGUI Backend** that owns Harness execution and filesystem/git operations, an **OpenGUI Frontend** that owns Workspaces, Projects, and presentation state, and platform **Shells** for Desktop, Web, and Mobile.
+
 ```
-main.ts              Electron main process (window management, IPC)
-preload.js           Preload script (contextBridge API for renderer)
-opencode-bridge.ts    IPC bridge to OpenCode SDK
-claude-code-bridge.ts IPC bridge to Claude Code SDK
-codex-bridge.ts       IPC bridge to Codex SDK
-pi-bridge.ts          IPC bridge to Pi runtime
-server/web-server.ts  Node.js backend for browser mode (RPC, events, server FS browser)
+main.ts              Desktop Shell main process (window management, IPC)
+preload.js           Desktop Shell preload API
+opencode-bridge.ts   OpenCode Harness adapter
+claude-code-bridge.ts Claude Code Harness adapter
+codex-bridge.ts      Codex Harness adapter
+pi-bridge.ts         Pi Harness adapter
+server/web-server.ts OpenGUI Backend for browser mode (RPC, events, server FS browser)
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point + web Electron shim install
-  App.tsx             Main app layout
-  hooks/
-    use-agent-impl-core.tsx  Central agent/workspace state
-  components/         UI components (sidebar, messages, prompt box, etc.)
-  lib/
-    web-electron-api.ts      Browser shim for Electron preload API
+  App.tsx             Main app layout/orchestrator
+  agents/             Harness descriptors, event normalizers, and protocol mappers
+  features/           Cross-component frontend orchestration hooks
+  hooks/              Agent state, model state, and UI hooks
+  components/         UI components (sidebar, messages, prompt box, dialogs, etc.)
+  components/ui/      Reusable UI primitives such as DialogShell
+  lib/                Utility modules and browser Electron shim
   types/              TypeScript type definitions
 ```
+
+See [docs/architecture.md](docs/architecture.md) for contributor architecture notes and the Harness addition guide.
 
 ## Configuration
 

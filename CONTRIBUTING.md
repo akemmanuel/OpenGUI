@@ -22,13 +22,13 @@ pnpm install
 
 ## Development
 
-Run Electron app in development mode (renderer HMR + Electron shell):
+Run the development app:
 
 ```bash
-vp run dev
+vp dev
 ```
 
-Or run browser version with backend API:
+Or run the browser version with backend API:
 
 ```bash
 vp run dev:web
@@ -39,13 +39,16 @@ vp run dev:web
 This project uses Vite+ tasks:
 
 ```bash
+vp dev           # development
 vp lint          # lint check
 vp check         # lint, format, and type checks
 vp test          # unit tests
 vp fmt           # format
+vp build         # production build
+vp run <task>    # named project tasks, such as dist:linux
 ```
 
-Run `vp check` and `vp test` before submitting a PR.
+Use pnpm for dependency changes (`pnpm install`, `pnpm add`, `pnpm remove`, `pnpm update`). Do not run `tsc` directly for typechecking. Run `vp check` and `vp test` before submitting a PR.
 
 ## Commit Messages
 
@@ -75,25 +78,40 @@ Check existing issues before opening a new one to avoid duplicates.
 
 ## Architecture Overview
 
-If you're new to the codebase, here's where things live:
+If you're new to the codebase, start with [CONTEXT.md](CONTEXT.md), [docs/architecture.md](docs/architecture.md), and the ADRs in [docs/adr/](docs/adr/). Use **Harness** for coding-agent runtimes (OpenCode, Claude Code, Codex, Pi); reserve **provider** for model/API providers inside a Harness.
 
 ```
-main.ts              Electron main process (window management, IPC)
-preload.js           Preload script (contextBridge API for renderer)
-opencode-bridge.ts   IPC bridge to OpenCode SDK (SSE, sessions, prompts)
-claude-code-bridge.ts IPC bridge to Claude Code SDK
-codex-bridge.ts      IPC bridge to Codex SDK
-pi-bridge.ts         IPC bridge to Pi runtime
-server/web-server.ts  Node.js backend for browser mode (RPC, events, server FS browser)
+main.ts              Desktop Shell main process (window management, IPC)
+preload.js           Desktop Shell preload API
+opencode-bridge.ts   OpenCode Harness adapter
+claude-code-bridge.ts Claude Code Harness adapter
+codex-bridge.ts      Codex Harness adapter
+pi-bridge.ts         Pi Harness adapter
+server/web-server.ts OpenGUI Backend for browser mode (RPC, events, server FS browser)
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point
-  App.tsx             Main app layout
-  hooks/              Custom React hooks (state management, backends, STT)
-  components/         UI components (sidebar, messages, prompt box, etc.)
-  lib/                Utility modules, including browser Electron shim
+  App.tsx             Main app layout/orchestrator
+  agents/             Harness descriptors, event normalizers, and protocol mappers
+  features/           Cross-component frontend orchestration hooks
+  hooks/              Agent state, model state, and UI hooks
+  components/         UI components (sidebar, messages, prompt box, dialogs, etc.)
+  components/ui/      Reusable UI primitives such as DialogShell
+  lib/                Utility modules and browser Electron shim
   types/              TypeScript type definitions
 ```
+
+### Harness changes
+
+Harness-facing code lives in `src/agents/`. Local CLI Harnesses should use `cli-harness-factory.ts` for shared capabilities/workspace defaults and tagged event normalization. Harnesses with custom SDK events should keep protocol mapping in `src/agents/protocol/` and add mapper tests. Use `id-codec.ts` and the shared tagging helpers instead of composing session IDs by hand.
+
+### Frontend feature slices
+
+`src/App.tsx` still composes the app shell, but cross-component orchestration should move into focused hooks under `src/features/<area>/`. Existing slices cover app keyboard shortcuts, active-session queue handlers, chat surface derivation, and active worktree merge actions. Keep reusable visual primitives in `src/components/ui/` and pure utilities in `src/lib/`.
+
+### Provider icons
+
+Provider icons are resolved from the SVG manifest under `src/components/provider-icons/svgs/`. Add a correctly named SVG there before changing React code; Vite expands the manifest automatically.
 
 ## Areas Where Help Is Needed
 

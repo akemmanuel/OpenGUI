@@ -10,15 +10,10 @@ import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
 import { createSettingsStore } from "./settings-store.js";
-import { setupUpdateManager } from "./main/update-manager.js";
 import { createBackendSidecarController } from "./main/backend-sidecar.js";
 import { broadcastToAllWindows } from "./lib/window-broadcast.js";
 import { findFilesInDirectory } from "./server/services/file-search.js";
-import {
-  getHarnessInventories,
-  getHarnessPackageName,
-  isHarnessId,
-} from "./server/harness-inventory.js";
+import { getHarnessInventories } from "./server/harness-inventory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,35 +49,6 @@ function parseCommand(command: unknown): string[] {
 function isGhostty(cmd: string | undefined) {
   if (!cmd) return false;
   return cmd.trim().split(/\s+/)[0] === "ghostty";
-}
-
-function isCommandAvailable(cmd: unknown) {
-  if (typeof cmd !== "string" || cmd.length === 0) return false;
-  try {
-    execSync(process.platform === "win32" ? `where ${cmd}` : `which ${cmd}`, {
-      stdio: ["ignore", "ignore", "ignore"],
-      timeout: 3000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolvePackageManager() {
-  const candidates = [
-    { command: "pnpm", argsFor: (packageName: string) => ["add", "-g", packageName] },
-    { command: "npm", argsFor: (packageName: string) => ["install", "-g", packageName] },
-  ];
-
-  return candidates.find((candidate) => isCommandAvailable(candidate.command));
-}
-
-function getBackendInstallCommand(backendId: unknown): [string, string[]] | null {
-  if (!isHarnessId(backendId)) return null;
-  const packageManager = resolvePackageManager();
-  if (!packageManager) return null;
-  return [packageManager.command, packageManager.argsFor(getHarnessPackageName(backendId))];
 }
 
 function spawnCustomCommand(command: unknown, options: SpawnOptions = {}) {
@@ -583,42 +549,6 @@ ipcMain.handle("files:find", async (_event, directory, query) => {
   return await findFilesInDirectory(directory, query);
 });
 
-// Install a known backend CLI tool. Renderer passes backend id, not shell text.
-// Streams stdout/stderr back to the renderer as "backend:install-progress" events.
-ipcMain.handle("backend:install", (event, backendId) => {
-  return new Promise((resolve) => {
-    const installCommand = getBackendInstallCommand(backendId);
-    if (!installCommand) {
-      resolve({
-        success: false,
-        error: "Unknown backend id or no supported package manager found",
-      });
-      return;
-    }
-
-    const [command, args] = installCommand;
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: false,
-    });
-
-    const sendChunk = (chunk: unknown, type: "stdout" | "stderr") => {
-      try {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send("backend:install-progress", { chunk: String(chunk), type });
-        }
-      } catch {
-        // renderer gone – ignore
-      }
-    };
-
-    child.stdout?.on("data", (data) => sendChunk(data, "stdout"));
-    child.stderr?.on("data", (data) => sendChunk(data, "stderr"));
-    child.on("close", (code) => resolve({ success: code === 0, exitCode: code }));
-    child.on("error", (err) => resolve({ success: false, error: err.message }));
-  });
-});
-
 void app.whenReady().then(async () => {
   installDevNetworkFailureLogging();
 
@@ -632,7 +562,6 @@ void app.whenReady().then(async () => {
   }
 
   createWindow();
-  setupUpdateManager();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

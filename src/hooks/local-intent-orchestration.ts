@@ -1,24 +1,44 @@
 import type { QueueMode } from "@/hooks/agent-state-types";
 
-export type PromptIntentEntry =
-  | { type: "missing-session" }
-  | { type: "use-session"; sessionId: string; createdFromActiveTarget: boolean };
-
 export type PromptIntentDispatch =
-  | { type: "prompt-now"; sessionId: string; mode: QueueMode }
+  | {
+      type: "prompt-now";
+      sessionId: string;
+      mode: QueueMode;
+    }
+  | {
+      type: "queue-prompt";
+      sessionId: string;
+      mode: QueueMode;
+      insertAt: "front" | "back";
+    }
   | { type: "queue-after-part"; sessionId: string; mode: "after-part"; insertAt: "front" };
 
 export function decidePromptIntentDispatch(input: {
-  entry: PromptIntentEntry;
+  sessionId: string | null;
   requestedMode?: QueueMode;
   busySessionIds: ReadonlySet<string>;
 }): PromptIntentDispatch | null {
-  if (input.entry.type === "missing-session") return null;
+  if (!input.sessionId) return null;
 
   const mode = input.requestedMode ?? "queue";
-  if (mode === "after-part" && input.busySessionIds.has(input.entry.sessionId)) {
-    return { type: "queue-after-part", sessionId: input.entry.sessionId, mode, insertAt: "front" };
+  const busy = input.busySessionIds.has(input.sessionId);
+  if (mode === "after-part" && busy) {
+    return { type: "queue-after-part", sessionId: input.sessionId, mode, insertAt: "front" };
   }
 
-  return { type: "prompt-now", sessionId: input.entry.sessionId, mode };
+  if (busy) {
+    return {
+      type: "queue-prompt",
+      sessionId: input.sessionId,
+      mode,
+      insertAt: mode === "interrupt" ? "front" : "back",
+    };
+  }
+
+  return {
+    type: "prompt-now",
+    sessionId: input.sessionId,
+    mode,
+  };
 }

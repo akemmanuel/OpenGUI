@@ -1,8 +1,8 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { BackendServiceContext } from "./services/index.ts";
-import { getHarnessInventories, getHarnessPackageName, isHarnessId } from "./harness-inventory.ts";
+import { getHarnessInventories } from "./harness-inventory.ts";
 
 interface IpcSender {
   send(channel: string, data: unknown): void;
@@ -116,28 +116,6 @@ async function chooseDirectory() {
   return null;
 }
 
-function isCommandAvailable(command: string) {
-  try {
-    const probe = process.platform === "win32" ? ["where", command] : ["which", command];
-    const [file, ...args] = probe;
-    if (!file) return false;
-    return spawnSync(file, args, { stdio: "ignore" }).status === 0;
-  } catch {
-    return false;
-  }
-}
-
-function getHarnessInstallCommand(harnessId: unknown): [string, string[]] | null {
-  if (!isHarnessId(harnessId)) return null;
-  const packageName = getHarnessPackageName(harnessId);
-  const managers = [
-    { command: "pnpm", args: ["add", "-g", packageName] },
-    { command: "npm", args: ["install", "-g", packageName] },
-  ];
-  const manager = managers.find((candidate) => isCommandAvailable(candidate.command));
-  return manager ? [manager.command, manager.args] : null;
-}
-
 function openTerminal(dirPath: string, command = "") {
   if (!existsSync(dirPath)) return;
   const parts = parseCommand(command);
@@ -202,29 +180,6 @@ export function registerShellIpcHandlers(input: {
   ipcMain.handle("platform:get", () => process.platform);
   ipcMain.handle("platform:homeDir", () => homedir());
   ipcMain.handle("platform:harnessInventory", () => getHarnessInventories());
-  ipcMain.handle("backend:install", async (event, harnessId) => {
-    const installCommand = getHarnessInstallCommand(harnessId);
-    if (!installCommand) {
-      return { success: false, error: "Unknown backend id or no supported package manager found" };
-    }
-    const [command, args] = installCommand;
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    const sendStream = async (stream: NodeJS.ReadableStream | null, type: "stdout" | "stderr") => {
-      if (!stream) return;
-      for await (const chunk of stream) {
-        event.sender.send("backend:install-progress", {
-          chunk: Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk),
-          type,
-        });
-      }
-    };
-    await Promise.all([sendStream(child.stdout, "stdout"), sendStream(child.stderr, "stderr")]);
-    const exitCode = await new Promise<number | null>((resolve, reject) => {
-      child.once("error", reject);
-      child.once("exit", (code) => resolve(code));
-    });
-    return { success: exitCode === 0, exitCode };
-  });
   ipcMain.handle(
     "platform:locale",
     () => Intl.DateTimeFormat().resolvedOptions().locale || "en-US",

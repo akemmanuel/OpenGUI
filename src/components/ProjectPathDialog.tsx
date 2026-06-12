@@ -1,10 +1,10 @@
 import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { BaseDialog } from "@/components/ui/base-dialog";
+import { DialogShell } from "@/components/ui/DialogShell";
+import { FormField } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 import { normalizeProjectPath } from "@/lib/utils";
@@ -147,7 +147,7 @@ export function ProjectPathDialog() {
   };
 
   return (
-    <BaseDialog
+    <DialogShell
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) closeWith(null);
@@ -178,8 +178,7 @@ export function ProjectPathDialog() {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="project-path">Project path</Label>
+        <FormField label="Project path" htmlFor="project-path">
           <div className="flex gap-2">
             <Input
               id="project-path"
@@ -257,8 +256,8 @@ export function ProjectPathDialog() {
               </div>
             </div>
           )}
-        </div>
+        </FormField>
       </div>
-    </BaseDialog>
+    </DialogShell>
   );
 }

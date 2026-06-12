@@ -179,7 +179,6 @@ function ToolImages({ presentation }: { presentation: ToolPresentation }) {
             loading="lazy"
             className="w-full max-h-52 object-contain bg-black/20"
           />
-
         </div>
       ))}
     </div>
@@ -337,7 +336,8 @@ export function ToolPartView({
     toolOutputRef.current.scrollTop = toolOutputRef.current.scrollHeight;
   }, [presentation.tool.kind, expanded, presentation.bashOutputText]);
 
-  const hasSideContent = presentation.sideContent.todos && presentation.sideContent.todos.length > 0;
+  const hasSideContent =
+    presentation.sideContent.todos && presentation.sideContent.todos.length > 0;
 
   return (
     <div className="text-xs font-mono text-muted-foreground overflow-hidden">

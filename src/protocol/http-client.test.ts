@@ -92,6 +92,93 @@ describe("createHttpOpenGuiClient", () => {
     ]);
   });
 
+  test("loads remote harness resources over HTTP instead of Electron RPC", async () => {
+    const rpcCalls: string[] = [];
+    const httpCalls: Array<{ url: string; body: unknown; authorization: string | null }> = [];
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://127.0.0.1:4096",
+      rpcImpl: async <T>(channel: string): Promise<T> => {
+        rpcCalls.push(channel);
+        return { success: true, data: {} } as T;
+      },
+      fetchImpl: async (input, init) => {
+        const requestBody = typeof init?.body === "string" ? init.body : "{}";
+        const body = JSON.parse(requestBody) as { channel?: string };
+        httpCalls.push({
+          url: String(input),
+          body,
+          authorization: new Headers(init?.headers).get("authorization"),
+        });
+        if (body.channel === "opencode:providers") {
+          return json({ ok: true, value: { success: true, data: { providers: [] } } });
+        }
+        if (body.channel === "opencode:agents") {
+          return json({ ok: true, value: { success: true, data: [] } });
+        }
+        if (body.channel === "opencode:commands") {
+          return json({ ok: true, value: { success: true, data: [] } });
+        }
+        throw new Error(`Unexpected channel ${body.channel}`);
+      },
+    });
+
+    await client.harnesses.loadResources({
+      harnessId: "opencode",
+      target: {
+        workspaceId: "remote",
+        directory: "/root/Workspace",
+        baseUrl: "http://91.98.206.29:4839",
+        authToken: "remote-token",
+      },
+    });
+
+    expect(rpcCalls).toEqual([]);
+    expect(httpCalls).toHaveLength(3);
+    expect(httpCalls.map((call) => call.url)).toEqual([
+      "http://91.98.206.29:4839/api/rpc",
+      "http://91.98.206.29:4839/api/rpc",
+      "http://91.98.206.29:4839/api/rpc",
+    ]);
+    expect(httpCalls.every((call) => call.authorization === "Bearer remote-token")).toBe(true);
+  });
+
+  test("keeps local harness resources on Electron RPC even when the default URL is remote", async () => {
+    const rpcCalls: string[] = [];
+    const httpCalls: string[] = [];
+    const client = createHttpOpenGuiClient({
+      resolveBaseUrl: () => "http://91.98.206.29:4839",
+      rpcImpl: async <T>(channel: string): Promise<T> => {
+        rpcCalls.push(channel);
+        return {
+          success: true,
+          data: channel.endsWith(":providers") ? { providers: [] } : [],
+        } as T;
+      },
+      fetchImpl: async (input) => {
+        httpCalls.push(String(input));
+        throw new Error("Local resource loading should not use HTTP");
+      },
+    });
+
+    await client.harnesses.loadResources({
+      harnessId: "opencode",
+      target: { workspaceId: "local", directory: "/home/me/project" },
+    });
+
+    expect(httpCalls).toEqual([]);
+    expect(rpcCalls).toEqual(["opencode:providers", "opencode:agents", "opencode:commands"]);
+  });
+
+  test("can restrict available harness descriptors for a remote workspace", () => {
+    const client = createHttpOpenGuiClient({
+      resolveHarnessIds: () => ["opencode"],
+    });
+
+    expect(client.harnesses.list().map((backend) => backend.id)).toEqual(["opencode"]);
+    expect(client.harnesses.get("opencode")?.id).toBe("opencode");
+    expect(client.harnesses.get("pi")).toBeUndefined();
+  });
+
   test("connectProject creates the project over HTTP and then connects requested harnesses", async () => {
     const calls: Array<{ input: string; method?: string }> = [];
     const client = createHttpOpenGuiClient({

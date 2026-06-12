@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
 import {
@@ -384,6 +384,7 @@ async function applyCanonicalEventSideEffects(
     }
 
     if (event.type === "session.error") {
+      if (!event.sessionID) return;
       await services.sessions.updateSession(event.sessionID, { status: "error" }, { harnessId });
     }
   } catch {
@@ -423,6 +424,13 @@ function parseAllowedRoots() {
 }
 
 const allowedRoots = parseAllowedRoots();
+
+function isWithinAllowedRoot(path: string) {
+  return allowedRoots.some((root) => {
+    const relativePath = relative(root, path);
+    return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+  });
+}
 
 function parsePositiveIntegerEnv(name: string, fallback: number) {
   const raw = process.env[name]?.trim();
@@ -487,8 +495,7 @@ async function resolveSafeDirectory(inputPath: string | null) {
   const actual = await realpath(requested);
   const info = await stat(actual);
   if (!info.isDirectory()) throw new Error("Path is not a directory");
-  const allowed = allowedRoots.some((root) => actual === root || actual.startsWith(`${root}/`));
-  if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+  if (!isWithinAllowedRoot(actual)) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
   return actual;
 }
 
@@ -500,7 +507,7 @@ async function listServerDirectories(inputPath: string | null) {
     .map((entry) => ({ name: entry.name, path: join(path, entry.name), type: "dir" as const }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const parent = dirname(path);
-  const canGoUp = allowedRoots.some((root) => parent === root || parent.startsWith(`${root}/`));
+  const canGoUp = isWithinAllowedRoot(parent);
   return { path, parent: canGoUp ? parent : null, roots: allowedRoots, entries: dirs };
 }
 
@@ -514,6 +521,7 @@ const contentTypes: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
+  ".gif": "image/gif",
 };
 
 async function serveBuiltFile(request: Request) {
@@ -1469,6 +1477,28 @@ app.get("/api/fs/list", async (c) => {
   }
 });
 app.get("/api/fs/roots", () => Response.json({ ok: true, value: allowedRoots }));
+app.get("/api/fs/file", async (c) => {
+  try {
+    const inputPath = c.req.query("path")?.trim();
+    if (!inputPath) throw new Error("path is required");
+    const directory = c.req.query("directory")?.trim() || null;
+    const requestedPath = inputPath.startsWith("/")
+      ? inputPath
+      : join(await resolveSafeDirectory(directory), inputPath);
+    const actual = await realpath(requestedPath);
+    const allowed = allowedRoots.some((root) => actual === root || actual.startsWith(`${root}/`));
+    if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+    const info = await stat(actual);
+    if (!info.isFile()) throw new Error("Path is not a file");
+    return new Response(await readFile(actual), {
+      headers: {
+        "content-type": contentTypes[extname(actual).toLowerCase()] ?? "application/octet-stream",
+      },
+    });
+  } catch (error) {
+    return jsonError(error, 400);
+  }
+});
 app.get("/api/fs/search", async (c) => {
   try {
     const projectId = c.req.query("projectId");

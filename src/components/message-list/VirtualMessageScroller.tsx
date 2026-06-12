@@ -96,22 +96,29 @@ export function VirtualMessageScroller({
     useAnimationFrameWithResizeObserver: true,
   });
 
+  const writeScrollSnapshot = useCallback(
+    (sessionId: string) => {
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return;
+      const first = virtualizer.getVirtualItems()[0];
+      const pinnedToBottom = isNearBottom(scrollEl);
+      pinnedToBottomRef.current = pinnedToBottom;
+      scrollSnapshotsRef.current.set(sessionId, {
+        anchorKey: first ? String(first.key) : null,
+        offsetFromViewportTop: first ? first.start - scrollEl.scrollTop : 0,
+        scrollTop: scrollEl.scrollTop,
+        distanceFromBottom: distanceFromBottom(scrollEl),
+        pinnedToBottom,
+        updatedAt: Date.now(),
+      });
+    },
+    [scrollSnapshotsRef, virtualizer],
+  );
+
   const captureScrollSnapshot = useCallback(() => {
     if (!scrollKey) return;
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
-    const first = virtualizer.getVirtualItems()[0];
-    const pinnedToBottom = isNearBottom(scrollEl);
-    pinnedToBottomRef.current = pinnedToBottom;
-    scrollSnapshotsRef.current.set(scrollKey, {
-      anchorKey: first ? String(first.key) : null,
-      offsetFromViewportTop: first ? first.start - scrollEl.scrollTop : 0,
-      scrollTop: scrollEl.scrollTop,
-      distanceFromBottom: distanceFromBottom(scrollEl),
-      pinnedToBottom,
-      updatedAt: Date.now(),
-    });
-  }, [scrollKey, scrollSnapshotsRef, virtualizer]);
+    writeScrollSnapshot(scrollKey);
+  }, [scrollKey, writeScrollSnapshot]);
 
   const scheduleScrollSnapshot = useCallback(() => {
     if (snapshotFrameRef.current != null) return;
@@ -239,6 +246,18 @@ export function VirtualMessageScroller({
   );
 
   useLayoutEffect(() => {
+    const sessionId = scrollKey;
+    return () => {
+      if (snapshotFrameRef.current != null) {
+        cancelAnimationFrame(snapshotFrameRef.current);
+        snapshotFrameRef.current = null;
+      }
+      if (!sessionId) return;
+      writeScrollSnapshot(sessionId);
+    };
+  }, [scrollKey, writeScrollSnapshot]);
+
+  useLayoutEffect(() => {
     restorePaginationAnchor();
   }, [restorePaginationAnchor, messages.length]);
 
@@ -257,29 +276,6 @@ export function VirtualMessageScroller({
     lastMessageKeyRef.current = keys.at(-1) ?? null;
     restoredScrollKeyRef.current = scrollKey;
   }, [keys, messages.length, restoreScrollSnapshot, scrollKey, scrollSnapshotsRef, scrollToLatest]);
-
-  useEffect(() => {
-    const sessionId = scrollKey;
-    return () => {
-      if (snapshotFrameRef.current != null) {
-        cancelAnimationFrame(snapshotFrameRef.current);
-        snapshotFrameRef.current = null;
-      }
-      if (!sessionId) return;
-      const scrollEl = scrollRef.current;
-      if (!scrollEl) return;
-      const first = virtualizer.getVirtualItems()[0];
-      const pinnedToBottom = isNearBottom(scrollEl);
-      scrollSnapshotsRef.current.set(sessionId, {
-        anchorKey: first ? String(first.key) : null,
-        offsetFromViewportTop: first ? first.start - scrollEl.scrollTop : 0,
-        scrollTop: scrollEl.scrollTop,
-        distanceFromBottom: distanceFromBottom(scrollEl),
-        pinnedToBottom,
-        updatedAt: Date.now(),
-      });
-    };
-  }, [scrollKey]);
 
   useEffect(() => {
     const lastKey = keys.at(-1) ?? null;

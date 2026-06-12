@@ -187,6 +187,9 @@ function LanguageSetting() {
     void i18n.changeLanguage(value);
   };
 
+  const selectedLanguageLabel =
+    language === "auto" ? t("common.autoDetect") : t(`languages.${language}`);
+
   return (
     <div className="flex items-center justify-between gap-3 pt-3 border-t">
       <div className="flex items-center gap-2">
@@ -195,7 +198,9 @@ function LanguageSetting() {
       </div>
       <Select value={language} onValueChange={handleChange}>
         <SelectTrigger className="w-[180px] h-8">
-          <SelectValue placeholder={t("settings.general.language")} />
+          <SelectValue placeholder={t("settings.general.language")}>
+            {selectedLanguageLabel}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="auto">{t("common.autoDetect")}</SelectItem>

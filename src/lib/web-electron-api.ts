@@ -1,6 +1,5 @@
-import type { HarnessId } from "@/agents";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
-import type { ElectronAPI, InstallProgress } from "@/types/electron";
+import type { ElectronAPI } from "@/types/electron";
 
 type Listener = (data: unknown) => void;
 
@@ -172,9 +171,6 @@ export function installWebElectronAPI() {
     openInTerminal: (dirPath: string, command = "") =>
       invoke("shell:openInTerminal", dirPath, command),
     getHomeDir: () => invoke("platform:homeDir"),
-    installBackend: (harnessId: HarnessId) => invoke("backend:install", harnessId),
-    onInstallProgress: (callback: (progress: InstallProgress) => void) =>
-      on("backend:install-progress", callback as Listener),
     worktree: {
       detectSetup: (worktreePath: string) => invoke("worktree:detect-setup", worktreePath),
       runSetup: (worktreePath: string, command: string) =>

@@ -2,18 +2,8 @@ import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
 import type { HarnessEvent, HarnessTarget } from "./backend.ts";
 import type { HarnessId } from "./index.ts";
-import { composeFrontendSessionId, rawSessionIdForHarness } from "../lib/session-identity.ts";
-
-function normalizeProjectPath(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) return "";
-  if (/^[/\\]+$/.test(trimmed)) return trimmed[0] ?? trimmed;
-  const windowsDriveRoot = trimmed.match(/^([A-Za-z]:)([/\\]+)$/);
-  if (windowsDriveRoot) {
-    return `${windowsDriveRoot[1]}${trimmed.includes("\\") ? "\\" : "/"}`;
-  }
-  return trimmed.replace(/[/\\]+$/, "");
-}
+import { normalizeProjectPath } from "../lib/path.ts";
+import { createBackendIdCodec } from "./id-codec.ts";
 
 type BridgeResult<T> =
   | { success: true; data?: T }
@@ -35,14 +25,7 @@ export function requireSuccess<T>(result: BridgeResult<T>, fallback: string): T 
   throw new Error(result.error ?? fallback);
 }
 
-export function createBackendIdCodec(prefix: HarnessId) {
-  const marker = `${prefix}:`;
-  return {
-    compose: (rawId: string) => composeFrontendSessionId(prefix, rawId),
-    decompose: (sessionId: string) => rawSessionIdForHarness(sessionId, prefix),
-    matches: (sessionId: string | null | undefined) => Boolean(sessionId?.startsWith(marker)),
-  };
-}
+export { createBackendIdCodec } from "./id-codec.ts";
 
 export function getTarget(target?: HarnessTarget) {
   return {

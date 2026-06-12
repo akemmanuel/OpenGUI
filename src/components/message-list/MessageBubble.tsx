@@ -1,9 +1,15 @@
 import { AlertTriangle, GitFork, Layers, Undo2 } from "lucide-react";
-import { memo } from "react";
+import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  ImageMentionLightbox,
+  ImageMentionThumbnails,
+  type ImageMention,
+} from "@/components/ImageMentionPreview";
 import { ProviderIcon } from "@/components/provider-icons";
-import type { MessageEntry } from "@/hooks/use-agent-state";
+import { useConnectionState, useSessionState, type MessageEntry } from "@/hooks/use-agent-state";
 import { USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
+import { splitImageMentions } from "@/lib/image-mentions";
 import { cn } from "@/lib/utils";
 import { DurationLabel } from "./DurationLabel";
 import { PartView } from "./PartView";
@@ -31,10 +37,34 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleToolPart?: (partId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const { isLocalWorkspace, workspaceServerUrl } = useConnectionState();
+  const { sessions, activeTargetDirectory } = useSessionState();
+  const imageServerUrl = isLocalWorkspace ? null : workspaceServerUrl;
   const { info, parts } = entry;
+  const imageBaseDirectory =
+    sessions.find((session) => session.id === info.sessionID)?._projectDir ??
+    sessions.find((session) => session.id === info.sessionID)?.directory ??
+    activeTargetDirectory ??
+    null;
   const isUser = info.role === "user";
   const expanded = expandedUserMessages?.has(info.id) ?? false;
   const isSummary = info.role === "assistant" && "summary" in info && info.summary === true;
+  const [activeImagePath, setActiveImagePath] = useState<string | null>(null);
+  const [openImage, setOpenImage] = useState<ImageMention | null>(null);
+  const userImages = useMemo(() => {
+    if (!isUser) return [];
+    const seen = new Set<string>();
+    const images: ImageMention[] = [];
+    for (const part of parts) {
+      if (part.type !== "text" || !part.text) continue;
+      for (const segment of splitImageMentions(part.text)) {
+        if (segment.type !== "image" || seen.has(segment.path)) continue;
+        seen.add(segment.path);
+        images.push({ path: segment.path, filename: segment.filename });
+      }
+    }
+    return images;
+  }, [isUser, parts]);
 
   const userTextLength = isUser
     ? parts.reduce((sum, p) => sum + (p.type === "text" ? (p.text?.length ?? 0) : 0), 0)
@@ -85,6 +115,17 @@ export const MessageBubble = memo(function MessageBubble({
             )}
           </div>
         )}
+        {userImages.length > 0 && (
+          <ImageMentionThumbnails
+            images={userImages}
+            activePath={activeImagePath}
+            onHover={setActiveImagePath}
+            onOpen={setOpenImage}
+            serverUrl={imageServerUrl}
+            baseDirectory={imageBaseDirectory}
+            className="mb-2"
+          />
+        )}
         {parts.length > 0 && (
           <div className={cn(shouldCollapse && !expanded && "relative")}>
             <div
@@ -101,6 +142,10 @@ export const MessageBubble = memo(function MessageBubble({
                   lastReasoningPartId={lastReasoningPartId}
                   expandedToolParts={expandedToolParts}
                   onToggleToolPart={onToggleToolPart}
+                  activeImagePath={activeImagePath}
+                  onImageHover={setActiveImagePath}
+                  onImageOpen={setOpenImage}
+                  imageBaseDirectory={imageBaseDirectory}
                 />
               ))}
             </div>
@@ -129,6 +174,12 @@ export const MessageBubble = memo(function MessageBubble({
               : info.error.name}
           </div>
         )}
+        <ImageMentionLightbox
+          image={openImage}
+          serverUrl={imageServerUrl}
+          baseDirectory={imageBaseDirectory}
+          onClose={() => setOpenImage(null)}
+        />
         {info.role === "assistant" && turnFooter && (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
             <DurationLabel footer={turnFooter} />

@@ -27,37 +27,21 @@ import type {
   UpdateProjectInput,
 } from "@/protocol/client";
 import { composeFrontendSessionId } from "@/lib/session-identity";
+import {
+  createOpenCodePlatform,
+  createPiPlatform,
+  targetArgs,
+  unwrapIpcResult,
+} from "@/protocol/http-platform";
 import type {
   GitMergeResult,
   GitWorktree,
   HarnessInventory,
-  InstallResult,
   IPCResult,
   WorktreeSetupDetection,
 } from "@/types/electron";
-
-interface RpcEnvelope<T> {
-  ok: boolean;
-  value?: T;
-  error?: string;
-  code?: string;
-  recoverable?: boolean;
-}
-
-export class OpenGuiRpcError extends Error {
-  constructor(
-    message: string,
-    readonly code = "UNKNOWN",
-    readonly recoverable = false,
-  ) {
-    super(message);
-    this.name = "OpenGuiRpcError";
-  }
-}
-
-function throwRpcError<T>(body: RpcEnvelope<T> | null, fallback: string): never {
-  throw new OpenGuiRpcError(body?.error || fallback, body?.code, body?.recoverable);
-}
+import { OpenGuiRpcError, type RpcEnvelope, throwRpcError } from "@/protocol/http-rpc";
+export { OpenGuiRpcError } from "@/protocol/http-rpc";
 
 interface EventSourceLike {
   onopen: ((event: Event) => void) | null;
@@ -82,6 +66,7 @@ export interface HttpOpenGuiClientOptions {
   eventSourceImpl?: EventSourceConstructorLike;
   location?: Pick<Location, "protocol" | "host">;
   resolveBaseUrl?: () => string | undefined;
+  resolveHarnessIds?: () => HarnessId[] | undefined;
   openDirectory?: () => Promise<string | null>;
   localCapabilities?: boolean;
 }
@@ -93,15 +78,26 @@ function joinUrl(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
 
+function isLoopbackBaseUrl(value: string | undefined) {
+  if (!value) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  } catch {
+    return false;
+  }
+}
+
 async function httpRpc<T>(
   path: string,
   token: string | undefined,
   channel: string,
   args: unknown[] = [],
+  fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
 ): Promise<T> {
   const headers = new Headers({ "content-type": "application/json" });
   if (token) headers.set("authorization", `Bearer ${token}`);
-  const response = await fetch(joinUrl(path, "/api/rpc"), {
+  const response = await fetchImpl(joinUrl(path, "/api/rpc"), {
     method: "POST",
     headers,
     body: JSON.stringify({ channel, args }),
@@ -134,217 +130,6 @@ const WEB_BACKEND_META = {
     normalizeEvent: (event: never) => HarnessEvent | null;
   }
 >;
-
-function targetArgs(target?: HarnessTarget) {
-  return [target?.directory, target?.workspaceId];
-}
-
-function unwrapIpcResult<T>(result: IPCResult<T>, fallback: string): T {
-  if (!result?.success) throw new Error(result?.error || fallback);
-  return result.data as T;
-}
-
-function unwrapBridgeResult<T>(result: T | IPCResult<T>, fallback: string): T {
-  if (
-    result &&
-    typeof result === "object" &&
-    "success" in result &&
-    typeof (result as IPCResult<T>).success === "boolean"
-  ) {
-    return unwrapIpcResult(result as IPCResult<T>, fallback);
-  }
-  return result as T;
-}
-
-function normalizeSkillList<T>(value: T[] | Record<string, T> | null | undefined): T[] {
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object") return Object.values(value);
-  return [];
-}
-
-function appendTarget(target?: HarnessTarget, ...args: unknown[]) {
-  return [...targetArgs(target), ...args];
-}
-
-function createOpenCodePlatform(
-  op: <T>(suffix: string, args?: unknown[]) => Promise<T>,
-): HarnessDescriptor["platform"] {
-  const platformOp = async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
-    unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
-
-  return {
-    server: {
-      start: () => platformOp("server:start", "Failed to start server"),
-      stop: () => platformOp("server:stop", "Failed to stop server"),
-      status: () => platformOp("server:status", "Failed to get server status"),
-    },
-    providers: {
-      listAll: (target) =>
-        platformOp("provider:list", "Failed to list providers", targetArgs(target)),
-      getAuthMethods: (target) =>
-        platformOp(
-          "provider:auth-methods",
-          "Failed to load provider auth methods",
-          targetArgs(target),
-        ),
-      connect: (target, providerID, auth) =>
-        platformOp(
-          "provider:connect",
-          `Failed to connect provider: ${providerID}`,
-          appendTarget(target, providerID, auth),
-        ),
-      disconnect: (target, providerID) =>
-        platformOp(
-          "provider:disconnect",
-          `Failed to disconnect provider: ${providerID}`,
-          appendTarget(target, providerID),
-        ),
-      oauthAuthorize: (target, providerID, method) =>
-        platformOp(
-          "provider:oauth:authorize",
-          `Failed to start OAuth for provider: ${providerID}`,
-          appendTarget(target, providerID, method),
-        ),
-      oauthCallback: (target, providerID, method, code) =>
-        platformOp(
-          "provider:oauth:callback",
-          `Failed to complete OAuth for provider: ${providerID}`,
-          appendTarget(target, providerID, method, code),
-        ),
-      dispose: (target) =>
-        platformOp("instance:dispose", "Failed to dispose provider instance", targetArgs(target)),
-    },
-    mcp: {
-      status: (target) => platformOp("mcp:status", "Failed to load MCP status", targetArgs(target)),
-      add: (target, name, config) =>
-        platformOp(
-          "mcp:add",
-          `Failed to add MCP server: ${name}`,
-          appendTarget(target, name, config),
-        ),
-      connect: (target, name) =>
-        platformOp(
-          "mcp:connect",
-          `Failed to connect MCP server: ${name}`,
-          appendTarget(target, name),
-        ),
-      disconnect: (target, name) =>
-        platformOp(
-          "mcp:disconnect",
-          `Failed to disconnect MCP server: ${name}`,
-          appendTarget(target, name),
-        ),
-    },
-    skills: {
-      list: async (target) =>
-        normalizeSkillList(
-          unwrapBridgeResult(await op("skills", targetArgs(target)), "Failed to list plugins"),
-        ),
-      marketplace: {
-        list: async (view, page, perPage, apiKey) =>
-          unwrapBridgeResult(
-            await op("skills:marketplace:list", [view, page, perPage, apiKey]),
-            "Failed to list plugin catalog entries",
-          ),
-        search: async (query, limit, apiKey) =>
-          unwrapBridgeResult(
-            await op("skills:marketplace:search", [query, limit, apiKey]),
-            "Failed to search plugin catalog entries",
-          ),
-        detail: async (source, slug, apiKey) =>
-          unwrapBridgeResult(
-            await op("skills:marketplace:detail", [source, slug, apiKey]),
-            "Failed to load plugin catalog entry",
-          ),
-        audit: async (source, slug, apiKey) =>
-          unwrapBridgeResult(
-            await op("skills:marketplace:audit", [source, slug, apiKey]),
-            "Failed to audit plugin catalog entry",
-          ),
-        curated: async (apiKey) =>
-          unwrapBridgeResult(
-            await op("skills:marketplace:curated", [apiKey]),
-            "Failed to load curated plugin catalog entries",
-          ),
-      },
-      install: async (source, directory, globalScope) =>
-        unwrapBridgeResult(
-          await op("skills:install", [source, directory, globalScope]),
-          "Failed to install plugin",
-        ),
-      remove: async (skillName, directory, globalScope) =>
-        unwrapBridgeResult(
-          await op("skills:remove", [skillName, directory, globalScope]),
-          "Failed to remove plugin",
-        ),
-      update: async (skillName, directory, globalScope) =>
-        unwrapBridgeResult(
-          await op("skills:update", [skillName, directory, globalScope]),
-          "Failed to update plugin",
-        ),
-      listInstalled: async (directory) =>
-        normalizeSkillList(
-          unwrapBridgeResult(
-            await op("skills:list-installed", [directory]),
-            "Failed to list installed plugins",
-          ),
-        ),
-      checkCli: async () =>
-        unwrapBridgeResult(await op("skills:check-cli"), "Failed to check plugins CLI"),
-    },
-    config: {
-      get: (target) => platformOp("config:get", "Failed to load config", targetArgs(target)),
-      update: (target, config) =>
-        platformOp("config:update", "Failed to update config", appendTarget(target, config)),
-    },
-  };
-}
-
-function createPiPlatform(
-  op: <T>(suffix: string, args?: unknown[]) => Promise<T>,
-): HarnessDescriptor["platform"] {
-  const platformOp = async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
-    unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
-
-  return {
-    providers: {
-      listAll: (target) =>
-        platformOp("provider:list", "Failed to list providers", targetArgs(target)),
-      getAuthMethods: (target) =>
-        platformOp(
-          "provider:auth-methods",
-          "Failed to load provider auth methods",
-          targetArgs(target),
-        ),
-      connect: (target, providerID, auth) =>
-        platformOp(
-          "provider:connect",
-          `Failed to connect provider: ${providerID}`,
-          appendTarget(target, providerID, auth),
-        ),
-      disconnect: (target, providerID) =>
-        platformOp(
-          "provider:disconnect",
-          `Failed to disconnect provider: ${providerID}`,
-          appendTarget(target, providerID),
-        ),
-      oauthAuthorize: (target, providerID, method) =>
-        platformOp(
-          "provider:oauth:authorize",
-          `Failed to start OAuth for provider: ${providerID}`,
-          appendTarget(target, providerID, method),
-        ),
-      oauthCallback: (target, providerID, method, code) =>
-        platformOp(
-          "provider:oauth:callback",
-          `Failed to complete OAuth for provider: ${providerID}`,
-          appendTarget(target, providerID, method, code),
-        ),
-      dispose: (target) =>
-        platformOp("instance:dispose", "Failed to dispose provider instance", targetArgs(target)),
-    },
-  };
-}
 
 function createWebBackendDescriptor(
   harnessId: HarnessId,
@@ -530,7 +315,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
 
   const rpcCall = <T>(channel: string, args: unknown[] = []) =>
     options.rpcImpl?.<T>(channel, args) ??
-    httpRpc<T>(getDefaultBaseUrl(), getToken(), channel, args);
+    httpRpc<T>(getDefaultBaseUrl(), getToken(), channel, args, fetchImpl);
   const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
     harnessIds?.length ? harnessIds : HARNESS_IDS;
   const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
@@ -582,10 +367,21 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     args: unknown[] = [],
   ) => {
     const baseUrl = requestBaseUrlForTarget(target);
+    const explicitTargetBaseUrl = target?.baseUrl?.replace(/\/+$/, "");
+    const useRemoteHttp = Boolean(
+      explicitTargetBaseUrl && !isLoopbackBaseUrl(explicitTargetBaseUrl),
+    );
     const token = baseUrlTokens.get(baseUrl.replace(/\/+$/, "")) ?? getToken();
     return unwrapIpcResult(
-      await (options.rpcImpl?.<IPCResult<T>>(backendChannel(harnessId, suffix), args) ??
-        httpRpc<IPCResult<T>>(baseUrl, token, backendChannel(harnessId, suffix), args)),
+      await (!useRemoteHttp && options.rpcImpl
+        ? options.rpcImpl<IPCResult<T>>(backendChannel(harnessId, suffix), args)
+        : httpRpc<IPCResult<T>>(
+            baseUrl,
+            token,
+            backendChannel(harnessId, suffix),
+            args,
+            fetchImpl,
+          )),
       `Backend call failed: ${harnessId}:${suffix}`,
     );
   };
@@ -850,9 +646,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const webBackends = HARNESS_IDS.map((harnessId) =>
     createWebBackendDescriptor(harnessId, rpcCall, runtimeOverridesForBackend(harnessId)),
   );
-  const list = () => webBackends;
+  const list = () => {
+    const resolvedHarnessIds = options.resolveHarnessIds?.();
+    if (!resolvedHarnessIds?.length) return webBackends;
+    const allowed = new Set(resolvedHarnessIds);
+    return webBackends.filter((backend) => allowed.has(backend.id as HarnessId));
+  };
   const get = (harnessId: HarnessId = "opencode") =>
-    webBackends.find((backend) => backend.id === harnessId);
+    list().find((backend) => backend.id === harnessId);
 
   return {
     capabilities: () =>
@@ -1460,8 +1261,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       getHomeDir: async () => await rpcCall<string>("platform:homeDir"),
       getHarnessInventories: async () =>
         await rpcCall<HarnessInventory[]>("platform:harnessInventory"),
-      installBackend: async (harnessId: HarnessId) =>
-        await rpcCall<InstallResult>("backend:install", [harnessId]),
     },
     desktop: {
       openDirectory: async () =>

@@ -50,9 +50,6 @@ export interface DesktopShellClient {
     getAll(): Promise<string[]>;
     onChange(callback: (detachedProjects: string[]) => void): () => void;
   };
-  backends: {
-    onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
-  };
   skills: {
     onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
   };
@@ -150,7 +147,9 @@ export function createElectronDesktopShell(api: ElectronAPI): DesktopShellClient
       getSystemLocale: () => api.getSystemLocale(),
     },
     updates: {
-      isManaged: true,
+      // No native auto-updater: the renderer only checks GitHub releases and
+      // shows a dismissible notification dialog.
+      isManaged: false,
       getState: () => api.updates.getState(),
       check: () => api.updates.check(),
       download: () => api.updates.download(),
@@ -161,10 +160,6 @@ export function createElectronDesktopShell(api: ElectronAPI): DesktopShellClient
       getCurrent: () => api.getDetachedProject(),
       getAll: () => api.getDetachedProjects(),
       onChange: (callback) => api.onDetachedProjectsChange(callback),
-    },
-    backends: {
-      onInstallProgress: (callback) =>
-        subscribeToRawBackendChannel(api, "backend:install-progress", callback),
     },
     skills: {
       onInstallProgress: (callback) =>
@@ -216,9 +211,6 @@ export function createWebDesktopShell(): DesktopShellClient {
       getCurrent: () => new URLSearchParams(window.location.search).get("detach"),
       getAll: async () => [],
       onChange: () => NOOP_UNSUBSCRIBE,
-    },
-    backends: {
-      onInstallProgress: () => NOOP_UNSUBSCRIBE,
     },
     skills: {
       onInstallProgress: () => NOOP_UNSUBSCRIBE,

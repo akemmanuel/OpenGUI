@@ -18,11 +18,7 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import {
-  getSessionMessages,
-  listSessions,
-  query,
-} from "../BetterSDK/dist/index.js";
+import { getSessionMessages, listSessions, query } from "../BetterSDK/dist/index.js";
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`OpenGUI Claude SDK replacement terminal prototype
@@ -93,8 +89,10 @@ function summarizeMessage(message) {
       .slice(0, 100);
     return `assistant ${message.message?.id ?? ""} ${text}`.trim();
   }
-  if (message.type === "result") return `result error=${Boolean(message.is_error)} ${message.subtype ?? ""}`;
-  if (message.type === "system") return `system:${message.subtype ?? "?"} session=${message.session_id ?? ""}`;
+  if (message.type === "result")
+    return `result error=${Boolean(message.is_error)} ${message.subtype ?? ""}`;
+  if (message.type === "system")
+    return `system:${message.subtype ?? "?"} session=${message.session_id ?? ""}`;
   if (message.type === "user") return `user session=${message.session_id ?? ""}`;
   return `${message.type ?? "unknown"} ${JSON.stringify(message).slice(0, 120)}`;
 }
@@ -119,7 +117,7 @@ function render() {
   console.log(JSON.stringify(state.counters, null, 2));
   console.log();
   console.log(bold("recent messages"));
-  for (const line of state.recentMessages) console.log(`  - ${line}`);
+  for (const line of state.recentMessages) console.log(`  - ${String(line)}`);
   if (state.recentMessages.length === 0) console.log(dim("  (none yet)"));
   console.log();
   console.log(bold("sessions cache"));
@@ -171,7 +169,8 @@ function buildOptions() {
       console.log(bold("Permission callback fired"));
       console.log(JSON.stringify({ toolName, input: toolInput, context }, null, 2));
       if (state.permissionPolicy === "allow") return { behavior: "allow", updatedInput: toolInput };
-      if (state.permissionPolicy === "deny") return { behavior: "deny", message: "Denied by prototype" };
+      if (state.permissionPolicy === "deny")
+        return { behavior: "deny", message: "Denied by prototype" };
       const answer = (await rl.question("Allow this tool call? [y/N] ")).trim().toLowerCase();
       return answer === "y" || answer === "yes"
         ? { behavior: "allow", updatedInput: toolInput }
@@ -181,12 +180,14 @@ function buildOptions() {
       PreToolUse: [
         {
           matcher: "*",
-          hooks: [async (hookInput, toolUseID) => {
-            state.counters.hooks += 1;
-            state.recentMessages.push(`hook PreToolUse toolUseID=${toolUseID ?? ""}`);
-            state.recentMessages = state.recentMessages.slice(-12);
-            return { continue: true };
-          }],
+          hooks: [
+            async (hookInput, toolUseID) => {
+              state.counters.hooks += 1;
+              state.recentMessages.push(`hook PreToolUse toolUseID=${toolUseID ?? ""}`);
+              state.recentMessages = state.recentMessages.slice(-12);
+              return { continue: true };
+            },
+          ],
         },
       ],
     },
@@ -200,7 +201,14 @@ async function runQuery(prompt) {
   state.lastResult = null;
   state.lastInit = null;
   state.recentMessages = [];
-  state.counters = { messages: 0, permissions: 0, hooks: 0, streamEvents: 0, assistant: 0, result: 0 };
+  state.counters = {
+    messages: 0,
+    permissions: 0,
+    hooks: 0,
+    streamEvents: 0,
+    assistant: 0,
+    result: 0,
+  };
   render();
   console.log(dim("Starting real Claude subprocess..."));
 
@@ -260,6 +268,7 @@ async function listModels() {
   render();
   console.log(dim("Launching Claude config probe for supportedModels()..."));
   const neverPrompt = (async function* () {
+    yield* [];
     await new Promise(() => {});
   })();
   const handle = query({
@@ -293,7 +302,8 @@ function cyclePermissionMode() {
 
 function cyclePermissionPolicy() {
   const policies = ["ask", "allow", "deny"];
-  state.permissionPolicy = policies[(policies.indexOf(state.permissionPolicy) + 1) % policies.length];
+  state.permissionPolicy =
+    policies[(policies.indexOf(state.permissionPolicy) + 1) % policies.length];
 }
 
 while (true) {
@@ -327,4 +337,3 @@ while (true) {
 }
 
 rl.close();
-

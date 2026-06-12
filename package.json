@@ -1,6 +1,6 @@
 {
   "name": "opengui",
-  "version": "0.5.25",
+  "version": "0.5.26",
   "private": false,
   "description": "OpenGUI - Desktop and web command center for coding agents",
   "homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -18,6 +18,29 @@
   "scripts": {
     "postinstall": "node ./scripts/ensure-electron.mjs",
     "prepare": "vp config",
+    "dev": "vp dev",
+    "dev:electron": "vp run dev",
+    "dev:web": "vp dev --host 127.0.0.1",
+    "build": "vp build",
+    "check": "vp check",
+    "check:fix": "vp check --fix",
+    "lint": "vp lint",
+    "lint:fix": "vp lint --fix",
+    "fmt": "vp fmt",
+    "fmt:fix": "vp fmt --fix",
+    "test": "vp test",
+    "start": "NODE_ENV=production pnpm exec electron . --no-sandbox",
+    "start:web": "HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
+    "dist:linux": "vp build && electron-builder --linux deb AppImage",
+    "dist:linux:appimage": "vp build && electron-builder --linux AppImage",
+    "dist:mac": "vp build && electron-builder --mac dmg",
+    "dist:mac:arm64": "vp build && electron-builder --mac dmg --arm64",
+    "dist:win": "vp build && electron-builder --win nsis",
+    "dist:win:portable": "vp build && electron-builder --win portable",
+    "mobile:sync": "vp build && cap sync android",
+    "mobile:open": "cap open android",
+    "mobile:build:debug": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleDebug'",
+    "mobile:build:release": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleRelease'",
     "prototype:claude-sdk": "node scripts/prototype-claude-sdk-terminal.mjs"
   },
   "dependencies": {
@@ -39,7 +62,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "effect": "^3.21.3",
-    "electron-updater": "^6.8.9",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "hono": "^4.12.23",
     "i18next": "^26.3.1",
@@ -99,7 +121,8 @@
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "icon": "assets/icon.png",
-      "category": "Development"
+      "category": "Development",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
@@ -160,22 +183,8 @@
       "node_modules/undici/**/*",
       "node_modules/uuid/**/*",
       "node_modules/yaml/**/*",
-      "node_modules/electron-updater/**/*",
-      "node_modules/builder-util-runtime/**/*",
-      "node_modules/fs-extra/**/*",
       "node_modules/js-yaml/**/*",
-      "node_modules/lazy-val/**/*",
-      "node_modules/lodash.escaperegexp/**/*",
-      "node_modules/lodash.isequal/**/*",
-      "node_modules/semver/**/*",
-      "node_modules/tiny-typed-emitter/**/*",
-      "node_modules/debug/**/*",
-      "node_modules/sax/**/*",
-      "node_modules/graceful-fs/**/*",
-      "node_modules/jsonfile/**/*",
-      "node_modules/universalify/**/*",
-      "node_modules/ms/**/*",
-      "node_modules/argparse/**/*"
+      "node_modules/sax/**/*"
     ],
     "directories": {
       "output": "release"
@@ -189,5 +198,6 @@
     ],
     "nodeGypRebuild": false,
     "npmRebuild": false
-  }
+  },
+  "desktopName": "OpenGUI"
 }

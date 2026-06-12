@@ -1,100 +1,51 @@
 /**
- * Auto-generated provider icon names.
- * Do not edit manually - run `vp node scripts/fetch-provider-icons.ts` to regenerate.
+ * Provider icon asset manifest.
+ *
+ * Vite expands this glob at build time, so adding an icon only requires dropping an
+ * SVG into ./svgs. No provider-name list or sprite sheet updates are needed for
+ * the React component to resolve it.
  */
 
-export const providerIconNames = [
-  "302ai",
-  "abacus",
-  "aihubmix",
-  "alibaba",
-  "alibaba-cn",
-  "amazon-bedrock",
-  "anthropic",
-  "azure",
-  "azure-cognitive-services",
-  "bailing",
-  "baseten",
-  "berget",
-  "cerebras",
-  "chutes",
-  "cloudflare-ai-gateway",
-  "cloudflare-workers-ai",
-  "cohere",
-  "cortecs",
-  "deepinfra",
-  "deepseek",
-  "fastrouter",
-  "fireworks-ai",
-  "firmware",
-  "friendli",
-  "github-copilot",
-  "github-models",
-  "gitlab",
-  "google",
-  "google-vertex",
-  "google-vertex-anthropic",
-  "groq",
-  "helicone",
-  "huggingface",
-  "iflowcn",
-  "inception",
-  "inference",
-  "io-net",
-  "jiekou",
-  "kilo",
-  "kimi-for-coding",
-  "kuae-cloud-coding-plan",
-  "llama",
-  "lmstudio",
-  "lucidquery",
-  "minimax",
-  "minimax-cn",
-  "minimax-cn-coding-plan",
-  "minimax-coding-plan",
-  "mistral",
-  "moark",
-  "modelscope",
-  "moonshotai",
-  "moonshotai-cn",
-  "morph",
-  "nano-gpt",
-  "nebius",
-  "nova",
-  "novita-ai",
-  "nvidia",
-  "ollama-cloud",
-  "openai",
-  "opencode",
-  "openrouter",
-  "ovhcloud",
-  "perplexity",
-  "poe",
-  "privatemode-ai",
-  "requesty",
-  "sap-ai-core",
-  "scaleway",
-  "siliconflow",
-  "siliconflow-cn",
-  "stackit",
-  "stepfun",
-  "submodel",
-  "synthetic",
-  "togetherai",
-  "upstage",
-  "v0",
-  "venice",
-  "vercel",
-  "vivgrid",
-  "vultr",
-  "wandb",
-  "xai",
-  "xiaomi",
-  "zai",
-  "zai-coding-plan",
-  "zenmux",
-  "zhipuai",
-  "zhipuai-coding-plan",
-] as const;
+const iconModules = import.meta.glob("./svgs/*.svg", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
 
-export type ProviderIconName = (typeof providerIconNames)[number];
+const rawIconModules = import.meta.glob("./svgs/*.svg", {
+  eager: true,
+  query: "?raw",
+  import: "default",
+}) as Record<string, string>;
+
+const iconNameFromPath = (path: string) => path.match(/\/([^/]+)\.svg$/)?.[1] ?? path;
+
+export const providerIconUrls = Object.fromEntries(
+  Object.entries(iconModules)
+    .map(([path, url]) => [iconNameFromPath(path), url] as const)
+    .sort(([left], [right]) => left.localeCompare(right)),
+) as Readonly<Record<string, string>>;
+
+export const providerIconSvgs = Object.fromEntries(
+  Object.entries(rawIconModules)
+    .map(([path, svg]) => [iconNameFromPath(path), svg] as const)
+    .sort(([left], [right]) => left.localeCompare(right)),
+) as Readonly<Record<string, string>>;
+
+export type ProviderIconName = string;
+
+export const providerIconNames = Object.keys(providerIconUrls) as readonly ProviderIconName[];
+
+const fallbackProviderIcon = "synthetic";
+
+export function resolveProviderIcon(id: string): ProviderIconName {
+  return providerIconUrls[id] ? id : fallbackProviderIcon;
+}
+
+export function getProviderIconUrl(id: string): string {
+  return providerIconUrls[resolveProviderIcon(id)] ?? "";
+}
+
+export function getProviderIconSvg(id: string): string {
+  return providerIconSvgs[resolveProviderIcon(id)] ?? "";
+}

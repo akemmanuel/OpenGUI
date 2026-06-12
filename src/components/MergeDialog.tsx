@@ -1,14 +1,8 @@
 import { AlertTriangle, Check, GitBranch, GitMerge, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogShell } from "@/components/ui/DialogShell";
+import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { getErrorMessage, getProjectName } from "@/lib/utils";
 import { useOpenGuiClient } from "@/protocol/provider";
 
@@ -93,131 +87,135 @@ export function MergeDialog({
     }
   }, [mergeState, onFixWithAI, handleClose]);
 
+  if (mergeState.step === "merging") {
+    return (
+      <DialogShell
+        open={open}
+        onOpenChange={handleClose}
+        className="sm:max-w-md"
+        icon={<Loader2 className="size-5 animate-spin" />}
+        title="Merging..."
+        description={
+          <>
+            Merging <span className="font-medium text-foreground">{branch}</span> into the current
+            branch
+          </>
+        }
+      />
+    );
+  }
+
+  if (mergeState.step === "success") {
+    return (
+      <DialogShell
+        open={open}
+        onOpenChange={handleClose}
+        className="sm:max-w-md"
+        icon={<Check className="size-5" />}
+        title="Merge successful"
+        titleClassName="text-green-600"
+        description={
+          <>
+            <span className="font-medium text-foreground">{branch}</span> has been merged
+            successfully.
+            {deleteWorktree && " The worktree will be removed."}
+          </>
+        }
+        footer={<Button onClick={() => handleClose(false)}>Done</Button>}
+      />
+    );
+  }
+
+  if (mergeState.step === "conflicts") {
+    return (
+      <DialogShell
+        open={open}
+        onOpenChange={handleClose}
+        className="sm:max-w-md"
+        icon={<AlertTriangle className="size-5" />}
+        title="Merge conflicts"
+        titleClassName="text-amber-500"
+        description={
+          <>
+            Merging <span className="font-medium text-foreground">{branch}</span> produced conflicts
+            in {mergeState.files.length} file
+            {mergeState.files.length !== 1 ? "s" : ""}:
+          </>
+        }
+        footerClassName="gap-2 sm:gap-0"
+        footer={
+          <>
+            <Button variant="outline" onClick={handleAbort}>
+              Abort merge
+            </Button>
+            <Button onClick={handleFixWithAI}>Fix with AI</Button>
+          </>
+        }
+      >
+        <div className="max-h-48 overflow-y-auto rounded-md border bg-muted/50 p-2">
+          {mergeState.files.map((file) => (
+            <div
+              key={file}
+              className="flex items-center gap-2 py-1 px-2 text-xs font-mono text-muted-foreground"
+            >
+              <GitBranch className="size-3 shrink-0" />
+              {file}
+            </div>
+          ))}
+        </div>
+      </DialogShell>
+    );
+  }
+
+  if (mergeState.step === "error") {
+    return (
+      <DialogShell
+        open={open}
+        onOpenChange={handleClose}
+        className="sm:max-w-md"
+        icon={<AlertTriangle className="size-5" />}
+        title="Merge failed"
+        titleClassName="text-destructive"
+        description={mergeState.message}
+        footer={
+          <Button variant="outline" onClick={() => handleClose(false)}>
+            Close
+          </Button>
+        }
+      />
+    );
+  }
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
-        {/* Confirm step */}
-        {mergeState.step === "confirm" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <GitMerge className="size-5" />
-                Merge branch
-              </DialogTitle>
-              <DialogDescription>
-                Merge <span className="font-medium text-foreground">{branch}</span> into the current
-                branch of <span className="font-medium text-foreground">{repoName}</span>
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={deleteWorktree}
-                  onChange={(e) => setDeleteWorktree(e.target.checked)}
-                  className="size-4 rounded border-input"
-                />
-                <span>Delete worktree after successful merge</span>
-              </label>
-              <p className="mt-1 ml-6 text-[11px] text-muted-foreground">
-                Removes the worktree directory and disconnects it from the project
-              </p>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => handleClose(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleMerge}>Merge</Button>
-            </DialogFooter>
-          </>
-        )}
-
-        {/* Merging step */}
-        {mergeState.step === "merging" && (
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Loader2 className="size-5 animate-spin" />
-              Merging...
-            </DialogTitle>
-            <DialogDescription>
-              Merging <span className="font-medium text-foreground">{branch}</span> into the current
-              branch
-            </DialogDescription>
-          </DialogHeader>
-        )}
-
-        {/* Success step */}
-        {mergeState.step === "success" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-green-600">
-                <Check className="size-5" />
-                Merge successful
-              </DialogTitle>
-              <DialogDescription>
-                <span className="font-medium text-foreground">{branch}</span> has been merged
-                successfully.
-                {deleteWorktree && " The worktree will be removed."}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button onClick={() => handleClose(false)}>Done</Button>
-            </DialogFooter>
-          </>
-        )}
-
-        {/* Conflicts step */}
-        {mergeState.step === "conflicts" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-amber-500">
-                <AlertTriangle className="size-5" />
-                Merge conflicts
-              </DialogTitle>
-              <DialogDescription>
-                Merging <span className="font-medium text-foreground">{branch}</span> produced
-                conflicts in {mergeState.files.length} file
-                {mergeState.files.length !== 1 ? "s" : ""}:
-              </DialogDescription>
-            </DialogHeader>
-            <div className="max-h-48 overflow-y-auto rounded-md border bg-muted/50 p-2">
-              {mergeState.files.map((file) => (
-                <div
-                  key={file}
-                  className="flex items-center gap-2 py-1 px-2 text-xs font-mono text-muted-foreground"
-                >
-                  <GitBranch className="size-3 shrink-0" />
-                  {file}
-                </div>
-              ))}
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" onClick={handleAbort}>
-                Abort merge
-              </Button>
-              <Button onClick={handleFixWithAI}>Fix with AI</Button>
-            </DialogFooter>
-          </>
-        )}
-
-        {/* Error step */}
-        {mergeState.step === "error" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-destructive">
-                <AlertTriangle className="size-5" />
-                Merge failed
-              </DialogTitle>
-              <DialogDescription>{mergeState.message}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => handleClose(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+    <DialogShell
+      open={open}
+      onOpenChange={handleClose}
+      className="sm:max-w-md"
+      icon={<GitMerge className="size-5" />}
+      title="Merge branch"
+      description={
+        <>
+          Merge <span className="font-medium text-foreground">{branch}</span> into the current
+          branch of <span className="font-medium text-foreground">{repoName}</span>
+        </>
+      }
+      footer={
+        <>
+          <Button variant="outline" onClick={() => handleClose(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleMerge}>Merge</Button>
+        </>
+      }
+    >
+      <div className="py-2">
+        <ToggleSwitch
+          checked={deleteWorktree}
+          onCheckedChange={setDeleteWorktree}
+          label="Delete worktree after successful merge"
+          description="Removes the worktree directory and disconnects it from the project"
+        />
+      </div>
+    </DialogShell>
   );
 }

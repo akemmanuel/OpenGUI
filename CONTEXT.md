@@ -41,8 +41,12 @@ _Avoid_: Bridge, provider glue, agent SDK glue
 A user-approved setup flow where OpenGUI helps install OpenCode and then verifies whether it is available. It must not silently install anything or present guided installation for every Harness.
 _Avoid_: silent install, bundled agent, automatic setup, default npm install, all-harness installer
 
+**Manual Guided Harness Install**:
+A guided install path where OpenGUI does not execute the installer itself. OpenGUI shows the official install command or installer source, offers copy and open-terminal actions, and then performs Install Verification after the user completes installation outside OpenGUI.
+_Avoid_: silent install, hidden script execution, package-manager fallback, automatic `curl | bash`
+
 **Official Installer Consent**:
-The explicit approval step before OpenGUI starts a Harness install action. OpenGUI shows what it will install in plain language, shows the command or installer source when relevant, and offers manual instructions as an alternative.
+The explicit approval step before OpenGUI starts or guides a Harness install action. OpenGUI shows what it will install in plain language, shows the command or installer source when relevant, and offers manual instructions as an alternative.
 _Avoid_: hidden script execution, blind install, terminal-only setup
 
 **Install Verification**:

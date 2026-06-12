@@ -1,0 +1,98 @@
+import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import type { Event as OpenCodeEvent, Message, Session } from "@opencode-ai/sdk/v2/client";
+import { mapOpenCodeEvent } from "./opencode-map";
+
+const context = { directory: "/repo", workspaceId: "workspace-1" };
+
+describe("mapOpenCodeEvent", () => {
+  test("tags session lifecycle events with OpenCode metadata", () => {
+    const session = { id: "session-1", title: "Work", directory: "/repo" } as unknown as Session;
+
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "session.created",
+          properties: { info: session },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toMatchObject({
+      type: "session.created",
+      directory: "/repo",
+      workspaceId: "workspace-1",
+      session: {
+        id: "opencode:session-1",
+        _rawId: "session-1",
+        _harnessId: "opencode",
+        _projectDir: "/repo",
+        _workspaceId: "workspace-1",
+      },
+    });
+  });
+
+  test("normalizes message IDs", () => {
+    const message = { id: "message-1", sessionID: "session-1" } as unknown as Message;
+
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "message.updated",
+          properties: { info: message },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toEqual({
+      type: "message.updated",
+      message: { id: "message-1", sessionID: "opencode:session-1" },
+    });
+  });
+
+  test("maps sync envelopes after stripping numeric type suffixes", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "sync",
+          syncEvent: {
+            id: "event-1",
+            type: "message.part.delta.0",
+            data: {
+              sessionID: "session-1",
+              messageID: "message-1",
+              partID: "part-1",
+              field: "text",
+              delta: "hello",
+            },
+          },
+        },
+        context,
+      ),
+    ).toEqual({
+      id: "event-1",
+      type: "message.part.delta",
+      sessionID: "opencode:session-1",
+      messageID: "message-1",
+      partID: "part-1",
+      field: "text",
+      delta: "hello",
+    });
+  });
+
+  test("returns null for unhandled and aborted error events", () => {
+    expect(
+      mapOpenCodeEvent(
+        { type: "unknown.event", properties: {} } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toBeNull();
+
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "session.error",
+          properties: { sessionID: "session-1", error: { name: "MessageAbortedError" } },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toBeNull();
+  });
+});
