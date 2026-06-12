@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Globe, Loader2, Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { usePluginsPlatform } from "@/hooks/use-plugins-platform";
-import { useConnectionState } from "@/hooks/use-agent-state";
+import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -69,6 +69,7 @@ export function DiscoverPlugins() {
   const pluginsApi = usePluginsPlatform();
   const catalogApi = pluginsApi?.marketplace;
   const { activeDirectory } = useConnectionState();
+  const { refreshProviders } = useActions();
   const shell = useDesktopShell();
 
   const [query, setQuery] = useState("");
@@ -198,7 +199,11 @@ export function DiscoverPlugins() {
   );
 
   const runPluginAction = useCallback(
-    async (key: string, action: () => Promise<void>, skillName?: string) => {
+    async (
+      key: string,
+      action: () => Promise<{ exitCode?: number } | void>,
+      skillName?: string,
+    ) => {
       setBusyKeys((prev) => new Set(prev).add(key));
       setInstallProgress({
         phase: "starting",
@@ -207,16 +212,28 @@ export function DiscoverPlugins() {
       });
       setShowProgress(true);
       try {
-        await action();
-        await fetchInstalled();
-      } catch {}
+        const result = await action();
+        if (result?.exitCode !== undefined && result.exitCode !== 0) {
+          setInstallProgress((prev) => ({ ...prev, phase: "failed" }));
+        } else {
+          setInstallProgress((prev) => ({ ...prev, phase: "completed" }));
+          await fetchInstalled();
+          await refreshProviders();
+        }
+      } catch (error) {
+        setInstallProgress((prev) => ({
+          ...prev,
+          phase: "failed",
+          rawLines: [...prev.rawLines, error instanceof Error ? error.message : String(error)],
+        }));
+      }
       setBusyKeys((prev) => {
         const next = new Set(prev);
         next.delete(key);
         return next;
       });
     },
-    [fetchInstalled],
+    [fetchInstalled, refreshProviders],
   );
 
   // Install
@@ -230,7 +247,11 @@ export function DiscoverPlugins() {
       if (!pluginsApi) return;
       const key = installed.remoteKey || installed.location;
       await runPluginAction(key, async () => {
-        await pluginsApi.update(installed.name, scopedDirectory, installed.scope === "global");
+        return await pluginsApi.update(
+          installed.name,
+          scopedDirectory,
+          installed.scope === "global",
+        );
       });
     },
     [pluginsApi, scopedDirectory, runPluginAction],
@@ -241,7 +262,11 @@ export function DiscoverPlugins() {
       if (!pluginsApi) return;
       const key = installed.remoteKey || installed.location;
       await runPluginAction(key, async () => {
-        await pluginsApi.remove(installed.name, scopedDirectory, installed.scope === "global");
+        return await pluginsApi.remove(
+          installed.name,
+          scopedDirectory,
+          installed.scope === "global",
+        );
       });
     },
     [pluginsApi, scopedDirectory, runPluginAction],
@@ -254,7 +279,7 @@ export function DiscoverPlugins() {
       await runPluginAction(
         key,
         async () => {
-          await pluginsApi.install(source, scopedDirectory, globalScope);
+          return await pluginsApi.install(source, scopedDirectory, globalScope);
         },
         installPlugin.name,
       );

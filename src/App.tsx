@@ -51,7 +51,13 @@ import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
-function AppContent({ detachedProject }: { detachedProject?: string }) {
+function AppContent({
+  detachedProject,
+  suppressBootErrors,
+}: {
+  detachedProject?: string;
+  suppressBootErrors?: boolean;
+}) {
   const client = useOpenGuiClient();
   const lastEscapeAtRef = useRef(0);
   const [queueMode, setQueueMode] = useState<QueueMode>("queue");
@@ -288,6 +294,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
   const isBooting = bootState === "checking-server" || bootState === "starting-server";
 
   useEffect(() => {
+    if (suppressBootErrors) return;
     if (isBooting) return;
     const message = bootState === "error" ? bootError : lastError;
     if (!message) return;
@@ -295,7 +302,7 @@ function AppContent({ detachedProject }: { detachedProject?: string }) {
       description: bootState === "error" && normalizedBootLogs ? normalizedBootLogs : undefined,
       duration: 8000,
     });
-  }, [bootState, bootError, isBooting, lastError, normalizedBootLogs]);
+  }, [bootState, bootError, isBooting, lastError, normalizedBootLogs, suppressBootErrors]);
 
   useEffect(() => {
     let cancelled = false;
@@ -529,7 +536,7 @@ export function App() {
       <OpenGuiClientProvider>
         <HarnessProvider detachedProject={detachedProject}>
           <SidebarProvider className="!h-dvh capacitor-safe-area">
-            <AppContent detachedProject={detachedProject} />
+            <AppContent detachedProject={detachedProject} suppressBootErrors={showWizard} />
             {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
             <Toaster richColors closeButton />
           </SidebarProvider>

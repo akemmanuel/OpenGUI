@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   RotateCw,
   Terminal,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -136,8 +137,18 @@ export function SetupWizard({ onComplete }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-background/90 backdrop-blur-md">
-      <div className="flex min-h-full items-start justify-center px-5 py-6 sm:items-center sm:py-10">
-        <div className="w-full max-w-[680px]">
+      <div className="flex min-h-full items-start justify-center px-4 py-4 sm:items-center sm:py-6">
+        <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-[560px] overflow-y-auto rounded-2xl border bg-background p-4 shadow-xl sm:max-h-[calc(100dvh-3rem)] sm:p-5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-2 top-2 size-8"
+            aria-label={t("common.close")}
+            onClick={onComplete}
+          >
+            <X className="size-4" />
+          </Button>
           <div className="mb-5 text-center">
             <div className="mb-2 text-xs text-muted-foreground">
               {Math.max(currentStepNumber, 0) + 1} / 4
@@ -163,7 +174,7 @@ export function SetupWizard({ onComplete }: Props) {
           </div>
 
           {step === "harness" && (
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
               {harnessState === "detecting" && (
                 <StatusRow
                   icon={<LoaderCircle className="size-5 animate-spin" />}
@@ -217,7 +228,7 @@ export function SetupWizard({ onComplete }: Props) {
           )}
 
           {step === "opencode" && (
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
               <StatusRow
                 icon={
                   opencodeInstalled ? (
@@ -287,7 +298,7 @@ export function SetupWizard({ onComplete }: Props) {
           )}
 
           {step === "folder" && (
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
               <StatusRow
                 icon={<Folder className="size-5 text-muted-foreground" />}
                 title={t("setupWizard.defaultChatDirectoryTitle")}
@@ -310,14 +321,14 @@ export function SetupWizard({ onComplete }: Props) {
           )}
 
           {step === "appearance" && (
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
               <AppearanceSetting />
               <StepNav onBack={() => setStep("folder")} onNext={() => setStep("finish")} />
             </div>
           )}
 
           {step === "finish" && (
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
               <StatusRow
                 icon={<Check className="size-5 text-emerald-500" />}
                 title={
