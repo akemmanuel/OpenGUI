@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Sidebar, SidebarContent, SidebarRail, useSidebar } from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, useSidebar } from "@/components/ui/sidebar";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
 import { useOpenGuiClient } from "@/protocol/provider";
@@ -426,8 +426,6 @@ export function AppSidebar({
           }}
         />
       )}
-
-      <SidebarRail />
 
       <ProjectPathDialog />
 

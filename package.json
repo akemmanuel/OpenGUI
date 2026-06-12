@@ -121,7 +121,8 @@
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "icon": "assets/icon.png",
-      "category": "Development"
+      "category": "Development",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
@@ -197,5 +198,6 @@
     ],
     "nodeGypRebuild": false,
     "npmRebuild": false
-  }
+  },
+  "desktopName": "OpenGUI"
 }
