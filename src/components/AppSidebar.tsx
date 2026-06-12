@@ -6,7 +6,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useHomeDir } from "@/hooks/use-home-dir";
@@ -555,8 +554,6 @@ export function AppSidebar({
           </div>
         </SidebarFooter>
       )}
-
-      <SidebarRail />
 
       <ProjectPathDialog />
 
