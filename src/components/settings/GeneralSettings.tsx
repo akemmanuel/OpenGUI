@@ -198,7 +198,9 @@ function LanguageSetting() {
       </div>
       <Select value={language} onValueChange={handleChange}>
         <SelectTrigger className="w-[180px] h-8">
-          <SelectValue placeholder={t("settings.general.language")}>{selectedLanguageLabel}</SelectValue>
+          <SelectValue placeholder={t("settings.general.language")}>
+            {selectedLanguageLabel}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="auto">{t("common.autoDetect")}</SelectItem>
