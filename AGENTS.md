@@ -29,7 +29,7 @@ Use Vite+ task runner and pnpm-managed deps.
 ## Project notes
 
 - `vite.config.ts` uses `vite-plus`
-- `packageManager` is `pnpm@11.1.2`
+- `packageManager` is `pnpm@11.5.2`
 - Keep docs aligned with Vite+ / pnpm workflow
 
 ## NEVER RUN
