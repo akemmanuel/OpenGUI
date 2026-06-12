@@ -2353,6 +2353,8 @@ function InternalAgentProvider({
                 sourceDirectory === targetDirectory ? null : sourceDirectory,
               pendingDirectoryChangeNotice: sourceDirectory !== targetDirectory,
               hideSystemAppendBlocks: sourceDirectory !== targetDirectory,
+              detachedFromProject: false,
+              detachedFromProjectAt: null,
             },
           },
         });
@@ -2365,6 +2367,46 @@ function InternalAgentProvider({
       }
     },
     [ensureDirectoryConnection, selectSession],
+  );
+
+  const removeSessionFromProject = useCallback(
+    async (sessionId: string) => {
+      try {
+        if (stateRef.current.busySessionIds.has(sessionId)) {
+          throw new Error("Wait for the session to finish before removing it from the project.");
+        }
+        const sourceSession = stateRef.current.sessions.find((session) => session.id === sessionId);
+        if (!sourceSession) return;
+        const sourceDirectory = normalizeProjectPath(
+          (sourceSession._projectDir ?? sourceSession.directory) || "",
+        );
+        if (!sourceDirectory) return;
+
+        dispatch({
+          type: "SET_SESSION_META",
+          payload: {
+            sessionId,
+            meta: {
+              originMode: "chat",
+              assignedProjectDir: null,
+              assignedProjectMovedAt: null,
+              assignedProjectSourceDir: null,
+              pendingDirectoryChangeNotice: false,
+              hideSystemAppendBlocks: false,
+              detachedFromProject: true,
+              detachedFromProjectAt: Date.now(),
+            },
+          },
+        });
+        await selectSession(sessionId);
+      } catch (error) {
+        dispatch({
+          type: "SET_ERROR",
+          payload: getErrorMessage(error) || "Failed to remove session from project",
+        });
+      }
+    },
+    [selectSession],
   );
 
   const setProjectPinned = useCallback((directory: string, pinned: boolean) => {
@@ -2741,6 +2783,7 @@ function InternalAgentProvider({
       setSessionTags,
       setSessionPinned,
       moveSessionToProject,
+      removeSessionFromProject,
       setProjectPinned,
       registerWorktree,
       unregisterWorktree,
@@ -2793,6 +2836,7 @@ function InternalAgentProvider({
       setSessionTags,
       setSessionPinned,
       moveSessionToProject,
+      removeSessionFromProject,
       setProjectPinned,
       registerWorktree,
       unregisterWorktree,

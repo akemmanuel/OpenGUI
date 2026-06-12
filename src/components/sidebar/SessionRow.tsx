@@ -44,6 +44,8 @@ export function SessionRow({
   setSessionTags,
   revealSessionInProject,
   moveSessionToProject,
+  removeSessionFromProject,
+  currentProjectDir,
   deleteSession,
 }: {
   session: Session;
@@ -74,6 +76,8 @@ export function SessionRow({
   setSessionTags: (sessionId: string, tags: string[]) => void;
   revealSessionInProject: (directory: string) => void;
   moveSessionToProject: (sessionId: string, projectDirectory: string) => void | Promise<void>;
+  removeSessionFromProject: (sessionId: string) => void | Promise<void>;
+  currentProjectDir: string | null;
   deleteSession: (sessionId: string) => void | Promise<void>;
 }) {
   const isActive = session.id === activeSessionId;
@@ -117,6 +121,12 @@ export function SessionRow({
     void moveSessionToProject(session.id, projectDirectory);
   };
 
+  const removeFromProject = currentProjectDir
+    ? () => {
+        void removeSessionFromProject(session.id);
+      }
+    : null;
+
   return (
     <SessionContextMenu
       key={session.id}
@@ -124,11 +134,13 @@ export function SessionRow({
       currentTags={tags}
       availableProjects={availableProjectDirectories}
       assignedProjectDir={meta?.assignedProjectDir ?? null}
+      currentProjectDir={currentProjectDir}
       pinned={isPinned}
       onTogglePin={() => setSessionPinned(session.id, !isPinned)}
       onSetColor={(color) => setSessionColor(session.id, color)}
       onSetTags={(newTags) => setSessionTags(session.id, newTags)}
       onMoveToProject={moveToProject}
+      onRemoveFromProject={removeFromProject}
       onRename={() => startEditing(session.id, isNaming ? "" : session.title || "")}
       onDelete={() => deleteSession(session.id)}
     >
@@ -263,10 +275,12 @@ export function SessionRow({
               currentTags={tags}
               availableProjects={availableProjectDirectories}
               assignedProjectDir={meta?.assignedProjectDir ?? null}
+              currentProjectDir={currentProjectDir}
               onTogglePin={() => setSessionPinned(session.id, !isPinned)}
               onSetColor={(color) => setSessionColor(session.id, color)}
               onSetTags={(newTags) => setSessionTags(session.id, newTags)}
               onMoveToProject={moveToProject}
+              onRemoveFromProject={removeFromProject}
               onRename={() => startEditing(session.id, session.title || "")}
               onDelete={() => deleteSession(session.id)}
             />

@@ -141,6 +141,7 @@
     "tags": "Tags",
     "addTag": "Tag hinzufügen...",
     "moveToProject": "In Projekt verschieben",
+    "removeFromProject": "Aus {{project}} entfernen",
     "deleteSession": "Sitzung löschen"
   },
   "projectMenu": {

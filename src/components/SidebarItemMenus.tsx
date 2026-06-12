@@ -2,6 +2,7 @@ import {
   Check,
   Copy,
   FolderOpen,
+  FolderX,
   GitBranch,
   GitMerge,
   Minimize2,
@@ -60,10 +61,12 @@ export function SessionItemMenu({
   currentTags,
   availableProjects,
   assignedProjectDir,
+  currentProjectDir,
   onTogglePin,
   onSetColor,
   onSetTags,
   onMoveToProject,
+  onRemoveFromProject,
   onRename,
   onDelete,
 }: {
@@ -72,10 +75,12 @@ export function SessionItemMenu({
   currentTags: string[];
   availableProjects: string[];
   assignedProjectDir: string | null;
+  currentProjectDir: string | null;
   onTogglePin: () => void;
   onSetColor: (color: SessionColor) => void;
   onSetTags: (tags: string[]) => void;
   onMoveToProject: (directory: string) => void;
+  onRemoveFromProject: (() => void) | null;
   onRename: () => void;
   onDelete: () => void;
 }) {
@@ -229,6 +234,24 @@ export function SessionItemMenu({
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {currentProjectDir && onRemoveFromProject && (
+          <>
+            <DropdownMenuItem
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemoveFromProject();
+              }}
+            >
+              <FolderX className="size-4" />
+              <span>
+                {t("sessionMenu.removeFromProject", {
+                  project: getProjectName(currentProjectDir),
+                })}
+              </span>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         )}

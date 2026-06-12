@@ -33,6 +33,7 @@ export function useSidebarRenderers(args: any) {
     refreshGitInfo,
     remoteUrls,
     removeProject,
+    removeSessionFromProject,
     revealSessionInProject,
     selectSession,
     sessionMeta,
@@ -57,7 +58,11 @@ export function useSidebarRenderers(args: any) {
     worktreeParents,
   } = args;
 
-  const renderSessionRow = (session: any) => (
+  const renderSessionRow = (
+    session: any,
+    _directory?: string,
+    options?: { currentProjectDir?: string | null },
+  ) => (
     <SessionRow
       key={session.id}
       session={session}
@@ -88,6 +93,8 @@ export function useSidebarRenderers(args: any) {
       setSessionTags={setSessionTags}
       revealSessionInProject={revealSessionInProject}
       moveSessionToProject={moveSessionToProject}
+      removeSessionFromProject={removeSessionFromProject}
+      currentProjectDir={options?.currentProjectDir ?? null}
       deleteSession={deleteSession}
     />
   );
