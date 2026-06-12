@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AppearanceSetting } from "@/components/AppearanceSetting";
 import { Button } from "@/components/ui/button";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageSet } from "@/lib/safe-storage";
@@ -21,7 +20,7 @@ import { useOpenGuiClient } from "@/protocol/provider";
 import { useDesktopShell } from "@/shell/provider";
 import type { HarnessInventory } from "@/types/electron";
 
-type Step = "harness" | "opencode" | "folder" | "appearance" | "finish";
+type Step = "harness" | "opencode" | "folder" | "finish";
 type HarnessState = "detecting" | "ready" | "none" | "error";
 
 const OPENCODE_INSTALL_COMMAND = "curl -fsSL https://opencode.ai/install | bash";
@@ -36,10 +35,12 @@ function hasModelReadyHarness(inventories: HarnessInventory[]) {
   );
 }
 
+function hasInstalledHarness(inventories: HarnessInventory[]) {
+  return inventories.some((inventory) => inventory.installed);
+}
+
 function stepNumber(step: Step) {
-  return ["harness", "folder", "appearance", "finish"].indexOf(
-    step === "opencode" ? "harness" : step,
-  );
+  return ["harness", "folder", "finish"].indexOf(step === "opencode" ? "harness" : step);
 }
 
 export function SetupWizard({ onComplete }: Props) {
@@ -56,7 +57,7 @@ export function SetupWizard({ onComplete }: Props) {
   const opencodeInstalled = inventories.some(
     (inventory) => inventory.harnessId === "opencode" && inventory.installed,
   );
-  const canUseAnyHarness = hasModelReadyHarness(inventories);
+  const canUseAnyHarness = hasModelReadyHarness(inventories) || hasInstalledHarness(inventories);
 
   const title = useMemo(() => {
     switch (step) {
@@ -66,8 +67,6 @@ export function SetupWizard({ onComplete }: Props) {
         return t("setupWizard.setupOpenCodeTitle");
       case "folder":
         return t("setupWizard.chooseStartTitle");
-      case "appearance":
-        return t("setupWizard.appearanceTitle");
       case "finish":
         return canUseAnyHarness ? t("setupWizard.readyTitle") : t("setupWizard.setupSavedTitle");
     }
@@ -78,9 +77,9 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       const result = await client.runtime.getHarnessInventories().catch(() => []);
       setInventories(result);
-      setHarnessState(hasModelReadyHarness(result) ? "ready" : "none");
-      if (result.some((inventory) => inventory.harnessId === "opencode" && inventory.installed)) {
-      }
+      setHarnessState(
+        hasModelReadyHarness(result) || hasInstalledHarness(result) ? "ready" : "none",
+      );
       return result;
     } catch {
       setInventories([]);
@@ -96,7 +95,9 @@ export function SetupWizard({ onComplete }: Props) {
       const result = await refreshHarnessStatus();
       if (cancelled) return;
       setInventories(result);
-      setHarnessState(hasModelReadyHarness(result) ? "ready" : "none");
+      setHarnessState(
+        hasModelReadyHarness(result) || hasInstalledHarness(result) ? "ready" : "none",
+      );
     })();
 
     return () => {
@@ -151,14 +152,13 @@ export function SetupWizard({ onComplete }: Props) {
           </Button>
           <div className="mb-5 text-center">
             <div className="mb-2 text-xs text-muted-foreground">
-              {Math.max(currentStepNumber, 0) + 1} / 4
+              {Math.max(currentStepNumber, 0) + 1} / 3
             </div>
             <h1 className="mb-1.5 text-xl font-semibold tracking-tight">{title}</h1>
-            <p className="text-sm text-muted-foreground">{t("setupWizard.privacyNote")}</p>
           </div>
 
           <div className="mb-5 flex justify-center gap-1.5">
-            {[0, 1, 2, 3].map((idx) => (
+            {[0, 1, 2].map((idx) => (
               <div
                 key={idx}
                 className={[
@@ -204,24 +204,29 @@ export function SetupWizard({ onComplete }: Props) {
                 />
               )}
 
-              <div className="mt-5 flex flex-wrap justify-end gap-2">
-                <Button variant="outline" onClick={() => void refreshHarnessStatus()}>
+              <div className="mt-5 flex flex-wrap justify-between gap-2">
+                <Button variant="ghost" onClick={() => void refreshHarnessStatus()}>
                   <RotateCw className="mr-1.5 size-4" />
                   {t("setupWizard.checkAgain")}
                 </Button>
-                {harnessState === "none" && (
-                  <Button variant="outline" onClick={() => setStep("folder")}>
-                    {t("setupWizard.useAnotherHarness")}
-                  </Button>
-                )}
-                {harnessState === "none" ? (
-                  <Button onClick={() => setStep("opencode")}>{t("setupWizard.setup")}</Button>
-                ) : (
-                  <Button onClick={() => setStep("folder")} disabled={harnessState === "detecting"}>
-                    {t("setupWizard.continue")}
-                    <ArrowRight className="ml-1.5 size-4" />
-                  </Button>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  {harnessState === "none" && (
+                    <Button variant="outline" onClick={() => setStep("folder")}>
+                      {t("setupWizard.useAnotherHarness")}
+                    </Button>
+                  )}
+                  {harnessState === "none" ? (
+                    <Button onClick={() => setStep("opencode")}>{t("setupWizard.setup")}</Button>
+                  ) : (
+                    <Button
+                      onClick={() => setStep("folder")}
+                      disabled={harnessState === "detecting"}
+                    >
+                      {t("setupWizard.continue")}
+                      <ArrowRight className="ml-1.5 size-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
               {inventories.length > 0 && <HarnessInventorySummary inventories={inventories} />}
             </div>
@@ -316,14 +321,7 @@ export function SetupWizard({ onComplete }: Props) {
                   {t("common.browse")}
                 </Button>
               </div>
-              <StepNav onBack={() => setStep("harness")} onNext={() => setStep("appearance")} />
-            </div>
-          )}
-
-          {step === "appearance" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
-              <AppearanceSetting />
-              <StepNav onBack={() => setStep("folder")} onNext={() => setStep("finish")} />
+              <StepNav onBack={() => setStep("harness")} onNext={() => setStep("finish")} />
             </div>
           )}
 
@@ -343,7 +341,7 @@ export function SetupWizard({ onComplete }: Props) {
                 }
               />
               <div className="mt-5 flex justify-between gap-2">
-                <Button variant="outline" onClick={() => setStep("appearance")}>
+                <Button variant="outline" onClick={() => setStep("folder")}>
                   {t("common.back")}
                 </Button>
                 <Button onClick={complete}>{t("setupWizard.openOpenGui")}</Button>
@@ -357,24 +355,38 @@ export function SetupWizard({ onComplete }: Props) {
 }
 
 function HarnessInventorySummary({ inventories }: { inventories: HarnessInventory[] }) {
+  const { t } = useTranslation();
+
+  function getInventoryDescription(inventory: HarnessInventory) {
+    if (inventory.status === "ready" && inventory.models.length > 0) {
+      return t("setupWizard.harnessReadyDescription");
+    }
+    if (inventory.installed) {
+      return t("setupWizard.harnessCliFoundDescription");
+    }
+    return t("setupWizard.harnessNotFoundDescription");
+  }
+
   return (
     <div className="mt-5 rounded-lg border bg-muted/20 p-3">
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Harness inventory
+        {t("setupWizard.harnessInventoryTitle")}
       </div>
       <div className="space-y-2">
         {inventories.map((inventory) => (
           <div key={inventory.harnessId} className="flex items-start justify-between gap-3 text-sm">
             <div>
               <div className="font-medium">{inventory.displayName}</div>
-              <div className="text-xs text-muted-foreground">{inventory.message}</div>
+              <div className="text-xs text-muted-foreground">
+                {getInventoryDescription(inventory)}
+              </div>
             </div>
             <div className="shrink-0 text-xs text-muted-foreground">
               {inventory.status === "ready"
-                ? `${inventory.models.length} models`
+                ? t("setupWizard.modelsCount", { count: inventory.models.length })
                 : inventory.installed
-                  ? "not model-ready"
-                  : "not found"}
+                  ? t("setupWizard.cliFound")
+                  : t("setupWizard.notFound")}
             </div>
           </div>
         ))}
