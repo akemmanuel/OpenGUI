@@ -1,6 +1,6 @@
 import "./build/suppress-node-deprecations.ts";
 
-import { copyFile, readdir } from "node:fs/promises";
+import { copyFile, readdir, writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import { join } from "node:path";
 import { build as buildWithEsbuild } from "esbuild";
@@ -85,7 +85,18 @@ export default defineConfig({
       name: "opengui-electron-artifacts",
       apply: "build",
       async closeBundle() {
-        await copyFile("package.json", "dist-electron/package.json");
+        const runtimePackage = {
+          name: pkg.name,
+          version: pkg.version,
+          type: pkg.type,
+          main: pkg.main,
+          dependencies: pkg.dependencies,
+        };
+
+        await writeFile(
+          "dist-electron/package.json",
+          `${JSON.stringify(runtimePackage, null, 2)}\n`,
+        );
         await copyFile(await findPhotonWasm(), "dist-electron/photon_rs_bg.wasm");
 
         await buildWithEsbuild({

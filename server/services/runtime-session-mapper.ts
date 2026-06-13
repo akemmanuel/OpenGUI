@@ -1,5 +1,6 @@
 import type { HarnessId } from "../../src/agents/index.ts";
 import { rawSessionIdForHarness } from "../../src/lib/session-identity.ts";
+import { cleanSessionTitle } from "../../src/lib/session-title.ts";
 import type { SessionService } from "./session-service.ts";
 import type { CreateSessionInput, SessionRecord } from "./session-types.ts";
 
@@ -27,7 +28,7 @@ function extractRuntimeSessionTitle(session: unknown): string {
   if (!isPlainObject(session)) return "Untitled";
   const candidates = [session.title, session.name, session.slug, session.id];
   for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "string" && candidate.trim()) return cleanSessionTitle(candidate);
   }
   return "Untitled";
 }

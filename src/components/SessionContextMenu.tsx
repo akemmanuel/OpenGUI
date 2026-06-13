@@ -164,7 +164,7 @@ export function SessionContextMenu({
           alignOffset={5}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onTogglePin}>
+          <ContextMenu.Item className={CTX_ITEM_CLASS} onClick={onTogglePin}>
             {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
             <span>{pinned ? t("sessionMenu.unpin") : t("sessionMenu.pin")}</span>
           </ContextMenu.Item>
@@ -172,7 +172,7 @@ export function SessionContextMenu({
           <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
 
           {/* Rename */}
-          <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onRename}>
+          <ContextMenu.Item className={CTX_ITEM_CLASS} onClick={onRename}>
             <Pencil className="size-4" />
             <span>{t("sessionMenu.rename")}</span>
           </ContextMenu.Item>
@@ -194,7 +194,7 @@ export function SessionContextMenu({
                   <ContextMenu.Item
                     key={c.value ?? "none"}
                     className={CTX_ITEM_CLASS}
-                    onSelect={() => onSetColor(c.value)}
+                    onClick={() => onSetColor(c.value)}
                   >
                     <span className={cn("size-3 rounded-full shrink-0", c.className)} />
                     <span>{c.label}</span>
@@ -288,7 +288,7 @@ export function SessionContextMenu({
                       <ContextMenu.Item
                         key={directory}
                         className={CTX_ITEM_CLASS}
-                        onSelect={() => onMoveToProject(directory)}
+                        onClick={() => onMoveToProject(directory)}
                       >
                         <span>{getProjectName(directory)}</span>
                         {assignedProjectDir === directory && <Check className="ml-auto size-3.5" />}
@@ -303,7 +303,7 @@ export function SessionContextMenu({
           {currentProjectDir && onRemoveFromProject && (
             <>
               <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
-              <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onRemoveFromProject}>
+              <ContextMenu.Item className={CTX_ITEM_CLASS} onClick={onRemoveFromProject}>
                 <FolderX className="size-4" />
                 <span>
                   {t("sessionMenu.removeFromProject", {
@@ -317,7 +317,7 @@ export function SessionContextMenu({
           <ContextMenu.Separator className={CTX_SEPARATOR_CLASS} />
 
           {/* Delete */}
-          <ContextMenu.Item className={CTX_ITEM_CLASS} onSelect={onDelete}>
+          <ContextMenu.Item className={CTX_ITEM_CLASS} onClick={onDelete}>
             <Trash2 className="size-4" />
             <span>{t("sessionMenu.deleteSession")}</span>
           </ContextMenu.Item>
