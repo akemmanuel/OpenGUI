@@ -24,11 +24,13 @@ import { useSidebarModel } from "./sidebar/use-sidebar-model";
 
 export function AppSidebar({
   detachedProject,
+  highlightedSessionId,
   onOpenSettings,
   onOpenChat,
   settingsActive = false,
 }: {
   detachedProject?: string;
+  highlightedSessionId?: string | null;
   onOpenSettings: () => void;
   onOpenChat: () => void;
   settingsActive?: boolean;
@@ -70,6 +72,8 @@ export function AppSidebar({
     activeTargetDirectory,
   } = useSessionState();
 
+  const visibleActiveSessionId =
+    highlightedSessionId === undefined ? activeSessionId : highlightedSessionId;
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeSessionDirectory =
     activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
@@ -261,7 +265,7 @@ export function AppSidebar({
   }, [isMobile, setOpenMobile]);
 
   const { renderSessionRow, renderProjectEntry } = useSidebarRenderers({
-    activeSessionId,
+    activeSessionId: visibleActiveSessionId,
     availableProjectDirectories,
     busySessionIds,
     cancelEditing,
@@ -375,7 +379,7 @@ export function AppSidebar({
             directory={projectPopover.directory}
             top={projectPopover.top}
             sessions={popoverSessions}
-            activeSessionId={activeSessionId}
+            activeSessionId={visibleActiveSessionId}
             busySessionIds={busySessionIds}
             unreadSessionIds={unreadSessionIds}
             queuedPrompts={queuedPrompts}
