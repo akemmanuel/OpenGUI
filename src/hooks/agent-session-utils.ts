@@ -47,7 +47,9 @@ export function getSessionProjectTarget(session: Session | undefined | null): Pr
 }
 
 export function getSessionHarnessId(session: Session | undefined | null): HarnessId | null {
-  return session?._harnessId ?? getHarnessIdFromSessionId(session?.id) ?? null;
+  return (
+    session?._harnessId ?? session?._backendId ?? getHarnessIdFromSessionId(session?.id) ?? null
+  );
 }
 
 export function getSessionSelectedModel(session: Session | undefined | null): SelectedModel | null {

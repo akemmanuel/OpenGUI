@@ -133,9 +133,14 @@ function timestamp(m: any): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 function contentText(c: unknown): string {
-  if (typeof c === "string") return c;
-  if (Array.isArray(c)) return c.map((x: any) => x?.text ?? "").join("");
-  return "";
+  const text =
+    typeof c === "string" ? c : Array.isArray(c) ? c.map((x: any) => x?.text ?? "").join("") : "";
+  return cleanSessionTitle(text);
+}
+function cleanSessionTitle(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/^(?:human|assistant|user)\s*:\s*/i, "").trim() || trimmed;
 }
 export function projectHash(dir: string): string {
   return createHash("sha1").update(dir).digest("hex");

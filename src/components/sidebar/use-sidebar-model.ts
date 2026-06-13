@@ -13,7 +13,38 @@ import {
 } from "@/lib/worktree-placement";
 import { getProjectName, normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, Workspace } from "@/types/electron";
-import { parseProjectKey } from "@/hooks/agent-session-utils";
+import { getSessionHarnessId, parseProjectKey } from "@/hooks/agent-session-utils";
+import type { HarnessId } from "@/agents";
+
+function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {
+  const meta = sessionMeta[session.id];
+  if (meta?.detachedFromProject && typeof meta.detachedFromProjectAt === "number") {
+    return meta.detachedFromProjectAt;
+  }
+  if (meta?.assignedProjectDir && typeof meta.assignedProjectMovedAt === "number") {
+    return meta.assignedProjectMovedAt;
+  }
+  return session.time.updated ?? session.time.created ?? 0;
+}
+
+export function sortSessionsForSidebar(
+  items: Session[],
+  sessionMeta: SessionMetaMap,
+  preferredHarnessId?: HarnessId | null,
+) {
+  return [...items].sort((a, b) => {
+    if (preferredHarnessId) {
+      const aPreferred = getSessionHarnessId(a) === preferredHarnessId;
+      const bPreferred = getSessionHarnessId(b) === preferredHarnessId;
+      if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+    }
+
+    const byUpdated =
+      getSidebarSessionSortTime(b, sessionMeta) - getSidebarSessionSortTime(a, sessionMeta);
+    if (byUpdated !== 0) return byUpdated;
+    return b.id.localeCompare(a.id);
+  });
+}
 
 export function useSidebarModel({
   sessions,
@@ -24,6 +55,7 @@ export function useSidebarModel({
   connections,
   detachedProject,
   defaultChatDirectory,
+  preferredHarnessId,
   searchQuery,
   untitledLabel,
 }: {
@@ -35,6 +67,7 @@ export function useSidebarModel({
   connections: Record<string, ConnectionStatus>;
   detachedProject?: string;
   defaultChatDirectory?: string | null;
+  preferredHarnessId?: HarnessId | null;
   searchQuery: string;
   untitledLabel: string;
 }) {
@@ -62,28 +95,9 @@ export function useSidebarModel({
     [defaultChatDirectory],
   );
 
-  const sortSessionsForSidebar = useCallback(
-    (items: Session[]) =>
-      [...items].sort((a, b) => {
-        const aMeta = sessionMeta[a.id];
-        const bMeta = sessionMeta[b.id];
-        const aTime =
-          aMeta?.detachedFromProject && typeof aMeta.detachedFromProjectAt === "number"
-            ? aMeta.detachedFromProjectAt
-            : aMeta?.assignedProjectDir && typeof aMeta.assignedProjectMovedAt === "number"
-              ? aMeta.assignedProjectMovedAt
-              : (a.time.updated ?? a.time.created ?? 0);
-        const bTime =
-          bMeta?.detachedFromProject && typeof bMeta.detachedFromProjectAt === "number"
-            ? bMeta.detachedFromProjectAt
-            : bMeta?.assignedProjectDir && typeof bMeta.assignedProjectMovedAt === "number"
-              ? bMeta.assignedProjectMovedAt
-              : (b.time.updated ?? b.time.created ?? 0);
-        const byUpdated = bTime - aTime;
-        if (byUpdated !== 0) return byUpdated;
-        return b.id.localeCompare(a.id);
-      }),
-    [sessionMeta],
+  const sortSidebarSessions = useCallback(
+    (items: Session[]) => sortSessionsForSidebar(items, sessionMeta, preferredHarnessId),
+    [preferredHarnessId, sessionMeta],
   );
 
   const projectGroups = useMemo(() => {
@@ -156,7 +170,7 @@ export function useSidebarModel({
     return new Map(
       Array.from(groups, ([directory, dirSessions]) => [
         directory,
-        sortSessionsForSidebar(dirSessions),
+        sortSidebarSessions(dirSessions),
       ]),
     );
   }, [
@@ -167,12 +181,12 @@ export function useSidebarModel({
     activeWorkspace,
     availableProjectDirectories,
     sessionMeta,
-    sortSessionsForSidebar,
+    sortSidebarSessions,
   ]);
 
   const chatSessions = useMemo(
     () =>
-      sortSessionsForSidebar(
+      sortSidebarSessions(
         sessions.filter(
           (session) =>
             !session.parentID &&
@@ -181,7 +195,7 @@ export function useSidebarModel({
               isDefaultChatDirectory(session._projectDir ?? session.directory)),
         ),
       ),
-    [sessions, isDefaultChatDirectory, sessionMeta, sortSessionsForSidebar],
+    [sessions, isDefaultChatDirectory, sessionMeta, sortSidebarSessions],
   );
 
   const filteredChatSessions = useMemo(() => {
