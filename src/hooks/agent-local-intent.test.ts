@@ -183,6 +183,55 @@ describe("createLocalIntentOrchestrator", () => {
     );
   });
 
+  test("prepends a directory-change notice when a session is moved back to its original project", async () => {
+    const session = makeSession({
+      id: "session-1",
+      directory: "/project-b",
+      _projectDir: "/project-b",
+      _workspaceId: "workspace-1",
+    });
+    const state = makeState({
+      activeSessionId: session.id,
+      selectedModel: { providerID: "openai", modelID: "gpt-5" },
+      sessions: [session],
+      sessionMeta: {
+        [session.id]: {
+          nativeProjectDir: "/original",
+          assignedProjectDir: null,
+          assignedProjectSourceDir: "/project-b",
+          pendingDirectoryChangeNotice: true,
+        },
+      },
+    });
+    const prompts: Array<Record<string, unknown>> = [];
+
+    const orchestrator = createLocalIntentOrchestrator({
+      getState: () => state,
+      getResourceRuntime: () => undefined,
+      getCurrentVariant: () => undefined,
+      sessionsClient: {
+        prompt: async (input: Record<string, unknown>) => {
+          prompts.push(input);
+        },
+        abort: async () => undefined,
+      } as never,
+      createSession: async () => null,
+      scheduleSessionMessageReconcile: () => undefined,
+      requestSessionAutoName: () => undefined,
+      dispatch: () => undefined,
+      sessionCreatingRef: { current: false },
+    });
+
+    await orchestrator.sendPrompt("Where are you?");
+
+    expect(prompts).toHaveLength(1);
+    expect(String(prompts[0]?.text)).toContain("`/project-b`");
+    expect(String(prompts[0]?.text)).toContain("`/original`");
+    expect(prompts[0]).toMatchObject({
+      target: { directory: "/original", workspaceId: "workspace-1" },
+    });
+  });
+
   test("queues busy-session prompts without creating an optimistic turn", async () => {
     const session = makeSession({
       id: "opencode:session-1",

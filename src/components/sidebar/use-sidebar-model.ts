@@ -27,6 +27,22 @@ function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap
   return session.time.updated ?? session.time.created ?? 0;
 }
 
+export function shouldShowSessionInChatList({
+  session,
+  meta,
+  isDefaultChatDirectory,
+}: {
+  session: Session;
+  meta: SessionMetaMap[string] | undefined;
+  isDefaultChatDirectory: (directory?: string | null) => boolean;
+}) {
+  if (session.parentID || meta?.movedToSessionId) return false;
+  if (meta?.detachedFromProject === true) return true;
+  if (meta?.originMode === "project") return false;
+  if (normalizeProjectPath(meta?.assignedProjectDir ?? "")) return false;
+  return isDefaultChatDirectory(session._projectDir ?? session.directory);
+}
+
 export function sortSessionsForSidebar(
   items: Session[],
   sessionMeta: SessionMetaMap,
@@ -113,7 +129,14 @@ export function useSidebarModel({
     const rootOpenDirectories = openDirectories.filter(
       (dir) => !shouldHideTopLevelProjectDirectory(dir, worktreeParents),
     );
-    const projectDirectorySet = new Set([...rootOpenDirectories, ...visibleProjectDirectorySet]);
+    const workspaceProjects = (activeWorkspace?.projects ?? [])
+      .map((dir) => normalizeProjectPath(dir))
+      .filter(Boolean);
+    const projectDirectorySet = new Set([
+      ...rootOpenDirectories,
+      ...workspaceProjects,
+      ...visibleProjectDirectorySet,
+    ]);
     const normalizedDetachedProject = normalizeProjectPath(detachedProject ?? "");
     const orderedRootDirectories = detachedProject
       ? rootOpenDirectories.filter((dir) => dir === normalizedDetachedProject)
@@ -187,12 +210,12 @@ export function useSidebarModel({
   const chatSessions = useMemo(
     () =>
       sortSidebarSessions(
-        sessions.filter(
-          (session) =>
-            !session.parentID &&
-            !sessionMeta[session.id]?.movedToSessionId &&
-            (sessionMeta[session.id]?.detachedFromProject === true ||
-              isDefaultChatDirectory(session._projectDir ?? session.directory)),
+        sessions.filter((session) =>
+          shouldShowSessionInChatList({
+            session,
+            meta: sessionMeta[session.id],
+            isDefaultChatDirectory,
+          }),
         ),
       ),
     [sessions, isDefaultChatDirectory, sessionMeta, sortSidebarSessions],

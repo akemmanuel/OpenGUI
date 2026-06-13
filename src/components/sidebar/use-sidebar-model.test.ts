@@ -1,7 +1,7 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { HarnessId } from "@/agents";
 import type { Session } from "@/hooks/agent-state-types";
-import { sortSessionsForSidebar } from "./use-sidebar-model";
+import { shouldShowSessionInChatList, sortSessionsForSidebar } from "./use-sidebar-model";
 
 function session(id: string, harnessId: HarnessId, updated: number): Session {
   return {
@@ -34,5 +34,47 @@ describe("sortSessionsForSidebar", () => {
     );
 
     expect(sorted.map((item) => item.id)).toEqual(["open-new", "open-old"]);
+  });
+});
+
+describe("shouldShowSessionInChatList", () => {
+  test("hides default-chat sessions after moving them into a project", () => {
+    const item = session("chat", "opencode", 20);
+    item.directory = "/home/tobias/Dokumente";
+    item._projectDir = "/home/tobias/Dokumente";
+
+    expect(
+      shouldShowSessionInChatList({
+        session: item,
+        meta: { assignedProjectDir: "/home/tobias/Dokumente/Jutta Kürzl" },
+        isDefaultChatDirectory: (directory) => directory === "/home/tobias/Dokumente",
+      }),
+    ).toBe(false);
+  });
+
+  test("hides project-origin sessions even when assignment is same-directory", () => {
+    const item = session("same-dir", "opencode", 20);
+    item.directory = "/home/tobias/Dokumente/Jutta Kürzl";
+    item._projectDir = "/home/tobias/Dokumente/Jutta Kürzl";
+
+    expect(
+      shouldShowSessionInChatList({
+        session: item,
+        meta: { originMode: "project", assignedProjectDir: null },
+        isDefaultChatDirectory: (directory) => directory === "/home/tobias/Dokumente/Jutta Kürzl",
+      }),
+    ).toBe(false);
+  });
+
+  test("still shows explicitly detached project sessions in Chats", () => {
+    const item = session("detached", "opencode", 20);
+
+    expect(
+      shouldShowSessionInChatList({
+        session: item,
+        meta: { assignedProjectDir: "/other", detachedFromProject: true },
+        isDefaultChatDirectory: () => false,
+      }),
+    ).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { normalizeProjectPath } from "@/lib/utils";
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
-import type { ProjectMetaMap } from "@/hooks/agent-state-persistence";
+import type { ProjectMetaMap, SessionMeta } from "@/hooks/agent-state-persistence";
 import type { Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
 
@@ -26,6 +26,74 @@ export function getSessionDirectory(session: Session | undefined | null) {
   return session._projectDir ?? session.directory ?? null;
 }
 
+export function getEffectiveSessionDirectory(
+  session: Session | undefined | null,
+  meta?: SessionMeta,
+) {
+  const assignedDirectory = meta?.assignedProjectDir
+    ? normalizeProjectPath(meta.assignedProjectDir)
+    : "";
+  const nativeDirectory = meta?.nativeProjectDir ? normalizeProjectPath(meta.nativeProjectDir) : "";
+  const sessionDirectory = normalizeProjectPath(getSessionDirectory(session) ?? "");
+  return assignedDirectory || nativeDirectory || sessionDirectory || null;
+}
+
+export function createSessionProjectMoveMeta(
+  session: Session | undefined | null,
+  meta: SessionMeta | undefined,
+  targetDirectory: string,
+  now = Date.now(),
+): Partial<SessionMeta> | null {
+  const nativeDirectory = normalizeProjectPath(
+    meta?.nativeProjectDir ?? getSessionDirectory(session) ?? "",
+  );
+  const normalizedTargetDirectory = normalizeProjectPath(targetDirectory);
+  if (!nativeDirectory || !normalizedTargetDirectory) return null;
+
+  const currentDirectory = getEffectiveSessionDirectory(session, meta) ?? nativeDirectory;
+  const directoryChanged = currentDirectory !== normalizedTargetDirectory;
+
+  return {
+    originMode: meta?.originMode === "chat" ? "chat" : "project",
+    nativeProjectDir: nativeDirectory,
+    assignedProjectDir:
+      nativeDirectory === normalizedTargetDirectory ? null : normalizedTargetDirectory,
+    assignedProjectMovedAt: directoryChanged ? now : null,
+    assignedProjectSourceDir: directoryChanged ? currentDirectory : null,
+    pendingDirectoryChangeNotice: directoryChanged,
+    hideSystemAppendBlocks: directoryChanged,
+    detachedFromProject: false,
+    detachedFromProjectAt: null,
+  };
+}
+
+export function createSessionProjectDetachMeta(
+  session: Session | undefined | null,
+  meta: SessionMeta | undefined,
+  now = Date.now(),
+  fallbackDirectory?: string | null,
+): Partial<SessionMeta> | null {
+  const nativeDirectory = normalizeProjectPath(
+    meta?.nativeProjectDir ?? fallbackDirectory ?? getSessionDirectory(session) ?? "",
+  );
+  if (!nativeDirectory) return null;
+
+  const currentDirectory = getEffectiveSessionDirectory(session, meta) ?? nativeDirectory;
+  const directoryChanged = currentDirectory !== nativeDirectory;
+
+  return {
+    originMode: "chat",
+    nativeProjectDir: nativeDirectory,
+    assignedProjectDir: null,
+    assignedProjectMovedAt: null,
+    assignedProjectSourceDir: directoryChanged ? currentDirectory : null,
+    pendingDirectoryChangeNotice: directoryChanged,
+    hideSystemAppendBlocks: directoryChanged,
+    detachedFromProject: true,
+    detachedFromProjectAt: now,
+  };
+}
+
 export function getSessionWorkspaceId(session: Session | undefined | null) {
   if (!session) return null;
   return session._workspaceId ?? null;
@@ -37,8 +105,11 @@ export type ProjectTarget = {
   baseUrl?: string;
 };
 
-export function getSessionProjectTarget(session: Session | undefined | null): ProjectTarget | null {
-  const directory = getSessionDirectory(session);
+export function getSessionProjectTarget(
+  session: Session | undefined | null,
+  meta?: SessionMeta,
+): ProjectTarget | null {
+  const directory = getEffectiveSessionDirectory(session, meta);
   if (!directory) return null;
   return {
     directory,

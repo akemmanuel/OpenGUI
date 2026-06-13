@@ -22,6 +22,7 @@ describe("processBusyToIdleTransitions", () => {
       previousBusySessionIds: new Set(["session-1", "session-2"]),
       currentBusySessionIds: new Set(["session-2"]),
       activeSessionId: "session-1",
+      sessionMeta: {},
       sessions: [
         makeSession({
           id: "session-1",
@@ -39,6 +40,34 @@ describe("processBusyToIdleTransitions", () => {
       {
         sessionId: "session-1",
         projectTarget: { directory: "/repo", workspaceId: "workspace-1" },
+      },
+    ]);
+  });
+
+  test("refreshes newly idle moved sessions at the assigned project target", () => {
+    const refreshed: Array<Record<string, unknown>> = [];
+
+    processBusyToIdleTransitions({
+      previousBusySessionIds: new Set(["session-1"]),
+      currentBusySessionIds: new Set(),
+      activeSessionId: "session-1",
+      sessionMeta: { "session-1": { assignedProjectDir: "/project-b" } },
+      sessions: [
+        makeSession({
+          id: "session-1",
+          _projectDir: "/project-a",
+          _workspaceId: "workspace-1",
+        }),
+      ],
+      refreshSessionMessages: async (sessionId, projectTarget) => {
+        refreshed.push({ sessionId, projectTarget });
+      },
+    });
+
+    expect(refreshed).toEqual([
+      {
+        sessionId: "session-1",
+        projectTarget: { directory: "/project-b", workspaceId: "workspace-1" },
       },
     ]);
   });

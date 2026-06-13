@@ -384,6 +384,29 @@ function getAssignedProjectDir(sessionMeta: InternalAgentState["sessionMeta"], s
   return assigned ? normalizeProjectPath(assigned) : null;
 }
 
+function preserveChatSessionDirectory(state: InternalAgentState, incoming: Session): Session {
+  const meta = state.sessionMeta[incoming.id];
+  if (meta?.originMode !== "chat") return incoming;
+  if (normalizeProjectPath(meta.assignedProjectDir ?? "")) return incoming;
+
+  const existing = state.sessions.find((session) => sameBackendSession(session, incoming));
+  const directory = normalizeProjectPath(
+    (meta.nativeProjectDir ??
+      existing?._projectDir ??
+      existing?.directory ??
+      state.defaultChatDirectory ??
+      "") ||
+      "",
+  );
+  if (!directory) return incoming;
+
+  return {
+    ...incoming,
+    directory,
+    _projectDir: directory,
+  };
+}
+
 export function reducer(state: InternalAgentState, action: Action): InternalAgentState {
   switch (action.type) {
     case "SET_WORKSPACES":
@@ -1039,33 +1062,34 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     }
 
     case "SESSION_CREATED": {
+      const created = preserveChatSessionDirectory(state, action.payload);
       // Ignore subagent / child sessions - only root sessions appear in the sidebar.
-      if (action.payload.parentID) return state;
+      if (created.parentID) return state;
       // Ignore backend echoes for sessions that were optimistically deleted.
-      if (state._deletedSessionIds.has(action.payload.id)) return state;
-      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, action.payload.id);
+      if (state._deletedSessionIds.has(created.id)) return state;
+      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, created.id);
       const sessionDirectory = normalizeProjectPath(
-        (action.payload._projectDir ?? action.payload.directory) || "",
+        (created._projectDir ?? created.directory) || "",
       );
       if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
       const previousActiveSession = state.activeSessionId
         ? state.sessions.find((session) => session.id === state.activeSessionId)
         : null;
       const shouldCanonicalizeActive = previousActiveSession
-        ? sameBackendSession(previousActiveSession, action.payload)
+        ? sameBackendSession(previousActiveSession, created)
         : false;
       return {
         ...state,
-        activeSessionId: shouldCanonicalizeActive ? action.payload.id : state.activeSessionId,
+        activeSessionId: shouldCanonicalizeActive ? created.id : state.activeSessionId,
         sessions: sortSessionsNewestFirst([
-          action.payload,
-          ...state.sessions.filter((s) => !sameBackendSession(s, action.payload)),
+          created,
+          ...state.sessions.filter((s) => !sameBackendSession(s, created)),
         ]),
       };
     }
 
     case "SESSION_UPDATED": {
-      const updated = action.payload;
+      const updated = preserveChatSessionDirectory(state, action.payload);
       // Ignore subagent / child sessions - only root sessions appear in the sidebar.
       if (updated.parentID) return state;
       // Ignore backend echoes for sessions that were optimistically deleted.
@@ -1873,7 +1897,17 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       const existing = nextMeta[sessionId] ?? {};
       nextMeta[sessionId] = { ...existing, ...meta };
       persistSessionMetaMap(nextMeta);
-      return { ...state, sessionMeta: nextMeta };
+      const affectsSidebarPlacement =
+        Object.hasOwn(meta, "originMode") ||
+        Object.hasOwn(meta, "assignedProjectDir") ||
+        Object.hasOwn(meta, "detachedFromProject");
+      return {
+        ...state,
+        sessionMeta: nextMeta,
+        sessions: affectsSidebarPlacement
+          ? state.sessions.map((session) => (session.id === sessionId ? { ...session } : session))
+          : state.sessions,
+      };
     }
 
     case "SET_PROJECT_META": {

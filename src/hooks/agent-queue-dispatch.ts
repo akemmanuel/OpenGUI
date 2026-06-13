@@ -1,4 +1,5 @@
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import type { SessionMetaMap } from "@/hooks/agent-state-persistence";
 import type { Session } from "@/hooks/agent-state-types";
 
 type QueueDispatchAction = {
@@ -11,12 +12,14 @@ export function processBusyToIdleTransitions({
   currentBusySessionIds,
   activeSessionId,
   sessions,
+  sessionMeta,
   refreshSessionMessages,
 }: {
   previousBusySessionIds: Iterable<string>;
   currentBusySessionIds: Set<string>;
   activeSessionId: string | null;
   sessions: Session[];
+  sessionMeta: SessionMetaMap;
   refreshSessionMessages: (
     sessionId: string,
     projectTarget?: { directory?: string; workspaceId?: string },
@@ -30,6 +33,7 @@ export function processBusyToIdleTransitions({
     if (sessionId === activeSessionId) {
       const projectTarget = getSessionProjectTarget(
         sessions.find((session) => session.id === sessionId),
+        sessionMeta[sessionId],
       );
       void refreshSessionMessages(sessionId, projectTarget ?? undefined).catch(() => {
         /* best-effort final transcript reconcile */

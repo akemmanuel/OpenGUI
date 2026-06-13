@@ -2,6 +2,7 @@ import type { Agent } from "@opencode-ai/sdk/v2/client";
 import type { HarnessDescriptor, HarnessTarget } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import type { SessionMeta } from "@/hooks/agent-state-persistence";
 import type { Session } from "@/hooks/agent-state-types";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import { resolveVariant } from "@/hooks/use-agent-variant-core";
@@ -42,6 +43,7 @@ export function resolveAgentSendSelection(
 export async function sendPromptToAgent({
   sessions,
   session,
+  sessionMeta,
   sessionId,
   text,
   selection,
@@ -51,6 +53,7 @@ export async function sendPromptToAgent({
 }: {
   sessions: OpenGuiClient["sessions"];
   session: Session | null | undefined;
+  sessionMeta?: SessionMeta;
   sessionId: string;
   text: string;
   selection: AgentSendSelection;
@@ -58,7 +61,7 @@ export async function sendPromptToAgent({
   getWorkspaceBaseUrl?: (workspaceId?: string | null) => string | undefined;
   mode?: QueueMode;
 }): Promise<{ projectTarget?: HarnessTarget }> {
-  const rawProjectTarget = getSessionProjectTarget(session) ?? undefined;
+  const rawProjectTarget = getSessionProjectTarget(session, sessionMeta) ?? undefined;
   const workspaceId = rawProjectTarget?.workspaceId ?? activeWorkspaceId;
   const baseUrl = getWorkspaceBaseUrl?.(workspaceId);
   const projectTarget =
@@ -82,6 +85,7 @@ export async function sendPromptToAgent({
 export async function sendCommandToAgent({
   runtime,
   session,
+  sessionMeta,
   sessionId,
   command,
   args,
@@ -89,12 +93,13 @@ export async function sendCommandToAgent({
 }: {
   runtime: HarnessDescriptor["runtime"];
   session: Session | null | undefined;
+  sessionMeta?: SessionMeta;
   sessionId: string;
   command: string;
   args: string;
   selection: AgentSendSelection;
 }): Promise<{ projectTarget?: HarnessTarget }> {
-  const projectTarget = getSessionProjectTarget(session) ?? undefined;
+  const projectTarget = getSessionProjectTarget(session, sessionMeta) ?? undefined;
 
   await runtime.sendCommand({
     sessionId,

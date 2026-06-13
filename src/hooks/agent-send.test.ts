@@ -54,6 +54,34 @@ describe("sendPromptToAgent", () => {
       projectTarget: { directory: "/repo", workspaceId: "workspace-1" },
     });
   });
+
+  test("uses assigned project directory when a session was moved in the sidebar", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const prompt = async (input: Record<string, unknown>) => {
+      calls.push(input);
+    };
+
+    await sendPromptToAgent({
+      sessions: { prompt } as never,
+      session: {
+        id: "opencode:session-1",
+        directory: "/home/tobias/Dokumente",
+        _projectDir: "/home/tobias/Dokumente",
+        _workspaceId: "workspace-1",
+        _harnessId: "opencode",
+      } as never,
+      sessionMeta: {
+        assignedProjectDir: "/home/tobias/Dokumente/Jutta Kürzl",
+      },
+      sessionId: "opencode:session-1",
+      text: "where are you?",
+      selection: { agent: "build" },
+    });
+
+    expect(calls[0]).toMatchObject({
+      target: { directory: "/home/tobias/Dokumente/Jutta Kürzl", workspaceId: "workspace-1" },
+    });
+  });
 });
 
 describe("sendCommandToAgent", () => {
@@ -88,6 +116,35 @@ describe("sendCommandToAgent", () => {
     });
     expect(result).toEqual({
       projectTarget: { directory: "/repo", workspaceId: "workspace-1" },
+    });
+  });
+
+  test("uses assigned project directory for commands after sidebar moves", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const sendCommand = async (input: Record<string, unknown>) => {
+      calls.push(input);
+    };
+
+    await sendCommandToAgent({
+      runtime: { sendCommand } as never,
+      session: {
+        id: "opencode:session-1",
+        directory: "/home/tobias/Dokumente",
+        _projectDir: "/home/tobias/Dokumente",
+        _workspaceId: "workspace-1",
+      } as never,
+      sessionMeta: {
+        assignedProjectDir: "/home/tobias/Dokumente/Jutta Kürzl",
+      },
+      sessionId: "opencode:session-1",
+      command: "review",
+      args: "",
+      selection: {},
+    });
+
+    expect(calls[0]).toMatchObject({
+      directory: "/home/tobias/Dokumente/Jutta Kürzl",
+      workspaceId: "workspace-1",
     });
   });
 });

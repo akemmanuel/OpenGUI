@@ -198,6 +198,7 @@ export function createLocalIntentOrchestrator(
       const { projectTarget } = await sendPromptToAgent({
         sessions: sessionsClient,
         session: currentSession,
+        sessionMeta: currentSession ? currentState.sessionMeta[currentSession.id] : undefined,
         sessionId,
         text,
         selection,
@@ -299,7 +300,8 @@ export function createLocalIntentOrchestrator(
         await sessionsClient.abort({
           sessionId: intent.sessionId,
           harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-          target: getSessionProjectTarget(session) ?? undefined,
+          target:
+            getSessionProjectTarget(session, current.sessionMeta[intent.sessionId]) ?? undefined,
         });
       }
       return;
@@ -334,6 +336,7 @@ export function createLocalIntentOrchestrator(
       const { projectTarget } = await sendCommandToAgent({
         runtime: commandRuntime,
         session: latestSession,
+        sessionMeta: latestSession ? getState().sessionMeta[latestSession.id] : undefined,
         sessionId,
         command,
         args,
@@ -413,6 +416,7 @@ export function useLocalIntentOrchestration(
       currentBusySessionIds: state.busySessionIds,
       activeSessionId: getState().activeSessionId,
       sessions: getState().sessions,
+      sessionMeta: getState().sessionMeta,
       refreshSessionMessages,
     });
     setJustIdledMap((prev) => {
@@ -433,7 +437,11 @@ export function useLocalIntentOrchestration(
         return sessionsClient.abort({
           ...input,
           harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-          target: getSessionProjectTarget(session) ?? undefined,
+          target:
+            getSessionProjectTarget(
+              session,
+              session ? getState().sessionMeta[session.id] : undefined,
+            ) ?? undefined,
         });
       },
       dispatch: dispatch as never,

@@ -92,6 +92,8 @@ import {
   loadOlderSessionMessages,
 } from "@/hooks/agent-message-loading";
 import {
+  createSessionProjectDetachMeta,
+  createSessionProjectMoveMeta,
   getSessionProjectTarget,
   getSessionSelectedAgent,
   getSessionWorkspaceId,
@@ -1356,7 +1358,8 @@ function InternalAgentProvider({
   useEffect(() => {
     if (!resourceBridge || !activeResourceDirectory) return;
     const activeProjectKey = makeProjectKey(activeWorkspace?.id, activeResourceDirectory);
-    if (!(activeProjectKey in state.connections)) return;
+    const activeConnection = state.connections[activeProjectKey];
+    if (activeConnection?.state !== "connected") return;
     const activeWorkspaceId = activeWorkspace?.id;
     const cached = activeWorkspaceId ? state.workspaceResources[activeWorkspaceId] : undefined;
     if (
@@ -1522,7 +1525,10 @@ function InternalAgentProvider({
           title: trimmed,
           harnessId: resolveSessionHarnessRoute(current).harnessId ?? undefined,
           target: (() => {
-            const target = getSessionProjectTarget(current);
+            const target = getSessionProjectTarget(
+              current,
+              current ? stateRef.current.sessionMeta[current.id] : undefined,
+            );
             const workspaceId = target?.workspaceId ?? stateRef.current.activeWorkspaceId;
             const workspace = workspaceId
               ? stateRef.current.workspaces.find((item) => item.id === workspaceId)
@@ -1575,8 +1581,17 @@ function InternalAgentProvider({
       projectTarget?: { directory?: string; workspaceId?: string },
     ) => {
       const session = stateRef.current.sessions.find((candidate) => candidate.id === sessionId);
+      const resolvedProjectTarget =
+        projectTarget ??
+        getSessionProjectTarget(
+          session,
+          session ? stateRef.current.sessionMeta[session.id] : undefined,
+        ) ??
+        undefined;
       const workspaceId =
-        projectTarget?.workspaceId ?? session?._workspaceId ?? stateRef.current.activeWorkspaceId;
+        resolvedProjectTarget?.workspaceId ??
+        session?._workspaceId ??
+        stateRef.current.activeWorkspaceId;
       const workspace = stateRef.current.workspaces.find(
         (candidate) => candidate.id === workspaceId,
       );
@@ -1587,8 +1602,8 @@ function InternalAgentProvider({
         options,
         projectTarget:
           workspace && !workspace.isLocal
-            ? { ...projectTarget, baseUrl: workspace.serverUrl, workspaceId }
-            : projectTarget,
+            ? { ...resolvedProjectTarget, baseUrl: workspace.serverUrl, workspaceId }
+            : resolvedProjectTarget,
       });
     },
     [openGuiClient],
@@ -1799,7 +1814,13 @@ function InternalAgentProvider({
           sessionId: id,
           title: plan.trimmedTitle,
           harnessId: resolveSessionHarnessRoute(plan.currentSession).harnessId ?? undefined,
-          target: getSessionProjectTarget(plan.currentSession) ?? undefined,
+          target:
+            getSessionProjectTarget(
+              plan.currentSession,
+              plan.currentSession
+                ? stateRef.current.sessionMeta[plan.currentSession.id]
+                : undefined,
+            ) ?? undefined,
         })
         .catch(() => {
           /* best-effort rename – backend events will reconcile */
@@ -1890,6 +1911,7 @@ function InternalAgentProvider({
     try {
       const projectTarget = getSessionProjectTarget(
         stateRef.current.sessions.find((session) => session.id === sessionId),
+        stateRef.current.sessionMeta[sessionId],
       );
       await runtime.compactSession(sessionId, model, projectTarget ?? undefined);
 
@@ -1961,7 +1983,11 @@ function InternalAgentProvider({
     const activeSession = state.sessions.find(
       (session) => session.id === sessionId || session.id === state.activeSessionId,
     );
-    const target = getSessionProjectTarget(activeSession) ?? undefined;
+    const target =
+      getSessionProjectTarget(
+        activeSession,
+        activeSession ? state.sessionMeta[activeSession.id] : undefined,
+      ) ?? undefined;
     const workspaceId = target?.workspaceId ?? state.activeWorkspaceId;
     const workspace = state.workspaces.find((item) => item.id === workspaceId);
     await openGuiClient.sessions.abort({
@@ -1996,7 +2022,9 @@ function InternalAgentProvider({
         permissionId: pending.id,
         response,
         harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-        target: getSessionProjectTarget(session) ?? undefined,
+        target:
+          getSessionProjectTarget(session, session ? state.sessionMeta[session.id] : undefined) ??
+          undefined,
       });
       dispatch({
         type: "SET_PERMISSION",
@@ -2086,11 +2114,11 @@ function InternalAgentProvider({
   );
 
   const startNewChat = useCallback(async () => {
-    const defaultChatDirectory = stateRef.current.defaultChatDirectory;
+    const defaultChatDirectory = normalizeProjectPath(stateRef.current.defaultChatDirectory ?? "");
     if (!defaultChatDirectory) return;
-    setActiveTarget(defaultChatDirectory);
+    setActiveTarget(defaultChatDirectory, preferredBackendId);
     await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
-  }, [ensureDirectoryConnection, setActiveTarget]);
+  }, [ensureDirectoryConnection, preferredBackendId, setActiveTarget]);
 
   const setActiveTargetDirectory = useCallback(
     (directory: string) => {
@@ -2145,7 +2173,11 @@ function InternalAgentProvider({
   const getQueueTarget = useCallback((sessionId: string) => {
     const session = stateRef.current.sessions.find((item) => item.id === sessionId);
     const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
-    const target = getSessionProjectTarget(session) ?? undefined;
+    const target =
+      getSessionProjectTarget(
+        session,
+        session ? stateRef.current.sessionMeta[session.id] : undefined,
+      ) ?? undefined;
     if (!harnessId || !target?.directory) {
       throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
     }
@@ -2252,7 +2284,11 @@ function InternalAgentProvider({
         await openGuiClient.sessions.abort({
           sessionId: state.activeSessionId,
           harnessId: resolveSessionHarnessRoute(activeSession).harnessId ?? undefined,
-          target: getSessionProjectTarget(activeSession) ?? undefined,
+          target:
+            getSessionProjectTarget(
+              activeSession,
+              activeSession ? state.sessionMeta[activeSession.id] : undefined,
+            ) ?? undefined,
         });
       }
       await refreshLifecycleSession({
@@ -2338,26 +2374,21 @@ function InternalAgentProvider({
           (sourceSession._projectDir ?? sourceSession.directory) || "",
         );
         if (!sourceDirectory) return;
-
-        await ensureDirectoryConnection(targetDirectory);
+        const meta = createSessionProjectMoveMeta(
+          sourceSession,
+          stateRef.current.sessionMeta[sessionId],
+          targetDirectory,
+        );
+        if (!meta) return;
 
         dispatch({
           type: "SET_SESSION_META",
           payload: {
             sessionId,
-            meta: {
-              originMode: "project",
-              assignedProjectDir: sourceDirectory === targetDirectory ? null : targetDirectory,
-              assignedProjectMovedAt: sourceDirectory === targetDirectory ? null : Date.now(),
-              assignedProjectSourceDir:
-                sourceDirectory === targetDirectory ? null : sourceDirectory,
-              pendingDirectoryChangeNotice: sourceDirectory !== targetDirectory,
-              hideSystemAppendBlocks: sourceDirectory !== targetDirectory,
-              detachedFromProject: false,
-              detachedFromProjectAt: null,
-            },
+            meta,
           },
         });
+        await ensureDirectoryConnection(targetDirectory);
         await selectSession(sessionId);
       } catch (error) {
         dispatch({
@@ -2381,21 +2412,19 @@ function InternalAgentProvider({
           (sourceSession._projectDir ?? sourceSession.directory) || "",
         );
         if (!sourceDirectory) return;
+        const meta = createSessionProjectDetachMeta(
+          sourceSession,
+          stateRef.current.sessionMeta[sessionId],
+          Date.now(),
+          stateRef.current.defaultChatDirectory,
+        );
+        if (!meta) return;
 
         dispatch({
           type: "SET_SESSION_META",
           payload: {
             sessionId,
-            meta: {
-              originMode: "chat",
-              assignedProjectDir: null,
-              assignedProjectMovedAt: null,
-              assignedProjectSourceDir: null,
-              pendingDirectoryChangeNotice: false,
-              hideSystemAppendBlocks: false,
-              detachedFromProject: true,
-              detachedFromProjectAt: Date.now(),
-            },
+            meta,
           },
         });
         await selectSession(sessionId);

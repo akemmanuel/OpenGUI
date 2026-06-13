@@ -222,13 +222,17 @@ function tagOpenCodeSession(session, dir, workspaceId) {
   if (!session) return session;
   const rawId = toRawSessionId(session.id);
   const id = toFrontendSessionId(rawId);
+  const sessionDirectory =
+    typeof session.directory === "string" && session.directory.trim()
+      ? session.directory.trim()
+      : null;
   return {
     ...session,
     id,
     slug: session.slug ? toFrontendSessionId(session.slug) : id,
     _harnessId: "opencode",
     _rawId: rawId,
-    _projectDir: dir ?? session._projectDir ?? session.directory,
+    _projectDir: session._projectDir ?? sessionDirectory ?? dir,
     _workspaceId: workspaceId ?? session._workspaceId,
   };
 }

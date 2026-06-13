@@ -72,6 +72,7 @@ function AppContent({
     isBusy,
     isLoadingMessages,
     activeTargetDirectory,
+    sessionMeta,
   } = useSessionState();
   const { messages } = useMessages();
   const { providers, selectedModel, providerDefaults } = useModelState();
@@ -100,6 +101,7 @@ function AppContent({
     sessions,
     activeSessionId,
     activeTargetDirectory,
+    sessionMeta,
     connections,
     defaultChatDirectory,
   });
