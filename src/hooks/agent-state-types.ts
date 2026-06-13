@@ -34,6 +34,8 @@ export type Session = BaseSession & {
   _projectDir?: string;
   _workspaceId?: string;
   _harnessId?: HarnessId;
+  /** Legacy field persisted by versions before the Harness migration. */
+  _backendId?: HarnessId;
   _rawId?: string;
 };
 

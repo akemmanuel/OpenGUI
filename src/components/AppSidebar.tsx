@@ -10,6 +10,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useHomeDir } from "@/hooks/use-home-dir";
+import { useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { useOutsideClick } from "@/hooks/use-outside-click";
@@ -47,6 +48,7 @@ export function AppSidebar({
   settingsActive?: boolean;
 }) {
   const client = useOpenGuiClient();
+  const preferredHarnessId = useCurrentHarnessId();
   const { t } = useTranslation();
   const { state: sidebarState, isMobile, setOpen: setSidebarOpen, setOpenMobile } = useSidebar();
   const {
@@ -160,6 +162,7 @@ export function AppSidebar({
     connections,
     detachedProject,
     defaultChatDirectory,
+    preferredHarnessId,
     searchQuery,
     untitledLabel: t("sidebar.untitled"),
   });
