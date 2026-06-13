@@ -29,7 +29,7 @@
     "fmt": "vp fmt",
     "fmt:fix": "vp fmt --fix",
     "test": "vp test",
-    "start": "NODE_ENV=production pnpm exec electron . --no-sandbox",
+    "start": "NODE_ENV=production vp exec electron . --no-sandbox",
     "start:web": "HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
     "dist:linux": "vp build && electron-builder --linux deb AppImage",
     "dist:linux:appimage": "vp build && electron-builder --linux AppImage",
