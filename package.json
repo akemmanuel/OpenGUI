@@ -18,9 +18,7 @@
   "scripts": {
     "postinstall": "node ./scripts/ensure-electron.mjs",
     "prepare": "vp config",
-    "dev": "vp dev",
     "dev:electron": "vp run dev",
-    "dev:web": "vp dev --host 127.0.0.1",
     "build": "vp build",
     "check": "vp check",
     "check:fix": "vp check --fix",
