@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { useConnectionState, useSessionState } from "@/hooks/use-agent-state";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
+import { getEffectiveSessionDirectory } from "@/hooks/agent-session-utils";
 import { getChatSurfaceState, hasProjectConnectedPrompt } from "@/lib/chat-surface";
 import { normalizeProjectPath } from "@/lib/utils";
 
@@ -11,6 +12,7 @@ interface UseChatSessionSurfaceParams {
   sessions: SessionState["sessions"];
   activeSessionId: SessionState["activeSessionId"];
   activeTargetDirectory: SessionState["activeTargetDirectory"];
+  sessionMeta: SessionState["sessionMeta"];
   connections: ConnectionState["connections"];
   defaultChatDirectory: ConnectionState["defaultChatDirectory"];
 }
@@ -19,6 +21,7 @@ export function useChatSessionSurface({
   sessions,
   activeSessionId,
   activeTargetDirectory,
+  sessionMeta,
   connections,
   defaultChatDirectory,
 }: UseChatSessionSurfaceParams) {
@@ -28,7 +31,12 @@ export function useChatSessionSurface({
   );
 
   const activeSessionDirectory =
-    activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
+    getEffectiveSessionDirectory(
+      activeSession,
+      activeSessionId ? sessionMeta[activeSessionId] : undefined,
+    ) ||
+    activeTargetDirectory ||
+    null;
 
   const connectedTargetDirectories = useMemo(
     () =>

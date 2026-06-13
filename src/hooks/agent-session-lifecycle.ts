@@ -1,5 +1,5 @@
 import type { HarnessId } from "@/agents";
-import type { WorktreeParentMap } from "@/hooks/agent-state-persistence";
+import type { SessionMeta, WorktreeParentMap } from "@/hooks/agent-state-persistence";
 import { resolvePendingPromptCreationHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionHarnessId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
@@ -20,10 +20,7 @@ type LifecycleAction =
       type: "SET_SESSION_META";
       payload: {
         sessionId: string;
-        meta: {
-          originMode: "chat";
-          assignedProjectDir: null;
-        };
+        meta: Partial<SessionMeta>;
       };
     }
   | {
@@ -254,7 +251,7 @@ export async function createLifecycleSession({
         type: "SET_SESSION_META",
         payload: {
           sessionId: session.id,
-          meta: { originMode: "chat", assignedProjectDir: null },
+          meta: { originMode: "chat", nativeProjectDir: directory, assignedProjectDir: null },
         },
       });
     }

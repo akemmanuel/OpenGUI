@@ -150,7 +150,7 @@ describe("createLifecycleSession", () => {
       type: "SET_SESSION_META",
       payload: {
         sessionId: "session-1",
-        meta: { originMode: "chat", assignedProjectDir: null },
+        meta: { originMode: "chat", nativeProjectDir: "/chat", assignedProjectDir: null },
       },
     });
     expect(selected).toEqual([{ sessionId: "session-1", session: created }]);

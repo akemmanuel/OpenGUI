@@ -171,7 +171,10 @@ export function useAgentSessionActivation({
         options?.session && options.session.id === id
           ? options.session
           : stateRef.current.sessions.find((session) => session.id === id);
-      const projectTarget = getSessionProjectTarget(resolvedSession);
+      const projectTarget = getSessionProjectTarget(
+        resolvedSession,
+        resolvedSession ? stateRef.current.sessionMeta[resolvedSession.id] : undefined,
+      );
 
       if (hadCompleteBuffer && bufferMessages) {
         applySelectionFromMessages(bufferMessages);

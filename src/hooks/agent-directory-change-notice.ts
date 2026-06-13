@@ -12,16 +12,18 @@ export function planDirectoryChangePrompt(input: {
   session?: Session;
   meta?: SessionMeta;
 }): DirectoryChangePromptPlan {
+  const fallbackSessionDirectory = normalizeProjectPath(
+    input.meta?.nativeProjectDir ?? input.session?._projectDir ?? input.session?.directory ?? "",
+  );
   const targetDirectory = input.meta?.assignedProjectDir
     ? normalizeProjectPath(input.meta.assignedProjectDir)
-    : null;
+    : input.meta?.pendingDirectoryChangeNotice
+      ? fallbackSessionDirectory
+      : null;
   if (!input.meta?.pendingDirectoryChangeNotice || !targetDirectory) return { text: input.text };
 
   const sourceDirectory = normalizeProjectPath(
-    input.meta.assignedProjectSourceDir ??
-      input.session?._projectDir ??
-      input.session?.directory ??
-      "",
+    input.meta.assignedProjectSourceDir ?? fallbackSessionDirectory,
   );
   const notice = [
     "<SYSTEM-APPEND>",

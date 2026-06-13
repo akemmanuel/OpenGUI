@@ -51,6 +51,7 @@ export interface SessionMeta {
   selectedAgent?: string | null;
   selectedVariant?: string | null;
   originMode?: "chat" | "project";
+  nativeProjectDir?: string | null;
   assignedProjectDir?: string | null;
   assignedProjectMovedAt?: number | null;
   assignedProjectSourceDir?: string | null;
@@ -96,6 +97,7 @@ export function persistSessionMetaMap(meta: SessionMetaMap) {
       Object.hasOwn(m, "selectedAgent") ||
       Object.hasOwn(m, "selectedVariant") ||
       m.originMode === "chat" ||
+      Object.hasOwn(m, "nativeProjectDir") ||
       Object.hasOwn(m, "assignedProjectDir") ||
       Object.hasOwn(m, "assignedProjectMovedAt") ||
       Object.hasOwn(m, "assignedProjectSourceDir") ||

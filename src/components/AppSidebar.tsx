@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Sidebar, SidebarContent, useSidebar } from "@/components/ui/sidebar";
+import {
+  createSessionProjectMoveMeta,
+  getEffectiveSessionDirectory,
+} from "@/hooks/agent-session-utils";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import { useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
@@ -76,9 +81,6 @@ export function AppSidebar({
 
   const visibleActiveSessionId =
     highlightedSessionId === undefined ? activeSessionId : highlightedSessionId;
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const activeSessionDirectory =
-    activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null;
   const {
     connections,
     worktreeParents,
@@ -119,6 +121,82 @@ export function AppSidebar({
       }),
     [],
   );
+  const [optimisticSessionMeta, setOptimisticSessionMeta] = useState<typeof sessionMeta>({});
+  const mergedSessionMeta = useMemo(() => {
+    if (Object.keys(optimisticSessionMeta).length === 0) return sessionMeta;
+    const next = { ...sessionMeta };
+    for (const [sessionId, meta] of Object.entries(optimisticSessionMeta)) {
+      next[sessionId] = { ...next[sessionId], ...meta };
+    }
+    return next;
+  }, [optimisticSessionMeta, sessionMeta]);
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const activeSessionDirectory =
+    getEffectiveSessionDirectory(
+      activeSession,
+      activeSessionId ? mergedSessionMeta[activeSessionId] : undefined,
+    ) ||
+    activeTargetDirectory ||
+    null;
+
+  useEffect(() => {
+    if (Object.keys(optimisticSessionMeta).length === 0) return;
+    setOptimisticSessionMeta((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [sessionId, optimisticMeta] of Object.entries(current)) {
+        const committedMeta = sessionMeta[sessionId];
+        if (
+          committedMeta?.originMode === optimisticMeta.originMode &&
+          normalizeProjectPath(committedMeta?.assignedProjectDir ?? "") ===
+            normalizeProjectPath(optimisticMeta.assignedProjectDir ?? "") &&
+          committedMeta?.detachedFromProject === optimisticMeta.detachedFromProject
+        ) {
+          delete next[sessionId];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [optimisticSessionMeta, sessionMeta]);
+
+  const moveSessionToProjectOptimistic = useCallback(
+    async (sessionId: string, directory: string) => {
+      const targetDirectory = normalizeProjectPath(directory);
+      const sourceSession = sessions.find((session) => session.id === sessionId);
+      const sourceDirectory = normalizeProjectPath(
+        (sourceSession?._projectDir ?? sourceSession?.directory) || "",
+      );
+      if (targetDirectory && sourceDirectory) {
+        const meta = createSessionProjectMoveMeta(
+          sourceSession,
+          mergedSessionMeta[sessionId],
+          targetDirectory,
+        );
+        if (!meta) return;
+        flushSync(() => {
+          setOptimisticSessionMeta((current) => ({
+            ...current,
+            [sessionId]: {
+              ...current[sessionId],
+              ...meta,
+            },
+          }));
+        });
+      }
+      try {
+        await moveSessionToProject(sessionId, directory);
+      } catch (error) {
+        setOptimisticSessionMeta((current) => {
+          const { [sessionId]: _removed, ...rest } = current;
+          return rest;
+        });
+        throw error;
+      }
+    },
+    [mergedSessionMeta, moveSessionToProject, sessions],
+  );
+
   const {
     hasActiveSearch,
     availableProjectDirectories,
@@ -128,7 +206,7 @@ export function AppSidebar({
     projectSessionsByDirectory,
   } = useSidebarModel({
     sessions,
-    sessionMeta,
+    sessionMeta: mergedSessionMeta,
     projectMeta,
     worktreeParents,
     activeWorkspace,
@@ -289,7 +367,7 @@ export function AppSidebar({
     isGitRepo,
     isLocalWorkspace,
     knownWorktrees,
-    moveSessionToProject,
+    moveSessionToProject: moveSessionToProjectOptimistic,
     namingSessionIds,
     pendingPermissions,
     pendingQuestions,
@@ -301,7 +379,7 @@ export function AppSidebar({
     removeSessionFromProject,
     revealSessionInProject,
     selectSession,
-    sessionMeta,
+    sessionMeta: mergedSessionMeta,
     setActiveTarget,
     setEditValue,
     setMergeInfo,
@@ -355,7 +433,7 @@ export function AppSidebar({
           hasMoreChats={hasMoreChats}
           canShowLessChats={canShowLessChats}
           worktreeParents={worktreeParents}
-          sessionMeta={sessionMeta}
+          sessionMeta={mergedSessionMeta}
           labels={{
             pinned: t("sidebar.pinned"),
             chats: t("sidebar.chats"),

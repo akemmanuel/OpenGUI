@@ -1,10 +1,11 @@
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import type { SessionMetaMap } from "@/hooks/agent-state-persistence";
 import type { InternalAgentState, QueuedPrompt, Session } from "@/hooks/agent-state-types";
 import type { OpenGuiClient, QueueScopeInput } from "@/protocol/client";
 
 interface SessionQueueOptions {
-  getState: () => Pick<InternalAgentState, "sessions">;
+  getState: () => Pick<InternalAgentState, "sessions" | "sessionMeta">;
   sessionsClient: OpenGuiClient["sessions"];
   dispatch: (action: unknown) => void;
 }
@@ -25,9 +26,13 @@ export interface SessionQueueOrchestrator {
   sendNow(this: void, sessionId: string, promptId: string): Promise<void>;
 }
 
-function getSessionLookup(session: Session | undefined): QueueScopeInput {
+function getSessionLookup(
+  session: Session | undefined,
+  sessionMeta: SessionMetaMap,
+): QueueScopeInput {
   const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
-  const target = getSessionProjectTarget(session) ?? undefined;
+  const target =
+    getSessionProjectTarget(session, session ? sessionMeta[session.id] : undefined) ?? undefined;
   if (!harnessId || !target?.directory) {
     throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
   }
@@ -39,8 +44,13 @@ export function createSessionQueueOrchestrator(
 ): SessionQueueOrchestrator {
   const { getState, sessionsClient, dispatch } = options;
 
-  const lookup = (sessionId: string) =>
-    getSessionLookup(getState().sessions.find((session) => session.id === sessionId));
+  const lookup = (sessionId: string) => {
+    const state = getState();
+    return getSessionLookup(
+      state.sessions.find((session) => session.id === sessionId),
+      state.sessionMeta,
+    );
+  };
 
   const setSnapshot = (sessionId: string, prompts: QueuedPrompt[]) => {
     dispatch({ type: "SET_SESSION_QUEUE", payload: { sessionID: sessionId, prompts } });

@@ -195,4 +195,26 @@ describe("mergeProjectBackendSessions", () => {
 
     expect(next.sessions.map((item) => item.id)).toEqual(["chat-1"]);
   });
+
+  test("keeps chat-origin sessions in the default chat directory when project indexes echo them", () => {
+    const state = baseState({
+      defaultChatDirectory: "/home/tobias/Dokumente",
+      sessions: [session("opencode:chat-1", "opencode", "/home/tobias/Dokumente", 1)],
+      sessionMeta: {
+        "opencode:chat-1": {
+          originMode: "chat",
+          nativeProjectDir: "/home/tobias/Dokumente",
+          assignedProjectDir: null,
+        },
+      },
+    });
+
+    const next = reducer(state, {
+      type: "SESSION_UPDATED",
+      payload: session("opencode:chat-1", "opencode", "/home/tobias/Dokumente/Jutta Kürzl", 2),
+    } as Parameters<typeof reducer>[1]);
+
+    expect(next.sessions[0]?._projectDir).toBe("/home/tobias/Dokumente");
+    expect(next.sessions[0]?.directory).toBe("/home/tobias/Dokumente");
+  });
 });
