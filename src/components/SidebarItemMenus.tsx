@@ -510,7 +510,7 @@ export function ProjectMenuContent({
       {canCreateSession && (
         <ContextMenu.Item
           className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-          onSelect={onNewSession}
+          onClick={onNewSession}
         >
           <SquarePen className="size-4" />
           <span>{t("projectMenu.newSession")}</span>
@@ -518,7 +518,7 @@ export function ProjectMenuContent({
       )}
       <ContextMenu.Item
         className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-        onSelect={onToggleCollapsed}
+        onClick={onToggleCollapsed}
       >
         <Minimize2 className="size-4" />
         <span>{collapsed ? t("projectMenu.expandProject") : t("projectMenu.collapseProject")}</span>
@@ -526,7 +526,7 @@ export function ProjectMenuContent({
       <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
       <ContextMenu.Item
         className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-        onSelect={onTogglePin}
+        onClick={onTogglePin}
       >
         {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
         <span>{pinned ? t("projectMenu.unpinProject") : t("projectMenu.pinProject")}</span>
@@ -534,7 +534,7 @@ export function ProjectMenuContent({
       <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
       <ContextMenu.Item
         className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-        onSelect={() => {
+        onClick={() => {
           void copyTextToClipboard(directory);
         }}
       >
@@ -545,7 +545,7 @@ export function ProjectMenuContent({
         <>
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-            onSelect={() => {
+            onClick={() => {
               void shell.system.openInFileBrowser(
                 directory,
                 storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
@@ -557,7 +557,7 @@ export function ProjectMenuContent({
           </ContextMenu.Item>
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-            onSelect={() => {
+            onClick={() => {
               void shell.system.openInTerminal(directory, storageGet(STORAGE_KEYS.TERMINAL) ?? "");
             }}
           >
@@ -571,7 +571,7 @@ export function ProjectMenuContent({
           <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-            onSelect={onNewWorktree}
+            onClick={onNewWorktree}
           >
             <GitBranch className="size-4" />
             <span>{t("projectMenu.newWorktree")}</span>
@@ -611,7 +611,7 @@ export function ProjectMenuContent({
                             {worktree.branch && (
                               <ContextMenu.Item
                                 className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-                                onSelect={() => onMergeWorktree(worktree)}
+                                onClick={() => onMergeWorktree(worktree)}
                               >
                                 <GitMerge className="size-4" />
                                 {t("projectMenu.merge")}
@@ -620,7 +620,7 @@ export function ProjectMenuContent({
                             {worktree.branch && (
                               <ContextMenu.Item
                                 className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-                                onSelect={() => onOpenWorktreePr(worktree)}
+                                onClick={() => onOpenWorktreePr(worktree)}
                               >
                                 <ExternalLink className="size-4" />
                                 {t("projectMenu.openPullRequest")}
@@ -629,7 +629,7 @@ export function ProjectMenuContent({
                             <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
                             <ContextMenu.Item
                               className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none focus:bg-accent focus:text-destructive"
-                              onSelect={() => {
+                              onClick={() => {
                                 void onRemoveWorktree(worktree);
                               }}
                             >
@@ -651,7 +651,7 @@ export function ProjectMenuContent({
           <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-            onSelect={onRemove}
+            onClick={onRemove}
           >
             <X className="size-4" />
             <span>{t("projectMenu.removeProject")}</span>
@@ -659,7 +659,7 @@ export function ProjectMenuContent({
           {canCloseOtherProjects && (
             <ContextMenu.Item
               className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-              onSelect={onCloseOtherProjects}
+              onClick={onCloseOtherProjects}
             >
               <X className="size-4" />
               <span>{t("projectMenu.closeOtherProjects")}</span>

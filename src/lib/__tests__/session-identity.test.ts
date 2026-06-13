@@ -34,6 +34,13 @@ describe("session identity", () => {
     );
   });
 
+  test("keeps legacy backend-tagged Sessions identifiable after Harness migration", () => {
+    expect(harnessSessionIdentity({ id: "raw-1", _backendId: "opencode" })).toBe("opencode:raw-1");
+    expect(
+      sameHarnessSessionIdentity({ id: "raw-1", _backendId: "opencode" }, { id: "opencode:raw-1" }),
+    ).toBe(true);
+  });
+
   test("builds storage mapping keys in one place", () => {
     expect(scopedRawSessionKey({ projectId: "project-1", harnessId: "pi", rawId: "raw-1" })).toBe(
       "project-1::pi::raw-1",

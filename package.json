@@ -27,6 +27,18 @@
     "fmt": "vp fmt",
     "fmt:fix": "vp fmt --fix",
     "test": "vp test",
+    "start": "NODE_ENV=production vp exec electron . --no-sandbox",
+    "start:web": "HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
+    "dist:linux": "vp build && electron-builder --linux deb AppImage",
+    "dist:linux:appimage": "vp build && electron-builder --linux AppImage",
+    "dist:mac": "vp build && electron-builder --mac dmg",
+    "dist:mac:arm64": "vp build && electron-builder --mac dmg --arm64",
+    "dist:win": "vp build && electron-builder --win nsis",
+    "dist:win:portable": "vp build && electron-builder --win portable",
+    "mobile:sync": "vp build && cap sync android",
+    "mobile:open": "cap open android",
+    "mobile:build:debug": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleDebug'",
+    "mobile:build:release": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleRelease'",
     "prototype:claude-sdk": "node scripts/prototype-claude-sdk-terminal.mjs"
   },
   "dependencies": {
