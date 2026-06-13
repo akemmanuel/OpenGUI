@@ -115,7 +115,11 @@ export function SessionItemMenu({
           <MoreHorizontal className="size-3.5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
+      <DropdownMenuContent
+        align="start"
+        className="w-64"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         <DropdownMenuItem
           onClick={(event) => {
             event.stopPropagation();
@@ -682,7 +686,7 @@ export function ProjectItemMenu(props: Omit<ProjectMenuContentProps, "kind">) {
           <MoreHorizontal className="size-3.5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="start" className="w-64">
         <ProjectMenuContent kind="dropdown" {...props} />
       </DropdownMenuContent>
     </DropdownMenu>
