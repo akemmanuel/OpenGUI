@@ -23,6 +23,7 @@ export type ScrollSnapshot = {
   offsetFromViewportTop: number;
   scrollTop: number;
   distanceFromBottom: number;
+  atTop: boolean;
   pinnedToBottom: boolean;
   updatedAt: number;
 };
@@ -37,12 +38,23 @@ function estimateMessageSize(message: MessageEntry): number {
   return Math.min(720, Math.max(140, 120 + partCount * 36 + Math.ceil(textLength / 90) * 18));
 }
 
-function isNearBottom(element: HTMLElement) {
-  return element.scrollHeight - element.scrollTop - element.clientHeight <= NEAR_BOTTOM_PX;
+export function distanceFromBottom(
+  element: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
+) {
+  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
 }
 
-function distanceFromBottom(element: HTMLElement) {
-  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
+export function isAtTop(element: Pick<HTMLElement, "scrollTop">) {
+  return element.scrollTop <= NEAR_BOTTOM_PX;
+}
+
+export function isNearBottom(
+  element: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
+) {
+  const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+  if (maxScrollTop <= NEAR_BOTTOM_PX) return true;
+  if (isAtTop(element)) return false;
+  return distanceFromBottom(element) <= NEAR_BOTTOM_PX;
 }
 
 export function VirtualMessageScroller({
@@ -101,6 +113,7 @@ export function VirtualMessageScroller({
       const scrollEl = scrollRef.current;
       if (!scrollEl) return;
       const first = virtualizer.getVirtualItems()[0];
+      const atTop = isAtTop(scrollEl);
       const pinnedToBottom = isNearBottom(scrollEl);
       pinnedToBottomRef.current = pinnedToBottom;
       scrollSnapshotsRef.current.set(sessionId, {
@@ -108,6 +121,7 @@ export function VirtualMessageScroller({
         offsetFromViewportTop: first ? first.start - scrollEl.scrollTop : 0,
         scrollTop: scrollEl.scrollTop,
         distanceFromBottom: distanceFromBottom(scrollEl),
+        atTop,
         pinnedToBottom,
         updatedAt: Date.now(),
       });
@@ -187,6 +201,12 @@ export function VirtualMessageScroller({
     (snapshot: ScrollSnapshot) => {
       const scrollEl = scrollRef.current;
       if (!scrollEl) return false;
+
+      if (snapshot.atTop) {
+        virtualizer.scrollToIndex(0, { align: "start" });
+        setProgrammaticScrollTop(0);
+        return true;
+      }
 
       if (snapshot.pinnedToBottom) {
         scrollToLatest();
