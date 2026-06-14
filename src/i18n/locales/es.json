@@ -401,7 +401,15 @@
     "up": "Subir",
     "noFolders": "No hay carpetas",
     "allowedRoots": "Raíces permitidas: {{roots}}",
-    "serverDefault": "predeterminado del servidor"
+    "serverDefault": "predeterminado del servidor",
+    "title": "Abrir proyecto",
+    "webLocalDescription": "Elige una ruta de proyecto en el servidor de OpenGUI. Si lo usas desde un teléfono, las rutas son del servidor, no archivos del teléfono.",
+    "localDescription": "Abre una carpeta de proyecto local para esta ventana. También puedes pegar una ruta absoluta manualmente.",
+    "remoteDescription": "Esta ventana está conectada a un servidor remoto, así que elige un proyecto introduciendo la ruta en ese servidor.",
+    "openProject": "Abrir proyecto",
+    "projectPathLabel": "Ruta del proyecto",
+    "browseServer": "Explorar servidor",
+    "loadingServerFolders": "Cargando carpetas del servidor..."
   },
   "fileMention": {
     "searching": "Buscando..."
@@ -411,5 +419,10 @@
     "allowOnce": "Permitir una vez",
     "alwaysAllow": "Permitir siempre",
     "reject": "Rechazar"
+  },
+  "revertBanner": {
+    "reverted": "{{count}} mensaje revertido",
+    "reverted_plural": "{{count}} mensajes revertidos",
+    "restore": "Restaurar"
   }
 }

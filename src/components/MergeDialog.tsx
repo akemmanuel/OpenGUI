@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, GitBranch, GitMerge, Loader2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { DialogShell } from "@/components/ui/DialogShell";
@@ -39,6 +39,7 @@ export function MergeDialog({
   const client = useOpenGuiClient();
   const [mergeState, setMergeState] = useState<MergeState>({ step: "confirm" });
   const [deleteWorktree, setDeleteWorktree] = useState(false);
+  const mergeInFlightRef = useRef(false);
 
   const repoName = getProjectName(mainDirectory);
 
@@ -48,6 +49,7 @@ export function MergeDialog({
         // Reset state on close
         setMergeState({ step: "confirm" });
         setDeleteWorktree(false);
+        mergeInFlightRef.current = false;
         onOpenChange(false);
       }
     },
@@ -55,6 +57,8 @@ export function MergeDialog({
   );
 
   const handleMerge = useCallback(async () => {
+    if (mergeInFlightRef.current) return;
+    mergeInFlightRef.current = true;
     setMergeState({ step: "merging" });
     try {
       const res = await client.git.merge(mainDirectory, branch);
@@ -74,6 +78,8 @@ export function MergeDialog({
         step: "error",
         message: getErrorMessage(err, t("mergeDialog.failed")),
       });
+    } finally {
+      mergeInFlightRef.current = false;
     }
   }, [branch, client, deleteWorktree, mainDirectory, onMerged, t]);
 

@@ -222,7 +222,7 @@ function AppContent({
                         onClick={() => setMergeInfo(activeWorktreeInfo)}
                       >
                         <GitMerge className="size-4" />
-                        Merge
+                        {t("projectMenu.merge")}
                       </Button>
                       <Button
                         variant="outline"

@@ -401,7 +401,15 @@
     "up": "Nach oben",
     "noFolders": "Keine Ordner",
     "allowedRoots": "Erlaubte Wurzeln: {{roots}}",
-    "serverDefault": "Server-Standard"
+    "serverDefault": "Server-Standard",
+    "title": "Projekt öffnen",
+    "webLocalDescription": "Wähle einen Projektpfad auf dem OpenGUI-Server. Wenn du dies von einem Smartphone aus verwendest, sind es Serverpfade, keine Dateien auf dem Smartphone.",
+    "localDescription": "Öffne einen lokalen Projektordner für dieses Fenster. Du kannst auch manuell einen absoluten Pfad einfügen.",
+    "remoteDescription": "Dieses Fenster ist mit einem Remote-Server verbunden. Wähle daher ein Projekt, indem du den Pfad auf diesem Server eingibst.",
+    "openProject": "Projekt öffnen",
+    "projectPathLabel": "Projektpfad",
+    "browseServer": "Server durchsuchen",
+    "loadingServerFolders": "Serverordner werden geladen..."
   },
   "fileMention": {
     "searching": "Suche..."
@@ -411,5 +419,10 @@
     "allowOnce": "Einmal erlauben",
     "alwaysAllow": "Immer erlauben",
     "reject": "Ablehnen"
+  },
+  "revertBanner": {
+    "reverted": "{{count}} Nachricht zurückgesetzt",
+    "reverted_plural": "{{count}} Nachrichten zurückgesetzt",
+    "restore": "Wiederherstellen"
   }
 }

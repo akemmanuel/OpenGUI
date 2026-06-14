@@ -398,7 +398,15 @@
     "up": "Up",
     "noFolders": "No folders",
     "allowedRoots": "Allowed roots: {{roots}}",
-    "serverDefault": "server default"
+    "serverDefault": "server default",
+    "title": "Open Project",
+    "webLocalDescription": "Choose a project path on the OpenGUI server. If you use this from a phone, paths are server paths, not phone files.",
+    "localDescription": "Open a local project folder for this window. You can also paste an absolute path manually.",
+    "remoteDescription": "This window is connected to a remote server, so choose a project by entering the path on that server.",
+    "openProject": "Open project",
+    "projectPathLabel": "Project path",
+    "browseServer": "Browse server",
+    "loadingServerFolders": "Loading server folders..."
   },
   "fileMention": {
     "searching": "Searching..."
@@ -408,5 +416,10 @@
     "allowOnce": "Allow once",
     "alwaysAllow": "Always allow",
     "reject": "Reject"
+  },
+  "revertBanner": {
+    "reverted": "{{count}} message reverted",
+    "reverted_plural": "{{count}} messages reverted",
+    "restore": "Restore"
   }
 }
