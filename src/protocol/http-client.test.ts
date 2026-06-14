@@ -304,13 +304,14 @@ describe("createHttpOpenGuiClient", () => {
   });
 
   test("sends session and project context with question replies", async () => {
-    const calls: Array<{ url: string; body: unknown }> = [];
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
     const client = createHttpOpenGuiClient({
       baseUrl: "http://example.test",
       fetchImpl: async (input, init) => {
         const url = String(input);
+        const method = init?.method ?? "GET";
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-        calls.push({ url, body });
+        calls.push({ url, method, body });
         if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
           return json({
             ok: true,
@@ -343,6 +344,7 @@ describe("createHttpOpenGuiClient", () => {
 
     expect(calls.at(-1)).toEqual({
       url: "http://example.test/api/questions/question_1/reply",
+      method: "POST",
       body: {
         sessionId: "opencode:session_1",
         answers: [["Yes"]],
@@ -351,6 +353,46 @@ describe("createHttpOpenGuiClient", () => {
         projectId: "project_1",
         directory: "/repo",
       },
+    });
+  });
+
+  test("does not create project records for question replies", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+        calls.push({ url, method, body });
+        if (url.endsWith("/api/projects") && method === "GET") {
+          return json({ ok: true, value: [] });
+        }
+        if (url.endsWith("/api/questions/question_1/reply") && method === "POST") {
+          return json({ ok: true, value: true });
+        }
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      },
+    });
+
+    await client.sessions.replyQuestion({
+      sessionId: "opencode:session_1",
+      requestId: "question_1",
+      answers: [["Yes"]],
+      harnessId: "opencode",
+      target: { directory: "/untracked", workspaceId: "workspace-1" },
+    });
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "GET http://example.test/api/projects",
+      "POST http://example.test/api/questions/question_1/reply",
+    ]);
+    expect(calls.at(-1)?.body).toEqual({
+      sessionId: "opencode:session_1",
+      answers: [["Yes"]],
+      harnessId: "opencode",
+      workspaceId: "workspace-1",
+      directory: "/untracked",
     });
   });
 

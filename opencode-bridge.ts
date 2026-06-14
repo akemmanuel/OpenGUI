@@ -1246,14 +1246,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (windowState.projectRegistry.getConnection(projectKey) !== conn) return;
       if (event?.type === "opencode:event") {
         const props = event.payload?.properties ?? {};
-        if (event.payload?.type === "question.asked") {
-          windowState.projectRegistry.rememberQuestion(projectKey, props?.id);
+        const questionId = props?.id ?? props?.requestID;
+        if (event.payload?.type === "question.asked" && questionId) {
+          windowState.projectRegistry.rememberQuestion(projectKey, questionId);
         }
         if (
-          event.payload?.type === "question.replied" ||
-          event.payload?.type === "question.rejected"
+          (event.payload?.type === "question.replied" ||
+            event.payload?.type === "question.rejected") &&
+          questionId
         ) {
-          windowState.projectRegistry.deleteQuestion(props?.requestID);
+          windowState.projectRegistry.deleteQuestion(questionId);
         }
       }
       sendEvent(sender, { ...event, directory, workspaceId });
@@ -1461,19 +1463,20 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   /**
    * Register an IPC handler for question operations that prefers
-   * requestID -> directory routing, then falls back to trying all connections.
+   * explicit target routing, then requestID -> directory routing,
+   * then falls back to a single connected connection.
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, requestID: string, ...args: any[]) => Promise<any>} fn
    */
-  function handleQuestionOp(channel, fn, targetArgOffset = 0) {
+  function handleQuestionOp(channel, fn) {
     ipcMain.handle(channel, async (event, requestID, ...args) => {
       try {
         const windowState = getWindowState(event.sender);
         if (typeof requestID !== "string" || !requestID.trim()) {
           return { success: false, error: "Question requestID is required" };
         }
-        const maybeDirectory = args[targetArgOffset];
-        const maybeWorkspaceId = args[targetArgOffset + 1];
+        const maybeDirectory = args.length >= 2 ? args[args.length - 2] : undefined;
+        const maybeWorkspaceId = args.length >= 1 ? args[args.length - 1] : undefined;
         const directory = typeof maybeDirectory === "string" ? maybeDirectory : undefined;
         const workspaceId = typeof maybeWorkspaceId === "string" ? maybeWorkspaceId : undefined;
 
@@ -1492,8 +1495,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           windowState.projectRegistry.deleteQuestion(requestID);
           return data === undefined ? { success: true } : { success: true, data };
         }
-
-        windowState.projectRegistry.deleteQuestion(requestID);
 
         const connected = getConnectedConnections(windowState, workspaceId);
         const entry = connected[0];
@@ -1917,12 +1918,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     conn.respondPermission(sessionId, permissionId, response),
   );
 
-  // --- Question response (try all connections) ---
+  // --- Question response (target/question routed) ---
 
-  handleQuestionOp(
-    "opencode:question:reply",
-    (conn, requestID, answers) => conn.replyQuestion(requestID, answers),
-    1,
+  handleQuestionOp("opencode:question:reply", (conn, requestID, answers) =>
+    conn.replyQuestion(requestID, answers),
   );
 
   // --- Commands (global) ---
@@ -1961,11 +1960,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       return { success: false, error: err.message };
     }
   });
-  handleQuestionOp(
-    "opencode:question:reject",
-    (conn, requestID) => conn.rejectQuestion(requestID),
-    0,
-  );
+  handleQuestionOp("opencode:question:reject", (conn, requestID) => conn.rejectQuestion(requestID));
 
   // --- MCP operations (directory-aware) ---
 

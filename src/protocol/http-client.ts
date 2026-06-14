@@ -1084,7 +1084,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
       },
       replyQuestion: async ({ sessionId, requestId, answers, harnessId, target }) => {
-        const project = target ? await ensureProjectForTarget(target) : null;
+        const project = target ? await findProjectForTarget(target) : null;
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/questions/${encodeURIComponent(requestId)}/reply`,
@@ -1102,7 +1102,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
       },
       rejectQuestion: async ({ sessionId, requestId, harnessId, target }) => {
-        const project = target ? await ensureProjectForTarget(target) : null;
+        const project = target ? await findProjectForTarget(target) : null;
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/questions/${encodeURIComponent(requestId)}/reject`,

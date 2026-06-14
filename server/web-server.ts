@@ -1360,11 +1360,18 @@ async function handleQuestionRequest(request: Request) {
     }
     const target = directory ? { directory, workspaceId } : undefined;
     if (action === "reply") {
+      if (!isPlainObject(body) || body.answers === undefined) {
+        throw new Error("answers is required for question reply");
+      }
+      const answers = toQuestionAnswers(body.answers);
+      if (answers.length === 0) {
+        throw new Error("answers must be a non-empty array");
+      }
       await replyToHarnessQuestion({
         services,
         harnessId,
         requestId: questionId,
-        answers: isPlainObject(body) ? toQuestionAnswers(body.answers) : [],
+        answers,
         target,
       });
     } else {
