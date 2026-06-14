@@ -255,6 +255,28 @@ function tagOpenCodeMessageEntry(entry) {
 const httpAgent = new Agent({ keepAlive: true, keepAliveMsecs: 15_000 });
 const httpsAgent = new HttpsAgent({ keepAlive: true, keepAliveMsecs: 15_000 });
 
+function assertOpenCodeResponseOk(result, fallbackMessage) {
+  if (!result || typeof result !== "object") return result;
+  if (result.error) {
+    const message =
+      typeof result.error.message === "string" && result.error.message.trim()
+        ? result.error.message
+        : fallbackMessage;
+    const error = new Error(message);
+    error.status = result.response?.status;
+    error.data = result.error;
+    throw error;
+  }
+  if (result.response && result.response.ok === false) {
+    const error = new Error(
+      `${fallbackMessage}: ${result.response.status} ${result.response.statusText}`,
+    );
+    error.status = result.response.status;
+    throw error;
+  }
+  return result;
+}
+
 function stripMessagePayloadBloat(messages) {
   for (const message of messages) {
     const summary = message?.info?.summary;
@@ -542,13 +564,41 @@ export class OpenCodeConnection {
 
   // - permissions ----------------------------------------------------------
 
-  async respondPermission(sessionId, permissionId, response) {
+  async respondPermission(sessionId, permissionId, response, workspaceId) {
     this._requireClient();
-    await this._client.permission.respond({
-      sessionID: sessionId,
-      permissionID: permissionId,
-      response,
-    });
+    const directory = this.getDirectory();
+    const workspace =
+      typeof workspaceId === "string" && workspaceId.trim() && workspaceId !== "local"
+        ? workspaceId.trim()
+        : undefined;
+    try {
+      assertOpenCodeResponseOk(
+        await this._client.permission.reply({
+          requestID: permissionId,
+          reply: response,
+          ...(directory ? { directory } : {}),
+          ...(workspace ? { workspace } : {}),
+        }),
+        `Permission reply failed for ${permissionId}`,
+      );
+    } catch (replyError) {
+      // Fallback for older OpenCode servers which only expose deprecated
+      // session-scoped permission responses.
+      try {
+        assertOpenCodeResponseOk(
+          await this._client.permission.respond({
+            sessionID: sessionId,
+            permissionID: permissionId,
+            response,
+            ...(directory ? { directory } : {}),
+            ...(workspace ? { workspace } : {}),
+          }),
+          `Permission response failed for ${permissionId}`,
+        );
+      } catch {
+        throw replyError;
+      }
+    }
   }
 
   // - commands -------------------------------------------------------------
@@ -1914,8 +1964,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   // --- Permission response (routed to session's connection) ---
 
-  handleSessionOp("opencode:permission", (conn, sessionId, permissionId, response) =>
-    conn.respondPermission(sessionId, permissionId, response),
+  handleSessionOp(
+    "opencode:permission",
+    (conn, sessionId, permissionId, response, directory, workspaceId) =>
+      conn.respondPermission(sessionId, permissionId, response, workspaceId),
   );
 
   // --- Question response (target/question routed) ---

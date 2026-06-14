@@ -7,11 +7,13 @@ export async function respondToHarnessPermission(input: {
   session: SessionRecord;
   permissionId: string;
   response: "once" | "always" | "reject";
+  scope?: { directory?: string; workspaceId?: string };
 }): Promise<void> {
   await input.services.harnesses.respondPermission({
     session: input.session,
     permissionId: input.permissionId,
     response: input.response,
+    scope: input.scope,
   });
 }
 

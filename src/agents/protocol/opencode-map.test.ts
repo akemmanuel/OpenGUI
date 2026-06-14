@@ -100,6 +100,55 @@ describe("mapOpenCodeEvent", () => {
     });
   });
 
+  test("maps v2 permission requests to panel-compatible shape", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "permission.v2.asked",
+          properties: {
+            id: "permission-1",
+            sessionID: "session-1",
+            action: "external_directory",
+            resources: ["/tmp/opengui-uploads/*"],
+            save: ["/tmp/opengui-uploads/*"],
+            metadata: { tool: "read" },
+          },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toEqual({
+      type: "permission.requested",
+      request: {
+        id: "permission-1",
+        sessionID: "opencode:session-1",
+        permission: "external_directory",
+        patterns: ["/tmp/opengui-uploads/*"],
+        always: ["/tmp/opengui-uploads/*"],
+        metadata: { tool: "read" },
+        source: undefined,
+      },
+    });
+  });
+
+  test("maps v2 permission replies", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "permission.v2.replied",
+          properties: {
+            sessionID: "session-1",
+            requestID: "permission-1",
+            reply: "once",
+          },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toEqual({
+      type: "permission.cleared",
+      sessionID: "opencode:session-1",
+    });
+  });
+
   test("returns null for unhandled and aborted error events", () => {
     expect(
       mapOpenCodeEvent(
