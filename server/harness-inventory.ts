@@ -21,6 +21,13 @@ const LABEL_BY_HARNESS: Record<HarnessId, string> = {
 
 const HARNESS_IDS: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
 
+function safeDiagnosticCwd() {
+  // Version/path probes do not need a project cwd. Avoid inheriting a cwd inside
+  // Documents/Desktop in dev or ad-hoc packaged launches, which can trigger
+  // macOS privacy prompts before the user has opened a project.
+  return homedir();
+}
+
 export function isHarnessId(value: unknown): value is HarnessId {
   return typeof value === "string" && HARNESS_IDS.includes(value as HarnessId);
 }
@@ -48,6 +55,7 @@ function commandFromShell(command: string): string | null {
   if (process.platform === "win32") return null;
   for (const shell of [process.env.SHELL, "/bin/zsh", "/bin/bash"].filter(Boolean) as string[]) {
     const result = spawnSync(shell, ["-lc", `command -v ${command}`], {
+      cwd: safeDiagnosticCwd(),
       encoding: "utf8",
       timeout: 3000,
       stdio: ["ignore", "pipe", "ignore"],
@@ -87,6 +95,7 @@ export function resolveHarnessCli(harnessId: HarnessId): HarnessInventoryCliDiag
 
 function readVersion(resolvedPath: string): string | null {
   const result = spawnSync(resolvedPath, ["--version"], {
+    cwd: safeDiagnosticCwd(),
     encoding: "utf8",
     timeout: 5000,
     stdio: ["ignore", "pipe", "pipe"],
