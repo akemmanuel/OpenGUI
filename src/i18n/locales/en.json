@@ -389,6 +389,11 @@
     "dismiss": "Dismiss",
     "open": "Open"
   },
+  "sessionError": {
+    "title": "Agent error",
+    "nextStep": "Next step: run this command in your terminal, then retry:",
+    "openTerminal": "Open terminal"
+  },
   "emptyStates": {
     "noProjectTitle": "No project connected",
     "noProjectCanStart": "Connect a project now or start a chat.",

@@ -104,6 +104,8 @@ export interface InternalAgentState {
   pendingQuestions: Record<string, QuestionRequest>;
   /** Last error surfaced to UI */
   lastError: string | null;
+  /** Last error per session, shown next to active chat input */
+  sessionErrors: Record<string, string>;
   /** App startup status for local server bootstrap */
   bootState: "idle" | "checking-server" | "starting-server" | "ready" | "error";
   /** Startup error shown only when bootstrap fails */

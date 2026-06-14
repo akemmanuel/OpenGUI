@@ -166,7 +166,7 @@ describe("handleHarnessEvent", () => {
     expect(actions).toEqual([{ type: "SESSION_DELETED", payload: "session-1" }]);
   });
 
-  test("surfaces only global session errors", () => {
+  test("surfaces session-scoped and global session errors", () => {
     const actions: Array<Record<string, unknown>> = [];
     const dispatch = (action: Record<string, unknown>) => {
       actions.push(action);
@@ -174,12 +174,12 @@ describe("handleHarnessEvent", () => {
 
     const sessionScoped: HarnessEvent = {
       type: "session.error",
-      error: "hidden",
+      error: "visible in session",
       sessionID: "session-1",
     };
     const globalError: HarnessEvent = {
       type: "session.error",
-      error: "visible",
+      error: "visible globally",
     };
 
     handleHarnessEvent({
@@ -199,6 +199,15 @@ describe("handleHarnessEvent", () => {
       dispatch: dispatch as never,
     });
 
-    expect(actions).toEqual([{ type: "SET_ERROR", payload: "visible" }]);
+    expect(actions).toEqual([
+      {
+        type: "SESSION_ERROR",
+        payload: { sessionID: "session-1", error: "visible in session" },
+      },
+      {
+        type: "SESSION_ERROR",
+        payload: { sessionID: undefined, error: "visible globally" },
+      },
+    ]);
   });
 });

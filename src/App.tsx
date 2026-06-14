@@ -6,6 +6,7 @@ import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { NoProjectConnected, NoSessionSelected } from "@/components/EmptyChatStates";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -39,6 +40,12 @@ import { PromptBox } from "./components/PromptBox";
 import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
+
+function extractTerminalCommand(message: string | null) {
+  if (!message) return null;
+  const match = message.match(/\bRun\s+['"`]([^'"`]+)['"`]\s+in\s+(?:your\s+)?terminal/i);
+  return match?.[1]?.trim() || null;
+}
 
 function AppContent({
   detachedProject,
@@ -75,6 +82,7 @@ function AppContent({
     isLoadingMessages,
     activeTargetDirectory,
     sessionMeta,
+    sessionErrors,
   } = useSessionState();
   const { messages } = useMessages();
   const { providers, selectedModel, providerDefaults } = useModelState();
@@ -93,6 +101,11 @@ function AppContent({
     [bootLogs],
   );
   const activeSessionId = sessionActiveId;
+  const activeSessionError = activeSessionId ? (sessionErrors[activeSessionId] ?? null) : null;
+  const activeSessionErrorCommand = useMemo(
+    () => extractTerminalCommand(activeSessionError),
+    [activeSessionError],
+  );
   const {
     activeSession,
     activeSessionDirectory,
@@ -178,6 +191,13 @@ function AppContent({
 
   const contextPercent = contextInfo.percent;
 
+  const openTerminalForSessionError = useCallback(() => {
+    if (!activeSessionDirectory) return;
+    void getDesktopShellClient()
+      .system.openInTerminal(activeSessionDirectory)
+      .catch((error) => console.error(error));
+  }, [activeSessionDirectory]);
+
   // Check for app updates on startup
   const updateCheck = useUpdateCheck();
 
@@ -256,6 +276,32 @@ function AppContent({
                 {showPromptBox && (
                   <div className="shrink-0 px-4 pb-3">
                     <div className="max-w-2xl mx-auto">
+                      {activeSessionError && (
+                        <Alert variant="destructive" className="mb-2 select-text">
+                          <AlertTitle>{t("sessionError.title")}</AlertTitle>
+                          <AlertDescription className="space-y-2">
+                            <p className="whitespace-pre-wrap break-words">{activeSessionError}</p>
+                            {activeSessionErrorCommand && (
+                              <div className="space-y-1">
+                                <p>{t("sessionError.nextStep")}</p>
+                                <code className="block rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground">
+                                  {activeSessionErrorCommand}
+                                </code>
+                              </div>
+                            )}
+                            {activeSessionErrorCommand && activeSessionDirectory && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={openTerminalForSessionError}
+                              >
+                                {t("sessionError.openTerminal")}
+                              </Button>
+                            )}
+                          </AlertDescription>
+                        </Alert>
+                      )}
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">
                           <QueueList

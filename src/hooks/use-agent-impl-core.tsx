@@ -2347,6 +2347,7 @@ function InternalAgentProvider({
       unreadSessionIds: state.unreadSessionIds,
       sessionDrafts: state.sessionDrafts,
       sessionMeta: state.sessionMeta,
+      sessionErrors: state.sessionErrors,
       childSessions: state.childSessions,
     }),
     [
@@ -2365,6 +2366,7 @@ function InternalAgentProvider({
       state.unreadSessionIds,
       state.sessionDrafts,
       state.sessionMeta,
+      state.sessionErrors,
       state.childSessions,
     ],
   );
