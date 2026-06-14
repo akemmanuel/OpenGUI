@@ -21,7 +21,6 @@ import { useEffect, useRef } from "react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
 import { Spinner } from "@/components/ui/spinner";
-import { useConnectionState } from "@/hooks/use-agent-state";
 import { todoStatusConfig, type TodoItem } from "@/lib/todos";
 import { cn, looksLikeTerminalOutput } from "@/lib/utils";
 import { ApplyPatchFilesView } from "./ApplyPatchFilesView";
@@ -273,13 +272,16 @@ export function ToolPartView({
   part,
   expandedToolParts,
   onToggleToolPart,
+  imageServerUrl,
+  imageAuthToken,
 }: {
   part: ToolPart;
   expandedToolParts?: ReadonlySet<string>;
   onToggleToolPart?: (partId: string, expanded: boolean) => void;
+  imageServerUrl?: string | null;
+  imageAuthToken?: string | null;
 }) {
-  const { workspaceServerUrl } = useConnectionState();
-  const presentation = getToolPresentation(part, workspaceServerUrl);
+  const presentation = getToolPresentation(part, imageServerUrl, imageAuthToken);
   const expanded = expandedToolParts?.has(part.id) ?? false;
   const setExpanded = (nextExpanded: boolean) => onToggleToolPart?.(part.id, nextExpanded);
   const autoExpandedRef = useRef(false);

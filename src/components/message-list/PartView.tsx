@@ -16,6 +16,8 @@ export const PartView = memo(function PartView({
   onImageHover,
   onImageOpen,
   imageBaseDirectory,
+  imageServerUrl,
+  imageAuthToken,
 }: {
   part: Part;
   isUser?: boolean;
@@ -26,6 +28,8 @@ export const PartView = memo(function PartView({
   onImageHover?: (path: string | null) => void;
   onImageOpen?: (image: ImageMention) => void;
   imageBaseDirectory?: string | null;
+  imageServerUrl?: string | null;
+  imageAuthToken?: string | null;
 }) {
   switch (part.type) {
     case "text":
@@ -37,10 +41,14 @@ export const PartView = memo(function PartView({
           onImageHover={onImageHover}
           onImageOpen={onImageOpen}
           imageBaseDirectory={imageBaseDirectory}
+          imageServerUrl={imageServerUrl}
+          imageAuthToken={imageAuthToken}
         />
       );
     case "file":
-      return <FilePartView part={part} />;
+      return (
+        <FilePartView part={part} imageServerUrl={imageServerUrl} imageAuthToken={imageAuthToken} />
+      );
     case "reasoning":
       return <ReasoningPartView part={part} isLastReasoning={part.id === lastReasoningPartId} />;
     case "tool":
@@ -49,6 +57,8 @@ export const PartView = memo(function PartView({
           part={part}
           expandedToolParts={expandedToolParts}
           onToggleToolPart={onToggleToolPart}
+          imageServerUrl={imageServerUrl}
+          imageAuthToken={imageAuthToken}
         />
       );
     case "step-start":

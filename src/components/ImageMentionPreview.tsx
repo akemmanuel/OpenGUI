@@ -13,11 +13,13 @@ function ImageLightbox({
   image,
   serverUrl,
   baseDirectory,
+  authToken,
   onClose,
 }: {
   image: ImageMention;
   serverUrl?: string | null;
   baseDirectory?: string | null;
+  authToken?: string | null;
   onClose: () => void;
 }) {
   React.useEffect(() => {
@@ -28,7 +30,7 @@ function ImageLightbox({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const src = resolveAttachmentImageSrc(image.path, serverUrl, baseDirectory);
+  const src = resolveAttachmentImageSrc(image.path, serverUrl, baseDirectory, authToken);
 
   return createPortal(
     <div
@@ -64,6 +66,7 @@ export function ImageMentionToken({
   image,
   serverUrl,
   baseDirectory,
+  authToken,
   active,
   onHover,
   onOpen,
@@ -72,6 +75,7 @@ export function ImageMentionToken({
   image: ImageMention;
   serverUrl?: string | null;
   baseDirectory?: string | null;
+  authToken?: string | null;
   active?: boolean;
   onHover?: (path: string | null) => void;
   onOpen?: (image: ImageMention) => void;
@@ -99,6 +103,7 @@ export function ImageMentionToken({
           image={localOpenImage}
           serverUrl={serverUrl}
           baseDirectory={baseDirectory}
+          authToken={authToken}
           onClose={() => setLocalOpenImage(null)}
         />
       )}
@@ -110,6 +115,7 @@ export function ImageMentionThumbnails({
   images,
   serverUrl,
   baseDirectory,
+  authToken,
   activePath,
   onHover,
   onOpen,
@@ -118,6 +124,7 @@ export function ImageMentionThumbnails({
   images: ImageMention[];
   serverUrl?: string | null;
   baseDirectory?: string | null;
+  authToken?: string | null;
   activePath?: string | null;
   onHover?: (path: string | null) => void;
   onOpen?: (image: ImageMention) => void;
@@ -130,7 +137,7 @@ export function ImageMentionThumbnails({
     <>
       <div className={cn("flex flex-wrap gap-2", className)}>
         {images.map((image) => {
-          const src = resolveAttachmentImageSrc(image.path, serverUrl, baseDirectory);
+          const src = resolveAttachmentImageSrc(image.path, serverUrl, baseDirectory, authToken);
           const active = activePath === image.path;
           return (
             <button
@@ -157,6 +164,7 @@ export function ImageMentionThumbnails({
           image={localOpenImage}
           serverUrl={serverUrl}
           baseDirectory={baseDirectory}
+          authToken={authToken}
           onClose={() => setLocalOpenImage(null)}
         />
       )}
@@ -168,11 +176,13 @@ export function ImageMentionLightbox({
   image,
   serverUrl,
   baseDirectory,
+  authToken,
   onClose,
 }: {
   image: ImageMention | null;
   serverUrl?: string | null;
   baseDirectory?: string | null;
+  authToken?: string | null;
   onClose: () => void;
 }) {
   if (!image) return null;
@@ -181,6 +191,7 @@ export function ImageMentionLightbox({
       image={image}
       serverUrl={serverUrl}
       baseDirectory={baseDirectory}
+      authToken={authToken}
       onClose={onClose}
     />
   );

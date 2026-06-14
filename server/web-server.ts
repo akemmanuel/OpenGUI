@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -416,12 +416,28 @@ const servesFrontend = !["api", "api-only", "backend", "backend-only"].includes(
 const authToken = process.env.OPENGUI_AUTH_TOKEN?.trim() || "";
 const allowedCorsOrigin = process.env.OPENGUI_CORS_ORIGIN?.trim() || "*";
 
+const uploadDirectory = join(tmpdir(), "opengui-uploads");
+mkdirSync(uploadDirectory, { recursive: true });
+
+function addCanonicalRootVariants(root: string) {
+  const resolved = resolve(root);
+  try {
+    const real = realpathSync(resolved);
+    return real === resolved ? [resolved] : [resolved, real];
+  } catch {
+    return [resolved];
+  }
+}
+
 function parseAllowedRoots() {
   const raw = process.env.OPENGUI_ALLOWED_ROOTS || homedir();
-  return raw
-    .split(",")
-    .map((entry) => resolve(entry.trim()))
-    .filter(Boolean);
+  return Array.from(
+    new Set(
+      [...raw.split(",").map((entry) => entry.trim()), uploadDirectory]
+        .filter(Boolean)
+        .flatMap(addCanonicalRootVariants),
+    ),
+  );
 }
 
 const allowedRoots = parseAllowedRoots();
@@ -1575,8 +1591,7 @@ app.get("/api/fs/file", async (c) => {
       ? inputPath
       : join(await resolveSafeDirectory(directory), inputPath);
     const actual = await realpath(requestedPath);
-    const allowed = allowedRoots.some((root) => actual === root || actual.startsWith(`${root}/`));
-    if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+    if (!isWithinAllowedRoot(actual)) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
     const info = await stat(actual);
     if (!info.isFile()) throw new Error("Path is not a file");
     return new Response(await readFile(actual), {
@@ -1615,8 +1630,7 @@ app.post("/api/fs/upload", async (c) => {
       if (file.size > uploadMaxFileBytes) throw new Error("File exceeds size limit");
     }
 
-    const dir = join(tmpdir(), "opengui-uploads");
-    await mkdir(dir, { recursive: true });
+    await mkdir(uploadDirectory, { recursive: true });
 
     const uploaded: string[] = [];
     for (const file of files) {
@@ -1624,7 +1638,7 @@ app.post("/api/fs/upload", async (c) => {
       const extension = extname(originalName)
         .replace(/[^a-zA-Z0-9.]/g, "")
         .slice(0, 24);
-      const filePath = join(dir, `${randomUUID()}${extension}`);
+      const filePath = join(uploadDirectory, `${randomUUID()}${extension}`);
       await writeFile(filePath, Buffer.from(await file.arrayBuffer()));
       uploaded.push(filePath);
     }

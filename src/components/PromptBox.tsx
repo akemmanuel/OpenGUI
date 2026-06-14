@@ -153,15 +153,25 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       clearSessionDraft,
     });
 
-    const promptImageServerUrl =
-      window.electronAPI?.kind === "electron" && activeWorkspace?.isLocal
-        ? null
-        : activeWorkspace?.serverUrl;
+    const browserOrigin =
+      window.location.protocol === "http:" || window.location.protocol === "https:"
+        ? window.location.origin
+        : null;
+    const localBackendUrl =
+      window.electronAPI?.kind === "electron" ? window.electronAPI.backendUrl : null;
+    const promptImageServerUrl = activeWorkspace?.isLocal
+      ? (localBackendUrl ?? activeWorkspace.serverUrl ?? browserOrigin)
+      : (activeWorkspace?.serverUrl ?? null);
+    const promptImageAuthToken =
+      activeWorkspace?.isLocal && window.electronAPI?.kind === "electron"
+        ? window.electronAPI.backendToken
+        : (activeWorkspace?.authToken ?? null);
     const promptFiles = usePromptFiles({
       disabled: isDisabled,
       value,
       setValue,
       serverUrl: promptImageServerUrl,
+      authToken: promptImageAuthToken,
       textareaRef: internalTextareaRef,
     });
     const promptImages = usePromptImages(value);
@@ -303,6 +313,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           images={promptImages}
           serverUrl={promptImageServerUrl}
           baseDirectory={projectDir ?? activeTargetDirectory ?? null}
+          authToken={promptImageAuthToken}
         />
         <textarea
           ref={internalTextareaRef}

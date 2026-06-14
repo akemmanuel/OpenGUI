@@ -1,11 +1,17 @@
 import type { FilePart } from "@opencode-ai/sdk/v2/client";
-import { useConnectionState } from "@/hooks/use-agent-state";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 
-export function FilePartView({ part }: { part: FilePart }) {
-  const { workspaceServerUrl } = useConnectionState();
+export function FilePartView({
+  part,
+  imageServerUrl,
+  imageAuthToken,
+}: {
+  part: FilePart;
+  imageServerUrl?: string | null;
+  imageAuthToken?: string | null;
+}) {
   const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
-  const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
+  const src = resolveAttachmentImageSrc(part.url, imageServerUrl, null, imageAuthToken);
 
   if (isImage) {
     return (

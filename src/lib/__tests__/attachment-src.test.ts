@@ -13,6 +13,12 @@ describe("resolveAttachmentImageSrc", () => {
     );
   });
 
+  test("adds auth token to backend image URLs", () => {
+    expect(
+      resolveAttachmentImageSrc("/tmp/image.png", "http://localhost:4096/", null, "secret"),
+    ).toBe("http://localhost:4096/api/fs/file?path=%2Ftmp%2Fimage.png&token=secret");
+  });
+
   test("resolves relative paths against the base directory", () => {
     expect(resolveAttachmentImageSrc("screenshot.png", null, "/repo/project")).toBe(
       "file:///repo/project/screenshot.png",

@@ -26,12 +26,14 @@ export function usePromptFiles({
   value,
   setValue,
   serverUrl,
+  authToken,
   textareaRef,
 }: {
   disabled: boolean;
   value: string;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   serverUrl?: string | null;
+  authToken?: string | null;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const [isDragging, setIsDragging] = React.useState(false);
@@ -60,9 +62,10 @@ export function usePromptFiles({
 
       const headers = new Headers();
       const token =
-        serverUrl?.trim() || !window.electronAPI?.backendToken
+        authToken?.trim() ||
+        (serverUrl?.trim() || !window.electronAPI?.backendToken
           ? getShellWorkspacePolicy().configuredWebWorkspace?.authToken
-          : window.electronAPI.backendToken;
+          : window.electronAPI.backendToken);
       if (token) headers.set("authorization", `Bearer ${token}`);
 
       const base =
@@ -102,7 +105,7 @@ export function usePromptFiles({
       setUploadProgress(100);
       setIsUploading(false);
     },
-    [appendUploadedPaths, serverUrl],
+    [appendUploadedPaths, authToken, serverUrl],
   );
 
   const appendFiles = React.useCallback(

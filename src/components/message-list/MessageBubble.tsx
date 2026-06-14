@@ -37,9 +37,21 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleToolPart?: (partId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { isLocalWorkspace, workspaceServerUrl } = useConnectionState();
+  const { activeWorkspace, isLocalWorkspace, workspaceServerUrl } = useConnectionState();
   const { sessions, activeTargetDirectory } = useSessionState();
-  const imageServerUrl = isLocalWorkspace ? null : workspaceServerUrl;
+  const browserOrigin =
+    window.location.protocol === "http:" || window.location.protocol === "https:"
+      ? window.location.origin
+      : null;
+  const localBackendUrl =
+    window.electronAPI?.kind === "electron" ? window.electronAPI.backendUrl : null;
+  const imageServerUrl = isLocalWorkspace
+    ? (localBackendUrl ?? activeWorkspace?.serverUrl ?? browserOrigin)
+    : workspaceServerUrl;
+  const imageAuthToken =
+    isLocalWorkspace && window.electronAPI?.kind === "electron"
+      ? window.electronAPI.backendToken
+      : (activeWorkspace?.authToken ?? null);
   const { info, parts } = entry;
   const imageBaseDirectory =
     sessions.find((session) => session.id === info.sessionID)?._projectDir ??
@@ -123,6 +135,7 @@ export const MessageBubble = memo(function MessageBubble({
             onOpen={setOpenImage}
             serverUrl={imageServerUrl}
             baseDirectory={imageBaseDirectory}
+            authToken={imageAuthToken}
             className="mb-2"
           />
         )}
@@ -146,6 +159,8 @@ export const MessageBubble = memo(function MessageBubble({
                   onImageHover={setActiveImagePath}
                   onImageOpen={setOpenImage}
                   imageBaseDirectory={imageBaseDirectory}
+                  imageServerUrl={imageServerUrl}
+                  imageAuthToken={imageAuthToken}
                 />
               ))}
             </div>
@@ -178,6 +193,7 @@ export const MessageBubble = memo(function MessageBubble({
           image={openImage}
           serverUrl={imageServerUrl}
           baseDirectory={imageBaseDirectory}
+          authToken={imageAuthToken}
           onClose={() => setOpenImage(null)}
         />
         {info.role === "assistant" && turnFooter && (

@@ -23,10 +23,12 @@ export function PromptImageMentions({
   images,
   serverUrl,
   baseDirectory,
+  authToken,
 }: {
   images: ImageMention[];
   serverUrl: string | null | undefined;
   baseDirectory: string | null;
+  authToken?: string | null;
 }) {
   const [activeImagePath, setActiveImagePath] = React.useState<string | null>(null);
   const [openImage, setOpenImage] = React.useState<ImageMention | null>(null);
@@ -38,6 +40,7 @@ export function PromptImageMentions({
           images={images}
           serverUrl={serverUrl}
           baseDirectory={baseDirectory}
+          authToken={authToken}
           activePath={activeImagePath}
           onHover={setActiveImagePath}
           onOpen={setOpenImage}
@@ -48,6 +51,7 @@ export function PromptImageMentions({
         image={openImage}
         serverUrl={serverUrl}
         baseDirectory={baseDirectory}
+        authToken={authToken}
         onClose={() => setOpenImage(null)}
       />
     </>

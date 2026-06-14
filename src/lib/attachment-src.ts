@@ -16,6 +16,7 @@ export function resolveAttachmentImageSrc(
   url: string,
   serverUrl?: string | null,
   baseDirectory?: string | null,
+  authToken?: string | null,
 ): string {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
@@ -29,6 +30,7 @@ export function resolveAttachmentImageSrc(
   if (normalizedServerUrl) {
     const params = new URLSearchParams({ path: resolvedPath });
     if (!isAbsolutePath(trimmed) && baseDirectory) params.set("directory", baseDirectory);
+    if (authToken?.trim()) params.set("token", authToken.trim());
     return `${normalizedServerUrl}/api/fs/file?${params.toString()}`;
   }
 

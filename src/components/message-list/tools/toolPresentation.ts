@@ -112,6 +112,7 @@ function getToolTitle(part: ToolPart, kind: ToolKind, isRunning: boolean): strin
 export function getToolPresentation(
   part: ToolPart,
   workspaceServerUrl?: string | null,
+  workspaceAuthToken?: string | null,
 ): ToolPresentation {
   const state = part.state;
   const kind = normalizeToolKind(part.tool);
@@ -143,7 +144,7 @@ export function getToolPresentation(
   const todos = kind === "todo" ? extractTodos(state) : null;
   const taskInfo = kind === "task" ? extractTaskInfo(state) : null;
   const taskDurationLabel = kind === "task" ? getTaskDurationLabel(state) : null;
-  const images = extractImageAttachments(state, workspaceServerUrl);
+  const images = extractImageAttachments(state, workspaceServerUrl, workspaceAuthToken);
 
   const command = kind === "bash" ? stringField(input, "command") : null;
   const globPattern = kind === "glob" ? stringField(input, "pattern") : null;

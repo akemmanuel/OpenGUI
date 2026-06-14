@@ -11,6 +11,7 @@ export interface ImageAttachmentInfo {
 export function extractImageAttachments(
   state: ToolPart["state"],
   serverUrl?: string | null,
+  authToken?: string | null,
 ): ImageAttachmentInfo[] {
   if (state.status !== "completed") return [];
   if (!Array.isArray(state.attachments) || state.attachments.length === 0) return [];
@@ -22,7 +23,7 @@ export function extractImageAttachments(
     })
     .map((att) => ({
       url: att.url,
-      src: resolveAttachmentImageSrc(att.url, serverUrl),
+      src: resolveAttachmentImageSrc(att.url, serverUrl, null, authToken),
       mime: att.mime,
       filename: att.filename,
     }));

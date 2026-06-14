@@ -1,7 +1,6 @@
 import type { TextPart } from "@opencode-ai/sdk/v2/client";
 import { ImageMentionToken, type ImageMention } from "@/components/ImageMentionPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { useConnectionState } from "@/hooks/use-agent-state";
 import { splitImageMentions } from "@/lib/image-mentions";
 
 export function TextPartView({
@@ -11,6 +10,8 @@ export function TextPartView({
   onImageHover,
   onImageOpen,
   imageBaseDirectory,
+  imageServerUrl,
+  imageAuthToken,
 }: {
   part: TextPart;
   isUser?: boolean;
@@ -18,8 +19,9 @@ export function TextPartView({
   onImageHover?: (path: string | null) => void;
   onImageOpen?: (image: ImageMention) => void;
   imageBaseDirectory?: string | null;
+  imageServerUrl?: string | null;
+  imageAuthToken?: string | null;
 }) {
-  const { isLocalWorkspace, workspaceServerUrl } = useConnectionState();
   if (!part.text) return null;
 
   if (isUser) {
@@ -34,8 +36,9 @@ export function TextPartView({
               key={`${segment.path}-${index}`}
               token={segment.token}
               image={{ path: segment.path, filename: segment.filename }}
-              serverUrl={isLocalWorkspace ? null : workspaceServerUrl}
+              serverUrl={imageServerUrl}
               baseDirectory={imageBaseDirectory}
+              authToken={imageAuthToken}
               active={activeImagePath === segment.path}
               onHover={onImageHover}
               onOpen={onImageOpen}
