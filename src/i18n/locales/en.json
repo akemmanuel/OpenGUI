@@ -353,5 +353,11 @@
     "de": "Deutsch",
     "en": "English",
     "es": "Español"
+  },
+  "permissionPanel": {
+    "title": "Permission: {{permission}}",
+    "allowOnce": "Allow once",
+    "alwaysAllow": "Always allow",
+    "reject": "Reject"
   }
 }
