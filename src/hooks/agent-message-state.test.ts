@@ -65,6 +65,40 @@ describe("mergeMessageSnapshot", () => {
     expect(merged.map((entry) => entry.info.id)).toEqual(["old", "new-live"]);
   });
 
+  test("preserves older loaded messages when replacing with a paged snapshot", () => {
+    const existing = [
+      message("original-user", 1, [textPart("original-part", "original-user", "first prompt")]),
+      message("older-assistant", 2, [textPart("older-part", "older-assistant", "early reply")]),
+      message("recent-assistant", 10, [textPart("recent-part", "recent-assistant", "recent")]),
+    ];
+    const incoming = [
+      message("recent-assistant", 10, [textPart("recent-part", "recent-assistant", "updated")]),
+    ];
+
+    const merged = mergeMessageSnapshot(incoming, existing, {
+      preserveExistingBeforeIncoming: true,
+    });
+
+    expect(merged.map((entry) => entry.info.id)).toEqual([
+      "original-user",
+      "older-assistant",
+      "recent-assistant",
+    ]);
+    expect((merged[2]?.parts[0] as Record<string, unknown>)?.text).toBe("updated");
+  });
+
+  test("full snapshots can still replace older messages", () => {
+    const existing = [
+      message("stale-old", 1, [textPart("stale-part", "stale-old", "stale")]),
+      message("fresh", 10, [textPart("fresh-part", "fresh", "fresh")]),
+    ];
+    const incoming = [message("fresh", 10, [textPart("fresh-part", "fresh", "fresh")])];
+
+    const merged = mergeMessageSnapshot(incoming, existing);
+
+    expect(merged.map((entry) => entry.info.id)).toEqual(["fresh"]);
+  });
+
   test("canonical user message replaces matching optimistic user message", () => {
     const optimistic = {
       info: {
