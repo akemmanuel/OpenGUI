@@ -882,7 +882,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
       let replayedState: InternalAgentState = {
         ...state,
-        messages: mergeMessageSnapshot(action.payload.messages, state.messages),
+        messages: mergeMessageSnapshot(action.payload.messages, state.messages, {
+          preserveExistingBeforeIncoming: action.payload.hasMore || state.messageHistoryHasMore,
+        }),
         messageHistoryHasMore: action.payload.hasMore,
         messageHistoryCursor: action.payload.nextCursor ?? null,
         isLoadingMessages: false,

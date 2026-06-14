@@ -57,6 +57,26 @@ export function isNearBottom(
   return distanceFromBottom(element) <= NEAR_BOTTOM_PX;
 }
 
+export function shouldLoadOlderMessages({
+  firstIndex,
+  hasOlder,
+  isLoadingOlder,
+  loadInFlight,
+}: {
+  firstIndex: number | undefined;
+  hasOlder: boolean;
+  isLoadingOlder: boolean;
+  loadInFlight: boolean;
+}) {
+  return (
+    firstIndex != null &&
+    firstIndex <= LOAD_OLDER_THRESHOLD_INDEX &&
+    hasOlder &&
+    !isLoadingOlder &&
+    !loadInFlight
+  );
+}
+
 export function VirtualMessageScroller({
   scrollKey,
   scrollSnapshotsRef,
@@ -151,6 +171,39 @@ export function VirtualMessageScroller({
       offsetFromViewportTop: first.start - scrollEl.scrollTop,
     };
   }, [virtualizer]);
+
+  const releaseOlderLoadLock = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        loadInFlightRef.current = false;
+      });
+    });
+  }, []);
+
+  const maybeLoadOlder = useCallback(() => {
+    const firstIndex = virtualizer.getVirtualItems()[0]?.index;
+    if (
+      !shouldLoadOlderMessages({
+        firstIndex,
+        hasOlder,
+        isLoadingOlder,
+        loadInFlight: loadInFlightRef.current,
+      })
+    ) {
+      return;
+    }
+
+    loadInFlightRef.current = true;
+    capturePaginationAnchor();
+    void loadOlder().finally(releaseOlderLoadLock);
+  }, [
+    capturePaginationAnchor,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
+    releaseOlderLoadLock,
+    virtualizer,
+  ]);
 
   const setProgrammaticScrollTop = useCallback((scrollTop: number) => {
     const scrollEl = scrollRef.current;
@@ -256,13 +309,16 @@ export function VirtualMessageScroller({
     if (!el || programmaticScrollRef.current) return;
     pinnedToBottomRef.current = isNearBottom(el);
     scheduleScrollSnapshot();
-  }, [scheduleScrollSnapshot]);
+    requestAnimationFrame(maybeLoadOlder);
+  }, [maybeLoadOlder, scheduleScrollSnapshot]);
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
-      if (event.deltaY < 0) detachFromBottom(true);
+      if (event.deltaY >= 0) return;
+      detachFromBottom(true);
+      requestAnimationFrame(maybeLoadOlder);
     },
-    [detachFromBottom],
+    [detachFromBottom, maybeLoadOlder],
   );
 
   useLayoutEffect(() => {
@@ -310,33 +366,22 @@ export function VirtualMessageScroller({
     captureScrollSnapshot();
   }, [captureScrollSnapshot, keys, scrollKey, scrollToLatest]);
 
-  useEffect(() => {
-    const firstIndex = virtualizer.getVirtualItems()[0]?.index;
-    if (
-      firstIndex == null ||
-      firstIndex > LOAD_OLDER_THRESHOLD_INDEX ||
-      !hasOlder ||
-      isLoadingOlder ||
-      loadInFlightRef.current
-    ) {
-      return;
-    }
-
-    loadInFlightRef.current = true;
-    capturePaginationAnchor();
-    void loadOlder().finally(() => {
-      loadInFlightRef.current = false;
-    });
-  }, [capturePaginationAnchor, hasOlder, isLoadingOlder, loadOlder, virtualizer]);
-
   const virtualItems = virtualizer.getVirtualItems();
+  const firstVirtualIndex = virtualItems[0]?.index;
+
+  useEffect(() => {
+    maybeLoadOlder();
+  }, [firstVirtualIndex, maybeLoadOlder]);
 
   return (
     <div
       ref={scrollRef}
       onScroll={handleScroll}
       onWheel={handleWheel}
-      onTouchMove={() => detachFromBottom(true)}
+      onTouchMove={() => {
+        detachFromBottom(true);
+        requestAnimationFrame(maybeLoadOlder);
+      }}
       className="relative flex-1 overflow-auto px-4 py-4"
     >
       <div className="max-w-[640px] mx-auto">

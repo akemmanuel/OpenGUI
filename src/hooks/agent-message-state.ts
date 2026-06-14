@@ -364,6 +364,7 @@ export function finalizeRunningToolPartsForSession(
 export function mergeMessageSnapshot(
   incomingMessages: MessageEntry[],
   existingMessages: MessageEntry[],
+  options: { preserveExistingBeforeIncoming?: boolean } = {},
 ): MessageEntry[] {
   const normalizedMessages = normalizeMessageEntries(incomingMessages, existingMessages);
   if (normalizedMessages.length === 0) return limitMessageWindow(existingMessages);
@@ -403,15 +404,23 @@ export function mergeMessageSnapshot(
   });
 
   const incomingIds = new Set(incomingMessages.map((message) => message.info.id));
+  const serverFirst = normalizedMessages[0];
   const serverLast = normalizedMessages[normalizedMessages.length - 1];
+  const serverFirstCreated = serverFirst?.info.time.created ?? 0;
   const serverLastCreated = serverLast?.info.time.created ?? 0;
+  const preservedOlder: MessageEntry[] = [];
+  const preservedNewer: MessageEntry[] = [];
   for (const entry of existingMessages) {
     if (incomingIds.has(entry.info.id) || optimisticIdsToDrop.has(entry.info.id)) continue;
     const entryCreated = entry.info.time.created ?? 0;
-    if (entryCreated > serverLastCreated) mergedMessages.push(entry);
+    if (options.preserveExistingBeforeIncoming && entryCreated < serverFirstCreated) {
+      preservedOlder.push(entry);
+    } else if (entryCreated > serverLastCreated) {
+      preservedNewer.push(entry);
+    }
   }
 
-  return limitMessageWindow(mergedMessages);
+  return limitMessageWindow([...preservedOlder, ...mergedMessages, ...preservedNewer]);
 }
 
 export function limitMessageWindow(messages: MessageEntry[]): MessageEntry[] {

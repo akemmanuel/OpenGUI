@@ -1,5 +1,10 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { distanceFromBottom, isAtTop, isNearBottom } from "./VirtualMessageScroller";
+import {
+  distanceFromBottom,
+  isAtTop,
+  isNearBottom,
+  shouldLoadOlderMessages,
+} from "./VirtualMessageScroller";
 
 function scrollElement(input: { scrollHeight: number; scrollTop: number; clientHeight: number }) {
   return input as HTMLElement;
@@ -28,5 +33,45 @@ describe("VirtualMessageScroller scroll position helpers", () => {
     expect(isAtTop(element)).toBe(true);
     expect(distanceFromBottom(element)).toBe(0);
     expect(isNearBottom(element)).toBe(true);
+  });
+});
+
+describe("shouldLoadOlderMessages", () => {
+  test("requests older history near the top of a paged transcript", () => {
+    expect(
+      shouldLoadOlderMessages({
+        firstIndex: 0,
+        hasOlder: true,
+        isLoadingOlder: false,
+        loadInFlight: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("does not request older history while away from top or already loading", () => {
+    expect(
+      shouldLoadOlderMessages({
+        firstIndex: 12,
+        hasOlder: true,
+        isLoadingOlder: false,
+        loadInFlight: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadOlderMessages({
+        firstIndex: 0,
+        hasOlder: true,
+        isLoadingOlder: true,
+        loadInFlight: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadOlderMessages({
+        firstIndex: 0,
+        hasOlder: true,
+        isLoadingOlder: false,
+        loadInFlight: true,
+      }),
+    ).toBe(false);
   });
 });
