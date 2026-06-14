@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -250,12 +250,14 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     const url = `http://${SIDE_CAR_HOST}:${port}`;
     const dataDir = path.join(options.app.getPath("userData"), "backend");
 
-    const workingDirectory = options.app.isPackaged
-      ? path.dirname(entrypoint)
-      : options.app.getAppPath();
+    // Keep the managed backend's process cwd inside OpenGUI-owned app data.
+    // Using the app/source directory as cwd can make macOS show privacy prompts
+    // (for example “OpenGUI.app wants access to Documents”) when the app is run
+    // from a protected user folder, even though the backend only needs its data dir.
+    mkdirSync(dataDir, { recursive: true });
 
     const child = spawn(runtime.command, runtime.args, {
-      cwd: workingDirectory,
+      cwd: dataDir,
       env: {
         ...runtime.env,
         HOST: SIDE_CAR_HOST,
@@ -265,6 +267,7 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
         OPENGUI_DATA_DIR: dataDir,
         OPENGUI_CORS_ORIGIN: process.env.OPENGUI_CORS_ORIGIN || "*",
         OPENGUI_MODE: "desktop-sidecar",
+        OPENGUI_SERVER_MODE: "backend-only",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
