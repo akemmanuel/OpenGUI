@@ -10,7 +10,9 @@
     "save": "Guardar",
     "restart": "Reiniciar",
     "settings": "Ajustes",
-    "version": "Versión"
+    "version": "Versión",
+    "done": "Listo",
+    "loading": "Cargando..."
   },
   "settings": {
     "subtitle": "Gestiona las preferencias de la app y los proveedores del espacio de trabajo activo.",
@@ -47,7 +49,10 @@
       "hideOldModelsHelp": "Los modelos seleccionados y favoritos siempre siguen visibles. Los modelos sin una fecha de lanzamiento válida también siguen visibles.",
       "restartServer": "Reiniciar Harnesses",
       "restartServerTitle": "¿Reiniciar Harnesses?",
-      "restartServerDescription": "Esto reiniciará OpenCode, Pi, Claude Code y Codex. Los turnos en ejecución pueden interrumpirse; las conexiones de proyecto se restaurarán automáticamente."
+      "restartServerDescription": "Esto reiniciará OpenCode, Pi, Claude Code y Codex. Los turnos en ejecución pueden interrumpirse; las conexiones de proyecto se restaurarán automáticamente.",
+      "restartLocalBackend": "Reiniciar backend local",
+      "restartLocalBackendTitle": "¿Reiniciar backend local?",
+      "restartLocalBackendDescription": "Esto recarga el backend local de OpenGUI y luego actualiza la app. Los turnos en ejecución pueden interrumpirse."
     },
     "skills": {
       "installed": "Plugins instalados",
@@ -158,7 +163,8 @@
     "merge": "Fusionar",
     "openPullRequest": "Abrir pull request",
     "removeProject": "Cerrar proyecto",
-    "closeOtherProjects": "Cerrar otros proyectos"
+    "closeOtherProjects": "Cerrar otros proyectos",
+    "createPullRequest": "Crear PR"
   },
   "prompt": {
     "inputLabel": "Entrada de mensaje",
@@ -353,5 +359,51 @@
     "de": "Deutsch",
     "en": "English",
     "es": "Español"
+  },
+  "startup": {
+    "checkingLocalServer": "Comprobando servidor local...",
+    "startingLocalServer": "Iniciando servidor local..."
+  },
+  "emptyStates": {
+    "noProjectTitle": "No hay ningún proyecto conectado",
+    "noProjectCanStart": "Conecta un proyecto ahora o inicia un chat.",
+    "noProjectConnect": "Conecta un proyecto para empezar a chatear.",
+    "startChat": "Iniciar chat",
+    "noSessionTitle": "No hay ninguna sesión seleccionada",
+    "noSessionDescription": "Selecciona una sesión o inicia una nueva desde un proyecto conectado."
+  },
+  "mergeDialog": {
+    "failed": "La fusión falló",
+    "merging": "Fusionando...",
+    "mergingDescription": "Fusionando {{branch}} en la rama actual",
+    "success": "Fusión completada",
+    "successDescription": "{{branch}} se ha fusionado correctamente.",
+    "successDescriptionDelete": "{{branch}} se ha fusionado correctamente. El worktree se eliminará.",
+    "conflicts": "Conflictos de fusión",
+    "conflictsDescription": "Fusionar {{branch}} produjo conflictos en {{count}} archivo(s):",
+    "abort": "Abortar fusión",
+    "fixWithAI": "Corregir con IA",
+    "title": "Fusionar rama",
+    "description": "Fusionar {{branch}} en la rama actual de {{repoName}}",
+    "deleteWorktreeLabel": "Eliminar worktree tras una fusión correcta",
+    "deleteWorktreeDescription": "Elimina el directorio del worktree y lo desconecta del proyecto"
+  },
+  "questionPanel": {
+    "title": "El asistente tiene una pregunta",
+    "customAnswerPlaceholder": "Escribe una respuesta personalizada...",
+    "submit": "Enviar",
+    "dismiss": "Descartar"
+  },
+  "diff": {
+    "noLineDiffAvailable": "No hay diff de líneas disponible."
+  },
+  "projectPath": {
+    "up": "Subir",
+    "noFolders": "No hay carpetas",
+    "allowedRoots": "Raíces permitidas: {{roots}}",
+    "serverDefault": "predeterminado del servidor"
+  },
+  "fileMention": {
+    "searching": "Buscando..."
   }
 }

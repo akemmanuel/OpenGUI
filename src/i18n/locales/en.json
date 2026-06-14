@@ -10,7 +10,9 @@
     "save": "Save",
     "restart": "Restart",
     "settings": "Settings",
-    "version": "Version"
+    "version": "Version",
+    "done": "Done",
+    "loading": "Loading..."
   },
   "settings": {
     "subtitle": "Manage app preferences and providers for active workspace.",
@@ -158,7 +160,8 @@
     "merge": "Merge",
     "openPullRequest": "Open pull request",
     "removeProject": "Close project",
-    "closeOtherProjects": "Close other projects"
+    "closeOtherProjects": "Close other projects",
+    "createPullRequest": "Create PR"
   },
   "prompt": {
     "inputLabel": "Message input",
@@ -353,5 +356,51 @@
     "de": "Deutsch",
     "en": "English",
     "es": "Español"
+  },
+  "startup": {
+    "checkingLocalServer": "Checking local server...",
+    "startingLocalServer": "Starting local server..."
+  },
+  "emptyStates": {
+    "noProjectTitle": "No project connected",
+    "noProjectCanStart": "Connect a project now or start a chat.",
+    "noProjectConnect": "Connect a project to start chatting.",
+    "startChat": "Start a chat",
+    "noSessionTitle": "No session selected",
+    "noSessionDescription": "Select a session or start a new one from a connected project."
+  },
+  "mergeDialog": {
+    "failed": "Merge failed",
+    "merging": "Merging...",
+    "mergingDescription": "Merging {{branch}} into the current branch",
+    "success": "Merge successful",
+    "successDescription": "{{branch}} has been merged successfully.",
+    "successDescriptionDelete": "{{branch}} has been merged successfully. The worktree will be removed.",
+    "conflicts": "Merge conflicts",
+    "conflictsDescription": "Merging {{branch}} produced conflicts in {{count}} file(s):",
+    "abort": "Abort merge",
+    "fixWithAI": "Fix with AI",
+    "title": "Merge branch",
+    "description": "Merge {{branch}} into the current branch of {{repoName}}",
+    "deleteWorktreeLabel": "Delete worktree after successful merge",
+    "deleteWorktreeDescription": "Removes the worktree directory and disconnects it from the project"
+  },
+  "questionPanel": {
+    "title": "The assistant has a question",
+    "customAnswerPlaceholder": "Type a custom answer...",
+    "submit": "Submit",
+    "dismiss": "Dismiss"
+  },
+  "diff": {
+    "noLineDiffAvailable": "No line diff available."
+  },
+  "projectPath": {
+    "up": "Up",
+    "noFolders": "No folders",
+    "allowedRoots": "Allowed roots: {{roots}}",
+    "serverDefault": "server default"
+  },
+  "fileMention": {
+    "searching": "Searching..."
   }
 }

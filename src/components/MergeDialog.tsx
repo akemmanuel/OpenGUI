@@ -1,5 +1,6 @@
 import { AlertTriangle, Check, GitBranch, GitMerge, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
@@ -34,6 +35,7 @@ export function MergeDialog({
   onMerged,
   onFixWithAI,
 }: MergeDialogProps) {
+  const { t } = useTranslation();
   const client = useOpenGuiClient();
   const [mergeState, setMergeState] = useState<MergeState>({ step: "confirm" });
   const [deleteWorktree, setDeleteWorktree] = useState(false);
@@ -64,16 +66,16 @@ export function MergeDialog({
       } else {
         setMergeState({
           step: "error",
-          message: res.error ?? "Merge failed",
+          message: res.error ?? t("mergeDialog.failed"),
         });
       }
     } catch (err) {
       setMergeState({
         step: "error",
-        message: getErrorMessage(err, "Merge failed"),
+        message: getErrorMessage(err, t("mergeDialog.failed")),
       });
     }
-  }, [branch, client, deleteWorktree, mainDirectory, onMerged]);
+  }, [branch, client, deleteWorktree, mainDirectory, onMerged, t]);
 
   const handleAbort = useCallback(async () => {
     await client.git.mergeAbort(mainDirectory);
@@ -94,13 +96,8 @@ export function MergeDialog({
         onOpenChange={handleClose}
         className="sm:max-w-md"
         icon={<Loader2 className="size-5 animate-spin" />}
-        title="Merging..."
-        description={
-          <>
-            Merging <span className="font-medium text-foreground">{branch}</span> into the current
-            branch
-          </>
-        }
+        title={t("mergeDialog.merging")}
+        description={t("mergeDialog.mergingDescription", { branch })}
       />
     );
   }
@@ -112,16 +109,15 @@ export function MergeDialog({
         onOpenChange={handleClose}
         className="sm:max-w-md"
         icon={<Check className="size-5" />}
-        title="Merge successful"
+        title={t("mergeDialog.success")}
         titleClassName="text-green-600"
-        description={
-          <>
-            <span className="font-medium text-foreground">{branch}</span> has been merged
-            successfully.
-            {deleteWorktree && " The worktree will be removed."}
-          </>
-        }
-        footer={<Button onClick={() => handleClose(false)}>Done</Button>}
+        description={t(
+          deleteWorktree
+            ? "mergeDialog.successDescriptionDelete"
+            : "mergeDialog.successDescription",
+          { branch },
+        )}
+        footer={<Button onClick={() => handleClose(false)}>{t("common.done")}</Button>}
       />
     );
   }
@@ -133,22 +129,19 @@ export function MergeDialog({
         onOpenChange={handleClose}
         className="sm:max-w-md"
         icon={<AlertTriangle className="size-5" />}
-        title="Merge conflicts"
+        title={t("mergeDialog.conflicts")}
         titleClassName="text-amber-500"
-        description={
-          <>
-            Merging <span className="font-medium text-foreground">{branch}</span> produced conflicts
-            in {mergeState.files.length} file
-            {mergeState.files.length !== 1 ? "s" : ""}:
-          </>
-        }
+        description={t("mergeDialog.conflictsDescription", {
+          branch,
+          count: mergeState.files.length,
+        })}
         footerClassName="gap-2 sm:gap-0"
         footer={
           <>
             <Button variant="outline" onClick={handleAbort}>
-              Abort merge
+              {t("mergeDialog.abort")}
             </Button>
-            <Button onClick={handleFixWithAI}>Fix with AI</Button>
+            <Button onClick={handleFixWithAI}>{t("mergeDialog.fixWithAI")}</Button>
           </>
         }
       >
@@ -174,12 +167,12 @@ export function MergeDialog({
         onOpenChange={handleClose}
         className="sm:max-w-md"
         icon={<AlertTriangle className="size-5" />}
-        title="Merge failed"
+        title={t("mergeDialog.failed")}
         titleClassName="text-destructive"
         description={mergeState.message}
         footer={
           <Button variant="outline" onClick={() => handleClose(false)}>
-            Close
+            {t("common.close")}
           </Button>
         }
       />
@@ -192,19 +185,14 @@ export function MergeDialog({
       onOpenChange={handleClose}
       className="sm:max-w-md"
       icon={<GitMerge className="size-5" />}
-      title="Merge branch"
-      description={
-        <>
-          Merge <span className="font-medium text-foreground">{branch}</span> into the current
-          branch of <span className="font-medium text-foreground">{repoName}</span>
-        </>
-      }
+      title={t("mergeDialog.title")}
+      description={t("mergeDialog.description", { branch, repoName })}
       footer={
         <>
           <Button variant="outline" onClick={() => handleClose(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
-          <Button onClick={handleMerge}>Merge</Button>
+          <Button onClick={handleMerge}>{t("projectMenu.merge")}</Button>
         </>
       }
     >
@@ -212,8 +200,8 @@ export function MergeDialog({
         <ToggleSwitch
           checked={deleteWorktree}
           onCheckedChange={setDeleteWorktree}
-          label="Delete worktree after successful merge"
-          description="Removes the worktree directory and disconnects it from the project"
+          label={t("mergeDialog.deleteWorktreeLabel")}
+          description={t("mergeDialog.deleteWorktreeDescription")}
         />
       </div>
     </DialogShell>

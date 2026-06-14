@@ -5,6 +5,7 @@
 
 import { FileText, Folder } from "lucide-react";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 interface FileMentionPopoverProps {
@@ -24,6 +25,7 @@ export function FileMentionPopover({
   loading,
   emptyMessage,
 }: FileMentionPopoverProps) {
+  const { t } = useTranslation();
   const listRef = React.useRef<HTMLDivElement>(null);
 
   // Scroll the active item into view
@@ -42,7 +44,9 @@ export function FileMentionPopover({
       className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[240px] overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
     >
       {loading && files.length === 0 && (
-        <div className="px-2.5 py-2 text-xs text-muted-foreground">Searching...</div>
+        <div className="px-2.5 py-2 text-xs text-muted-foreground">
+          {t("fileMention.searching")}
+        </div>
       )}
       {!loading && files.length === 0 && emptyMessage && (
         <div className="px-2.5 py-2 text-xs text-muted-foreground">{emptyMessage}</div>

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 
 export function NoProjectConnected({
@@ -7,21 +8,23 @@ export function NoProjectConnected({
   canStartChat: boolean;
   onStartChat: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex-1 flex items-center justify-center px-6">
       <div className="max-w-md text-center space-y-4">
         <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">No project connected</h2>
+          <h2 className="text-lg font-semibold tracking-tight">
+            {t("emptyStates.noProjectTitle")}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            {canStartChat
-              ? "Connect a project now or start a chat."
-              : "Connect a project to start chatting."}
+            {canStartChat ? t("emptyStates.noProjectCanStart") : t("emptyStates.noProjectConnect")}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
           {canStartChat && (
             <Button type="button" onClick={onStartChat}>
-              Start a chat
+              {t("emptyStates.startChat")}
             </Button>
           )}
         </div>
@@ -31,13 +34,13 @@ export function NoProjectConnected({
 }
 
 export function NoSessionSelected() {
+  const { t } = useTranslation();
+
   return (
     <div className="flex-1 flex items-center justify-center px-6">
       <div className="max-w-md text-center space-y-1.5">
-        <h2 className="text-lg font-semibold tracking-tight">No session selected</h2>
-        <p className="text-sm text-muted-foreground">
-          Select a session or start a new one from a connected project.
-        </p>
+        <h2 className="text-lg font-semibold tracking-tight">{t("emptyStates.noSessionTitle")}</h2>
+        <p className="text-sm text-muted-foreground">{t("emptyStates.noSessionDescription")}</p>
       </div>
     </div>
   );

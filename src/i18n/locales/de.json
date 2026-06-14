@@ -10,7 +10,9 @@
     "save": "Speichern",
     "restart": "Neu starten",
     "settings": "Einstellungen",
-    "version": "Version"
+    "version": "Version",
+    "done": "Fertig",
+    "loading": "Lade..."
   },
   "settings": {
     "subtitle": "App-Einstellungen und Anbieter für den aktiven Workspace verwalten.",
@@ -47,7 +49,10 @@
       "hideOldModelsHelp": "Ausgewählte und favorisierte Modelle bleiben immer sichtbar. Modelle ohne gültiges Veröffentlichungsdatum bleiben ebenfalls sichtbar.",
       "restartServer": "Harnesses neu starten",
       "restartServerTitle": "Harnesses neu starten?",
-      "restartServerDescription": "Dadurch werden OpenCode, Pi, Claude Code und Codex hart neu gestartet. Laufende Vorgänge können unterbrochen werden; Projektverbindungen werden automatisch wiederhergestellt."
+      "restartServerDescription": "Dadurch werden OpenCode, Pi, Claude Code und Codex hart neu gestartet. Laufende Vorgänge können unterbrochen werden; Projektverbindungen werden automatisch wiederhergestellt.",
+      "restartLocalBackend": "Lokales Backend neu starten",
+      "restartLocalBackendTitle": "Lokales Backend neu starten?",
+      "restartLocalBackendDescription": "Dadurch wird das lokale OpenGUI-Backend neu geladen und die App anschließend aktualisiert. Laufende Vorgänge können unterbrochen werden."
     },
     "skills": {
       "installed": "Installierte Plugins",
@@ -158,7 +163,8 @@
     "merge": "Zusammenführen",
     "openPullRequest": "Pull Request öffnen",
     "removeProject": "Projekt schließen",
-    "closeOtherProjects": "Andere Projekte schließen"
+    "closeOtherProjects": "Andere Projekte schließen",
+    "createPullRequest": "PR erstellen"
   },
   "prompt": {
     "inputLabel": "Nachrichteneingabe",
@@ -353,5 +359,51 @@
     "de": "Deutsch",
     "en": "English",
     "es": "Español"
+  },
+  "startup": {
+    "checkingLocalServer": "Lokaler Server wird geprüft...",
+    "startingLocalServer": "Lokaler Server wird gestartet..."
+  },
+  "emptyStates": {
+    "noProjectTitle": "Kein Projekt verbunden",
+    "noProjectCanStart": "Verbinde jetzt ein Projekt oder starte einen Chat.",
+    "noProjectConnect": "Verbinde ein Projekt, um zu chatten.",
+    "startChat": "Chat starten",
+    "noSessionTitle": "Keine Sitzung ausgewählt",
+    "noSessionDescription": "Wähle eine Sitzung aus oder starte eine neue aus einem verbundenen Projekt."
+  },
+  "mergeDialog": {
+    "failed": "Merge fehlgeschlagen",
+    "merging": "Merge läuft...",
+    "mergingDescription": "{{branch}} wird in den aktuellen Branch gemergt",
+    "success": "Merge erfolgreich",
+    "successDescription": "{{branch}} wurde erfolgreich gemergt.",
+    "successDescriptionDelete": "{{branch}} wurde erfolgreich gemergt. Der Worktree wird entfernt.",
+    "conflicts": "Merge-Konflikte",
+    "conflictsDescription": "Merge von {{branch}} hat Konflikte in {{count}} Datei(en) verursacht:",
+    "abort": "Merge abbrechen",
+    "fixWithAI": "Mit KI beheben",
+    "title": "Branch mergen",
+    "description": "{{branch}} in den aktuellen Branch von {{repoName}} mergen",
+    "deleteWorktreeLabel": "Worktree nach erfolgreichem Merge löschen",
+    "deleteWorktreeDescription": "Entfernt das Worktree-Verzeichnis und trennt es vom Projekt"
+  },
+  "questionPanel": {
+    "title": "Der Assistent hat eine Frage",
+    "customAnswerPlaceholder": "Eigene Antwort eingeben...",
+    "submit": "Absenden",
+    "dismiss": "Verwerfen"
+  },
+  "diff": {
+    "noLineDiffAvailable": "Kein Zeilendiff verfügbar."
+  },
+  "projectPath": {
+    "up": "Nach oben",
+    "noFolders": "Keine Ordner",
+    "allowedRoots": "Erlaubte Wurzeln: {{roots}}",
+    "serverDefault": "Server-Standard"
+  },
+  "fileMention": {
+    "searching": "Suche..."
   }
 }

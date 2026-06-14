@@ -1,6 +1,7 @@
 import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { FormField } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,7 @@ function resolveBrowserApiBaseUrl(workspaceServerUrl: string | null | undefined)
 }
 
 export function ProjectPathDialog() {
+  const { t } = useTranslation();
   const { activeWorkspace, isLocalWorkspace, workspaceServerUrl, workspaceDirectory } =
     useConnectionState();
   const shell = useDesktopShell();
@@ -228,12 +230,14 @@ export function ProjectPathDialog() {
                   }
                 >
                   <ChevronLeft className="size-4" />
-                  Up
+                  {t("projectPath.up")}
                 </Button>
               </div>
               <div className="max-h-56 overflow-y-auto rounded border bg-background">
                 {serverBrowserLoading ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    {t("common.loading")}
+                  </div>
                 ) : serverListing?.entries.length ? (
                   serverListing.entries.map((entry) => (
                     <button
@@ -248,11 +252,15 @@ export function ProjectPathDialog() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">No folders</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    {t("projectPath.noFolders")}
+                  </div>
                 )}
               </div>
               <div className="mt-2 text-[11px] text-muted-foreground">
-                Allowed roots: {serverListing?.roots.join(", ") || "server default"}
+                {t("projectPath.allowedRoots", {
+                  roots: serverListing?.roots.join(", ") || t("projectPath.serverDefault"),
+                })}
               </div>
             </div>
           )}

@@ -1,6 +1,7 @@
 import { ExternalLink, GitMerge } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -46,6 +47,7 @@ function AppContent({
   detachedProject?: string;
   suppressBootErrors?: boolean;
 }) {
+  const { t } = useTranslation();
   const client = useOpenGuiClient();
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const leftSidebar = useSidebar();
@@ -200,8 +202,8 @@ function AppContent({
                 <Spinner className="size-4 shrink-0" />
                 <span>
                   {bootState === "checking-server"
-                    ? "Checking local server..."
-                    : "Starting local server..."}
+                    ? t("startup.checkingLocalServer")
+                    : t("startup.startingLocalServer")}
                 </span>
               </div>
             )}
@@ -229,7 +231,7 @@ function AppContent({
                         onClick={openPullRequest}
                       >
                         <ExternalLink className="size-4" />
-                        Create PR
+                        {t("projectMenu.createPullRequest")}
                       </Button>
                     </div>
                   </div>

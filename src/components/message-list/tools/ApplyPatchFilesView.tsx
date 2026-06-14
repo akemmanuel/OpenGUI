@@ -1,16 +1,20 @@
 import { ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { getApplyPatchActionLabel, type ApplyPatchFileDiff } from "./applyPatch";
 import { DiffView } from "./DiffView";
 
 export function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) {
+  const { t } = useTranslation();
   if (files.length === 1) {
     const file = files[0];
     if (!file) return null;
     return file.lines.length > 0 ? (
       <DiffView lines={file.lines} />
     ) : (
-      <div className="pl-7 pt-1 text-[11px] text-muted-foreground">No line diff available.</div>
+      <div className="pl-7 pt-1 text-[11px] text-muted-foreground">
+        {t("diff.noLineDiffAvailable")}
+      </div>
     );
   }
 
@@ -55,7 +59,7 @@ export function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) 
               <DiffView lines={file.lines} />
             ) : (
               <div className="px-2 pb-2 text-[11px] text-muted-foreground">
-                No line diff available.
+                {t("diff.noLineDiffAvailable")}
               </div>
             )}
           </details>
