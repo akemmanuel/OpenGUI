@@ -136,6 +136,8 @@
     "projects": "Proyectos",
     "searchPlaceholder": "Buscar proyectos y sesiones...",
     "showLess": "Mostrar menos",
+    "title": "Barra lateral",
+    "mobileDescription": "Muestra la barra lateral móvil.",
     "untitled": "Sin título"
   },
   "sessionMenu": {
@@ -191,6 +193,9 @@
   "variantSelector": {
     "off": "apagado",
     "thinkingEffort": "Esfuerzo de razonamiento: {{level}} (clic o Ctrl+T para cambiar, Ctrl+Mayús+T para retroceder)"
+  },
+  "agentSelector": {
+    "placeholder": "Agente"
   },
   "modelSelector": {
     "selectModel": "Seleccionar modelo",
@@ -268,6 +273,16 @@
     "run": "Ejecutar",
     "detectedCommand": "Comando detectado",
     "setupFinished": "Configuración finalizada - el worktree está listo."
+  },
+  "worktreeCleanup": {
+    "title": "No quedan sesiones",
+    "descriptionPrefix": "El worktree",
+    "branch": "rama",
+    "descriptionSuffix": "no tiene sesiones activas. ¿Quieres eliminarlo?",
+    "keep": "Conservar",
+    "remove": "Eliminar",
+    "removing": "Eliminando...",
+    "deleteFromDisk": "Eliminar también los archivos del worktree del disco"
   },
   "providers": {
     "searchPlaceholder": "Buscar proveedores...",
@@ -364,6 +379,13 @@
     "checkingLocalServer": "Comprobando servidor local...",
     "startingLocalServer": "Iniciando servidor local..."
   },
+  "updateDialog": {
+    "title": "Actualización disponible",
+    "description": "Hay una nueva versión de OpenGUI ({{latestVersion}}) disponible. Actualmente ejecutas v{{currentVersion}}.",
+    "currentVersion": "Versión actual: v{{currentVersion}}.",
+    "dismiss": "Descartar",
+    "open": "Abrir"
+  },
   "emptyStates": {
     "noProjectTitle": "No hay ningún proyecto conectado",
     "noProjectCanStart": "Conecta un proyecto ahora o inicia un chat.",
@@ -397,6 +419,65 @@
   "diff": {
     "noLineDiffAvailable": "No hay diff de líneas disponible."
   },
+  "reasoning": {
+    "thinking": "Pensando",
+    "thinkingRunning": "Pensando..."
+  },
+  "toolLabels": {
+    "bash": {
+      "running": "Ejecutando",
+      "done": "Ejecutado"
+    },
+    "read": {
+      "running": "Leyendo",
+      "done": "Leído"
+    },
+    "edit": {
+      "running": "Editando",
+      "done": "Editado"
+    },
+    "write": {
+      "running": "Escribiendo",
+      "done": "Escrito"
+    },
+    "grep": {
+      "running": "Buscando",
+      "done": "Buscado"
+    },
+    "glob": {
+      "running": "Buscando archivos",
+      "done": "Archivos encontrados"
+    },
+    "task": {
+      "running": "Ejecutando",
+      "done": "Ejecutado"
+    },
+    "todo": {
+      "running": "Escribiendo tareas",
+      "doneOne": "{{count}} tarea escrita",
+      "doneOther": "{{count}} tareas escritas"
+    },
+    "question": {
+      "running": "Preguntando",
+      "doneOne": "{{count}} pregunta hecha",
+      "doneOther": "{{count}} preguntas hechas"
+    },
+    "patch": {
+      "created": "Creado",
+      "deleted": "Eliminado",
+      "moved": "Movido",
+      "patched": "Parcheado"
+    },
+    "fileCountOther": "{{count}} archivos",
+    "matchCountOne": "{{count}} coincidencia",
+    "matchCountOther": "{{count}} coincidencias"
+  },
+  "attachments": {
+    "image": "Imagen",
+    "fileAttachment": "Archivo adjunto",
+    "imageAttachment": "Imagen adjunta {{count}}",
+    "closeImagePreview": "Cerrar vista previa de imagen"
+  },
   "projectPath": {
     "up": "Subir",
     "noFolders": "No hay carpetas",
@@ -412,7 +493,19 @@
     "loadingServerFolders": "Cargando carpetas del servidor..."
   },
   "fileMention": {
-    "searching": "Buscando..."
+    "searching": "Buscando...",
+    "typeToSearch": "Escribe para buscar archivos",
+    "noMatchingFiles": "No hay archivos coincidentes",
+    "searchFailed": "Error al buscar archivos"
+  },
+  "queueList": {
+    "reorderQueuedPrompt": "Reordenar mensaje en cola",
+    "sendNow": "Enviar ahora",
+    "interrupt": "interrumpir",
+    "steer": "dirigir",
+    "edit": "Editar",
+    "moveToTop": "Mover arriba del todo",
+    "moveToBottom": "Mover abajo del todo"
   },
   "permissionPanel": {
     "title": "Permiso: {{permission}}",

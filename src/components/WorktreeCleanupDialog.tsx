@@ -1,5 +1,6 @@
 import { GitBranch, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -8,6 +9,7 @@ import { getProjectName } from "@/lib/utils";
 import { useOpenGuiClient } from "@/protocol/provider";
 
 export function WorktreeCleanupDialog() {
+  const { t } = useTranslation();
   const client = useOpenGuiClient();
   const { pendingWorktreeCleanup, worktreeParents } = useConnectionState();
   const { unregisterWorktree, removeProject, clearWorktreeCleanup } = useActions();
@@ -59,29 +61,30 @@ export function WorktreeCleanupDialog() {
       title={
         <span className="flex items-center gap-2">
           <GitBranch className="size-4" />
-          No sessions remaining
+          {t("worktreeCleanup.title")}
         </span>
       }
       description={
         <>
-          The worktree <strong>{getProjectName(worktreeDir)}</strong>
+          {t("worktreeCleanup.descriptionPrefix")} <strong>{getProjectName(worktreeDir)}</strong>
           {meta?.branch && meta.branch !== "unknown" && (
             <>
               {" "}
-              (branch <code className="rounded bg-muted px-1 text-xs">{meta.branch}</code>)
+              ({t("worktreeCleanup.branch")}{" "}
+              <code className="rounded bg-muted px-1 text-xs">{meta.branch}</code>)
             </>
           )}{" "}
-          has no active sessions. Would you like to remove it?
+          {t("worktreeCleanup.descriptionSuffix")}
         </>
       }
       footer={
         <>
           <Button variant="ghost" onClick={handleKeep} disabled={removing}>
-            Keep
+            {t("worktreeCleanup.keep")}
           </Button>
           <Button variant="destructive" onClick={handleRemove} disabled={removing}>
             <Trash2 className="mr-1.5 size-3.5" />
-            {removing ? "Removing..." : "Remove"}
+            {removing ? t("worktreeCleanup.removing") : t("worktreeCleanup.remove")}
           </Button>
         </>
       }
@@ -93,7 +96,7 @@ export function WorktreeCleanupDialog() {
           onCheckedChange={(checked) => setDeleteFromDisk(checked === true)}
         />
         <label htmlFor="delete-from-disk" className="cursor-pointer text-sm">
-          Also delete worktree files from disk
+          {t("worktreeCleanup.deleteFromDisk")}
         </label>
       </div>
     </BaseDialog>

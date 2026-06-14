@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
 import { Spinner } from "@/components/ui/spinner";
@@ -94,6 +95,7 @@ function ToolHeader({
   expanded: boolean;
   setExpanded: (expanded: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const { tool, expandable } = presentation;
   const Icon = toolIcon(tool.kind);
   const icon = expandable ? (
@@ -121,7 +123,12 @@ function ToolHeader({
       )}
       {presentation.grepMatchCount != null && (
         <span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
-          {presentation.grepMatchCount} {presentation.grepMatchCount === 1 ? "match" : "matches"}
+          {t(
+            presentation.grepMatchCount === 1
+              ? "toolLabels.matchCountOne"
+              : "toolLabels.matchCountOther",
+            { count: presentation.grepMatchCount },
+          )}
         </span>
       )}
       {presentation.diffSummary && (
@@ -159,6 +166,7 @@ function ToolHeader({
 }
 
 function ToolImages({ presentation }: { presentation: ToolPresentation }) {
+  const { t } = useTranslation();
   if (presentation.sideContent.images.length === 0) return null;
 
   return (
@@ -175,7 +183,7 @@ function ToolImages({ presentation }: { presentation: ToolPresentation }) {
         >
           <img
             src={image.src}
-            alt={image.filename ?? `Image attachment ${idx + 1}`}
+            alt={image.filename ?? t("attachments.imageAttachment", { count: idx + 1 })}
             loading="lazy"
             className="w-full max-h-52 object-contain bg-black/20"
           />
@@ -279,7 +287,8 @@ export function ToolPartView({
   onToggleToolPart?: (partId: string, expanded: boolean) => void;
 }) {
   const { workspaceServerUrl } = useConnectionState();
-  const presentation = getToolPresentation(part, workspaceServerUrl);
+  const { t } = useTranslation();
+  const presentation = getToolPresentation(part, workspaceServerUrl, t);
   const expanded = expandedToolParts?.has(part.id) ?? false;
   const setExpanded = (nextExpanded: boolean) => onToggleToolPart?.(part.id, nextExpanded);
   const autoExpandedRef = useRef(false);

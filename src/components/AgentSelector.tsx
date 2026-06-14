@@ -7,6 +7,7 @@
 
 import { Bot } from "lucide-react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Select,
   SelectContent,
@@ -19,6 +20,7 @@ import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { DEFAULT_AGENT_NAME, getPrimaryAgents } from "@/lib/utils";
 
 export function AgentSelector() {
+  const { t } = useTranslation();
   const { setAgent } = useActions();
   const { agents, selectedAgent } = useModelState();
   const capabilities = useBackendCapabilities();
@@ -38,7 +40,7 @@ export function AgentSelector() {
     <Select value={currentValue} onValueChange={handleChange}>
       <SelectTrigger className="!h-7 w-auto max-w-[180px] gap-1.5 border-none bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none hover:text-foreground focus:ring-0 [&>svg]:size-3">
         <Bot className="size-3.5 shrink-0" />
-        <SelectValue placeholder="Agent" />
+        <SelectValue placeholder={t("agentSelector.placeholder")} />
       </SelectTrigger>
       <SelectContent
         position="popper"

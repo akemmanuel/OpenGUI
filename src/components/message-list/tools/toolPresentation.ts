@@ -1,4 +1,5 @@
 import type { ToolPart } from "@opencode-ai/sdk/v2/client";
+import type { TFunction } from "i18next";
 import type { TodoItem } from "@/lib/todos";
 import { extractTodos } from "@/lib/todos";
 import type { ApplyPatchFileDiff } from "./applyPatch";
@@ -66,43 +67,51 @@ function getErrorText(state: ToolPart["state"]): string | null {
   return "error" in state && typeof state.error === "string" ? state.error : null;
 }
 
-function getToolTitle(part: ToolPart, kind: ToolKind, isRunning: boolean): string {
+function getToolTitle(part: ToolPart, kind: ToolKind, isRunning: boolean, t: TFunction): string {
   const input = getToolInput(part.state);
   const title =
     "title" in part.state && typeof part.state.title === "string" ? part.state.title : null;
 
   switch (kind) {
     case "bash":
-      return isRunning ? "Running" : "Ran";
+      return isRunning ? t("toolLabels.bash.running") : t("toolLabels.bash.done");
     case "read":
-      return isRunning ? "Reading" : "Read";
+      return isRunning ? t("toolLabels.read.running") : t("toolLabels.read.done");
     case "edit":
       return isRunning
-        ? "Editing"
+        ? t("toolLabels.edit.running")
         : part.tool.toLowerCase() === "apply_patch"
-          ? "Patched"
-          : "Edited";
+          ? t("toolLabels.patch.patched")
+          : t("toolLabels.edit.done");
     case "write":
-      return isRunning ? "Writing" : "Wrote";
+      return isRunning ? t("toolLabels.write.running") : t("toolLabels.write.done");
     case "grep":
-      return isRunning ? "Searching" : "Searched";
+      return isRunning ? t("toolLabels.grep.running") : t("toolLabels.grep.done");
     case "glob":
-      return isRunning ? "Globbing" : "Globbed";
+      return isRunning ? t("toolLabels.glob.running") : t("toolLabels.glob.done");
     case "task": {
       const subagent = input?.subagent_type ?? input?.subagentType;
       return typeof subagent === "string"
         ? subagent.charAt(0).toUpperCase() + subagent.slice(1)
         : isRunning
-          ? "Running"
-          : "Ran";
+          ? t("toolLabels.task.running")
+          : t("toolLabels.task.done");
     }
     case "todo": {
       const todoCount = Array.isArray(input?.todos) ? input.todos.length : 0;
-      return isRunning ? "Writing todos" : `Wrote ${todoCount} todos`;
+      return isRunning
+        ? t("toolLabels.todo.running")
+        : t(todoCount === 1 ? "toolLabels.todo.doneOne" : "toolLabels.todo.doneOther", {
+            count: todoCount,
+          });
     }
     case "question": {
       const qCount = Array.isArray(input?.questions) ? input.questions.length : 0;
-      return isRunning ? "Asking" : `Asked ${qCount} ${qCount === 1 ? "question" : "questions"}`;
+      return isRunning
+        ? t("toolLabels.question.running")
+        : t(qCount === 1 ? "toolLabels.question.doneOne" : "toolLabels.question.doneOther", {
+            count: qCount,
+          });
     }
     default:
       return title ?? part.tool;
@@ -111,7 +120,8 @@ function getToolTitle(part: ToolPart, kind: ToolKind, isRunning: boolean): strin
 
 export function getToolPresentation(
   part: ToolPart,
-  workspaceServerUrl?: string | null,
+  workspaceServerUrl: string | null | undefined,
+  t: TFunction,
 ): ToolPresentation {
   const state = part.state;
   const kind = normalizeToolKind(part.tool);
@@ -156,7 +166,7 @@ export function getToolPresentation(
       : null;
   const taskDescription =
     kind === "task" && taskInfo?.description ? `(${taskInfo.description})` : null;
-  const editFilesLabel = kind === "edit" ? getApplyPatchContextLabel(editFiles) : null;
+  const editFilesLabel = kind === "edit" ? getApplyPatchContextLabel(editFiles, t) : null;
   const stateTitle =
     state.status === "completed" &&
     state.title &&
@@ -196,7 +206,7 @@ export function getToolPresentation(
 
   return {
     tool: normalized,
-    title: getToolTitle(part, kind, isRunning),
+    title: getToolTitle(part, kind, isRunning, t),
     context,
     hasDynamicLabel: [
       "read",
