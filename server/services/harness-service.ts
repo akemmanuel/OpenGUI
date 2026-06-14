@@ -346,6 +346,7 @@ export class HarnessService {
 
   async revertSession(input: {
     session: SessionRecord;
+    scope: HarnessScope;
     messageId: string;
     partId?: string;
   }): Promise<unknown> {
@@ -353,11 +354,17 @@ export class HarnessService {
       input.session.rawId,
       input.messageId,
       input.partId,
+      input.scope.directory,
+      undefined,
     ]);
   }
 
-  async unrevertSession(input: { session: SessionRecord }): Promise<unknown> {
-    return this.backendRpc(input.session.harnessId, "session:unrevert", [input.session.rawId]);
+  async unrevertSession(input: { session: SessionRecord; scope: HarnessScope }): Promise<unknown> {
+    return this.backendRpc(input.session.harnessId, "session:unrevert", [
+      input.session.rawId,
+      input.scope.directory,
+      undefined,
+    ]);
   }
 
   async loadResources(input: {

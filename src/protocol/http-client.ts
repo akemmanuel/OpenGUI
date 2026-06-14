@@ -150,10 +150,12 @@ function createWebBackendDescriptor(
     renameSession: (sessionId, title) => backendCall("session:update", [sessionId, title]),
     compactSession: (sessionId, model, target) =>
       backendCall("session:summarize", [sessionId, model, ...targetArgs(target)]),
-    forkSession: (sessionId, messageID) => backendCall("session:fork", [sessionId, messageID]),
-    revertSession: (sessionId, messageID, partID) =>
-      backendCall("session:revert", [sessionId, messageID, partID]),
-    unrevertSession: (sessionId) => backendCall("session:unrevert", [sessionId]),
+    forkSession: (sessionId, messageID, target) =>
+      backendCall("session:fork", [sessionId, messageID, ...targetArgs(target)]),
+    revertSession: (sessionId, messageID, partID, target) =>
+      backendCall("session:revert", [sessionId, messageID, partID, ...targetArgs(target)]),
+    unrevertSession: (sessionId, target) =>
+      backendCall("session:unrevert", [sessionId, ...targetArgs(target)]),
     sendCommand: (input) =>
       backendCall("command:send", [
         input.sessionId,
@@ -578,15 +580,20 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       );
       return await toFrontendSession(record);
     },
-    compactSession: async (sessionId, model) => {
-      await request<boolean>(await resolveSessionPath({ sessionId, harnessId }, "/compact"), {
-        method: "POST",
-        body: JSON.stringify({ model }),
-      });
+    compactSession: async (sessionId, model, target) => {
+      await requestAt<boolean>(
+        requestBaseUrlForSession({ sessionId, harnessId, target }),
+        await resolveSessionPath({ sessionId, harnessId, target }, "/compact"),
+        {
+          method: "POST",
+          body: JSON.stringify({ model }),
+        },
+      );
     },
-    forkSession: async (sessionId, messageID) => {
-      const record = await request<SessionRecordResponse>(
-        await resolveSessionPath({ sessionId, harnessId }, "/fork"),
+    forkSession: async (sessionId, messageID, target) => {
+      const record = await requestAt<SessionRecordResponse>(
+        requestBaseUrlForSession({ sessionId, harnessId, target }),
+        await resolveSessionPath({ sessionId, harnessId, target }, "/fork"),
         {
           method: "POST",
           body: JSON.stringify({ messageId: messageID }),
@@ -594,9 +601,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       );
       return await toFrontendSession(record);
     },
-    revertSession: async (sessionId, messageID, partID) => {
-      const value = await request<SessionRecordResponse | boolean>(
-        await resolveSessionPath({ sessionId, harnessId }, "/revert"),
+    revertSession: async (sessionId, messageID, partID, target) => {
+      const value = await requestAt<SessionRecordResponse | boolean>(
+        requestBaseUrlForSession({ sessionId, harnessId, target }),
+        await resolveSessionPath({ sessionId, harnessId, target }, "/revert"),
         {
           method: "POST",
           body: JSON.stringify({ messageId: messageID, partId: partID }),
@@ -604,18 +612,19 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       );
       return await toFrontendSession(
         typeof value === "boolean"
-          ? await getSessionRecord(sessionId, { sessionId, harnessId })
+          ? await getSessionRecord(sessionId, { sessionId, harnessId, target })
           : value,
       );
     },
-    unrevertSession: async (sessionId) => {
-      const value = await request<SessionRecordResponse | boolean>(
-        await resolveSessionPath({ sessionId, harnessId }, "/unrevert"),
+    unrevertSession: async (sessionId, target) => {
+      const value = await requestAt<SessionRecordResponse | boolean>(
+        requestBaseUrlForSession({ sessionId, harnessId, target }),
+        await resolveSessionPath({ sessionId, harnessId, target }, "/unrevert"),
         { method: "POST" },
       );
       return await toFrontendSession(
         typeof value === "boolean"
-          ? await getSessionRecord(sessionId, { sessionId, harnessId })
+          ? await getSessionRecord(sessionId, { sessionId, harnessId, target })
           : value,
       );
     },

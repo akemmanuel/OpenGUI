@@ -2029,9 +2029,18 @@ function InternalAgentProvider({
             ) ?? undefined,
         });
       }
+      const activeSession = stateRef.current.sessions.find(
+        (session) => session.id === state.activeSessionId,
+      );
+      const projectTarget =
+        getSessionProjectTarget(
+          activeSession,
+          activeSession ? stateRef.current.sessionMeta[activeSession.id] : undefined,
+        ) ?? undefined;
       await refreshLifecycleSession({
         sessionId: state.activeSessionId,
-        mutateSession: () => runtime.revertSession(state.activeSessionId!, messageID),
+        mutateSession: () =>
+          runtime.revertSession(state.activeSessionId!, messageID, undefined, projectTarget),
         fetchMessagePage,
         dispatch,
         errorMessage: "Failed to revert session",
@@ -2049,9 +2058,17 @@ function InternalAgentProvider({
 
   const unrevert = useCallback(async () => {
     if (!runtime || !state.activeSessionId) return;
+    const activeSession = stateRef.current.sessions.find(
+      (session) => session.id === state.activeSessionId,
+    );
+    const projectTarget =
+      getSessionProjectTarget(
+        activeSession,
+        activeSession ? stateRef.current.sessionMeta[activeSession.id] : undefined,
+      ) ?? undefined;
     await refreshLifecycleSession({
       sessionId: state.activeSessionId,
-      mutateSession: () => runtime.unrevertSession(state.activeSessionId!),
+      mutateSession: () => runtime.unrevertSession(state.activeSessionId!, projectTarget),
       fetchMessagePage,
       dispatch,
       errorMessage: "Failed to unrevert session",
@@ -2061,6 +2078,14 @@ function InternalAgentProvider({
   const forkFromMessage = useCallback(
     async (messageID: string) => {
       if (!runtime || !state.activeSessionId) return;
+      const activeSession = stateRef.current.sessions.find(
+        (session) => session.id === state.activeSessionId,
+      );
+      const projectTarget =
+        getSessionProjectTarget(
+          activeSession,
+          activeSession ? stateRef.current.sessionMeta[activeSession.id] : undefined,
+        ) ?? undefined;
       await forkLifecycleSession({
         messageId: messageID,
         activeSessionId: state.activeSessionId,
@@ -2069,6 +2094,7 @@ function InternalAgentProvider({
         selectSession,
         forceSessionTitle,
         dispatch,
+        target: projectTarget,
       });
     },
     [runtime, state.activeSessionId, selectSession, forceSessionTitle],
