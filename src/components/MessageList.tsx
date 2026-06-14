@@ -6,6 +6,7 @@
 import type { Part, TextPart } from "@opencode-ai/sdk/v2/client";
 import { ShieldAlert, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { QuestionPanel } from "@/components/message-list/QuestionPanel";
 import { MessageBubble } from "@/components/message-list/MessageBubble";
 import {
@@ -82,21 +83,20 @@ function RevertBanner({
   revertedCount: number;
   onRestore: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2 mt-4 select-none">
       <div className="flex-1 h-px bg-orange-500/30" />
       <div className="flex items-center gap-2 text-[11px] text-orange-500/80 font-mono">
         <Undo2 className="size-3" />
-        <span>
-          {revertedCount} message{revertedCount !== 1 ? "s" : ""} reverted
-        </span>
+        <span>{t("revertBanner.reverted", { count: revertedCount })}</span>
         <span className="text-orange-500/50">|</span>
         <button
           type="button"
           onClick={onRestore}
           className="hover:text-orange-500 transition-colors cursor-pointer"
         >
-          Restore
+          {t("revertBanner.restore")}
         </button>
       </div>
       <div className="flex-1 h-px bg-orange-500/30" />
@@ -105,6 +105,7 @@ function RevertBanner({
 }
 
 export function MessageList({ detachedProject: _detachedProject }: { detachedProject?: string }) {
+  const { t } = useTranslation();
   const {
     respondPermission,
     replyQuestion,
@@ -419,7 +420,9 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
           <div className="flex items-start gap-2">
             <ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="text-sm font-medium">Permission: {pendingPermission.permission}</p>
+              <p className="text-sm font-medium">
+                {t("permissionPanel.title", { permission: pendingPermission.permission })}
+              </p>
               {pendingPermission.patterns.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {pendingPermission.patterns.join(", ")}
@@ -429,13 +432,13 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="default" onClick={() => respondPermission("once")}>
-              Allow once
+              {t("permissionPanel.allowOnce")}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => respondPermission("always")}>
-              Always allow
+              {t("permissionPanel.alwaysAllow")}
             </Button>
             <Button size="sm" variant="destructive" onClick={() => respondPermission("reject")}>
-              Reject
+              {t("permissionPanel.reject")}
             </Button>
           </div>
         </div>

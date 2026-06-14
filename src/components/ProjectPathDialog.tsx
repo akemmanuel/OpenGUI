@@ -1,6 +1,7 @@
 import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { FormField } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/button";
@@ -38,13 +39,6 @@ function isWebRuntime() {
   return !navigator.userAgent.includes("Electron");
 }
 
-function getPromptMessage(isLocalWorkspace: boolean) {
-  if (isLocalWorkspace) {
-    return "Open a local project folder for this window. You can also paste an absolute path manually.";
-  }
-  return "This window is connected to a remote server, so choose a project by entering the path on that server.";
-}
-
 function isLoopbackServerUrl(url: string) {
   try {
     const parsed = new URL(url);
@@ -61,6 +55,7 @@ function resolveBrowserApiBaseUrl(workspaceServerUrl: string | null | undefined)
 }
 
 export function ProjectPathDialog() {
+  const { t } = useTranslation();
   const { activeWorkspace, isLocalWorkspace, workspaceServerUrl, workspaceDirectory } =
     useConnectionState();
   const shell = useDesktopShell();
@@ -153,19 +148,21 @@ export function ProjectPathDialog() {
         if (!nextOpen) closeWith(null);
       }}
       className="sm:max-w-lg"
-      title="Open Project"
+      title={t("projectPath.title")}
       description={
         webRuntime && isLocalWorkspace
-          ? "Choose a project path on the OpenGUI server. If you use this from a phone, paths are server paths, not phone files."
-          : getPromptMessage(isLocalWorkspace)
+          ? t("projectPath.webLocalDescription")
+          : isLocalWorkspace
+            ? t("projectPath.localDescription")
+            : t("projectPath.remoteDescription")
       }
       footer={
         <>
           <Button type="button" variant="ghost" onClick={() => closeWith(null)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="button" disabled={!value.trim()} onClick={() => closeWith(value)}>
-            Open project
+            {t("projectPath.openProject")}
           </Button>
         </>
       }
@@ -178,7 +175,7 @@ export function ProjectPathDialog() {
           </div>
         </div>
 
-        <FormField label="Project path" htmlFor="project-path">
+        <FormField label={t("projectPath.projectPathLabel")} htmlFor="project-path">
           <div className="flex gap-2">
             <Input
               id="project-path"
@@ -209,14 +206,14 @@ export function ProjectPathDialog() {
               }}
             >
               <FolderOpen className="size-4" />
-              {webRuntime || !isLocalWorkspace ? "Browse server" : "Browse"}
+              {webRuntime || !isLocalWorkspace ? t("projectPath.browseServer") : t("common.browse")}
             </Button>
           </div>
           {showServerBrowser && (
             <div className="rounded-lg border bg-muted/20 p-2">
               <div className="mb-2 flex items-center justify-between gap-2 text-xs">
                 <span className="truncate font-mono text-muted-foreground">
-                  {serverListing?.path ?? "Loading server folders..."}
+                  {serverListing?.path ?? t("projectPath.loadingServerFolders")}
                 </span>
                 <Button
                   type="button"
@@ -228,12 +225,14 @@ export function ProjectPathDialog() {
                   }
                 >
                   <ChevronLeft className="size-4" />
-                  Up
+                  {t("projectPath.up")}
                 </Button>
               </div>
               <div className="max-h-56 overflow-y-auto rounded border bg-background">
                 {serverBrowserLoading ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    {t("common.loading")}
+                  </div>
                 ) : serverListing?.entries.length ? (
                   serverListing.entries.map((entry) => (
                     <button
@@ -248,11 +247,15 @@ export function ProjectPathDialog() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">No folders</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    {t("projectPath.noFolders")}
+                  </div>
                 )}
               </div>
               <div className="mt-2 text-[11px] text-muted-foreground">
-                Allowed roots: {serverListing?.roots.join(", ") || "server default"}
+                {t("projectPath.allowedRoots", {
+                  roots: serverListing?.roots.join(", ") || t("projectPath.serverDefault"),
+                })}
               </div>
             </div>
           )}

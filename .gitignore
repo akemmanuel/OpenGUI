@@ -38,10 +38,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Local OpenCode config (user-specific model/MCP settings)
 config.json
 
-# Provider icon individual SVGs (intermediate build artifacts)
-# The sprite.svg and types.ts are the actual outputs
-src/components/provider-icons/svgs/
-
 .worktrees/
 
 # Local benchmark/debug output

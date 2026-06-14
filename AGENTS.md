@@ -26,6 +26,14 @@ Use Vite+ task runner and pnpm-managed deps.
 - Prefer `vp lint` / `vp fmt` when narrowing issues
 - Use `pnpm run` only when task is defined in `package.json`
 
+## Translations
+
+When adding or changing user-facing text, update i18n files in `src/i18n/locales/` at same time.
+
+- Add or update keys in `en.json`, `de.json`, and `es.json`
+- Do not leave hardcoded UI strings in React components when text should be translated
+- Keep locale key structure aligned across all supported languages
+
 ## Project notes
 
 - `vite.config.ts` uses `vite-plus`
