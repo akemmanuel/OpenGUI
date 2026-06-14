@@ -1269,7 +1269,7 @@ function InternalAgentProvider({
         if (getSessionWorkspaceId(session)) {
           return getSessionWorkspaceId(session) === activeWorkspace.id;
         }
-        const directory = session._projectDir ?? session.directory;
+        const directory = normalizeProjectPath((session._projectDir ?? session.directory) || "");
         return activeWorkspaceProjectSet.has(directory);
       }),
     [state.sessions, state.sessionMeta, activeWorkspace, activeWorkspaceProjectSet],
@@ -2039,11 +2039,18 @@ function InternalAgentProvider({
       if (!state.activeSessionId) return;
       const pending = state.pendingQuestions[state.activeSessionId];
       if (!pending) return;
+      const session = state.sessions.find((item) => item.id === state.activeSessionId);
       try {
         await openGuiClient.sessions.replyQuestion({
+          sessionId: state.activeSessionId,
           requestId: pending.id,
           answers,
-          harnessId: activeSessionBackendId ?? undefined,
+          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+          target: getSessionProjectTarget(session) ?? undefined,
+        });
+        dispatch({
+          type: "SET_QUESTION",
+          payload: { sessionID: state.activeSessionId, clear: true },
         });
       } catch (error) {
         dispatch({
@@ -2052,17 +2059,24 @@ function InternalAgentProvider({
         });
       }
     },
-    [activeSessionBackendId, openGuiClient, state.pendingQuestions, state.activeSessionId],
+    [openGuiClient, state.pendingQuestions, state.activeSessionId, state.sessions],
   );
 
   const rejectQuestion = useCallback(async () => {
     if (!state.activeSessionId) return;
     const pending = state.pendingQuestions[state.activeSessionId];
     if (!pending) return;
+    const session = state.sessions.find((item) => item.id === state.activeSessionId);
     try {
       await openGuiClient.sessions.rejectQuestion({
+        sessionId: state.activeSessionId,
         requestId: pending.id,
-        harnessId: activeSessionBackendId ?? undefined,
+        harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+        target: getSessionProjectTarget(session) ?? undefined,
+      });
+      dispatch({
+        type: "SET_QUESTION",
+        payload: { sessionID: state.activeSessionId, clear: true },
       });
     } catch (error) {
       dispatch({
@@ -2070,7 +2084,7 @@ function InternalAgentProvider({
         payload: error instanceof Error ? error.message : "Failed to dismiss question",
       });
     }
-  }, [activeSessionBackendId, openGuiClient, state.pendingQuestions, state.activeSessionId]);
+  }, [openGuiClient, state.pendingQuestions, state.activeSessionId, state.sessions]);
 
   const setDefaultChatDirectory = useCallback((directory: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
@@ -2691,7 +2705,9 @@ function InternalAgentProvider({
             if (sessionWorkspaceId) {
               return sessionWorkspaceId === workspace.id;
             }
-            const directory = session._projectDir ?? session.directory;
+            const directory = normalizeProjectPath(
+              (session._projectDir ?? session.directory) || "",
+            );
             return workspace.projects.includes(directory);
           });
           const sessionIds = new Set(workspaceSessions.map((session) => session.id));

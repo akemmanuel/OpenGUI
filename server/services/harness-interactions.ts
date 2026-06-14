@@ -20,11 +20,13 @@ export async function replyToHarnessQuestion(input: {
   harnessId: HarnessId;
   requestId: string;
   answers: QuestionAnswer[];
+  target?: { directory?: string; workspaceId?: string };
 }): Promise<void> {
   await input.services.harnesses.replyQuestion({
     harnessId: input.harnessId,
     requestId: input.requestId,
     answers: input.answers,
+    target: input.target,
   });
 }
 
@@ -32,9 +34,11 @@ export async function rejectHarnessQuestion(input: {
   services: BackendServiceContext;
   harnessId: HarnessId;
   requestId: string;
+  target?: { directory?: string; workspaceId?: string };
 }): Promise<void> {
   await input.services.harnesses.rejectQuestion({
     harnessId: input.harnessId,
     requestId: input.requestId,
+    target: input.target,
   });
 }

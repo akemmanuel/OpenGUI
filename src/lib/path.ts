@@ -1,13 +1,13 @@
 /** Normalize project path for stable workspace/session keys. */
 export function normalizeProjectPath(path: string): string {
-  const trimmed = path.trim();
+  const trimmed = path.trim().replace(/\\/g, "/");
   if (!trimmed) return "";
-  if (/^[/\\]+$/.test(trimmed)) return trimmed[0] ?? trimmed;
-  const windowsDriveRoot = trimmed.match(/^([A-Za-z]:)([/\\]+)$/);
+  if (/^\/+$/.test(trimmed)) return "/";
+  const windowsDriveRoot = trimmed.match(new RegExp("^([A-Za-z]:)(/+)$"));
   if (windowsDriveRoot) {
-    return `${windowsDriveRoot[1]}${trimmed.includes("\\") ? "\\" : "/"}`;
+    return `${windowsDriveRoot[1]}/`;
   }
-  return trimmed.replace(/[/\\]+$/, "");
+  return trimmed.replace(/\/+$/, "");
 }
 
 /** Extract the trailing directory name from an absolute path (cross-platform). */

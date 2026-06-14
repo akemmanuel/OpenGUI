@@ -303,6 +303,57 @@ describe("createHttpOpenGuiClient", () => {
     });
   });
 
+  test("sends session and project context with question replies", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+        calls.push({ url, body });
+        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
+          return json({
+            ok: true,
+            value: [
+              {
+                id: "project_1",
+                displayName: "repo",
+                path: "/repo",
+                canonicalPath: "/repo",
+                createdAt: "2026-05-12T00:00:00.000Z",
+                updatedAt: "2026-05-12T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        if (url.endsWith("/api/questions/question_1/reply") && init?.method === "POST") {
+          return json({ ok: true, value: true });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+    });
+
+    await client.sessions.replyQuestion({
+      sessionId: "opencode:session_1",
+      requestId: "question_1",
+      answers: [["Yes"]],
+      harnessId: "opencode",
+      target: { directory: "/repo", workspaceId: "workspace-1" },
+    });
+
+    expect(calls.at(-1)).toEqual({
+      url: "http://example.test/api/questions/question_1/reply",
+      body: {
+        sessionId: "opencode:session_1",
+        answers: [["Yes"]],
+        harnessId: "opencode",
+        workspaceId: "workspace-1",
+        projectId: "project_1",
+        directory: "/repo",
+      },
+    });
+  });
+
   test("sends auth token with RPC requests", async () => {
     const originalFetch = globalThis.fetch;
     let authHeader = "";

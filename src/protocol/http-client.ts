@@ -1083,17 +1083,40 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           },
         );
       },
-      replyQuestion: async ({ requestId, answers, harnessId }) => {
-        await request<boolean>(`/api/questions/${encodeURIComponent(requestId)}/reply`, {
-          method: "POST",
-          body: JSON.stringify({ answers, harnessId }),
-        });
+      replyQuestion: async ({ sessionId, requestId, answers, harnessId, target }) => {
+        const project = target ? await ensureProjectForTarget(target) : null;
+        await requestAt<boolean>(
+          requestBaseUrlForTarget(target),
+          `/api/questions/${encodeURIComponent(requestId)}/reply`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              sessionId,
+              answers,
+              harnessId,
+              workspaceId: project?.workspaceId ?? target?.workspaceId,
+              projectId: project?.id,
+              directory: target?.directory,
+            }),
+          },
+        );
       },
-      rejectQuestion: async ({ requestId, harnessId }) => {
-        await request<boolean>(`/api/questions/${encodeURIComponent(requestId)}/reject`, {
-          method: "POST",
-          body: JSON.stringify({ harnessId }),
-        });
+      rejectQuestion: async ({ sessionId, requestId, harnessId, target }) => {
+        const project = target ? await ensureProjectForTarget(target) : null;
+        await requestAt<boolean>(
+          requestBaseUrlForTarget(target),
+          `/api/questions/${encodeURIComponent(requestId)}/reject`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              sessionId,
+              harnessId,
+              workspaceId: project?.workspaceId ?? target?.workspaceId,
+              projectId: project?.id,
+              directory: target?.directory,
+            }),
+          },
+        );
       },
       queue: {
         list: async ({ sessionId, harnessId, target }) =>

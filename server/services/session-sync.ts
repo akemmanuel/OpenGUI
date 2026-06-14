@@ -6,6 +6,7 @@ import { toSessionRecordInputFromRuntime } from "./runtime-session-mapper.ts";
 export interface ResolvedHarnessDirectory {
   directory: string;
   canonicalPath: string;
+  workspaceId?: string;
 }
 
 export async function syncDirectorySessions(
@@ -15,7 +16,11 @@ export async function syncDirectorySessions(
 ): Promise<{ sessions: SessionRecord[]; nextCursor: null }> {
   const projectId = directory.canonicalPath;
   const runtimeResults = await services.harnesses.listProjectSessions({
-    scope: { projectId, directory: directory.canonicalPath },
+    scope: {
+      projectId,
+      directory: directory.canonicalPath,
+      workspaceId: directory.workspaceId,
+    },
     harnessIds: [harnessId],
   });
   const runtimeSessions = runtimeResults[0]?.sessions?.filter((session) =>
