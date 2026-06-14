@@ -433,10 +433,9 @@ export function ModelSelector() {
 
       <DialogContent
         className="p-0 sm:max-w-2xl"
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
-          document.querySelector<HTMLTextAreaElement>('[data-slot="prompt-box-textarea"]')?.focus();
-        }}
+        finalFocus={() =>
+          document.querySelector<HTMLTextAreaElement>('[data-slot="prompt-box-textarea"]')
+        }
       >
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="text-base">{t("modelSelector.selectModel")}</DialogTitle>
