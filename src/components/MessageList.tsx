@@ -6,7 +6,6 @@
 import type { Part, TextPart } from "@opencode-ai/sdk/v2/client";
 import { ShieldAlert, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { QuestionPanel } from "@/components/message-list/QuestionPanel";
 import { MessageBubble } from "@/components/message-list/MessageBubble";
 import {
@@ -106,7 +105,6 @@ function RevertBanner({
 }
 
 export function MessageList({ detachedProject: _detachedProject }: { detachedProject?: string }) {
-  const { t } = useTranslation();
   const {
     respondPermission,
     replyQuestion,
@@ -421,9 +419,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
           <div className="flex items-start gap-2">
             <ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="text-sm font-medium">
-                {t("permissionPanel.title", { permission: pendingPermission.permission })}
-              </p>
+              <p className="text-sm font-medium">Permission: {pendingPermission.permission}</p>
               {pendingPermission.patterns.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {pendingPermission.patterns.join(", ")}
@@ -433,13 +429,13 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="default" onClick={() => respondPermission("once")}>
-              {t("permissionPanel.allowOnce")}
+              Allow once
             </Button>
             <Button size="sm" variant="secondary" onClick={() => respondPermission("always")}>
-              {t("permissionPanel.alwaysAllow")}
+              Always allow
             </Button>
             <Button size="sm" variant="destructive" onClick={() => respondPermission("reject")}>
-              {t("permissionPanel.reject")}
+              Reject
             </Button>
           </div>
         </div>
