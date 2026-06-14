@@ -2013,25 +2013,46 @@ function InternalAgentProvider({
 
   const respondPermission = useCallback(
     async (response: "once" | "always" | "reject") => {
-      if (!state.activeSessionId) return;
-      const pending = state.pendingPermissions[state.activeSessionId];
+      const sessionId = state.activeSessionId;
+      if (!sessionId) return;
+      const pending = state.pendingPermissions[sessionId];
       if (!pending) return;
-      const session = state.sessions.find((item) => item.id === state.activeSessionId);
-      await openGuiClient.sessions.respondPermission({
-        sessionId: state.activeSessionId,
-        permissionId: pending.id,
-        response,
-        harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-        target:
-          getSessionProjectTarget(session, session ? state.sessionMeta[session.id] : undefined) ??
-          undefined,
-      });
-      dispatch({
-        type: "SET_PERMISSION",
-        payload: { sessionID: state.activeSessionId, clear: true },
-      });
+      const session = state.sessions.find((item) => item.id === sessionId);
+      const clearPermission = () =>
+        dispatch({
+          type: "SET_PERMISSION",
+          payload: { sessionID: sessionId, clear: true },
+        });
+
+      try {
+        await openGuiClient.sessions.respondPermission({
+          sessionId,
+          permissionId: pending.id,
+          response,
+          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+          target:
+            getSessionProjectTarget(session, session ? state.sessionMeta[session.id] : undefined) ??
+            undefined,
+        });
+        clearPermission();
+      } catch (error) {
+        const message = getErrorMessage(error);
+        if (/permission request not found|permission not found|not found/i.test(message)) {
+          clearPermission();
+        }
+        dispatch({
+          type: "SET_ERROR",
+          payload: message || "Failed to respond to permission request",
+        });
+      }
     },
-    [openGuiClient, state.pendingPermissions, state.activeSessionId, state.sessions],
+    [
+      openGuiClient,
+      state.activeSessionId,
+      state.pendingPermissions,
+      state.sessionMeta,
+      state.sessions,
+    ],
   );
 
   const replyQuestion = useCallback(

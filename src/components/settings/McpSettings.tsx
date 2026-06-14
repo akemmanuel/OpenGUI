@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
 import type { McpStatus } from "@opencode-ai/sdk/v2/client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { HARNESS_LABELS, type HarnessId } from "@/agents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,14 +9,22 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { useHarness, useAvailableHarnessIds, useCurrentHarnessId } from "@/hooks/use-agent-backend";
+import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
+import { useOpenGuiClient } from "@/protocol/provider";
 
 // ---------------------------------------------------------------------------
 // MCP/Tools tab content (inline)
 // ---------------------------------------------------------------------------
 
 export function McpTabContent() {
+  const { t } = useTranslation();
   const initialBackendId = useCurrentHarnessId();
   const availableBackendIds = useAvailableHarnessIds();
+  const openGuiClient = useOpenGuiClient();
+  const mcpHarnessIds = useMemo(
+    () => availableBackendIds.filter((id) => openGuiClient.harnesses.get(id)?.capabilities.mcp),
+    [availableBackendIds, openGuiClient],
+  );
   const [harnessId, setBackendId] = useState<HarnessId>(initialBackendId);
   const backend = useHarness(harnessId);
   const mcpApi = backend?.platform?.mcp;
@@ -30,8 +39,18 @@ export function McpTabContent() {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (mcpHarnessIds.length === 0 || mcpHarnessIds.includes(harnessId)) return;
+    setBackendId(mcpHarnessIds[0]!);
+  }, [harnessId, mcpHarnessIds]);
+
   const refresh = useCallback(async () => {
-    if (!mcpApi || !configApi) return;
+    if (!mcpApi || !configApi) {
+      setMcpStatus({});
+      setMcpTypes({});
+      setLoading(false);
+      return;
+    }
     const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
     const [statusData, configData] = await Promise.all([
       mcpApi.status(target),
@@ -51,6 +70,7 @@ export function McpTabContent() {
   }, [mcpApi, configApi, scopedDirectory, activeWorkspaceId]);
 
   useEffect(() => {
+    setLoading(true);
     void refresh();
   }, [refresh]);
 
@@ -66,7 +86,7 @@ export function McpTabContent() {
       } else {
         await mcpApi.connect({ directory: scopedDirectory, workspaceId: activeWorkspaceId }, name);
       }
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, MCP_TOGGLE_DELAY_MS));
       await refresh();
     } finally {
       setToggling(null);
@@ -76,24 +96,24 @@ export function McpTabContent() {
   const STATUS_CONFIG = {
     connected: {
       variant: "default" as const,
-      label: "Connected",
+      label: t("mcp.connected"),
       icon: CheckCircle2,
       className: "bg-emerald-600 hover:bg-emerald-600",
     },
-    disabled: { variant: "secondary" as const, label: "Disabled" },
+    disabled: { variant: "secondary" as const, label: t("mcp.disabled") },
     failed: {
       variant: "destructive" as const,
-      label: "Failed",
+      label: t("mcp.failed"),
       icon: AlertCircle,
     },
     needs_auth: {
       variant: "outline" as const,
-      label: "Needs auth",
+      label: t("mcp.needsAuth"),
       className: "text-amber-500 border-amber-500",
     },
     needs_client_registration: {
       variant: "outline" as const,
-      label: "Needs registration",
+      label: t("mcp.needsRegistration"),
       className: "text-amber-500 border-amber-500",
     },
   } as const;
@@ -110,9 +130,9 @@ export function McpTabContent() {
 
   return (
     <div className="space-y-2">
-      {availableBackendIds.length > 1 && (
+      {mcpHarnessIds.length > 1 && (
         <div className="mb-3 flex flex-wrap gap-1">
-          {availableBackendIds.map((id) => (
+          {mcpHarnessIds.map((id) => (
             <Button
               key={id}
               type="button"
@@ -126,9 +146,13 @@ export function McpTabContent() {
           ))}
         </div>
       )}
-      {entries.length === 0 ? (
+      {!mcpApi || !configApi ? (
         <div className="text-center py-6 text-sm text-muted-foreground">
-          No MCP servers configured.
+          {t("mcp.noManagement")}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="text-center py-6 text-sm text-muted-foreground">
+          {t("mcp.noneConfigured")}
         </div>
       ) : (
         entries.map(([name, status]) => {
@@ -137,7 +161,7 @@ export function McpTabContent() {
           const type = mcpTypes[name];
           const config = STATUS_CONFIG[status.status as keyof typeof STATUS_CONFIG] ?? {
             variant: "secondary" as const,
-            label: "Unknown",
+            label: t("mcp.unknown"),
           };
           const BadgeIcon = "icon" in config ? config.icon : undefined;
 

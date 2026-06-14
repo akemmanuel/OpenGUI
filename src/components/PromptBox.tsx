@@ -416,7 +416,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               <Button
                 type="button"
                 size="icon-sm"
-                variant="secondary"
+                variant="default"
+                className="bg-primary text-[oklch(0.985_0_0)] hover:bg-primary/85 dark:text-primary-foreground"
                 title={t("prompt.stop")}
                 onClick={(e) => {
                   e.stopPropagation();

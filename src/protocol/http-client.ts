@@ -1079,6 +1079,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               harnessId,
               workspaceId: project?.workspaceId ?? target?.workspaceId,
               projectId: project?.id,
+              directory: target?.directory,
             }),
           },
         );

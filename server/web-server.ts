@@ -6,6 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
+import { parseFrontendSessionId } from "../src/lib/session-identity.ts";
 import {
   BackendEventBus,
   compactSessionThroughHarness,
@@ -659,6 +660,65 @@ async function getSessionOrThrow(
   }
 }
 
+async function resolvePermissionSessionScope(
+  services: BackendServiceContext,
+  body: Record<string, unknown>,
+): Promise<{ session: SessionRecord; project: ProjectRecord; workspaceId?: string }> {
+  const sessionId = toOptionalString(body.sessionId, "sessionId");
+  if (!sessionId) throw new Error("sessionId and response are required");
+  const harnessId =
+    (toOptionalString(body.harnessId, "harnessId") as HarnessId | undefined) ?? undefined;
+  const projectId = toOptionalString(body.projectId, "projectId") ?? undefined;
+  const directory = toOptionalString(body.directory, "directory") ?? undefined;
+  const workspaceId = toOptionalString(body.workspaceId, "workspaceId") ?? undefined;
+
+  try {
+    const session = await getSessionOrThrow(services, sessionId, { projectId, harnessId });
+    return {
+      session,
+      project: await getSessionProjectScopeOrThrow(services, session),
+      workspaceId:
+        workspaceId ??
+        (session.metadata && typeof session.metadata.workspaceID === "string"
+          ? session.metadata.workspaceID
+          : undefined),
+    };
+  } catch (error) {
+    const frontend = parseFrontendSessionId(sessionId);
+    if (!frontend) throw error;
+    if (harnessId && harnessId !== frontend.harnessId) throw error;
+    if (!projectId && !directory) throw error;
+
+    const fallbackDirectory = directory ?? "";
+    const project = projectId
+      ? await getProjectOrThrow(services, projectId)
+      : await createProjectRecord({
+          services,
+          project: await normalizeProjectCreateInput(
+            { path: fallbackDirectory, displayName: basename(fallbackDirectory) },
+            resolveSafeDirectory,
+            realpath,
+          ),
+        });
+    const now = new Date().toISOString();
+    return {
+      session: {
+        id: sessionId,
+        rawId: frontend.rawId,
+        projectId: project.id,
+        harnessId: frontend.harnessId,
+        title: "Recovered session",
+        status: "unknown",
+        createdAt: now,
+        updatedAt: now,
+        metadata: { directory: project.path, workspaceID: workspaceId, recovered: true },
+      },
+      project,
+      workspaceId,
+    };
+  }
+}
+
 function decodeCanonicalDirectorySessionId(
   sessionId: string,
 ): { projectId: string; harnessId: HarnessId; rawId: string } | null {
@@ -1303,16 +1363,13 @@ async function handlePermissionRequest(request: Request) {
     ) {
       throw new Error("sessionId and response are required");
     }
-    const session = await getSessionOrThrow(services, body.sessionId, {
-      projectId: toOptionalString(body.projectId, "projectId") ?? undefined,
-      harnessId:
-        (toOptionalString(body.harnessId, "harnessId") as HarnessId | undefined) ?? undefined,
-    });
+    const { session, project, workspaceId } = await resolvePermissionSessionScope(services, body);
     await respondToHarnessPermission({
       services,
       session,
       permissionId,
       response: body.response as "once" | "always" | "reject",
+      scope: { directory: project.path, workspaceId },
     });
     return Response.json({ ok: true, value: true });
   } catch (error) {

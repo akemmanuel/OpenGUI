@@ -172,6 +172,38 @@ export const openCodeEventHandlers: Partial<Record<string, OpenCodeEventHandler>
     type: "permission.cleared",
     sessionID: toCompositeSessionId(getSessionId(getProperties(event))),
   }),
+  "permission.v2.asked": (event) => {
+    const properties = getProperties(event) as {
+      id: string;
+      sessionID: string;
+      action: string;
+      resources?: unknown;
+      save?: unknown;
+      metadata?: unknown;
+      source?: unknown;
+    };
+    return {
+      type: "permission.requested",
+      request: {
+        id: properties.id,
+        sessionID: toCompositeSessionId(properties.sessionID),
+        permission: properties.action,
+        patterns: Array.isArray(properties.resources)
+          ? properties.resources.filter((item): item is string => typeof item === "string")
+          : [],
+        always: Array.isArray(properties.save)
+          ? properties.save.filter((item): item is string => typeof item === "string")
+          : [],
+        metadata:
+          properties.metadata && typeof properties.metadata === "object" ? properties.metadata : {},
+        source: properties.source,
+      } as PermissionRequest,
+    };
+  },
+  "permission.v2.replied": (event) => ({
+    type: "permission.cleared",
+    sessionID: toCompositeSessionId(getSessionId(getProperties(event))),
+  }),
   "question.asked": (event) => {
     const properties = getProperties(event) as Record<string, unknown> & { sessionID: string };
     return {

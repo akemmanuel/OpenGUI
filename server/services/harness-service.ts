@@ -281,11 +281,14 @@ export class HarnessService {
     session: SessionRecord;
     permissionId: string;
     response: "once" | "always" | "reject";
+    scope?: { directory?: string; workspaceId?: string };
   }): Promise<void> {
     await this.backendRpc(input.session.harnessId, "permission", [
       input.session.rawId,
       input.permissionId,
       input.response,
+      input.scope?.directory,
+      input.scope?.workspaceId,
     ]);
   }
 
