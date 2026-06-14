@@ -1323,6 +1323,7 @@ async function handleSessionRequest(request: Request) {
       }
       const session = await revertSessionThroughHarness({
         services,
+        project,
         session: existing,
         messageId: body.messageId,
         partId: toOptionalString(body.partId, "partId"),
@@ -1333,7 +1334,7 @@ async function handleSessionRequest(request: Request) {
 
     if (child === "unrevert") {
       if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
-      const session = await unrevertSessionThroughHarness({ services, session: existing });
+      const session = await unrevertSessionThroughHarness({ services, project, session: existing });
       if (session) return Response.json({ ok: true, value: session });
       return Response.json({ ok: true, value: true });
     }
