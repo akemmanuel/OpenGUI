@@ -402,5 +402,11 @@
   },
   "fileMention": {
     "searching": "Searching..."
+  },
+  "permissionPanel": {
+    "title": "Permission: {{permission}}",
+    "allowOnce": "Allow once",
+    "alwaysAllow": "Always allow",
+    "reject": "Reject"
   }
 }

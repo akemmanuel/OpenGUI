@@ -405,5 +405,11 @@
   },
   "fileMention": {
     "searching": "Suche..."
+  },
+  "permissionPanel": {
+    "title": "Berechtigung: {{permission}}",
+    "allowOnce": "Einmal erlauben",
+    "alwaysAllow": "Immer erlauben",
+    "reject": "Ablehnen"
   }
 }
