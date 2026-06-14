@@ -40,7 +40,7 @@ export function tagBackendSession(
   target?: { directory?: string; workspaceId?: string },
 ): TaggedSession {
   const rawId = session._rawId ?? session.id;
-  const projectDir = target?.directory ?? session._projectDir ?? session.directory;
+  const projectDir = session.directory ?? session._projectDir ?? target?.directory;
   return {
     ...session,
     id: createBackendIdCodec(harnessId).compose(rawId),

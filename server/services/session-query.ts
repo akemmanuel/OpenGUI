@@ -9,6 +9,7 @@ export interface ResolvedSessionQueryProject {
   frontendProjectId: string;
   directory: string;
   canonicalPath: string;
+  workspaceId?: string;
 }
 
 export async function querySessionsForResolvedProjects(input: {
@@ -17,37 +18,42 @@ export async function querySessionsForResolvedProjects(input: {
   harnessIds: HarnessId[];
   sync: boolean;
 }) {
-  const sessionJobs = input.projects.flatMap(({ frontendProjectId, directory, canonicalPath }) =>
-    input.harnessIds.map((harnessId) => async () => {
-      try {
-        const page = input.sync
-          ? await syncDirectorySessions(input.services, { directory, canonicalPath }, harnessId)
-          : await listSessionRecords({
-              services: input.services,
-              projectId: canonicalPath,
+  const sessionJobs = input.projects.flatMap(
+    ({ frontendProjectId, directory, canonicalPath, workspaceId }) =>
+      input.harnessIds.map((harnessId) => async () => {
+        try {
+          const page = input.sync
+            ? await syncDirectorySessions(
+                input.services,
+                { directory, canonicalPath, workspaceId },
+                harnessId,
+              )
+            : await listSessionRecords({
+                services: input.services,
+                projectId: canonicalPath,
+                harnessId,
+              });
+          return {
+            ok: true as const,
+            item: {
+              frontendProjectId,
+              directory,
               harnessId,
-            });
-        return {
-          ok: true as const,
-          item: {
-            frontendProjectId,
-            directory,
-            harnessId,
-            sessions: page.sessions,
-          },
-        };
-      } catch (error) {
-        return {
-          ok: false as const,
-          error: {
-            frontendProjectId,
-            directory,
-            harnessId,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        };
-      }
-    }),
+              sessions: page.sessions,
+            },
+          };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error: {
+              frontendProjectId,
+              directory,
+              harnessId,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+        }
+      }),
   );
 
   const sessionResults = await runJobsWithConcurrency(sessionJobs, 4);

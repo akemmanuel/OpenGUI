@@ -226,11 +226,18 @@ export interface OpenGuiClient {
       target?: HarnessTarget;
     }): Promise<void>;
     replyQuestion(input: {
+      sessionId?: string;
       requestId: string;
       answers: QuestionAnswer[];
       harnessId?: HarnessId;
+      target?: HarnessTarget;
     }): Promise<void>;
-    rejectQuestion(input: { requestId: string; harnessId?: HarnessId }): Promise<void>;
+    rejectQuestion(input: {
+      sessionId?: string;
+      requestId: string;
+      harnessId?: HarnessId;
+      target?: HarnessTarget;
+    }): Promise<void>;
     queue: {
       list(
         input: QueueScopeInput & {

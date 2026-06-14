@@ -43,10 +43,16 @@ export function toQueueMode(value: unknown, fallback?: QueueMode): QueueMode | u
 }
 
 export function toQuestionAnswers(value: unknown): QuestionAnswer[] {
-  return Array.isArray(value)
-    ? (value.filter(
-        (item): item is Record<string, unknown> =>
-          !!item && typeof item === "object" && !Array.isArray(item),
-      ) as unknown as QuestionAnswer[])
-    : [];
+  if (!Array.isArray(value)) return [];
+  return value.map((answer, answerIndex) => {
+    if (!Array.isArray(answer)) {
+      throw new Error(`answers[${answerIndex}] must be an array`);
+    }
+    return answer.map((item, itemIndex) => {
+      if (typeof item !== "string") {
+        throw new Error(`answers[${answerIndex}][${itemIndex}] must be a string`);
+      }
+      return item.trim();
+    });
+  });
 }

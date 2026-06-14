@@ -1,20 +1,26 @@
 // @ts-nocheck
-import { normalize } from "node:path";
+import { normalizeProjectPath } from "./src/lib/path.ts";
+
+const PROJECT_KEY_SEPARATOR = "\u0000";
 
 export class OpencodeProjectRegistry {
   connections = new Map();
   questionProjectKeys = new Map();
 
-  createProjectKey(_workspaceId, directory) {
-    return normalize(String(directory || "").trim());
+  createProjectKey(workspaceId, directory) {
+    return `${String(workspaceId || "")}${PROJECT_KEY_SEPARATOR}${normalizeProjectPath(
+      String(directory || ""),
+    )}`;
   }
 
-  getWorkspaceIdFromProjectKey(_projectKey) {
-    return "";
+  getWorkspaceIdFromProjectKey(projectKey) {
+    const raw = String(projectKey || "");
+    const idx = raw.indexOf(PROJECT_KEY_SEPARATOR);
+    return idx < 0 ? "" : raw.slice(0, idx);
   }
 
   setConnection(target, connection) {
-    const projectKey = this.createProjectKey(null, target.directory);
+    const projectKey = this.createProjectKey(target.workspaceId, target.directory);
     this.connections.set(projectKey, connection);
     return { projectKey, connection };
   }
@@ -31,9 +37,25 @@ export class OpencodeProjectRegistry {
 
   getExactConnectionEntry(target) {
     if (typeof target.directory !== "string" || !target.directory.trim()) return null;
-    const projectKey = this.createProjectKey(null, target.directory);
+    const projectKey = this.createProjectKey(target.workspaceId, target.directory);
     const connection = this.connections.get(projectKey);
     return connection ? { projectKey, connection } : null;
+  }
+
+  getDirectoryConnectionEntry(target) {
+    const directory = normalizeProjectPath(String(target.directory || ""));
+    if (!directory) return null;
+    const exact = this.getExactConnectionEntry(target);
+    if (exact) return exact;
+    const matches = [];
+    for (const [projectKey, connection] of this.connections) {
+      const idx = String(projectKey).indexOf(PROJECT_KEY_SEPARATOR);
+      const keyWorkspaceId = idx < 0 ? "" : String(projectKey).slice(0, idx);
+      const keyDirectory = idx < 0 ? String(projectKey) : String(projectKey).slice(idx + 1);
+      if (target.workspaceId && keyWorkspaceId && keyWorkspaceId !== target.workspaceId) continue;
+      if (keyDirectory === directory) matches.push({ projectKey, connection });
+    }
+    return matches.length === 1 ? matches[0] : null;
   }
 
   getQuestionProjectKey(requestId) {

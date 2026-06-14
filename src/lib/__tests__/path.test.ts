@@ -4,14 +4,21 @@ import { getProjectName, normalizeProjectPath } from "../path";
 describe("normalizeProjectPath", () => {
   test("trims whitespace and trailing separators", () => {
     expect(normalizeProjectPath("  /repo/project///  ")).toBe("/repo/project");
-    expect(normalizeProjectPath("C:\\repo\\project\\")).toBe("C:\\repo\\project");
+    expect(normalizeProjectPath("C:\\repo\\project\\")).toBe("C:/repo/project");
+  });
+
+  test("canonicalizes Windows separators", () => {
+    expect(normalizeProjectPath("C:\\Users\\Quickemu\\Documents")).toBe(
+      "C:/Users/Quickemu/Documents",
+    );
+    expect(normalizeProjectPath("C:/Users/Quickemu/Documents")).toBe("C:/Users/Quickemu/Documents");
   });
 
   test("preserves filesystem roots", () => {
     expect(normalizeProjectPath("/")).toBe("/");
-    expect(normalizeProjectPath("\\\\")).toBe("\\");
+    expect(normalizeProjectPath("\\\\")).toBe("/");
     expect(normalizeProjectPath("C:/")).toBe("C:/");
-    expect(normalizeProjectPath("C:\\")).toBe("C:\\");
+    expect(normalizeProjectPath("C:\\")).toBe("C:/");
   });
 
   test("returns empty strings for blank paths", () => {

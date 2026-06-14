@@ -65,6 +65,27 @@ describe("normalizeTaggedBackendEvent", () => {
     });
   });
 
+  test("keeps a session-owned directory when it differs from the event target", () => {
+    const event = {
+      type: "opencode:event",
+      payload: {
+        type: "session.created",
+        directory: "/pictures",
+        workspaceId: "workspace-1",
+        session: { ...session, directory: "/documents" },
+      },
+    } as unknown as NativeBackendEvent;
+
+    const normalized = normalizeTaggedBackendEvent("opencode", event, "opencode:event");
+
+    expect(normalized).toMatchObject({
+      type: "session.created",
+      session: {
+        _projectDir: "/documents",
+      },
+    });
+  });
+
   test("prefixes ids in non-session payloads", () => {
     const event = {
       type: "claude-code:event",

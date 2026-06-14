@@ -21,6 +21,7 @@ import { pollUntilEffect, runEffect, sleepEffect } from "./lib/effect-runtime.ts
 import { getOpenCodeProviderAuthKinds } from "./opencode-config.ts";
 import { OpencodeProjectRegistry } from "./opencode-project-registry.ts";
 import { resolveHarnessCli } from "./server/harness-inventory.ts";
+import { normalizeProjectPath } from "./src/lib/path.ts";
 
 // ---------------------------------------------------------------------------
 // Local server management
@@ -226,13 +227,14 @@ function tagOpenCodeSession(session, dir, workspaceId) {
     typeof session.directory === "string" && session.directory.trim()
       ? session.directory.trim()
       : null;
+  const projectDir = sessionDirectory ?? session._projectDir ?? dir;
   return {
     ...session,
     id,
     slug: session.slug ? toFrontendSessionId(session.slug) : id,
     _harnessId: "opencode",
     _rawId: rawId,
-    _projectDir: session._projectDir ?? sessionDirectory ?? dir,
+    _projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
     _workspaceId: workspaceId ?? session._workspaceId,
   };
 }
@@ -600,12 +602,21 @@ export class OpenCodeConnection {
 
   async replyQuestion(requestID, answers) {
     this._requireClient();
-    await this._client.question.reply({ requestID, answers });
+    const directory = this.getDirectory();
+    await this._client.question.reply({
+      requestID,
+      answers,
+      ...(directory ? { directory } : {}),
+    });
   }
 
   async rejectQuestion(requestID) {
     this._requireClient();
-    await this._client.question.reject({ requestID });
+    const directory = this.getDirectory();
+    await this._client.question.reject({
+      requestID,
+      ...(directory ? { directory } : {}),
+    });
   }
 
   // - MCP ------------------------------------------------------------------
@@ -778,7 +789,6 @@ export class OpenCodeConnection {
           if (!raw) continue;
           const event = JSON.parse(raw);
           const payload = event.payload ?? event;
-          if (payload?.type === "sync") continue;
           if (payload) {
             this._emit({ type: "opencode:event", payload });
             this._status.lastEventAt = Date.now();
@@ -1236,14 +1246,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (windowState.projectRegistry.getConnection(projectKey) !== conn) return;
       if (event?.type === "opencode:event") {
         const props = event.payload?.properties ?? {};
-        if (event.payload?.type === "question.asked") {
-          windowState.projectRegistry.rememberQuestion(projectKey, props?.id);
+        const questionId = props?.id ?? props?.requestID;
+        if (event.payload?.type === "question.asked" && questionId) {
+          windowState.projectRegistry.rememberQuestion(projectKey, questionId);
         }
         if (
-          event.payload?.type === "question.replied" ||
-          event.payload?.type === "question.rejected"
+          (event.payload?.type === "question.replied" ||
+            event.payload?.type === "question.rejected") &&
+          questionId
         ) {
-          windowState.projectRegistry.deleteQuestion(props?.requestID);
+          windowState.projectRegistry.deleteQuestion(questionId);
         }
       }
       sendEvent(sender, { ...event, directory, workspaceId });
@@ -1297,7 +1309,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (typeof directory !== "string" || !directory.trim()) {
       return getAnyConnectionEntry(windowState, workspaceId);
     }
-    return windowState.projectRegistry.getExactConnectionEntry({ directory, workspaceId });
+    return windowState.projectRegistry.getDirectoryConnectionEntry({ directory, workspaceId });
   }
 
   function getConnectionForDirectory(windowState, directory, workspaceId) {
@@ -1451,7 +1463,8 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   /**
    * Register an IPC handler for question operations that prefers
-   * requestID -> directory routing, then falls back to trying all connections.
+   * explicit target routing, then requestID -> directory routing,
+   * then falls back to a single connected connection.
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, requestID: string, ...args: any[]) => Promise<any>} fn
    */
@@ -1462,6 +1475,19 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         if (typeof requestID !== "string" || !requestID.trim()) {
           return { success: false, error: "Question requestID is required" };
         }
+        const maybeDirectory = args.length >= 2 ? args[args.length - 2] : undefined;
+        const maybeWorkspaceId = args.length >= 1 ? args[args.length - 1] : undefined;
+        const directory = typeof maybeDirectory === "string" ? maybeDirectory : undefined;
+        const workspaceId = typeof maybeWorkspaceId === "string" ? maybeWorkspaceId : undefined;
+
+        const targetEntry = directory
+          ? getConnectionEntryForDirectory(windowState, directory, workspaceId)
+          : null;
+        if (targetEntry) {
+          const data = await fn(targetEntry.connection, requestID, ...args);
+          windowState.projectRegistry.deleteQuestion(requestID);
+          return data === undefined ? { success: true } : { success: true, data };
+        }
 
         const mappedEntry = windowState.projectRegistry.getMappedQuestionConnectionEntry(requestID);
         if (mappedEntry) {
@@ -1469,10 +1495,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           windowState.projectRegistry.deleteQuestion(requestID);
           return data === undefined ? { success: true } : { success: true, data };
         }
-        windowState.projectRegistry.deleteQuestion(requestID);
 
-        const entry = getAnyConnectionEntry(windowState);
-        if (entry && getConnectedConnections(windowState).length === 1) {
+        const connected = getConnectedConnections(windowState, workspaceId);
+        const entry = connected[0];
+        if (entry && connected.length === 1) {
           const data = await fn(entry.connection, requestID, ...args);
           windowState.projectRegistry.deleteQuestion(requestID);
           return data === undefined ? { success: true } : { success: true, data };
@@ -1892,7 +1918,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     conn.respondPermission(sessionId, permissionId, response),
   );
 
-  // --- Question response (try all connections) ---
+  // --- Question response (target/question routed) ---
 
   handleQuestionOp("opencode:question:reply", (conn, requestID, answers) =>
     conn.replyQuestion(requestID, answers),

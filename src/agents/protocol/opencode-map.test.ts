@@ -77,6 +77,29 @@ describe("mapOpenCodeEvent", () => {
     });
   });
 
+  test("maps sync question replies", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "sync",
+          syncEvent: {
+            id: "event-2",
+            type: "question.replied.0",
+            data: {
+              sessionID: "session-1",
+              requestID: "question-1",
+              answers: [["Yes"]],
+            },
+          },
+        },
+        context,
+      ),
+    ).toEqual({
+      type: "question.cleared",
+      sessionID: "opencode:session-1",
+    });
+  });
+
   test("returns null for unhandled and aborted error events", () => {
     expect(
       mapOpenCodeEvent(

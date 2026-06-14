@@ -1,6 +1,7 @@
 import type { QuestionAnswer, QuestionInfo } from "@opencode-ai/sdk/v2/client";
 import { Check, MessageCircleQuestion, X } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ export function QuestionPanel({
   onSubmit: (answers: QuestionAnswer[]) => void;
   onDismiss: () => void;
 }) {
+  const { t } = useTranslation();
   const [selections, setSelections] = useState<string[][]>(() => questions.map(() => []));
   const [customTexts, setCustomTexts] = useState<string[]>(() => questions.map(() => ""));
 
@@ -48,14 +50,16 @@ export function QuestionPanel({
     onSubmit(answers);
   }, [questions, selections, customTexts, onSubmit]);
 
-  const hasAnyAnswer =
-    selections.some((s) => s.length > 0) || customTexts.some((t) => t.trim().length > 0);
+  const hasAllAnswers = questions.every(
+    (_q, qIdx) =>
+      (selections[qIdx]?.length ?? 0) > 0 || (customTexts[qIdx] ?? "").trim().length > 0,
+  );
 
   return (
     <div className="border rounded-lg p-4 bg-primary/5 border-primary/20 space-y-4">
       <div className="flex items-start gap-2">
         <MessageCircleQuestion className="size-5 text-primary shrink-0 mt-0.5" />
-        <span className="text-sm font-medium">The assistant has a question</span>
+        <span className="text-sm font-medium">{t("questionPanel.title")}</span>
       </div>
 
       {questions.map((q, qIdx) => {
@@ -95,11 +99,11 @@ export function QuestionPanel({
             {allowCustom && (
               <input
                 type="text"
-                placeholder="Type a custom answer..."
+                placeholder={t("questionPanel.customAnswerPlaceholder")}
                 value={customTexts[qIdx] ?? ""}
                 onChange={(e) => handleCustomTextChange(qIdx, e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && hasAnyAnswer) {
+                  if (e.key === "Enter" && hasAllAnswers) {
                     e.preventDefault();
                     handleSubmit();
                   }
@@ -112,12 +116,12 @@ export function QuestionPanel({
       })}
 
       <div className="flex gap-2 pt-1">
-        <Button size="sm" variant="default" disabled={!hasAnyAnswer} onClick={handleSubmit}>
-          Submit
+        <Button size="sm" variant="default" disabled={!hasAllAnswers} onClick={handleSubmit}>
+          {t("questionPanel.submit")}
         </Button>
         <Button size="sm" variant="ghost" onClick={onDismiss}>
           <X className="size-3.5 mr-1" />
-          Dismiss
+          {t("questionPanel.dismiss")}
         </Button>
       </div>
     </div>
