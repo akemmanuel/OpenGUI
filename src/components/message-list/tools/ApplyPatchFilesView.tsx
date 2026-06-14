@@ -22,7 +22,7 @@ export function ApplyPatchFilesView({ files }: { files: ApplyPatchFileDiff[] }) 
     <div className="mt-1 ml-5 space-y-1.5">
       {files.map((file) => {
         const hasDiff = file.lines.length > 0;
-        const actionLabel = getApplyPatchActionLabel(file);
+        const actionLabel = getApplyPatchActionLabel(file, t);
         const pathLabel =
           file.type === "move" && file.previousPath && file.previousPath !== file.path
             ? `${file.previousPath} -> ${file.path}`
