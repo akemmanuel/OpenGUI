@@ -364,6 +364,11 @@
     "checkingLocalServer": "Lokaler Server wird geprüft...",
     "startingLocalServer": "Lokaler Server wird gestartet..."
   },
+  "sessionError": {
+    "title": "Agentenfehler",
+    "nextStep": "Nächster Schritt: Führe diesen Befehl im Terminal aus und versuche es erneut:",
+    "openTerminal": "Terminal öffnen"
+  },
   "emptyStates": {
     "noProjectTitle": "Kein Projekt verbunden",
     "noProjectCanStart": "Verbinde jetzt ein Projekt oder starte einen Chat.",

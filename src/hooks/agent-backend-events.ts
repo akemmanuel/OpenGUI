@@ -62,7 +62,8 @@ type BackendEventDispatch = (
         type: "SET_QUESTION";
         payload: QuestionRequest | { sessionID: string; clear: true };
       }
-    | { type: "SET_ERROR"; payload: string | null },
+    | { type: "SET_ERROR"; payload: string | null }
+    | { type: "SESSION_ERROR"; payload: { sessionID?: string; error: string } },
 ) => void;
 
 const seenDeltaEventIds = new Set<string>();
@@ -285,9 +286,10 @@ export function handleHarnessEvent({
       });
       return;
     case "session.error":
-      if (!event.sessionID) {
-        dispatch({ type: "SET_ERROR", payload: event.error });
-      }
+      dispatch({
+        type: "SESSION_ERROR",
+        payload: { sessionID: event.sessionID, error: event.error },
+      });
       return;
   }
 }

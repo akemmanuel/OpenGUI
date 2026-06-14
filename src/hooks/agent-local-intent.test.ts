@@ -20,6 +20,7 @@ function makeState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     pendingPermissions: {},
     pendingQuestions: {},
     lastError: null,
+    sessionErrors: {},
     bootState: "idle",
     bootError: null,
     bootLogs: null,

@@ -109,6 +109,23 @@ describe("normalizeTaggedBackendEvent", () => {
     });
   });
 
+  test("prefixes session error ids", () => {
+    const event = {
+      type: "pi:event",
+      payload: {
+        type: "session.error",
+        sessionID: "raw-session",
+        error: "Claude auth expired",
+      },
+    } as unknown as NativeBackendEvent;
+
+    expect(normalizeTaggedBackendEvent("pi", event, "pi:event")).toEqual({
+      type: "session.error",
+      sessionID: "pi:raw-session",
+      error: "Claude auth expired",
+    });
+  });
+
   test("ignores unrelated native event channels", () => {
     const event = {
       type: "pi:event",

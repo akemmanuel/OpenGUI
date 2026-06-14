@@ -27,6 +27,7 @@ export const initialAgentState: InternalAgentState = {
   pendingPermissions: {},
   pendingQuestions: {},
   lastError: null,
+  sessionErrors: {},
   bootState: "idle",
   bootError: null,
   bootLogs: null,

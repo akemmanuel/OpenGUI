@@ -364,6 +364,11 @@
     "checkingLocalServer": "Comprobando servidor local...",
     "startingLocalServer": "Iniciando servidor local..."
   },
+  "sessionError": {
+    "title": "Error del agente",
+    "nextStep": "Siguiente paso: ejecuta este comando en tu terminal y vuelve a intentarlo:",
+    "openTerminal": "Abrir terminal"
+  },
   "emptyStates": {
     "noProjectTitle": "No hay ningún proyecto conectado",
     "noProjectCanStart": "Conecta un proyecto ahora o inicia un chat.",
