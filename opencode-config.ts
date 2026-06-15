@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -6,7 +5,25 @@ import { dirname, join, resolve } from "node:path";
 const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json");
 const OPENCODE_CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json");
 
-async function readJsonIfExists(path) {
+type JsonObject = Record<string, unknown>;
+
+type OpenCodeProvider = {
+  id?: string;
+  source?: string;
+};
+
+type OpenCodeAuth = {
+  type?: string;
+};
+
+type OpenCodeProviderConfig = {
+  options?: {
+    apiKey?: unknown;
+  };
+  env?: unknown;
+};
+
+async function readJsonIfExists(path: string): Promise<JsonObject | null> {
   try {
     return JSON.parse(await readFile(path, "utf-8"));
   } catch {
@@ -14,8 +31,8 @@ async function readJsonIfExists(path) {
   }
 }
 
-async function getOpenCodeConfigPaths(directory) {
-  const paths = [];
+async function getOpenCodeConfigPaths(directory?: string | null) {
+  const paths: string[] = [];
   if (directory) {
     let current = resolve(directory);
     while (true) {
@@ -30,18 +47,23 @@ async function getOpenCodeConfigPaths(directory) {
   return Array.from(new Set(paths));
 }
 
-export async function getOpenCodeProviderAuthKinds(directory, providers, connected) {
-  const authKindByProvider = {};
+export async function getOpenCodeProviderAuthKinds(
+  directory: string | null | undefined,
+  providers: OpenCodeProvider[] | undefined,
+  connected: string[] | undefined,
+) {
+  const authKindByProvider: Record<string, "env" | "subscription" | "api" | "config"> = {};
   const connectedSet = new Set(Array.isArray(connected) ? connected : []);
   for (const provider of providers || []) {
-    if (provider?.source === "env") authKindByProvider[provider.id] = "env";
+    if (provider?.source === "env" && provider.id) authKindByProvider[provider.id] = "env";
   }
 
   const authData = (await readJsonIfExists(OPENCODE_AUTH_PATH)) || {};
   for (const [providerID, auth] of Object.entries(authData)) {
     if (!connectedSet.has(providerID)) continue;
-    if (auth?.type === "oauth") authKindByProvider[providerID] = "subscription";
-    else if (auth?.type === "api" || auth?.type === "wellknown") {
+    const typedAuth = auth as OpenCodeAuth;
+    if (typedAuth.type === "oauth") authKindByProvider[providerID] = "subscription";
+    else if (typedAuth.type === "api" || typedAuth.type === "wellknown") {
       authKindByProvider[providerID] = "api";
     }
   }
@@ -52,10 +74,11 @@ export async function getOpenCodeProviderAuthKinds(directory, providers, connect
     if (!providerConfig || typeof providerConfig !== "object") continue;
     for (const [providerID, entry] of Object.entries(providerConfig)) {
       if (!connectedSet.has(providerID) || authKindByProvider[providerID]) continue;
-      const options = entry?.options;
+      const typedEntry = entry as OpenCodeProviderConfig;
+      const options = typedEntry.options;
       const hasLiteralApiKey =
         typeof options?.apiKey === "string" && options.apiKey.trim().length > 0;
-      const hasConfiguredEnv = Array.isArray(entry?.env) && entry.env.length > 0;
+      const hasConfiguredEnv = Array.isArray(typedEntry.env) && typedEntry.env.length > 0;
       if (hasLiteralApiKey) authKindByProvider[providerID] = "api";
       else if (hasConfiguredEnv) authKindByProvider[providerID] = "env";
       else authKindByProvider[providerID] = "config";

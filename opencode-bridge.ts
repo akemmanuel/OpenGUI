@@ -1233,7 +1233,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     let state = windowStates.get(key);
     if (state) return state;
     state = {
-      projectRegistry: new OpencodeProjectRegistry(),
+      projectRegistry: new OpencodeProjectRegistry<OpenCodeConnection>(),
       pendingConnections: new Map(),
       serverConfig: null,
     };

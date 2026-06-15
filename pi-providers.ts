@@ -1,7 +1,7 @@
-// @ts-nocheck
 import { findEnvKeys, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
-const PROVIDER_ENVS = {
+const PROVIDER_ENVS: Record<string, string[]> = {
   anthropic: ["ANTHROPIC_API_KEY"],
   openai: ["OPENAI_API_KEY"],
   google: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
@@ -19,9 +19,43 @@ const PROVIDER_ENVS = {
   azure: ["AZURE_OPENAI_API_KEY"],
 };
 
-function normalizePiModel(model) {
+type PiModel = {
+  id: string;
+  provider: string;
+  input?: string[];
+  reasoning?: unknown;
+  api?: string;
+  baseUrl?: string;
+  name?: string;
+  cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  contextWindow?: number;
+  maxTokens?: number;
+  headers?: Record<string, string>;
+};
+
+type ProviderData = {
+  id: string;
+  name: string;
+  source: string;
+  env: string[];
+  options: Record<string, unknown>;
+  models: Record<string, ReturnType<typeof normalizePiModel>>;
+};
+
+type ModelRegistry = {
+  refresh?: () => void;
+  getAll: () => PiModel[];
+  authStorage: {
+    get?: (providerId: string) => { type?: string } | undefined;
+    hasAuth?: (providerId: string) => boolean;
+  };
+  getProviderDisplayName?: (providerId: string) => string | undefined;
+  getProviderAuthStatus?: (providerId: string) => { configured?: boolean; source?: string };
+};
+
+function normalizePiModel(model: PiModel) {
   const input = Array.isArray(model?.input) ? model.input : [];
-  const supportedVariants = model?.reasoning ? getSupportedThinkingLevels(model) : [];
+  const supportedVariants = model?.reasoning ? getSupportedThinkingLevels(model as Model<Api>) : [];
   const variants = supportedVariants.length
     ? Object.fromEntries(supportedVariants.map((variant) => [variant, { label: variant }]))
     : undefined;
@@ -58,9 +92,9 @@ function normalizePiModel(model) {
   };
 }
 
-export function buildProvidersData(models) {
-  const providers = new Map();
-  const defaults = {};
+export function buildProvidersData(models: PiModel[]) {
+  const providers = new Map<string, ProviderData>();
+  const defaults: Record<string, string> = {};
   for (const model of models) {
     const providerId = model.provider;
     const normalizedModel = normalizePiModel(model);
@@ -74,18 +108,18 @@ export function buildProvidersData(models) {
         models: {},
       });
     }
-    providers.get(providerId).models[normalizedModel.id] = normalizedModel;
+    providers.get(providerId)!.models[normalizedModel.id] = normalizedModel;
     if (!defaults[providerId]) defaults[providerId] = normalizedModel.id;
   }
   return { providers: Array.from(providers.values()), default: defaults };
 }
 
-export function buildAllProvidersData(modelRegistry) {
+export function buildAllProvidersData(modelRegistry: ModelRegistry) {
   modelRegistry.refresh?.();
   const { providers, default: defaults } = buildProvidersData(modelRegistry.getAll());
   const authStorage = modelRegistry.authStorage;
-  const connected = [];
-  const authKindByProvider = {};
+  const connected: string[] = [];
+  const authKindByProvider: Record<string, string> = {};
   for (const provider of providers) {
     provider.name =
       modelRegistry.getProviderDisplayName?.(provider.id) || provider.name || provider.id;

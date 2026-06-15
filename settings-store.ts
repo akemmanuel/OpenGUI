@@ -1,13 +1,19 @@
-// @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 
 const SETTINGS_FILE_NAME = "settings.json";
 const SETTINGS_VERSION = 1;
 
-function normalizeValues(input) {
+type SettingsValues = Record<string, string>;
+
+type SettingsPayload = {
+  version: number;
+  values: SettingsValues;
+};
+
+function normalizeValues(input: unknown): SettingsValues {
   if (!input || typeof input !== "object" || Array.isArray(input)) return {};
-  const values = {};
+  const values: SettingsValues = {};
   for (const [key, value] of Object.entries(input)) {
     if (typeof key !== "string") continue;
     if (typeof value === "string") {
@@ -17,7 +23,7 @@ function normalizeValues(input) {
   return values;
 }
 
-function readSettingsFile(filePath) {
+function readSettingsFile(filePath: string): SettingsPayload {
   try {
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
@@ -40,7 +46,7 @@ function readSettingsFile(filePath) {
   return { version: SETTINGS_VERSION, values: {} };
 }
 
-function writeSettingsFile(filePath, payload) {
+function writeSettingsFile(filePath: string, payload: SettingsPayload) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
@@ -48,7 +54,7 @@ function writeSettingsFile(filePath, payload) {
   fs.renameSync(tempPath, filePath);
 }
 
-function createSettingsStore(baseDir) {
+function createSettingsStore(baseDir: string) {
   const filePath = path.join(baseDir, SETTINGS_FILE_NAME);
   let state = readSettingsFile(filePath);
 
@@ -65,24 +71,24 @@ function createSettingsStore(baseDir) {
     getAll() {
       return { ...state.values };
     },
-    get(key) {
+    get(key: string) {
       if (typeof key !== "string") return null;
       return state.values[key] ?? null;
     },
-    set(key, value) {
+    set(key: string, value: string) {
       if (typeof key !== "string" || typeof value !== "string") return false;
       state.values[key] = value;
       flush();
       return true;
     },
-    remove(key) {
+    remove(key: string) {
       if (typeof key !== "string") return false;
       if (!(key in state.values)) return true;
       delete state.values[key];
       flush();
       return true;
     },
-    merge(entries) {
+    merge(entries: unknown) {
       if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
         return false;
       }
