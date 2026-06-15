@@ -1,5 +1,4 @@
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
-import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HARNESS_LABELS, type HarnessId } from "@/agents";
@@ -10,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { useHarness, useAvailableHarnessIds, useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
+import type { McpServerStatus } from "@/protocol/harness-resources";
 import { useOpenGuiClient } from "@/protocol/provider";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ export function McpTabContent() {
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
   const scopedDirectory = activeDirectory ?? undefined;
 
-  const [mcpStatus, setMcpStatus] = useState<{ [key: string]: McpStatus }>({});
+  const [mcpStatus, setMcpStatus] = useState<{ [key: string]: McpServerStatus }>({});
   const [mcpTypes, setMcpTypes] = useState<{
     [key: string]: "local" | "remote";
   }>({});
@@ -74,7 +74,7 @@ export function McpTabContent() {
     void refresh();
   }, [refresh]);
 
-  const handleToggle = async (name: string, currentStatus: McpStatus) => {
+  const handleToggle = async (name: string, currentStatus: McpServerStatus) => {
     if (!mcpApi) return;
     setToggling(name);
     try {

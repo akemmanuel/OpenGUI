@@ -1,10 +1,10 @@
-import type { ReasoningPart } from "@opencode-ai/sdk/v2/client";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { useSessionState } from "@/hooks/use-agent-state";
 import { cn } from "@/lib/utils";
+import type { ReasoningTranscriptPart } from "@/protocol/session-transcript";
 import { formatDuration, hideZeroDurationLabel } from "./duration";
 
 const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
@@ -15,7 +15,7 @@ export function ReasoningPartView({
   part,
   isLastReasoning,
 }: {
-  part: ReasoningPart;
+  part: ReasoningTranscriptPart;
   isLastReasoning?: boolean;
 }) {
   const isThinking = !part.time.end;

@@ -5,7 +5,6 @@
  * Clicking a provider fires onSelect; clicking "Custom" fires onCustom.
  */
 
-import type { Provider } from "@opencode-ai/sdk/v2/client";
 import { Check, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,6 +12,7 @@ import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Input } from "@/components/ui/input";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
+import type { ProviderResource } from "@/protocol/harness-resources";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -25,7 +25,7 @@ const POPULAR_IDS = new Set<string>(POPULAR_PROVIDER_IDS);
 // ---------------------------------------------------------------------------
 
 interface DialogSelectProviderProps {
-  providers: Provider[];
+  providers: ProviderResource[];
   connectedIds: Set<string>;
   onSelect: (providerID: string) => void;
   onCustom: () => void;
@@ -48,8 +48,8 @@ export function DialogSelectProvider({
   const lowerSearch = search.toLowerCase().trim();
 
   const { popular, other } = useMemo(() => {
-    const pop: Provider[] = [];
-    const oth: Provider[] = [];
+    const pop: ProviderResource[] = [];
+    const oth: ProviderResource[] = [];
     for (const p of providers) {
       // Filter by search
       if (
@@ -159,7 +159,7 @@ function ProviderRow({
   connected,
   onSelect,
 }: {
-  provider: Provider;
+  provider: ProviderResource;
   connected: boolean;
   onSelect: (id: string) => void;
 }) {

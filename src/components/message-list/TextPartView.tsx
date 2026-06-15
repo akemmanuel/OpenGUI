@@ -1,8 +1,8 @@
-import type { TextPart } from "@opencode-ai/sdk/v2/client";
 import { ImageMentionToken, type ImageMention } from "@/components/ImageMentionPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { splitImageMentions } from "@/lib/image-mentions";
+import type { TextTranscriptPart } from "@/protocol/session-transcript";
 
 export function TextPartView({
   part,
@@ -12,7 +12,7 @@ export function TextPartView({
   onImageOpen,
   imageBaseDirectory,
 }: {
-  part: TextPart;
+  part: TextTranscriptPart;
   isUser?: boolean;
   activeImagePath?: string | null;
   onImageHover?: (path: string | null) => void;

@@ -39,7 +39,13 @@ export function tagBackendSession(
   session: TaggedSession,
   target?: { directory?: string; workspaceId?: string },
 ): TaggedSession {
-  const rawId = session._rawId ?? session.id;
+  const rawId =
+    typeof session._rawId === "string"
+      ? session._rawId
+      : typeof session.id === "string"
+        ? session.id
+        : null;
+  if (!rawId) return session;
   const projectDir = session.directory ?? session._projectDir ?? target?.directory;
   return {
     ...session,

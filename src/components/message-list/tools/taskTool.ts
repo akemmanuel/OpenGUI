@@ -1,5 +1,5 @@
-import type { ToolPart } from "@opencode-ai/sdk/v2/client";
-import { isRecord } from "./toolTypes";
+import type { ToolCallState } from "@/protocol/session-transcript";
+import { isRecord } from "./toolCallUtils";
 
 export interface TaskInfo {
   description: string;
@@ -28,10 +28,9 @@ function formatDuration(ms: number): string {
   return `${hours}h ${String(remMinutes).padStart(2, "0")}m`;
 }
 
-export function getTaskDurationLabel(state: ToolPart["state"]): string | null {
+export function getTaskDurationLabel(state: ToolCallState): string | null {
   if (
     (state.status === "completed" || state.status === "error") &&
-    "time" in state &&
     state.time &&
     typeof state.time.start === "number" &&
     typeof state.time.end === "number"
@@ -43,7 +42,7 @@ export function getTaskDurationLabel(state: ToolPart["state"]): string | null {
 }
 
 /** Extract execution info from a task tool call (input for header, output/metadata for content). */
-export function extractTaskInfo(state: ToolPart["state"]): TaskInfo | null {
+export function extractTaskInfo(state: ToolCallState): TaskInfo | null {
   const input = "input" in state && isRecord(state.input) ? state.input : null;
   const description =
     input && typeof input.description === "string" ? input.description.trim() : "";
