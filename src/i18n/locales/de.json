@@ -168,6 +168,7 @@
   },
   "fileActions": {
     "openFile": "Datei öffnen",
+    "openLink": "Link öffnen",
     "mobileUnavailable": "Lokale Workspace-Dateien können auf Mobilgeräten nicht geöffnet werden. Pfad kopiert.",
     "openUnavailable": "Dateien können hier nicht geöffnet werden. Pfad kopiert.",
     "openFailedCopied": "Datei konnte nicht geöffnet werden. Pfad kopiert."

@@ -15,8 +15,10 @@ import ReactMarkdown from "react-markdown";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
 import { FilePathToken } from "@/components/FilePathToken";
+import { LinkToken } from "@/components/LinkToken";
 import { Button } from "@/components/ui/button";
 import { isFilePathLike } from "@/lib/file-paths";
+import { isWebUrl } from "@/lib/urls";
 import { cn, copyTextToClipboard, openExternalLink } from "@/lib/utils";
 
 type StarryNight = Awaited<ReturnType<typeof createStarryNight>>;
@@ -170,6 +172,9 @@ function createMarkdownComponents(baseDirectory?: string | null) {
       if (href && isFilePathLike(href)) {
         return <FilePathToken path={href} baseDirectory={baseDirectory} />;
       }
+      if (isWebUrl(href) && nodeToString(children) === href) {
+        return <LinkToken url={href} />;
+      }
 
       const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
         if (!href) return;
@@ -192,6 +197,9 @@ function createMarkdownComponents(baseDirectory?: string | null) {
     },
     code({ children, node: _node, ...props }: ComponentProps<"code"> & { node?: unknown }) {
       const value = nodeToString(children);
+      if (!props.className && isWebUrl(value)) {
+        return <LinkToken url={value} />;
+      }
       if (!props.className && isFilePathLike(value)) {
         return <FilePathToken path={value} baseDirectory={baseDirectory} />;
       }
