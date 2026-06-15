@@ -165,6 +165,13 @@
     "closeOtherProjects": "Close other projects",
     "createPullRequest": "Create PR"
   },
+  "fileActions": {
+    "openFile": "Open file",
+    "openLink": "Open link",
+    "mobileUnavailable": "Opening local workspace files is not available on mobile. Path copied.",
+    "openUnavailable": "Opening files is not available here. Path copied.",
+    "openFailedCopied": "Could not open file. Path copied."
+  },
   "prompt": {
     "inputLabel": "Message input",
     "selectOrCreateSession": "Select or create a session...",

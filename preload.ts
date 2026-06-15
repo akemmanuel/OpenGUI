@@ -113,6 +113,9 @@ const electronAPI: ElectronAPI = {
   },
 
   openExternal: invoke("shell:openExternal"),
+  fileExists: invoke("shell:fileExists"),
+  openFile: invoke("shell:openFile"),
+  showFileInFolder: invoke("shell:showFileInFolder"),
   updates: {
     getState: async () => disabledUpdateState,
     check: async () => disabledUpdateState,

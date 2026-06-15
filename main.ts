@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, dialog, ipcMain, shell, session } =
   require("electron") as typeof import("electron");
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
@@ -60,6 +61,38 @@ function spawnCustomCommand(command: unknown, options: SpawnOptions = {}) {
   child.on("error", () => {});
   child.unref();
   return true;
+}
+
+function cleanOpenPath(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/^["']|["']$/g, "");
+}
+
+function isPathInside(candidate: string, parent: string) {
+  const relative = path.relative(parent, candidate);
+  return (
+    relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+function resolveFileTarget(filePath: unknown, baseDirectory?: unknown) {
+  const target = cleanOpenPath(filePath);
+  if (!target || target.includes("\0")) return null;
+
+  const base = cleanOpenPath(baseDirectory);
+  const normalizedBase = base ? path.resolve(base) : null;
+  if (!normalizedBase) return null;
+
+  const isAbsolute = path.isAbsolute(target) || path.win32.isAbsolute(target);
+  const resolved = isAbsolute ? path.resolve(target) : path.resolve(normalizedBase, target);
+  if (normalizedBase && !isPathInside(resolved, normalizedBase)) return null;
+
+  try {
+    if (!existsSync(resolved) || !statSync(resolved).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return resolved;
 }
 
 function getDesktopTerminalCommand() {
@@ -481,6 +514,24 @@ ipcMain.handle("platform:harnessInventory", () => getHarnessInventories());
 // Open a URL in the system browser (not in Electron)
 ipcMain.handle("shell:openExternal", (_event, url) => {
   if (isWebUrl(url)) void shell.openExternal(url);
+});
+
+ipcMain.handle("shell:fileExists", (_event, filePath, baseDirectory) => {
+  return !!resolveFileTarget(filePath, baseDirectory);
+});
+
+ipcMain.handle("shell:openFile", async (_event, filePath, baseDirectory) => {
+  const target = resolveFileTarget(filePath, baseDirectory);
+  if (!target) return false;
+  const error = await shell.openPath(target);
+  return !error;
+});
+
+ipcMain.handle("shell:showFileInFolder", (_event, filePath, baseDirectory) => {
+  const target = resolveFileTarget(filePath, baseDirectory);
+  if (!target) return false;
+  shell.showItemInFolder(target);
+  return true;
 });
 
 // Open a directory in the system file browser

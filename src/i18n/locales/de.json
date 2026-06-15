@@ -168,6 +168,13 @@
     "closeOtherProjects": "Andere Projekte schließen",
     "createPullRequest": "PR erstellen"
   },
+  "fileActions": {
+    "openFile": "Datei öffnen",
+    "openLink": "Link öffnen",
+    "mobileUnavailable": "Lokale Workspace-Dateien können auf Mobilgeräten nicht geöffnet werden. Pfad kopiert.",
+    "openUnavailable": "Dateien können hier nicht geöffnet werden. Pfad kopiert.",
+    "openFailedCopied": "Datei konnte nicht geöffnet werden. Pfad kopiert."
+  },
   "prompt": {
     "inputLabel": "Nachrichteneingabe",
     "selectOrCreateSession": "Sitzung auswählen oder erstellen...",
