@@ -66,4 +66,22 @@ describe("getToolCallViewModel", () => {
     expect(vm.kind).toBe("unknown");
     expect(vm.label).toBe("Ask User");
   });
+
+  test("keeps todo raw output separate when formatted todos are available", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "todowrite",
+        state: {
+          status: "completed",
+          input: { todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+          output: '[{"content":"Buy milk","status":"pending","priority":"medium"}]',
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([
+      { type: "todos", todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+    ]);
+    expect(vm.rawOutput).toBe('[{"content":"Buy milk","status":"pending","priority":"medium"}]');
+  });
 });

@@ -44,6 +44,7 @@ export interface ToolCallViewModel {
   diffSummary: { added: number; removed: number } | null;
   durationLabel: string | null;
   output: ToolOutputBlock[];
+  rawOutput: string | null;
   expandable: boolean;
 }
 
@@ -221,23 +222,23 @@ export function getToolCallViewModel(
   const todos = kind === "todo" ? extractTodos(state) : null;
   const images = extractImageAttachments(state, serverUrl);
   const output: ToolOutputBlock[] = [];
+  const rawContent = meaningfulText(
+    kind === "bash" ? bashText : status === "error" ? (error ?? text) : text,
+  );
 
   if (editFiles.length > 0) output.push({ type: "diff", files: editFiles });
   else if (taskInfo) output.push({ type: "task", taskInfo });
-  else {
-    const content = meaningfulText(
-      kind === "bash" ? bashText : status === "error" ? (error ?? text) : text,
-    );
-    if (content)
-      output.push({
-        type: "text",
-        text: content,
-        format: kind === "bash" || looksLikeTerminalOutput(content) ? "terminal" : "plain",
-      });
-  }
-
   if (todos?.length) output.push({ type: "todos", todos });
   if (images.length) output.push({ type: "images", images });
+
+  const hasFormattedOutput = output.length > 0;
+  if (!hasFormattedOutput && rawContent) {
+    output.push({
+      type: "text",
+      text: rawContent,
+      format: kind === "bash" || looksLikeTerminalOutput(rawContent) ? "terminal" : "plain",
+    });
+  }
 
   const grepText = meaningfulText(text);
   const match = kind === "grep" ? grepText?.match(/^Found (\d+) match/) : null;
@@ -253,6 +254,7 @@ export function getToolCallViewModel(
     diffSummary: summarizeApplyPatchFiles(editFiles),
     durationLabel: kind === "task" ? getTaskDurationLabel(state) : null,
     output,
+    rawOutput: hasFormattedOutput ? rawContent : null,
     expandable: status !== "error" && output.length > 0,
   };
 }

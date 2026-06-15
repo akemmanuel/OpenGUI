@@ -1,8 +1,19 @@
 import { CheckCircle2, Circle, Wrench, XCircle } from "lucide-react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { todoStatusConfig } from "@/lib/todos";
-import { cn, looksLikeTerminalOutput } from "@/lib/utils";
+import { cn, copyTextToClipboard, looksLikeTerminalOutput } from "@/lib/utils";
 import { ApplyPatchFilesView } from "./ApplyPatchFilesView";
 import type { ToolOutputBlock } from "./toolCallModel";
 
@@ -26,7 +37,16 @@ function ToolImages({ block }: { block: Extract<ToolOutputBlock, { type: "images
   );
 }
 
-export function ToolCallOutputView({ blocks }: { blocks: ToolOutputBlock[] }) {
+export function ToolCallOutputView({
+  blocks,
+  rawOutput,
+}: {
+  blocks: ToolOutputBlock[];
+  rawOutput?: string | null;
+}) {
+  const { t } = useTranslation();
+  const [rawOpen, setRawOpen] = useState(false);
+
   return (
     <div className="pl-5 pt-1 space-y-1">
       {blocks.map((block, index) => {
@@ -109,6 +129,35 @@ export function ToolCallOutputView({ blocks }: { blocks: ToolOutputBlock[] }) {
             );
         }
       })}
+      {rawOutput && (
+        <div className="pt-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="h-5 px-1.5 text-[11px] text-muted-foreground"
+            onClick={() => setRawOpen(true)}
+          >
+            {t("toolOutput.showRaw")}
+          </Button>
+          <Dialog open={rawOpen} onOpenChange={setRawOpen}>
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>{t("toolOutput.rawTitle")}</DialogTitle>
+                <DialogDescription>{t("toolOutput.rawDescription")}</DialogDescription>
+              </DialogHeader>
+              <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                {rawOutput}
+              </pre>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => void copyTextToClipboard(rawOutput)}>
+                  {t("toolOutput.copyRaw")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
     </div>
   );
 }
