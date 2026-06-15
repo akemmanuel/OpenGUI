@@ -211,20 +211,23 @@ export function getToolCallViewModel(
   const kind = normalizeKind(part.tool);
   const text = rawOutput(state);
   const error = errorOutput(state);
+  const metadataText = metadataOutput(state);
   const bashDisplayText =
     kind === "bash"
       ? status === "error"
         ? (error ?? text)
-        : (text ?? metadataOutput(state))
+        : running
+          ? (metadataText ?? text)
+          : (text ?? metadataText)
       : null;
+  const rawCandidate =
+    kind === "bash" ? bashDisplayText : status === "error" ? (error ?? text) : text;
   const editFiles = kind === "edit" ? extractEditFiles(state) : [];
   const taskInfo = kind === "task" ? extractTaskInfo(state) : null;
   const todos = kind === "todo" ? extractTodos(state) : null;
   const images = extractImageAttachments(state, serverUrl);
   const output: ToolOutputBlock[] = [];
-  const rawContent = meaningfulText(
-    kind === "bash" ? bashDisplayText : status === "error" ? (error ?? text) : text,
-  );
+  const rawContent = meaningfulText(rawCandidate);
 
   if (editFiles.length > 0) output.push({ type: "diff", files: editFiles });
   else if (taskInfo) output.push({ type: "task", taskInfo });
@@ -232,7 +235,7 @@ export function getToolCallViewModel(
   if (images.length) output.push({ type: "images", images });
 
   const hasFormattedOutput = output.length > 0;
-  if (!hasFormattedOutput && rawContent) {
+  if (rawContent) {
     output.push({
       type: "text",
       text: rawContent,
@@ -254,7 +257,7 @@ export function getToolCallViewModel(
     diffSummary: summarizeApplyPatchFiles(editFiles),
     durationLabel: kind === "task" ? getTaskDurationLabel(state) : null,
     output,
-    rawOutput: hasFormattedOutput ? rawContent : null,
+    rawOutput: hasFormattedOutput && rawContent ? rawCandidate : null,
     expandable: status !== "error" && output.length > 0,
   };
 }

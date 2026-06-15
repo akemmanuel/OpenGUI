@@ -150,7 +150,11 @@ export function ToolCallOutputView({
                 {rawOutput}
               </pre>
               <DialogFooter>
-                <Button variant="outline" onClick={() => void copyTextToClipboard(rawOutput)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void copyTextToClipboard(rawOutput)}
+                >
                   {t("toolOutput.copyRaw")}
                 </Button>
               </DialogFooter>

@@ -81,6 +81,11 @@ describe("getToolCallViewModel", () => {
 
     expect(vm.output).toEqual([
       { type: "todos", todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+      {
+        type: "text",
+        text: '[{"content":"Buy milk","status":"pending","priority":"medium"}]',
+        format: "plain",
+      },
     ]);
     expect(vm.rawOutput).toBe('[{"content":"Buy milk","status":"pending","priority":"medium"}]');
   });
@@ -110,6 +115,22 @@ describe("getToolCallViewModel", () => {
     );
 
     expect(vm.output).toEqual([{ type: "text", text: "streaming output", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("prefers latest bash metadata over stale output while running", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: {
+          status: "running",
+          output: "stale output",
+          metadata: { output: "latest output" },
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "latest output", format: "terminal" }]);
     expect(vm.rawOutput).toBe(null);
   });
 
