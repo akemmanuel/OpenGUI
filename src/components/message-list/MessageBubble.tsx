@@ -19,7 +19,6 @@ import type { TurnFooter } from "./types";
 export const MessageBubble = memo(function MessageBubble({
   entry,
   turnFooter,
-  lastReasoningPartId,
   onFork,
   onRevert,
   expandedUserMessages,
@@ -29,7 +28,6 @@ export const MessageBubble = memo(function MessageBubble({
 }: {
   entry: TranscriptMessageEntry;
   turnFooter?: TurnFooter;
-  lastReasoningPartId?: string;
   onFork?: () => void;
   onRevert?: () => void;
   expandedUserMessages?: ReadonlySet<string>;
@@ -140,7 +138,6 @@ export const MessageBubble = memo(function MessageBubble({
                   key={part.id}
                   part={part}
                   isUser={isUser}
-                  lastReasoningPartId={lastReasoningPartId}
                   expandedToolCalls={expandedToolCalls}
                   onToggleToolCall={onToggleToolCall}
                   activeImagePath={activeImagePath}

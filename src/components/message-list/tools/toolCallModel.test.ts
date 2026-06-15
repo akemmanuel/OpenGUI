@@ -66,4 +66,110 @@ describe("getToolCallViewModel", () => {
     expect(vm.kind).toBe("unknown");
     expect(vm.label).toBe("Ask User");
   });
+
+  test("keeps todo raw output separate when formatted todos are available", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "todowrite",
+        state: {
+          status: "completed",
+          input: { todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+          output: '[{"content":"Buy milk","status":"pending","priority":"medium"}]',
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([
+      { type: "todos", todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+      {
+        type: "text",
+        text: '[{"content":"Buy milk","status":"pending","priority":"medium"}]',
+        format: "plain",
+      },
+    ]);
+    expect(vm.rawOutput).toBe('[{"content":"Buy milk","status":"pending","priority":"medium"}]');
+  });
+
+  test("prefers completed bash output over streaming metadata for raw output", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: {
+          status: "completed",
+          output: "final output",
+          metadata: { output: "partial output" },
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "final output", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("uses bash metadata while output is still streaming", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: { status: "running", metadata: { output: "streaming output" } },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "streaming output", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("prefers latest bash metadata over stale output while running", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: {
+          status: "running",
+          output: "stale output",
+          metadata: { output: "latest output" },
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "latest output", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("uses error text for failed tools", () => {
+    const vm = getToolCallViewModel(
+      toolPart({ tool: "bash", state: { status: "error", error: "command failed" } }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "command failed", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("prefers bash error text over partial output when both are present", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: { status: "error", output: "partial stdout", error: "command failed" },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "command failed", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("keeps raw output null for formatted output with meaningless text", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "todowrite",
+        state: {
+          status: "completed",
+          input: { todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+          output: "\n>\n>\n",
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([
+      { type: "todos", todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+    ]);
+    expect(vm.rawOutput).toBe(null);
+  });
 });

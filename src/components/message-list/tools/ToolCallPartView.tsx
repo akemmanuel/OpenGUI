@@ -45,17 +45,6 @@ export function ToolCallPartView({
   const expanded = expandedToolCalls?.has(part.id) ?? false;
   const setExpanded = (nextExpanded: boolean) => onToggleToolCall?.(part.id, nextExpanded);
   const outputRef = useRef<HTMLDivElement | null>(null);
-  const shouldAutoExpand =
-    tool.status === "running" &&
-    tool.expandable &&
-    (tool.kind === "bash" ||
-      (tool.kind === "task" &&
-        tool.output.some((block) => block.type === "task" && block.taskInfo.childSessionId)));
-
-  useEffect(() => {
-    if (shouldAutoExpand && !expanded) setExpanded(true);
-  }, [expanded, shouldAutoExpand]);
-
   useEffect(() => {
     if (!expanded || tool.status !== "running" || (tool.kind !== "bash" && tool.kind !== "task")) {
       return;
@@ -120,7 +109,7 @@ export function ToolCallPartView({
       )}
       {tool.expandable && expanded && (
         <div ref={outputRef} className="max-h-96 overflow-auto">
-          <ToolCallOutputView blocks={tool.output} />
+          <ToolCallOutputView blocks={tool.output} rawOutput={tool.rawOutput} />
         </div>
       )}
     </div>

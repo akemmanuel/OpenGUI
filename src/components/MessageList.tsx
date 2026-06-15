@@ -294,19 +294,6 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     return footerByMessageId;
   }, [visibleMessages, turnRuns]);
 
-  // Find the last reasoning part across all assistant messages so we can
-  // auto-collapse earlier reasoning blocks when a new one starts.
-  const lastReasoningPartId = useMemo(() => {
-    for (let i = visibleMessages.length - 1; i >= 0; i--) {
-      const entry = visibleMessages[i];
-      if (!entry || entry.info.role !== "assistant") continue;
-      for (let j = entry.parts.length - 1; j >= 0; j--) {
-        const part = entry.parts[j];
-        if (part?.type === "reasoning") return part.id;
-      }
-    }
-    return undefined;
-  }, [visibleMessages]);
   const firstUserMessageIndex = useMemo(
     () => visibleMessages.findIndex((message) => message.info.role === "user"),
     [visibleMessages],
@@ -342,7 +329,6 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
           <MessageBubble
             entry={entry}
             turnFooter={turnFooterByMessageId.get(entry.info.id)}
-            lastReasoningPartId={lastReasoningPartId}
             onFork={
               capabilities?.fork && entry.info.role === "user" && !isFirstUserMsg
                 ? () => forkFromMessage(entry.info.id)
@@ -365,7 +351,6 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
       firstUserMessageIndex,
       visibleMessages,
       turnFooterByMessageId,
-      lastReasoningPartId,
       forkFromMessage,
       revertToMessage,
       expandedUserMessages,

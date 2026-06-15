@@ -211,6 +211,12 @@
     "showMore": "Show more",
     "showLess": "Show less"
   },
+  "toolOutput": {
+    "showRaw": "Show raw",
+    "rawTitle": "Raw tool output",
+    "rawDescription": "Original textual output returned by the tool.",
+    "copyRaw": "Copy raw"
+  },
   "workspace": {
     "addTitle": "Add workspace",
     "editTitle": "Edit workspace",

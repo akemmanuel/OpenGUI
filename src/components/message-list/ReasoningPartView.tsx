@@ -2,7 +2,6 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { useSessionState } from "@/hooks/use-agent-state";
 import { cn } from "@/lib/utils";
 import type { ReasoningTranscriptPart } from "@/protocol/session-transcript";
 import { formatDuration, hideZeroDurationLabel } from "./duration";
@@ -11,33 +10,12 @@ const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
 const TIMELINE_BUTTON_RESET =
   "m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
 
-export function ReasoningPartView({
-  part,
-  isLastReasoning,
-}: {
-  part: ReasoningTranscriptPart;
-  isLastReasoning?: boolean;
-}) {
+export function ReasoningPartView({ part }: { part: ReasoningTranscriptPart }) {
   const isThinking = !part.time.end;
   const { t } = useTranslation();
-  const { isBusy } = useSessionState();
-  const [expanded, setExpanded] = useState(isThinking);
+  const [expanded, setExpanded] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const hasText = !!part.text?.trim();
-  // Start false so first visible render counts as "became visible".
-  // Needed when backend batches snapshots and component first mounts only
-  // after reasoning text already exists.
-  const prevHasTextRef = useRef(false);
-
-  useEffect(() => {
-    const becameVisible = hasText && !prevHasTextRef.current;
-    if (isThinking || (becameVisible && isLastReasoning && isBusy)) {
-      setExpanded(true);
-    } else if (!isLastReasoning || !isBusy) {
-      setExpanded(false);
-    }
-    prevHasTextRef.current = hasText;
-  }, [hasText, isThinking, isLastReasoning, isBusy]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: part.text triggers scroll on new streamed content
   useEffect(() => {
