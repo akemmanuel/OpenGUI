@@ -136,6 +136,8 @@
     "projects": "Projekte",
     "searchPlaceholder": "Projekte und Sitzungen durchsuchen...",
     "showLess": "Weniger anzeigen",
+    "title": "Sidebar",
+    "mobileDescription": "Zeigt die mobile Sidebar an.",
     "untitled": "Ohne Titel"
   },
   "sessionMenu": {
@@ -191,6 +193,9 @@
   "variantSelector": {
     "off": "aus",
     "thinkingEffort": "Denkaufwand: {{level}} (Klick oder Strg+T zum Wechseln, Strg+Umschalt+T rückwärts)"
+  },
+  "agentSelector": {
+    "placeholder": "Agent"
   },
   "modelSelector": {
     "selectModel": "Modell auswählen",
@@ -268,6 +273,16 @@
     "run": "Ausführen",
     "detectedCommand": "Erkannter Befehl",
     "setupFinished": "Einrichtung abgeschlossen - Worktree ist bereit."
+  },
+  "worktreeCleanup": {
+    "title": "Keine Sitzungen übrig",
+    "descriptionPrefix": "Der Worktree",
+    "branch": "Branch",
+    "descriptionSuffix": "hat keine aktiven Sitzungen. Möchtest du ihn entfernen?",
+    "keep": "Behalten",
+    "remove": "Entfernen",
+    "removing": "Entferne...",
+    "deleteFromDisk": "Worktree-Dateien auch von der Festplatte löschen"
   },
   "providers": {
     "searchPlaceholder": "Anbieter suchen...",
@@ -364,6 +379,13 @@
     "checkingLocalServer": "Lokaler Server wird geprüft...",
     "startingLocalServer": "Lokaler Server wird gestartet..."
   },
+  "updateDialog": {
+    "title": "Update verfügbar",
+    "description": "Eine neue Version von OpenGUI ({{latestVersion}}) ist verfügbar. Aktuell läuft v{{currentVersion}}.",
+    "currentVersion": "Aktuelle Version: v{{currentVersion}}.",
+    "dismiss": "Ausblenden",
+    "open": "Öffnen"
+  },
   "emptyStates": {
     "noProjectTitle": "Kein Projekt verbunden",
     "noProjectCanStart": "Verbinde jetzt ein Projekt oder starte einen Chat.",
@@ -397,6 +419,65 @@
   "diff": {
     "noLineDiffAvailable": "Kein Zeilendiff verfügbar."
   },
+  "reasoning": {
+    "thinking": "Denkt",
+    "thinkingRunning": "Denkt..."
+  },
+  "toolLabels": {
+    "bash": {
+      "running": "Führt aus",
+      "done": "Ausgeführt"
+    },
+    "read": {
+      "running": "Liest",
+      "done": "Gelesen"
+    },
+    "edit": {
+      "running": "Bearbeitet",
+      "done": "Bearbeitet"
+    },
+    "write": {
+      "running": "Schreibt",
+      "done": "Geschrieben"
+    },
+    "grep": {
+      "running": "Sucht",
+      "done": "Gesucht"
+    },
+    "glob": {
+      "running": "Sucht Dateien",
+      "done": "Dateien gesucht"
+    },
+    "task": {
+      "running": "Läuft",
+      "done": "Ausgeführt"
+    },
+    "todo": {
+      "running": "Schreibt Todos",
+      "doneOne": "{{count}} Todo geschrieben",
+      "doneOther": "{{count}} Todos geschrieben"
+    },
+    "question": {
+      "running": "Fragt",
+      "doneOne": "{{count}} Frage gestellt",
+      "doneOther": "{{count}} Fragen gestellt"
+    },
+    "patch": {
+      "created": "Erstellt",
+      "deleted": "Gelöscht",
+      "moved": "Verschoben",
+      "patched": "Gepatcht"
+    },
+    "fileCountOther": "{{count}} Dateien",
+    "matchCountOne": "{{count}} Treffer",
+    "matchCountOther": "{{count}} Treffer"
+  },
+  "attachments": {
+    "image": "Bild",
+    "fileAttachment": "Dateianhang",
+    "imageAttachment": "Bildanhang {{count}}",
+    "closeImagePreview": "Bildvorschau schließen"
+  },
   "projectPath": {
     "up": "Nach oben",
     "noFolders": "Keine Ordner",
@@ -412,7 +493,19 @@
     "loadingServerFolders": "Serverordner werden geladen..."
   },
   "fileMention": {
-    "searching": "Suche..."
+    "searching": "Suche...",
+    "typeToSearch": "Tippe, um Dateien zu suchen",
+    "noMatchingFiles": "Keine passenden Dateien",
+    "searchFailed": "Dateisuche fehlgeschlagen"
+  },
+  "queueList": {
+    "reorderQueuedPrompt": "Nachricht in Warteschlange neu anordnen",
+    "sendNow": "Jetzt senden",
+    "interrupt": "unterbrechen",
+    "steer": "steuern",
+    "edit": "Bearbeiten",
+    "moveToTop": "Nach ganz oben",
+    "moveToBottom": "Nach ganz unten"
   },
   "permissionPanel": {
     "title": "Berechtigung: {{permission}}",

@@ -133,6 +133,8 @@
     "projects": "Projects",
     "searchPlaceholder": "Search projects and sessions...",
     "showLess": "Show less",
+    "title": "Sidebar",
+    "mobileDescription": "Displays the mobile sidebar.",
     "untitled": "Untitled"
   },
   "sessionMenu": {
@@ -188,6 +190,9 @@
   "variantSelector": {
     "off": "off",
     "thinkingEffort": "Thinking effort: {{level}} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)"
+  },
+  "agentSelector": {
+    "placeholder": "Agent"
   },
   "modelSelector": {
     "selectModel": "Select model",
@@ -265,6 +270,16 @@
     "run": "Run",
     "detectedCommand": "Detected command",
     "setupFinished": "Setup finished - worktree is ready."
+  },
+  "worktreeCleanup": {
+    "title": "No sessions remaining",
+    "descriptionPrefix": "The worktree",
+    "branch": "branch",
+    "descriptionSuffix": "has no active sessions. Would you like to remove it?",
+    "keep": "Keep",
+    "remove": "Remove",
+    "removing": "Removing...",
+    "deleteFromDisk": "Also delete worktree files from disk"
   },
   "providers": {
     "searchPlaceholder": "Search providers...",
@@ -361,6 +376,13 @@
     "checkingLocalServer": "Checking local server...",
     "startingLocalServer": "Starting local server..."
   },
+  "updateDialog": {
+    "title": "Update Available",
+    "description": "A new version of OpenGUI ({{latestVersion}}) is available. You are currently running v{{currentVersion}}.",
+    "currentVersion": "Current version: v{{currentVersion}}.",
+    "dismiss": "Dismiss",
+    "open": "Open"
+  },
   "emptyStates": {
     "noProjectTitle": "No project connected",
     "noProjectCanStart": "Connect a project now or start a chat.",
@@ -394,6 +416,65 @@
   "diff": {
     "noLineDiffAvailable": "No line diff available."
   },
+  "reasoning": {
+    "thinking": "Thinking",
+    "thinkingRunning": "Thinking..."
+  },
+  "toolLabels": {
+    "bash": {
+      "running": "Running",
+      "done": "Ran"
+    },
+    "read": {
+      "running": "Reading",
+      "done": "Read"
+    },
+    "edit": {
+      "running": "Editing",
+      "done": "Edited"
+    },
+    "write": {
+      "running": "Writing",
+      "done": "Wrote"
+    },
+    "grep": {
+      "running": "Searching",
+      "done": "Searched"
+    },
+    "glob": {
+      "running": "Globbing",
+      "done": "Globbed"
+    },
+    "task": {
+      "running": "Running",
+      "done": "Ran"
+    },
+    "todo": {
+      "running": "Writing todos",
+      "doneOne": "Wrote {{count}} todo",
+      "doneOther": "Wrote {{count}} todos"
+    },
+    "question": {
+      "running": "Asking",
+      "doneOne": "Asked {{count}} question",
+      "doneOther": "Asked {{count}} questions"
+    },
+    "patch": {
+      "created": "Created",
+      "deleted": "Deleted",
+      "moved": "Moved",
+      "patched": "Patched"
+    },
+    "fileCountOther": "{{count}} files",
+    "matchCountOne": "{{count}} match",
+    "matchCountOther": "{{count}} matches"
+  },
+  "attachments": {
+    "image": "Image",
+    "fileAttachment": "File attachment",
+    "imageAttachment": "Image attachment {{count}}",
+    "closeImagePreview": "Close image preview"
+  },
   "projectPath": {
     "up": "Up",
     "noFolders": "No folders",
@@ -409,7 +490,19 @@
     "loadingServerFolders": "Loading server folders..."
   },
   "fileMention": {
-    "searching": "Searching..."
+    "searching": "Searching...",
+    "typeToSearch": "Type to search files",
+    "noMatchingFiles": "No matching files",
+    "searchFailed": "File search failed"
+  },
+  "queueList": {
+    "reorderQueuedPrompt": "Reorder queued prompt",
+    "sendNow": "Send now",
+    "interrupt": "interrupt",
+    "steer": "steer",
+    "edit": "Edit",
+    "moveToTop": "Move to top",
+    "moveToBottom": "Move to bottom"
   },
   "permissionPanel": {
     "title": "Permission: {{permission}}",

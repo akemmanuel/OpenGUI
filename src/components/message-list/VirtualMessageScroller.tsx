@@ -1,6 +1,8 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type KeyboardEvent,
   type MutableRefObject,
+  type PointerEvent,
   type ReactNode,
   type WheelEvent,
   useCallback,
@@ -17,6 +19,8 @@ const OVERSCAN_IDLE = 10;
 const OVERSCAN_BUSY = 14;
 const LOAD_OLDER_THRESHOLD_INDEX = 4;
 const RESTORE_RETRY_FRAMES = 3;
+const USER_SCROLL_INTENT_WINDOW_MS = 750;
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
 
 export type ScrollSnapshot = {
   anchorKey: string | null;
@@ -77,6 +81,17 @@ export function shouldLoadOlderMessages({
   );
 }
 
+export function getScrollSnapshotFlags(
+  element: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
+  wasPinnedToBottom: boolean,
+) {
+  const pinnedToBottom = wasPinnedToBottom || isNearBottom(element);
+  return {
+    atTop: !pinnedToBottom && isAtTop(element),
+    pinnedToBottom,
+  };
+}
+
 export function VirtualMessageScroller({
   scrollKey,
   scrollSnapshotsRef,
@@ -106,6 +121,7 @@ export function VirtualMessageScroller({
   const programmaticScrollRef = useRef(false);
   const pinnedToBottomRef = useRef(true);
   const restoredScrollKeyRef = useRef<string | null>(null);
+  const userScrollIntentUntilRef = useRef(0);
   const snapshotFrameRef = useRef<number | null>(null);
 
   const keys = useMemo(() => messages.map((message) => message.info.id), [messages]);
@@ -133,8 +149,7 @@ export function VirtualMessageScroller({
       const scrollEl = scrollRef.current;
       if (!scrollEl) return;
       const first = virtualizer.getVirtualItems()[0];
-      const atTop = isAtTop(scrollEl);
-      const pinnedToBottom = isNearBottom(scrollEl);
+      const { atTop, pinnedToBottom } = getScrollSnapshotFlags(scrollEl, pinnedToBottomRef.current);
       pinnedToBottomRef.current = pinnedToBottom;
       scrollSnapshotsRef.current.set(sessionId, {
         anchorKey: first ? String(first.key) : null,
@@ -181,6 +196,9 @@ export function VirtualMessageScroller({
   }, []);
 
   const maybeLoadOlder = useCallback(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl || pinnedToBottomRef.current || !isAtTop(scrollEl)) return;
+
     const firstIndex = virtualizer.getVirtualItems()[0]?.index;
     if (
       !shouldLoadOlderMessages({
@@ -255,14 +273,14 @@ export function VirtualMessageScroller({
       const scrollEl = scrollRef.current;
       if (!scrollEl) return false;
 
-      if (snapshot.atTop) {
-        virtualizer.scrollToIndex(0, { align: "start" });
-        setProgrammaticScrollTop(0);
+      if (snapshot.pinnedToBottom) {
+        scrollToLatest();
         return true;
       }
 
-      if (snapshot.pinnedToBottom) {
-        scrollToLatest();
+      if (snapshot.atTop) {
+        virtualizer.scrollToIndex(0, { align: "start" });
+        setProgrammaticScrollTop(0);
         return true;
       }
 
@@ -304,21 +322,49 @@ export function VirtualMessageScroller({
     pinnedToBottomRef.current = false;
   }, []);
 
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentUntilRef.current = Date.now() + USER_SCROLL_INTENT_WINDOW_MS;
+  }, []);
+
+  const hasRecentUserScrollIntent = useCallback(
+    () => Date.now() <= userScrollIntentUntilRef.current,
+    [],
+  );
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el || programmaticScrollRef.current) return;
-    pinnedToBottomRef.current = isNearBottom(el);
+    if (isNearBottom(el)) pinnedToBottomRef.current = true;
+    else if (hasRecentUserScrollIntent()) pinnedToBottomRef.current = false;
     scheduleScrollSnapshot();
     requestAnimationFrame(maybeLoadOlder);
-  }, [maybeLoadOlder, scheduleScrollSnapshot]);
+  }, [hasRecentUserScrollIntent, maybeLoadOlder, scheduleScrollSnapshot]);
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
-      if (event.deltaY >= 0) return;
-      detachFromBottom(true);
+      markUserScrollIntent();
+      if (event.deltaY < 0) detachFromBottom(true);
       requestAnimationFrame(maybeLoadOlder);
     },
-    [detachFromBottom, maybeLoadOlder],
+    [detachFromBottom, markUserScrollIntent, maybeLoadOlder],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const el = event.currentTarget;
+      const scrollbarWidth = el.offsetWidth - el.clientWidth;
+      if (scrollbarWidth <= 0) return;
+      const rect = el.getBoundingClientRect();
+      if (event.clientX >= rect.right - scrollbarWidth - 2) markUserScrollIntent();
+    },
+    [markUserScrollIntent],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (SCROLL_KEYS.has(event.key)) markUserScrollIntent();
+    },
+    [markUserScrollIntent],
   );
 
   useLayoutEffect(() => {
@@ -353,7 +399,7 @@ export function VirtualMessageScroller({
     restoredScrollKeyRef.current = scrollKey;
   }, [keys, messages.length, restoreScrollSnapshot, scrollKey, scrollSnapshotsRef, scrollToLatest]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const lastKey = keys.at(-1) ?? null;
     const previousLastKey = lastMessageKeyRef.current;
     lastMessageKeyRef.current = lastKey;
@@ -368,6 +414,13 @@ export function VirtualMessageScroller({
 
   const virtualItems = virtualizer.getVirtualItems();
   const firstVirtualIndex = virtualItems[0]?.index;
+  const totalSize = virtualizer.getTotalSize();
+
+  useLayoutEffect(() => {
+    if (!scrollKey || restoredScrollKeyRef.current !== scrollKey) return;
+    if (!pinnedToBottomRef.current) return;
+    scrollToLatest();
+  }, [scrollKey, scrollToLatest, totalSize]);
 
   useEffect(() => {
     maybeLoadOlder();
@@ -378,7 +431,11 @@ export function VirtualMessageScroller({
       ref={scrollRef}
       onScroll={handleScroll}
       onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+      onKeyDown={handleKeyDown}
+      onTouchStart={markUserScrollIntent}
       onTouchMove={() => {
+        markUserScrollIntent();
         detachFromBottom(true);
         requestAnimationFrame(maybeLoadOlder);
       }}

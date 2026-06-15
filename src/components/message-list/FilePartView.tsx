@@ -1,8 +1,10 @@
+import { useTranslation } from "react-i18next";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import type { FileTranscriptPart } from "@/protocol/session-transcript";
 
 export function FilePartView({ part }: { part: FileTranscriptPart }) {
+  const { t } = useTranslation();
   const { workspaceServerUrl } = useConnectionState();
   const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
   const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
@@ -12,7 +14,7 @@ export function FilePartView({ part }: { part: FileTranscriptPart }) {
       <div>
         <img
           src={src}
-          alt={part.filename ?? "Image"}
+          alt={part.filename ?? t("attachments.image")}
           className="max-h-64 max-w-full rounded-lg object-contain"
         />
         {part.filename && (
@@ -23,6 +25,8 @@ export function FilePartView({ part }: { part: FileTranscriptPart }) {
   }
 
   return (
-    <div className="text-sm text-muted-foreground italic">{part.filename ?? "File attachment"}</div>
+    <div className="text-sm text-muted-foreground italic">
+      {part.filename ?? t("attachments.fileAttachment")}
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { parseUnifiedDiff, type DiffLine, type DiffResult } from "@/lib/diff";
 import type { ToolCallState } from "@/protocol/session-transcript";
 import { getToolInput, isRecord, stringField, toFiniteNumber } from "./toolCallUtils";
@@ -91,14 +92,17 @@ export function extractEditFiles(state: ToolCallState): ApplyPatchFileDiff[] {
   ];
 }
 
-export function getApplyPatchActionLabel(file: ApplyPatchFileDiff): string {
-  if (file.type === "add") return "Created";
-  if (file.type === "delete") return "Deleted";
-  if (file.type === "move") return "Moved";
-  return "Patched";
+export function getApplyPatchActionLabel(file: ApplyPatchFileDiff, t: TFunction): string {
+  if (file.type === "add") return t("toolLabels.patch.created");
+  if (file.type === "delete") return t("toolLabels.patch.deleted");
+  if (file.type === "move") return t("toolLabels.patch.moved");
+  return t("toolLabels.patch.patched");
 }
 
-export function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string | null {
+export function getApplyPatchContextLabel(
+  files: ApplyPatchFileDiff[],
+  t?: TFunction,
+): string | null {
   if (files.length === 0) return null;
   if (files.length === 1) {
     const file = files[0];
@@ -107,7 +111,7 @@ export function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string |
       ? `${file.previousPath} -> ${file.path}`
       : file.path;
   }
-  return `${files.length} files`;
+  return t ? t("toolLabels.fileCountOther", { count: files.length }) : `${files.length} files`;
 }
 
 export function summarizeApplyPatchFiles(files: ApplyPatchFileDiff[]) {

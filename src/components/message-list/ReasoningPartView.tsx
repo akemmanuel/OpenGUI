@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { useSessionState } from "@/hooks/use-agent-state";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ export function ReasoningPartView({
   isLastReasoning?: boolean;
 }) {
   const isThinking = !part.time.end;
+  const { t } = useTranslation();
   const { isBusy } = useSessionState();
   const [expanded, setExpanded] = useState(isThinking);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -65,7 +67,9 @@ export function ReasoningPartView({
               className={cn("size-3 transition-transform duration-150", expanded && "rotate-90")}
             />
           </span>
-          <span className="font-medium">{isThinking ? "Thinking..." : "Thinking"}</span>
+          <span className="font-medium">
+            {isThinking ? t("reasoning.thinkingRunning") : t("reasoning.thinking")}
+          </span>
           {durationLabel && <span className="opacity-60">{durationLabel}</span>}
         </summary>
       </details>

@@ -894,20 +894,7 @@ function InternalAgentProvider({
         });
       }),
     );
-
-    const defaultChatDirectory = stateRef.current.defaultChatDirectory;
-    if (defaultChatDirectory && !detachedProject) {
-      await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
-    }
-  }, [addProject, detachedProject, discoveryBackendIds, ensureDirectoryConnection, openGuiClient]);
-
-  const ensureDefaultChatConnection = useCallback(async () => {
-    const defaultChatDirectory = stateRef.current.defaultChatDirectory;
-    if (!defaultChatDirectory || detachedProject) return;
-    await ensureDirectoryConnection(defaultChatDirectory, {
-      transient: true,
-    });
-  }, [detachedProject, ensureDirectoryConnection]);
+  }, [addProject, discoveryBackendIds, openGuiClient]);
 
   const removeProject = useCallback(
     async (directory: string) => {
@@ -1167,17 +1154,6 @@ function InternalAgentProvider({
     updateProjectHydration,
     workspaceStateReady,
     shellWorkspacePolicy.localWorkspaceMode,
-  ]);
-
-  useEffect(() => {
-    if (allBackends.length === 0 || detachedProject) return;
-    if (!state.defaultChatDirectory) return;
-    void ensureDefaultChatConnection();
-  }, [
-    allBackends.length,
-    detachedProject,
-    ensureDefaultChatConnection,
-    state.defaultChatDirectory,
   ]);
 
   useEffect(() => {
@@ -2151,9 +2127,11 @@ function InternalAgentProvider({
   const startNewChat = useCallback(async () => {
     const defaultChatDirectory = normalizeProjectPath(stateRef.current.defaultChatDirectory ?? "");
     if (!defaultChatDirectory) return;
+    // Opening a blank chat should not touch the filesystem. The project connection is
+    // created lazily when the user sends a prompt or explicitly connects a project,
+    // which avoids unnecessary macOS Documents/Desktop permission prompts.
     setActiveTarget(defaultChatDirectory, preferredBackendId);
-    await ensureDirectoryConnection(defaultChatDirectory, { transient: true });
-  }, [ensureDirectoryConnection, preferredBackendId, setActiveTarget]);
+  }, [preferredBackendId, setActiveTarget]);
 
   const setActiveTargetDirectory = useCallback(
     (directory: string) => {
