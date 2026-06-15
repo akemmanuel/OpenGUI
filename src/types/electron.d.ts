@@ -422,6 +422,15 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<void>;
   updates: UpdatesBridge;
 
+  /** Check whether a file exists. Relative paths are resolved against baseDirectory. */
+  fileExists?: (filePath: string, baseDirectory?: string) => Promise<boolean>;
+
+  /** Open a file with the system default application. Relative paths are resolved against baseDirectory. */
+  openFile?: (filePath: string, baseDirectory?: string) => Promise<boolean>;
+
+  /** Reveal a file in the system file browser. Relative paths are resolved against baseDirectory. */
+  showFileInFolder?: (filePath: string, baseDirectory?: string) => Promise<boolean>;
+
   /** Open a directory in the system file browser (Finder / Explorer / Nautilus). */
   openInFileBrowser: (dirPath: string, command?: string) => Promise<void>;
 

@@ -166,6 +166,12 @@
     "closeOtherProjects": "Andere Projekte schließen",
     "createPullRequest": "PR erstellen"
   },
+  "fileActions": {
+    "openFile": "Datei öffnen",
+    "mobileUnavailable": "Lokale Workspace-Dateien können auf Mobilgeräten nicht geöffnet werden. Pfad kopiert.",
+    "openUnavailable": "Dateien können hier nicht geöffnet werden. Pfad kopiert.",
+    "openFailedCopied": "Datei konnte nicht geöffnet werden. Pfad kopiert."
+  },
   "prompt": {
     "inputLabel": "Nachrichteneingabe",
     "selectOrCreateSession": "Sitzung auswählen oder erstellen...",
@@ -363,6 +369,11 @@
   "startup": {
     "checkingLocalServer": "Lokaler Server wird geprüft...",
     "startingLocalServer": "Lokaler Server wird gestartet..."
+  },
+  "sessionError": {
+    "title": "Agentenfehler",
+    "nextStep": "Nächster Schritt: Führe diesen Befehl im Terminal aus und versuche es erneut:",
+    "openTerminal": "Terminal öffnen"
   },
   "emptyStates": {
     "noProjectTitle": "Kein Projekt verbunden",

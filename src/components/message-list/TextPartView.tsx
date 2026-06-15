@@ -48,7 +48,7 @@ export function TextPartView({
 
   return (
     <div>
-      <MarkdownRenderer content={part.text} />
+      <MarkdownRenderer content={part.text} baseDirectory={imageBaseDirectory} />
     </div>
   );
 }

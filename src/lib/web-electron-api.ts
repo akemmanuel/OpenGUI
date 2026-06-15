@@ -159,6 +159,12 @@ export function installWebElectronAPI() {
     getDetachedProjects: () => invoke("window:getDetachedProjects"),
     onDetachedProjectsChange: () => () => {},
     openExternal: (url: string) => invoke("shell:openExternal", url),
+    fileExists: (filePath: string, baseDirectory?: string) =>
+      invoke("shell:fileExists", filePath, baseDirectory),
+    openFile: (filePath: string, baseDirectory?: string) =>
+      invoke("shell:openFile", filePath, baseDirectory),
+    showFileInFolder: (filePath: string, baseDirectory?: string) =>
+      invoke("shell:showFileInFolder", filePath, baseDirectory),
     updates: {
       getState: async () => ({ status: "idle" }),
       check: async () => undefined,

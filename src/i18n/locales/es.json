@@ -166,6 +166,12 @@
     "closeOtherProjects": "Cerrar otros proyectos",
     "createPullRequest": "Crear PR"
   },
+  "fileActions": {
+    "openFile": "Abrir archivo",
+    "mobileUnavailable": "Abrir archivos locales del workspace no está disponible en móvil. Ruta copiada.",
+    "openUnavailable": "Abrir archivos no está disponible aquí. Ruta copiada.",
+    "openFailedCopied": "No se pudo abrir el archivo. Ruta copiada."
+  },
   "prompt": {
     "inputLabel": "Entrada de mensaje",
     "selectOrCreateSession": "Selecciona o crea una sesión...",
@@ -363,6 +369,11 @@
   "startup": {
     "checkingLocalServer": "Comprobando servidor local...",
     "startingLocalServer": "Iniciando servidor local..."
+  },
+  "sessionError": {
+    "title": "Error del agente",
+    "nextStep": "Siguiente paso: ejecuta este comando en tu terminal y vuelve a intentarlo:",
+    "openTerminal": "Abrir terminal"
   },
   "emptyStates": {
     "noProjectTitle": "No hay ningún proyecto conectado",

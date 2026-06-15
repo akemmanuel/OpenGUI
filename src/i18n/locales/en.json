@@ -163,6 +163,12 @@
     "closeOtherProjects": "Close other projects",
     "createPullRequest": "Create PR"
   },
+  "fileActions": {
+    "openFile": "Open file",
+    "mobileUnavailable": "Opening local workspace files is not available on mobile. Path copied.",
+    "openUnavailable": "Opening files is not available here. Path copied.",
+    "openFailedCopied": "Could not open file. Path copied."
+  },
   "prompt": {
     "inputLabel": "Message input",
     "selectOrCreateSession": "Select or create a session...",
@@ -360,6 +366,11 @@
   "startup": {
     "checkingLocalServer": "Checking local server...",
     "startingLocalServer": "Starting local server..."
+  },
+  "sessionError": {
+    "title": "Agent error",
+    "nextStep": "Next step: run this command in your terminal, then retry:",
+    "openTerminal": "Open terminal"
   },
   "emptyStates": {
     "noProjectTitle": "No project connected",
