@@ -28,7 +28,7 @@ export type ToolCallKind =
   | "unknown";
 
 export type ToolOutputBlock =
-  | { type: "text"; text: string; format: "plain" | "terminal" | "markdown" }
+  | { type: "text"; text: string; format: "plain" | "terminal" }
   | { type: "images"; images: ImageAttachmentInfo[] }
   | { type: "diff"; files: ApplyPatchFileDiff[] }
   | { type: "task"; taskInfo: TaskInfo }
@@ -154,7 +154,7 @@ function labelFor(
         : (t?.(running ? "toolLabels.write.running" : "toolLabels.write.done") ??
             (running ? "Writing" : "Wrote"));
     case "edit": {
-      const target = getApplyPatchContextLabel(editFiles) ?? path;
+      const target = getApplyPatchContextLabel(editFiles, t) ?? path;
       const verb = running
         ? (t?.("toolLabels.edit.running") ?? "Editing")
         : part.tool.toLowerCase() === "apply_patch"
@@ -253,6 +253,6 @@ export function getToolCallViewModel(
     diffSummary: summarizeApplyPatchFiles(editFiles),
     durationLabel: kind === "task" ? getTaskDurationLabel(state) : null,
     output,
-    expandable: output.length > 0,
+    expandable: status !== "error" && output.length > 0,
   };
 }

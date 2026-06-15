@@ -2,7 +2,7 @@ import { CheckCircle2, Circle, Wrench, XCircle } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
 import { todoStatusConfig } from "@/lib/todos";
-import { cn } from "@/lib/utils";
+import { cn, looksLikeTerminalOutput } from "@/lib/utils";
 import { ApplyPatchFilesView } from "./ApplyPatchFilesView";
 import type { ToolOutputBlock } from "./toolCallModel";
 
@@ -34,10 +34,6 @@ export function ToolCallOutputView({ blocks }: { blocks: ToolOutputBlock[] }) {
           case "text":
             return block.format === "terminal" ? (
               <TerminalOutput key={index} content={block.text} className="max-h-64" />
-            ) : block.format === "markdown" ? (
-              <div key={index} className="text-xs">
-                <MarkdownRenderer content={block.text} />
-              </div>
             ) : (
               <pre
                 key={index}
@@ -101,11 +97,14 @@ export function ToolCallOutputView({ blocks }: { blocks: ToolOutputBlock[] }) {
                     ))}
                   </div>
                 )}
-                {block.taskInfo.output && (
-                  <div className="text-xs">
-                    <MarkdownRenderer content={block.taskInfo.output} />
-                  </div>
-                )}
+                {block.taskInfo.output &&
+                  (looksLikeTerminalOutput(block.taskInfo.output) ? (
+                    <TerminalOutput content={block.taskInfo.output} className="max-h-64" />
+                  ) : (
+                    <div className="text-xs">
+                      <MarkdownRenderer content={block.taskInfo.output} />
+                    </div>
+                  ))}
               </div>
             );
         }
