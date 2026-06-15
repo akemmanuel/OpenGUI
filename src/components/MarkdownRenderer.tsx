@@ -14,7 +14,11 @@ import {
 import ReactMarkdown from "react-markdown";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
+import { FilePathToken } from "@/components/FilePathToken";
+import { LinkToken } from "@/components/LinkToken";
 import { Button } from "@/components/ui/button";
+import { isFilePathLike } from "@/lib/file-paths";
+import { isWebUrl } from "@/lib/urls";
 import { cn, copyTextToClipboard, openExternalLink } from "@/lib/utils";
 
 type StarryNight = Awaited<ReturnType<typeof createStarryNight>>;
@@ -141,62 +145,89 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
   );
 }
 
-const markdownComponents = {
-  table({ children, node: _node, ...props }: ComponentProps<"table"> & { node?: unknown }) {
-    return (
-      <div className="markdown-table-scroll">
-        <table {...props}>{children}</table>
-      </div>
-    );
-  },
-  pre({ children }: ComponentProps<"pre">) {
-    // react-markdown applies component mappings before passing children to `pre`,
-    // so the child type is our mapped `code` function, not the literal "code" tag.
-    // Treat any single React element child with code-like props as a fenced block.
-    if (isValidElement<ComponentProps<"code">>(children)) {
+function createMarkdownComponents(baseDirectory?: string | null) {
+  return {
+    table({ children, node: _node, ...props }: ComponentProps<"table"> & { node?: unknown }) {
       return (
-        <StarryCodeBlock className={children.props.className}>
-          {children.props.children}
-        </StarryCodeBlock>
+        <div className="markdown-table-scroll">
+          <table {...props}>{children}</table>
+        </div>
       );
-    }
+    },
+    pre({ children }: ComponentProps<"pre">) {
+      // react-markdown applies component mappings before passing children to `pre`,
+      // so the child type is our mapped `code` function, not the literal "code" tag.
+      // Treat any single React element child with code-like props as a fenced block.
+      if (isValidElement<ComponentProps<"code">>(children)) {
+        return (
+          <StarryCodeBlock className={children.props.className}>
+            {children.props.children}
+          </StarryCodeBlock>
+        );
+      }
 
-    return <pre>{children}</pre>;
-  },
-  a({ children, href, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
-    const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-      if (!href) return;
-      event.preventDefault();
-      openExternalLink(href);
-    };
+      return <pre>{children}</pre>;
+    },
+    a({ children, href, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
+      if (href && isFilePathLike(href)) {
+        return <FilePathToken path={href} baseDirectory={baseDirectory} />;
+      }
+      if (isWebUrl(href) && nodeToString(children) === href) {
+        return <LinkToken url={href} />;
+      }
 
-    return (
-      <a
-        {...props}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-primary hover:underline"
-        onClick={handleClick}
-      >
-        {children}
-      </a>
-    );
-  },
-  code({ children, node: _node, ...props }: ComponentProps<"code"> & { node?: unknown }) {
-    return (
-      <code
-        {...props}
-        className="rounded bg-muted px-[0.3rem] py-[0.1rem] font-mono text-[0.85em] font-medium"
-      >
-        {children}
-      </code>
-    );
-  },
-};
+      const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+        if (!href) return;
+        event.preventDefault();
+        openExternalLink(href);
+      };
 
-export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
+      return (
+        <a
+          {...props}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+          onClick={handleClick}
+        >
+          {children}
+        </a>
+      );
+    },
+    code({ children, node: _node, ...props }: ComponentProps<"code"> & { node?: unknown }) {
+      const value = nodeToString(children);
+      if (!props.className && isWebUrl(value)) {
+        return <LinkToken url={value} />;
+      }
+      if (!props.className && isFilePathLike(value)) {
+        return <FilePathToken path={value} baseDirectory={baseDirectory} />;
+      }
+
+      return (
+        <code
+          {...props}
+          className="rounded bg-muted px-[0.3rem] py-[0.1rem] font-mono text-[0.85em] font-medium"
+        >
+          {children}
+        </code>
+      );
+    },
+  };
+}
+
+export const MarkdownRenderer = memo(function MarkdownRenderer({
+  content,
+  baseDirectory,
+}: {
+  content: string;
+  baseDirectory?: string | null;
+}) {
   const remarkPlugins = useMemo(() => [remarkGfm], []);
+  const markdownComponents = useMemo(
+    () => createMarkdownComponents(baseDirectory),
+    [baseDirectory],
+  );
 
   return (
     <div className="markdown-renderer text-sm leading-relaxed select-text">

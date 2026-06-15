@@ -166,6 +166,13 @@
     "closeOtherProjects": "Cerrar otros proyectos",
     "createPullRequest": "Crear PR"
   },
+  "fileActions": {
+    "openFile": "Abrir archivo",
+    "openLink": "Abrir enlace",
+    "mobileUnavailable": "Abrir archivos locales del workspace no está disponible en móvil. Ruta copiada.",
+    "openUnavailable": "Abrir archivos no está disponible aquí. Ruta copiada.",
+    "openFailedCopied": "No se pudo abrir el archivo. Ruta copiada."
+  },
   "prompt": {
     "inputLabel": "Entrada de mensaje",
     "selectOrCreateSession": "Selecciona o crea una sesión...",
