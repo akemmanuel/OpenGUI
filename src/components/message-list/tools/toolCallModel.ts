@@ -1,4 +1,5 @@
 import type { TodoItem } from "@/lib/todos";
+import type { TFunction } from "i18next";
 import { extractTodos } from "@/lib/todos";
 import { looksLikeTerminalOutput } from "@/lib/utils";
 import type { ToolCallState, ToolCallTranscriptPart } from "@/protocol/session-transcript";
@@ -69,6 +70,7 @@ const KNOWN_TOOLS: Record<string, ToolCallKind> = {
   rg: "grep",
   ripgrep: "grep",
   glob: "glob",
+  mcp_glob: "glob",
   find: "glob",
   list: "glob",
   ls: "glob",
@@ -130,6 +132,7 @@ function labelFor(
   input: Record<string, unknown> | null,
   editFiles: ApplyPatchFileDiff[],
   taskInfo: TaskInfo | null,
+  t?: TFunction,
 ): string {
   const path = stringField(input, "filePath") ?? stringField(input, "path");
   const command = stringField(input, "command");
@@ -137,55 +140,68 @@ function labelFor(
   switch (kind) {
     case "bash":
       return command
-        ? `${running ? "Running" : "Ran"} ${command}`
-        : running
-          ? "Running command"
-          : "Ran command";
+        ? `${t?.(running ? "toolLabels.bash.running" : "toolLabels.bash.done") ?? (running ? "Running" : "Ran")} ${command}`
+        : (t?.(running ? "toolLabels.bash.running" : "toolLabels.bash.done") ??
+            (running ? "Running" : "Ran"));
     case "read":
-      return path ? `${running ? "Reading" : "Read"} ${path}` : running ? "Reading" : "Read";
+      return path
+        ? `${t?.(running ? "toolLabels.read.running" : "toolLabels.read.done") ?? (running ? "Reading" : "Read")} ${path}`
+        : (t?.(running ? "toolLabels.read.running" : "toolLabels.read.done") ??
+            (running ? "Reading" : "Read"));
     case "write":
-      return path ? `${running ? "Writing" : "Wrote"} ${path}` : running ? "Writing" : "Wrote";
+      return path
+        ? `${t?.(running ? "toolLabels.write.running" : "toolLabels.write.done") ?? (running ? "Writing" : "Wrote")} ${path}`
+        : (t?.(running ? "toolLabels.write.running" : "toolLabels.write.done") ??
+            (running ? "Writing" : "Wrote"));
     case "edit": {
       const target = getApplyPatchContextLabel(editFiles) ?? path;
       const verb = running
-        ? "Editing"
+        ? (t?.("toolLabels.edit.running") ?? "Editing")
         : part.tool.toLowerCase() === "apply_patch"
-          ? "Patched"
-          : "Edited";
+          ? (t?.("toolLabels.patch.patched") ?? "Patched")
+          : (t?.("toolLabels.edit.done") ?? "Edited");
       return target ? `${verb} ${target}` : verb;
     }
     case "grep":
       return pattern
-        ? `${running ? "Searching" : "Searched"} ${pattern}`
-        : running
-          ? "Searching"
-          : "Searched";
+        ? `${t?.(running ? "toolLabels.grep.running" : "toolLabels.grep.done") ?? (running ? "Searching" : "Searched")} ${pattern}`
+        : (t?.(running ? "toolLabels.grep.running" : "toolLabels.grep.done") ??
+            (running ? "Searching" : "Searched"));
     case "glob":
       return pattern
-        ? `${running ? "Globbing" : "Globbed"} ${pattern}`
-        : running
-          ? "Globbing"
-          : "Globbed";
+        ? `${t?.(running ? "toolLabels.glob.running" : "toolLabels.glob.done") ?? (running ? "Globbing" : "Globbed")} ${pattern}`
+        : (t?.(running ? "toolLabels.glob.running" : "toolLabels.glob.done") ??
+            (running ? "Globbing" : "Globbed"));
     case "todo": {
       const count = Array.isArray(input?.todos) ? input.todos.length : 0;
-      return running ? "Writing todos" : `Wrote ${count} todos`;
+      return running
+        ? (t?.("toolLabels.todo.running") ?? "Writing todos")
+        : (t?.(count === 1 ? "toolLabels.todo.doneOne" : "toolLabels.todo.doneOther", { count }) ??
+            `Wrote ${count} todos`);
     }
     case "task": {
       const subagent = stringField(input, "subagent_type") ?? stringField(input, "subagentType");
       return subagent
         ? prettifyToolName(subagent)
-        : taskInfo?.description || (running ? "Running task" : "Ran task");
+        : taskInfo?.description ||
+            (t?.(running ? "toolLabels.task.running" : "toolLabels.task.done") ??
+              (running ? "Running" : "Ran"));
     }
     case "browser":
     case "fetch":
     case "unknown":
       return prettifyToolName(part.tool);
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
   }
 }
 
 export function getToolCallViewModel(
   part: ToolCallTranscriptPart,
   serverUrl?: string | null,
+  t?: TFunction,
 ): ToolCallViewModel {
   const state = part.state;
   const status = normalizeStatus(state.status);
@@ -224,21 +240,19 @@ export function getToolCallViewModel(
   if (images.length) output.push({ type: "images", images });
 
   const grepText = meaningfulText(text);
-  const matchCount =
-    kind === "grep" && grepText
-      ? Number.parseInt(grepText.match(/^Found (\d+) match/)?.[1] ?? "", 10)
-      : Number.NaN;
+  const match = kind === "grep" ? grepText?.match(/^Found (\d+) match/) : null;
+  const matchCount = match ? Number.parseInt(match[1] ?? "", 10) : null;
 
   return {
     id: part.id,
     rawName: part.tool,
     kind,
     status,
-    label: labelFor(kind, part, running, input, editFiles, taskInfo),
+    label: labelFor(kind, part, running, input, editFiles, taskInfo, t),
     matchCount: Number.isFinite(matchCount) ? matchCount : null,
     diffSummary: summarizeApplyPatchFiles(editFiles),
     durationLabel: kind === "task" ? getTaskDurationLabel(state) : null,
     output,
-    expandable: status === "success" && output.length > 0,
+    expandable: output.length > 0,
   };
 }

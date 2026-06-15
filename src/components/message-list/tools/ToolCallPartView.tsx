@@ -1,4 +1,6 @@
 import { Check, ChevronRight, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Spinner } from "@/components/ui/spinner";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { cn } from "@/lib/utils";
@@ -38,9 +40,29 @@ export function ToolCallPartView({
   onToggleToolCall?: (partId: string, expanded: boolean) => void;
 }) {
   const { workspaceServerUrl } = useConnectionState();
-  const tool = getToolCallViewModel(part, workspaceServerUrl);
+  const { t } = useTranslation();
+  const tool = getToolCallViewModel(part, workspaceServerUrl, t);
   const expanded = expandedToolCalls?.has(part.id) ?? false;
   const setExpanded = (nextExpanded: boolean) => onToggleToolCall?.(part.id, nextExpanded);
+  const outputRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoExpand =
+    tool.status === "running" &&
+    tool.expandable &&
+    (tool.kind === "bash" ||
+      (tool.kind === "task" &&
+        tool.output.some((block) => block.type === "task" && block.taskInfo.childSessionId)));
+
+  useEffect(() => {
+    if (shouldAutoExpand && !expanded) setExpanded(true);
+  }, [expanded, shouldAutoExpand]);
+
+  useEffect(() => {
+    if (!expanded || tool.status !== "running" || (tool.kind !== "bash" && tool.kind !== "task")) {
+      return;
+    }
+    const el = outputRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [expanded, tool.status, tool.kind, tool.output]);
 
   const rowContent = (
     <>
@@ -96,7 +118,11 @@ export function ToolCallPartView({
       ) : (
         <div className={cn(ROW, "cursor-default")}>{rowContent}</div>
       )}
-      {tool.expandable && expanded && <ToolCallOutputView blocks={tool.output} />}
+      {tool.expandable && expanded && (
+        <div ref={outputRef} className="max-h-96 overflow-auto">
+          <ToolCallOutputView blocks={tool.output} />
+        </div>
+      )}
     </div>
   );
 }

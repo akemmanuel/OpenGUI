@@ -28,7 +28,7 @@ function ToolImages({ block }: { block: Extract<ToolOutputBlock, { type: "images
 
 export function ToolCallOutputView({ blocks }: { blocks: ToolOutputBlock[] }) {
   return (
-    <div className="pl-5 pt-1 space-y-1 max-h-96 overflow-auto">
+    <div className="pl-5 pt-1 space-y-1">
       {blocks.map((block, index) => {
         switch (block.type) {
           case "text":
