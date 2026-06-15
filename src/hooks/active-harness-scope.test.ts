@@ -14,27 +14,27 @@ function session(overrides: Partial<Session>): Session {
   } as Session;
 }
 
-function backend(id: string): HarnessDescriptor {
+function harness(id: string): HarnessDescriptor {
   return {
     id,
     label: id,
     capabilities: {},
     runtime: { id } as never,
-    workspace: { kind: "remote" } as never,
+    connection: { kind: "remote" } as never,
   } as unknown as HarnessDescriptor;
 }
 
-function client(fallbackBackend: HarnessDescriptor): OpenGuiClient {
+function client(fallbackHarness: HarnessDescriptor): OpenGuiClient {
   return {
     harnesses: {
-      get: () => fallbackBackend,
+      get: () => fallbackHarness,
     },
   } as never;
 }
 
 describe("resolveActiveHarnessScope", () => {
   test("locks scope to the active Session Harness and directory", () => {
-    const codex = backend("codex");
+    const codex = harness("codex");
     const scope = resolveActiveHarnessScope({
       activeSession: session({ _harnessId: "codex", _projectDir: "/session-repo" }),
       activeTargetDirectory: "/target-repo",
@@ -42,19 +42,19 @@ describe("resolveActiveHarnessScope", () => {
       workspaceDirectory: "/workspace-repo",
       preferredBackendId: "opencode",
       backendsById: { codex },
-      openGuiClient: client(backend("fallback")),
+      openGuiClient: client(harness("fallback")),
     });
 
     expect(scope.harnessId).toBe("codex");
     expect(scope.directory).toBe("/session-repo");
-    expect(scope.backend).toBe(codex);
+    expect(scope.harness).toBe(codex);
     expect(scope.runtime).toBe(codex.runtime);
-    expect(scope.workspaceProfile).toBe(codex.workspace);
+    expect(scope.connectionProfile).toBe(codex.connection);
     expect(scope.route).toEqual({ harnessId: "codex", reason: "session", locked: true });
   });
 
   test("uses active target before preferred when no Session is active", () => {
-    const pi = backend("pi");
+    const pi = harness("pi");
     const scope = resolveActiveHarnessScope({
       activeSession: null,
       activeTargetDirectory: "/target-repo",
@@ -62,17 +62,17 @@ describe("resolveActiveHarnessScope", () => {
       workspaceDirectory: "/workspace-repo",
       preferredBackendId: "opencode",
       backendsById: { pi },
-      openGuiClient: client(backend("fallback")),
+      openGuiClient: client(harness("fallback")),
     });
 
     expect(scope.harnessId).toBe("pi");
     expect(scope.directory).toBe("/target-repo");
-    expect(scope.backend).toBe(pi);
+    expect(scope.harness).toBe(pi);
     expect(scope.route).toEqual({ harnessId: "pi", reason: "active-target", locked: false });
   });
 
   test("falls back to preferred Harness and workspace directory", () => {
-    const fallback = backend("opencode");
+    const fallback = harness("opencode");
     const scope = resolveActiveHarnessScope({
       activeSession: null,
       activeTargetDirectory: null,
@@ -85,7 +85,7 @@ describe("resolveActiveHarnessScope", () => {
 
     expect(scope.harnessId).toBe("opencode");
     expect(scope.directory).toBe("/workspace-repo");
-    expect(scope.backend).toBe(fallback);
+    expect(scope.harness).toBe(fallback);
     expect(scope.route).toEqual({ harnessId: "opencode", reason: "preferred", locked: false });
   });
 });

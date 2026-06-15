@@ -60,7 +60,7 @@ export function SettingsProviders() {
   const lowerSearch = search.toLowerCase().trim();
   const isSearching = lowerSearch.length > 0;
 
-  // Filter backends that support provider management
+  // Filter Harnesses that support provider management
   const openGuiClient = useOpenGuiClient();
   const providerBackendIds = useMemo(
     () =>

@@ -7,17 +7,11 @@ import type {
   PermissionRequest,
   QuestionRequest,
   Session,
-  Config as OpenCodeConfig,
+  Config as HarnessConfig,
 } from "@opencode-ai/sdk/v2/client";
 import type {
   AllProvidersData,
   ConnectionStatus,
-  InstalledPluginInfo,
-  PluginCatalogAuditResponse,
-  PluginCatalogCuratedResponse,
-  PluginCatalogDetailResponse,
-  PluginCatalogListResponse,
-  PluginCatalogSearchResponse,
   ProviderAuth,
   ProviderAuthMethod,
   ProviderOAuthAuthorization,
@@ -45,12 +39,11 @@ export interface HarnessCapabilities {
   questions: boolean;
   providerAuth: boolean;
   mcp: boolean;
-  skills: boolean;
   config: boolean;
   localServer: boolean;
 }
 
-interface HarnessWorkspaceProfile {
+interface HarnessConnectionProfile {
   kind: "remote-server" | "local-cli";
   fields: {
     serverUrl: boolean;
@@ -60,7 +53,7 @@ interface HarnessWorkspaceProfile {
   };
 }
 
-interface AgentSessionStatus {
+interface HarnessSessionStatus {
   type: string;
 }
 
@@ -116,7 +109,7 @@ export type HarnessEvent =
       partID: string;
     }
   | { type: "message.removed"; sessionID: string; messageID: string }
-  | { type: "session.status"; sessionID: string; status: AgentSessionStatus }
+  | { type: "session.status"; sessionID: string; status: HarnessSessionStatus }
   | { type: "permission.requested"; request: PermissionRequest }
   | { type: "permission.cleared"; sessionID: string }
   | { type: "question.requested"; request: QuestionRequest }
@@ -192,54 +185,16 @@ interface HarnessPlatform {
     connect(target: HarnessTarget, name: string): Promise<void>;
     disconnect(target: HarnessTarget, name: string): Promise<void>;
   };
-  skills?: {
-    list(target?: HarnessTarget): Promise<InstalledPluginInfo[]>;
-
-    marketplace: {
-      list(
-        view?: string,
-        page?: number,
-        perPage?: number,
-        apiKey?: string,
-      ): Promise<PluginCatalogListResponse>;
-      search(query: string, limit?: number, apiKey?: string): Promise<PluginCatalogSearchResponse>;
-      detail(source: string, slug: string, apiKey?: string): Promise<PluginCatalogDetailResponse>;
-      audit(source: string, slug: string, apiKey?: string): Promise<PluginCatalogAuditResponse>;
-      curated(apiKey?: string): Promise<PluginCatalogCuratedResponse>;
-    };
-
-    install(
-      source: string,
-      directory?: string,
-      globalScope?: boolean,
-    ): Promise<{ exitCode?: number }>;
-
-    remove(
-      skillName: string,
-      directory?: string,
-      globalScope?: boolean,
-    ): Promise<{ exitCode?: number }>;
-
-    update(
-      skillName?: string,
-      directory?: string,
-      globalScope?: boolean,
-    ): Promise<{ exitCode?: number }>;
-
-    listInstalled(directory?: string): Promise<InstalledPluginInfo[]>;
-
-    checkCli(): Promise<{ available: boolean; command: string | null }>;
-  };
   config?: {
-    get(target?: HarnessTarget): Promise<OpenCodeConfig>;
-    update(target: HarnessTarget, config: Partial<OpenCodeConfig>): Promise<OpenCodeConfig>;
+    get(target?: HarnessTarget): Promise<HarnessConfig>;
+    update(target: HarnessTarget, config: Partial<HarnessConfig>): Promise<HarnessConfig>;
   };
 }
 
 export interface HarnessDescriptor {
   id: string;
   label: string;
-  workspace: HarnessWorkspaceProfile;
+  connection: HarnessConnectionProfile;
   capabilities: HarnessCapabilities;
   runtime: HarnessRuntime;
   platform?: HarnessPlatform;

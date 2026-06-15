@@ -1,12 +1,9 @@
 import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
-import { normalizeClaudeCodeEvent } from "../src/agents/claude-code.ts";
-import { normalizeCodexEvent } from "../src/agents/codex.ts";
-import { normalizeOpenCodeEvent } from "../src/agents/opencode.ts";
-import { normalizePiEvent } from "../src/agents/pi.ts";
+import { HARNESS_BACKEND_META } from "../src/agents/cli-harness-factory.ts";
+import { setupOpenCodeBridge } from "../opencode-bridge.ts";
 import { setupClaudeCodeBridge } from "../claude-code-bridge.ts";
 import { setupCodexBridge } from "../codex-bridge.ts";
-import { setupOpenCodeBridge } from "../opencode-bridge.ts";
 import { setupPiBridge } from "../pi-bridge.ts";
 
 interface IpcSender {
@@ -44,14 +41,12 @@ export interface HarnessControl {
 }
 
 const BRIDGE_EVENT_NORMALIZERS: Record<ManagedHarnessId, (event: unknown) => HarnessEvent | null> =
-  {
-    opencode: (event) =>
-      normalizeOpenCodeEvent(event as Parameters<typeof normalizeOpenCodeEvent>[0]),
-    "claude-code": (event) =>
-      normalizeClaudeCodeEvent(event as Parameters<typeof normalizeClaudeCodeEvent>[0]),
-    pi: (event) => normalizePiEvent(event as Parameters<typeof normalizePiEvent>[0]),
-    codex: (event) => normalizeCodexEvent(event as Parameters<typeof normalizeCodexEvent>[0]),
-  };
+  Object.fromEntries(
+    MANAGED_HARNESS_IDS.map((harnessId) => [
+      harnessId,
+      HARNESS_BACKEND_META[harnessId].normalizeEvent,
+    ]),
+  ) as Record<ManagedHarnessId, (event: unknown) => HarnessEvent | null>;
 
 export function isManagedHarnessId(value: unknown): value is ManagedHarnessId {
   return typeof value === "string" && MANAGED_HARNESS_IDS.includes(value as ManagedHarnessId);

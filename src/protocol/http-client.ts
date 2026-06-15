@@ -1,18 +1,7 @@
 import type { HarnessId } from "@/agents";
 import { HARNESS_IDS, HARNESS_LABELS, getHarnessIdFromSessionId } from "@/agents";
 import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/backend";
-import {
-  CLAUDE_CODE_CAPABILITIES,
-  CLAUDE_CODE_WORKSPACE,
-  normalizeClaudeCodeEvent,
-} from "@/agents/claude-code";
-import { CODEX_CAPABILITIES, CODEX_WORKSPACE, normalizeCodexEvent } from "@/agents/codex";
-import {
-  normalizeOpenCodeEvent,
-  OPENCODE_CAPABILITIES,
-  OPENCODE_WORKSPACE,
-} from "@/agents/opencode";
-import { normalizePiEvent, PI_CAPABILITIES, PI_WORKSPACE } from "@/agents/pi";
+import { HARNESS_BACKEND_META } from "@/agents/cli-harness-factory";
 import type {
   HarnessResourceBundle,
   CreateProjectInput,
@@ -27,12 +16,7 @@ import type {
   UpdateProjectInput,
 } from "@/protocol/client";
 import { composeFrontendSessionId } from "@/lib/session-identity";
-import {
-  createOpenCodePlatform,
-  createPiPlatform,
-  targetArgs,
-  unwrapIpcResult,
-} from "@/protocol/http-platform";
+import { createHarnessPlatform, targetArgs, unwrapIpcResult } from "@/protocol/http-platform";
 import type {
   GitMergeResult,
   GitWorktree,
@@ -107,36 +91,15 @@ async function httpRpc<T>(
   return body.value as T;
 }
 
-const WEB_BACKEND_META = {
-  opencode: {
-    capabilities: OPENCODE_CAPABILITIES,
-    workspace: OPENCODE_WORKSPACE,
-    normalizeEvent: normalizeOpenCodeEvent,
-  },
-  "claude-code": {
-    capabilities: CLAUDE_CODE_CAPABILITIES,
-    workspace: CLAUDE_CODE_WORKSPACE,
-    normalizeEvent: normalizeClaudeCodeEvent,
-  },
-  pi: { capabilities: PI_CAPABILITIES, workspace: PI_WORKSPACE, normalizeEvent: normalizePiEvent },
-  codex: {
-    capabilities: CODEX_CAPABILITIES,
-    workspace: CODEX_WORKSPACE,
-    normalizeEvent: normalizeCodexEvent,
-  },
-} satisfies Record<
-  HarnessId,
-  Pick<HarnessDescriptor, "capabilities" | "workspace"> & {
-    normalizeEvent: (event: never) => HarnessEvent | null;
-  }
->;
-
 function createWebBackendDescriptor(
   harnessId: HarnessId,
   rpcCall: <T>(channel: string, args?: unknown[]) => Promise<T>,
   runtimeOverrides: Partial<HarnessDescriptor["runtime"]> = {},
 ): HarnessDescriptor {
-  const meta = WEB_BACKEND_META[harnessId];
+  if (!(harnessId in HARNESS_BACKEND_META)) {
+    throw new Error(`Harness is not available: ${harnessId}`);
+  }
+  const meta = HARNESS_BACKEND_META[harnessId as keyof typeof HARNESS_BACKEND_META];
   const backendCall = async <T>(suffix: string, args: unknown[] = []) =>
     unwrapIpcResult(
       await rpcCall<IPCResult<T>>(`${harnessId}:${suffix}`, args),
@@ -169,18 +132,13 @@ function createWebBackendDescriptor(
   };
   const op = <T>(suffix: string, args: unknown[] = []) =>
     rpcCall<T>(`${harnessId}:${suffix}`, args);
-  const platform =
-    harnessId === "opencode"
-      ? createOpenCodePlatform(op)
-      : harnessId === "pi"
-        ? createPiPlatform(op)
-        : undefined;
+  const platform = createHarnessPlatform(meta.capabilities, op);
 
   return {
     id: harnessId,
     label: HARNESS_LABELS[harnessId],
     capabilities: meta.capabilities,
-    workspace: meta.workspace,
+    connection: meta.connection,
     runtime,
     platform,
     normalizeEvent: meta.normalizeEvent as (event: unknown) => HarnessEvent | null,
@@ -652,7 +610,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     const allowed = new Set(resolvedHarnessIds);
     return webBackends.filter((backend) => allowed.has(backend.id as HarnessId));
   };
-  const get = (harnessId: HarnessId = "opencode") =>
+  const get = (harnessId: HarnessId = "claude-code") =>
     list().find((backend) => backend.id === harnessId);
 
   return {
@@ -802,7 +760,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             "agent-backends:restart",
             [],
           ),
-          "Failed to restart agent backends",
+          "Failed to restart Harnesses",
         ),
       loadResources: async ({ harnessId, target }) => {
         const args = targetArgs(target);

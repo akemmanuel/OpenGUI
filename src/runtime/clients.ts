@@ -140,7 +140,7 @@ export function initializeRuntimeClients(): RuntimeClients {
   };
 
   const getElectronHarnessIds = (): HarnessId[] | undefined => {
-    return getSelectedAdditionalWorkspaceServerUrl() ? ["opencode"] : undefined;
+    return getSelectedAdditionalWorkspaceServerUrl() ? ["claude-code"] : undefined;
   };
 
   const getElectronAuthToken = () => {

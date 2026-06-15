@@ -1,8 +1,8 @@
 /**
- * Central React context + hook for agent backend state.
+ * Central React context + hook for Harness state.
  *
  * Provides connection lifecycle, session management, messages,
- * variant selection, and real-time backend event handling to entire
+ * variant selection, and real-time Harness event handling to entire
  * component tree.
  *
  * Uses v2 SDK types which include variant support on models.
@@ -18,7 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { HarnessId } from "@/agents";
+import { DEFAULT_HARNESS_ID, HARNESS_IDS, type ActiveHarnessId, type HarnessId } from "@/agents";
 import { resolveActiveHarnessScope } from "@/hooks/active-harness-scope";
 import { useBackendEventSubscription } from "@/hooks/agent-backend-event-subscription";
 import {
@@ -157,10 +157,9 @@ function InternalAgentProvider({
   const shellWorkspacePolicy = useMemo(() => getShellWorkspacePolicy(), []);
   const [preferredBackendId, setPreferredBackendId] = useState<HarnessId>(() => {
     const stored = storageGet(STORAGE_KEYS.HARNESS);
-    if (stored === "claude-code") return "claude-code";
-    if (stored === "pi") return "pi";
-    if (stored === "codex") return "codex";
-    return "opencode";
+    return HARNESS_IDS.includes(stored as ActiveHarnessId)
+      ? (stored as ActiveHarnessId)
+      : DEFAULT_HARNESS_ID;
   });
 
   const openGuiClient = useOpenGuiClient();
@@ -236,19 +235,11 @@ function InternalAgentProvider({
   useEffect(() => {
     return onSettingsChange((change) => {
       if (change.key !== STORAGE_KEYS.HARNESS) return;
-      if (change.value === "claude-code") {
-        setPreferredBackendId("claude-code");
-        return;
-      }
-      if (change.value === "pi") {
-        setPreferredBackendId("pi");
-        return;
-      }
-      if (change.value === "codex") {
-        setPreferredBackendId("codex");
-        return;
-      }
-      setPreferredBackendId("opencode");
+      setPreferredBackendId(
+        HARNESS_IDS.includes(change.value as ActiveHarnessId)
+          ? (change.value as ActiveHarnessId)
+          : DEFAULT_HARNESS_ID,
+      );
     });
   }, []);
 
@@ -541,9 +532,9 @@ function InternalAgentProvider({
 
         // History is server data, not a live backend capability.  Desktop and
         // mobile should both show the same sessions for a remote workspace even
-        // when a specific agent backend is currently unhealthy/unavailable for
-        // new work.  Keep loading the session index after a failed connect and
-        // only mark the backend hydration as failed after history has merged.
+        // when a specific Harness is currently unhealthy/unavailable for new
+        // work. Keep loading the session index after a failed connect and only
+        // mark Harness hydration as failed after history has merged.
         const sessionResults = await openGuiClient.harnesses.listProjectSessions({
           harnessIds: [harnessId],
           target: connection.target,
@@ -1312,8 +1303,8 @@ function InternalAgentProvider({
   });
   const activeResourceBackendId = activeHarnessScope.harnessId;
   const activeResourceDirectory = activeHarnessScope.directory;
-  const resourceBridge = activeHarnessScope.backend;
-  const workspaceProfile = activeHarnessScope.workspaceProfile;
+  const resourceHarness = activeHarnessScope.harness;
+  const connectionProfile = activeHarnessScope.connectionProfile;
   const runtime = activeHarnessScope.runtime;
   useEffect(() => {
     if (!state.activeTargetBackendId) return;
@@ -1331,7 +1322,7 @@ function InternalAgentProvider({
     state.activeTargetBackendId,
   ]);
   useEffect(() => {
-    if (!resourceBridge || !activeResourceDirectory) return;
+    if (!resourceHarness || !activeResourceDirectory) return;
     const activeProjectKey = makeProjectKey(activeWorkspace?.id, activeResourceDirectory);
     const activeConnection = state.connections[activeProjectKey];
     if (activeConnection?.state !== "connected") return;
@@ -1355,7 +1346,7 @@ function InternalAgentProvider({
       return;
     void loadServerResources(activeResourceBackendId, activeResourceDirectory, activeWorkspace?.id);
   }, [
-    resourceBridge,
+    resourceHarness,
     activeResourceBackendId,
     activeResourceDirectory,
     activeWorkspace?.id,
@@ -1365,11 +1356,11 @@ function InternalAgentProvider({
   ]);
 
   const openDirectory = useCallback(async (): Promise<string | null> => {
-    if (!(workspaceProfile?.kind === "local-cli" || activeWorkspace?.isLocal)) {
+    if (!(connectionProfile?.kind === "local-cli" || activeWorkspace?.isLocal)) {
       return null;
     }
     return await openGuiClient.desktop.openDirectory();
-  }, [workspaceProfile?.kind, activeWorkspace?.isLocal, openGuiClient]);
+  }, [connectionProfile?.kind, activeWorkspace?.isLocal, openGuiClient]);
 
   const connectToProject = useCallback(
     async (
@@ -2459,11 +2450,11 @@ function InternalAgentProvider({
       ),
       workspaceDirectory,
       defaultChatDirectory: state.defaultChatDirectory,
-      workspaceServerUrl: workspaceProfile?.fields.serverUrl
+      workspaceServerUrl: connectionProfile?.fields.serverUrl
         ? (activeWorkspace?.serverUrl ?? workspaceConnection?.serverUrl ?? null)
         : null,
       isLocalWorkspace:
-        workspaceProfile?.kind === "local-cli"
+        connectionProfile?.kind === "local-cli"
           ? true
           : (activeWorkspace?.isLocal ?? isLocalServer()),
       activeDirectory: activeResourceDirectory,
@@ -2497,7 +2488,7 @@ function InternalAgentProvider({
       workspaceDirectory,
       state.defaultChatDirectory,
       workspaceConnection,
-      workspaceProfile,
+      connectionProfile,
       activeResourceDirectory,
       state.bootState,
       state.bootError,

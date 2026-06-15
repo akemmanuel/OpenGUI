@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { HARNESS_LABELS, type HarnessId } from "@/agents";
+import { HARNESS_LABELS, type ActiveHarnessId } from "@/agents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -25,7 +25,7 @@ export function McpTabContent() {
     () => availableBackendIds.filter((id) => openGuiClient.harnesses.get(id)?.capabilities.mcp),
     [availableBackendIds, openGuiClient],
   );
-  const [harnessId, setBackendId] = useState<HarnessId>(initialBackendId);
+  const [harnessId, setBackendId] = useState<ActiveHarnessId>(initialBackendId);
   const backend = useHarness(harnessId);
   const mcpApi = backend?.platform?.mcp;
   const configApi = backend?.platform?.config;

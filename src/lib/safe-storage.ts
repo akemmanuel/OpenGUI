@@ -1,5 +1,6 @@
 import type { SettingsBridgeChange } from "@/types/electron";
 import { getSettingsBridge } from "@/runtime/settings";
+import { LEGACY_STORAGE_KEYS } from "@/lib/constants";
 
 const SETTINGS_CHANGED_EVENT = "opengui:settings-changed";
 
@@ -64,6 +65,23 @@ function mirrorSettingsToLocalStorage(entries: SettingsCache) {
   }
 }
 
+function migrateLegacyStorageKey(
+  key: string,
+  cache: SettingsCache | null,
+  bridge: ReturnType<typeof getSettingsBridge>,
+): string | null {
+  const legacyKey = LEGACY_STORAGE_KEYS[key as keyof typeof LEGACY_STORAGE_KEYS];
+  if (!legacyKey || legacyKey === key) return null;
+
+  const legacyValue = cache?.[legacyKey] ?? safeLocalStorageGet(legacyKey);
+  if (legacyValue === null) return null;
+
+  safeLocalStorageSet(key, legacyValue);
+  if (cache) cache[key] = legacyValue;
+  if (bridge) void bridge.set(key, legacyValue);
+  return legacyValue;
+}
+
 function initSettingsCache(): SettingsCache | null {
   const bridge = getSettingsBridge();
   if (!bridge) return null;
@@ -104,11 +122,12 @@ export function onSettingsChange(callback: (change: SettingsChangeDetail) => voi
 
 /** Read raw string from persistent app settings. Returns `null` if missing or on error. */
 export function storageGet(key: string): string | null {
+  const bridge = getSettingsBridge();
   const cache = initSettingsCache();
   if (cache) {
-    return cache[key] ?? null;
+    return cache[key] ?? migrateLegacyStorageKey(key, cache, bridge);
   }
-  return safeLocalStorageGet(key);
+  return safeLocalStorageGet(key) ?? migrateLegacyStorageKey(key, null, bridge);
 }
 
 /** Write raw string to persistent app settings. Silently ignores errors. */

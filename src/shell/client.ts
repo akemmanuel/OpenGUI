@@ -1,9 +1,4 @@
-import type {
-  AppUpdateState,
-  DesktopBackendStatus,
-  ElectronAPI,
-  InstallProgress,
-} from "@/types/electron";
+import type { AppUpdateState, DesktopBackendStatus, ElectronAPI } from "@/types/electron";
 
 export interface DesktopShellClient {
   runtime: {
@@ -50,8 +45,8 @@ export interface DesktopShellClient {
     getAll(): Promise<string[]>;
     onChange(callback: (detachedProjects: string[]) => void): () => void;
   };
-  skills: {
-    onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
+  events: {
+    onBackendChannel<T = unknown>(channel: string, callback: (data: T) => void): () => void;
   };
 }
 
@@ -86,10 +81,10 @@ function rawBackendEventUrl(api: ElectronAPI) {
   return url.toString();
 }
 
-function subscribeToRawBackendChannel(
+function subscribeToRawBackendChannel<T = unknown>(
   api: ElectronAPI,
   channel: string,
-  callback: (data: InstallProgress) => void,
+  callback: (data: T) => void,
 ) {
   const url = rawBackendEventUrl(api);
   if (!url) return NOOP_UNSUBSCRIBE;
@@ -98,7 +93,7 @@ function subscribeToRawBackendChannel(
   stream.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data);
-      if (message?.channel === channel) callback(message.data as InstallProgress);
+      if (message?.channel === channel) callback(message.data as T);
     } catch (error) {
       console.error("Bad raw backend event payload", error);
     }
@@ -161,9 +156,8 @@ export function createElectronDesktopShell(api: ElectronAPI): DesktopShellClient
       getAll: () => api.getDetachedProjects(),
       onChange: (callback) => api.onDetachedProjectsChange(callback),
     },
-    skills: {
-      onInstallProgress: (callback) =>
-        subscribeToRawBackendChannel(api, "opencode:skills:install-progress", callback),
+    events: {
+      onBackendChannel: (channel, callback) => subscribeToRawBackendChannel(api, channel, callback),
     },
   };
 }
@@ -212,8 +206,8 @@ export function createWebDesktopShell(): DesktopShellClient {
       getAll: async () => [],
       onChange: () => NOOP_UNSUBSCRIBE,
     },
-    skills: {
-      onInstallProgress: () => NOOP_UNSUBSCRIBE,
+    events: {
+      onBackendChannel: () => NOOP_UNSUBSCRIBE,
     },
   };
 }

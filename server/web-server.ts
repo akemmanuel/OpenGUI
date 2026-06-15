@@ -727,8 +727,8 @@ function decodeCanonicalDirectorySessionId(
     const decoded = Buffer.from(sessionId.slice("session_".length), "base64url").toString("utf8");
     const [projectId, harnessId, rawId] = decoded.split("::");
     if (!projectId || !rawId) return null;
-    if (!MANAGED_HARNESS_IDS.includes(harnessId as HarnessId)) return null;
-    return { projectId, harnessId: harnessId as HarnessId, rawId };
+    if (!isManagedHarnessId(harnessId)) return null;
+    return { projectId, harnessId, rawId };
   } catch {
     return null;
   }
@@ -1391,8 +1391,8 @@ async function handleQuestionRequest(request: Request) {
     const body = await readJsonBody(request);
     const harnessId = (
       isPlainObject(body)
-        ? (toOptionalString(body.harnessId, "harnessId") ?? "opencode")
-        : "opencode"
+        ? (toOptionalString(body.harnessId, "harnessId") ?? "claude-code")
+        : "claude-code"
     ) as HarnessId;
     const sessionId = isPlainObject(body)
       ? toOptionalString(body.sessionId, "sessionId")

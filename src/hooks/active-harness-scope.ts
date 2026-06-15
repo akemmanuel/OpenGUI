@@ -12,9 +12,9 @@ export interface ActiveHarnessScope {
   route: HarnessRoute;
   harnessId: HarnessId;
   directory: string | null;
-  backend: HarnessDescriptor | undefined;
+  harness: HarnessDescriptor | undefined;
   runtime: HarnessDescriptor["runtime"] | undefined;
-  workspaceProfile: HarnessDescriptor["workspace"] | undefined;
+  connectionProfile: HarnessDescriptor["connection"] | undefined;
 }
 
 export function resolveActiveHarnessScope({
@@ -41,14 +41,14 @@ export function resolveActiveHarnessScope({
   });
   const directory =
     getSessionDirectory(activeSession) ?? activeTargetDirectory ?? workspaceDirectory;
-  const backend = backendsById[route.harnessId] ?? openGuiClient.harnesses.get(route.harnessId);
+  const harness = backendsById[route.harnessId] ?? openGuiClient.harnesses.get(route.harnessId);
 
   return {
     route,
     harnessId: route.harnessId,
     directory,
-    backend,
-    runtime: backend?.runtime,
-    workspaceProfile: backend?.workspace,
+    harness,
+    runtime: harness?.runtime,
+    connectionProfile: harness?.connection,
   };
 }

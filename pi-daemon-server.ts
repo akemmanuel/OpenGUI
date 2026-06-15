@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createServer } from "node:http";
-import { PiBridgeManager } from "./pi-bridge.js";
+import { PiBridgeManager } from "./pi-bridge.ts";
 
 const MAX_BODY_BYTES = 100 * 1024 * 1024;
 

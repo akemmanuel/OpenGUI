@@ -1,4 +1,5 @@
-import type { Event as OpenCodeEvent, Provider } from "@opencode-ai/sdk/v2/client";
+import type { Provider } from "@opencode-ai/sdk/v2/client";
+import type { HarnessId } from "@/agents";
 
 // ---------------------------------------------------------------------------
 // Provider management types
@@ -86,7 +87,7 @@ export type BridgeEvent =
     }
   | {
       type: "opencode:event";
-      payload: OpenCodeEvent;
+      payload: unknown;
       directory: string;
       workspaceId?: string;
     }
@@ -153,7 +154,7 @@ export interface HarnessInventoryAgent {
 }
 
 export interface HarnessInventory {
-  harnessId: "opencode" | "claude-code" | "pi" | "codex";
+  harnessId: HarnessId;
   displayName: string;
   enabled: boolean;
   installed: boolean;
@@ -171,95 +172,6 @@ export interface HarnessInventory {
   diagnostics: {
     cli: HarnessInventoryCliDiagnostics;
   };
-}
-
-// ---------------------------------------------------------------------------
-// Plugin Catalog Types
-// ---------------------------------------------------------------------------
-
-export interface PluginCatalogEntry {
-  id: string;
-  slug: string;
-  name: string;
-  source: string;
-  installs: number;
-  sourceType: "github" | "well-known";
-  installUrl: string | null;
-  url: string;
-  isDuplicate?: boolean;
-  installsYesterday?: number;
-  change?: number;
-}
-
-export interface PluginCatalogListResponse {
-  data: PluginCatalogEntry[];
-  pagination: {
-    page: number;
-    perPage: number;
-    total: number;
-    hasMore: boolean;
-  };
-}
-
-export interface PluginCatalogSearchResponse {
-  data: PluginCatalogEntry[];
-  query: string;
-  searchType: "fuzzy" | "semantic";
-  count: number;
-  durationMs: number;
-}
-
-export interface PluginCatalogDetailResponse {
-  id: string;
-  source: string;
-  slug: string;
-  installs: number;
-  hash: string | null;
-  files: Array<{ path: string; contents: string }> | null;
-}
-
-export interface PluginCatalogAuditResponse {
-  id: string;
-  source: string;
-  slug: string;
-  audits: Array<{
-    provider: string;
-    slug: string;
-    status: "pass" | "warn" | "fail";
-    summary: string;
-    auditedAt: string;
-    riskLevel?: string;
-  }>;
-}
-
-export interface PluginCatalogCuratedResponse {
-  data: Array<{
-    owner: string;
-    totalInstalls: number;
-    featuredRepo: string;
-    featuredPlugin: string;
-    skills: PluginCatalogEntry[];
-  }>;
-  totalOwners: number;
-  totalPlugins: number;
-  generatedAt: string;
-}
-
-export interface InstalledPluginInfo {
-  name: string;
-  slug?: string;
-  description: string;
-  location: string;
-  content: string;
-  source?: string;
-  remoteKey?: string;
-  scope?: "project" | "global";
-  pluginName?: string;
-  sourceType?: string;
-  sourceUrl?: string;
-  pluginPath?: string;
-  pluginFolderHash?: string;
-  computedHash?: string;
 }
 
 // ---------------------------------------------------------------------------
