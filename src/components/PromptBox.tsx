@@ -243,7 +243,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         onDragLeave={promptFiles.handleDragLeave}
         onDrop={promptFiles.handleDrop}
         className={cn(
-          "flex flex-col bg-background px-2 pt-2 shadow-xs transition-colors cursor-text border rounded-xl",
+          "flex flex-col border border-input bg-card px-2 pt-2 shadow-sm transition-colors cursor-text rounded-xl",
+          "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
+          "dark:bg-card/60 dark:border-input/80",
           promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
         )}
@@ -326,7 +328,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                     : t("prompt.queueMessage")
                 : t("prompt.message")
           }
-          className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/95 focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
           {...props}
         />
 
@@ -354,7 +356,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           worktreePath={setupWorktreePath ?? ""}
         />
 
-        <div className="flex min-w-0 items-center gap-1 px-1.5 pb-2">
+        <div className="flex min-w-0 items-center gap-1.5 px-1.5 pt-1 pb-2">
           <PromptAddMenu
             disabled={isDisabled}
             canManageMcp={canManageMcp}
@@ -362,9 +364,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             onOpenMcp={() => setMcpDialogOpen(true)}
           />
 
-          <ModelSelector />
-          <AgentSelector />
-          <VariantSelector />
+          <div className="flex min-w-0 items-center gap-1 rounded-lg bg-muted/45 p-0.5 dark:bg-muted/35">
+            <ModelSelector />
+            <AgentSelector />
+            <VariantSelector />
+          </div>
 
           <PromptWorktreeSelector
             shouldShow={shouldShowWorktreeSelector}
