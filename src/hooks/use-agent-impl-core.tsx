@@ -8,8 +8,6 @@
  * Uses v2 SDK types which include variant support on models.
  */
 
-import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
-
 import {
   type ReactNode,
   useCallback,
@@ -28,6 +26,7 @@ import {
   resolveSessionHarnessRoute,
 } from "@/hooks/agent-harness-routing";
 import { useLocalIntentOrchestration } from "@/hooks/agent-local-intent";
+import { useSessionInteractionOrchestration } from "@/hooks/agent-session-interactions";
 import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
 import {
@@ -1846,6 +1845,26 @@ function InternalAgentProvider({
       refreshSessionMessages: refreshActiveSessionMessages,
     });
 
+  const {
+    summarizeSession,
+    abortSession,
+    respondPermission,
+    replyQuestion,
+    rejectQuestion,
+    getQueuedPrompts,
+    removeFromQueue,
+    reorderQueue,
+    updateQueuedPrompt,
+  } = useSessionInteractionOrchestration({
+    state,
+    stateRef,
+    runtime,
+    openGuiClient,
+    ensureSession,
+    resolveCurrentSessionId,
+    dispatch,
+  });
+
   const findFiles = useCallback(
     async (
       target: { directory?: string; workspaceId?: string; baseUrl?: string } | null,
@@ -1868,63 +1887,6 @@ function InternalAgentProvider({
     },
     [openGuiClient, runtime],
   );
-
-  const summarizeSession = useCallback(async () => {
-    if (!runtime) return;
-    const sessionId = await ensureSession();
-    if (!sessionId) return;
-
-    const model = state.selectedModel;
-    if (!model) {
-      dispatch({
-        type: "SET_ERROR",
-        payload: "Compaction requires a model to be selected",
-      });
-      return;
-    }
-
-    dispatch({ type: "SET_BUSY", payload: true });
-    try {
-      const projectTarget = getSessionProjectTarget(
-        stateRef.current.sessions.find((session) => session.id === sessionId),
-        stateRef.current.sessionMeta[sessionId],
-      );
-      await runtime.compactSession(sessionId, model, projectTarget ?? undefined);
-
-      // Wait for session to complete (polling state via setInterval to capture updates)
-      // eslint-disable-next-line no-await-of-promise
-      await new Promise((resolve) => {
-        const checkInterval = setInterval(() => {
-          if (!stateRef.current.busySessionIds.has(sessionId)) {
-            clearInterval(checkInterval);
-            resolve(true);
-          }
-        }, 200);
-        // Timeout after 6 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          resolve(true);
-        }, 6000);
-      });
-
-      // Brief delay to let the SDK server finish message updates
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      // Re-fetch messages to get updated token counts
-      const messages = (
-        await openGuiClient.sessions.getMessages({
-          sessionId,
-          options: { limit: 100 },
-        })
-      ).messages;
-      dispatch({
-        type: "SET_MESSAGES",
-        payload: { messages, hasMore: false, nextCursor: null },
-      });
-    } catch (err) {
-      dispatch({ type: "SET_ERROR", payload: getErrorMessage(err) });
-    }
-    // Note: SET_BUSY=false is handled by SESSION_STATUS backend events
-  }, [runtime, state.selectedModel, ensureSession, openGuiClient]);
 
   // Desktop notifications for newly-idle sessions
   useDesktopNotification(
@@ -1952,136 +1914,6 @@ function InternalAgentProvider({
     state.sessions,
     selectSession,
   );
-
-  const abortSession = useCallback(async () => {
-    if (!state.activeSessionId) return;
-    const sessionId = resolveCurrentSessionId(state.activeSessionId);
-    const activeSession = state.sessions.find(
-      (session) => session.id === sessionId || session.id === state.activeSessionId,
-    );
-    const target =
-      getSessionProjectTarget(
-        activeSession,
-        activeSession ? state.sessionMeta[activeSession.id] : undefined,
-      ) ?? undefined;
-    const workspaceId = target?.workspaceId ?? state.activeWorkspaceId;
-    const workspace = state.workspaces.find((item) => item.id === workspaceId);
-    await openGuiClient.sessions.abort({
-      sessionId,
-      harnessId: resolveSessionHarnessRoute(activeSession).harnessId ?? undefined,
-      target:
-        workspace && !workspace.isLocal
-          ? { ...target, workspaceId, baseUrl: workspace.serverUrl }
-          : target,
-    });
-    dispatch({
-      type: "SESSION_STATUS",
-      payload: { sessionID: state.activeSessionId, status: { type: "idle" } },
-    });
-  }, [
-    openGuiClient,
-    resolveCurrentSessionId,
-    state.activeSessionId,
-    state.activeWorkspaceId,
-    state.sessions,
-    state.workspaces,
-  ]);
-
-  const respondPermission = useCallback(
-    async (response: "once" | "always" | "reject") => {
-      const sessionId = state.activeSessionId;
-      if (!sessionId) return;
-      const pending = state.pendingPermissions[sessionId];
-      if (!pending) return;
-      const session = state.sessions.find((item) => item.id === sessionId);
-      const clearPermission = () =>
-        dispatch({
-          type: "SET_PERMISSION",
-          payload: { sessionID: sessionId, clear: true },
-        });
-
-      try {
-        await openGuiClient.sessions.respondPermission({
-          sessionId,
-          permissionId: pending.id,
-          response,
-          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-          target:
-            getSessionProjectTarget(session, session ? state.sessionMeta[session.id] : undefined) ??
-            undefined,
-        });
-        clearPermission();
-      } catch (error) {
-        const message = getErrorMessage(error);
-        if (/permission request not found|permission not found|not found/i.test(message)) {
-          clearPermission();
-        }
-        dispatch({
-          type: "SET_ERROR",
-          payload: message || "Failed to respond to permission request",
-        });
-      }
-    },
-    [
-      openGuiClient,
-      state.activeSessionId,
-      state.pendingPermissions,
-      state.sessionMeta,
-      state.sessions,
-    ],
-  );
-
-  const replyQuestion = useCallback(
-    async (answers: QuestionAnswer[]) => {
-      if (!state.activeSessionId) return;
-      const pending = state.pendingQuestions[state.activeSessionId];
-      if (!pending) return;
-      const session = state.sessions.find((item) => item.id === state.activeSessionId);
-      try {
-        await openGuiClient.sessions.replyQuestion({
-          sessionId: state.activeSessionId,
-          requestId: pending.id,
-          answers,
-          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-          target: getSessionProjectTarget(session) ?? undefined,
-        });
-        dispatch({
-          type: "SET_QUESTION",
-          payload: { sessionID: state.activeSessionId, clear: true },
-        });
-      } catch (error) {
-        dispatch({
-          type: "SET_ERROR",
-          payload: error instanceof Error ? error.message : "Failed to submit question reply",
-        });
-      }
-    },
-    [openGuiClient, state.pendingQuestions, state.activeSessionId, state.sessions],
-  );
-
-  const rejectQuestion = useCallback(async () => {
-    if (!state.activeSessionId) return;
-    const pending = state.pendingQuestions[state.activeSessionId];
-    if (!pending) return;
-    const session = state.sessions.find((item) => item.id === state.activeSessionId);
-    try {
-      await openGuiClient.sessions.rejectQuestion({
-        sessionId: state.activeSessionId,
-        requestId: pending.id,
-        harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-        target: getSessionProjectTarget(session) ?? undefined,
-      });
-      dispatch({
-        type: "SET_QUESTION",
-        payload: { sessionID: state.activeSessionId, clear: true },
-      });
-    } catch (error) {
-      dispatch({
-        type: "SET_ERROR",
-        payload: error instanceof Error ? error.message : "Failed to dismiss question",
-      });
-    }
-  }, [openGuiClient, state.pendingQuestions, state.activeSessionId, state.sessions]);
 
   const setDefaultChatDirectory = useCallback((directory: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
@@ -2170,113 +2002,6 @@ function InternalAgentProvider({
       dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
     }
   }, [state.bootState]);
-
-  const getQueuedPrompts = useCallback(
-    (sessionId: string) => state.queuedPrompts[sessionId] ?? [],
-    [state.queuedPrompts],
-  );
-
-  const applyQueueSnapshot = useCallback(
-    (sessionId: string, prompts: (typeof state.queuedPrompts)[string]) => {
-      dispatch({ type: "SET_SESSION_QUEUE", payload: { sessionID: sessionId, prompts } });
-    },
-    [],
-  );
-
-  const getQueueTarget = useCallback((sessionId: string) => {
-    const session = stateRef.current.sessions.find((item) => item.id === sessionId);
-    const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
-    const target =
-      getSessionProjectTarget(
-        session,
-        session ? stateRef.current.sessionMeta[session.id] : undefined,
-      ) ?? undefined;
-    if (!harnessId || !target?.directory) {
-      throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
-    }
-    return {
-      harnessId,
-      target: { ...target, directory: target.directory },
-    };
-  }, []);
-
-  const removeFromQueue = useCallback(
-    (sessionId: string, promptId: string) => {
-      let queueTarget: ReturnType<typeof getQueueTarget>;
-      try {
-        queueTarget = getQueueTarget(sessionId);
-      } catch (error) {
-        dispatch({
-          type: "SET_ERROR",
-          payload: getErrorMessage(error) || "Failed to resolve queued prompt target",
-        });
-        return;
-      }
-      void openGuiClient.sessions.queue
-        .remove({ sessionId, entryId: promptId, ...queueTarget })
-        .then((prompts) => applyQueueSnapshot(sessionId, prompts))
-        .catch((error) => {
-          dispatch({
-            type: "SET_ERROR",
-            payload: getErrorMessage(error) || "Failed to remove queued prompt",
-          });
-        });
-    },
-    [applyQueueSnapshot, getQueueTarget, openGuiClient],
-  );
-
-  const reorderQueue = useCallback(
-    (sessionId: string, fromIndex: number, toIndex: number) => {
-      const existing = stateRef.current.queuedPrompts[sessionId] ?? [];
-      const entryId = existing[fromIndex]?.id;
-      if (!entryId) return;
-      let queueTarget: ReturnType<typeof getQueueTarget>;
-      try {
-        queueTarget = getQueueTarget(sessionId);
-      } catch (error) {
-        dispatch({
-          type: "SET_ERROR",
-          payload: getErrorMessage(error) || "Failed to resolve queued prompt target",
-        });
-        return;
-      }
-      void openGuiClient.sessions.queue
-        .reorder({ sessionId, entryId, index: toIndex, ...queueTarget })
-        .then((prompts) => applyQueueSnapshot(sessionId, prompts))
-        .catch((error) => {
-          dispatch({
-            type: "SET_ERROR",
-            payload: getErrorMessage(error) || "Failed to reorder queue",
-          });
-        });
-    },
-    [applyQueueSnapshot, getQueueTarget, openGuiClient],
-  );
-
-  const updateQueuedPrompt = useCallback(
-    (sessionId: string, promptId: string, text: string) => {
-      let queueTarget: ReturnType<typeof getQueueTarget>;
-      try {
-        queueTarget = getQueueTarget(sessionId);
-      } catch (error) {
-        dispatch({
-          type: "SET_ERROR",
-          payload: getErrorMessage(error) || "Failed to resolve queued prompt target",
-        });
-        return;
-      }
-      void openGuiClient.sessions.queue
-        .update({ sessionId, entryId: promptId, text, ...queueTarget })
-        .then((prompts) => applyQueueSnapshot(sessionId, prompts))
-        .catch((error) => {
-          dispatch({
-            type: "SET_ERROR",
-            payload: getErrorMessage(error) || "Failed to update queued prompt",
-          });
-        });
-    },
-    [applyQueueSnapshot, getQueueTarget, openGuiClient],
-  );
 
   const setSessionDraft = useCallback((key: string, text: string) => {
     dispatch({ type: "SET_SESSION_DRAFT", payload: { key, text } });
@@ -2848,6 +2573,7 @@ function InternalAgentProvider({
       sendPrompt,
       findFiles,
       sendCommand,
+      summarizeSession,
       abortSession,
       respondPermission,
       replyQuestion,
