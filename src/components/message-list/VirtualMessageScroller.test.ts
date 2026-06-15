@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import {
   distanceFromBottom,
+  getScrollSnapshotFlags,
   isAtTop,
   isNearBottom,
   shouldLoadOlderMessages,
@@ -33,6 +34,28 @@ describe("VirtualMessageScroller scroll position helpers", () => {
     expect(isAtTop(element)).toBe(true);
     expect(distanceFromBottom(element)).toBe(0);
     expect(isNearBottom(element)).toBe(true);
+  });
+
+  test("keeps bottom pin sticky while new content increases scroll height", () => {
+    const element = scrollElement({ scrollHeight: 5400, scrollTop: 4200, clientHeight: 800 });
+
+    expect(getScrollSnapshotFlags(element, true)).toEqual({
+      atTop: false,
+      pinnedToBottom: true,
+    });
+  });
+
+  test("stores explicit top only after bottom pin is detached", () => {
+    const element = scrollElement({ scrollHeight: 5000, scrollTop: 0, clientHeight: 800 });
+
+    expect(getScrollSnapshotFlags(element, false)).toEqual({
+      atTop: true,
+      pinnedToBottom: false,
+    });
+    expect(getScrollSnapshotFlags(element, true)).toEqual({
+      atTop: false,
+      pinnedToBottom: true,
+    });
   });
 });
 
