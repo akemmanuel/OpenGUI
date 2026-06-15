@@ -171,6 +171,10 @@ _Avoid_: disconnected workspace, empty local workspace
 Frontend-local composition state choosing the Harness, model, agent, and variant for the next Agent send. When a Frontend loads an existing Session, PromptBox selection is replaced by the latest User message selection in that Session; when a Frontend starts a new Pending prompt target, PromptBox selection is inherited from the immediately previous in-memory PromptBox selection.
 _Avoid_: shared session setting, backend default, assistant model, persisted default, compatibility fallback
 
+**PromptBox action controls**:
+The visible controls for turning PromptBox text into an Agent send and for interrupting a running Session. When PromptBox text exists and the Session is idle, Send is active. When PromptBox text exists and the Session is running, both Interrupt Session and Send are active so the user can either stop current work or submit follow-up intent. When PromptBox text is empty and the Session is idle, Send remains visible but inactive. When PromptBox text is empty and the Session is running, only Interrupt Session is shown.
+_Avoid_: one-button toggle, send-as-stop, disabled stop while running
+
 **User message selection**:
 The Harness, model, agent, and variant recorded on a User message as the execution intent for that message. For PromptBox selection, the latest User message selection in a Session is the only transcript-derived source of truth; Assistant message models are display facts for history and must not drive PromptBox selection.
 _Avoid_: assistant selection, resolved model default, inferred model

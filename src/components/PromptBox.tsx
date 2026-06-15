@@ -31,7 +31,7 @@ import {
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { getSessionDraftKey } from "@/lib/session-drafts";
-import { shouldShowStopButton } from "@/lib/session-controls";
+import { shouldShowSendButton, shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps extends Omit<
@@ -226,6 +226,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         setAgent,
       });
 
+    const hasPromptText = promptSubmit.hasValue;
+    const isSessionRunning = Boolean(isLoading);
+
     React.useEffect(() => {
       fileMention.reset();
       slashCommand.reset();
@@ -409,10 +412,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 onCompact={promptCompaction.compact}
               />
             )}
-            {shouldShowStopButton({
-              isLoading,
-              isCompactingInProgress: promptCompaction.isCompactingInProgress,
-            }) && (
+            {shouldShowStopButton({ isSessionRunning }) && (
               <Button
                 type="button"
                 size="icon-sm"
@@ -428,32 +428,34 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 <span className="sr-only">{t("prompt.stopGenerating")}</span>
               </Button>
             )}
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="default"
-              title={
-                isLoading
-                  ? queueMode === "after-part"
-                    ? t("prompt.steer")
-                    : t("prompt.queue")
-                  : t("prompt.send")
-              }
-              disabled={isDisabled || !promptSubmit.hasValue}
-              onClick={(e) => {
-                e.stopPropagation();
-                void promptSubmit.submit();
-              }}
-            >
-              <ArrowUp />
-              <span className="sr-only">
-                {isLoading
-                  ? queueMode === "after-part"
-                    ? t("prompt.steer")
-                    : t("prompt.queueMessage")
-                  : t("prompt.sendMessage")}
-              </span>
-            </Button>
+            {shouldShowSendButton({ hasPromptText, isSessionRunning }) && (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="default"
+                title={
+                  isLoading
+                    ? queueMode === "after-part"
+                      ? t("prompt.steer")
+                      : t("prompt.queue")
+                    : t("prompt.send")
+                }
+                disabled={isDisabled || !hasPromptText}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void promptSubmit.submit();
+                }}
+              >
+                <ArrowUp />
+                <span className="sr-only">
+                  {isLoading
+                    ? queueMode === "after-part"
+                      ? t("prompt.steer")
+                      : t("prompt.queueMessage")
+                    : t("prompt.sendMessage")}
+                </span>
+              </Button>
+            )}
           </div>
         </div>
       </section>
