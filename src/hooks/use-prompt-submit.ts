@@ -4,6 +4,10 @@ import type { parseSlashCommand } from "@/hooks/use-slash-command-input";
 
 type SlashInvocation = ReturnType<typeof parseSlashCommand>;
 
+function hasPromptText(value: string) {
+  return value.trim().length > 0;
+}
+
 export type PromptSubmitDecision =
   | { type: "skip" }
   | { type: "command"; commandName: string; args: string }
@@ -24,7 +28,7 @@ export function decidePromptSubmit({
   queueMode: QueueMode;
   slashInvocation: SlashInvocation;
 }): PromptSubmitDecision {
-  const hasValue = value.trim().length > 0;
+  const hasValue = hasPromptText(value);
   if (disabled || isUploading || !hasValue) return { type: "skip" };
   if (slashInvocation) {
     return {
@@ -98,46 +102,51 @@ export function usePromptSubmit({
     resetHistory,
   };
 
-  const hasValue = value.trim().length > 0;
+  const hasValue = hasPromptText(value);
 
   const submit = React.useCallback(async () => {
     const latest = latestRef.current;
     const currentValue = latest.value;
     if (submittingRef.current) return;
-    if (latest.disabled || latest.isUploading) return;
-    if (currentValue.trim().length === 0) return;
     submittingRef.current = true;
 
-    const decision = decidePromptSubmit({
-      value: currentValue,
-      disabled: latest.disabled,
-      isUploading: latest.isUploading,
-      isLoading: latest.isLoading,
-      queueMode: latest.queueMode,
-      slashInvocation: latest.parseSlashCommand(currentValue),
-    });
-
-    if (decision.type === "skip") {
-      submittingRef.current = false;
-      return;
-    }
-
     try {
+      if (latest.disabled || latest.isUploading) return;
+      if (!hasPromptText(currentValue)) return;
+
+      const decision = decidePromptSubmit({
+        value: currentValue,
+        disabled: latest.disabled,
+        isUploading: latest.isUploading,
+        isLoading: latest.isLoading,
+        queueMode: latest.queueMode,
+        slashInvocation: latest.parseSlashCommand(currentValue),
+      });
+
+      if (decision.type === "skip") return;
+
       if (decision.type === "command") {
+        try {
+          await latest.sendCommand(decision.commandName, decision.args);
+        } catch (error) {
+          console.error("Failed to send command", error);
+          return;
+        }
         latest.clearPromptDraft();
         latest.resetSlashCommand();
         latest.resetHistory();
-        await latest.sendCommand(decision.commandName, decision.args);
         return;
       }
 
-      const submission = Promise.resolve(latest.onSubmit?.(decision.text, decision.mode));
+      try {
+        await latest.onSubmit?.(decision.text, decision.mode);
+      } catch (error) {
+        console.error("Failed to submit prompt", error);
+        return;
+      }
       latest.clearPromptDraft();
       latest.onAfterSubmit?.();
       latest.resetHistory();
-      submission.catch((error) => {
-        console.error("Failed to submit prompt", error);
-      });
     } finally {
       submittingRef.current = false;
     }

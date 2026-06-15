@@ -60,7 +60,7 @@ function ToggleGroup({
       ? undefined
       : isMultiple
         ? (value as readonly string[])
-        : value
+        : value != null
           ? [value as string]
           : [];
   const primitiveDefaultValue =
@@ -68,7 +68,7 @@ function ToggleGroup({
       ? undefined
       : isMultiple
         ? (defaultValue as readonly string[])
-        : defaultValue
+        : defaultValue != null
           ? [defaultValue as string]
           : [];
 
@@ -78,6 +78,8 @@ function ToggleGroup({
       return;
     }
 
+    // Radix represents a cleared single-selection as [], while this wrapper's
+    // public single-mode API uses an empty string for "no selection".
     (onValueChange as ((value: string) => void) | undefined)?.(nextValue[0] ?? "");
   };
 

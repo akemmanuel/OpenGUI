@@ -2,7 +2,7 @@ import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import {
   distanceFromBottom,
   getScrollSnapshotFlags,
-  isAtTop,
+  isNearTop,
   isNearBottom,
   shouldLoadOlderMessages,
 } from "./VirtualMessageScroller";
@@ -15,7 +15,7 @@ describe("VirtualMessageScroller scroll position helpers", () => {
   test("does not treat top of an overflowing chat as pinned to bottom", () => {
     const element = scrollElement({ scrollHeight: 5000, scrollTop: 0, clientHeight: 800 });
 
-    expect(isAtTop(element)).toBe(true);
+    expect(isNearTop(element)).toBe(true);
     expect(distanceFromBottom(element)).toBe(4200);
     expect(isNearBottom(element)).toBe(false);
   });
@@ -23,7 +23,7 @@ describe("VirtualMessageScroller scroll position helpers", () => {
   test("treats real bottom as pinned to bottom", () => {
     const element = scrollElement({ scrollHeight: 5000, scrollTop: 4200, clientHeight: 800 });
 
-    expect(isAtTop(element)).toBe(false);
+    expect(isNearTop(element)).toBe(false);
     expect(distanceFromBottom(element)).toBe(0);
     expect(isNearBottom(element)).toBe(true);
   });
@@ -31,7 +31,7 @@ describe("VirtualMessageScroller scroll position helpers", () => {
   test("keeps short non-scrollable chats pinned to bottom", () => {
     const element = scrollElement({ scrollHeight: 700, scrollTop: 0, clientHeight: 800 });
 
-    expect(isAtTop(element)).toBe(true);
+    expect(isNearTop(element)).toBe(true);
     expect(distanceFromBottom(element)).toBe(0);
     expect(isNearBottom(element)).toBe(true);
   });

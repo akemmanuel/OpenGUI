@@ -48,7 +48,7 @@ export function distanceFromBottom(
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
 }
 
-export function isAtTop(element: Pick<HTMLElement, "scrollTop">) {
+export function isNearTop(element: Pick<HTMLElement, "scrollTop">) {
   return element.scrollTop <= NEAR_BOTTOM_PX;
 }
 
@@ -57,7 +57,7 @@ export function isNearBottom(
 ) {
   const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
   if (maxScrollTop <= NEAR_BOTTOM_PX) return true;
-  if (isAtTop(element)) return false;
+  if (isNearTop(element)) return false;
   return distanceFromBottom(element) <= NEAR_BOTTOM_PX;
 }
 
@@ -87,7 +87,7 @@ export function getScrollSnapshotFlags(
 ) {
   const pinnedToBottom = wasPinnedToBottom || isNearBottom(element);
   return {
-    atTop: !pinnedToBottom && isAtTop(element),
+    atTop: !pinnedToBottom && isNearTop(element),
     pinnedToBottom,
   };
 }
@@ -197,7 +197,7 @@ export function VirtualMessageScroller({
 
   const maybeLoadOlder = useCallback(() => {
     const scrollEl = scrollRef.current;
-    if (!scrollEl || pinnedToBottomRef.current || !isAtTop(scrollEl)) return;
+    if (!scrollEl || pinnedToBottomRef.current) return;
 
     const firstIndex = virtualizer.getVirtualItems()[0]?.index;
     if (
@@ -355,7 +355,13 @@ export function VirtualMessageScroller({
       const scrollbarWidth = el.offsetWidth - el.clientWidth;
       if (scrollbarWidth <= 0) return;
       const rect = el.getBoundingClientRect();
-      if (event.clientX >= rect.right - scrollbarWidth - 2) markUserScrollIntent();
+      const isRtl = getComputedStyle(el).direction === "rtl";
+      const isScrollbarClick = isRtl
+        ? event.clientX <= rect.left + scrollbarWidth + 2
+        : event.clientX >= rect.right - scrollbarWidth - 2;
+      if (isScrollbarClick) {
+        markUserScrollIntent();
+      }
     },
     [markUserScrollIntent],
   );
