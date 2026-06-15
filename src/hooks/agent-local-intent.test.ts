@@ -302,6 +302,59 @@ describe("createLocalIntentOrchestrator", () => {
     ]);
   });
 
+  test("queues busy-session prompts even when local Session lacks project directory metadata", async () => {
+    const session = makeSession({
+      id: "pi:session-1",
+      directory: undefined as never,
+      _harnessId: "pi",
+      _rawId: "session-1",
+      _workspaceId: "workspace-1",
+    });
+    const model: SelectedModel = { providerID: "openai", modelID: "gpt-5" };
+    const state = makeState({
+      activeSessionId: session.id,
+      sessions: [session],
+      busySessionIds: new Set([session.id]),
+      selectedModel: model,
+    });
+    const queued: Array<Record<string, unknown>> = [];
+
+    const orchestrator = createLocalIntentOrchestrator({
+      getState: () => state,
+      getResourceRuntime: () => undefined,
+      getCurrentVariant: () => undefined,
+      sessionsClient: {
+        prompt: async () => undefined,
+        abort: async () => undefined,
+        queue: {
+          enqueue: async (input: Record<string, unknown>) => {
+            queued.push(input);
+            return [{ id: "queue-1", text: String(input.text), mode: "queue" }];
+          },
+        },
+      } as never,
+      createSession: async () => null,
+      scheduleSessionMessageReconcile: () => undefined,
+      requestSessionAutoName: () => undefined,
+      dispatch: () => undefined,
+      sessionCreatingRef: { current: false },
+    });
+
+    await orchestrator.sendPrompt("Queue without directory");
+
+    expect(queued).toEqual([
+      expect.objectContaining({
+        sessionId: "pi:session-1",
+        text: "Queue without directory",
+        model,
+        mode: "queue",
+        insertAt: "back",
+        harnessId: "pi",
+        target: { workspaceId: "workspace-1" },
+      }),
+    ]);
+  });
+
   test("sends commands through the active backend runtime and reconciles afterward", async () => {
     const session = makeSession({
       id: "session-1",

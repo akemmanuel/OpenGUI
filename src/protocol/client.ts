@@ -139,7 +139,7 @@ export type QueueHarnessTarget = HarnessTarget & { directory: string };
 
 export interface QueueScopeInput {
   harnessId: HarnessId;
-  target: QueueHarnessTarget;
+  target?: HarnessTarget;
 }
 
 export interface OpenGuiClient {
