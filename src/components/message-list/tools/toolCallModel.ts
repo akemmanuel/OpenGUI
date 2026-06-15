@@ -211,15 +211,19 @@ export function getToolCallViewModel(
   const kind = normalizeKind(part.tool);
   const text = rawOutput(state);
   const error = errorOutput(state);
-  const bashText =
-    kind === "bash" ? (text ?? metadataOutput(state) ?? (status === "error" ? error : null)) : null;
+  const bashDisplayText =
+    kind === "bash"
+      ? status === "error"
+        ? (error ?? text)
+        : (text ?? metadataOutput(state))
+      : null;
   const editFiles = kind === "edit" ? extractEditFiles(state) : [];
   const taskInfo = kind === "task" ? extractTaskInfo(state) : null;
   const todos = kind === "todo" ? extractTodos(state) : null;
   const images = extractImageAttachments(state, serverUrl);
   const output: ToolOutputBlock[] = [];
   const rawContent = meaningfulText(
-    kind === "bash" ? bashText : status === "error" ? (error ?? text) : text,
+    kind === "bash" ? bashDisplayText : status === "error" ? (error ?? text) : text,
   );
 
   if (editFiles.length > 0) output.push({ type: "diff", files: editFiles });

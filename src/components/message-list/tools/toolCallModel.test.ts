@@ -121,4 +121,34 @@ describe("getToolCallViewModel", () => {
     expect(vm.output).toEqual([{ type: "text", text: "command failed", format: "terminal" }]);
     expect(vm.rawOutput).toBe(null);
   });
+
+  test("prefers bash error text over partial output when both are present", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: { status: "error", output: "partial stdout", error: "command failed" },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "command failed", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("keeps raw output null for formatted output with meaningless text", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "todowrite",
+        state: {
+          status: "completed",
+          input: { todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+          output: "\n>\n>\n",
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([
+      { type: "todos", todos: [{ content: "Buy milk", status: "pending", priority: "medium" }] },
+    ]);
+    expect(vm.rawOutput).toBe(null);
+  });
 });
