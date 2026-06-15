@@ -18,22 +18,69 @@ const ToggleGroupContext = React.createContext<
   orientation: "horizontal",
 });
 
+type ToggleGroupBaseProps = Omit<
+  ToggleGroupPrimitive.Props,
+  "value" | "defaultValue" | "onValueChange" | "multiple"
+> &
+  VariantProps<typeof toggleVariants> & {
+    spacing?: number;
+    orientation?: "horizontal" | "vertical";
+  };
+
+type ToggleGroupProps =
+  | (ToggleGroupBaseProps & {
+      type?: "single";
+      value?: string;
+      defaultValue?: string;
+      onValueChange?: (value: string) => void;
+    })
+  | (ToggleGroupBaseProps & {
+      type: "multiple";
+      value?: readonly string[];
+      defaultValue?: readonly string[];
+      onValueChange?: (value: string[]) => void;
+    });
+
 function ToggleGroup({
   className,
   variant,
   size,
   spacing = 2,
   orientation = "horizontal",
+  type = "single",
+  value,
+  defaultValue,
+  onValueChange,
   children,
   ...props
-}: Omit<ToggleGroupPrimitive.Props, "value" | "onValueChange"> &
-  VariantProps<typeof toggleVariants> & {
-    spacing?: number;
-    orientation?: "horizontal" | "vertical";
-    type?: "single" | "multiple";
-    value?: string | readonly string[];
-    onValueChange?: (value: string | readonly string[]) => void;
-  }) {
+}: ToggleGroupProps) {
+  const isMultiple = type === "multiple";
+  const primitiveValue =
+    value === undefined
+      ? undefined
+      : isMultiple
+        ? (value as readonly string[])
+        : value
+          ? [value as string]
+          : [];
+  const primitiveDefaultValue =
+    defaultValue === undefined
+      ? undefined
+      : isMultiple
+        ? (defaultValue as readonly string[])
+        : defaultValue
+          ? [defaultValue as string]
+          : [];
+
+  const handleValueChange = (nextValue: string[]) => {
+    if (isMultiple) {
+      (onValueChange as ((value: string[]) => void) | undefined)?.(nextValue);
+      return;
+    }
+
+    (onValueChange as ((value: string) => void) | undefined)?.(nextValue[0] ?? "");
+  };
+
   return (
     <ToggleGroupPrimitive
       data-slot="toggle-group"
@@ -46,7 +93,14 @@ function ToggleGroup({
         "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-vertical:flex-col data-vertical:items-stretch",
         className,
       )}
-      {...(props as ToggleGroupPrimitive.Props)}
+      multiple={isMultiple}
+      value={primitiveValue}
+      defaultValue={primitiveDefaultValue}
+      onValueChange={handleValueChange}
+      {...(props as Omit<
+        ToggleGroupPrimitive.Props,
+        "value" | "defaultValue" | "onValueChange" | "multiple"
+      >)}
     >
       <ToggleGroupContext.Provider value={{ variant, size, spacing, orientation }}>
         {children}
