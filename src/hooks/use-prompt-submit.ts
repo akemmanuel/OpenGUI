@@ -68,21 +68,53 @@ export function usePromptSubmit({
   resetHistory: () => void;
 }) {
   const submittingRef = React.useRef(false);
+  const latestRef = React.useRef({
+    value,
+    disabled,
+    isUploading,
+    isLoading,
+    queueMode,
+    parseSlashCommand,
+    sendCommand,
+    onSubmit,
+    clearPromptDraft,
+    onAfterSubmit,
+    resetSlashCommand,
+    resetHistory,
+  });
+
+  latestRef.current = {
+    value,
+    disabled,
+    isUploading,
+    isLoading,
+    queueMode,
+    parseSlashCommand,
+    sendCommand,
+    onSubmit,
+    clearPromptDraft,
+    onAfterSubmit,
+    resetSlashCommand,
+    resetHistory,
+  };
+
   const hasValue = value.trim().length > 0;
 
   const submit = React.useCallback(async () => {
+    const latest = latestRef.current;
+    const currentValue = latest.value;
     if (submittingRef.current) return;
-    if (disabled || isUploading) return;
-    if (!hasValue) return;
+    if (latest.disabled || latest.isUploading) return;
+    if (currentValue.trim().length === 0) return;
     submittingRef.current = true;
 
     const decision = decidePromptSubmit({
-      value,
-      disabled,
-      isUploading,
-      isLoading,
-      queueMode,
-      slashInvocation: parseSlashCommand(value),
+      value: currentValue,
+      disabled: latest.disabled,
+      isUploading: latest.isUploading,
+      isLoading: latest.isLoading,
+      queueMode: latest.queueMode,
+      slashInvocation: latest.parseSlashCommand(currentValue),
     });
 
     if (decision.type === "skip") {
@@ -92,35 +124,24 @@ export function usePromptSubmit({
 
     try {
       if (decision.type === "command") {
-        clearPromptDraft();
-        resetSlashCommand();
-        resetHistory();
-        await sendCommand(decision.commandName, decision.args);
+        latest.clearPromptDraft();
+        latest.resetSlashCommand();
+        latest.resetHistory();
+        await latest.sendCommand(decision.commandName, decision.args);
         return;
       }
 
-      await onSubmit?.(decision.text, decision.mode);
-      clearPromptDraft();
-      onAfterSubmit?.();
-      resetHistory();
+      const submission = Promise.resolve(latest.onSubmit?.(decision.text, decision.mode));
+      latest.clearPromptDraft();
+      latest.onAfterSubmit?.();
+      latest.resetHistory();
+      submission.catch((error) => {
+        console.error("Failed to submit prompt", error);
+      });
     } finally {
       submittingRef.current = false;
     }
-  }, [
-    clearPromptDraft,
-    disabled,
-    hasValue,
-    isUploading,
-    isLoading,
-    onSubmit,
-    onAfterSubmit,
-    parseSlashCommand,
-    queueMode,
-    resetHistory,
-    resetSlashCommand,
-    sendCommand,
-    value,
-  ]);
+  }, []);
 
   return { hasValue, submit };
 }

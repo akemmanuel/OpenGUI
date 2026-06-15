@@ -2213,12 +2213,13 @@ function InternalAgentProvider({
         session,
         session ? stateRef.current.sessionMeta[session.id] : undefined,
       ) ?? undefined;
-    if (!harnessId || !target?.directory) {
-      throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
+    const workspaceId = getSessionWorkspaceId(session) ?? undefined;
+    if (!harnessId) {
+      throw new Error("Queued prompt target requires Harness and Session ID");
     }
     return {
       harnessId,
-      target: { ...target, directory: target.directory },
+      target: target ?? (workspaceId ? { workspaceId } : undefined),
     };
   }, []);
 
