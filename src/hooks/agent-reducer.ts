@@ -104,6 +104,43 @@ function getTurnRunIdForSession(state: InternalAgentState, sessionID: string) {
   return undefined;
 }
 
+function getSessionIdentityKeys(state: InternalAgentState, sessionID: string) {
+  const keys = new Set([sessionID]);
+  const matchingSessions = state.sessions.filter(
+    (session) => session.id === sessionID || getBackendSessionIdentity(session) === sessionID,
+  );
+  for (const matchingSession of matchingSessions) {
+    keys.add(matchingSession.id);
+    keys.add(getBackendSessionIdentity(matchingSession));
+  }
+  return keys;
+}
+
+function removeSessionError(errors: Record<string, string>, sessionID: string) {
+  if (!errors[sessionID]) return errors;
+  const next = { ...errors };
+  delete next[sessionID];
+  return next;
+}
+
+function getNextSessionStatusErrors({
+  current,
+  sessionID,
+  statusType,
+  retryMessage,
+}: {
+  current: Record<string, string>;
+  sessionID: string;
+  statusType: string;
+  retryMessage: string | null;
+}) {
+  if (retryMessage) return { ...current, [sessionID]: retryMessage };
+  if (statusType === "busy" || statusType === "idle" || statusType === "retry") {
+    return removeSessionError(current, sessionID);
+  }
+  return current;
+}
+
 function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Message) {
   if (msg.role !== "assistant") return null;
   const activeTurnId = getTurnRunIdForSession(state, msg.sessionID);
@@ -923,7 +960,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       const run = action.payload;
       const busySessionIds = new Set(state.busySessionIds);
       busySessionIds.add(run.sessionID);
-      const { [run.sessionID]: _clearedSessionError, ...sessionErrors } = state.sessionErrors;
+      const sessionErrors = state.sessionErrors[run.sessionID]
+        ? Object.fromEntries(
+            Object.entries(state.sessionErrors).filter(([id]) => id !== run.sessionID),
+          )
+        : state.sessionErrors;
       return {
         ...state,
         sessionErrors,
@@ -944,15 +985,15 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         lastError: action.payload,
-        ...(action.payload === null ? { sessionErrors: {} } : {}),
       };
 
     case "SESSION_ERROR": {
       const { sessionID, error } = action.payload;
       if (!sessionID) return { ...state, lastError: error };
 
+      const sessionIdentityKeys = getSessionIdentityKeys(state, sessionID);
       const newBusy = new Set(state.busySessionIds);
-      newBusy.delete(sessionID);
+      sessionIdentityKeys.forEach((key) => newBusy.delete(key));
       const activeTurnId = getTurnRunIdForSession(state, sessionID);
       const activeTurn = activeTurnId ? state.turnRuns[activeTurnId] : undefined;
       const nextTurnRuns =
@@ -968,7 +1009,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           : state.turnRuns;
       const nextActiveTurnRunBySession = Object.fromEntries(
         Object.entries(state.activeTurnRunBySession).filter(([sid, turnId]) => {
-          if (sid === sessionID) return false;
+          if (sessionIdentityKeys.has(sid)) return false;
           return turnId !== activeTurnId;
         }),
       );
@@ -980,7 +1021,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         busySessionIds: newBusy,
         turnRuns: nextTurnRuns,
         activeTurnRunBySession: nextActiveTurnRunBySession,
-        ...(sessionID === state.activeSessionId ? { isBusy: false } : {}),
+        ...(state.activeSessionId && sessionIdentityKeys.has(state.activeSessionId)
+          ? { isBusy: false }
+          : {}),
       };
     }
 
@@ -1724,13 +1767,12 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       } else {
         newBusy.delete(sessionID);
       }
-      const nextSessionErrors = retryMessage
-        ? { ...state.sessionErrors, [sessionID]: retryMessage }
-        : status.type === "idle" && state.sessionErrors[sessionID]
-          ? Object.fromEntries(
-              Object.entries(state.sessionErrors).filter(([id]) => id !== sessionID),
-            )
-          : state.sessionErrors;
+      const nextSessionErrors = getNextSessionStatusErrors({
+        current: state.sessionErrors,
+        sessionID,
+        statusType: status.type,
+        retryMessage,
+      });
       // Keep session buffer cached even when session goes idle so
       // switching back to it is instant (LRU eviction handles cleanup).
       const nextBuffers = state._sessionBuffers;

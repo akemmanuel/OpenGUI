@@ -439,7 +439,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                     : t("prompt.queue")
                   : t("prompt.send")
               }
-              disabled={isDisabled}
+              disabled={isDisabled || !promptSubmit.hasValue}
               className={!promptSubmit.hasValue ? "opacity-50" : undefined}
               onClick={(e) => {
                 e.stopPropagation();

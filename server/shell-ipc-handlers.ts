@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, win32 } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { homedir } from "node:os";
 import type { BackendServiceContext } from "./services/index.ts";
 import { getHarnessInventories } from "./harness-inventory.ts";
+import { resolveFileTarget } from "../lib/open-file-target.ts";
 
 interface IpcSender {
   send(channel: string, data: unknown): void;
@@ -59,39 +60,6 @@ function showFileInFolder(path: string) {
   if (process.platform === "darwin") spawnDetached("open", ["-R", path]);
   else if (process.platform === "win32") spawnDetached("explorer.exe", [`/select,${path}`]);
   else openPath(dirname(path));
-}
-
-function cleanOpenPath(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim().replace(/^["']|["']$/g, "");
-}
-
-function isPathInside(candidate: string, parent: string) {
-  const childRelative = relative(parent, candidate);
-  return (
-    childRelative === "" ||
-    (!!childRelative && !childRelative.startsWith("..") && !isAbsolute(childRelative))
-  );
-}
-
-function resolveFileTarget(filePath: unknown, baseDirectory?: unknown) {
-  const target = cleanOpenPath(filePath);
-  if (!target || target.includes("\0")) return null;
-
-  const base = cleanOpenPath(baseDirectory);
-  const normalizedBase = base ? resolve(base) : null;
-  if (!normalizedBase) return null;
-
-  const targetAbsolute = isAbsolute(target) || win32.isAbsolute(target);
-  const resolved = targetAbsolute ? resolve(target) : resolve(normalizedBase, target);
-  if (normalizedBase && !isPathInside(resolved, normalizedBase)) return null;
-
-  try {
-    if (!existsSync(resolved) || !statSync(resolved).isFile()) return null;
-  } catch {
-    return null;
-  }
-  return resolved;
 }
 
 async function runPicker(command: string[]) {
@@ -229,17 +197,19 @@ export function registerShellIpcHandlers(input: {
   ipcMain.handle("shell:openExternal", (_event, url) =>
     openExternal(typeof url === "string" ? url : ""),
   );
-  ipcMain.handle("shell:fileExists", (_event, filePath, baseDirectory) => {
-    return !!resolveFileTarget(filePath, baseDirectory);
+  // Browser-only web-server handlers registered on FakeIpcMain. Electron's
+  // real main process registers equivalent channels in main.ts.
+  ipcMain.handle("shell:fileExists", async (_event, filePath, baseDirectory) => {
+    return !!(await resolveFileTarget(filePath, baseDirectory));
   });
-  ipcMain.handle("shell:openFile", (_event, filePath, baseDirectory) => {
-    const target = resolveFileTarget(filePath, baseDirectory);
+  ipcMain.handle("shell:openFile", async (_event, filePath, baseDirectory) => {
+    const target = await resolveFileTarget(filePath, baseDirectory);
     if (!target) return false;
     openPath(target);
     return true;
   });
-  ipcMain.handle("shell:showFileInFolder", (_event, filePath, baseDirectory) => {
-    const target = resolveFileTarget(filePath, baseDirectory);
+  ipcMain.handle("shell:showFileInFolder", async (_event, filePath, baseDirectory) => {
+    const target = await resolveFileTarget(filePath, baseDirectory);
     if (!target) return false;
     showFileInFolder(target);
     return true;

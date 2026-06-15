@@ -1,4 +1,7 @@
 import type { QueueMode } from "../../src/lib/session-drafts.ts";
+import { access, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
 import type { BackendEventBus } from "./event-bus.ts";
 import type { ProjectService } from "./project-service.ts";
@@ -284,7 +287,17 @@ export class PromptQueueService {
     // Older Session records sometimes used the directory itself as projectId.
     // Keep queue usable for those records instead of failing a running Session.
     if (session.projectId.startsWith("/") || session.projectId.startsWith("~")) {
-      return session.projectId;
+      const legacyPath = session.projectId.startsWith("~")
+        ? join(homedir(), session.projectId.slice(1))
+        : session.projectId;
+      try {
+        await access(legacyPath);
+        if ((await stat(legacyPath)).isDirectory()) {
+          return legacyPath;
+        }
+      } catch {
+        // Fall through to the normal missing-project error.
+      }
     }
 
     throw new Error("Project not found");

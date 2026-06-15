@@ -1889,10 +1889,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
   });
 
-  handleSessionOp("opencode:session:revert", async (conn, id, messageID, partID) =>
-    tagOpenCodeSession(await conn.revertSession(id, messageID, partID), conn.getDirectory()),
+  handleSessionOp(
+    "opencode:session:revert",
+    async (conn, id, messageID, partID, _directory, _workspaceId) =>
+      tagOpenCodeSession(await conn.revertSession(id, messageID, partID), conn.getDirectory()),
   );
-  handleSessionOp("opencode:session:unrevert", async (conn, id) =>
+  handleSessionOp("opencode:session:unrevert", async (conn, id, _directory, _workspaceId) =>
     tagOpenCodeSession(await conn.unrevertSession(id), conn.getDirectory()),
   );
 
