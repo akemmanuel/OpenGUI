@@ -212,11 +212,7 @@ export function getToolCallViewModel(
   const text = rawOutput(state);
   const error = errorOutput(state);
   const bashText =
-    kind === "bash"
-      ? running
-        ? (metadataOutput(state) ?? text)
-        : (text ?? metadataOutput(state) ?? error)
-      : null;
+    kind === "bash" ? (text ?? metadataOutput(state) ?? (status === "error" ? error : null)) : null;
   const editFiles = kind === "edit" ? extractEditFiles(state) : [];
   const taskInfo = kind === "task" ? extractTaskInfo(state) : null;
   const todos = kind === "todo" ? extractTodos(state) : null;

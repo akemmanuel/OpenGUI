@@ -84,4 +84,41 @@ describe("getToolCallViewModel", () => {
     ]);
     expect(vm.rawOutput).toBe('[{"content":"Buy milk","status":"pending","priority":"medium"}]');
   });
+
+  test("prefers completed bash output over streaming metadata for raw output", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: {
+          status: "completed",
+          output: "final output",
+          metadata: { output: "partial output" },
+        },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "final output", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("uses bash metadata while output is still streaming", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "bash",
+        state: { status: "running", metadata: { output: "streaming output" } },
+      }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "streaming output", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
+
+  test("uses error text for failed tools", () => {
+    const vm = getToolCallViewModel(
+      toolPart({ tool: "bash", state: { status: "error", error: "command failed" } }),
+    );
+
+    expect(vm.output).toEqual([{ type: "text", text: "command failed", format: "terminal" }]);
+    expect(vm.rawOutput).toBe(null);
+  });
 });
