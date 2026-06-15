@@ -5,8 +5,8 @@
  * inline TodoListView in MessageList.
  */
 
-import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { Circle, CircleCheck, CircleDot, CircleOff } from "lucide-react";
+import type { ToolCallState } from "@/protocol/session-transcript";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,10 +49,10 @@ export const todoStatusConfig: Record<
 // ---------------------------------------------------------------------------
 
 /** Try to extract a todo array from a todowrite tool part's state. */
-export function extractTodos(state: ToolPart["state"]): TodoItem[] | null {
+export function extractTodos(state: ToolCallState): TodoItem[] | null {
   try {
-    if ("input" in state && state.input) {
-      const raw = state.input.todos;
+    if ("input" in state && state.input && typeof state.input === "object") {
+      const raw = (state.input as Record<string, unknown>).todos;
       if (Array.isArray(raw) && raw.length > 0) {
         return raw.filter(
           (t): t is TodoItem =>

@@ -3,18 +3,18 @@
  * Shows available slash commands filtered by the current input.
  */
 
-import type { Command } from "@opencode-ai/sdk/v2/client";
 import { cn } from "@/lib/utils";
+import type { SlashCommandResource } from "@/protocol/harness-resources";
 
-interface SlashCommandPopoverProps {
-  commands: Command[];
+interface SlashCommandPopoverProps<TCommand extends SlashCommandResource = SlashCommandResource> {
+  commands: TCommand[];
   filter: string;
   activeIndex: number;
-  onSelect: (command: Command) => void;
+  onSelect: (command: TCommand) => void;
   onHover: (index: number) => void;
 }
 
-function matchesFilter(command: Command, filter: string): boolean {
+function matchesFilter(command: SlashCommandResource, filter: string): boolean {
   if (!filter) return true;
   const lower = filter.toLowerCase();
   if (command.name.toLowerCase().includes(lower)) return true;
@@ -22,17 +22,20 @@ function matchesFilter(command: Command, filter: string): boolean {
   return false;
 }
 
-export function useFilteredCommands(commands: Command[], filter: string) {
+export function useFilteredCommands<TCommand extends SlashCommandResource>(
+  commands: TCommand[],
+  filter: string,
+) {
   return commands.filter((cmd) => matchesFilter(cmd, filter));
 }
 
-export function SlashCommandPopover({
+export function SlashCommandPopover<TCommand extends SlashCommandResource>({
   commands,
   filter,
   activeIndex,
   onSelect,
   onHover,
-}: SlashCommandPopoverProps) {
+}: SlashCommandPopoverProps<TCommand>) {
   const filtered = useFilteredCommands(commands, filter);
 
   if (filtered.length === 0) return null;

@@ -3,18 +3,16 @@
  * Handles user messages, assistant text, tool calls, and permission requests.
  */
 
-import type { Part, TextPart } from "@opencode-ai/sdk/v2/client";
-import { ShieldAlert, Undo2 } from "lucide-react";
+import { Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { QuestionPanel } from "@/components/message-list/QuestionPanel";
+import { InteractionRequestsView } from "@/components/message-list/interactions/InteractionRequestsView";
 import { MessageBubble } from "@/components/message-list/MessageBubble";
 import {
   type ScrollSnapshot,
   VirtualMessageScroller,
 } from "@/components/message-list/VirtualMessageScroller";
 import type { TurnFooter } from "@/components/message-list/types";
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
@@ -24,13 +22,14 @@ import {
   useSessionState,
 } from "@/hooks/use-agent-state";
 import type { TurnRun } from "@/hooks/agent-state-types";
+import type { TextTranscriptPart, TranscriptPart } from "@/protocol/session-transcript";
 import logoDark from "../../opengui-dark.svg";
 import logoLight from "../../opengui-light.svg";
 
 /** Part types that actually render something visible. */
 const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
 /** Check if a part will produce visible output. */
-function isRenderablePart(part: Part): boolean {
+function isRenderablePart(part: TranscriptPart): boolean {
   if (!RENDERABLE_TYPES.has(part.type)) return false;
   // text parts with empty content render nothing
   if (part.type === "text" && !part.text?.trim()) return false;
@@ -52,9 +51,9 @@ function nonEmptyString(value: unknown): string | undefined {
 }
 
 function getEntryText(entry: MessageEntry): string {
-  return (entry.parts as TextPart[])
+  return entry.parts
     .filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
+    .map((part) => (part as TextTranscriptPart).text)
     .join("\n")
     .trim();
 }
@@ -105,7 +104,6 @@ function RevertBanner({
 }
 
 export function MessageList({ detachedProject: _detachedProject }: { detachedProject?: string }) {
-  const { t } = useTranslation();
   const {
     respondPermission,
     replyQuestion,
@@ -136,7 +134,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
   const pendingQuestion = activeSessionId ? (pendingQuestions[activeSessionId] ?? null) : null;
 
   const [expandedUserMessages, setExpandedUserMessages] = useState<Set<string>>(() => new Set());
-  const [expandedToolParts, setExpandedToolParts] = useState<Set<string>>(() => new Set());
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(() => new Set());
   const scrollSnapshotsRef = useRef(new Map<string, ScrollSnapshot>());
 
   useEffect(() => {
@@ -322,8 +320,8 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     });
   }, []);
 
-  const toggleToolPart = useCallback((partId: string, expanded: boolean) => {
-    setExpandedToolParts((current) => {
+  const toggleToolCall = useCallback((partId: string, expanded: boolean) => {
+    setExpandedToolCalls((current) => {
       const next = new Set(current);
       if (expanded) next.add(partId);
       else next.delete(partId);
@@ -356,9 +354,9 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
                 : undefined
             }
             expandedUserMessages={expandedUserMessages}
-            expandedToolParts={expandedToolParts}
+            expandedToolCalls={expandedToolCalls}
             onToggleUserMessage={toggleUserMessage}
-            onToggleToolPart={toggleToolPart}
+            onToggleToolCall={toggleToolCall}
           />
         </div>
       );
@@ -371,9 +369,9 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
       forkFromMessage,
       revertToMessage,
       expandedUserMessages,
-      expandedToolParts,
+      expandedToolCalls,
       toggleUserMessage,
-      toggleToolPart,
+      toggleToolCall,
       capabilities,
     ],
   );
@@ -415,42 +413,13 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
         <RevertBanner revertedCount={revertedCount} onRestore={unrevert} />
       )}
 
-      {capabilities?.permissions && pendingPermission && (
-        <div className="border rounded-lg p-4 bg-amber-500/10 border-amber-500/30 space-y-3 mt-4">
-          <div className="flex items-start gap-2">
-            <ShieldAlert className="size-5 text-amber-500 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="text-sm font-medium">
-                {t("permissionPanel.title", { permission: pendingPermission.permission })}
-              </p>
-              {pendingPermission.patterns.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {pendingPermission.patterns.join(", ")}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="default" onClick={() => respondPermission("once")}>
-              {t("permissionPanel.allowOnce")}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => respondPermission("always")}>
-              {t("permissionPanel.alwaysAllow")}
-            </Button>
-            <Button size="sm" variant="destructive" onClick={() => respondPermission("reject")}>
-              {t("permissionPanel.reject")}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {capabilities?.questions && pendingQuestion && (
-        <QuestionPanel
-          questions={pendingQuestion.questions}
-          onSubmit={(answers) => replyQuestion(answers)}
-          onDismiss={() => rejectQuestion()}
-        />
-      )}
+      <InteractionRequestsView
+        permission={capabilities?.permissions ? pendingPermission : null}
+        question={capabilities?.questions ? pendingQuestion : null}
+        onRespondPermission={respondPermission}
+        onReplyQuestion={replyQuestion}
+        onRejectQuestion={rejectQuestion}
+      />
     </>
   );
 

@@ -1,7 +1,7 @@
-import type { Part } from "@opencode-ai/sdk/v2/client";
 import { memo } from "react";
 import type { ImageMention } from "@/components/ImageMentionPreview";
-import { ToolPartView } from "@/components/message-list/tools/ToolPartView";
+import { ToolCallPartView } from "@/components/message-list/tools/ToolCallPartView";
+import type { TranscriptPart } from "@/protocol/session-transcript";
 import { FilePartView } from "./FilePartView";
 import { ReasoningPartView } from "./ReasoningPartView";
 import { TextPartView } from "./TextPartView";
@@ -10,18 +10,18 @@ export const PartView = memo(function PartView({
   part,
   isUser,
   lastReasoningPartId,
-  expandedToolParts,
-  onToggleToolPart,
+  expandedToolCalls,
+  onToggleToolCall,
   activeImagePath,
   onImageHover,
   onImageOpen,
   imageBaseDirectory,
 }: {
-  part: Part;
+  part: TranscriptPart;
   isUser?: boolean;
   lastReasoningPartId?: string;
-  expandedToolParts?: ReadonlySet<string>;
-  onToggleToolPart?: (partId: string, expanded: boolean) => void;
+  expandedToolCalls?: ReadonlySet<string>;
+  onToggleToolCall?: (partId: string, expanded: boolean) => void;
   activeImagePath?: string | null;
   onImageHover?: (path: string | null) => void;
   onImageOpen?: (image: ImageMention) => void;
@@ -45,10 +45,10 @@ export const PartView = memo(function PartView({
       return <ReasoningPartView part={part} isLastReasoning={part.id === lastReasoningPartId} />;
     case "tool":
       return (
-        <ToolPartView
+        <ToolCallPartView
           part={part}
-          expandedToolParts={expandedToolParts}
-          onToggleToolPart={onToggleToolPart}
+          expandedToolCalls={expandedToolCalls}
+          onToggleToolCall={onToggleToolCall}
         />
       );
     case "step-start":
@@ -57,6 +57,8 @@ export const PartView = memo(function PartView({
     case "patch":
     case "compaction":
     case "retry":
+    case "subtask":
+    case "agent":
       return null;
     default:
       return null;

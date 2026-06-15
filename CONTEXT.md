@@ -398,6 +398,18 @@ _Avoid_: default to Discover
 A backend-owned external capability exposed through MCP. Tools are managed separately from Plugins even though both can extend agent behaviour.
 _Avoid_: Plugin, frontend tool
 
+**Tool call**:
+A single visible use of a Tool within a Session transcript or Live Session stream. A Tool call has a tool name, input, output, and status (`running`, `success`, or `error`); protocol states such as pending are implementation details and present as running. Tool calls are passive execution metadata attached to an assistant turn, not chat-equivalent assistant content and not user-actionable prompts.
+_Avoid_: plugin call, raw log line, assistant message, permission request, question prompt
+
+**Tool call presentation**:
+The compact UI rendering of a Tool call. Collapsed Tool call rows show a status icon plus a semantic label for known tools, or a prettified tool name for unknown/custom MCP tools. Inputs are hidden for now. Outputs, including error text, terminal text, structured output, and images, are shown only when the Tool call is expanded. A Tool call is expandable only when it has meaningful output; empty, whitespace-only, or structurally useless output must not create an expansion affordance or blank body. Long expanded output is bounded and scrollable.
+_Avoid_: always show input, JSON inspector by default, empty expandable row, inline error by default
+
+**Interaction request**:
+A user-actionable, agent-blocking request inside a Session where the agent is paused until the user decides something. Permission requests and question prompts are Interaction requests, not ordinary Tool calls. They should render as prominent actionable panels rather than passive collapsible Tool call rows.
+_Avoid_: tool output, permission tool call, question tool call, passive transcript metadata
+
 **Harness restart**:
 A user-requested recovery action that hard-restarts all Harness processes managed by OpenGUI, not just the currently selected Harness. It stops background agent processes such as the Pi daemon before starting them again.
 _Avoid_: server restart, selected backend restart, soft reconnect

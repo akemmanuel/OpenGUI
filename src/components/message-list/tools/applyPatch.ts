@@ -1,6 +1,6 @@
-import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { parseUnifiedDiff, type DiffLine, type DiffResult } from "@/lib/diff";
-import { getToolInput, isRecord, stringField, toFiniteNumber } from "./toolTypes";
+import type { ToolCallState } from "@/protocol/session-transcript";
+import { getToolInput, isRecord, stringField, toFiniteNumber } from "./toolCallUtils";
 
 type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
 
@@ -22,7 +22,7 @@ function computeApplyPatchDiff(file: Record<string, unknown>): DiffResult | null
   return parseDiffText(file.diff);
 }
 
-function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
+function extractApplyPatchFiles(state: ToolCallState): ApplyPatchFileDiff[] {
   if (!("metadata" in state) || !isRecord(state.metadata)) return [];
   const rawFiles = state.metadata.files;
   if (!Array.isArray(rawFiles)) return [];
@@ -66,7 +66,7 @@ function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] 
  * Prefer rich backend metadata when present, but still create a single file row
  * from input.filePath/path so edit and patch tools use the same UI frame.
  */
-export function extractEditFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
+export function extractEditFiles(state: ToolCallState): ApplyPatchFileDiff[] {
   const metadataFiles = extractApplyPatchFiles(state);
   if (metadataFiles.length > 0) return metadataFiles;
 
