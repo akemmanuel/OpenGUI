@@ -129,7 +129,11 @@ export interface ActionsContextValue {
     password?: string,
   ) => Promise<void>;
   startNewChat: () => Promise<void>;
-  setActiveTarget: (directory: string, harnessId?: HarnessId | null) => void;
+  setActiveTarget: (
+    directory: string,
+    harnessId?: HarnessId | null,
+    options?: { resetSelection?: boolean; newChat?: boolean },
+  ) => void;
   setDefaultChatDirectory: (directory: string | null) => void;
   setActiveTargetDirectory: (directory: string) => void;
   setActiveTargetBackend: (harnessId: HarnessId) => void;

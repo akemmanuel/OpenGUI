@@ -62,6 +62,7 @@ import { initialAgentState } from "@/hooks/agent-initial-state";
 import {
   isModelAvailable,
   resolveAvailableAgent,
+  resolveServerDefaultModel,
   selectedModelsEqual,
   selectedVariantsEqual,
 } from "@/hooks/agent-model-selection";
@@ -124,6 +125,7 @@ export {
 } from "@/hooks/agent-state-persistence";
 export { resolveServerDefaultModel } from "@/hooks/agent-model-selection";
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
+import { getNewChatModelBehavior } from "@/lib/new-chat-model-behavior";
 import {
   onSettingsChange,
   storageGet,
@@ -135,7 +137,12 @@ import { useOpenGuiClient } from "@/protocol/provider";
 import { persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
-import type { ConnectionConfig, ConnectionStatus, Workspace } from "@/types/electron";
+import type {
+  ConnectionConfig,
+  ConnectionStatus,
+  SelectedModel,
+  Workspace,
+} from "@/types/electron";
 
 // ---------------------------------------------------------------------------
 // State
@@ -1929,20 +1936,45 @@ function InternalAgentProvider({
   }, []);
 
   const setActiveTarget = useCallback(
-    (directory: string, harnessId?: HarnessId | null) => {
-      dispatch({
-        type: "SET_ACTIVE_TARGET",
-        payload: {
-          directory,
-          harnessId:
-            harnessId ??
-            activeSessionBackendId ??
-            resolvePendingPromptCreationHarnessRoute({
-              activeTargetBackendId: stateRef.current.activeTargetBackendId,
-              preferredBackendId,
-            }).harnessId,
-        },
-      });
+    (
+      directory: string,
+      harnessId?: HarnessId | null,
+      options?: { resetSelection?: boolean; newChat?: boolean },
+    ) => {
+      const payload: {
+        directory: string;
+        harnessId: HarnessId | null;
+        resetSelection?: boolean;
+        selectedModel?: SelectedModel | null;
+        selectedAgent?: string | null;
+      } = {
+        directory,
+        harnessId:
+          harnessId ??
+          activeSessionBackendId ??
+          resolvePendingPromptCreationHarnessRoute({
+            activeTargetBackendId: stateRef.current.activeTargetBackendId,
+            preferredBackendId,
+          }).harnessId,
+      };
+
+      if (options?.newChat) {
+        const behavior = getNewChatModelBehavior();
+        if (behavior === "ask") {
+          payload.resetSelection = true;
+        } else if (behavior === "workspace-default") {
+          payload.resetSelection = true;
+          payload.selectedModel = resolveServerDefaultModel(
+            stateRef.current.providers,
+            stateRef.current.providerDefaults,
+          );
+          payload.selectedAgent = null;
+        }
+      } else if (options?.resetSelection) {
+        payload.resetSelection = true;
+      }
+
+      dispatch({ type: "SET_ACTIVE_TARGET", payload });
     },
     [activeSessionBackendId, preferredBackendId],
   );
@@ -1953,7 +1985,7 @@ function InternalAgentProvider({
     // Opening a blank chat should not touch the filesystem. The project connection is
     // created lazily when the user sends a prompt or explicitly connects a project,
     // which avoids unnecessary macOS Documents/Desktop permission prompts.
-    setActiveTarget(defaultChatDirectory, preferredBackendId);
+    setActiveTarget(defaultChatDirectory, preferredBackendId, { newChat: true });
   }, [preferredBackendId, setActiveTarget]);
 
   const setActiveTargetDirectory = useCallback(
