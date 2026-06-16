@@ -22,9 +22,9 @@ export function PromptWorktreeSelector({
   onNewWorktree,
 }: {
   shouldShow: boolean;
-  selectedOption: any;
+  selectedOption: { path: string; label: string; isRoot: boolean } | null;
   isPendingTargetSelection: boolean;
-  options: any[];
+  options: { path: string; label: string; isRoot: boolean; branch?: string | null }[];
   selectedDirectory?: string | null;
   projectDir?: string | null;
   worktreeParents: Record<string, unknown>;

@@ -7,6 +7,7 @@ import {
   abortSessionThroughHarness,
   promptSessionThroughHarness,
 } from "./session-lifecycle-actions.ts";
+import { resolveSessionProjectRecord } from "./session-project-scope.ts";
 
 export type SharedSessionPromptDecision = "dispatch" | "queue";
 
@@ -137,6 +138,7 @@ export async function submitSessionPrompt(input: {
 
 export function registerSharedSessionControl(input: {
   services: BackendServiceContext;
+  resolveSafeDirectory: (path: string) => Promise<string>;
 }): () => void {
   const dispatching = new Set<string>();
 
@@ -148,9 +150,12 @@ export function registerSharedSessionControl(input: {
     forkEffect(
       Effect.gen(function* () {
         const project = yield* tryPromiseEffect(() =>
-          input.services.projects.getProject(session.projectId),
+          resolveSessionProjectRecord({
+            services: input.services,
+            session,
+            resolveSafeDirectory: input.resolveSafeDirectory,
+          }),
         );
-        if (!project) return;
 
         yield* dispatchFirstQueuedPromptEffect({
           services: input.services,

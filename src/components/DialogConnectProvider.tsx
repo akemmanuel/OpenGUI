@@ -90,6 +90,7 @@ export function DialogConnectProvider({
   const pollingRef = useRef(false);
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     setSelectedMethodIndex(authMethods.length === 1 && authMethods[0] ? 0 : null);
@@ -197,7 +198,8 @@ export function DialogConnectProvider({
           // Start polling
           setOauthPolling(true);
           pollingRef.current = true;
-          void pollOAuth(methodIndex);
+          const pollPromise = pollOAuth(methodIndex);
+          pollPromiseRef.current = pollPromise ?? null;
         }
       } catch (err) {
         toast.error(getErrorMessage(err));
@@ -245,6 +247,7 @@ export function DialogConnectProvider({
   useEffect(() => {
     return () => {
       pollingRef.current = false;
+      pollPromiseRef.current = null;
     };
   }, []);
 

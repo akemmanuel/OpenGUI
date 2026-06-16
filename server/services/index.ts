@@ -115,6 +115,7 @@ export {
   listSessionRecords,
   updateSessionRecord,
 } from "./session-record-actions.ts";
+export { resolveSessionProjectRecord } from "./session-project-scope.ts";
 export { syncDirectorySessions, syncProjectSessions } from "./session-sync.ts";
 
 export interface HarnessAdapterDescriptor {

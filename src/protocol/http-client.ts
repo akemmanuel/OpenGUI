@@ -15,6 +15,7 @@ import type {
   SessionQueryResult,
   UpdateProjectInput,
 } from "@/protocol/client";
+import { mergeCanonicalEventForListener } from "@/hooks/backend-event-normalization";
 import { composeFrontendSessionId } from "@/lib/session-identity";
 import { normalizeProjectPath } from "@/lib/path";
 import { createHarnessPlatform, targetArgs, unwrapIpcResult } from "@/protocol/http-platform";
@@ -739,16 +740,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         ) => {
           try {
             if (isCanonicalEventEnvelope(message)) {
-              if (message.payload && typeof message.payload === "object") {
-                listener({
-                  id: message.id,
-                  type: message.type,
-                  ...(message.payload as object),
-                  ...(message.projectId ? { projectId: message.projectId } : {}),
-                  ...(message.sessionId ? { sessionId: message.sessionId } : {}),
-                  ...(message.harnessId ? { harnessId: message.harnessId } : {}),
-                } as unknown as HarnessEvent);
-              }
+              const merged = mergeCanonicalEventForListener(message);
+              if (merged) listener(merged as unknown as HarnessEvent);
               return;
             }
             if (!message?.channel?.endsWith(":bridge-event")) return;

@@ -4,6 +4,41 @@ import { useListKeyboardNavigation } from "@/hooks/use-list-keyboard-navigation"
 import { getNextPrimaryAgent } from "@/hooks/use-primary-agent-cycle";
 import { usePromptSubmit } from "@/hooks/use-prompt-submit";
 import { useSlashCommandInput } from "@/hooks/use-slash-command-input";
+import type { Session } from "@/hooks/agent-state-types";
+import type { HarnessCapabilities } from "@/agents/backend";
+import type { Command } from "@/protocol/harness-types";
+import type { QueueMode } from "@/lib/session-drafts";
+
+interface UsePromptInputInteractionsProps {
+  value: string;
+  setValue: React.Dispatch<React.SetStateAction<string>>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  findFiles: (
+    target: { directory?: string; workspaceId?: string; baseUrl?: string } | null,
+    query: string,
+  ) => Promise<string[]>;
+  activeSessionId: string | null;
+  sessions: Session[];
+  activeTargetDirectory: string | null;
+  activeWorkspaceId: string | null;
+  workspaceServerUrl: string | null;
+  capabilities: HarnessCapabilities | undefined;
+  commands: Command[];
+  propsOnChange: ((e: React.ChangeEvent<HTMLTextAreaElement>) => void) | undefined;
+  noteManualInput: () => void;
+  promptFiles: { isUploading: boolean };
+  isDisabled: boolean;
+  isLoading?: boolean;
+  queueMode: QueueMode;
+  sendCommand: (command: string, args: string) => Promise<void>;
+  onSubmit?: (message: string, mode?: QueueMode) => void | Promise<void>;
+  clearPromptDraft: () => void;
+  resetHistory: () => void;
+  handleHistoryKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  primaryAgents: string[];
+  selectedAgent: string | null;
+  setAgent: (agent: string | null) => void;
+}
 
 export function usePromptInputInteractions({
   value,
@@ -31,10 +66,10 @@ export function usePromptInputInteractions({
   primaryAgents,
   selectedAgent,
   setAgent,
-}: any) {
+}: UsePromptInputInteractionsProps) {
   const getActiveTarget = React.useCallback(() => {
     if (activeSessionId) {
-      const activeSession = sessions.find((s: any) => s.id === activeSessionId);
+      const activeSession = sessions.find((s) => s.id === activeSessionId);
       return {
         directory: activeSession?._projectDir ?? activeSession?.directory ?? undefined,
         workspaceId: activeSession?._workspaceId ?? activeWorkspaceId ?? undefined,

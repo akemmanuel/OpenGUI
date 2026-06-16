@@ -20,7 +20,7 @@ export function useSidebarRename({
   const commitRename = useCallback(() => {
     if (editingSessionId) {
       const trimmed = editValue.trim();
-      if (trimmed && trimmed !== editingSessionId) {
+      if (trimmed) {
         const session = sessions.find((s) => s.id === editingSessionId);
         if (trimmed !== (session?.title || "")) void renameSession(editingSessionId, trimmed);
       }

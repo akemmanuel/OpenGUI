@@ -1,7 +1,77 @@
 import { SessionRow } from "./SessionRow";
 import { ProjectEntry } from "./ProjectEntry";
+import type { Session } from "@/hooks/agent-state-types";
+import type {
+  ProjectMetaMap,
+  SessionMetaMap,
+  SessionColor,
+  WorktreeParentMap,
+} from "@/hooks/agent-state-persistence";
+import type { OpenGuiClient } from "@/protocol/client";
+import type { ConnectionStatus, GitWorktree } from "@/types/electron";
+import type { SidebarCollapsedProjects } from "@/lib/sidebar-collapsed";
 
-export function useSidebarRenderers(args: any) {
+interface UseSidebarRenderersArgs {
+  activeSessionId: string | null;
+  availableProjectDirectories: string[];
+  busySessionIds: Set<string>;
+  cancelEditing: () => void;
+  client: OpenGuiClient;
+  closeMobileSidebar: () => void;
+  closeOtherProjects: (directory: string) => void | Promise<void>;
+  collapsed: SidebarCollapsedProjects;
+  commitRename: () => void;
+  connections: Record<string, ConnectionStatus>;
+  deleteSession: (sessionId: string) => void | Promise<void>;
+  detachedProject?: string;
+  editInputRef: React.RefObject<HTMLInputElement | null>;
+  editValue: string;
+  editingSessionId: string | null;
+  hasActiveSearch: boolean;
+  hasUnsentDraft: (sessionId: string) => boolean;
+  homeDir?: string | null;
+  isGitRepo: Record<string, boolean>;
+  isLocalWorkspace: boolean;
+  knownWorktrees: Record<string, GitWorktree[]>;
+  moveSessionToProject: (sessionId: string, projectDirectory: string) => void | Promise<void>;
+  namingSessionIds: Set<string>;
+  pendingPermissions: Record<string, unknown>;
+  pendingQuestions: Record<string, unknown>;
+  projectMeta: ProjectMetaMap;
+  queuedPrompts: Record<string, unknown[]>;
+  refreshGitInfo: (directory: string) => void | Promise<void>;
+  remoteUrls: Record<string, string>;
+  removeProject: (directory: string) => void | Promise<void>;
+  removeSessionFromProject: (sessionId: string) => void | Promise<void>;
+  revealSessionInProject: (directory: string) => void;
+  selectSession: (sessionId: string) => void | Promise<void>;
+  sessionMeta: SessionMetaMap;
+  setActiveTarget: (directory: string, harnessId?: null, options?: { newChat?: boolean }) => void;
+  setEditValue: (value: string) => void;
+  setMergeInfo: React.Dispatch<
+    React.SetStateAction<{ mainDir: string; branch: string; worktreePath: string } | null>
+  >;
+  setProjectPinned: (directory: string, pinned: boolean) => void;
+  setProjectPopover: React.Dispatch<
+    React.SetStateAction<{ directory: string; top: number } | null>
+  >;
+  setSessionColor: (sessionId: string, color: SessionColor) => void;
+  setSessionPinned: (sessionId: string, pinned: boolean) => void;
+  setSessionTags: (sessionId: string, tags: string[]) => void;
+  setVisibleByProject: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  setWorktreeDialogDir: (directory: string) => void;
+  sidebarState: "expanded" | "collapsed";
+  startEditing: (sessionId: string, currentTitle: string) => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  toggleCollapsed: (directory: string) => void;
+  unreadSessionIds: Set<string>;
+  unregisterWorktree: (directory: string) => void;
+  visibleByProject: Record<string, number>;
+  worktreeDirs: Set<string>;
+  worktreeParents: WorktreeParentMap;
+}
+
+export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
   const {
     activeSessionId,
     availableProjectDirectories,
@@ -58,8 +128,12 @@ export function useSidebarRenderers(args: any) {
     worktreeParents,
   } = args;
 
-  const renderSessionRow = (
-    session: any,
+  const renderSessionRow: (
+    session: Session,
+    _directory?: string,
+    options?: { currentProjectDir?: string | null },
+  ) => React.ReactNode = (
+    session: Session,
     _directory?: string,
     options?: { currentProjectDir?: string | null },
   ) => (
@@ -99,9 +173,13 @@ export function useSidebarRenderers(args: any) {
     />
   );
 
-  const renderProjectEntry = (
+  const renderProjectEntry: (
     directory: string,
-    dirSessions: any,
+    dirSessions: Session[],
+    options?: { canDrag?: boolean; dragHandleProps?: Record<string, unknown> },
+  ) => React.ReactNode = (
+    directory: string,
+    dirSessions: Session[],
     options?: { canDrag?: boolean; dragHandleProps?: Record<string, unknown> },
   ) => (
     <ProjectEntry

@@ -45,6 +45,7 @@ import {
   readJsonBody,
   rejectHarnessQuestion,
   registerSharedSessionControl,
+  resolveSessionProjectRecord,
   removeSessionPrompt,
   renameSessionThroughHarness,
   reorderSessionPrompt,
@@ -242,7 +243,7 @@ async function createBackendServiceContext(
     restartHarness: (harnessId: string) => harnesses.restartHarness(harnessId),
     restartAllHarnesses: () => harnesses.restartAllHarnesses(),
   };
-  registerSharedSessionControl({ services });
+  registerSharedSessionControl({ services, resolveSafeDirectory });
   return services;
 }
 
@@ -611,23 +612,11 @@ async function getSessionProjectScopeOrThrow(
   services: BackendServiceContext,
   session: SessionRecord,
 ): Promise<ProjectRecord> {
-  const storedProject = await services.projects.getProject(session.projectId);
-  if (storedProject) return storedProject;
-
-  const metadataDirectory =
-    session.metadata && typeof session.metadata.directory === "string"
-      ? session.metadata.directory
-      : undefined;
-  const directory = await resolveSafeDirectory(metadataDirectory ?? session.projectId);
-  const now = new Date().toISOString();
-  return {
-    id: directory,
-    displayName: basename(directory),
-    path: directory,
-    canonicalPath: directory,
-    createdAt: now,
-    updatedAt: now,
-  };
+  return await resolveSessionProjectRecord({
+    services,
+    session,
+    resolveSafeDirectory,
+  });
 }
 
 async function getSessionOrThrow(
