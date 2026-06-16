@@ -13,6 +13,7 @@ describe("session identity", () => {
   test("composes and parses frontend Session IDs", () => {
     expect(composeFrontendSessionId("opencode", "raw-1")).toBe("opencode:raw-1");
     expect(composeFrontendSessionId("opencode", "opencode:raw-1")).toBe("opencode:raw-1");
+    expect(() => composeFrontendSessionId("opencode", "")).toThrow(/missing raw session id/);
     expect(parseFrontendSessionId("pi:native-1")).toEqual({ harnessId: "pi", rawId: "native-1" });
     expect(parseFrontendSessionId("session_canonical")).toBeNull();
   });

@@ -30,6 +30,50 @@ describe("mapOpenCodeEvent", () => {
     });
   });
 
+  test("tags session.updated when only sessionID is present on the wire", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "session.updated",
+          properties: {
+            sessionID: "session-1",
+            info: { title: "Renamed" },
+          },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toMatchObject({
+      type: "session.updated",
+      session: {
+        id: "opencode:session-1",
+        _rawId: "session-1",
+        title: "Renamed",
+      },
+    });
+  });
+
+  test("tags sync session.updated when info omits id", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "sync",
+          syncEvent: {
+            id: "event-session",
+            type: "session.updated.1",
+            data: {
+              sessionID: "session-1",
+              info: { title: "From sync" },
+            },
+          },
+        },
+        context,
+      ),
+    ).toMatchObject({
+      type: "session.updated",
+      session: { id: "opencode:session-1", _rawId: "session-1" },
+    });
+  });
+
   test("ignores malformed session lifecycle events without crashing SSE handling", () => {
     expect(
       mapOpenCodeEvent(

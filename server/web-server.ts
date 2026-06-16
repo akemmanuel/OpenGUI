@@ -315,7 +315,17 @@ const broadcast = (channel: string, data: unknown) => {
 
   const harnessId = getHarnessIdFromBridgeChannel(channel);
   if (!harnessId) return;
-  const normalizedEvent = normalizeBridgeEvent({ harnessId, event: data });
+  let normalizedEvent: ReturnType<typeof normalizeBridgeEvent>;
+  try {
+    normalizedEvent = normalizeBridgeEvent({ harnessId, event: data });
+  } catch (error) {
+    const eventType =
+      typeof data === "object" && data !== null && "type" in data
+        ? String((data as { type?: unknown }).type)
+        : "unknown";
+    console.error("[bridge] failed to normalize harness event", { harnessId, eventType, error });
+    return;
+  }
   if (!normalizedEvent) return;
 
   if (!servicesReady) return;

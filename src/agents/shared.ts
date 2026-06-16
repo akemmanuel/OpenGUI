@@ -34,17 +34,21 @@ export function getTarget(target?: HarnessTarget) {
   };
 }
 
+function resolveTaggedSessionRawId(session: TaggedSession): string | null {
+  if (typeof session._rawId === "string" && session._rawId.length > 0) return session._rawId;
+  if (typeof session.id === "string" && session.id.length > 0) return session.id;
+  if ("slug" in session && typeof session.slug === "string" && session.slug.length > 0) {
+    return session.slug;
+  }
+  return null;
+}
+
 export function tagBackendSession(
   harnessId: HarnessId,
   session: TaggedSession,
   target?: { directory?: string; workspaceId?: string },
 ): TaggedSession {
-  const rawId =
-    typeof session._rawId === "string"
-      ? session._rawId
-      : typeof session.id === "string"
-        ? session.id
-        : null;
+  const rawId = resolveTaggedSessionRawId(session);
   if (!rawId) return session;
   const projectDir = session.directory ?? session._projectDir ?? target?.directory;
   return {
@@ -63,6 +67,7 @@ export function tagBackendSession(
 }
 
 export function normalizeMessageSessionId(harnessId: HarnessId, message: Message): Message {
+  if (typeof message.sessionID !== "string" || message.sessionID.length === 0) return message;
   return {
     ...message,
     sessionID: createBackendIdCodec(harnessId).compose(message.sessionID),

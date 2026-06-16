@@ -36,16 +36,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isTaggedSession(value: unknown): value is TaggedSession {
-  return isRecord(value) && typeof value.id === "string" && value.id.length > 0;
-}
-
 function getProperties(event: OpenCodeEvent): EventProperties {
   return event.properties as EventProperties;
 }
 
+function resolveOpenCodeLifecycleRawId(properties: EventProperties): string | null {
+  const sessionID =
+    typeof properties.sessionID === "string" && properties.sessionID.length > 0
+      ? properties.sessionID
+      : null;
+  const info = properties.info;
+  if (!isRecord(info)) return sessionID;
+  if (typeof info._rawId === "string" && info._rawId.length > 0) return info._rawId;
+  if (typeof info.id === "string" && info.id.length > 0) return info.id;
+  if (typeof info.slug === "string" && info.slug.length > 0) return info.slug;
+  return sessionID;
+}
+
+function resolveOpenCodeLifecycleSession(properties: EventProperties): TaggedSession | null {
+  const rawId = resolveOpenCodeLifecycleRawId(properties);
+  if (!rawId) return null;
+  const info = isRecord(properties.info) ? properties.info : {};
+  return { ...info, id: rawId, _rawId: rawId } as TaggedSession;
+}
+
 function getSessionId(properties: EventProperties): string {
-  return String(properties.sessionID);
+  const fromProperty =
+    typeof properties.sessionID === "string" && properties.sessionID.length > 0
+      ? properties.sessionID
+      : null;
+  if (fromProperty) return fromProperty;
+  const rawId = resolveOpenCodeLifecycleRawId(properties);
+  if (rawId) return rawId;
+  return "";
 }
 
 function tagSession(session: TaggedSession, context: OpenCodeEventContext): TaggedSession {
@@ -66,33 +89,36 @@ function normalizeOpenCodePayload(raw: OpenCodeEvent | OpenCodeSyncEnvelope): Op
 
 export const openCodeEventHandlers: Partial<Record<string, OpenCodeEventHandler>> = {
   "session.created": (event, context) => {
-    const { info } = getProperties(event) as { info: TaggedSession };
-    if (!isTaggedSession(info)) return null;
+    const properties = getProperties(event);
+    const session = resolveOpenCodeLifecycleSession(properties);
+    if (!session) return null;
     return {
       type: "session.created",
       directory: context.directory,
       workspaceId: context.workspaceId,
-      session: tagSession(info, context),
+      session: tagSession(session, context),
     };
   },
   "session.updated": (event, context) => {
-    const { info } = getProperties(event) as { info: TaggedSession };
-    if (!isTaggedSession(info)) return null;
+    const properties = getProperties(event);
+    const session = resolveOpenCodeLifecycleSession(properties);
+    if (!session) return null;
     return {
       type: "session.updated",
       directory: context.directory,
       workspaceId: context.workspaceId,
-      session: tagSession(info, context),
+      session: tagSession(session, context),
     };
   },
   "session.deleted": (event, context) => {
-    const { info } = getProperties(event) as { info: { id: string } };
-    if (!isTaggedSession(info)) return null;
+    const properties = getProperties(event);
+    const rawId = resolveOpenCodeLifecycleRawId(properties);
+    if (!rawId) return null;
     return {
       type: "session.deleted",
       directory: context.directory,
       workspaceId: context.workspaceId,
-      sessionId: toCompositeSessionId(info.id),
+      sessionId: toCompositeSessionId(rawId),
     };
   },
   "message.updated": (event) => {

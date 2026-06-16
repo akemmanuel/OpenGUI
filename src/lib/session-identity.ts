@@ -20,6 +20,9 @@ export type SessionIdentityLike = {
 const SESSION_ID_HARNESS_IDS: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
 
 export function composeFrontendSessionId(harnessId: HarnessId, rawId: string): string {
+  if (typeof rawId !== "string" || rawId.length === 0) {
+    throw new Error(`composeFrontendSessionId: missing raw session id for harness "${harnessId}"`);
+  }
   const marker = `${harnessId}:`;
   return rawId.startsWith(marker) ? rawId : `${marker}${rawId}`;
 }

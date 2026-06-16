@@ -168,6 +168,123 @@ function hasLegacyJsonStorage(dataDir: string): boolean {
   );
 }
 
+function sqliteTableNames(db: { prepare: (sql: string) => { all: () => unknown[] } }): Set<string> {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+    name?: unknown;
+  }>;
+  return new Set(rows.map((row) => String(row.name)));
+}
+
+function sqlitePromptQueueColumnNames(db: {
+  prepare: (sql: string) => { all: () => unknown[] };
+}): Set<string> {
+  const rows = db.prepare("PRAGMA table_info(prompt_queue)").all() as Array<{ name?: unknown }>;
+  return new Set(rows.map((row) => String(row.name)));
+}
+
+const PROMPT_QUEUE_TABLE_SQL = `
+  CREATE TABLE prompt_queue (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    harness_id TEXT NOT NULL,
+    project_directory TEXT NOT NULL,
+    harness_session_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    model_json TEXT,
+    agent TEXT,
+    variant TEXT,
+    mode TEXT NOT NULL,
+    entry_order INTEGER NOT NULL
+  );
+`;
+
+function promptQueueSchemaIsCurrent(columns: Set<string>): boolean {
+  const required = [
+    "harness_id",
+    "project_directory",
+    "harness_session_id",
+    "model_json",
+    "entry_order",
+  ];
+  if (!required.every((name) => columns.has(name))) return false;
+  if (columns.has("queue_order")) return false;
+  return true;
+}
+
+type SqliteSchemaDb = {
+  exec: (sql: string) => void;
+  prepare: (sql: string) => { all: () => unknown[] };
+};
+
+/** Rebuilds pre-v0.5.25 prompt_queue tables onto the current schema. */
+function migrateLegacyPromptQueueSchema(db: SqliteSchemaDb): void {
+  const tables = sqliteTableNames(db);
+  if (!tables.has("prompt_queue")) return;
+
+  const columns = sqlitePromptQueueColumnNames(db);
+  if (promptQueueSchemaIsCurrent(columns)) return;
+
+  const tablesNow = sqliteTableNames(db);
+  const hasSessions = tablesNow.has("sessions");
+  const hasProjects = tablesNow.has("projects");
+
+  const harnessIdExpr = columns.has("harness_id")
+    ? "COALESCE(NULLIF(pq.harness_id, ''), s.harness_id, 'unknown')"
+    : "COALESCE(s.harness_id, 'unknown')";
+  const harnessSessionExpr = columns.has("harness_session_id")
+    ? "COALESCE(NULLIF(pq.harness_session_id, ''), s.raw_id, '')"
+    : "COALESCE(s.raw_id, '')";
+  const projectDirectoryExpr =
+    hasSessions && hasProjects
+      ? columns.has("project_directory")
+        ? "COALESCE(NULLIF(pq.project_directory, ''), NULLIF(p.canonical_path, ''), NULLIF(p.path, ''), '')"
+        : "COALESCE(NULLIF(p.canonical_path, ''), NULLIF(p.path, ''), '')"
+      : columns.has("project_directory")
+        ? "COALESCE(pq.project_directory, '')"
+        : "''";
+  const entryOrderExpr = columns.has("entry_order")
+    ? columns.has("queue_order")
+      ? "COALESCE(pq.entry_order, pq.queue_order, 0)"
+      : "COALESCE(pq.entry_order, 0)"
+    : columns.has("queue_order")
+      ? "COALESCE(pq.queue_order, 0)"
+      : "0";
+  const modelJsonExpr = columns.has("model_json") ? "pq.model_json" : "NULL";
+  const agentExpr = columns.has("agent") ? "pq.agent" : "NULL";
+  const variantExpr = columns.has("variant") ? "pq.variant" : "NULL";
+
+  const sessionJoin = hasSessions ? "LEFT JOIN sessions s ON s.id = pq.session_id" : "";
+  const projectJoin =
+    hasSessions && hasProjects ? "LEFT JOIN projects p ON p.id = s.project_id" : "";
+
+  db.exec("ALTER TABLE prompt_queue RENAME TO prompt_queue_legacy");
+  db.exec(PROMPT_QUEUE_TABLE_SQL);
+  db.exec(`
+    INSERT INTO prompt_queue (
+      id, session_id, harness_id, project_directory, harness_session_id,
+      text, created_at, model_json, agent, variant, mode, entry_order
+    )
+    SELECT
+      pq.id,
+      pq.session_id,
+      ${harnessIdExpr},
+      ${projectDirectoryExpr},
+      ${harnessSessionExpr},
+      pq.text,
+      pq.created_at,
+      ${modelJsonExpr},
+      ${agentExpr},
+      ${variantExpr},
+      pq.mode,
+      ${entryOrderExpr}
+    FROM prompt_queue_legacy pq
+    ${sessionJoin}
+    ${projectJoin};
+  `);
+  db.exec("DROP TABLE prompt_queue_legacy");
+}
+
 export function createJsonStorageService(dataDir: string): StorageService {
   mkdirSync(dataDir, { recursive: true });
 
@@ -411,15 +528,7 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
     );
   `);
 
-  const promptQueueColumns = new Set(
-    db
-      .prepare("PRAGMA table_info(prompt_queue)")
-      .all()
-      .map((row) => String((row as Record<string, unknown>).name)),
-  );
-  if (!promptQueueColumns.has("entry_order")) {
-    db.exec("ALTER TABLE prompt_queue ADD COLUMN entry_order INTEGER NOT NULL DEFAULT 0");
-  }
+  migrateLegacyPromptQueueSchema(db);
   db.exec(`
     CREATE INDEX IF NOT EXISTS prompt_queue_session_order
       ON prompt_queue(session_id, entry_order, created_at);
@@ -654,12 +763,20 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
 
 async function migrateJsonStorageToSqlite(dataDir: string, storage: StorageService): Promise<void> {
   const legacy = createJsonStorageService(dataDir);
-  const [projects, settings] = await Promise.all([legacy.listProjects(), legacy.getAllSettings()]);
+  const [projects, settings, queue] = await Promise.all([
+    legacy.listProjects(),
+    legacy.getAllSettings(),
+    legacy.listPromptQueue(),
+  ]);
 
   for (const project of projects) {
     await storage.createProject({
       ...project,
     });
+  }
+
+  for (const entry of queue) {
+    await storage.createPromptQueueEntry(entry);
   }
 
   await storage.mergeSettings(settings);

@@ -31,59 +31,57 @@ export function PromptContextStatus({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <div className="flex">
-          <button
-            type="button"
-            className={cn(
-              "flex items-center gap-1 text-[11px] tabular-nums select-none cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors",
-              isCompactingOrInProgress && "animate-pulse",
-              contextPercent >= 90
-                ? "text-destructive hover:text-destructive"
-                : contextPercent >= 70
-                  ? "text-amber-500 hover:text-amber-600"
-                  : "text-muted-foreground/70 hover:text-foreground",
-            )}
-          >
-            {isCompactingOrInProgress ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 20 20"
-                className="shrink-0 -rotate-90"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="10"
-                  cy="10"
-                  r="8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  opacity="0.2"
-                />
-                <circle
-                  cx="10"
-                  cy="10"
-                  r="8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
-                />
-              </svg>
-            )}
-            {isCompactingOrInProgress
-              ? t("contextStatus.compacting")
-              : contextPercent === 0
-                ? "0%"
-                : contextPercent < 1
-                  ? "<1%"
-                  : `${contextPercent}%`}
-          </button>
-        </div>
+        <button
+          type="button"
+          className={cn(
+            "flex items-center gap-1 text-[11px] tabular-nums select-none cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-accent transition-colors",
+            isCompactingOrInProgress && "animate-pulse",
+            contextPercent >= 90
+              ? "text-destructive hover:text-destructive"
+              : contextPercent >= 70
+                ? "text-amber-500 hover:text-amber-600"
+                : "text-muted-foreground/70 hover:text-foreground",
+          )}
+        >
+          {isCompactingOrInProgress ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 20 20"
+              className="shrink-0 -rotate-90"
+              aria-hidden="true"
+            >
+              <circle
+                cx="10"
+                cy="10"
+                r="8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                opacity="0.2"
+              />
+              <circle
+                cx="10"
+                cy="10"
+                r="8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeDasharray={`${Math.max(contextPercent, 0) * 0.5027} 50.27`}
+              />
+            </svg>
+          )}
+          {isCompactingOrInProgress
+            ? t("contextStatus.compacting")
+            : contextPercent === 0
+              ? "0%"
+              : contextPercent < 1
+                ? "<1%"
+                : `${contextPercent}%`}
+        </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="center" className="w-48 p-3 text-xs z-50">
         <div className="font-semibold mb-2">{t("contextStatus.contextWindow")}</div>
