@@ -240,6 +240,9 @@
   },
   "providers": {
     "searchPlaceholder": "Search providers...",
+    "managerSwitcher": "Provider manager",
+    "noManagement": "No Harness with provider management is available.",
+    "loadFailed": "Could not load providers. Is the OpenGUI Backend connected?",
     "allProviders": "All providers",
     "customProvider": "Custom provider",
     "popular": "Popular",

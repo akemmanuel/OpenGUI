@@ -240,6 +240,9 @@
   },
   "providers": {
     "searchPlaceholder": "Anbieter suchen...",
+    "managerSwitcher": "Anbieter-Verwaltung",
+    "noManagement": "Kein Harness mit Anbieter-Verwaltung ist verfügbar.",
+    "loadFailed": "Anbieter konnten nicht geladen werden. Ist das OpenGUI Backend verbunden?",
     "allProviders": "Alle Anbieter",
     "customProvider": "Eigener Anbieter",
     "popular": "Beliebt",

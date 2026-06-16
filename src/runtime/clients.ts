@@ -8,7 +8,6 @@ import {
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageParsed } from "@/lib/safe-storage";
-import type { HarnessId } from "@/agents";
 
 interface RuntimeClients {
   openGuiClient: OpenGuiClient;
@@ -139,10 +138,6 @@ export function initializeRuntimeClients(): RuntimeClients {
     return remoteUrl || electronApi?.backendUrl || undefined;
   };
 
-  const getElectronHarnessIds = (): HarnessId[] | undefined => {
-    return getSelectedAdditionalWorkspaceServerUrl() ? ["claude-code"] : undefined;
-  };
-
   const getElectronAuthToken = () => {
     const remoteToken = getSelectedAdditionalWorkspaceAuthToken();
     return remoteToken || electronApi?.backendToken || undefined;
@@ -166,7 +161,6 @@ export function initializeRuntimeClients(): RuntimeClients {
           baseUrl: electronApi.backendUrl ?? "",
           token: electronApi.backendToken ?? undefined,
           resolveBaseUrl: getElectronBaseUrl,
-          resolveHarnessIds: getElectronHarnessIds,
           resolveToken: getElectronAuthToken,
           fetchImpl: async (input, init) => {
             const api = await ensureElectronBackend();

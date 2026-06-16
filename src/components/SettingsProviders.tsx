@@ -26,7 +26,7 @@ import { useHarness, useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
 
 // ---------------------------------------------------------------------------
@@ -37,8 +37,24 @@ export function SettingsProviders() {
   const { t } = useTranslation();
   const { refreshProviders } = useActions();
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
-  const initialBackendId = useCurrentHarnessId();
-  const [harnessId, setBackendId] = useState<HarnessId>(initialBackendId);
+  const initialHarnessId = useCurrentHarnessId();
+
+  // Filter Harnesses that support provider management. If the current chat
+  // Harness is Claude/Codex, fall through to the first provider-capable Harness
+  // instead of making the Providers tab look unavailable.
+  const openGuiClient = useOpenGuiClient();
+  const providerHarnessIds = useMemo(
+    () =>
+      openGuiClient.harnesses
+        .list()
+        .filter((harness) => harness.capabilities?.providerAuth)
+        .map((harness) => harness.id as HarnessId),
+    [openGuiClient],
+  );
+  const [selectedHarnessId, setSelectedHarnessId] = useState<HarnessId>(initialHarnessId);
+  const harnessId = providerHarnessIds.includes(selectedHarnessId)
+    ? selectedHarnessId
+    : (providerHarnessIds[0] ?? selectedHarnessId);
   const backend = useHarness(harnessId);
   const providersApi = backend?.platform?.providers;
   const scopedDirectory = activeDirectory ?? undefined;
@@ -59,17 +75,6 @@ export function SettingsProviders() {
   const [search, setSearch] = useState("");
   const lowerSearch = search.toLowerCase().trim();
   const isSearching = lowerSearch.length > 0;
-
-  // Filter Harnesses that support provider management
-  const openGuiClient = useOpenGuiClient();
-  const providerBackendIds = useMemo(
-    () =>
-      openGuiClient.harnesses
-        .list()
-        .filter((b) => b.capabilities?.providerAuth)
-        .map((b) => b.id as HarnessId),
-    [openGuiClient],
-  );
 
   // Missing auth-method entries are valid; backends may return a sparse map and
   // rely on the client to fall back to manual API-key auth.
@@ -124,26 +129,69 @@ export function SettingsProviders() {
     await refreshProviders();
   };
 
+  const providerHarnessSwitcher =
+    providerHarnessIds.length > 1 ? (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 p-2">
+        <span className="px-1 text-xs font-medium text-muted-foreground">
+          {t("providers.managerSwitcher")}
+        </span>
+        <div
+          role="group"
+          aria-label={t("providers.managerSwitcher")}
+          className="inline-flex rounded-full bg-background p-0.5"
+        >
+          {providerHarnessIds.map((id) => {
+            const selected = harnessId === id;
+            return (
+              <Button
+                key={id}
+                type="button"
+                variant={selected ? "default" : "ghost"}
+                size="sm"
+                aria-pressed={selected}
+                className={cn(
+                  "h-7 rounded-full px-3 text-xs",
+                  !selected && "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSelectedHarnessId(id)}
+              >
+                {HARNESS_LABELS[id]}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
   if (!providersApi) {
     return (
-      <div className="text-center py-6 text-sm text-muted-foreground">
-        Current backend has no provider management.
+      <div className="space-y-4">
+        {providerHarnessSwitcher}
+        <div className="text-center py-6 text-sm text-muted-foreground">
+          {t("providers.noManagement")}
+        </div>
       </div>
     );
   }
 
   if (loading && !allProviders) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Spinner className="size-5" />
+      <div className="space-y-4">
+        {providerHarnessSwitcher}
+        <div className="flex items-center justify-center py-8">
+          <Spinner className="size-5" />
+        </div>
       </div>
     );
   }
 
   if (!allProviders) {
     return (
-      <div className="text-center py-6 text-sm text-muted-foreground">
-        Could not load providers. Is the server connected?
+      <div className="space-y-4">
+        {providerHarnessSwitcher}
+        <div className="text-center py-6 text-sm text-muted-foreground">
+          {t("providers.loadFailed")}
+        </div>
       </div>
     );
   }
@@ -168,137 +216,124 @@ export function SettingsProviders() {
 
   return (
     <>
-      <div className="space-y-5 max-h-[50vh] overflow-y-auto pr-1">
-        {providerBackendIds.length > 1 && (
-          <div className="flex flex-wrap gap-1">
-            {providerBackendIds.map((id) => (
-              <Button
-                key={id}
-                type="button"
-                variant={harnessId === id ? "default" : "outline"}
-                size="sm"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => setBackendId(id)}
-              >
-                {HARNESS_LABELS[id]}
-              </Button>
-            ))}
+      <div className="space-y-4">
+        {providerHarnessSwitcher}
+        <div className="space-y-5 max-h-[50vh] overflow-y-auto pr-1">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <Input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("providers.searchPlaceholder")}
+              className="pl-8 text-sm"
+            />
           </div>
-        )}
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-          <Input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("providers.searchPlaceholder")}
-            className="pl-8 text-sm"
-          />
+          {isSearching ? (
+            <div className="space-y-1.5">
+              {filteredProviders.map((provider) => {
+                const isConnected = connectedSet.has(provider.id);
+                const isDisconnecting = disconnecting === provider.id;
+                const isConfirming = confirmingDisconnect === provider.id;
+                return (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    connected={isConnected}
+                    disconnecting={isDisconnecting}
+                    confirming={isConfirming}
+                    onConnect={() => setConnectProviderID(provider.id)}
+                    onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
+                    onCancelDisconnect={() => setConfirmingDisconnect(null)}
+                    onDisconnect={() => handleDisconnect(provider.id)}
+                  />
+                );
+              })}
+              {filteredProviders.length === 0 && (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  {t("providers.noProvidersFound", { query: search })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {connectedProviders.length > 0 && (
+                <section className="space-y-2">
+                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {t("providers.connected")}
+                  </h4>
+                  {connectedProviders.map((provider) => {
+                    const isDisconnecting = disconnecting === provider.id;
+                    const isConfirming = confirmingDisconnect === provider.id;
+                    return (
+                      <ProviderRow
+                        key={provider.id}
+                        provider={provider}
+                        connected
+                        showSource
+                        badgeSource={getProviderBadgeSource(allProviders, provider)}
+                        disconnecting={isDisconnecting}
+                        confirming={isConfirming}
+                        onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
+                        onCancelDisconnect={() => setConfirmingDisconnect(null)}
+                        onDisconnect={() => handleDisconnect(provider.id)}
+                      />
+                    );
+                  })}
+                </section>
+              )}
+
+              {/* Popular providers (not yet connected) */}
+              {popularNotConnected.length > 0 && (
+                <section className="space-y-2">
+                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {t("providers.popular")}
+                  </h4>
+                  {popularNotConnected.map((id) => {
+                    const provider = allById.get(id);
+                    return (
+                      <ProviderRow
+                        key={id}
+                        provider={{ id, name: provider?.name }}
+                        onConnect={() => setConnectProviderID(id)}
+                      />
+                    );
+                  })}
+                </section>
+              )}
+
+              {/* Custom + View all */}
+              <section className="space-y-2">
+                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {t("providers.other")}
+                </h4>
+                <div
+                  className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
+                  onClick={() => setShowCustom(true)}
+                >
+                  <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
+                  <span className="text-sm font-medium truncate flex-1">
+                    {t("providers.customProvider")}
+                  </span>
+                  <Button variant="outline" size="sm">
+                    <Plus className="size-3.5 mr-1" />
+                    {t("providers.connect")}
+                  </Button>
+                </div>
+                <div
+                  className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
+                  onClick={() => setShowSelectAll(true)}
+                >
+                  <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
+                  <span className="text-sm font-medium truncate flex-1">
+                    {t("providers.allProviders")}
+                  </span>
+                </div>
+              </section>
+            </>
+          )}
         </div>
-        {isSearching ? (
-          <div className="space-y-1.5">
-            {filteredProviders.map((provider) => {
-              const isConnected = connectedSet.has(provider.id);
-              const isDisconnecting = disconnecting === provider.id;
-              const isConfirming = confirmingDisconnect === provider.id;
-              return (
-                <ProviderRow
-                  key={provider.id}
-                  provider={provider}
-                  connected={isConnected}
-                  disconnecting={isDisconnecting}
-                  confirming={isConfirming}
-                  onConnect={() => setConnectProviderID(provider.id)}
-                  onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
-                  onCancelDisconnect={() => setConfirmingDisconnect(null)}
-                  onDisconnect={() => handleDisconnect(provider.id)}
-                />
-              );
-            })}
-            {filteredProviders.length === 0 && (
-              <div className="text-center py-6 text-sm text-muted-foreground">
-                {t("providers.noProvidersFound", { query: search })}
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {connectedProviders.length > 0 && (
-              <section className="space-y-2">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t("providers.connected")}
-                </h4>
-                {connectedProviders.map((provider) => {
-                  const isDisconnecting = disconnecting === provider.id;
-                  const isConfirming = confirmingDisconnect === provider.id;
-                  return (
-                    <ProviderRow
-                      key={provider.id}
-                      provider={provider}
-                      connected
-                      showSource
-                      badgeSource={getProviderBadgeSource(allProviders, provider)}
-                      disconnecting={isDisconnecting}
-                      confirming={isConfirming}
-                      onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
-                      onCancelDisconnect={() => setConfirmingDisconnect(null)}
-                      onDisconnect={() => handleDisconnect(provider.id)}
-                    />
-                  );
-                })}
-              </section>
-            )}
-
-            {/* Popular providers (not yet connected) */}
-            {popularNotConnected.length > 0 && (
-              <section className="space-y-2">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t("providers.popular")}
-                </h4>
-                {popularNotConnected.map((id) => {
-                  const provider = allById.get(id);
-                  return (
-                    <ProviderRow
-                      key={id}
-                      provider={{ id, name: provider?.name }}
-                      onConnect={() => setConnectProviderID(id)}
-                    />
-                  );
-                })}
-              </section>
-            )}
-
-            {/* Custom + View all */}
-            <section className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {t("providers.other")}
-              </h4>
-              <div
-                className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
-                onClick={() => setShowCustom(true)}
-              >
-                <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-                <span className="text-sm font-medium truncate flex-1">
-                  {t("providers.customProvider")}
-                </span>
-                <Button variant="outline" size="sm">
-                  <Plus className="size-3.5 mr-1" />
-                  {t("providers.connect")}
-                </Button>
-              </div>
-              <div
-                className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
-                onClick={() => setShowSelectAll(true)}
-              >
-                <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-                <span className="text-sm font-medium truncate flex-1">
-                  {t("providers.allProviders")}
-                </span>
-              </div>
-            </section>
-          </>
-        )}
       </div>
 
       {/* Connect dialog */}

@@ -240,6 +240,9 @@
   },
   "providers": {
     "searchPlaceholder": "Buscar proveedores...",
+    "managerSwitcher": "Gestor de proveedores",
+    "noManagement": "No hay ningún Harness con gestión de proveedores disponible.",
+    "loadFailed": "No se pudieron cargar los proveedores. ¿Está conectado el OpenGUI Backend?",
     "allProviders": "Todos los proveedores",
     "customProvider": "Proveedor personalizado",
     "popular": "Populares",
