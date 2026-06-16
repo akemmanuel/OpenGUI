@@ -1,4 +1,4 @@
-import type { Agent, Provider } from "@opencode-ai/sdk/v2/client";
+import type { Agent, Provider } from "@/protocol/harness-types";
 import type { SelectedModel } from "@/types/electron";
 
 /**

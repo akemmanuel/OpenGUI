@@ -1,8 +1,6 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { NativeBackendEvent } from "@/types/electron";
-import { normalizeClaudeCodeEvent } from "./claude-code";
-import { normalizeCodexEvent } from "./codex";
-import { normalizePiEvent } from "./pi";
+import { HARNESS_BACKEND_META } from "./cli-harness-factory";
 
 type CliHarnessCase = readonly [
   harnessId: "claude-code" | "codex" | "pi",
@@ -10,9 +8,9 @@ type CliHarnessCase = readonly [
 ];
 
 const cliHarnessCases: readonly CliHarnessCase[] = [
-  ["claude-code", normalizeClaudeCodeEvent],
-  ["codex", normalizeCodexEvent],
-  ["pi", normalizePiEvent],
+  ["claude-code", HARNESS_BACKEND_META["claude-code"].normalizeEvent],
+  ["codex", HARNESS_BACKEND_META.codex.normalizeEvent],
+  ["pi", HARNESS_BACKEND_META.pi.normalizeEvent],
 ] as const;
 
 describe("CLI harness normalizers", () => {
@@ -41,6 +39,6 @@ describe("CLI harness normalizers", () => {
       payload: { type: "session.deleted", directory: "/repo", sessionId: "raw-session" },
     } as unknown as NativeBackendEvent;
 
-    expect(normalizeCodexEvent(event)).toBeNull();
+    expect(HARNESS_BACKEND_META.codex.normalizeEvent(event)).toBeNull();
   });
 });

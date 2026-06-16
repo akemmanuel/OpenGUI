@@ -1,8 +1,7 @@
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
-import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { HARNESS_LABELS, type HarnessId } from "@/agents";
+import { HARNESS_LABELS, type ActiveHarnessId } from "@/agents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -10,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { useHarness, useAvailableHarnessIds, useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
+import type { McpServerStatus } from "@/protocol/harness-resources";
 import { useOpenGuiClient } from "@/protocol/provider";
 
 // ---------------------------------------------------------------------------
@@ -25,14 +25,14 @@ export function McpTabContent() {
     () => availableBackendIds.filter((id) => openGuiClient.harnesses.get(id)?.capabilities.mcp),
     [availableBackendIds, openGuiClient],
   );
-  const [harnessId, setBackendId] = useState<HarnessId>(initialBackendId);
+  const [harnessId, setBackendId] = useState<ActiveHarnessId>(initialBackendId);
   const backend = useHarness(harnessId);
   const mcpApi = backend?.platform?.mcp;
   const configApi = backend?.platform?.config;
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
   const scopedDirectory = activeDirectory ?? undefined;
 
-  const [mcpStatus, setMcpStatus] = useState<{ [key: string]: McpStatus }>({});
+  const [mcpStatus, setMcpStatus] = useState<{ [key: string]: McpServerStatus }>({});
   const [mcpTypes, setMcpTypes] = useState<{
     [key: string]: "local" | "remote";
   }>({});
@@ -74,7 +74,7 @@ export function McpTabContent() {
     void refresh();
   }, [refresh]);
 
-  const handleToggle = async (name: string, currentStatus: McpStatus) => {
+  const handleToggle = async (name: string, currentStatus: McpServerStatus) => {
     if (!mcpApi) return;
     setToggling(name);
     try {

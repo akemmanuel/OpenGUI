@@ -70,6 +70,59 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
   } as InternalAgentState;
 }
 
+describe("SET_ACTIVE_TARGET", () => {
+  test("resets prompt selection for a fresh chat when requested", () => {
+    const next = reducer(
+      baseState({
+        selectedModel: { providerID: "openai", modelID: "gpt-5" },
+        selectedAgent: "build",
+      }),
+      {
+        type: "SET_ACTIVE_TARGET",
+        payload: { directory: "/repo", harnessId: "opencode", resetSelection: true },
+      },
+    );
+
+    expect(next.activeTargetDirectory).toBe("/repo");
+    expect(next.selectedModel).toBeNull();
+    expect(next.selectedAgent).toBeNull();
+  });
+
+  test("uses explicit prompt selection for a fresh target", () => {
+    const selectedModel = { providerID: "anthropic", modelID: "claude-sonnet" };
+    const next = reducer(
+      baseState({
+        selectedModel: { providerID: "openai", modelID: "gpt-5" },
+        selectedAgent: "build",
+      }),
+      {
+        type: "SET_ACTIVE_TARGET",
+        payload: {
+          directory: "/repo",
+          harnessId: "opencode",
+          resetSelection: true,
+          selectedModel,
+          selectedAgent: null,
+        },
+      },
+    );
+
+    expect(next.selectedModel).toBe(selectedModel);
+    expect(next.selectedAgent).toBeNull();
+  });
+
+  test("preserves prompt selection when changing target without reset", () => {
+    const selectedModel = { providerID: "openai", modelID: "gpt-5" };
+    const next = reducer(baseState({ selectedModel, selectedAgent: "build" }), {
+      type: "SET_ACTIVE_TARGET",
+      payload: { directory: "/repo", harnessId: "opencode" },
+    });
+
+    expect(next.selectedModel).toBe(selectedModel);
+    expect(next.selectedAgent).toBe("build");
+  });
+});
+
 describe("mergeProjectBackendSessions", () => {
   test("replaces only sessions from listed backends", () => {
     const current = [session("open-old", "opencode"), session("pi-old", "pi")];

@@ -1,4 +1,5 @@
-import type { Event as OpenCodeEvent, Provider } from "@opencode-ai/sdk/v2/client";
+import type { Provider } from "@/protocol/harness-types";
+import type { HarnessId } from "@/agents";
 
 // ---------------------------------------------------------------------------
 // Provider management types
@@ -86,7 +87,7 @@ export type BridgeEvent =
     }
   | {
       type: "opencode:event";
-      payload: OpenCodeEvent;
+      payload: unknown;
       directory: string;
       workspaceId?: string;
     }
@@ -153,7 +154,7 @@ export interface HarnessInventoryAgent {
 }
 
 export interface HarnessInventory {
-  harnessId: "opencode" | "claude-code" | "pi" | "codex";
+  harnessId: HarnessId;
   displayName: string;
   enabled: boolean;
   installed: boolean;
@@ -182,12 +183,11 @@ export interface PluginCatalogEntry {
   slug: string;
   name: string;
   source: string;
+  description?: string;
+  url?: string;
   installs: number;
-  sourceType: "github" | "well-known";
-  installUrl: string | null;
-  url: string;
-  isDuplicate?: boolean;
-  installsYesterday?: number;
+  createdAt?: string;
+  updatedAt?: string;
   change?: number;
 }
 
@@ -197,7 +197,7 @@ export interface PluginCatalogListResponse {
     page: number;
     perPage: number;
     total: number;
-    hasMore: boolean;
+    totalPages: number;
   };
 }
 
@@ -213,8 +213,8 @@ export interface PluginCatalogDetailResponse {
   id: string;
   source: string;
   slug: string;
-  installs: number;
-  hash: string | null;
+  readme: string | null;
+  manifest: unknown;
   files: Array<{ path: string; contents: string }> | null;
 }
 
@@ -223,12 +223,10 @@ export interface PluginCatalogAuditResponse {
   source: string;
   slug: string;
   audits: Array<{
-    provider: string;
-    slug: string;
-    status: "pass" | "warn" | "fail";
-    summary: string;
-    auditedAt: string;
-    riskLevel?: string;
+    id: string;
+    status: string;
+    message?: string;
+    details?: unknown;
   }>;
 }
 
@@ -250,16 +248,12 @@ export interface InstalledPluginInfo {
   slug?: string;
   description: string;
   location: string;
-  content: string;
   source?: string;
-  remoteKey?: string;
-  scope?: "project" | "global";
-  pluginName?: string;
-  sourceType?: string;
   sourceUrl?: string;
-  pluginPath?: string;
-  pluginFolderHash?: string;
-  computedHash?: string;
+  sourceType?: string;
+  remoteKey?: string;
+  pluginName?: string;
+  scope: "project" | "global";
 }
 
 // ---------------------------------------------------------------------------

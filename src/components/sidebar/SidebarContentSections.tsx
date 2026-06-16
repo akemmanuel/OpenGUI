@@ -148,9 +148,13 @@ export function SidebarContentSections({
               hasActiveSearch &&
               filteredProjectEntries.length === 0 &&
               pinnedEntries.length === 0 ? (
-                <div className="px-2 py-3 text-sm text-muted-foreground">{labels.noMatches}</div>
+                <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {labels.noMatches}
+                </div>
               ) : (
-                <div className="px-2 py-1 text-[11px] text-muted-foreground">{labels.noChats}</div>
+                <div className="px-2 py-1 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {labels.noChats}
+                </div>
               )
             ) : (
               <SidebarMenu>
@@ -208,13 +212,17 @@ export function SidebarContentSections({
         <SidebarGroupContent>
           {filteredProjectEntries.length === 0 ? (
             hasActiveSearch && pinnedEntries.length === 0 ? (
-              <div className="px-2 py-3 text-sm text-muted-foreground">{labels.noMatches}</div>
+              <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+                {labels.noMatches}
+              </div>
             ) : pinnedEntries.length > 0 ? (
-              <div className="px-2 py-3 text-sm text-muted-foreground">
+              <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
                 {labels.allProjectsPinned}
               </div>
             ) : (
-              <div className="px-2 py-3 text-sm text-muted-foreground">{labels.noProjectsYet}</div>
+              <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+                {labels.noProjectsYet}
+              </div>
             )
           ) : canReorderProjects ? (
             <DndContext

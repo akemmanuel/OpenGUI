@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { Button } from "@/components/ui/button";
 import type { UpdateCheckResult } from "@/hooks/use-update-check";
@@ -8,30 +9,28 @@ interface UpdateDialogProps {
   update: UpdateCheckResult;
 }
 
-function buildDescription(update: UpdateCheckResult): string {
-  const { latestVersion } = update;
-  if (latestVersion) {
-    return `A new version of OpenGUI (${latestVersion}) is available. You are currently running v${packageJson.version}.`;
-  }
-  return `Current version: v${packageJson.version}.`;
-}
-
 export function UpdateDialog({ update }: UpdateDialogProps) {
-  const { updateAvailable, releaseUrl, dismiss } = update;
+  const { t } = useTranslation();
+  const { updateAvailable, releaseUrl, dismiss, latestVersion } = update;
 
   const open = updateAvailable;
-  const description = buildDescription(update);
+  const description = latestVersion
+    ? t("updateDialog.description", {
+        latestVersion,
+        currentVersion: packageJson.version,
+      })
+    : t("updateDialog.currentVersion", { currentVersion: packageJson.version });
 
   return (
     <DialogShell
       open={open}
       onOpenChange={(nextOpen) => !nextOpen && dismiss()}
-      title="Update Available"
+      title={t("updateDialog.title")}
       description={description}
       footer={
         <>
           <Button variant="outline" onClick={dismiss}>
-            Dismiss
+            {t("updateDialog.dismiss")}
           </Button>
           {releaseUrl && (
             <Button
@@ -40,7 +39,7 @@ export function UpdateDialog({ update }: UpdateDialogProps) {
                 dismiss();
               }}
             >
-              Open
+              {t("updateDialog.open")}
             </Button>
           )}
         </>

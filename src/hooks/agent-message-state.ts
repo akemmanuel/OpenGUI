@@ -1,4 +1,4 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client";
+import type { Message, Part } from "@/protocol/harness-types";
 import type { InternalAgentState, MessageEntry } from "@/hooks/agent-state-types";
 
 export const MESSAGE_PAGE_SIZE = 30;

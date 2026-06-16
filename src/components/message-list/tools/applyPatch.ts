@@ -1,6 +1,7 @@
-import type { ToolPart } from "@opencode-ai/sdk/v2/client";
+import type { TFunction } from "i18next";
 import { parseUnifiedDiff, type DiffLine, type DiffResult } from "@/lib/diff";
-import { getToolInput, isRecord, stringField, toFiniteNumber } from "./toolTypes";
+import type { ToolCallState } from "@/protocol/session-transcript";
+import { getToolInput, isRecord, stringField, toFiniteNumber } from "./toolCallUtils";
 
 type ApplyPatchChangeType = "add" | "delete" | "move" | "update";
 
@@ -22,7 +23,7 @@ function computeApplyPatchDiff(file: Record<string, unknown>): DiffResult | null
   return parseDiffText(file.diff);
 }
 
-function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
+function extractApplyPatchFiles(state: ToolCallState): ApplyPatchFileDiff[] {
   if (!("metadata" in state) || !isRecord(state.metadata)) return [];
   const rawFiles = state.metadata.files;
   if (!Array.isArray(rawFiles)) return [];
@@ -66,7 +67,7 @@ function extractApplyPatchFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] 
  * Prefer rich backend metadata when present, but still create a single file row
  * from input.filePath/path so edit and patch tools use the same UI frame.
  */
-export function extractEditFiles(state: ToolPart["state"]): ApplyPatchFileDiff[] {
+export function extractEditFiles(state: ToolCallState): ApplyPatchFileDiff[] {
   const metadataFiles = extractApplyPatchFiles(state);
   if (metadataFiles.length > 0) return metadataFiles;
 
@@ -91,14 +92,17 @@ export function extractEditFiles(state: ToolPart["state"]): ApplyPatchFileDiff[]
   ];
 }
 
-export function getApplyPatchActionLabel(file: ApplyPatchFileDiff): string {
-  if (file.type === "add") return "Created";
-  if (file.type === "delete") return "Deleted";
-  if (file.type === "move") return "Moved";
-  return "Patched";
+export function getApplyPatchActionLabel(file: ApplyPatchFileDiff, t: TFunction): string {
+  if (file.type === "add") return t("toolLabels.patch.created");
+  if (file.type === "delete") return t("toolLabels.patch.deleted");
+  if (file.type === "move") return t("toolLabels.patch.moved");
+  return t("toolLabels.patch.patched");
 }
 
-export function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string | null {
+export function getApplyPatchContextLabel(
+  files: ApplyPatchFileDiff[],
+  t?: TFunction,
+): string | null {
   if (files.length === 0) return null;
   if (files.length === 1) {
     const file = files[0];
@@ -107,7 +111,7 @@ export function getApplyPatchContextLabel(files: ApplyPatchFileDiff[]): string |
       ? `${file.previousPath} -> ${file.path}`
       : file.path;
   }
-  return `${files.length} files`;
+  return t ? t("toolLabels.fileCountOther", { count: files.length }) : `${files.length} files`;
 }
 
 export function summarizeApplyPatchFiles(files: ApplyPatchFileDiff[]) {

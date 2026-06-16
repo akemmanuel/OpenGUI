@@ -48,12 +48,12 @@ export function SidebarHeaderContent({
       >
         <img
           src={logoDark}
-          alt="OpenCode"
+          alt="OpenGUI"
           className="size-6 shrink-0 hidden group-data-[collapsible=icon]:dark:block"
         />
         <img
           src={logoLight}
-          alt="OpenCode"
+          alt="OpenGUI"
           className="size-6 shrink-0 hidden group-data-[collapsible=icon]:block group-data-[collapsible=icon]:dark:hidden"
         />
         <img

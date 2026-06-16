@@ -1,17 +1,17 @@
-import type { QuestionAnswer, QuestionInfo } from "@opencode-ai/sdk/v2/client";
 import { Check, MessageCircleQuestion, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { QuestionInteractionAnswer, QuestionPrompt } from "@/protocol/session-transcript";
 
 export function QuestionPanel({
   questions,
   onSubmit,
   onDismiss,
 }: {
-  questions: QuestionInfo[];
-  onSubmit: (answers: QuestionAnswer[]) => void;
+  questions: QuestionPrompt[];
+  onSubmit: (answers: QuestionInteractionAnswer[]) => void;
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
@@ -42,7 +42,7 @@ export function QuestionPanel({
   }, []);
 
   const handleSubmit = useCallback(() => {
-    const answers: QuestionAnswer[] = questions.map((_q, i) => {
+    const answers: QuestionInteractionAnswer[] = questions.map((_q, i) => {
       const selected = selections[i] ?? [];
       const custom = (customTexts[i] ?? "").trim();
       return custom ? [...selected, custom] : selected;

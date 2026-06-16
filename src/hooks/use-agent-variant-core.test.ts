@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { Model } from "@opencode-ai/sdk/v2/client";
+import type { Model } from "@/protocol/harness-types";
 import {
   cycleVariantSelection,
   normalizeVariantSelection,

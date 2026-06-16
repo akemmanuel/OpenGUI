@@ -208,8 +208,6 @@ describe("createHttpOpenGuiClient", () => {
             JSON.stringify({
               harnessIds: ["opencode", "pi"],
               config: {
-                workspaceId: "local",
-                baseUrl: "http://127.0.0.1:4096",
                 directory: "/repo",
               },
             }),
@@ -595,7 +593,6 @@ describe("createHttpOpenGuiClient", () => {
       projects: [
         {
           workspaceId: "workspace-1",
-          frontendProjectId: "project_1",
           directory: "/repo",
           baseUrl: "http://remote.test",
         },

@@ -36,7 +36,7 @@ export function PromptAddMenu({
           <span className="sr-only">{t("prompt.add")}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start">
+      <DropdownMenuContent side="top" align="start" className="w-44 min-w-44">
         <DropdownMenuItem
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation();

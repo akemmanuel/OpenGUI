@@ -1,5 +1,5 @@
-import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
+import type { ToolCallState } from "@/protocol/session-transcript";
 
 export interface ImageAttachmentInfo {
   url: string;
@@ -9,7 +9,7 @@ export interface ImageAttachmentInfo {
 }
 
 export function extractImageAttachments(
-  state: ToolPart["state"],
+  state: ToolCallState,
   serverUrl?: string | null,
 ): ImageAttachmentInfo[] {
   if (state.status !== "completed") return [];
@@ -20,10 +20,13 @@ export function extractImageAttachments(
       const mime = (att.mime ?? "").toLowerCase();
       return mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg";
     })
-    .map((att) => ({
-      url: att.url,
-      src: resolveAttachmentImageSrc(att.url, serverUrl),
-      mime: att.mime,
-      filename: att.filename,
-    }));
+    .map((att) => {
+      const mime = att.mime ?? "";
+      return {
+        url: att.url,
+        src: resolveAttachmentImageSrc(att.url, serverUrl),
+        mime,
+        filename: att.filename,
+      };
+    });
 }

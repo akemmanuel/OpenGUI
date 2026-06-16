@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { HarnessId } from "@/agents";
-import { HARNESS_IDS } from "@/agents";
+import type { ActiveHarnessId, HarnessId } from "@/agents";
+import { DEFAULT_HARNESS_ID, HARNESS_IDS } from "@/agents";
 import {
   resolveActiveResourceHarnessRoute,
   type HarnessRoute,
@@ -10,33 +10,20 @@ import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/safe-storage";
 import { useOpenGuiClient } from "@/protocol/provider";
 
-function getStoredHarnessId(): HarnessId {
+function getStoredHarnessId(): ActiveHarnessId {
   const stored = storageGet(STORAGE_KEYS.HARNESS);
-  if (stored === "claude-code") return "claude-code";
-  if (stored === "pi") return "pi";
-  if (stored === "codex") return "codex";
-  return "opencode";
+  return HARNESS_IDS.includes(stored as ActiveHarnessId)
+    ? (stored as ActiveHarnessId)
+    : DEFAULT_HARNESS_ID;
 }
 
-export function useCurrentHarnessId() {
-  const [harnessId, setBackendId] = useState<HarnessId>(() => getStoredHarnessId());
+export function useCurrentHarnessId(): ActiveHarnessId {
+  const [harnessId, setBackendId] = useState<ActiveHarnessId>(() => getStoredHarnessId());
 
   useEffect(() => {
     return onSettingsChange((change) => {
       if (change.key !== STORAGE_KEYS.HARNESS) return;
-      if (change.value === "claude-code") {
-        setBackendId("claude-code");
-        return;
-      }
-      if (change.value === "pi") {
-        setBackendId("pi");
-        return;
-      }
-      if (change.value === "codex") {
-        setBackendId("codex");
-        return;
-      }
-      setBackendId("opencode");
+      setBackendId(getStoredHarnessId());
     });
   }, []);
 

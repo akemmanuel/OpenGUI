@@ -19,10 +19,12 @@
     "tabs": {
       "general": "General",
       "providers": "Providers",
-      "skills": "Plugins",
-      "marketplace": "Discover Plugins",
-      "tools": "Tools",
-      "plugins": "Plugins"
+      "plugins": "Plugins",
+      "tools": "Tools"
+    },
+    "plugins": {
+      "title": "Plugins",
+      "unavailable": "Plugin management was removed by the last harness migration fix. The entry point is visible again; management actions need to be reconnected to the new harness API."
     },
     "general": {
       "agentBackend": "Harness",
@@ -38,6 +40,11 @@
       "language": "Language",
       "defaultChatDirectory": "Default chat directory",
       "defaultChatDirectoryHelp": "New chats start in this working directory.",
+      "newChatModelBehavior": "LLM model for new chats",
+      "newChatModelBehaviorHelp": "Choose how OpenGUI preselects the LLM model when starting a fresh chat.",
+      "newChatModelAsk": "Choose every time",
+      "newChatModelLast": "Use last LLM model",
+      "newChatModelWorkspaceDefault": "Use workspace default",
       "desktopNotifications": "Desktop notifications",
       "blockedByBrowser": "Blocked by browser",
       "fileManager": "File manager",
@@ -51,72 +58,25 @@
       "restartLocalBackendTitle": "Restart Local Backend?",
       "restartLocalBackendDescription": "This reloads OpenGUI's local backend and then refreshes the app. Running turns may be interrupted."
     },
-    "skills": {
-      "installed": "Installed Plugins",
-      "noSkills": "No plugins discovered.",
-      "browseMarketplace": "Discover Plugins",
-      "remove": "Remove",
-      "update": "Update",
-      "local": "Local",
-      "remote": "Remote",
-      "sdkSkills": "Agent SDK Plugins",
-      "installedSkills": "Filesystem Plugins",
-      "cliAvailable": "CLI available",
-      "cliUnavailable": "Install Node.js to use Discover"
-    },
-    "marketplace": {
-      "title": "Discover Plugins",
-      "searchPlaceholder": "Search plugins…",
-      "all": "All",
-      "trending": "Trending",
-      "hot": "Hot",
-      "official": "Official",
-      "install": "Install",
-      "installing": "Installing…",
-      "installed": "Installed",
-      "nameConflict": "Name used",
-      "installs": "{{count}} installs",
-      "installsLabel": "installs",
-      "details": "Details",
-      "audit": "Security",
-      "noResults": "No plugins found",
-      "loading": "Loading plugins…",
-      "error": "Failed to load plugins",
-      "retry": "Retry",
-      "projectScope": "Project",
-      "globalScope": "Global",
-      "installScope": "Install scope",
-      "installScopeHelp": "Project installs plugins into .agents/skills/ in the current project directory. Global installs into ~/.agents/skills/.",
-      "source": "Source",
-      "skillFile": "File",
-      "installSuccess": "Plugin installed successfully",
-      "installFailed": "Installation failed",
-      "confirmRemove": "Remove plugin \"{{name}}\"?",
-      "confirmRemoveDesc": "This will uninstall the plugin from your agents.",
-      "confirmUpdate": "Update plugin \"{{name}}\"?",
-      "confirmUpdateDesc": "This will fetch the latest version from the source.",
-      "sku": "plugin",
-      "progressTitle": "Installing Plugin",
-      "progressComplete": "Installation Complete",
-      "progressFailed": "Installation Failed",
-      "progressStarting": "Preparing installation…",
-      "progressRunning": "Installing plugin…",
-      "progressDone": "Plugin installed successfully.",
-      "progressDetails": "Technical details"
-    },
     "plugins": {
       "installed": "Installed",
       "discover": "Discover",
       "project": "Project",
       "global": "Global",
+      "globalScope": "Install globally",
       "published": "Published",
       "custom": "Custom",
+      "searchPlaceholder": "Search plugins…",
+      "install": "Install",
+      "installSourcePlaceholder": "Install from source, e.g. owner/repo@skill-name",
+      "noResults": "No plugins found.",
       "noPlugins": "No plugins installed.",
       "emptyScope": "No plugins in this scope.",
       "pluginGroups": "Plugin Groups",
       "general": "General",
       "capabilityCount": "{{count}} capabilities",
-      "updateGroup": "Update group"
+      "updateGroup": "Update group",
+      "update": "Update"
     }
   },
   "sidebar": {
@@ -133,6 +93,8 @@
     "projects": "Projects",
     "searchPlaceholder": "Search projects and sessions...",
     "showLess": "Show less",
+    "title": "Sidebar",
+    "mobileDescription": "Displays the mobile sidebar.",
     "untitled": "Untitled"
   },
   "sessionMenu": {
@@ -189,6 +151,9 @@
     "off": "off",
     "thinkingEffort": "Thinking effort: {{level}} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)"
   },
+  "agentSelector": {
+    "placeholder": "Agent"
+  },
   "modelSelector": {
     "selectModel": "Select model",
     "searchPlaceholder": "Search provider, model, or id...",
@@ -205,6 +170,12 @@
     "forkFromMessage": "Fork from this message",
     "showMore": "Show more",
     "showLess": "Show less"
+  },
+  "toolOutput": {
+    "showRaw": "Show raw",
+    "rawTitle": "Raw tool output",
+    "rawDescription": "Original textual output returned by the tool.",
+    "copyRaw": "Copy raw"
   },
   "workspace": {
     "addTitle": "Add workspace",
@@ -266,8 +237,21 @@
     "detectedCommand": "Detected command",
     "setupFinished": "Setup finished - worktree is ready."
   },
+  "worktreeCleanup": {
+    "title": "No sessions remaining",
+    "descriptionPrefix": "The worktree",
+    "branch": "branch",
+    "descriptionSuffix": "has no active sessions. Would you like to remove it?",
+    "keep": "Keep",
+    "remove": "Remove",
+    "removing": "Removing...",
+    "deleteFromDisk": "Also delete worktree files from disk"
+  },
   "providers": {
     "searchPlaceholder": "Search providers...",
+    "managerSwitcher": "Provider manager",
+    "noManagement": "No Harness with provider management is available.",
+    "loadFailed": "Could not load providers. Is the OpenGUI Backend connected?",
     "allProviders": "All providers",
     "customProvider": "Custom provider",
     "popular": "Popular",
@@ -311,7 +295,6 @@
   "setupWizard": {
     "title": "Welcome to OpenGUI",
     "setupAgentsTitle": "Set up coding agents",
-    "setupOpenCodeTitle": "Set up OpenCode",
     "chooseStartTitle": "Choose where new chats start",
     "readyTitle": "You're ready",
     "setupSavedTitle": "Setup saved",
@@ -324,7 +307,6 @@
     "checkHarnessesFailedTitle": "Could not check Harnesses",
     "checkHarnessesFailedDescription": "You can continue setup and check again later.",
     "checkAgain": "Check again",
-    "useAnotherHarness": "I want to set up the agent later",
     "harnessInventoryTitle": "Harness inventory",
     "modelsCount": "{{count}} models",
     "cliFound": "CLI found",
@@ -332,16 +314,6 @@
     "harnessCliFoundDescription": "The CLI is installed. Model and provider selection happens later in OpenGUI.",
     "harnessNotFoundDescription": "The CLI was not found on this computer.",
     "notFound": "not found",
-    "setup": "Setup",
-    "openCodeInstalled": "OpenCode is installed",
-    "installOpenCode": "Install OpenCode",
-    "openCodeDescription": "OpenCode is the guided setup path. Other Harnesses can still be installed manually.",
-    "providerConnectionAfterOpenCode": "Provider connection will happen in OpenGUI after OpenCode is available.",
-    "officialOpenCodeInstaller": "Official OpenCode installer",
-    "openCodeManualInstallHelp": "Copy this command, open a terminal, run it there, then come back and check again.",
-    "copyInstallCommand": "Copy command",
-    "copied": "Copied",
-    "openTerminal": "Open terminal",
     "defaultChatDirectoryTitle": "Default chat directory",
     "defaultChatDirectoryDescription": "New chats start in this folder when no project is selected.",
     "folderPlaceholder": "Choose a folder or leave empty",
@@ -365,6 +337,13 @@
     "title": "Agent error",
     "nextStep": "Next step: run this command in your terminal, then retry:",
     "openTerminal": "Open terminal"
+  },
+  "updateDialog": {
+    "title": "Update Available",
+    "description": "A new version of OpenGUI ({{latestVersion}}) is available. You are currently running v{{currentVersion}}.",
+    "currentVersion": "Current version: v{{currentVersion}}.",
+    "dismiss": "Dismiss",
+    "open": "Open"
   },
   "emptyStates": {
     "noProjectTitle": "No project connected",
@@ -399,6 +378,65 @@
   "diff": {
     "noLineDiffAvailable": "No line diff available."
   },
+  "reasoning": {
+    "thinking": "Thinking",
+    "thinkingRunning": "Thinking..."
+  },
+  "toolLabels": {
+    "bash": {
+      "running": "Running",
+      "done": "Ran"
+    },
+    "read": {
+      "running": "Reading",
+      "done": "Read"
+    },
+    "edit": {
+      "running": "Editing",
+      "done": "Edited"
+    },
+    "write": {
+      "running": "Writing",
+      "done": "Wrote"
+    },
+    "grep": {
+      "running": "Searching",
+      "done": "Searched"
+    },
+    "glob": {
+      "running": "Globbing",
+      "done": "Globbed"
+    },
+    "task": {
+      "running": "Running",
+      "done": "Ran"
+    },
+    "todo": {
+      "running": "Writing todos",
+      "doneOne": "Wrote {{count}} todo",
+      "doneOther": "Wrote {{count}} todos"
+    },
+    "question": {
+      "running": "Asking",
+      "doneOne": "Asked {{count}} question",
+      "doneOther": "Asked {{count}} questions"
+    },
+    "patch": {
+      "created": "Created",
+      "deleted": "Deleted",
+      "moved": "Moved",
+      "patched": "Patched"
+    },
+    "fileCountOther": "{{count}} files",
+    "matchCountOne": "{{count}} match",
+    "matchCountOther": "{{count}} matches"
+  },
+  "attachments": {
+    "image": "Image",
+    "fileAttachment": "File attachment",
+    "imageAttachment": "Image attachment {{count}}",
+    "closeImagePreview": "Close image preview"
+  },
   "projectPath": {
     "up": "Up",
     "noFolders": "No folders",
@@ -414,7 +452,19 @@
     "loadingServerFolders": "Loading server folders..."
   },
   "fileMention": {
-    "searching": "Searching..."
+    "searching": "Searching...",
+    "typeToSearch": "Type to search files",
+    "noMatchingFiles": "No matching files",
+    "searchFailed": "File search failed"
+  },
+  "queueList": {
+    "reorderQueuedPrompt": "Reorder queued prompt",
+    "sendNow": "Send now",
+    "interrupt": "interrupt",
+    "steer": "steer",
+    "edit": "Edit",
+    "moveToTop": "Move to top",
+    "moveToBottom": "Move to bottom"
   },
   "permissionPanel": {
     "title": "Permission: {{permission}}",

@@ -534,10 +534,10 @@ ipcMain.handle("dialog:openDirectory", async (event) => {
   const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
   const result = ownerWindow
     ? await dialog.showOpenDialog(ownerWindow, {
-        properties: ["openDirectory"],
+        properties: ["openDirectory", "createDirectory"],
       })
     : await dialog.showOpenDialog({
-        properties: ["openDirectory"],
+        properties: ["openDirectory", "createDirectory"],
       });
   if (result.canceled || result.filePaths.length === 0) {
     return null;

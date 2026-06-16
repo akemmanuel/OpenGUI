@@ -5,7 +5,7 @@ import type { ProjectConnectionConfig } from "./harness-service.ts";
 import { buildHarnessScope } from "./harness-scope.ts";
 
 function firstHarnessId(harnessIds?: HarnessId[]): HarnessId {
-  return harnessIds?.[0] ?? "opencode";
+  return harnessIds?.[0] ?? "claude-code";
 }
 
 export async function connectProjectToHarnesses(input: {
@@ -47,7 +47,10 @@ export async function getProjectHarnessStatus(input: {
 }) {
   return await input.services.harnesses.getProjectStatus({
     project: input.project,
-    scope: buildHarnessScope({ project: input.project, harnessId: input.harnessId ?? "opencode" }),
+    scope: buildHarnessScope({
+      project: input.project,
+      harnessId: input.harnessId ?? "claude-code",
+    }),
     harnessIds: input.harnessId ? [input.harnessId] : undefined,
   });
 }

@@ -1,13 +1,13 @@
-import { BookOpen, Layers, Trash2 } from "lucide-react";
+import { BookOpen, Layers, Loader2, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { DiscoverPlugins } from "@/components/DiscoverPlugins";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
-import { usePluginsPlatform } from "@/hooks/use-plugins-platform";
-import type { InstalledPluginInfo } from "@/types/electron";
+import { useDesktopShell } from "@/shell/provider";
+import type { InstalledPluginInfo, PluginCatalogEntry } from "@/types/electron";
 
 type PluginScope = "project" | "global";
 type PluginOrigin = "published" | "custom";
@@ -37,9 +37,9 @@ export function PluginsTabContent() {
       <div className="flex gap-1 border-b pb-2">
         <button
           type="button"
-          className={`text-xs font-medium px-2.5 py-1 rounded-t transition-colors ${
+          className={`rounded-t px-2.5 py-1 text-xs font-medium transition-colors ${
             activeTab === "installed"
-              ? "text-foreground border-b-2 border-primary"
+              ? "border-b-2 border-primary text-foreground"
               : "text-muted-foreground hover:text-foreground"
           }`}
           onClick={() => setActiveTab("installed")}
@@ -48,9 +48,9 @@ export function PluginsTabContent() {
         </button>
         <button
           type="button"
-          className={`text-xs font-medium px-2.5 py-1 rounded-t transition-colors ${
+          className={`rounded-t px-2.5 py-1 text-xs font-medium transition-colors ${
             activeTab === "discover"
-              ? "text-foreground border-b-2 border-primary"
+              ? "border-b-2 border-primary text-foreground"
               : "text-muted-foreground hover:text-foreground"
           }`}
           onClick={() => setActiveTab("discover")}
@@ -58,7 +58,189 @@ export function PluginsTabContent() {
           {t("settings.plugins.discover")}
         </button>
       </div>
-      {activeTab === "installed" ? <InstalledPluginsView /> : <DiscoverPlugins />}
+      {activeTab === "installed" ? <InstalledPluginsView /> : <DiscoverPluginsView />}
+    </div>
+  );
+}
+
+function remoteKeyForPlugin(plugin: PluginCatalogEntry) {
+  return `${plugin.source?.toLowerCase()}@${plugin.slug?.toLowerCase()}`;
+}
+
+function installSourceForPlugin(plugin: PluginCatalogEntry) {
+  return plugin.source ? `${plugin.source}@${plugin.slug}` : plugin.id || plugin.slug;
+}
+
+function DiscoverPluginsView() {
+  const { t } = useTranslation();
+  const skillsApi = useDesktopShell().skills;
+  const { activeDirectory } = useConnectionState();
+  const { refreshProviders } = useActions();
+  const scopedDirectory = activeDirectory ?? undefined;
+  const [query, setQuery] = useState("");
+  const [plugins, setPlugins] = useState<PluginCatalogEntry[]>([]);
+  const [installedPlugins, setInstalledPlugins] = useState<InstalledPluginInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [globalScope, setGlobalScope] = useState(false);
+  const [manualSource, setManualSource] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshInstalled = useCallback(async () => {
+    setInstalledPlugins(await skillsApi.listInstalled(scopedDirectory).catch(() => []));
+  }, [skillsApi, scopedDirectory]);
+
+  const loadPlugins = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const trimmed = query.trim();
+      const result = trimmed
+        ? await skillsApi.marketplace.search(trimmed, 50)
+        : await skillsApi.marketplace.list(undefined, 0, 50);
+      setPlugins(result.data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      setPlugins([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [skillsApi, query]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadPlugins(), 250);
+    return () => window.clearTimeout(timeout);
+  }, [loadPlugins]);
+
+  useEffect(() => {
+    void refreshInstalled();
+  }, [refreshInstalled]);
+
+  const installSource = useCallback(
+    async (source: string, key: string) => {
+      const trimmed = source.trim();
+      if (!trimmed) return;
+      setBusyKey(key);
+      setError(null);
+      try {
+        await skillsApi.install(trimmed, scopedDirectory, globalScope);
+        await refreshInstalled();
+        await refreshProviders();
+        setManualSource("");
+      } catch (installError) {
+        setError(installError instanceof Error ? installError.message : String(installError));
+      } finally {
+        setBusyKey(null);
+      }
+    },
+    [skillsApi, scopedDirectory, globalScope, refreshInstalled, refreshProviders],
+  );
+
+  const installedRemoteKeys = useMemo(
+    () => new Set(installedPlugins.map((plugin) => plugin.remoteKey).filter(Boolean)),
+    [installedPlugins],
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border bg-muted/20 p-3">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={manualSource}
+            onChange={(event) => setManualSource(event.target.value)}
+            placeholder={t("settings.plugins.installSourcePlaceholder")}
+            className="h-9 flex-1"
+          />
+          <Button
+            type="button"
+            size="sm"
+            disabled={!manualSource.trim() || busyKey === "manual"}
+            onClick={() => void installSource(manualSource, "manual")}
+          >
+            {busyKey === "manual" ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
+            {t("settings.plugins.install")}
+          </Button>
+        </div>
+        <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={globalScope}
+            onChange={(event) => setGlobalScope(event.target.checked)}
+          />
+          {t("settings.plugins.globalScope")}
+        </label>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="h-10 pl-9 pr-8 text-sm"
+          placeholder={t("settings.plugins.searchPlaceholder")}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {query ? (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        ) : null}
+      </div>
+
+      {error ? (
+        <div className="rounded-md border border-destructive/30 p-3 text-xs text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Spinner className="size-5" />
+        </div>
+      ) : plugins.length === 0 ? (
+        <div className="py-8 text-center text-sm text-muted-foreground">
+          {t("settings.plugins.noResults")}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {plugins.map((plugin) => {
+            const source = installSourceForPlugin(plugin);
+            const key = remoteKeyForPlugin(plugin);
+            const installed = installedRemoteKeys.has(key);
+            return (
+              <div key={plugin.id} className="rounded-lg border bg-card p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="truncate text-sm font-medium">{plugin.name}</h3>
+                      {installed ? (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {t("settings.plugins.installed")}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                      {plugin.source}/{plugin.slug}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={installed || busyKey === key}
+                    onClick={() => void installSource(source, key)}
+                  >
+                    {busyKey === key ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
+                    {installed ? t("settings.plugins.installed") : t("settings.plugins.install")}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -86,41 +268,36 @@ function buildPluginItems(skills: InstalledPluginInfo[], scope: PluginScope): Pl
   const general: InstalledPluginInfo[] = [];
 
   for (const skill of scoped) {
-    if (skill.pluginName) {
-      const existing = groups.get(skill.pluginName) ?? [];
-      existing.push(skill);
-      groups.set(skill.pluginName, existing);
-    } else {
-      general.push(skill);
-    }
+    if (skill.pluginName)
+      groups.set(skill.pluginName, [...(groups.get(skill.pluginName) ?? []), skill]);
+    else general.push(skill);
   }
 
-  const groupedItems: PluginListItem[] = [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, capabilities]) => ({
-      kind: "group" as const,
-      name,
-      scope,
-      origin: capabilities.some(hasExternalSource) ? "published" : "custom",
-      capabilities: capabilities.sort((a, b) => a.name.localeCompare(b.name)),
-    }));
-
-  const generalItems: PluginListItem[] = general
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((capability) => ({
-      kind: "general" as const,
-      name: capability.name,
-      scope,
-      origin: pluginOrigin(capability),
-      capability,
-    }));
-
-  return [...groupedItems, ...generalItems];
+  return [
+    ...[...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, capabilities]) => ({
+        kind: "group" as const,
+        name,
+        scope,
+        origin: (capabilities.some(hasExternalSource) ? "published" : "custom") as PluginOrigin,
+        capabilities: capabilities.sort((a, b) => a.name.localeCompare(b.name)),
+      })),
+    ...general
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((capability) => ({
+        kind: "general" as const,
+        name: capability.name,
+        scope,
+        origin: pluginOrigin(capability),
+        capability,
+      })),
+  ];
 }
 
 function InstalledPluginsView() {
   const { t } = useTranslation();
-  const skillsApi = usePluginsPlatform();
+  const skillsApi = useDesktopShell().skills;
   const { activeDirectory } = useConnectionState();
   const { refreshProviders } = useActions();
   const scopedDirectory = activeDirectory ?? undefined;
@@ -130,15 +307,10 @@ function InstalledPluginsView() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
 
   const refresh = useCallback(async () => {
-    if (!skillsApi) {
-      setInstalledPlugins([]);
-      setLoading(false);
-      return;
-    }
+    if (!skillsApi) return;
     setLoading(true);
     try {
-      const installed = await skillsApi.listInstalled(scopedDirectory).catch(() => []);
-      setInstalledPlugins(installed);
+      setInstalledPlugins(await skillsApi.listInstalled(scopedDirectory).catch(() => []));
     } finally {
       setLoading(false);
     }
@@ -160,11 +332,11 @@ function InstalledPluginsView() {
   const handleRemoveOne = useCallback(
     async (plugin: InstalledPluginInfo) => {
       if (!skillsApi) return;
-      try {
-        await skillsApi.remove(plugin.name, scopedDirectory, plugin.scope === "global");
-        await refresh();
-        await refreshProviders();
-      } catch {}
+      await skillsApi
+        .remove(plugin.name, scopedDirectory, plugin.scope === "global")
+        .catch(() => undefined);
+      await refresh();
+      await refreshProviders();
     },
     [skillsApi, scopedDirectory, refresh, refreshProviders],
   );
@@ -172,11 +344,11 @@ function InstalledPluginsView() {
   const handleUpdateOne = useCallback(
     async (plugin: InstalledPluginInfo) => {
       if (!skillsApi) return;
-      try {
-        await skillsApi.update(plugin.name, scopedDirectory, plugin.scope === "global");
-        await refresh();
-        await refreshProviders();
-      } catch {}
+      await skillsApi
+        .update(plugin.name, scopedDirectory, plugin.scope === "global")
+        .catch(() => undefined);
+      await refresh();
+      await refreshProviders();
     },
     [skillsApi, scopedDirectory, refresh, refreshProviders],
   );
@@ -184,17 +356,13 @@ function InstalledPluginsView() {
   const handleGroupAction = useCallback(
     async (plugins: InstalledPluginInfo[], action: "update" | "remove") => {
       if (!skillsApi) return;
-      try {
-        for (const plugin of plugins) {
-          if (action === "update") {
-            await skillsApi.update(plugin.name, scopedDirectory, plugin.scope === "global");
-          } else {
-            await skillsApi.remove(plugin.name, scopedDirectory, plugin.scope === "global");
-          }
-        }
-        await refresh();
-        await refreshProviders();
-      } catch {}
+      for (const plugin of plugins) {
+        if (action === "update")
+          await skillsApi.update(plugin.name, scopedDirectory, plugin.scope === "global");
+        else await skillsApi.remove(plugin.name, scopedDirectory, plugin.scope === "global");
+      }
+      await refresh();
+      await refreshProviders();
     },
     [skillsApi, scopedDirectory, refresh, refreshProviders],
   );
@@ -208,44 +376,39 @@ function InstalledPluginsView() {
     });
   }, []);
 
-  if (loading) {
+  if (loading)
     return (
       <div className="flex items-center justify-center py-8">
         <Spinner className="size-5" />
       </div>
     );
-  }
 
   const hasAny = projectItems.length > 0 || globalItems.length > 0;
 
-  return (
+  return !hasAny ? (
+    <div className="py-8 text-center text-sm text-muted-foreground">
+      {t("settings.plugins.noPlugins")}
+    </div>
+  ) : (
     <div className="space-y-6">
-      {!hasAny ? (
-        <div className="text-center py-8 text-sm text-muted-foreground">
-          {t("settings.plugins.noPlugins")}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <PluginScopeSection
-            scope="project"
-            items={projectItems}
-            expandedGroups={expandedGroups}
-            onToggleGroup={toggleGroup}
-            onUpdateOne={handleUpdateOne}
-            onRemoveOne={handleRemoveOne}
-            onGroupAction={handleGroupAction}
-          />
-          <PluginScopeSection
-            scope="global"
-            items={globalItems}
-            expandedGroups={expandedGroups}
-            onToggleGroup={toggleGroup}
-            onUpdateOne={handleUpdateOne}
-            onRemoveOne={handleRemoveOne}
-            onGroupAction={handleGroupAction}
-          />
-        </div>
-      )}
+      <PluginScopeSection
+        scope="project"
+        items={projectItems}
+        expandedGroups={expandedGroups}
+        onToggleGroup={toggleGroup}
+        onUpdateOne={handleUpdateOne}
+        onRemoveOne={handleRemoveOne}
+        onGroupAction={handleGroupAction}
+      />
+      <PluginScopeSection
+        scope="global"
+        items={globalItems}
+        expandedGroups={expandedGroups}
+        onToggleGroup={toggleGroup}
+        onUpdateOne={handleUpdateOne}
+        onRemoveOne={handleRemoveOne}
+        onGroupAction={handleGroupAction}
+      />
     </div>
   );
 }
@@ -331,10 +494,10 @@ function PluginBadges({ scope, origin }: { scope: PluginScope; origin: PluginOri
   const { t } = useTranslation();
   return (
     <div className="flex flex-wrap gap-1.5">
-      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+      <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
         {scopeLabel(scope, t)}
       </Badge>
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
         {originLabel(origin, t)}
       </Badge>
     </div>
@@ -357,17 +520,16 @@ function PluginGroupCard({
   onGroupAction: (plugins: InstalledPluginInfo[], action: "update" | "remove") => void;
 }) {
   const { t } = useTranslation();
-
   return (
-    <div className="rounded-lg border p-3 bg-card">
+    <div className="rounded-lg border bg-card p-3">
       <div className="flex items-start gap-3">
-        <Layers className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-        <button type="button" className="flex-1 min-w-0 text-left" onClick={onToggle}>
+        <Layers className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={onToggle}>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{item.name}</span>
             <PluginBadges scope={item.scope} origin={item.origin} />
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {t("settings.plugins.capabilityCount", { count: item.capabilities.length })}
           </p>
         </button>
@@ -399,10 +561,10 @@ function PluginGroupCard({
               key={capability.location}
               className="flex items-start gap-3 rounded-md bg-muted/40 px-3 py-2"
             >
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium">{capability.name}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{capability.description}</div>
-                <div className="text-[10px] text-muted-foreground font-mono truncate mt-1">
+                <div className="mt-0.5 text-xs text-muted-foreground">{capability.description}</div>
+                <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
                   {capability.location}
                 </div>
               </div>
@@ -414,7 +576,7 @@ function PluginGroupCard({
                   className="h-6 px-2 text-[10px]"
                   onClick={() => onUpdateOne(capability)}
                 >
-                  {t("settings.skills.update")}
+                  {t("settings.plugins.update")}
                 </Button>
                 <Button
                   type="button"
@@ -445,17 +607,16 @@ function GeneralPluginCard({
 }) {
   const { t } = useTranslation();
   const plugin = item.capability;
-
   return (
-    <div className="flex items-start gap-3 rounded-lg border p-3 bg-card">
-      <BookOpen className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
+    <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+      <BookOpen className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">{plugin.name}</span>
           <PluginBadges scope={item.scope} origin={item.origin} />
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{plugin.description}</p>
-        <p className="text-[10px] text-muted-foreground font-mono truncate mt-1">
+        <p className="mt-0.5 text-xs text-muted-foreground">{plugin.description}</p>
+        <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
           {plugin.location}
         </p>
       </div>
@@ -467,7 +628,7 @@ function GeneralPluginCard({
           className="h-7 px-2 text-[11px]"
           onClick={() => onUpdate(plugin)}
         >
-          {t("settings.skills.update")}
+          {t("settings.plugins.update")}
         </Button>
         <Button
           type="button"

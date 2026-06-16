@@ -5,7 +5,6 @@
  * No add, edit, or delete - purely runtime toggling.
  */
 
-import type { McpStatus } from "@opencode-ai/sdk/v2/client";
 import { AlertCircle, CheckCircle2, Globe, Terminal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { useHarness } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
 import { MCP_TOGGLE_DELAY_MS } from "@/lib/constants";
+import type { McpServerStatus } from "@/protocol/harness-resources";
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -46,7 +46,7 @@ const STATUS_CONFIG = {
   },
 } as const;
 
-function StatusBadge({ status }: { status: McpStatus }) {
+function StatusBadge({ status }: { status: McpServerStatus }) {
   const { t } = useTranslation();
   const config =
     STATUS_CONFIG[status.status as keyof typeof STATUS_CONFIG] ??
@@ -79,7 +79,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
   const configApi = backend?.platform?.config;
   const { activeDirectory, activeWorkspaceId } = useConnectionState();
 
-  const [mcpStatus, setMcpStatus] = useState<Record<string, McpStatus>>({});
+  const [mcpStatus, setMcpStatus] = useState<Record<string, McpServerStatus>>({});
   const [mcpTypes, setMcpTypes] = useState<Record<string, "local" | "remote">>({});
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
@@ -114,7 +114,7 @@ export function McpDialog({ open, onOpenChange }: McpDialogProps) {
     }
   }, [open, refresh]);
 
-  const handleToggle = async (name: string, currentStatus: McpStatus) => {
+  const handleToggle = async (name: string, currentStatus: McpServerStatus) => {
     if (!mcpApi) return;
     setToggling(name);
     try {

@@ -23,6 +23,7 @@ export function parseCreateProjectInput(body: unknown): CreateProjectInput {
       basename(body.path.replace(/[\\/]+$/, "")) ??
       "Project",
     allowedRootId: toOptionalString(body.allowedRootId, "allowedRootId"),
+    workspaceId: toOptionalString(body.workspaceId, "workspaceId"),
     git: body.git as CreateProjectInput["git"],
   };
 }

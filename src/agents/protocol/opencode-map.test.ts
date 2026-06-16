@@ -30,6 +30,28 @@ describe("mapOpenCodeEvent", () => {
     });
   });
 
+  test("ignores malformed session lifecycle events without crashing SSE handling", () => {
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "session.updated",
+          properties: { info: { title: "Missing ID" } },
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toBeNull();
+
+    expect(
+      mapOpenCodeEvent(
+        {
+          type: "session.created",
+          properties: {},
+        } as unknown as OpenCodeEvent,
+        context,
+      ),
+    ).toBeNull();
+  });
+
   test("normalizes message IDs", () => {
     const message = { id: "message-1", sessionID: "session-1" } as unknown as Message;
 

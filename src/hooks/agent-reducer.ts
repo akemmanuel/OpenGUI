@@ -1,11 +1,11 @@
 import type {
+  Agent,
   Command,
   Message,
   Part,
   PermissionRequest,
   QuestionRequest,
-  Agent,
-} from "@opencode-ai/sdk/v2/client";
+} from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 import type {
   InternalAgentState,
@@ -294,7 +294,13 @@ export type Action =
   | { type: "SET_DEFAULT_CHAT_DIRECTORY"; payload: string | null }
   | {
       type: "SET_ACTIVE_TARGET";
-      payload: { directory: string; harnessId: HarnessId | null };
+      payload: {
+        directory: string;
+        harnessId: HarnessId | null;
+        resetSelection?: boolean;
+        selectedModel?: SelectedModel | null;
+        selectedAgent?: string | null;
+      };
     }
   | { type: "CLEAR_ACTIVE_TARGET" }
   | { type: "SET_SESSION_NAMING"; payload: { sessionId: string; naming: boolean } }
@@ -1938,6 +1944,16 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         activeTargetDirectory: action.payload.directory,
         activeTargetBackendId: action.payload.harnessId,
         activeSessionId: null,
+        selectedModel: Object.hasOwn(action.payload, "selectedModel")
+          ? (action.payload.selectedModel ?? null)
+          : action.payload.resetSelection
+            ? null
+            : state.selectedModel,
+        selectedAgent: Object.hasOwn(action.payload, "selectedAgent")
+          ? (action.payload.selectedAgent ?? null)
+          : action.payload.resetSelection
+            ? null
+            : state.selectedAgent,
         messages: [],
         messageHistoryHasMore: false,
         messageHistoryCursor: null,

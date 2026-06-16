@@ -1,9 +1,13 @@
-export function shouldShowStopButton({
-  isLoading,
-  isCompactingInProgress,
+export function shouldShowStopButton({ isSessionRunning }: { isSessionRunning?: boolean }) {
+  return Boolean(isSessionRunning);
+}
+
+export function shouldShowSendButton({
+  hasPromptText,
+  isSessionRunning,
 }: {
-  isLoading?: boolean;
-  isCompactingInProgress?: boolean;
+  hasPromptText: boolean;
+  isSessionRunning?: boolean;
 }) {
-  return Boolean(isLoading || isCompactingInProgress);
+  return hasPromptText || !isSessionRunning;
 }

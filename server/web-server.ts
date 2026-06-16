@@ -60,7 +60,7 @@ import {
   toOptionalString,
   toQuestionAnswers,
   toQueueMode,
-  querySessionsForResolvedProjects,
+  querySessionsFromFrontendProjects,
   unrevertSessionThroughHarness,
   updateProjectRecord,
   updateSessionPrompt,
@@ -663,25 +663,19 @@ async function getSessionOrThrow(
 async function resolvePermissionSessionScope(
   services: BackendServiceContext,
   body: Record<string, unknown>,
-): Promise<{ session: SessionRecord; project: ProjectRecord; workspaceId?: string }> {
+): Promise<{ session: SessionRecord; project: ProjectRecord }> {
   const sessionId = toOptionalString(body.sessionId, "sessionId");
   if (!sessionId) throw new Error("sessionId and response are required");
   const harnessId =
     (toOptionalString(body.harnessId, "harnessId") as HarnessId | undefined) ?? undefined;
   const projectId = toOptionalString(body.projectId, "projectId") ?? undefined;
   const directory = toOptionalString(body.directory, "directory") ?? undefined;
-  const workspaceId = toOptionalString(body.workspaceId, "workspaceId") ?? undefined;
 
   try {
     const session = await getSessionOrThrow(services, sessionId, { projectId, harnessId });
     return {
       session,
       project: await getSessionProjectScopeOrThrow(services, session),
-      workspaceId:
-        workspaceId ??
-        (session.metadata && typeof session.metadata.workspaceID === "string"
-          ? session.metadata.workspaceID
-          : undefined),
     };
   } catch (error) {
     const frontend = parseFrontendSessionId(sessionId);
@@ -711,10 +705,9 @@ async function resolvePermissionSessionScope(
         status: "unknown",
         createdAt: now,
         updatedAt: now,
-        metadata: { directory: project.path, workspaceID: workspaceId, recovered: true },
+        metadata: { directory: project.path, recovered: true },
       },
       project,
-      workspaceId,
     };
   }
 }
@@ -727,8 +720,8 @@ function decodeCanonicalDirectorySessionId(
     const decoded = Buffer.from(sessionId.slice("session_".length), "base64url").toString("utf8");
     const [projectId, harnessId, rawId] = decoded.split("::");
     if (!projectId || !rawId) return null;
-    if (!MANAGED_HARNESS_IDS.includes(harnessId as HarnessId)) return null;
-    return { projectId, harnessId: harnessId as HarnessId, rawId };
+    if (!isManagedHarnessId(harnessId)) return null;
+    return { projectId, harnessId, rawId };
   } catch {
     return null;
   }
@@ -919,62 +912,13 @@ async function handleSessionRequest(request: Request) {
       if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
       const body = await readJsonBody(request);
       if (!isPlainObject(body)) throw new Error("Request body must be an object");
-      const projectsInput = Array.isArray(body.projects) ? body.projects : [];
-      const harnessIds = Array.isArray(body.harnessIds)
-        ? body.harnessIds.filter(isManagedHarnessId)
-        : [];
-      const sync = body.sync === true;
-      const resolvedProjects = await Promise.all(
-        projectsInput.map(async (projectInput) => {
-          if (!isPlainObject(projectInput)) return null;
-          const frontendProjectId = toOptionalString(
-            projectInput.frontendProjectId,
-            "frontendProjectId",
-          );
-          const directory = toOptionalString(projectInput.directory, "directory");
-          const workspaceId = toOptionalString(projectInput.workspaceId, "workspaceId");
-          if (!frontendProjectId || !directory) return null;
-
-          try {
-            const resolvedDirectory = await resolveHarnessDirectoryForSessions({ directory });
-            return { ok: true as const, frontendProjectId, workspaceId, ...resolvedDirectory };
-          } catch (error) {
-            return {
-              ok: false as const,
-              error: {
-                frontendProjectId,
-                directory,
-                error: error instanceof Error ? error.message : String(error),
-              },
-            };
-          }
-        }),
-      );
-
-      const errors = resolvedProjects
-        .filter((result): result is Extract<NonNullable<typeof result>, { ok: false }> =>
-          Boolean(result && !result.ok),
-        )
-        .map((result) => result.error);
-      const resolved = resolvedProjects
-        .filter((result): result is Extract<NonNullable<typeof result>, { ok: true }> =>
-          Boolean(result && result.ok),
-        )
-        .map(({ frontendProjectId, directory, canonicalPath, workspaceId }) => ({
-          frontendProjectId,
-          directory,
-          canonicalPath,
-          workspaceId,
-        }));
-      const queried = await querySessionsForResolvedProjects({
+      const value = await querySessionsFromFrontendProjects({
         services,
-        projects: resolved,
-        harnessIds,
-        sync,
+        body,
+        isHarnessId: isManagedHarnessId,
+        resolveDirectory: (directory) => resolveHarnessDirectoryForSessions({ directory }),
       });
-      errors.push(...queried.errors);
-
-      return Response.json({ ok: true, value: { items: queried.items, errors } });
+      return Response.json({ ok: true, value });
     } catch (error) {
       return jsonError(error, 400);
     }
@@ -1364,13 +1308,13 @@ async function handlePermissionRequest(request: Request) {
     ) {
       throw new Error("sessionId and response are required");
     }
-    const { session, project, workspaceId } = await resolvePermissionSessionScope(services, body);
+    const { session, project } = await resolvePermissionSessionScope(services, body);
     await respondToHarnessPermission({
       services,
       session,
       permissionId,
       response: body.response as "once" | "always" | "reject",
-      scope: { directory: project.path, workspaceId },
+      scope: { directory: project.path },
     });
     return Response.json({ ok: true, value: true });
   } catch (error) {
@@ -1392,14 +1336,11 @@ async function handleQuestionRequest(request: Request) {
     const body = await readJsonBody(request);
     const harnessId = (
       isPlainObject(body)
-        ? (toOptionalString(body.harnessId, "harnessId") ?? "opencode")
-        : "opencode"
+        ? (toOptionalString(body.harnessId, "harnessId") ?? "claude-code")
+        : "claude-code"
     ) as HarnessId;
     const sessionId = isPlainObject(body)
       ? toOptionalString(body.sessionId, "sessionId")
-      : undefined;
-    const workspaceId = isPlainObject(body)
-      ? toOptionalString(body.workspaceId, "workspaceId")
       : undefined;
     const projectId = isPlainObject(body)
       ? toOptionalString(body.projectId, "projectId")
@@ -1416,7 +1357,7 @@ async function handleQuestionRequest(request: Request) {
     } else if (!directory && projectId) {
       directory = (await getProjectOrThrow(services, projectId)).path;
     }
-    const target = directory ? { directory, workspaceId } : undefined;
+    const target = directory ? { directory } : undefined;
     if (action === "reply") {
       if (!isPlainObject(body) || body.answers === undefined) {
         throw new Error("answers is required for question reply");

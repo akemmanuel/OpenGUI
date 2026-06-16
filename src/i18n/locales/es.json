@@ -19,10 +19,12 @@
     "tabs": {
       "general": "General",
       "providers": "Proveedores",
-      "skills": "Plugins",
-      "marketplace": "Descubrir plugins",
-      "tools": "Herramientas",
-      "plugins": "Plugins"
+      "plugins": "Plugins",
+      "tools": "Herramientas"
+    },
+    "plugins": {
+      "title": "Plugins",
+      "unavailable": "La gestión de plugins se eliminó con la última corrección de migración del harness. La entrada vuelve a estar visible; las acciones de gestión deben reconectarse a la nueva API del harness."
     },
     "general": {
       "agentBackend": "Harness",
@@ -38,6 +40,11 @@
       "language": "Idioma",
       "defaultChatDirectory": "Directorio de chat predeterminado",
       "defaultChatDirectoryHelp": "Los chats nuevos empiezan en este directorio de trabajo.",
+      "newChatModelBehavior": "Modelo LLM para chats nuevos",
+      "newChatModelBehaviorHelp": "Elige cómo OpenGUI preselecciona el modelo LLM al iniciar un chat nuevo.",
+      "newChatModelAsk": "Elegir cada vez",
+      "newChatModelLast": "Usar el último modelo LLM",
+      "newChatModelWorkspaceDefault": "Usar predeterminado del espacio de trabajo",
       "desktopNotifications": "Notificaciones de escritorio",
       "blockedByBrowser": "Bloqueado por el navegador",
       "fileManager": "Gestor de archivos",
@@ -47,79 +54,29 @@
       "hideOldModels": "Ocultar modelos antiguos",
       "months": "meses",
       "hideOldModelsHelp": "Los modelos seleccionados y favoritos siempre siguen visibles. Los modelos sin una fecha de lanzamiento válida también siguen visibles.",
-      "restartServer": "Reiniciar Harnesses",
-      "restartServerTitle": "¿Reiniciar Harnesses?",
-      "restartServerDescription": "Esto reiniciará OpenCode, Pi, Claude Code y Codex. Los turnos en ejecución pueden interrumpirse; las conexiones de proyecto se restaurarán automáticamente.",
       "restartLocalBackend": "Reiniciar backend local",
       "restartLocalBackendTitle": "¿Reiniciar backend local?",
       "restartLocalBackendDescription": "Esto recarga el backend local de OpenGUI y luego actualiza la app. Los turnos en ejecución pueden interrumpirse."
-    },
-    "skills": {
-      "installed": "Plugins instalados",
-      "noSkills": "No se encontraron plugins.",
-      "browseMarketplace": "Descubrir plugins",
-      "remove": "Eliminar",
-      "update": "Actualizar",
-      "local": "Local",
-      "remote": "Remoto",
-      "sdkSkills": "Plugins del SDK del agente",
-      "installedSkills": "Plugins del sistema de archivos",
-      "cliAvailable": "CLI disponible",
-      "cliUnavailable": "Instala Node.js para usar Discover"
-    },
-    "marketplace": {
-      "title": "Descubrir plugins",
-      "searchPlaceholder": "Buscar plugins…",
-      "all": "Todo",
-      "trending": "Tendencia",
-      "hot": "Popular",
-      "official": "Oficial",
-      "install": "Instalar",
-      "installing": "Instalando…",
-      "installed": "Instalado",
-      "nameConflict": "Nombre usado",
-      "installs": "{{count}} instalaciones",
-      "installsLabel": "instalaciones",
-      "details": "Detalles",
-      "audit": "Seguridad",
-      "noResults": "No se encontraron plugins",
-      "loading": "Cargando plugins…",
-      "error": "Error al cargar plugins",
-      "retry": "Reintentar",
-      "projectScope": "Proyecto",
-      "globalScope": "Global",
-      "installScope": "Ámbito de instalación",
-      "installScopeHelp": "Proyecto instala plugins en .agents/skills/ del directorio actual. Global instala en ~/.agents/skills/.",
-      "source": "Fuente",
-      "skillFile": "Archivo",
-      "installSuccess": "Plugin instalado correctamente",
-      "installFailed": "La instalación falló",
-      "confirmRemove": "¿Eliminar plugin \"{{name}}\"?",
-      "confirmRemoveDesc": "Esto desinstalará el plugin de tus agentes.",
-      "confirmUpdate": "¿Actualizar plugin \"{{name}}\"?",
-      "confirmUpdateDesc": "Esto obtendrá la última versión desde la fuente.",
-      "sku": "plugin",
-      "progressTitle": "Instalando plugin",
-      "progressComplete": "Instalación completada",
-      "progressFailed": "Instalación fallida",
-      "progressStarting": "Preparando instalación…",
-      "progressRunning": "Instalando plugin…",
-      "progressDone": "Plugin instalado correctamente.",
-      "progressDetails": "Detalles técnicos"
     },
     "plugins": {
       "installed": "Instalados",
       "discover": "Descubrir",
       "project": "Proyecto",
       "global": "Global",
+      "globalScope": "Instalar globalmente",
       "published": "Publicado",
       "custom": "Personalizado",
+      "searchPlaceholder": "Buscar plugins…",
+      "install": "Instalar",
+      "installSourcePlaceholder": "Instalar desde fuente, p. ej. owner/repo@skill-name",
+      "noResults": "No se encontraron plugins.",
       "noPlugins": "No hay plugins instalados.",
       "emptyScope": "No hay plugins en este ámbito.",
       "pluginGroups": "Grupos de plugins",
       "general": "General",
       "capabilityCount": "{{count}} capacidades",
-      "updateGroup": "Actualizar grupo"
+      "updateGroup": "Actualizar grupo",
+      "update": "Actualizar"
     }
   },
   "sidebar": {
@@ -136,6 +93,8 @@
     "projects": "Proyectos",
     "searchPlaceholder": "Buscar proyectos y sesiones...",
     "showLess": "Mostrar menos",
+    "title": "Barra lateral",
+    "mobileDescription": "Muestra la barra lateral móvil.",
     "untitled": "Sin título"
   },
   "sessionMenu": {
@@ -192,6 +151,9 @@
     "off": "apagado",
     "thinkingEffort": "Esfuerzo de razonamiento: {{level}} (clic o Ctrl+T para cambiar, Ctrl+Mayús+T para retroceder)"
   },
+  "agentSelector": {
+    "placeholder": "Agente"
+  },
   "modelSelector": {
     "selectModel": "Seleccionar modelo",
     "searchPlaceholder": "Buscar proveedor, modelo o ID...",
@@ -208,6 +170,12 @@
     "forkFromMessage": "Bifurcar desde este mensaje",
     "showMore": "Mostrar más",
     "showLess": "Mostrar menos"
+  },
+  "toolOutput": {
+    "showRaw": "Mostrar sin procesar",
+    "rawTitle": "Salida sin procesar de la herramienta",
+    "rawDescription": "Salida textual original devuelta por la herramienta.",
+    "copyRaw": "Copiar sin procesar"
   },
   "workspace": {
     "addTitle": "Añadir espacio de trabajo",
@@ -269,8 +237,21 @@
     "detectedCommand": "Comando detectado",
     "setupFinished": "Configuración finalizada - el worktree está listo."
   },
+  "worktreeCleanup": {
+    "title": "No quedan sesiones",
+    "descriptionPrefix": "El worktree",
+    "branch": "rama",
+    "descriptionSuffix": "no tiene sesiones activas. ¿Quieres eliminarlo?",
+    "keep": "Conservar",
+    "remove": "Eliminar",
+    "removing": "Eliminando...",
+    "deleteFromDisk": "Eliminar también los archivos del worktree del disco"
+  },
   "providers": {
     "searchPlaceholder": "Buscar proveedores...",
+    "managerSwitcher": "Gestor de proveedores",
+    "noManagement": "No hay ningún Harness con gestión de proveedores disponible.",
+    "loadFailed": "No se pudieron cargar los proveedores. ¿Está conectado el OpenGUI Backend?",
     "allProviders": "Todos los proveedores",
     "customProvider": "Proveedor personalizado",
     "popular": "Populares",
@@ -314,7 +295,6 @@
   "setupWizard": {
     "title": "Bienvenido a OpenGUI",
     "setupAgentsTitle": "Configurar agentes de código",
-    "setupOpenCodeTitle": "Configurar OpenCode",
     "chooseStartTitle": "Elige dónde empiezan los chats nuevos",
     "readyTitle": "Todo listo",
     "setupSavedTitle": "Configuración guardada",
@@ -327,7 +307,6 @@
     "checkHarnessesFailedTitle": "No se pudieron comprobar los Harnesses",
     "checkHarnessesFailedDescription": "Puedes continuar la configuración y volver a comprobarlo más tarde.",
     "checkAgain": "Comprobar de nuevo",
-    "useAnotherHarness": "Quiero configurar el agente más tarde",
     "harnessInventoryTitle": "Inventario de agentes",
     "modelsCount": "{{count}} modelos",
     "cliFound": "CLI encontrada",
@@ -335,16 +314,6 @@
     "harnessCliFoundDescription": "La CLI está instalada. La selección de modelo y proveedor se hace más tarde en OpenGUI.",
     "harnessNotFoundDescription": "No se encontró la CLI en este equipo.",
     "notFound": "no encontrado",
-    "setup": "Configurar",
-    "openCodeInstalled": "OpenCode está instalado",
-    "installOpenCode": "Instalar OpenCode",
-    "openCodeDescription": "OpenCode es la ruta de configuración guiada. Otros Harnesses aún pueden instalarse manualmente.",
-    "providerConnectionAfterOpenCode": "La conexión de proveedores se hará en OpenGUI cuando OpenCode esté disponible.",
-    "officialOpenCodeInstaller": "Instalador oficial de OpenCode",
-    "openCodeManualInstallHelp": "Copia este comando, abre una terminal, ejecútalo allí y vuelve para comprobar de nuevo.",
-    "copyInstallCommand": "Copiar comando",
-    "copied": "Copiado",
-    "openTerminal": "Abrir terminal",
     "defaultChatDirectoryTitle": "Directorio de chat predeterminado",
     "defaultChatDirectoryDescription": "Los chats nuevos empiezan en esta carpeta cuando no haya ningún proyecto seleccionado.",
     "folderPlaceholder": "Elige una carpeta o déjalo vacío",
@@ -368,6 +337,13 @@
     "title": "Error del agente",
     "nextStep": "Siguiente paso: ejecuta este comando en tu terminal y vuelve a intentarlo:",
     "openTerminal": "Abrir terminal"
+  },
+  "updateDialog": {
+    "title": "Actualización disponible",
+    "description": "Hay una nueva versión de OpenGUI ({{latestVersion}}) disponible. Actualmente ejecutas v{{currentVersion}}.",
+    "currentVersion": "Versión actual: v{{currentVersion}}.",
+    "dismiss": "Descartar",
+    "open": "Abrir"
   },
   "emptyStates": {
     "noProjectTitle": "No hay ningún proyecto conectado",
@@ -402,6 +378,65 @@
   "diff": {
     "noLineDiffAvailable": "No hay diff de líneas disponible."
   },
+  "reasoning": {
+    "thinking": "Pensando",
+    "thinkingRunning": "Pensando..."
+  },
+  "toolLabels": {
+    "bash": {
+      "running": "Ejecutando",
+      "done": "Ejecutado"
+    },
+    "read": {
+      "running": "Leyendo",
+      "done": "Leído"
+    },
+    "edit": {
+      "running": "Editando",
+      "done": "Editado"
+    },
+    "write": {
+      "running": "Escribiendo",
+      "done": "Escrito"
+    },
+    "grep": {
+      "running": "Buscando",
+      "done": "Buscado"
+    },
+    "glob": {
+      "running": "Buscando archivos",
+      "done": "Archivos encontrados"
+    },
+    "task": {
+      "running": "Ejecutando",
+      "done": "Ejecutado"
+    },
+    "todo": {
+      "running": "Escribiendo tareas",
+      "doneOne": "{{count}} tarea escrita",
+      "doneOther": "{{count}} tareas escritas"
+    },
+    "question": {
+      "running": "Preguntando",
+      "doneOne": "{{count}} pregunta hecha",
+      "doneOther": "{{count}} preguntas hechas"
+    },
+    "patch": {
+      "created": "Creado",
+      "deleted": "Eliminado",
+      "moved": "Movido",
+      "patched": "Parcheado"
+    },
+    "fileCountOther": "{{count}} archivos",
+    "matchCountOne": "{{count}} coincidencia",
+    "matchCountOther": "{{count}} coincidencias"
+  },
+  "attachments": {
+    "image": "Imagen",
+    "fileAttachment": "Archivo adjunto",
+    "imageAttachment": "Imagen adjunta {{count}}",
+    "closeImagePreview": "Cerrar vista previa de imagen"
+  },
   "projectPath": {
     "up": "Subir",
     "noFolders": "No hay carpetas",
@@ -417,7 +452,19 @@
     "loadingServerFolders": "Cargando carpetas del servidor..."
   },
   "fileMention": {
-    "searching": "Buscando..."
+    "searching": "Buscando...",
+    "typeToSearch": "Escribe para buscar archivos",
+    "noMatchingFiles": "No hay archivos coincidentes",
+    "searchFailed": "Error al buscar archivos"
+  },
+  "queueList": {
+    "reorderQueuedPrompt": "Reordenar mensaje en cola",
+    "sendNow": "Enviar ahora",
+    "interrupt": "interrumpir",
+    "steer": "dirigir",
+    "edit": "Editar",
+    "moveToTop": "Mover arriba del todo",
+    "moveToBottom": "Mover abajo del todo"
   },
   "permissionPanel": {
     "title": "Permiso: {{permission}}",

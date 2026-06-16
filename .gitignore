@@ -51,6 +51,7 @@ changes.patch
 
 # Local agent/tool state
 .claude/
+.impeccable/
 .pi/
 .opencode/
 

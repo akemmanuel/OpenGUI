@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { Command } from "@opencode-ai/sdk/v2/client";
+import type { Command } from "@/protocol/harness-types";
 import { parseSlashCommand } from "@/hooks/use-slash-command-input";
 
 const commands = [{ name: "review" }, { name: "compact" }] as Command[];

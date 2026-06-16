@@ -31,13 +31,14 @@ import {
   tryPromiseEffect,
 } from "./lib/effect-runtime.ts";
 import { buildAllProvidersData, buildProvidersData } from "./pi-providers.ts";
+import { listFastPiSessionInfos as listPiSessionInfosFromDisk } from "./pi-session-listing.ts";
 
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
 const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
 // Bump when daemon import/runtime behavior changes. Existing healthy daemon gets reused
 // across app restarts; failed lazy ESM imports inside pi-ai stay poisoned in-process.
-const PI_DAEMON_VERSION = "2026-05-15-pi-streaming-replace-v1";
+const PI_DAEMON_VERSION = "2026-06-15-dev-source-daemon-v1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function normalizeDir(directory) {
@@ -175,163 +176,6 @@ function normalizePiSession(info, target = {}) {
 function extractPiThinkingVariant(entry) {
   const raw = entry?.level ?? entry?.thinkingLevel ?? entry?.effort ?? entry?.value ?? entry?.label;
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
-}
-
-function getPiSessionDir(cwd, agentDir = getAgentDir()) {
-  const safePath = `--${cwd.replace(/^[\\/]/, "").replace(/[\\/:]/g, "-")}--`;
-  return join(agentDir, "sessions", safePath);
-}
-
-function extractPiListTextContent(message) {
-  const content = message?.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text" && typeof block.text === "string")
-    .map((block) => block.text)
-    .join(" ");
-}
-
-async function buildFastPiSessionInfo(filePath, stats) {
-  try {
-    const maxBytes = Math.min(stats.size, 64 * 1024);
-    const handle = await open(filePath, "r");
-    let content;
-    try {
-      const buffer = Buffer.alloc(maxBytes);
-      const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
-      content = buffer.subarray(0, bytesRead).toString("utf8");
-    } finally {
-      await handle.close();
-    }
-
-    // Avoid parsing a truncated JSON line at the end of the head window.
-    // The first user message and session_info are normally near the top; updated
-    // time comes from file stats so listing does not need to scan full transcripts.
-    const lastNewline = content.lastIndexOf("\n");
-    if (lastNewline >= 0 && lastNewline < content.length - 1 && maxBytes < stats.size) {
-      content = content.slice(0, lastNewline + 1);
-    }
-
-    let header = null;
-    let messageCount = 0;
-    let firstMessage = "";
-    let name;
-
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      let entry;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (!header) {
-        if (entry.type !== "session" || typeof entry.id !== "string") return null;
-        header = entry;
-        continue;
-      }
-
-      if (entry.type === "session_info") {
-        name = entry.name?.trim() || undefined;
-        continue;
-      }
-
-      if (entry.type !== "message") continue;
-      messageCount++;
-      const message = entry.message;
-      if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
-
-      if (!firstMessage && message.role === "user") {
-        firstMessage = extractPiListTextContent(message);
-        if (name) break;
-      }
-    }
-
-    if (!header) return null;
-    const headerTime = typeof header.timestamp === "string" ? Date.parse(header.timestamp) : NaN;
-    const created = !Number.isNaN(headerTime) ? new Date(headerTime) : stats.birthtime;
-    const modified = stats.mtime;
-
-    return {
-      path: filePath,
-      id: header.id,
-      cwd: typeof header.cwd === "string" ? header.cwd : "",
-      name,
-      parentSessionPath: header.parentSession,
-      created,
-      modified,
-      messageCount,
-      firstMessage: firstMessage || "(no messages)",
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function mapPiSessionInfoWithConcurrency(items, limit, mapper) {
-  const results = Array.from({ length: items.length });
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      results[index] = await mapper(items[index], index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-async function listFastPiSessionInfos(directory, agentDir, cache, directoryCache) {
-  const sessionDir = getPiSessionDir(directory, agentDir);
-  if (!existsSync(sessionDir)) return [];
-  let entries;
-  try {
-    entries = await readdir(sessionDir);
-  } catch {
-    return [];
-  }
-
-  const files = entries
-    .filter((entry) => entry.endsWith(".jsonl"))
-    .map((entry) => join(sessionDir, entry));
-  const fileStats = await Promise.all(
-    files.map(async (filePath) => {
-      try {
-        return { filePath, stats: await stat(filePath) };
-      } catch {
-        cache.delete(filePath);
-        return null;
-      }
-    }),
-  );
-  const liveStats = fileStats.filter(Boolean);
-  const signature = liveStats
-    .map(({ filePath, stats }) => `${filePath}:${stats.size}:${stats.mtimeMs}`)
-    .join("\n");
-  const cachedDirectory = directoryCache.get(sessionDir);
-  if (cachedDirectory?.signature === signature) return cachedDirectory.infos;
-
-  const infos = await mapPiSessionInfoWithConcurrency(liveStats, 4, async ({ filePath, stats }) => {
-    const cached = cache.get(filePath);
-    if (cached && cached.size === stats.size && Math.abs(cached.mtimeMs - stats.mtimeMs) < 1000) {
-      return cached.info;
-    }
-    const info = await buildFastPiSessionInfo(filePath, stats);
-    if (info) cache.set(filePath, { size: stats.size, mtimeMs: stats.mtimeMs, info });
-    else cache.delete(filePath);
-    return info;
-  });
-  const liveFiles = new Set(files);
-  for (const filePath of cache.keys()) {
-    if (filePath.startsWith(`${sessionDir}/`) && !liveFiles.has(filePath)) cache.delete(filePath);
-  }
-  const sortedInfos = infos
-    .filter(Boolean)
-    .sort((a, b) => (b.modified?.getTime?.() ?? 0) - (a.modified?.getTime?.() ?? 0));
-  directoryCache.set(sessionDir, { signature, infos: sortedInfos });
-  return sortedInfos;
 }
 
 function inferPiSessionModelFromManager(manager) {
@@ -1750,7 +1594,7 @@ export class PiBridgeManager {
   async listSessions(target) {
     if (target?.directory) {
       const project = this.getListProject(target);
-      const infos = await listFastPiSessionInfos(
+      const infos = await listPiSessionInfosFromDisk(
         project.directory,
         this.agentDir,
         this.sessionInfoCache,
@@ -1768,7 +1612,7 @@ export class PiBridgeManager {
     }
     const sessions = [];
     for (const project of this.projects.values()) {
-      const infos = await listFastPiSessionInfos(
+      const infos = await listPiSessionInfosFromDisk(
         project.directory,
         this.agentDir,
         this.sessionInfoCache,
@@ -2816,6 +2660,7 @@ class PiDaemonClient {
     const token = preferredInfo?.token || randomUUID();
     const baseUrl = `http://127.0.0.1:${port}`;
     const daemonPathCandidates = [
+      join(process.cwd(), "pi-daemon-server.ts"),
       join(__dirname, "pi-daemon-server.js"),
       join(process.cwd(), "dist-electron", "pi-daemon-server.js"),
       join(process.cwd(), "pi-daemon-server.js"),
@@ -2829,7 +2674,10 @@ class PiDaemonClient {
     const appendLog = (chunk) => {
       if (logs.length < 8192) logs += chunk.toString().slice(0, 8192 - logs.length);
     };
-    const child = spawn(process.execPath, [daemonPath, "--port", String(port), "--token", token], {
+    const daemonArgs = daemonPath.endsWith(".ts")
+      ? ["--experimental-strip-types", daemonPath, "--port", String(port), "--token", token]
+      : [daemonPath, "--port", String(port), "--token", token];
+    const child = spawn(process.execPath, daemonArgs, {
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,

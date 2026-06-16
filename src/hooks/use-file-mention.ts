@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 export function findFileMentionTrigger(
   value: string,
@@ -34,6 +35,7 @@ export function useFileMention({
   ) => Promise<string[]>;
   getActiveTarget: () => { directory?: string; workspaceId?: string; baseUrl?: string } | null;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [results, setResults] = React.useState<string[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -82,7 +84,7 @@ export function useFileMention({
       if (query.trim().length === 0) {
         setLoading(false);
         setResults([]);
-        setEmptyMessage("Type to search files");
+        setEmptyMessage(t("fileMention.typeToSearch"));
         return;
       }
 
@@ -93,16 +95,16 @@ export function useFileMention({
           const activeTarget = getActiveTarget();
           const found = await findFiles(activeTarget, query);
           setResults(found.slice(0, 20));
-          setEmptyMessage(found.length === 0 ? "No matching files" : null);
+          setEmptyMessage(found.length === 0 ? t("fileMention.noMatchingFiles") : null);
         } catch {
           setResults([]);
-          setEmptyMessage("File search failed");
+          setEmptyMessage(t("fileMention.searchFailed"));
         } finally {
           setLoading(false);
         }
       }, 150);
     },
-    [clearDebounce, dismiss, findFiles, getActiveTarget],
+    [clearDebounce, dismiss, findFiles, getActiveTarget, t],
   );
 
   const select = React.useCallback(

@@ -31,7 +31,7 @@ import {
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { getSessionDraftKey } from "@/lib/session-drafts";
-import { shouldShowStopButton } from "@/lib/session-controls";
+import { shouldShowSendButton, shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
 interface PromptBoxProps extends Omit<
@@ -226,6 +226,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         setAgent,
       });
 
+    const hasPromptText = promptSubmit.hasValue;
+    const isSessionRunning = Boolean(isLoading);
+
     React.useEffect(() => {
       fileMention.reset();
       slashCommand.reset();
@@ -240,7 +243,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         onDragLeave={promptFiles.handleDragLeave}
         onDrop={promptFiles.handleDrop}
         className={cn(
-          "flex flex-col bg-background px-2 pt-2 shadow-xs transition-colors cursor-text border rounded-xl",
+          "flex flex-col border border-input bg-card px-2 pt-2 shadow-sm transition-colors cursor-text rounded-xl",
+          "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
+          "dark:bg-card/60 dark:border-input/80",
           promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
         )}
@@ -323,7 +328,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                     : t("prompt.queueMessage")
                 : t("prompt.message")
           }
-          className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/95 focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
           {...props}
         />
 
@@ -351,7 +356,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           worktreePath={setupWorktreePath ?? ""}
         />
 
-        <div className="flex min-w-0 items-center gap-1 px-1.5 pb-2">
+        <div className="flex min-w-0 items-center gap-1.5 px-1.5 pt-1 pb-2">
           <PromptAddMenu
             disabled={isDisabled}
             canManageMcp={canManageMcp}
@@ -359,9 +364,11 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             onOpenMcp={() => setMcpDialogOpen(true)}
           />
 
-          <ModelSelector />
-          <AgentSelector />
-          <VariantSelector />
+          <div className="flex min-w-0 items-center gap-1 rounded-lg bg-muted/45 p-0.5 dark:bg-muted/35">
+            <ModelSelector />
+            <AgentSelector />
+            <VariantSelector />
+          </div>
 
           <PromptWorktreeSelector
             shouldShow={shouldShowWorktreeSelector}
@@ -409,10 +416,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 onCompact={promptCompaction.compact}
               />
             )}
-            {shouldShowStopButton({
-              isLoading,
-              isCompactingInProgress: promptCompaction.isCompactingInProgress,
-            }) && (
+            {shouldShowStopButton({ isSessionRunning }) && (
               <Button
                 type="button"
                 size="icon-sm"
@@ -428,33 +432,34 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                 <span className="sr-only">{t("prompt.stopGenerating")}</span>
               </Button>
             )}
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="default"
-              title={
-                isLoading
-                  ? queueMode === "after-part"
-                    ? t("prompt.steer")
-                    : t("prompt.queue")
-                  : t("prompt.send")
-              }
-              disabled={isDisabled}
-              className={!promptSubmit.hasValue ? "opacity-50" : undefined}
-              onClick={(e) => {
-                e.stopPropagation();
-                void promptSubmit.submit();
-              }}
-            >
-              <ArrowUp />
-              <span className="sr-only">
-                {isLoading
-                  ? queueMode === "after-part"
-                    ? t("prompt.steer")
-                    : t("prompt.queueMessage")
-                  : t("prompt.sendMessage")}
-              </span>
-            </Button>
+            {shouldShowSendButton({ hasPromptText, isSessionRunning }) && (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="default"
+                title={
+                  isLoading
+                    ? queueMode === "after-part"
+                      ? t("prompt.steer")
+                      : t("prompt.queue")
+                    : t("prompt.send")
+                }
+                disabled={isDisabled || !hasPromptText}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void promptSubmit.submit();
+                }}
+              >
+                <ArrowUp />
+                <span className="sr-only">
+                  {isLoading
+                    ? queueMode === "after-part"
+                      ? t("prompt.steer")
+                      : t("prompt.queueMessage")
+                    : t("prompt.sendMessage")}
+                </span>
+              </Button>
+            )}
           </div>
         </div>
       </section>

@@ -14,7 +14,7 @@ OpenGUI is split into three layers:
   - **Mobile Shell** (Capacitor JS): native file picker, push notifications, secure token storage. Never spawns a backend or opens a terminal.
 
 **Harness**:
-A backend-wide coding-agent runtime (OpenCode, Claude Code, Codex, Pi) that OpenGUI Backend manages. Harness availability is not Project-specific. Harnesses are hosted inside the Backend process via adapters (`opencode-bridge.ts`, `claude-code-bridge.ts`, etc.). The Frontend never speaks to a Harness directly.
+A backend-wide coding-agent runtime (Claude Code, Codex, Pi, or another supported CLI) that OpenGUI Backend manages. Harness availability is not Project-specific. Harnesses are hosted inside the Backend process via adapters (`claude-code-bridge.ts`, `codex-bridge.ts`, etc.). The Frontend never speaks to a Harness directly.
 _Avoid_: Agent backend, agent runtime (in product UI), bridge, provider
 
 **Detected Harness**:
@@ -22,15 +22,11 @@ A Harness CLI OpenGUI finds already installed and available on the user's machin
 _Avoid_: recommended harness, preferred harness, default agent, onboarding harness picker
 
 **No Harness Installed**:
-The setup and home state where OpenGUI cannot find any available Harness CLI on the user's machine. After setup, this state shows a single Setup action in the empty state that opens the OpenCode install/provider flow; it does not list every possible Harness installation path.
-_Avoid_: failed setup, broken app, install every harness, equal install menu
-
-**OpenCode Setup Flow**:
-The setup wizard flow for installing OpenCode and connecting its providers when no Harness is installed. OpenCode is privileged only as the guided installation path; already Detected Harnesses are still presented neutrally as available Harness choices.
-_Avoid_: recommended harness overall, only supported harness, list all harness installers
+The setup and home state where OpenGUI cannot find any available Harness CLI on the user's machine. Setup may still be completed because execution readiness is separate from presentation preferences; Agent sends remain unavailable until a Harness is installed, authenticated, and model-ready.
+_Avoid_: failed setup, broken app, install every harness, equal install menu, privileged fallback harness
 
 **Skip Harness Setup**:
-The setup wizard path where a user intentionally skips the OpenCode Setup Flow because they want to use another Harness or postpone Harness setup, then continues to non-execution preferences such as Default chat directory and appearance. Skipping Harness setup does not show a Harness picker; after setup, Detected Harnesses may be used immediately while No Harness Installed shows the Setup empty-state action.
+The setup wizard path where a user intentionally continues without a model-ready Harness, then configures non-execution preferences such as Default chat directory and appearance. Skipping Harness setup does not show a Harness picker or installer; after setup, Detected Harnesses may be used immediately while No Harness Installed keeps Agent sends unavailable.
 _Avoid_: skip onboarding, ready without harness, cancel setup, install another harness in setup
 
 **Harness Adapter**:
@@ -38,7 +34,7 @@ The local integration code that translates OpenGUI Backend operations into Harne
 _Avoid_: Bridge, provider glue, agent SDK glue
 
 **Guided Harness Install**:
-A user-approved setup flow where OpenGUI helps install OpenCode and then verifies whether it is available. It must not silently install anything or present guided installation for every Harness.
+A user-approved setup flow where OpenGUI helps install a specific Harness and then verifies whether it is available. It must not silently install anything or present guided installation for every Harness.
 _Avoid_: silent install, bundled agent, automatic setup, default npm install, all-harness installer
 
 **Manual Guided Harness Install**:
@@ -170,6 +166,10 @@ _Avoid_: disconnected workspace, empty local workspace
 **PromptBox selection**:
 Frontend-local composition state choosing the Harness, model, agent, and variant for the next Agent send. When a Frontend loads an existing Session, PromptBox selection is replaced by the latest User message selection in that Session; when a Frontend starts a new Pending prompt target, PromptBox selection is inherited from the immediately previous in-memory PromptBox selection.
 _Avoid_: shared session setting, backend default, assistant model, persisted default, compatibility fallback
+
+**PromptBox action controls**:
+The visible controls for turning PromptBox text into an Agent send and for interrupting a running Session. When PromptBox text exists and the Session is idle, Send is active. When PromptBox text exists and the Session is running, both Interrupt Session and Send are active so the user can either stop current work or submit follow-up intent. When PromptBox text is empty and the Session is idle, Send remains visible but inactive. When PromptBox text is empty and the Session is running, only Interrupt Session is shown.
+_Avoid_: one-button toggle, send-as-stop, disabled stop while running
 
 **User message selection**:
 The Harness, model, agent, and variant recorded on a User message as the execution intent for that message. For PromptBox selection, the latest User message selection in a Session is the only transcript-derived source of truth; Assistant message models are display facts for history and must not drive PromptBox selection.
@@ -330,73 +330,21 @@ _Avoid_: local title override, rename patching, title fixup
 The frontend-local orchestration for creating, renaming, reauthenticating, switching, and removing Workspaces, including Project re-resolution when auth changes. A Workspace's OpenGUI Backend URL is not editable after creation; a different URL means creating a different Workspace.
 _Avoid_: backend profile lifecycle, workspace CRUD, tabs logic, edit backend URL
 
-**Plugin**:
-A backend/project/global agent configuration package that extends an agent with additional behaviour or knowledge. In the product interface, prefer Plugin over Skill because users understand plugins as installable functionality.
-_Avoid_: Skill, extension, add-on
-
-**Installed Plugin**:
-A Plugin already available to the user's agent, whether installed for the current project or globally. Installed Plugins are shown as one list; implementation sources such as filesystem or agent SDK are not navigation concepts.
-_Avoid_: Filesystem skill, SDK skill, Agent SDK
-
-**Plugin Scope**:
-Where an Installed Plugin is available: either the current project or all projects for the user. When the active directory is the user's home directory, home-level `.agents/skills` entries are Global, not Project.
-_Avoid_: Local, filesystem
-
-**Published Plugin**:
-An Installed Plugin with recorded source metadata from an external source. It remains Published even if the source later becomes unavailable or changes.
-_Avoid_: Skill, marketplace skill
-
-**Custom Plugin**:
-An Installed Plugin without recorded external source metadata and maintained locally by the user.
-_Avoid_: Local skill, filesystem skill
-
-**Plugin Update**:
-A refresh of a Published Plugin from its recorded external source. Update availability is based on source metadata and recorded hashes, not on whether the plugin appears in the catalog UI today.
-_Avoid_: Marketplace reinstall
-
-**Plugin Source of Truth**:
-Installed Plugin identity, scope, and origin come from backend/project/global agent configuration such as local skills lockfiles, not from Frontend Workspace state or catalog search results. The catalog is for discovery, not for deciding what is installed.
-_Avoid_: infer installed state from marketplace results, workspace plugin state
-
-**Plugin Group**:
-A Plugin made of multiple related capabilities installed from an explicit recorded plugin package. Grouping is based on recorded plugin metadata, not inferred from a shared source repository.
-_Avoid_: show every grouped skill as an unrelated plugin, infer groups from source
-
-**General Plugins**:
-Installed Plugins without recorded plugin grouping metadata. General Plugins are shown separately from Plugin Groups.
-_Avoid_: ungrouped skills
-
-**Installed Plugins Layout**:
-Installed Plugins are organized first by Plugin Scope and then by grouping. Within each scope, Plugin Groups are shown separately from General Plugins.
-_Avoid_: flat installed skill list
-
-**Cross-Scope Duplicate Plugin**:
-The same Plugin installed in both Project and Global scopes. Cross-scope duplicates are shown separately because scope is part of installed identity.
-_Avoid_: dedupe project and global installs
-
-**Plugin Capability**:
-An individual capability inside a Plugin Group. A standalone Plugin has exactly one capability.
-_Avoid_: Skill in product UI
-
-**Plugin Group Action**:
-An action applied to every capability in a Plugin Group, such as updating or removing the group.
-_Avoid_: ambiguous update button on grouped capabilities
-
-**Capability Action**:
-An action applied to one Plugin Capability inside a group.
-_Avoid_: hidden per-skill operation
-
-**Discover Plugins**:
-The product area where users browse, search, and install Plugins they do not yet have. Browsing emphasizes Plugin packages or groups; searching emphasizes matching capabilities within those Plugins.
-_Avoid_: Marketplace, Skills Marketplace
-
-**Plugins Tab Default**:
-The Plugins settings tab opens to Installed Plugins by default because settings is primarily for managing what is already configured.
-_Avoid_: default to Discover
-
 **Tool**:
-A backend-owned external capability exposed through MCP. Tools are managed separately from Plugins even though both can extend agent behaviour.
-_Avoid_: Plugin, frontend tool
+A backend-owned external capability exposed through MCP.
+_Avoid_: frontend tool, plugin
+
+**Tool call**:
+A single visible use of a Tool within a Session transcript or Live Session stream. A Tool call has a tool name, input, output, and status (`running`, `success`, or `error`); protocol states such as pending are implementation details and present as running. Tool calls are passive execution metadata attached to an assistant turn, not chat-equivalent assistant content and not user-actionable prompts.
+_Avoid_: plugin call, raw log line, assistant message, permission request, question prompt
+
+**Tool call presentation**:
+The compact UI rendering of a Tool call. Collapsed Tool call rows show a status icon plus a semantic label for known tools, or a prettified tool name for unknown/custom MCP tools. Inputs are hidden for now. Outputs, including error text, terminal text, structured output, and images, are shown only when the Tool call is expanded. A Tool call is expandable only when it has meaningful output; empty, whitespace-only, or structurally useless output must not create an expansion affordance or blank body. Long expanded output is bounded and scrollable.
+_Avoid_: always show input, JSON inspector by default, empty expandable row, inline error by default
+
+**Interaction request**:
+A user-actionable, agent-blocking request inside a Session where the agent is paused until the user decides something. Permission requests and question prompts are Interaction requests, not ordinary Tool calls. They should render as prominent actionable panels rather than passive collapsible Tool call rows.
+_Avoid_: tool output, permission tool call, question tool call, passive transcript metadata
 
 **Harness restart**:
 A user-requested recovery action that hard-restarts all Harness processes managed by OpenGUI, not just the currently selected Harness. It stops background agent processes such as the Pi daemon before starting them again.

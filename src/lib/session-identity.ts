@@ -13,7 +13,11 @@ export type SessionIdentityLike = {
   _rawId?: string;
 };
 
-const KNOWN_HARNESS_IDS = ["opencode", "claude-code", "pi", "codex"] as const;
+// Keep this list local instead of importing HARNESS_IDS from ../agents/index.ts.
+// The agents index re-exports createBackendIdCodec, which depends on this file;
+// importing its runtime constants here creates a production Rollup cycle where
+// HARNESS_IDS can be read before it is initialized.
+const SESSION_ID_HARNESS_IDS: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
 
 export function composeFrontendSessionId(harnessId: HarnessId, rawId: string): string {
   const marker = `${harnessId}:`;
@@ -23,7 +27,7 @@ export function composeFrontendSessionId(harnessId: HarnessId, rawId: string): s
 export function parseFrontendSessionId(
   sessionId: string,
 ): { harnessId: HarnessId; rawId: string } | null {
-  for (const harnessId of KNOWN_HARNESS_IDS) {
+  for (const harnessId of SESSION_ID_HARNESS_IDS) {
     const marker = `${harnessId}:`;
     if (sessionId.startsWith(marker)) return { harnessId, rawId: sessionId.slice(marker.length) };
   }

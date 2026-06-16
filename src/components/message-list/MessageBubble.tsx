@@ -7,10 +7,11 @@ import {
   type ImageMention,
 } from "@/components/ImageMentionPreview";
 import { ProviderIcon } from "@/components/provider-icons";
-import { useConnectionState, useSessionState, type MessageEntry } from "@/hooks/use-agent-state";
+import { useConnectionState, useSessionState } from "@/hooks/use-agent-state";
 import { USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { splitImageMentions } from "@/lib/image-mentions";
 import { cn } from "@/lib/utils";
+import type { TranscriptMessageEntry } from "@/protocol/session-transcript";
 import { DurationLabel } from "./DurationLabel";
 import { PartView } from "./PartView";
 import type { TurnFooter } from "./types";
@@ -18,23 +19,21 @@ import type { TurnFooter } from "./types";
 export const MessageBubble = memo(function MessageBubble({
   entry,
   turnFooter,
-  lastReasoningPartId,
   onFork,
   onRevert,
   expandedUserMessages,
-  expandedToolParts,
+  expandedToolCalls,
   onToggleUserMessage,
-  onToggleToolPart,
+  onToggleToolCall,
 }: {
-  entry: MessageEntry;
+  entry: TranscriptMessageEntry;
   turnFooter?: TurnFooter;
-  lastReasoningPartId?: string;
   onFork?: () => void;
   onRevert?: () => void;
   expandedUserMessages?: ReadonlySet<string>;
-  expandedToolParts?: ReadonlySet<string>;
+  expandedToolCalls?: ReadonlySet<string>;
   onToggleUserMessage?: (messageId: string) => void;
-  onToggleToolPart?: (partId: string, expanded: boolean) => void;
+  onToggleToolCall?: (partId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
   const { isLocalWorkspace, workspaceServerUrl } = useConnectionState();
@@ -139,9 +138,8 @@ export const MessageBubble = memo(function MessageBubble({
                   key={part.id}
                   part={part}
                   isUser={isUser}
-                  lastReasoningPartId={lastReasoningPartId}
-                  expandedToolParts={expandedToolParts}
-                  onToggleToolPart={onToggleToolPart}
+                  expandedToolCalls={expandedToolCalls}
+                  onToggleToolCall={onToggleToolCall}
                   activeImagePath={activeImagePath}
                   onImageHover={setActiveImagePath}
                   onImageOpen={setOpenImage}

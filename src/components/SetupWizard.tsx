@@ -1,16 +1,6 @@
 /** First-run onboarding for Everyday Builders. */
 
-import {
-  AlertCircle,
-  ArrowRight,
-  Check,
-  Copy,
-  Folder,
-  LoaderCircle,
-  RotateCw,
-  Terminal,
-  X,
-} from "lucide-react";
+import { AlertCircle, ArrowRight, Check, Folder, LoaderCircle, RotateCw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -20,10 +10,8 @@ import { useOpenGuiClient } from "@/protocol/provider";
 import { useDesktopShell } from "@/shell/provider";
 import type { HarnessInventory } from "@/types/electron";
 
-type Step = "harness" | "opencode" | "folder" | "finish";
+type Step = "harness" | "folder" | "finish";
 type HarnessState = "detecting" | "ready" | "none" | "error";
-
-const OPENCODE_INSTALL_COMMAND = "curl -fsSL https://opencode.ai/install | bash";
 
 interface Props {
   onComplete: () => void;
@@ -50,7 +38,6 @@ function harnessStateFromInventories(inventories: HarnessInventory[]): HarnessSt
 function stepNumber(step: Step) {
   const stepToProgressDot: Record<Step, number> = {
     harness: 0,
-    opencode: 0,
     folder: 1,
     finish: 2,
   };
@@ -64,21 +51,15 @@ export function SetupWizard({ onComplete }: Props) {
   const [step, setStep] = useState<Step>("harness");
   const [inventories, setInventories] = useState<HarnessInventory[]>([]);
   const [harnessState, setHarnessState] = useState<HarnessState>("detecting");
-  const [copiedInstallCommand, setCopiedInstallCommand] = useState(false);
   const [folder, setFolder] = useState("");
 
   const currentStepNumber = stepNumber(step);
-  const opencodeInstalled = inventories.some(
-    (inventory) => inventory.harnessId === "opencode" && inventory.installed,
-  );
   const canUseAnyHarness = hasUsableHarness(inventories);
 
   const title = useMemo(() => {
     switch (step) {
       case "harness":
         return t("setupWizard.setupAgentsTitle");
-      case "opencode":
-        return t("setupWizard.setupOpenCodeTitle");
       case "folder":
         return t("setupWizard.chooseStartTitle");
       case "finish":
@@ -112,21 +93,6 @@ export function SetupWizard({ onComplete }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function copyOpenCodeInstallCommand() {
-    try {
-      await navigator.clipboard.writeText(OPENCODE_INSTALL_COMMAND);
-      setCopiedInstallCommand(true);
-      window.setTimeout(() => setCopiedInstallCommand(false), 2000);
-    } catch {
-      setCopiedInstallCommand(false);
-    }
-  }
-
-  async function openTerminalForOpenCodeInstall() {
-    const home = await client.runtime.getHomeDir().catch(() => "");
-    await shell.system.openInTerminal(home || folder || "/");
-  }
 
   async function browseFolder() {
     try {
@@ -217,95 +183,13 @@ export function SetupWizard({ onComplete }: Props) {
                   {t("setupWizard.checkAgain")}
                 </Button>
                 <div className="flex flex-wrap gap-2">
-                  {harnessState === "none" && (
-                    <Button variant="outline" onClick={() => setStep("folder")}>
-                      {t("setupWizard.useAnotherHarness")}
-                    </Button>
-                  )}
-                  {harnessState === "none" ? (
-                    <Button onClick={() => setStep("opencode")}>{t("setupWizard.setup")}</Button>
-                  ) : (
-                    <Button
-                      onClick={() => setStep("folder")}
-                      disabled={harnessState === "detecting"}
-                    >
-                      {t("setupWizard.continue")}
-                      <ArrowRight className="ml-1.5 size-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {inventories.length > 0 && <HarnessInventorySummary inventories={inventories} />}
-            </div>
-          )}
-
-          {step === "opencode" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
-              <StatusRow
-                icon={
-                  opencodeInstalled ? (
-                    <Check className="size-5 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="size-5 text-amber-500" />
-                  )
-                }
-                title={
-                  opencodeInstalled
-                    ? t("setupWizard.openCodeInstalled")
-                    : t("setupWizard.installOpenCode")
-                }
-                description={t("setupWizard.openCodeDescription")}
-              />
-              <div className="mt-5 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                {t("setupWizard.providerConnectionAfterOpenCode")}
-              </div>
-              {!opencodeInstalled && (
-                <div className="mt-4 rounded-lg border bg-background p-4">
-                  <div className="mb-2 text-sm font-medium">
-                    {t("setupWizard.officialOpenCodeInstaller")}
-                  </div>
-                  <code className="block overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs text-foreground">
-                    {OPENCODE_INSTALL_COMMAND}
-                  </code>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {t("setupWizard.openCodeManualInstallHelp")}
-                  </p>
-                </div>
-              )}
-              <div className="mt-5 flex flex-wrap justify-between gap-2">
-                <Button variant="ghost" onClick={() => setStep("harness")}>
-                  {t("common.back")}
-                </Button>
-                <div className="flex gap-2">
-                  {!opencodeInstalled && (
-                    <Button variant="outline" onClick={() => void copyOpenCodeInstallCommand()}>
-                      <Copy className="mr-1.5 size-4" />
-                      {copiedInstallCommand
-                        ? t("setupWizard.copied")
-                        : t("setupWizard.copyInstallCommand")}
-                    </Button>
-                  )}
-                  {!opencodeInstalled && (
-                    <Button variant="outline" onClick={() => void openTerminalForOpenCodeInstall()}>
-                      <Terminal className="mr-1.5 size-4" />
-                      {t("setupWizard.openTerminal")}
-                    </Button>
-                  )}
-                  {!opencodeInstalled && (
-                    <Button variant="outline" onClick={() => void refreshHarnessStatus()}>
-                      <RotateCw className="mr-1.5 size-4" />
-                      {t("setupWizard.checkAgain")}
-                    </Button>
-                  )}
-                  <Button
-                    variant={opencodeInstalled ? "default" : "outline"}
-                    onClick={() => setStep("folder")}
-                  >
+                  <Button onClick={() => setStep("folder")} disabled={harnessState === "detecting"}>
                     {t("setupWizard.continue")}
                     <ArrowRight className="ml-1.5 size-4" />
                   </Button>
                 </div>
               </div>
+              {inventories.length > 0 && <HarnessInventorySummary inventories={inventories} />}
             </div>
           )}
 

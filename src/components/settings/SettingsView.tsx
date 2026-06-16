@@ -32,7 +32,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
               {t("settings.tabs.providers")}
             </TabsTrigger>
             <TabsTrigger value="plugins" className="flex-1">
-              <ShoppingBag className="size-3.5 mr-1.5" />
+              <ShoppingBag className="mr-1.5 size-3.5" />
               {t("settings.tabs.plugins")}
             </TabsTrigger>
             <TabsTrigger value="mcp" className="flex-1">

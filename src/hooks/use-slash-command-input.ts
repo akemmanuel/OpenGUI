@@ -1,4 +1,4 @@
-import type { Command } from "@opencode-ai/sdk/v2/client";
+import type { Command } from "@/protocol/harness-types";
 import * as React from "react";
 import { useFilteredCommands } from "@/components/SlashCommandPopover";
 

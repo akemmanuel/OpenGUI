@@ -15,6 +15,7 @@ export interface ProjectRecord {
   path: string;
   canonicalPath: string;
   allowedRootId?: string;
+  workspaceId?: string;
   git?: {
     currentBranch?: string;
     remoteUrl?: string;
@@ -43,6 +44,7 @@ export interface CreateProjectInput {
   path: string;
   canonicalPath?: string;
   allowedRootId?: string;
+  workspaceId?: string;
   git?: ProjectRecord["git"];
 }
 
@@ -215,6 +217,7 @@ export function createJsonStorageService(dataDir: string): StorageService {
         path: input.path,
         canonicalPath: input.canonicalPath ?? input.path,
         allowedRootId: input.allowedRootId,
+        workspaceId: input.workspaceId,
         git: input.git,
         createdAt: now,
         updatedAt: now,
@@ -383,6 +386,7 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
       path TEXT NOT NULL,
       canonical_path TEXT NOT NULL,
       allowed_root_id TEXT,
+      workspace_id TEXT,
       git_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -435,6 +439,7 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
     path: String(row.path),
     canonicalPath: String(row.canonical_path),
     allowedRootId: typeof row.allowed_root_id === "string" ? row.allowed_root_id : undefined,
+    workspaceId: typeof row.workspace_id === "string" ? row.workspace_id : undefined,
     git: parseJson<ProjectRecord["git"]>(row.git_json),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -470,19 +475,21 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
         path: input.path,
         canonicalPath: input.canonicalPath ?? input.path,
         allowedRootId: input.allowedRootId,
+        workspaceId: input.workspaceId,
         git: input.git,
         createdAt: now,
         updatedAt: now,
       };
       db.prepare(
-        `INSERT INTO projects (id, display_name, path, canonical_path, allowed_root_id, git_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO projects (id, display_name, path, canonical_path, allowed_root_id, workspace_id, git_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         project.id,
         project.displayName,
         project.path,
         project.canonicalPath,
         project.allowedRootId ?? null,
+        project.workspaceId ?? null,
         project.git ? JSON.stringify(project.git) : null,
         project.createdAt,
         project.updatedAt,

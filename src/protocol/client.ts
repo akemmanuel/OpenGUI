@@ -1,4 +1,4 @@
-import type { Agent, Command, QuestionAnswer } from "@opencode-ai/sdk/v2/client";
+import type { Agent, Command, QuestionAnswer } from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/backend";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
@@ -69,6 +69,7 @@ export interface CreateProjectInput {
   path: string;
   canonicalPath?: string;
   allowedRootId?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateProjectInput {
@@ -95,7 +96,6 @@ export interface HarnessProjectSessionsResult {
 }
 
 export interface SessionQueryProject {
-  frontendProjectId: string;
   directory: string;
   workspaceId?: string;
   baseUrl?: string;
@@ -103,7 +103,6 @@ export interface SessionQueryProject {
 }
 
 export interface SessionQueryItem {
-  frontendProjectId: string;
   directory: string;
   workspaceId?: string;
   harnessId: HarnessId;
@@ -113,7 +112,6 @@ export interface SessionQueryItem {
 export interface SessionQueryResult {
   items: SessionQueryItem[];
   errors?: Array<{
-    frontendProjectId: string;
     directory: string;
     workspaceId?: string;
     harnessId?: HarnessId;

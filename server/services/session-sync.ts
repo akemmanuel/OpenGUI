@@ -6,7 +6,6 @@ import { toSessionRecordInputFromRuntime } from "./runtime-session-mapper.ts";
 export interface ResolvedHarnessDirectory {
   directory: string;
   canonicalPath: string;
-  workspaceId?: string;
 }
 
 export async function syncDirectorySessions(
@@ -19,7 +18,6 @@ export async function syncDirectorySessions(
     scope: {
       projectId,
       directory: directory.canonicalPath,
-      workspaceId: directory.workspaceId,
     },
     harnessIds: [harnessId],
   });

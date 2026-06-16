@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,8 @@ function ImageLightbox({
   baseDirectory?: string | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
+
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -43,7 +46,7 @@ function ImageLightbox({
           type="button"
           className="absolute right-2 top-2 rounded-full bg-background/90 p-1.5 text-muted-foreground shadow-sm hover:text-foreground"
           onClick={onClose}
-          aria-label="Close image preview"
+          aria-label={t("attachments.closeImagePreview")}
         >
           <X className="size-4" />
         </button>

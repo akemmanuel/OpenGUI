@@ -24,6 +24,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +78,7 @@ function QueueItemRow({
   const [editValue, setEditValue] = React.useState(item.text);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const { t } = useTranslation();
   const rowRef = React.useRef<HTMLDivElement>(null);
 
   const isFirst = index === 0;
@@ -155,7 +157,7 @@ function QueueItemRow({
       <div
         {...dragHandleProps}
         className="size-3.5 cursor-grab text-muted-foreground/50 shrink-0 active:cursor-grabbing"
-        aria-label="Reorder queued prompt"
+        aria-label={t("queueList.reorderQueuedPrompt")}
       >
         <GripVertical className="size-3.5" />
       </div>
@@ -193,7 +195,7 @@ function QueueItemRow({
                   : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
               )}
             >
-              {item.mode === "interrupt" ? "interrupt" : "steer"}
+              {item.mode === "interrupt" ? t("queueList.interrupt") : t("queueList.steer")}
             </span>
           )}
           {item.variant && (
@@ -214,7 +216,7 @@ function QueueItemRow({
               onSendNow?.(item.id);
             }}
             className="text-muted-foreground hover:text-foreground"
-            title="Send now"
+            title={t("queueList.sendNow")}
           >
             <Send className="size-3" />
           </Button>
@@ -264,7 +266,7 @@ function QueueItemRow({
                   }}
                 >
                   <Pencil className="size-3" />
-                  Edit
+                  {t("queueList.edit")}
                 </button>
                 {!isFirst && (
                   <button
@@ -277,7 +279,7 @@ function QueueItemRow({
                     }}
                   >
                     <ArrowUpToLine className="size-3" />
-                    Move to top
+                    {t("queueList.moveToTop")}
                   </button>
                 )}
                 {!isLast && (
@@ -291,7 +293,7 @@ function QueueItemRow({
                     }}
                   >
                     <ArrowDownToLine className="size-3" />
-                    Move to bottom
+                    {t("queueList.moveToBottom")}
                   </button>
                 )}
               </div>

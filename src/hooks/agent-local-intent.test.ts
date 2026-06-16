@@ -122,6 +122,39 @@ describe("createLocalIntentOrchestrator", () => {
     ]);
   });
 
+  test("requires model before creating a fresh session", async () => {
+    const state = makeState({ activeTargetDirectory: "/repo", selectedModel: null });
+    const actions: Array<Record<string, unknown>> = [];
+    let created = false;
+
+    const orchestrator = createLocalIntentOrchestrator({
+      getState: () => state,
+      getResourceRuntime: () => undefined,
+      getCurrentVariant: () => undefined,
+      sessionsClient: {
+        prompt: async () => undefined,
+        abort: async () => undefined,
+      } as never,
+      createSession: async () => {
+        created = true;
+        return null;
+      },
+      scheduleSessionMessageReconcile: () => undefined,
+      requestSessionAutoName: () => undefined,
+      dispatch: (action) => {
+        actions.push(action as unknown as Record<string, unknown>);
+      },
+      sessionCreatingRef: { current: false },
+    });
+
+    await orchestrator.sendPrompt("Ship it");
+
+    expect(created).toBe(false);
+    expect(actions).toEqual([
+      { type: "SET_ERROR", payload: "Choose a Harness model before sending." },
+    ]);
+  });
+
   test("prepends the directory-change notice before prompting the backend", async () => {
     const session = makeSession({
       id: "session-1",

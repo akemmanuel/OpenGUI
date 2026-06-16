@@ -2,7 +2,10 @@ import { createBackendIdCodec } from "./shared.ts";
 
 export type HarnessId = "opencode" | "claude-code" | "pi" | "codex";
 
-export const HARNESS_IDS: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
+export type ActiveHarnessId = HarnessId;
+
+export const HARNESS_IDS: ActiveHarnessId[] = ["opencode", "claude-code", "pi", "codex"];
+export const DEFAULT_HARNESS_ID: ActiveHarnessId = "claude-code";
 
 export const HARNESS_LABELS: Record<HarnessId, string> = {
   opencode: "OpenCode",

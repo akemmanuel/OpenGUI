@@ -32,6 +32,14 @@ type OpenCodeEventHandler = (
 
 type EventProperties = Record<string, unknown>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isTaggedSession(value: unknown): value is TaggedSession {
+  return isRecord(value) && typeof value.id === "string" && value.id.length > 0;
+}
+
 function getProperties(event: OpenCodeEvent): EventProperties {
   return event.properties as EventProperties;
 }
@@ -59,6 +67,7 @@ function normalizeOpenCodePayload(raw: OpenCodeEvent | OpenCodeSyncEnvelope): Op
 export const openCodeEventHandlers: Partial<Record<string, OpenCodeEventHandler>> = {
   "session.created": (event, context) => {
     const { info } = getProperties(event) as { info: TaggedSession };
+    if (!isTaggedSession(info)) return null;
     return {
       type: "session.created",
       directory: context.directory,
@@ -68,6 +77,7 @@ export const openCodeEventHandlers: Partial<Record<string, OpenCodeEventHandler>
   },
   "session.updated": (event, context) => {
     const { info } = getProperties(event) as { info: TaggedSession };
+    if (!isTaggedSession(info)) return null;
     return {
       type: "session.updated",
       directory: context.directory,
@@ -77,6 +87,7 @@ export const openCodeEventHandlers: Partial<Record<string, OpenCodeEventHandler>
   },
   "session.deleted": (event, context) => {
     const { info } = getProperties(event) as { info: { id: string } };
+    if (!isTaggedSession(info)) return null;
     return {
       type: "session.deleted",
       directory: context.directory,

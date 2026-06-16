@@ -1,4 +1,4 @@
-import type { Agent } from "@opencode-ai/sdk/v2/client";
+import type { Agent } from "@/protocol/harness-types";
 import type { HarnessDescriptor, HarnessTarget } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
