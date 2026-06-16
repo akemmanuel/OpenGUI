@@ -175,6 +175,88 @@ export interface HarnessInventory {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin Catalog Types
+// ---------------------------------------------------------------------------
+
+export interface PluginCatalogEntry {
+  id: string;
+  slug: string;
+  name: string;
+  source: string;
+  description?: string;
+  url?: string;
+  installs: number;
+  createdAt?: string;
+  updatedAt?: string;
+  change?: number;
+}
+
+export interface PluginCatalogListResponse {
+  data: PluginCatalogEntry[];
+  pagination: {
+    page: number;
+    perPage: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface PluginCatalogSearchResponse {
+  data: PluginCatalogEntry[];
+  query: string;
+  searchType: "fuzzy" | "semantic";
+  count: number;
+  durationMs: number;
+}
+
+export interface PluginCatalogDetailResponse {
+  id: string;
+  source: string;
+  slug: string;
+  readme: string | null;
+  manifest: unknown;
+  files: Array<{ path: string; contents: string }> | null;
+}
+
+export interface PluginCatalogAuditResponse {
+  id: string;
+  source: string;
+  slug: string;
+  audits: Array<{
+    id: string;
+    status: string;
+    message?: string;
+    details?: unknown;
+  }>;
+}
+
+export interface PluginCatalogCuratedResponse {
+  data: Array<{
+    owner: string;
+    totalInstalls: number;
+    featuredRepo: string;
+    featuredPlugin: string;
+    skills: PluginCatalogEntry[];
+  }>;
+  totalOwners: number;
+  totalPlugins: number;
+  generatedAt: string;
+}
+
+export interface InstalledPluginInfo {
+  name: string;
+  slug?: string;
+  description: string;
+  location: string;
+  source?: string;
+  sourceUrl?: string;
+  sourceType?: string;
+  remoteKey?: string;
+  pluginName?: string;
+  scope: "project" | "global";
+}
+
+// ---------------------------------------------------------------------------
 // Git helpers
 // ---------------------------------------------------------------------------
 

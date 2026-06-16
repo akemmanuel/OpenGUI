@@ -19,6 +19,7 @@
     "tabs": {
       "general": "General",
       "providers": "Proveedores",
+      "plugins": "Plugins",
       "tools": "Herramientas"
     },
     "general": {
@@ -47,6 +48,26 @@
       "restartLocalBackend": "Reiniciar backend local",
       "restartLocalBackendTitle": "¿Reiniciar backend local?",
       "restartLocalBackendDescription": "Esto recarga el backend local de OpenGUI y luego actualiza la app. Los turnos en ejecución pueden interrumpirse."
+    },
+    "plugins": {
+      "installed": "Instalados",
+      "discover": "Descubrir",
+      "project": "Proyecto",
+      "global": "Global",
+      "globalScope": "Instalar globalmente",
+      "published": "Publicado",
+      "custom": "Personalizado",
+      "searchPlaceholder": "Buscar plugins…",
+      "install": "Instalar",
+      "installSourcePlaceholder": "Instalar desde fuente, p. ej. owner/repo@skill-name",
+      "noResults": "No se encontraron plugins.",
+      "noPlugins": "No hay plugins instalados.",
+      "emptyScope": "No hay plugins en este ámbito.",
+      "pluginGroups": "Grupos de plugins",
+      "general": "General",
+      "capabilityCount": "{{count}} capacidades",
+      "updateGroup": "Actualizar grupo",
+      "update": "Actualizar"
     }
   },
   "sidebar": {
