@@ -22,7 +22,6 @@ export interface HarnessControl {
 
 export interface HarnessTarget {
   directory?: string;
-  workspaceId?: string;
 }
 
 export interface ProjectConnectionConfig {
@@ -30,7 +29,6 @@ export interface ProjectConnectionConfig {
   username?: string;
   password?: string;
   directory?: string;
-  workspaceId?: string;
 }
 
 export interface HarnessScope {
@@ -38,7 +36,6 @@ export interface HarnessScope {
   sessionId?: string;
   harnessId: HarnessId;
   directory: string;
-  workspaceId?: string;
 }
 
 export class HarnessService {
@@ -78,7 +75,7 @@ export class HarnessService {
 
   async connectProject(input: {
     project: ProjectRecord;
-    scope: Pick<HarnessScope, "projectId" | "directory" | "workspaceId">;
+    scope: Pick<HarnessScope, "projectId" | "directory">;
     harnessIds?: HarnessId[];
     config?: ProjectConnectionConfig;
   }): Promise<ProjectConnectResult> {
@@ -89,7 +86,6 @@ export class HarnessService {
           await this.backendRpc(harnessId, "project:add", [
             {
               directory: input.scope.directory,
-              workspaceId: input.config?.workspaceId,
               baseUrl: input.config?.baseUrl,
               username: input.config?.username,
               password: input.config?.password,
@@ -116,22 +112,19 @@ export class HarnessService {
 
   async disconnectProject(input: {
     project: ProjectRecord;
-    scope: Pick<HarnessScope, "projectId" | "directory" | "workspaceId">;
+    scope: Pick<HarnessScope, "projectId" | "directory">;
     harnessIds?: HarnessId[];
   }): Promise<void> {
     await Promise.all(
       this.harnessIdsOrAll(input.harnessIds).map((harnessId) =>
-        this.backendRpc(harnessId, "project:remove", [
-          input.scope.directory,
-          input.scope.workspaceId,
-        ]),
+        this.backendRpc(harnessId, "project:remove", [input.scope.directory]),
       ),
     );
   }
 
   async getProjectStatus(input: {
     project: ProjectRecord;
-    scope: Pick<HarnessScope, "projectId" | "directory" | "workspaceId">;
+    scope: Pick<HarnessScope, "projectId" | "directory">;
     harnessIds?: HarnessId[];
   }): Promise<
     Record<
@@ -145,7 +138,7 @@ export class HarnessService {
           const statuses = await this.backendRpc<Record<string, { type: string }>>(
             harnessId,
             "session:statuses",
-            [input.scope.directory, input.scope.workspaceId],
+            [input.scope.directory],
           );
           return [harnessId, { connected: true, statuses }] as const;
         } catch (error) {
@@ -164,7 +157,7 @@ export class HarnessService {
   }
 
   async listProjectSessions(input: {
-    scope: Pick<HarnessScope, "projectId" | "directory" | "workspaceId">;
+    scope: Pick<HarnessScope, "projectId" | "directory">;
     harnessIds: HarnessId[];
   }): Promise<Array<{ harnessId: HarnessId; sessions: HarnessProjectSessionsResult["sessions"] }>> {
     const results = await Promise.all(
@@ -173,7 +166,7 @@ export class HarnessService {
           const sessions = await this.backendRpc<HarnessProjectSessionsResult["sessions"]>(
             harnessId,
             "session:list",
-            [input.scope.directory, input.scope.workspaceId],
+            [input.scope.directory],
           );
           return { harnessId: harnessId, sessions };
         } catch {
@@ -281,14 +274,13 @@ export class HarnessService {
     session: SessionRecord;
     permissionId: string;
     response: "once" | "always" | "reject";
-    scope?: { directory?: string; workspaceId?: string };
+    scope?: { directory?: string };
   }): Promise<void> {
     await this.backendRpc(input.session.harnessId, "permission", [
       input.session.rawId,
       input.permissionId,
       input.response,
       input.scope?.directory,
-      input.scope?.workspaceId,
     ]);
   }
 
@@ -302,7 +294,6 @@ export class HarnessService {
       input.requestId,
       input.answers,
       input.target?.directory,
-      input.target?.workspaceId,
     ]);
   }
 
@@ -314,7 +305,6 @@ export class HarnessService {
     await this.backendRpc(input.harnessId, "question:reject", [
       input.requestId,
       input.target?.directory,
-      input.target?.workspaceId,
     ]);
   }
 

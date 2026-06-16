@@ -7,7 +7,7 @@ export async function respondToHarnessPermission(input: {
   session: SessionRecord;
   permissionId: string;
   response: "once" | "always" | "reject";
-  scope?: { directory?: string; workspaceId?: string };
+  scope?: { directory?: string };
 }): Promise<void> {
   await input.services.harnesses.respondPermission({
     session: input.session,
@@ -22,7 +22,7 @@ export async function replyToHarnessQuestion(input: {
   harnessId: HarnessId;
   requestId: string;
   answers: QuestionAnswer[];
-  target?: { directory?: string; workspaceId?: string };
+  target?: { directory?: string };
 }): Promise<void> {
   await input.services.harnesses.replyQuestion({
     harnessId: input.harnessId,
@@ -36,7 +36,7 @@ export async function rejectHarnessQuestion(input: {
   services: BackendServiceContext;
   harnessId: HarnessId;
   requestId: string;
-  target?: { directory?: string; workspaceId?: string };
+  target?: { directory?: string };
 }): Promise<void> {
   await input.services.harnesses.rejectQuestion({
     harnessId: input.harnessId,

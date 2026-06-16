@@ -55,7 +55,7 @@ function extractRuntimeSessionTimestamps(session: unknown) {
 function extractRuntimeSessionMetadata(session: unknown): Record<string, unknown> | undefined {
   if (!isPlainObject(session)) return undefined;
   const metadata: Record<string, unknown> = {};
-  for (const key of ["model", "version", "parentID", "projectID", "directory", "workspaceID"]) {
+  for (const key of ["model", "version", "parentID", "projectID", "directory"]) {
     if (key in session) metadata[key] = session[key];
   }
   return Object.keys(metadata).length > 0 ? metadata : undefined;

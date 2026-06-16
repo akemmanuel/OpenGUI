@@ -97,7 +97,11 @@ export {
   sendCommandThroughHarness,
   unrevertSessionThroughHarness,
 } from "./session-lifecycle-actions.ts";
-export { listSessionsForRequest, querySessionsForResolvedProjects } from "./session-query.ts";
+export {
+  listSessionsForRequest,
+  querySessionsForResolvedProjects,
+  querySessionsFromFrontendProjects,
+} from "./session-query.ts";
 export {
   enqueueSessionPrompt,
   listProjectSessionQueues,
