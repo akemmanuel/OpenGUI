@@ -6,13 +6,11 @@ import { syncDirectorySessions, syncProjectSessions } from "./session-sync.ts";
 import { getProjectRecordOrThrow } from "./project-record-actions.ts";
 
 export interface ResolvedSessionQueryProject {
-  frontendProjectId: string;
   directory: string;
   canonicalPath: string;
 }
 
 export interface SessionQueryProjectError {
-  frontendProjectId?: string;
   directory?: string;
   harnessId?: HarnessId;
   error: string;
@@ -28,7 +26,7 @@ export async function querySessionsForResolvedProjects(input: {
   harnessIds: HarnessId[];
   sync: boolean;
 }) {
-  const sessionJobs = input.projects.flatMap(({ frontendProjectId, directory, canonicalPath }) =>
+  const sessionJobs = input.projects.flatMap(({ directory, canonicalPath }) =>
     input.harnessIds.map((harnessId) => async () => {
       try {
         const page = input.sync
@@ -41,7 +39,6 @@ export async function querySessionsForResolvedProjects(input: {
         return {
           ok: true as const,
           item: {
-            frontendProjectId,
             directory,
             harnessId,
             sessions: page.sessions,
@@ -51,7 +48,6 @@ export async function querySessionsForResolvedProjects(input: {
         return {
           ok: false as const,
           error: {
-            frontendProjectId,
             directory,
             harnessId,
             error: errorMessage(error),
@@ -82,24 +78,36 @@ export async function querySessionsFromFrontendProjects(input: {
   const harnessIds = Array.isArray(input.body.harnessIds)
     ? input.body.harnessIds.filter(input.isHarnessId)
     : [];
-  const errors: SessionQueryProjectError[] = [];
-  const projects: ResolvedSessionQueryProject[] = [];
-
-  await Promise.all(
-    projectsInput.map(async (projectInput) => {
-      if (!projectInput || typeof projectInput !== "object" || Array.isArray(projectInput)) return;
-      const record = projectInput as Record<string, unknown>;
-      const frontendProjectId =
-        typeof record.frontendProjectId === "string" ? record.frontendProjectId.trim() : "";
-      const directory = typeof record.directory === "string" ? record.directory.trim() : "";
-      if (!frontendProjectId || !directory) return;
-      try {
-        projects.push({ frontendProjectId, ...(await input.resolveDirectory(directory)) });
-      } catch (error) {
-        errors.push({ frontendProjectId, directory, error: errorMessage(error) });
-      }
-    }),
+  const resolved = await Promise.all(
+    projectsInput.map(
+      async (
+        projectInput,
+      ): Promise<
+        | { ok: true; item: ResolvedSessionQueryProject }
+        | { ok: false; error: SessionQueryProjectError }
+        | undefined
+      > => {
+        if (!projectInput || typeof projectInput !== "object" || Array.isArray(projectInput))
+          return;
+        const record = projectInput as Record<string, unknown>;
+        const directory = typeof record.directory === "string" ? record.directory.trim() : "";
+        if (!directory) return;
+        try {
+          return {
+            ok: true as const,
+            item: await input.resolveDirectory(directory),
+          };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error: { directory, error: errorMessage(error) },
+          };
+        }
+      },
+    ),
   );
+  const projects = resolved.flatMap((result) => (result?.ok ? [result.item] : []));
+  const errors = resolved.flatMap((result) => (result && !result.ok ? [result.error] : []));
 
   const queried = await querySessionsForResolvedProjects({
     services: input.services,

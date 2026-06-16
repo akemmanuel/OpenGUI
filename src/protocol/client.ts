@@ -95,7 +95,6 @@ export interface HarnessProjectSessionsResult {
 }
 
 export interface SessionQueryProject {
-  frontendProjectId: string;
   directory: string;
   workspaceId?: string;
   baseUrl?: string;
@@ -103,7 +102,6 @@ export interface SessionQueryProject {
 }
 
 export interface SessionQueryItem {
-  frontendProjectId: string;
   directory: string;
   workspaceId?: string;
   harnessId: HarnessId;
@@ -113,7 +111,6 @@ export interface SessionQueryItem {
 export interface SessionQueryResult {
   items: SessionQueryItem[];
   errors?: Array<{
-    frontendProjectId: string;
     directory: string;
     workspaceId?: string;
     harnessId?: HarnessId;

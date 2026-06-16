@@ -535,7 +535,6 @@ describe("createHttpOpenGuiClient", () => {
       projects: [
         {
           workspaceId: "workspace-1",
-          frontendProjectId: "project_1",
           directory: "/repo",
           baseUrl: "http://remote.test",
         },

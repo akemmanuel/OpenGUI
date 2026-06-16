@@ -16,6 +16,7 @@ import type {
   UpdateProjectInput,
 } from "@/protocol/client";
 import { composeFrontendSessionId } from "@/lib/session-identity";
+import { normalizeProjectPath } from "@/lib/path";
 import { createHarnessPlatform, targetArgs, unwrapIpcResult } from "@/protocol/http-platform";
 import type {
   GitMergeResult,
@@ -185,13 +186,11 @@ function toFrontendProject(project: BackendProjectResponse, workspaceId?: string
 
 interface SessionQueryResponse {
   items: Array<{
-    frontendProjectId: string;
     directory: string;
     harnessId: HarnessId;
     sessions: SessionRecordResponse[];
   }>;
   errors?: Array<{
-    frontendProjectId: string;
     directory: string;
     harnessId?: HarnessId;
     error: string;
@@ -847,9 +846,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             body: JSON.stringify({
               projects: [
                 {
-                  frontendProjectId: target.directory,
                   directory: target.directory,
-                  workspaceId: target.workspaceId,
                 },
               ],
               harnessIds,
@@ -900,20 +897,26 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           groupedRequests.map((group) =>
             requestAt<SessionQueryResponse>(group.requestBaseUrl, "/api/sessions/query", {
               method: "POST",
-              body: JSON.stringify({ projects: group.projects, harnessIds, sync }),
+              body: JSON.stringify({
+                projects: group.projects.map(({ directory }) => ({ directory })),
+                harnessIds,
+                sync,
+              }),
             }),
           ),
         );
         return {
           items: responses
             .flatMap((response, index) =>
-              response.items.map((item) => ({
-                item,
-                requestBaseUrl: groupedRequests[index]?.requestBaseUrl,
-                requestProject: groupedRequests[index]?.projects.find(
-                  (project) => project.frontendProjectId === item.frontendProjectId,
-                ),
-              })),
+              response.items.flatMap((item) =>
+                (groupedRequests[index]?.projects ?? [])
+                  .filter(
+                    (project) =>
+                      normalizeProjectPath(project.directory) ===
+                      normalizeProjectPath(item.directory),
+                  )
+                  .map((requestProject) => ({ item, requestProject })),
+              ),
             )
             .map(({ item, requestProject }) => ({
               ...item,
@@ -927,12 +930,15 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               ),
             })),
           errors: responses.flatMap((response, index) =>
-            (response.errors ?? []).map((error) => ({
-              ...error,
-              workspaceId: groupedRequests[index]?.projects.find(
-                (project) => project.frontendProjectId === error.frontendProjectId,
-              )?.workspaceId,
-            })),
+            (response.errors ?? []).flatMap((error) =>
+              (groupedRequests[index]?.projects ?? [])
+                .filter(
+                  (project) =>
+                    normalizeProjectPath(project.directory) ===
+                    normalizeProjectPath(error.directory),
+                )
+                .map((project) => ({ ...error, workspaceId: project.workspaceId })),
+            ),
           ),
         };
       },
