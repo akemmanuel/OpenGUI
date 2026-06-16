@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { Provider } from "@opencode-ai/sdk/v2/client";
+import type { Provider } from "@/protocol/harness-types";
 import { abbreviatePath, findModel } from "../utils";
 
 describe("abbreviatePath", () => {

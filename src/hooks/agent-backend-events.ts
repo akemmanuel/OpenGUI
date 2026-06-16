@@ -1,4 +1,4 @@
-import type { Message, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
+import type { Message, Part, PermissionRequest, QuestionRequest } from "@/protocol/harness-types";
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
 import type { HarnessEvent } from "@/agents/backend";
 import { makeProjectKey } from "@/hooks/agent-session-utils";

@@ -73,6 +73,10 @@ function isLoopbackBaseUrl(value: string | undefined) {
   }
 }
 
+function normalizeBaseUrl(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
 async function httpRpc<T>(
   path: string,
   token: string | undefined,
@@ -231,6 +235,15 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const getDefaultBaseUrl = () => options.resolveBaseUrl?.() ?? baseUrl;
   const getToken = () => options.resolveToken?.() ?? options.token;
   const fetchImpl = options.fetchImpl ?? fetch;
+  const workspaceConnections = new Map<string, { baseUrl?: string; token?: string }>();
+
+  const tokenForBaseUrl = (requestBaseUrl: string) => {
+    const normalized = normalizeBaseUrl(requestBaseUrl);
+    for (const connection of workspaceConnections.values()) {
+      if (connection.baseUrl === normalized && connection.token) return connection.token;
+    }
+    return getToken();
+  };
 
   async function requestAt<T>(
     requestBaseUrl: string,
@@ -241,7 +254,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     if (init.body && !headers.has("content-type")) {
       headers.set("content-type", "application/json");
     }
-    const scopedToken = baseUrlTokens.get(requestBaseUrl.replace(/\/+$/, "")) ?? getToken();
+    const scopedToken = tokenForBaseUrl(requestBaseUrl);
     if (scopedToken) headers.set("authorization", `Bearer ${scopedToken}`);
 
     const response = await fetchImpl(joinUrl(requestBaseUrl, path), { ...init, headers });
@@ -279,9 +292,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     harnessIds?.length ? harnessIds : HARNESS_IDS;
   const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
   const projectById = new Map<string, Promise<OpenGuiProject | null>>();
-  const workspaceBaseUrls = new Map<string, string>();
-  const workspaceTokens = new Map<string, string>();
-  const baseUrlTokens = new Map<string, string>();
   const sessionRecordByCanonicalId = new Map<string, SessionRecordResponse>();
   const sessionCanonicalIdsByFrontendId = new Map<string, Set<string>>();
 
@@ -299,25 +309,31 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     return promise;
   };
 
-  const requestBaseUrlForTarget = (target?: HarnessTarget) => {
-    const normalizedBaseUrl = target?.baseUrl?.replace(/\/+$/, "");
-    if (target?.workspaceId && normalizedBaseUrl) {
-      workspaceBaseUrls.set(target.workspaceId, normalizedBaseUrl);
-    }
-    if (target?.workspaceId && target.authToken) {
-      workspaceTokens.set(target.workspaceId, target.authToken);
-    }
-    const resolvedBaseUrl =
-      normalizedBaseUrl ??
-      (target?.workspaceId
-        ? (workspaceBaseUrls.get(target.workspaceId) ?? getDefaultBaseUrl())
-        : getDefaultBaseUrl());
-    const resolvedToken =
-      target?.authToken ??
-      (target?.workspaceId ? workspaceTokens.get(target.workspaceId) : undefined);
-    if (resolvedToken) baseUrlTokens.set(resolvedBaseUrl.replace(/\/+$/, ""), resolvedToken);
-    return resolvedBaseUrl;
+  const rememberWorkspaceConnection = (target?: HarnessTarget) => {
+    if (!target?.workspaceId) return;
+    const previous = workspaceConnections.get(target.workspaceId) ?? {};
+    workspaceConnections.set(target.workspaceId, {
+      baseUrl: target.baseUrl ? normalizeBaseUrl(target.baseUrl) : previous.baseUrl,
+      token: target.authToken ?? previous.token,
+    });
   };
+
+  const backendRouteForTarget = (target?: HarnessTarget) => {
+    rememberWorkspaceConnection(target);
+    const workspaceConnection = target?.workspaceId
+      ? workspaceConnections.get(target.workspaceId)
+      : undefined;
+    const baseUrl = target?.baseUrl
+      ? normalizeBaseUrl(target.baseUrl)
+      : (workspaceConnection?.baseUrl ?? getDefaultBaseUrl());
+    return {
+      baseUrl,
+      token: target?.authToken ?? workspaceConnection?.token ?? getToken(),
+      preferHttp: Boolean(target?.baseUrl && !isLoopbackBaseUrl(target.baseUrl)),
+    };
+  };
+
+  const requestBaseUrlForTarget = (target?: HarnessTarget) => backendRouteForTarget(target).baseUrl;
 
   const backendRpcForTarget = async <T>(
     harnessId: HarnessId,
@@ -325,18 +341,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     target?: HarnessTarget,
     args: unknown[] = [],
   ) => {
-    const baseUrl = requestBaseUrlForTarget(target);
-    const explicitTargetBaseUrl = target?.baseUrl?.replace(/\/+$/, "");
-    const useRemoteHttp = Boolean(
-      explicitTargetBaseUrl && !isLoopbackBaseUrl(explicitTargetBaseUrl),
-    );
-    const token = baseUrlTokens.get(baseUrl.replace(/\/+$/, "")) ?? getToken();
+    const route = backendRouteForTarget(target);
     return unwrapIpcResult(
-      await (!useRemoteHttp && options.rpcImpl
+      await (!route.preferHttp && options.rpcImpl
         ? options.rpcImpl<IPCResult<T>>(backendChannel(harnessId, suffix), args)
         : httpRpc<IPCResult<T>>(
-            baseUrl,
-            token,
+            route.baseUrl,
+            route.token,
             backendChannel(harnessId, suffix),
             args,
             fetchImpl,
@@ -814,9 +825,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       },
       connectProject: async ({ config, harnessIds }) => {
         const targetBackends = harnessIdsOrAll(harnessIds);
-        if (config.workspaceId && config.baseUrl) {
-          workspaceBaseUrls.set(config.workspaceId, config.baseUrl);
-        }
         if (!config.directory) {
           return {
             connectedHarnessIds: [],
@@ -832,6 +840,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           baseUrl: config.baseUrl,
           authToken: config.authToken,
         };
+        rememberWorkspaceConnection(target);
         const project = await ensureProjectForTarget(target);
         if (!project) {
           return {

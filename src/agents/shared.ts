@@ -1,4 +1,4 @@
-import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client";
+import type { HarnessSession as Session, Message, Part } from "@/protocol/harness-types";
 import type { NativeBackendEvent } from "@/types/electron";
 import type { HarnessEvent, HarnessTarget } from "./backend.ts";
 import type { HarnessId } from "./index.ts";

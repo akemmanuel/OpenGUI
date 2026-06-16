@@ -1,4 +1,4 @@
-import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
+import type { QuestionAnswer } from "@/protocol/harness-types";
 import { useCallback, type MutableRefObject } from "react";
 import type { HarnessDescriptor } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";

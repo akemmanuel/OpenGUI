@@ -1,11 +1,11 @@
 import type {
+  Agent,
   Command,
   Message,
   Part,
   PermissionRequest,
   QuestionRequest,
-  Agent,
-} from "@opencode-ai/sdk/v2/client";
+} from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 import type {
   InternalAgentState,

@@ -1,13 +1,13 @@
 import type {
   Agent,
   Command,
+  HarnessSession as BaseSession,
   Message,
   Part,
   PermissionRequest,
   Provider,
   QuestionRequest,
-  Session as BaseSession,
-} from "@opencode-ai/sdk/v2/client";
+} from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 import type {
   ProjectMetaMap,

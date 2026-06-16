@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { Command } from "@opencode-ai/sdk/v2/client";
+import type { Command } from "@/protocol/harness-types";
 import { decidePromptSubmit } from "@/hooks/use-prompt-submit";
 
 const command = { name: "review" } as Command;

@@ -1,4 +1,4 @@
-import type { Agent, Model, Provider } from "@opencode-ai/sdk/v2/client";
+import type { Agent, Model, Provider } from "@/protocol/harness-types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { getDesktopShellClient } from "@/runtime/clients";

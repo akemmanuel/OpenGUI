@@ -1,4 +1,4 @@
-import type { Provider } from "@opencode-ai/sdk/v2/client";
+import type { Provider } from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 
 // ---------------------------------------------------------------------------

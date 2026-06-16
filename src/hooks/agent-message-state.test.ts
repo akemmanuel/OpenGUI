@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import type { Message, Part } from "@opencode-ai/sdk/v2/client";
+import type { Message, Part } from "@/protocol/harness-types";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import {
   createOptimisticUserMessage,

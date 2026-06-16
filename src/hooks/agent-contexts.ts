@@ -6,7 +6,7 @@ import type {
   Provider,
   QuestionAnswer,
   QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+} from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type {
