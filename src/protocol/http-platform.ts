@@ -10,7 +10,7 @@ export function unwrapIpcResult<T>(result: IPCResult<T>, fallback: string): T {
   return result.data as T;
 }
 
-export function unwrapBridgeResult<T>(result: T | IPCResult<T>, fallback: string): T {
+export function unwrapHarnessResult<T>(result: T | IPCResult<T>, fallback: string): T {
   if (
     result &&
     typeof result === "object" &&
@@ -26,11 +26,11 @@ export function appendTarget(target?: HarnessTarget, ...args: unknown[]) {
   return [...targetArgs(target), ...args];
 }
 
-type BridgeOp = <T>(suffix: string, args?: unknown[]) => Promise<T>;
+type HarnessOp = <T>(suffix: string, args?: unknown[]) => Promise<T>;
 
-function createPlatformOp(op: BridgeOp) {
+function createPlatformOp(op: HarnessOp) {
   return async <T>(suffix: string, fallback: string, args: unknown[] = []) =>
-    unwrapBridgeResult(await op<T | IPCResult<T>>(suffix, args), fallback);
+    unwrapHarnessResult(await op<T | IPCResult<T>>(suffix, args), fallback);
 }
 
 function createProvidersPlatform(

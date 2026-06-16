@@ -7,6 +7,16 @@
 
 export type JsonRecord = Record<string, unknown>;
 
+export type McpLocalConfig = JsonRecord & { type?: "local" | "stdio"; command?: string };
+export type McpRemoteConfig = JsonRecord & { type?: "remote" | "sse" | "http"; url?: string };
+
+export interface McpStatus extends JsonRecord {
+  status: string;
+  error?: string;
+}
+
+export type HarnessConfig = JsonRecord;
+
 export interface Model extends JsonRecord {
   id?: string;
   name: string;

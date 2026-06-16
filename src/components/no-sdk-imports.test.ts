@@ -5,8 +5,6 @@ import { join, relative } from "node:path";
 const SRC_DIR = join(process.cwd(), "src");
 const OPENCODE_SDK_IMPORT = ["@opencode-ai", "sdk"].join("/");
 const ALLOWED_DIRECT_SDK_IMPORTS = new Set([
-  join("src", "agents", "backend.ts"),
-  join("src", "agents", "shared.ts"),
   join("src", "agents", "shared.test.ts"),
   join("src", "agents", "protocol", "opencode-map.ts"),
   join("src", "agents", "protocol", "opencode-map.test.ts"),

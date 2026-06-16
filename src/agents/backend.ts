@@ -1,11 +1,9 @@
 import type {
+  HarnessConfig,
+  HarnessSession as Session,
   McpLocalConfig,
   McpRemoteConfig,
   McpStatus,
-  Config as HarnessConfig,
-} from "@opencode-ai/sdk/v2/client";
-import type {
-  HarnessSession as Session,
   Message,
   Part,
   PermissionRequest,

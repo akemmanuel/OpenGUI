@@ -21,6 +21,7 @@ import { createHarnessPlatform, targetArgs, unwrapIpcResult } from "@/protocol/h
 import type {
   GitMergeResult,
   GitWorktree,
+  ConnectionConfig,
   HarnessInventory,
   IPCResult,
   WorktreeSetupDetection,
@@ -58,6 +59,8 @@ export interface HttpOpenGuiClientOptions {
 
 const INITIAL_EVENT_RETRY_MS = 1_000;
 const MAX_EVENT_RETRY_MS = 30_000;
+// Compatibility channel exposed by older OpenGUI Backends.
+const RESTART_ALL_HARNESSES_CHANNEL = "agent-backends:restart";
 
 function joinUrl(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
@@ -75,6 +78,20 @@ function isLoopbackBaseUrl(value: string | undefined) {
 
 function normalizeBaseUrl(value: string) {
   return value.replace(/\/+$/, "");
+}
+
+function jsonBody(value: unknown): Pick<RequestInit, "body"> {
+  return { body: JSON.stringify(value) };
+}
+
+function backendProjectConnectionConfig(
+  config: ConnectionConfig,
+): Omit<ConnectionConfig, "workspaceId" | "baseUrl" | "authToken"> {
+  const { workspaceId, baseUrl, authToken, ...backendConfig } = config;
+  void workspaceId;
+  void baseUrl;
+  void authToken;
+  return backendConfig;
 }
 
 async function httpRpc<T>(
@@ -96,7 +113,7 @@ async function httpRpc<T>(
   return body.value as T;
 }
 
-function createWebBackendDescriptor(
+function createHarnessDescriptor(
   harnessId: HarnessId,
   rpcCall: <T>(channel: string, args?: unknown[]) => Promise<T>,
   runtimeOverrides: Partial<HarnessDescriptor["runtime"]> = {},
@@ -105,25 +122,25 @@ function createWebBackendDescriptor(
     throw new Error(`Harness is not available: ${harnessId}`);
   }
   const meta = HARNESS_BACKEND_META[harnessId as keyof typeof HARNESS_BACKEND_META];
-  const backendCall = async <T>(suffix: string, args: unknown[] = []) =>
+  const callHarnessRpc = async <T>(suffix: string, args: unknown[] = []) =>
     unwrapIpcResult(
       await rpcCall<IPCResult<T>>(`${harnessId}:${suffix}`, args),
-      `Backend call failed: ${harnessId}:${suffix}`,
+      `Harness call failed: ${harnessId}:${suffix}`,
     );
   const runtime: HarnessDescriptor["runtime"] = {
     createSession: ({ title, directory, workspaceId } = {}) =>
-      backendCall("session:create", [title, directory, workspaceId]),
-    startSession: (input) => backendCall("session:start", [input]),
-    deleteSession: (sessionId) => backendCall("session:delete", [sessionId]),
-    renameSession: (sessionId, title) => backendCall("session:update", [sessionId, title]),
+      callHarnessRpc("session:create", [title, directory, workspaceId]),
+    startSession: (input) => callHarnessRpc("session:start", [input]),
+    deleteSession: (sessionId) => callHarnessRpc("session:delete", [sessionId]),
+    renameSession: (sessionId, title) => callHarnessRpc("session:update", [sessionId, title]),
     compactSession: (sessionId, model, target) =>
-      backendCall("session:summarize", [sessionId, model, ...targetArgs(target)]),
-    forkSession: (sessionId, messageID) => backendCall("session:fork", [sessionId, messageID]),
+      callHarnessRpc("session:summarize", [sessionId, model, ...targetArgs(target)]),
+    forkSession: (sessionId, messageID) => callHarnessRpc("session:fork", [sessionId, messageID]),
     revertSession: (sessionId, messageID, partID) =>
-      backendCall("session:revert", [sessionId, messageID, partID]),
-    unrevertSession: (sessionId) => backendCall("session:unrevert", [sessionId]),
+      callHarnessRpc("session:revert", [sessionId, messageID, partID]),
+    unrevertSession: (sessionId) => callHarnessRpc("session:unrevert", [sessionId]),
     sendCommand: (input) =>
-      backendCall("command:send", [
+      callHarnessRpc("command:send", [
         input.sessionId,
         input.command,
         input.args,
@@ -290,7 +307,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     unwrapIpcResult(await rpcCall<IPCResult<T>>(channel, args), message);
   const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
     harnessIds?.length ? harnessIds : HARNESS_IDS;
-  const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
+  const harnessChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
   const projectById = new Map<string, Promise<OpenGuiProject | null>>();
   const sessionRecordByCanonicalId = new Map<string, SessionRecordResponse>();
   const sessionCanonicalIdsByFrontendId = new Map<string, Set<string>>();
@@ -318,7 +335,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     });
   };
 
-  const backendRouteForTarget = (target?: HarnessTarget) => {
+  const routeForTarget = (target?: HarnessTarget) => {
     rememberWorkspaceConnection(target);
     const workspaceConnection = target?.workspaceId
       ? workspaceConnections.get(target.workspaceId)
@@ -333,26 +350,21 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     };
   };
 
-  const requestBaseUrlForTarget = (target?: HarnessTarget) => backendRouteForTarget(target).baseUrl;
+  const requestBaseUrlForTarget = (target?: HarnessTarget) => routeForTarget(target).baseUrl;
 
-  const backendRpcForTarget = async <T>(
+  const harnessRpcForTarget = async <T>(
     harnessId: HarnessId,
     suffix: string,
     target?: HarnessTarget,
     args: unknown[] = [],
   ) => {
-    const route = backendRouteForTarget(target);
+    const route = routeForTarget(target);
+    const channel = harnessChannel(harnessId, suffix);
     return unwrapIpcResult(
       await (!route.preferHttp && options.rpcImpl
-        ? options.rpcImpl<IPCResult<T>>(backendChannel(harnessId, suffix), args)
-        : httpRpc<IPCResult<T>>(
-            route.baseUrl,
-            route.token,
-            backendChannel(harnessId, suffix),
-            args,
-            fetchImpl,
-          )),
-      `Backend call failed: ${harnessId}:${suffix}`,
+        ? options.rpcImpl<IPCResult<T>>(channel, args)
+        : httpRpc<IPCResult<T>>(route.baseUrl, route.token, channel, args, fetchImpl)),
+      `Harness call failed: ${channel}`,
     );
   };
 
@@ -411,7 +423,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     return toFrontendProject(
       await requestAt<BackendProjectResponse>(requestBaseUrlForTarget(target), "/api/projects", {
         method: "POST",
-        body: JSON.stringify({
+        ...jsonBody({
           path: target.directory,
           displayName: toProjectDisplayName(target.directory),
         } satisfies CreateProjectInput),
@@ -519,44 +531,53 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       await resolveSessionPath({ ...input, sessionId }),
     );
 
+  const createSessionRecord = async ({
+    harnessId,
+    title,
+    target,
+  }: {
+    harnessId: HarnessId;
+    title?: string;
+    target: HarnessTarget & { directory: string };
+  }) =>
+    await requestAt<SessionRecordResponse>(requestBaseUrlForTarget(target), "/api/sessions", {
+      method: "POST",
+      ...jsonBody({ directory: target.directory, harnessId, title }),
+    });
+
+  const sessionAction = async <T>(
+    input: SessionLookupInput,
+    suffix: string,
+    body?: Record<string, unknown>,
+  ) =>
+    await sessionRequest<T>(input, suffix, {
+      method: "POST",
+      ...(body ? jsonBody(body) : {}),
+    });
+
   const runtimeOverridesForBackend = (
     harnessId: HarnessId,
   ): Partial<HarnessDescriptor["runtime"]> => ({
     createSession: async ({ title, directory, workspaceId, baseUrl: targetBaseUrl } = {}) => {
-      const target = { directory, workspaceId, baseUrl: targetBaseUrl };
       if (!directory) throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
-      const requestBaseUrl = requestBaseUrlForTarget(target);
-      const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({ directory, harnessId: harnessId, title }),
-      });
+      const target = { directory, workspaceId, baseUrl: targetBaseUrl };
+      const record = await createSessionRecord({ harnessId, title, target });
       return toFrontendSessionFromDirectory(record, directory, workspaceId);
     },
     startSession: async (input) => {
       if (!input.directory)
         throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
-      const requestBaseUrl = requestBaseUrlForTarget(input);
-      const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({
-          directory: input.directory,
-          harnessId: harnessId,
-          title: input.title,
-        }),
+      const record = await createSessionRecord({
+        harnessId,
+        title: input.title,
+        target: { ...input, directory: input.directory },
       });
-      await requestAt<boolean>(
-        requestBaseUrl,
-        `/api/sessions/${encodeURIComponent(record.id)}/prompt`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            text: input.text,
-            model: input.model,
-            agent: input.agent,
-            variant: input.variant,
-          }),
-        },
-      );
+      await sessionAction<boolean>({ sessionId: record.id, harnessId, target: input }, "/prompt", {
+        text: input.text,
+        model: input.model,
+        agent: input.agent,
+        variant: input.variant,
+      });
       return toFrontendSessionFromDirectory(record, input.directory, input.workspaceId);
     },
     deleteSession: async (sessionId) =>
@@ -568,34 +589,25 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         await resolveSessionPath({ sessionId, harnessId }),
         {
           method: "PATCH",
-          body: JSON.stringify({ title }),
+          ...jsonBody({ title }),
         },
       );
       return await toFrontendSession(record);
     },
     compactSession: async (sessionId, model) => {
-      await request<boolean>(await resolveSessionPath({ sessionId, harnessId }, "/compact"), {
-        method: "POST",
-        body: JSON.stringify({ model }),
-      });
+      await sessionAction<boolean>({ sessionId, harnessId }, "/compact", { model });
     },
     forkSession: async (sessionId, messageID) => {
-      const record = await request<SessionRecordResponse>(
-        await resolveSessionPath({ sessionId, harnessId }, "/fork"),
-        {
-          method: "POST",
-          body: JSON.stringify({ messageId: messageID }),
-        },
-      );
+      const record = await sessionAction<SessionRecordResponse>({ sessionId, harnessId }, "/fork", {
+        messageId: messageID,
+      });
       return await toFrontendSession(record);
     },
     revertSession: async (sessionId, messageID, partID) => {
-      const value = await request<SessionRecordResponse | boolean>(
-        await resolveSessionPath({ sessionId, harnessId }, "/revert"),
-        {
-          method: "POST",
-          body: JSON.stringify({ messageId: messageID, partId: partID }),
-        },
+      const value = await sessionAction<SessionRecordResponse | boolean>(
+        { sessionId, harnessId },
+        "/revert",
+        { messageId: messageID, partId: partID },
       );
       return await toFrontendSession(
         typeof value === "boolean"
@@ -604,9 +616,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       );
     },
     unrevertSession: async (sessionId) => {
-      const value = await request<SessionRecordResponse | boolean>(
-        await resolveSessionPath({ sessionId, harnessId }, "/unrevert"),
-        { method: "POST" },
+      const value = await sessionAction<SessionRecordResponse | boolean>(
+        { sessionId, harnessId },
+        "/unrevert",
       );
       return await toFrontendSession(
         typeof value === "boolean"
@@ -626,7 +638,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         ),
         {
           method: "POST",
-          body: JSON.stringify({
+          ...jsonBody({
             command: input.command,
             args: input.args,
             model: input.model,
@@ -638,17 +650,17 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     },
   });
 
-  const webBackends = HARNESS_IDS.map((harnessId) =>
-    createWebBackendDescriptor(harnessId, rpcCall, runtimeOverridesForBackend(harnessId)),
+  const harnessDescriptors = HARNESS_IDS.map((harnessId) =>
+    createHarnessDescriptor(harnessId, rpcCall, runtimeOverridesForBackend(harnessId)),
   );
   const list = () => {
     const resolvedHarnessIds = options.resolveHarnessIds?.();
-    if (!resolvedHarnessIds?.length) return webBackends;
+    if (!resolvedHarnessIds?.length) return harnessDescriptors;
     const allowed = new Set(resolvedHarnessIds);
-    return webBackends.filter((backend) => allowed.has(backend.id as HarnessId));
+    return harnessDescriptors.filter((descriptor) => allowed.has(descriptor.id as HarnessId));
   };
   const get = (harnessId: HarnessId = "claude-code") =>
-    list().find((backend) => backend.id === harnessId);
+    list().find((descriptor) => descriptor.id === harnessId);
 
   return {
     capabilities: () =>
@@ -685,7 +697,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         toFrontendProject(
           await request<BackendProjectResponse>("/api/projects", {
             method: "POST",
-            body: JSON.stringify(input),
+            ...jsonBody(input),
           }),
           workspaceId,
         ),
@@ -694,7 +706,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           return toFrontendProject(
             await request<BackendProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {
               method: "PATCH",
-              body: JSON.stringify(input),
+              ...jsonBody(input),
             }),
           );
         } catch (error) {
@@ -735,13 +747,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               return;
             }
             if (!message?.channel?.endsWith(":bridge-event")) return;
-            const backend = list().find(
+            const descriptor = list().find(
               (candidate) => message.channel === `${candidate.id}:bridge-event`,
             );
-            const backendEvent = (
-              backend as { normalizeEvent?: (event: unknown) => HarnessEvent | null } | undefined
+            const harnessEvent = (
+              descriptor as { normalizeEvent?: (event: unknown) => HarnessEvent | null } | undefined
             )?.normalizeEvent?.(message.data);
-            if (backendEvent) listener(backendEvent);
+            if (harnessEvent) listener(harnessEvent);
           } catch (error) {
             console.error("Bad OpenGUI event", error);
           }
@@ -794,7 +806,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       restart: async () =>
         unwrapIpcResult(
           await rpcCall<IPCResult<Record<HarnessId, { success: boolean; error?: string }>>>(
-            "agent-backends:restart",
+            RESTART_ALL_HARNESSES_CHANNEL,
             [],
           ),
           "Failed to restart Harnesses",
@@ -802,19 +814,19 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       loadResources: async ({ harnessId, target }) => {
         const args = targetArgs(target);
         const [providersData, agentsData, commandsData] = await Promise.all([
-          backendRpcForTarget<HarnessResourceBundle["providersData"]>(
+          harnessRpcForTarget<HarnessResourceBundle["providersData"]>(
             harnessId,
             "providers",
             target,
             args,
           ),
-          backendRpcForTarget<HarnessResourceBundle["agentsData"]>(
+          harnessRpcForTarget<HarnessResourceBundle["agentsData"]>(
             harnessId,
             "agents",
             target,
             args,
           ),
-          backendRpcForTarget<HarnessResourceBundle["commandsData"]>(
+          harnessRpcForTarget<HarnessResourceBundle["commandsData"]>(
             harnessId,
             "commands",
             target,
@@ -856,7 +868,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/projects/${encodeURIComponent(project.id)}/connect`,
           {
             method: "POST",
-            body: JSON.stringify({ harnessIds: targetBackends, config }),
+            ...jsonBody({
+              harnessIds: targetBackends,
+              config: backendProjectConnectionConfig(config),
+            }),
           },
         );
       },
@@ -868,7 +883,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/projects/${encodeURIComponent(project.id)}/disconnect`,
           {
             method: "POST",
-            body: JSON.stringify({ harnessIds: harnessIdsOrAll(harnessIds) }),
+            ...jsonBody({ harnessIds: harnessIdsOrAll(harnessIds) }),
           },
         );
       },
@@ -879,7 +894,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           "/api/sessions/query",
           {
             method: "POST",
-            body: JSON.stringify({
+            ...jsonBody({
               projects: [
                 {
                   directory: target.directory,
@@ -902,7 +917,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         const entries = await Promise.all(
           harnessIds.map(async (harnessId) => {
             try {
-              const statuses = await backendRpcForTarget<Record<string, { type: string }>>(
+              const statuses = await harnessRpcForTarget<Record<string, { type: string }>>(
                 harnessId,
                 "session:statuses",
                 target,
@@ -933,7 +948,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           groupedRequests.map((group) =>
             requestAt<SessionQueryResponse>(group.requestBaseUrl, "/api/sessions/query", {
               method: "POST",
-              body: JSON.stringify({
+              ...jsonBody({
                 projects: group.projects.map(({ directory }) => ({ directory })),
                 harnessIds,
                 sync,
@@ -981,10 +996,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       create: async ({ harnessId, title, target }) => {
         if (!target?.directory)
           throw new OpenGuiRpcError("Directory is required", "INVALID_INPUT", true);
-        const requestBaseUrl = requestBaseUrlForTarget(target);
-        const record = await requestAt<SessionRecordResponse>(requestBaseUrl, "/api/sessions", {
-          method: "POST",
-          body: JSON.stringify({ directory: target.directory, harnessId: harnessId, title }),
+        const record = await createSessionRecord({
+          harnessId,
+          title,
+          target: { ...target, directory: target.directory },
         });
         return toFrontendSessionFromDirectory(record, target.directory, target.workspaceId);
       },
@@ -1007,7 +1022,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           await resolveSessionPath({ sessionId, harnessId, target }),
           {
             method: "PATCH",
-            body: JSON.stringify({ title }),
+            ...jsonBody({ title }),
           },
         );
         return await toFrontendSession(record, null);
@@ -1050,7 +1065,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       prompt: async ({ sessionId, text, model, agent, variant, mode, target, harnessId }) => {
         await sessionRequest<boolean>({ sessionId, harnessId, target }, "/prompt", {
           method: "POST",
-          body: JSON.stringify({ text, model, agent, variant, mode }),
+          ...jsonBody({ text, model, agent, variant, mode }),
         });
       },
       abort: async ({ sessionId, harnessId, target }) => {
@@ -1065,7 +1080,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/permissions/${encodeURIComponent(permissionId)}/respond`,
           {
             method: "POST",
-            body: JSON.stringify({
+            ...jsonBody({
               sessionId,
               response,
               harnessId,
@@ -1081,7 +1096,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/questions/${encodeURIComponent(requestId)}/reply`,
           {
             method: "POST",
-            body: JSON.stringify({
+            ...jsonBody({
               sessionId,
               answers,
               harnessId,
@@ -1097,7 +1112,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           `/api/questions/${encodeURIComponent(requestId)}/reject`,
           {
             method: "POST",
-            body: JSON.stringify({
+            ...jsonBody({
               sessionId,
               harnessId,
               ...targetBody,
@@ -1129,7 +1144,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         }) =>
           await sessionRequest<OpenGuiQueueEntry[]>({ sessionId, harnessId, target }, "/queue", {
             method: "POST",
-            body: JSON.stringify({ text, model, agent, variant, mode, insertAt }),
+            ...jsonBody({ text, model, agent, variant, mode, insertAt }),
           }),
         remove: async ({ sessionId, entryId, harnessId, target }) =>
           await sessionRequest<OpenGuiQueueEntry[]>(
@@ -1153,7 +1168,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             queueEntryPath(entryId),
             {
               method: "PATCH",
-              body: JSON.stringify({ text, model, agent, variant, mode }),
+              ...jsonBody({ text, model, agent, variant, mode }),
             },
           ),
         reorder: async ({ sessionId, entryId, index, harnessId, target }) =>
@@ -1162,7 +1177,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             queueEntryPath(entryId, "/reorder"),
             {
               method: "PATCH",
-              body: JSON.stringify({ index }),
+              ...jsonBody({ index }),
             },
           ),
         sendNow: async ({ sessionId, entryId, harnessId, target }) =>
