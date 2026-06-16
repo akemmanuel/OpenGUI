@@ -65,7 +65,8 @@ Use Vite+ (`vp`) for project tasks and pnpm for dependency changes:
 
 ```bash
 pnpm install        # install dependencies
-vp dev              # development
+pnpm run dev        # desktop development (Electron)
+pnpm run dev:web    # web development (browser)
 vp check            # lint, format, and type checks
 vp lint             # lint only
 vp fmt              # format only

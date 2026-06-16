@@ -22,16 +22,9 @@ pnpm install
 
 ## Development
 
-Run the development app:
-
 ```bash
-vp dev
-```
-
-Or run the browser version with backend API:
-
-```bash
-vp run dev:web
+pnpm run dev       # Electron (desktop)
+pnpm run dev:web   # Browser + local backend API
 ```
 
 ## Code Style
@@ -39,7 +32,8 @@ vp run dev:web
 This project uses Vite+ tasks:
 
 ```bash
-vp dev           # development
+pnpm run dev     # desktop development
+pnpm run dev:web # web development
 vp lint          # lint check
 vp check         # lint, format, and type checks
 vp test          # unit tests

@@ -109,19 +109,12 @@ No manual config file needed. Connection settings live in UI. Pick a Harness, co
 
 ### Development
 
-Run the development app:
+| Goal                               | Command            |
+| ---------------------------------- | ------------------ |
+| Desktop app (Electron, hot reload) | `pnpm run dev`     |
+| Web UI only (browser + API)        | `pnpm run dev:web` |
 
-```bash
-vp dev
-```
-
-Run web app with local backend API (projects, git, Harnesses):
-
-```bash
-vp run dev:web
-```
-
-Open `http://127.0.0.1:3000`. Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
+For `dev:web`, open the URL Vite prints in the terminal (default port is often 5173). Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
 
 ### Docker
 
@@ -142,13 +135,13 @@ vp build
 Run Electron app in production mode:
 
 ```bash
-vp run start
+pnpm run start
 ```
 
 Build and run web app in production mode:
 
 ```bash
-vp run start:web
+pnpm run start:web
 ```
 
 For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or another HTTPS reverse proxy in front.
