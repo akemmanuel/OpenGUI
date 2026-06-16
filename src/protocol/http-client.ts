@@ -273,6 +273,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const rpcCall = <T>(channel: string, args: unknown[] = []) =>
     options.rpcImpl?.<T>(channel, args) ??
     httpRpc<T>(getDefaultBaseUrl(), getToken(), channel, args, fetchImpl);
+  const ipcResult = async <T>(channel: string, args: unknown[] = [], message: string) =>
+    unwrapIpcResult(await rpcCall<IPCResult<T>>(channel, args), message);
   const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
     harnessIds?.length ? harnessIds : HARNESS_IDS;
   const backendChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
@@ -346,6 +348,31 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const requestBaseUrlForSession = (input: SessionLookupInput) => {
     const target = input.target ?? input;
     return requestBaseUrlForTarget(target);
+  };
+
+  const sessionRequest = async <T>(
+    input: SessionLookupInput,
+    suffix = "",
+    init: RequestInit = {},
+  ) =>
+    await requestAt<T>(
+      requestBaseUrlForSession(input),
+      await resolveSessionPath(input, suffix),
+      init,
+    );
+
+  const queueEntryPath = (entryId: string, action = "") =>
+    `/queue/${encodeURIComponent(entryId)}${action}`;
+
+  const interactionTargetBody = async (target?: HarnessTarget, ensure = false) => {
+    const project = target
+      ? await (ensure ? ensureProjectForTarget(target) : findProjectForTarget(target))
+      : null;
+    return {
+      workspaceId: project?.workspaceId ?? target?.workspaceId,
+      projectId: project?.id,
+      directory: target?.directory,
+    };
   };
 
   const findProjectForTarget = async (target?: HarnessTarget): Promise<OpenGuiProject | null> => {
@@ -1012,26 +1039,18 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         }
       },
       prompt: async ({ sessionId, text, model, agent, variant, mode, target, harnessId }) => {
-        await requestAt<boolean>(
-          requestBaseUrlForSession({ sessionId, harnessId, target }),
-          await resolveSessionPath({ sessionId, harnessId, target }, "/prompt"),
-          {
-            method: "POST",
-            body: JSON.stringify({ text, model, agent, variant, mode }),
-          },
-        );
+        await sessionRequest<boolean>({ sessionId, harnessId, target }, "/prompt", {
+          method: "POST",
+          body: JSON.stringify({ text, model, agent, variant, mode }),
+        });
       },
       abort: async ({ sessionId, harnessId, target }) => {
-        await requestAt<boolean>(
-          requestBaseUrlForSession({ sessionId, harnessId, target }),
-          await resolveSessionPath({ sessionId, harnessId, target }, "/abort"),
-          {
-            method: "POST",
-          },
-        );
+        await sessionRequest<boolean>({ sessionId, harnessId, target }, "/abort", {
+          method: "POST",
+        });
       },
       respondPermission: async ({ sessionId, permissionId, response, harnessId, target }) => {
-        const project = target ? await ensureProjectForTarget(target) : null;
+        const targetBody = await interactionTargetBody(target, true);
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/permissions/${encodeURIComponent(permissionId)}/respond`,
@@ -1041,15 +1060,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               sessionId,
               response,
               harnessId,
-              workspaceId: project?.workspaceId ?? target?.workspaceId,
-              projectId: project?.id,
-              directory: target?.directory,
+              ...targetBody,
             }),
           },
         );
       },
       replyQuestion: async ({ sessionId, requestId, answers, harnessId, target }) => {
-        const project = target ? await findProjectForTarget(target) : null;
+        const targetBody = await interactionTargetBody(target);
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/questions/${encodeURIComponent(requestId)}/reply`,
@@ -1059,15 +1076,13 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               sessionId,
               answers,
               harnessId,
-              workspaceId: project?.workspaceId ?? target?.workspaceId,
-              projectId: project?.id,
-              directory: target?.directory,
+              ...targetBody,
             }),
           },
         );
       },
       rejectQuestion: async ({ sessionId, requestId, harnessId, target }) => {
-        const project = target ? await findProjectForTarget(target) : null;
+        const targetBody = await interactionTargetBody(target);
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/questions/${encodeURIComponent(requestId)}/reject`,
@@ -1076,19 +1091,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             body: JSON.stringify({
               sessionId,
               harnessId,
-              workspaceId: project?.workspaceId ?? target?.workspaceId,
-              projectId: project?.id,
-              directory: target?.directory,
+              ...targetBody,
             }),
           },
         );
       },
       queue: {
         list: async ({ sessionId, harnessId, target }) =>
-          await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, harnessId, target }),
-            await resolveSessionPath({ sessionId, harnessId, target }, "/queue"),
-          ),
+          await sessionRequest<OpenGuiQueueEntry[]>({ sessionId, harnessId, target }, "/queue"),
         listProject: async ({ harnessId, target }) => {
           const project = await ensureProjectForTarget(target);
           if (!project) return {};
@@ -1108,21 +1118,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           harnessId,
           target,
         }) =>
-          await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, harnessId, target }),
-            await resolveSessionPath({ sessionId, harnessId, target }, "/queue"),
-            {
-              method: "POST",
-              body: JSON.stringify({ text, model, agent, variant, mode, insertAt }),
-            },
-          ),
+          await sessionRequest<OpenGuiQueueEntry[]>({ sessionId, harnessId, target }, "/queue", {
+            method: "POST",
+            body: JSON.stringify({ text, model, agent, variant, mode, insertAt }),
+          }),
         remove: async ({ sessionId, entryId, harnessId, target }) =>
-          await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, harnessId, target }),
-            await resolveSessionPath(
-              { sessionId, harnessId, target },
-              `/queue/${encodeURIComponent(entryId)}`,
-            ),
+          await sessionRequest<OpenGuiQueueEntry[]>(
+            { sessionId, harnessId, target },
+            queueEntryPath(entryId),
             { method: "DELETE" },
           ),
         update: async ({
@@ -1136,36 +1139,27 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           harnessId,
           target,
         }) =>
-          await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, harnessId, target }),
-            await resolveSessionPath(
-              { sessionId, harnessId, target },
-              `/queue/${encodeURIComponent(entryId)}`,
-            ),
+          await sessionRequest<OpenGuiQueueEntry[]>(
+            { sessionId, harnessId, target },
+            queueEntryPath(entryId),
             {
               method: "PATCH",
               body: JSON.stringify({ text, model, agent, variant, mode }),
             },
           ),
         reorder: async ({ sessionId, entryId, index, harnessId, target }) =>
-          await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, harnessId, target }),
-            await resolveSessionPath(
-              { sessionId, harnessId, target },
-              `/queue/${encodeURIComponent(entryId)}/reorder`,
-            ),
+          await sessionRequest<OpenGuiQueueEntry[]>(
+            { sessionId, harnessId, target },
+            queueEntryPath(entryId, "/reorder"),
             {
               method: "PATCH",
               body: JSON.stringify({ index }),
             },
           ),
         sendNow: async ({ sessionId, entryId, harnessId, target }) =>
-          await requestAt<OpenGuiQueueEntry[]>(
-            requestBaseUrlForSession({ sessionId, harnessId, target }),
-            await resolveSessionPath(
-              { sessionId, harnessId, target },
-              `/queue/${encodeURIComponent(entryId)}/send-now`,
-            ),
+          await sessionRequest<OpenGuiQueueEntry[]>(
+            { sessionId, harnessId, target },
+            queueEntryPath(entryId, "/send-now"),
             { method: "POST" },
           ),
       },
@@ -1181,23 +1175,19 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     },
     git: {
       isRepo: async (directory: string) =>
-        unwrapIpcResult(
-          await rpcCall<IPCResult<boolean>>("git:is-repo", [directory]),
-          "Failed to detect git repository",
-        ),
+        await ipcResult<boolean>("git:is-repo", [directory], "Failed to detect git repository"),
       listBranches: async (directory: string) =>
-        unwrapIpcResult(
-          await rpcCall<IPCResult<string[]>>("git:branch:list", [directory]),
-          "Failed to list git branches",
-        ),
+        await ipcResult<string[]>("git:branch:list", [directory], "Failed to list git branches"),
       currentBranch: async (directory: string) =>
-        unwrapIpcResult(
-          await rpcCall<IPCResult<string>>("git:current-branch", [directory]),
+        await ipcResult<string>(
+          "git:current-branch",
+          [directory],
           "Failed to get current git branch",
         ),
       listWorktrees: async (directory: string) =>
-        unwrapIpcResult(
-          await rpcCall<IPCResult<GitWorktree[]>>("git:worktree:list", [directory]),
+        await ipcResult<GitWorktree[]>(
+          "git:worktree:list",
+          [directory],
           "Failed to list git worktrees",
         ),
       addWorktree: async (
@@ -1206,41 +1196,33 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         branch: string,
         isNewBranch: boolean,
       ) =>
-        unwrapIpcResult(
-          await rpcCall<IPCResult<{ path: string }>>("git:worktree:add", [
-            directory,
-            worktreePath,
-            branch,
-            isNewBranch,
-          ]),
+        await ipcResult<{ path: string }>(
+          "git:worktree:add",
+          [directory, worktreePath, branch, isNewBranch],
           "Failed to create git worktree",
         ),
       removeWorktree: async (directory: string, worktreePath: string) => {
-        unwrapIpcResult(
-          await rpcCall<IPCResult>("git:worktree:remove", [directory, worktreePath]),
+        await ipcResult(
+          "git:worktree:remove",
+          [directory, worktreePath],
           "Failed to remove git worktree",
         );
       },
       merge: async (directory: string, branch: string) =>
         await rpcCall<GitMergeResult>("git:merge", [directory, branch]),
       mergeAbort: async (directory: string) => {
-        unwrapIpcResult(
-          await rpcCall<IPCResult>("git:merge:abort", [directory]),
-          "Failed to abort git merge",
-        );
+        await ipcResult("git:merge:abort", [directory], "Failed to abort git merge");
       },
       getRemoteUrl: async (directory: string) =>
-        unwrapIpcResult(
-          await rpcCall<IPCResult<string>>("git:remote:url", [directory]),
-          "Failed to load git remote URL",
-        ),
+        await ipcResult<string>("git:remote:url", [directory], "Failed to load git remote URL"),
     },
     worktree: {
       detectSetup: async (worktreePath: string) =>
         await rpcCall<WorktreeSetupDetection>("worktree:detect-setup", [worktreePath]),
       runSetup: async (worktreePath: string, command: string) => {
-        unwrapIpcResult(
-          await rpcCall<IPCResult>("worktree:run-setup", [worktreePath, command]),
+        await ipcResult(
+          "worktree:run-setup",
+          [worktreePath, command],
           "Failed to run worktree setup",
         );
       },
