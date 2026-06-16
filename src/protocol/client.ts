@@ -69,6 +69,7 @@ export interface CreateProjectInput {
   path: string;
   canonicalPath?: string;
   allowedRootId?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateProjectInput {

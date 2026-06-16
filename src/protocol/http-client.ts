@@ -426,6 +426,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         ...jsonBody({
           path: target.directory,
           displayName: toProjectDisplayName(target.directory),
+          workspaceId: target.workspaceId,
         } satisfies CreateProjectInput),
       }),
       target.workspaceId,
