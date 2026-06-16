@@ -1,7 +1,6 @@
 /**
- * Dev script - replaces concurrently + wait-on.
- * Starts the Vite+ dev server, waits for it to be ready, then launches Electron.
- * Kills both processes on exit.
+ * Desktop development: build Electron main/preload, run Vite + web backend, launch Electron.
+ * Use: pnpm run dev
  */
 
 import { spawn, spawnSync } from "node:child_process";

@@ -1,6 +1,8 @@
 Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands.
 
-- Use `vp dev` for development
+- Use `pnpm run dev` for desktop development (Electron)
+- Use `pnpm run dev:web` for web development (browser)
+- Use `pnpm run start` / `pnpm run start:web` for production runs
 - Use `vp check` for lint, format, and type checks
 - Use `vp lint` for lint only
 - Use `vp fmt` for format only
@@ -8,7 +10,7 @@ Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands
 - Use `vp build` for production build
 - Use `vp run <task>` for project tasks
 - Use `vp exec <command>` for local binaries
-- Use `vp node <file>` for Node.js scripts
+- Use `node --experimental-strip-types <file>` for project TypeScript scripts (or `vp node` when Vite+ env shims are installed)
 - Use `vp dlx <package> <command>` for one-off package binaries
 - Use `vp cache` for task cache
 - Use `pnpm install` to install dependencies
@@ -18,7 +20,7 @@ Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands
 
 ## Development
 
-Use Vite+ task runner and pnpm-managed deps.
+Run the app with `pnpm run dev` (Electron) or `pnpm run dev:web` (browser). Use Vite+ (`vp`) for lint, format, typecheck, test, and build—not for choosing dev vs prod.
 
 ## Code quality
 

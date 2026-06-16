@@ -1,5 +1,5 @@
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
-import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
+import { getSessionProjectTarget, getSessionWorkspaceId } from "@/hooks/agent-session-utils";
 import type { SessionMetaMap } from "@/hooks/agent-state-persistence";
 import type { InternalAgentState, QueuedPrompt, Session } from "@/hooks/agent-state-types";
 import type { OpenGuiClient, QueueScopeInput } from "@/protocol/client";
@@ -33,10 +33,11 @@ function getSessionLookup(
   const harnessId = resolveSessionHarnessRoute(session).harnessId ?? undefined;
   const target =
     getSessionProjectTarget(session, session ? sessionMeta[session.id] : undefined) ?? undefined;
-  if (!harnessId || !target?.directory) {
-    throw new Error("Queued prompt target requires Harness, Project directory, and Session ID");
+  const workspaceId = getSessionWorkspaceId(session) ?? undefined;
+  if (!harnessId) {
+    throw new Error("Queued prompt target requires Harness and Session ID");
   }
-  return { harnessId, target: { ...target, directory: target.directory } };
+  return { harnessId, target: target ?? (workspaceId ? { workspaceId } : undefined) };
 }
 
 export function createSessionQueueOrchestrator(

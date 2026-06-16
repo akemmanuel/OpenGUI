@@ -18,6 +18,7 @@ import {
 import { decideSessionEntry } from "@/hooks/agent-session-entry";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { InternalAgentState, QueueMode, Session } from "@/hooks/agent-state-types";
+import { getErrorMessage } from "@/lib/utils";
 import { getSessionDraftKey } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
 import type { OpenGuiClient } from "@/protocol/client";
@@ -207,8 +208,9 @@ export function createLocalIntentOrchestrator(
         mode,
       });
       scheduleSessionMessageReconcile(sessionId, projectTarget);
-    } catch {
+    } catch (error) {
       dispatch({ type: "SET_BUSY", payload: false });
+      dispatch({ type: "SET_ERROR", payload: getErrorMessage(error, "Failed to send prompt") });
     }
   };
 
@@ -239,16 +241,24 @@ export function createLocalIntentOrchestrator(
       dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
       return false;
     }
-    await sessionQueue.enqueuePrompt({
-      sessionId: input.sessionId,
-      text: prepareDirectoryChangePrompt(input.sessionId, input.text),
-      model: selection.model,
-      agent: selection.agent,
-      variant: selection.variant,
-      mode: input.mode,
-      insertAt: input.insertAt,
-    });
-    return true;
+    try {
+      await sessionQueue.enqueuePrompt({
+        sessionId: input.sessionId,
+        text: prepareDirectoryChangePrompt(input.sessionId, input.text),
+        model: selection.model,
+        agent: selection.agent,
+        variant: selection.variant,
+        mode: input.mode,
+        insertAt: input.insertAt,
+      });
+      return true;
+    } catch (error) {
+      dispatch({
+        type: "SET_ERROR",
+        payload: getErrorMessage(error, "Failed to queue prompt"),
+      });
+      return false;
+    }
   };
 
   const resolveNamedSession = async (sourceText: string): Promise<string | null> => {
@@ -359,8 +369,9 @@ export function createLocalIntentOrchestrator(
         },
       });
       scheduleSessionMessageReconcile(sessionId, projectTarget);
-    } catch {
+    } catch (error) {
       dispatch({ type: "SET_BUSY", payload: false });
+      dispatch({ type: "SET_ERROR", payload: getErrorMessage(error, "Failed to send command") });
     }
   };
 

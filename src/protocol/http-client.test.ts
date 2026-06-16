@@ -301,6 +301,66 @@ describe("createHttpOpenGuiClient", () => {
     });
   });
 
+  test("routes runtime revert through session project target", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const sessionRecord = {
+      id: "session_1",
+      rawId: "native-1",
+      projectId: "project_1",
+      harnessId: "opencode",
+      title: "Chat",
+      status: "unknown",
+      createdAt: "2026-05-12T00:00:00.000Z",
+      updatedAt: "2026-05-12T00:00:00.000Z",
+    };
+    const projectRecord = {
+      id: "project_1",
+      displayName: "repo",
+      path: "/repo",
+      canonicalPath: "/repo",
+      createdAt: "2026-05-12T00:00:00.000Z",
+      updatedAt: "2026-05-12T00:00:00.000Z",
+    };
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+        calls.push({ url, method, body });
+        if (url.endsWith("/api/projects") && method === "GET") {
+          return json({ ok: true, value: [projectRecord] });
+        }
+        if (url.endsWith("/api/projects/project_1") && method === "GET") {
+          return json({ ok: true, value: projectRecord });
+        }
+        if (
+          url ===
+            "http://example.test/api/sessions/opencode%3Asession_1/revert?harnessId=opencode&projectId=project_1" &&
+          method === "POST"
+        ) {
+          return json({ ok: true, value: sessionRecord });
+        }
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      },
+    });
+
+    const session = await client.harnesses
+      .get("opencode")
+      ?.runtime.revertSession("opencode:session_1", "msg_1", undefined, {
+        directory: "/repo",
+        workspaceId: "workspace-1",
+      });
+
+    expect(session).toMatchObject({ id: "opencode:native-1", _projectDir: "/repo" });
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "GET http://example.test/api/projects",
+      "POST http://example.test/api/sessions/opencode%3Asession_1/revert?harnessId=opencode&projectId=project_1",
+      "GET http://example.test/api/projects/project_1",
+    ]);
+    expect(calls[1]?.body).toEqual({ messageId: "msg_1" });
+  });
+
   test("sends session and project context with question replies", async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = [];
     const client = createHttpOpenGuiClient({

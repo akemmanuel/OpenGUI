@@ -5,7 +5,7 @@ import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import {

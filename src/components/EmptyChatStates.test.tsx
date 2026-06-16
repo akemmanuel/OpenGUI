@@ -1,8 +1,12 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test, beforeAll } from "@voidzero-dev/vite-plus-test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { initI18n } from "@/i18n";
 import { NoProjectConnected, NoSessionSelected } from "./EmptyChatStates";
 
 describe("EmptyChatStates", () => {
+  beforeAll(async () => {
+    await initI18n();
+  });
   test("NoProjectConnected invites project connection when chat cannot start", () => {
     const markup = renderToStaticMarkup(
       <NoProjectConnected canStartChat={false} onStartChat={() => {}} />,

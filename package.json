@@ -18,7 +18,8 @@
   "scripts": {
     "postinstall": "node ./scripts/ensure-electron.mjs",
     "prepare": "vp config",
-    "dev:electron": "vp run dev",
+    "dev": "node --experimental-strip-types scripts/dev-desktop.ts",
+    "dev:web": "vp dev",
     "build": "vp build",
     "check": "vp check",
     "check:fix": "vp check --fix",

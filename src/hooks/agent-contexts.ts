@@ -40,6 +40,7 @@ export interface SessionContextValue {
   unreadSessionIds: Set<string>;
   sessionDrafts: Record<string, string>;
   sessionMeta: SessionMetaMap;
+  sessionErrors: Record<string, string>;
 }
 
 export interface MessagesContextValue {

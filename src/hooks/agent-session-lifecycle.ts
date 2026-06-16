@@ -1,4 +1,5 @@
 import type { HarnessId } from "@/agents";
+import type { HarnessTarget } from "@/agents/backend";
 import type { SessionMeta, WorktreeParentMap } from "@/hooks/agent-state-persistence";
 import { resolvePendingPromptCreationHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionHarnessId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
@@ -65,9 +66,14 @@ interface SessionsClient {
 }
 
 interface SessionRuntime {
-  forkSession(sessionId: string, messageID?: string): Promise<Session>;
-  revertSession(sessionId: string, messageID: string): Promise<Session>;
-  unrevertSession(sessionId: string): Promise<Session>;
+  forkSession(sessionId: string, messageID?: string, target?: HarnessTarget): Promise<Session>;
+  revertSession(
+    sessionId: string,
+    messageID: string,
+    partID?: string,
+    target?: HarnessTarget,
+  ): Promise<Session>;
+  unrevertSession(sessionId: string, target?: HarnessTarget): Promise<Session>;
 }
 
 interface SessionMutationResult {
@@ -368,6 +374,7 @@ export async function forkLifecycleSession({
   selectSession,
   forceSessionTitle,
   dispatch,
+  target,
 }: {
   messageId: string;
   activeSessionId: string | null;
@@ -376,12 +383,13 @@ export async function forkLifecycleSession({
   selectSession: (sessionId: string, options?: { session?: Session }) => Promise<void>;
   forceSessionTitle: (sessionId: string, title: string) => void;
   dispatch: (action: LifecycleAction) => void;
+  target?: HarnessTarget;
 }) {
   const plan = createSessionForkPlan({ activeSessionId, sessions });
   if (!plan) return;
 
   try {
-    const session = await runtime.forkSession(plan.sourceSessionId, messageId);
+    const session = await runtime.forkSession(plan.sourceSessionId, messageId, target);
     const titledSession = { ...session, title: plan.forkTitle };
     dispatch({ type: "SESSION_CREATED", payload: titledSession });
     forceSessionTitle(session.id, plan.forkTitle);

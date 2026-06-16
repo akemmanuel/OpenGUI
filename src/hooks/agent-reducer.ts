@@ -206,6 +206,7 @@ export type Action =
       };
     }
   | { type: "SET_ERROR"; payload: string | null }
+  | { type: "SESSION_ERROR"; payload: { sessionID?: string; error: string } }
   | {
       type: "SET_BOOT_STATE";
       payload: {
@@ -928,8 +929,10 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       const run = action.payload;
       const busySessionIds = new Set(state.busySessionIds);
       busySessionIds.add(run.sessionID);
+      const { [run.sessionID]: _clearedSessionError, ...sessionErrors } = state.sessionErrors;
       return {
         ...state,
+        sessionErrors,
         busySessionIds,
         ...(run.sessionID === state.activeSessionId ? { isBusy: true } : {}),
         turnRuns: {
@@ -944,7 +947,48 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     }
 
     case "SET_ERROR":
-      return { ...state, lastError: action.payload };
+      return {
+        ...state,
+        lastError: action.payload,
+        ...(action.payload === null ? { sessionErrors: {} } : {}),
+      };
+
+    case "SESSION_ERROR": {
+      const { sessionID, error } = action.payload;
+      if (!sessionID) return { ...state, lastError: error };
+
+      const newBusy = new Set(state.busySessionIds);
+      newBusy.delete(sessionID);
+      const activeTurnId = getTurnRunIdForSession(state, sessionID);
+      const activeTurn = activeTurnId ? state.turnRuns[activeTurnId] : undefined;
+      const nextTurnRuns =
+        activeTurn?.status === "running"
+          ? {
+              ...state.turnRuns,
+              [activeTurn.id]: {
+                ...activeTurn,
+                completedAt: Date.now(),
+                status: "error" as const,
+              },
+            }
+          : state.turnRuns;
+      const nextActiveTurnRunBySession = Object.fromEntries(
+        Object.entries(state.activeTurnRunBySession).filter(([sid, turnId]) => {
+          if (sid === sessionID) return false;
+          return turnId !== activeTurnId;
+        }),
+      );
+
+      return {
+        ...state,
+        lastError: error,
+        sessionErrors: { ...state.sessionErrors, [sessionID]: error },
+        busySessionIds: newBusy,
+        turnRuns: nextTurnRuns,
+        activeTurnRunBySession: nextActiveTurnRunBySession,
+        ...(sessionID === state.activeSessionId ? { isBusy: false } : {}),
+      };
+    }
 
     case "SET_PERMISSION": {
       const p = action.payload;
@@ -1672,13 +1716,27 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
     case "SESSION_STATUS": {
       const { sessionID, status } = action.payload;
-      const isBusy = status.type === "busy";
+      const retryMessage =
+        status.type === "retry" &&
+        "message" in status &&
+        typeof status.message === "string" &&
+        status.message.trim()
+          ? status.message.trim()
+          : null;
+      const isBusy = status.type === "busy" || status.type === "retry";
       const newBusy = new Set(state.busySessionIds);
       if (isBusy) {
         newBusy.add(sessionID);
       } else {
         newBusy.delete(sessionID);
       }
+      const nextSessionErrors = retryMessage
+        ? { ...state.sessionErrors, [sessionID]: retryMessage }
+        : status.type === "idle" && state.sessionErrors[sessionID]
+          ? Object.fromEntries(
+              Object.entries(state.sessionErrors).filter(([id]) => id !== sessionID),
+            )
+          : state.sessionErrors;
       // Keep session buffer cached even when session goes idle so
       // switching back to it is instant (LRU eviction handles cleanup).
       const nextBuffers = state._sessionBuffers;
@@ -1711,6 +1769,8 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         ...state,
         ...completedTurnPatch,
         busySessionIds: newBusy,
+        sessionErrors: nextSessionErrors,
+        ...(retryMessage ? { lastError: retryMessage } : {}),
         unreadSessionIds: nextUnread,
         _sessionBuffers: nextBuffers,
         ...(sessionID === state.activeSessionId && !isBusy

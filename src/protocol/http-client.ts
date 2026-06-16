@@ -135,10 +135,12 @@ function createHarnessDescriptor(
     renameSession: (sessionId, title) => callHarnessRpc("session:update", [sessionId, title]),
     compactSession: (sessionId, model, target) =>
       callHarnessRpc("session:summarize", [sessionId, model, ...targetArgs(target)]),
-    forkSession: (sessionId, messageID) => callHarnessRpc("session:fork", [sessionId, messageID]),
-    revertSession: (sessionId, messageID, partID) =>
-      callHarnessRpc("session:revert", [sessionId, messageID, partID]),
-    unrevertSession: (sessionId) => callHarnessRpc("session:unrevert", [sessionId]),
+    forkSession: (sessionId, messageID, target) =>
+      callHarnessRpc("session:fork", [sessionId, messageID, ...targetArgs(target)]),
+    revertSession: (sessionId, messageID, partID, target) =>
+      callHarnessRpc("session:revert", [sessionId, messageID, partID, ...targetArgs(target)]),
+    unrevertSession: (sessionId, target) =>
+      callHarnessRpc("session:unrevert", [sessionId, ...targetArgs(target)]),
     sendCommand: (input) =>
       callHarnessRpc("command:send", [
         input.sessionId,
@@ -595,35 +597,37 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       );
       return await toFrontendSession(record);
     },
-    compactSession: async (sessionId, model) => {
-      await sessionAction<boolean>({ sessionId, harnessId }, "/compact", { model });
+    compactSession: async (sessionId, model, target) => {
+      await sessionAction<boolean>({ sessionId, harnessId, target }, "/compact", { model });
     },
-    forkSession: async (sessionId, messageID) => {
-      const record = await sessionAction<SessionRecordResponse>({ sessionId, harnessId }, "/fork", {
-        messageId: messageID,
-      });
+    forkSession: async (sessionId, messageID, target) => {
+      const record = await sessionAction<SessionRecordResponse>(
+        { sessionId, harnessId, target },
+        "/fork",
+        { messageId: messageID },
+      );
       return await toFrontendSession(record);
     },
-    revertSession: async (sessionId, messageID, partID) => {
+    revertSession: async (sessionId, messageID, partID, target) => {
       const value = await sessionAction<SessionRecordResponse | boolean>(
-        { sessionId, harnessId },
+        { sessionId, harnessId, target },
         "/revert",
         { messageId: messageID, partId: partID },
       );
       return await toFrontendSession(
         typeof value === "boolean"
-          ? await getSessionRecord(sessionId, { sessionId, harnessId })
+          ? await getSessionRecord(sessionId, { sessionId, harnessId, target })
           : value,
       );
     },
-    unrevertSession: async (sessionId) => {
+    unrevertSession: async (sessionId, target) => {
       const value = await sessionAction<SessionRecordResponse | boolean>(
-        { sessionId, harnessId },
+        { sessionId, harnessId, target },
         "/unrevert",
       );
       return await toFrontendSession(
         typeof value === "boolean"
-          ? await getSessionRecord(sessionId, { sessionId, harnessId })
+          ? await getSessionRecord(sessionId, { sessionId, harnessId, target })
           : value,
       );
     },

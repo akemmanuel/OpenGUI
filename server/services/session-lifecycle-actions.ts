@@ -93,12 +93,18 @@ export async function forkSessionThroughHarness(input: {
 
 export async function revertSessionThroughHarness(input: {
   services: BackendServiceContext;
+  project: ProjectRecord;
   session: SessionRecord;
   messageId: string;
   partId?: string;
 }): Promise<SessionRecord | null> {
   const runtimeSession = await input.services.harnesses.revertSession({
     session: input.session,
+    scope: buildHarnessScope({
+      project: input.project,
+      harnessId: input.session.harnessId,
+      sessionId: input.session.id,
+    }),
     messageId: input.messageId,
     partId: input.partId,
   });
@@ -115,9 +121,17 @@ export async function revertSessionThroughHarness(input: {
 
 export async function unrevertSessionThroughHarness(input: {
   services: BackendServiceContext;
+  project: ProjectRecord;
   session: SessionRecord;
 }): Promise<SessionRecord | null> {
-  const runtimeSession = await input.services.harnesses.unrevertSession({ session: input.session });
+  const runtimeSession = await input.services.harnesses.unrevertSession({
+    session: input.session,
+    scope: buildHarnessScope({
+      project: input.project,
+      harnessId: input.session.harnessId,
+      sessionId: input.session.id,
+    }),
+  });
   if (!runtimeSession || typeof runtimeSession !== "object" || Array.isArray(runtimeSession)) {
     return null;
   }

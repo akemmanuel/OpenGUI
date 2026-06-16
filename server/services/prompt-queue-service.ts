@@ -90,7 +90,7 @@ export class PromptQueueService {
     const created = await this.storage.createPromptQueueEntry({
       sessionId: session.id,
       harnessId: session.harnessId,
-      projectDirectory: await this.getProjectDirectory(session.projectId),
+      projectDirectory: await this.getProjectDirectory(session),
       harnessSessionId: session.rawId,
       text: input.text,
       model: input.model,
@@ -271,10 +271,23 @@ export class PromptQueueService {
     return sessions;
   }
 
-  private async getProjectDirectory(projectId: string): Promise<string> {
-    const project = await this.projects.getProject(projectId);
-    if (!project) throw new Error("Project not found");
-    return project.canonicalPath || project.path;
+  private async getProjectDirectory(session: SessionRecord): Promise<string> {
+    const project = await this.projects.getProject(session.projectId);
+    if (project) return project.canonicalPath || project.path;
+
+    const metadataDirectory =
+      session.metadata && typeof session.metadata.directory === "string"
+        ? session.metadata.directory.trim()
+        : "";
+    if (metadataDirectory) return metadataDirectory;
+
+    // Older Session records sometimes used the directory itself as projectId.
+    // Keep queue usable for those records instead of failing a running Session.
+    if (session.projectId.startsWith("/") || session.projectId.startsWith("~")) {
+      return session.projectId;
+    }
+
+    throw new Error("Project not found");
   }
 
   private async reindex(sessionId: string): Promise<PromptQueueEntryRecord[]> {

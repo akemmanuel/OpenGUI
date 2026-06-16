@@ -33,6 +33,7 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     pendingPermissions: {},
     pendingQuestions: {},
     lastError: null,
+    sessionErrors: {},
     bootState: "idle",
     bootError: null,
     bootLogs: null,
@@ -186,6 +187,81 @@ describe("mergeProjectBackendSessions", () => {
     } as Parameters<typeof reducer>[1]);
 
     expect(selected.isBusy).toBe(true);
+  });
+
+  test("session error stops active turn and records message", () => {
+    const sessionId = "pi:session-1";
+    const running = reducer(
+      baseState({ activeSessionId: sessionId, sessions: [session(sessionId, "pi")] }),
+      {
+        type: "TURN_RUN_STARTED",
+        payload: {
+          id: "turn-1",
+          sessionID: sessionId,
+          startedAt: 1,
+          status: "running",
+        },
+      } as Parameters<typeof reducer>[1],
+    );
+
+    const next = reducer(running, {
+      type: "SESSION_ERROR",
+      payload: { sessionID: sessionId, error: "Claude auth expired" },
+    } as Parameters<typeof reducer>[1]);
+
+    expect(next.isBusy).toBe(false);
+    expect(next.busySessionIds.has(sessionId)).toBe(false);
+    expect(next.sessionErrors[sessionId]).toBe("Claude auth expired");
+    expect(next.lastError).toBe("Claude auth expired");
+    expect(next.turnRuns["turn-1"]?.status).toBe("error");
+  });
+
+  test("retry session status keeps session busy and records message", () => {
+    const sessionId = "opencode:session-1";
+    const next = reducer(baseState({ activeSessionId: sessionId }), {
+      type: "SESSION_STATUS",
+      payload: {
+        sessionID: sessionId,
+        status: {
+          type: "retry",
+          attempt: 4,
+          message: "Claude authentication expired or invalid. Run 'claude login' in your terminal.",
+          next: Date.now() + 9000,
+        },
+      },
+    } as Parameters<typeof reducer>[1]);
+
+    expect(next.isBusy).toBe(true);
+    expect(next.busySessionIds.has(sessionId)).toBe(true);
+    expect(next.sessionErrors[sessionId]).toContain("claude login");
+  });
+
+  test("idle session status clears retry message", () => {
+    const sessionId = "opencode:session-1";
+    const next = reducer(
+      baseState({ activeSessionId: sessionId, sessionErrors: { [sessionId]: "retrying" } }),
+      {
+        type: "SESSION_STATUS",
+        payload: { sessionID: sessionId, status: { type: "idle" } },
+      } as Parameters<typeof reducer>[1],
+    );
+
+    expect(next.sessionErrors[sessionId]).toBeUndefined();
+  });
+
+  test("new turn clears previous session error", () => {
+    const sessionId = "pi:session-1";
+    const next = reducer(baseState({ sessionErrors: { [sessionId]: "old error" } }), {
+      type: "TURN_RUN_STARTED",
+      payload: {
+        id: "turn-1",
+        sessionID: sessionId,
+        startedAt: 1,
+        status: "running",
+      },
+    } as Parameters<typeof reducer>[1]);
+
+    expect(next.sessionErrors[sessionId]).toBeUndefined();
   });
 
   test("preserves chat-infra connection kind across backend status updates", () => {

@@ -136,9 +136,14 @@ interface HarnessRuntime {
   deleteSession(sessionId: string): Promise<boolean>;
   renameSession(sessionId: string, title: string): Promise<Session>;
   compactSession(sessionId: string, model?: SelectedModel, target?: HarnessTarget): Promise<void>;
-  forkSession(sessionId: string, messageID?: string): Promise<Session>;
-  revertSession(sessionId: string, messageID: string, partID?: string): Promise<Session>;
-  unrevertSession(sessionId: string): Promise<Session>;
+  forkSession(sessionId: string, messageID?: string, target?: HarnessTarget): Promise<Session>;
+  revertSession(
+    sessionId: string,
+    messageID: string,
+    partID?: string,
+    target?: HarnessTarget,
+  ): Promise<Session>;
+  unrevertSession(sessionId: string, target?: HarnessTarget): Promise<Session>;
   sendCommand(input: {
     sessionId: string;
     command: string;

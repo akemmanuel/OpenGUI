@@ -158,6 +158,10 @@ function normalizeBackendEventPayload(harnessId: HarnessId, payload: HarnessEven
     case "permission.cleared":
     case "question.cleared":
       return { ...payload, sessionID: codec.compose(payload.sessionID) };
+    case "session.error":
+      return payload.sessionID
+        ? { ...payload, sessionID: codec.compose(payload.sessionID) }
+        : payload;
     case "permission.requested":
       return {
         ...payload,

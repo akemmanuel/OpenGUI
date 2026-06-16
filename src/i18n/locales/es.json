@@ -333,6 +333,11 @@
     "checkingLocalServer": "Comprobando servidor local...",
     "startingLocalServer": "Iniciando servidor local..."
   },
+  "sessionError": {
+    "title": "Error del agente",
+    "nextStep": "Siguiente paso: ejecuta este comando en tu terminal y vuelve a intentarlo:",
+    "openTerminal": "Abrir terminal"
+  },
   "updateDialog": {
     "title": "Actualización disponible",
     "description": "Hay una nueva versión de OpenGUI ({{latestVersion}}) disponible. Actualmente ejecutas v{{currentVersion}}.",
