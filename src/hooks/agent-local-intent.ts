@@ -267,6 +267,18 @@ export function createLocalIntentOrchestrator(
   };
 
   const sendPrompt = async (text: string, mode?: QueueMode) => {
+    const initialState = getState();
+    if (!initialState.activeSessionId && initialState.activeTargetDirectory) {
+      const selection = resolveAgentSendSelection(getSelectionSnapshot());
+      if (!selection.model) {
+        dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("open-model-selector"));
+        }
+        return;
+      }
+    }
+
     const sessionId = await resolveNamedSession(text);
     if (!sessionId) return;
 

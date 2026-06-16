@@ -19,7 +19,12 @@
     "tabs": {
       "general": "General",
       "providers": "Providers",
+      "plugins": "Plugins",
       "tools": "Tools"
+    },
+    "plugins": {
+      "title": "Plugins",
+      "unavailable": "Plugin management was removed by the last harness migration fix. The entry point is visible again; management actions need to be reconnected to the new harness API."
     },
     "general": {
       "agentBackend": "Harness",
@@ -35,6 +40,11 @@
       "language": "Language",
       "defaultChatDirectory": "Default chat directory",
       "defaultChatDirectoryHelp": "New chats start in this working directory.",
+      "newChatModelBehavior": "LLM model for new chats",
+      "newChatModelBehaviorHelp": "Choose how OpenGUI preselects the LLM model when starting a fresh chat.",
+      "newChatModelAsk": "Choose every time",
+      "newChatModelLast": "Use last LLM model",
+      "newChatModelWorkspaceDefault": "Use workspace default",
       "desktopNotifications": "Desktop notifications",
       "blockedByBrowser": "Blocked by browser",
       "fileManager": "File manager",

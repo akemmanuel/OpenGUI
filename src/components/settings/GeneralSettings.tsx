@@ -1,4 +1,13 @@
-import { Bell, Folder, FolderOpen, Globe, Layers, RotateCcw, Terminal } from "lucide-react";
+import {
+  Bell,
+  BrainCircuit,
+  Folder,
+  FolderOpen,
+  Globe,
+  Layers,
+  RotateCcw,
+  Terminal,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -29,6 +38,12 @@ import { Switch } from "@/components/ui/switch";
 import { NOTIFICATIONS_ENABLED_KEY, useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { detectSystemLanguage } from "@/i18n";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, STORAGE_KEYS } from "@/lib/constants";
+import {
+  getNewChatModelBehavior,
+  isNewChatModelBehavior,
+  setNewChatModelBehavior,
+  type NewChatModelBehavior,
+} from "@/lib/new-chat-model-behavior";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
 import packageJson from "../../../package.json";
@@ -58,6 +73,7 @@ export function GeneralSettings() {
       <AppearanceSetting />
       <LanguageSetting />
       <DefaultChatDirectorySetting />
+      <NewChatModelBehaviorSetting />
       <FileManagerSetting />
       <TerminalSetting />
       <ModelAgeFilterSetting />
@@ -207,6 +223,49 @@ function LanguageSetting() {
           <SelectItem value="de">{t("languages.de")}</SelectItem>
           <SelectItem value="en">{t("languages.en")}</SelectItem>
           <SelectItem value="es">{t("languages.es")}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New chat LLM model behavior setting
+// ---------------------------------------------------------------------------
+
+function NewChatModelBehaviorSetting() {
+  const { t } = useTranslation();
+  const [behavior, setBehavior] = useState<NewChatModelBehavior>(() => getNewChatModelBehavior());
+
+  const handleChange = (value: string) => {
+    if (!isNewChatModelBehavior(value)) return;
+    setBehavior(value);
+    setNewChatModelBehavior(value);
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3 pt-3 border-t">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="size-4 text-muted-foreground" />
+          <Label htmlFor="new-chat-model-behavior" className="text-sm font-normal">
+            {t("settings.general.newChatModelBehavior")}
+          </Label>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {t("settings.general.newChatModelBehaviorHelp")}
+        </p>
+      </div>
+      <Select value={behavior} onValueChange={handleChange}>
+        <SelectTrigger id="new-chat-model-behavior" className="w-[220px] h-8">
+          <SelectValue placeholder={t("settings.general.newChatModelBehavior")} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ask">{t("settings.general.newChatModelAsk")}</SelectItem>
+          <SelectItem value="last">{t("settings.general.newChatModelLast")}</SelectItem>
+          <SelectItem value="workspace-default">
+            {t("settings.general.newChatModelWorkspaceDefault")}
+          </SelectItem>
         </SelectContent>
       </Select>
     </div>

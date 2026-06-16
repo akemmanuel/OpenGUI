@@ -19,7 +19,12 @@
     "tabs": {
       "general": "Allgemein",
       "providers": "Anbieter",
+      "plugins": "Plugins",
       "tools": "Werkzeuge"
+    },
+    "plugins": {
+      "title": "Plugins",
+      "unavailable": "Die Plugin-Verwaltung wurde beim letzten Harness-Migrations-Fix entfernt. Der Einstieg ist wieder sichtbar; die Verwaltungsfunktionen müssen gegen die neue Harness-API neu angebunden werden."
     },
     "general": {
       "agentBackend": "Harness",
@@ -35,6 +40,11 @@
       "language": "Sprache",
       "defaultChatDirectory": "Standard-Chat-Verzeichnis",
       "defaultChatDirectoryHelp": "Neue Chats starten in diesem Arbeitsverzeichnis.",
+      "newChatModelBehavior": "LLM-Modell für neue Chats",
+      "newChatModelBehaviorHelp": "Lege fest, wie OpenGUI das LLM-Modell beim Start eines neuen Chats vorauswählt.",
+      "newChatModelAsk": "Jedes Mal auswählen",
+      "newChatModelLast": "Letztes LLM-Modell verwenden",
+      "newChatModelWorkspaceDefault": "Workspace-Standard verwenden",
       "desktopNotifications": "Desktop-Benachrichtigungen",
       "blockedByBrowser": "Vom Browser blockiert",
       "fileManager": "Dateimanager",
