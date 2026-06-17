@@ -36,7 +36,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { NOTIFICATIONS_ENABLED_KEY, useActions, useConnectionState } from "@/hooks/use-agent-state";
-import { detectSystemLanguage } from "@/i18n";
+import { detectSystemLanguage, SUPPORTED_LANGUAGE_LIST, type SupportedLanguage } from "@/i18n";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, STORAGE_KEYS } from "@/lib/constants";
 import {
   getNewChatModelBehavior,
@@ -173,9 +173,12 @@ function StorageInputSetting({
 
 function LanguageSetting() {
   const { t, i18n } = useTranslation();
-  const [language, setLanguage] = useState<"auto" | "de" | "en" | "es">(() => {
+  const isSupportedLanguage = (value: string | null): value is SupportedLanguage =>
+    SUPPORTED_LANGUAGE_LIST.includes(value as SupportedLanguage);
+
+  const [language, setLanguage] = useState<"auto" | SupportedLanguage>(() => {
     const storedLanguage = storageGet(STORAGE_KEYS.LANGUAGE);
-    if (storedLanguage === "de" || storedLanguage === "en" || storedLanguage === "es") {
+    if (isSupportedLanguage(storedLanguage)) {
       return storedLanguage;
     }
     return "auto";
@@ -183,7 +186,7 @@ function LanguageSetting() {
 
   useEffect(() => {
     const storedLanguage = storageGet(STORAGE_KEYS.LANGUAGE);
-    if (storedLanguage === "de" || storedLanguage === "en" || storedLanguage === "es") {
+    if (isSupportedLanguage(storedLanguage)) {
       setLanguage(storedLanguage);
       return;
     }
@@ -197,7 +200,7 @@ function LanguageSetting() {
       void detectSystemLanguage().then((detected) => i18n.changeLanguage(detected));
       return;
     }
-    if (value !== "de" && value !== "en" && value !== "es") return;
+    if (!isSupportedLanguage(value)) return;
     setLanguage(value);
     storageSet(STORAGE_KEYS.LANGUAGE, value);
     void i18n.changeLanguage(value);
@@ -220,9 +223,11 @@ function LanguageSetting() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="auto">{t("common.autoDetect")}</SelectItem>
-          <SelectItem value="de">{t("languages.de")}</SelectItem>
-          <SelectItem value="en">{t("languages.en")}</SelectItem>
-          <SelectItem value="es">{t("languages.es")}</SelectItem>
+          {SUPPORTED_LANGUAGE_LIST.map((code) => (
+            <SelectItem key={code} value={code}>
+              {t(`languages.${code}`)}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </div>
