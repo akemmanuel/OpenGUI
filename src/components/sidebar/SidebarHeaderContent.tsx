@@ -83,7 +83,7 @@ export function SidebarHeaderContent({
               type="button"
               onClick={() => {
                 setSearchQuery("");
-                searchInputRef.current?.focus();
+                searchInputRef.current?.focus({ preventScroll: true });
               }}
               className="absolute right-2 top-1/2 flex size-4.5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
               aria-label={labels.clearSearch}

@@ -194,7 +194,7 @@ function Sidebar({
             } as React.CSSProperties
           }
           side={side}
-          onOpenAutoFocus={(event) => event.preventDefault()}
+          initialFocus={false}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>{t("sidebar.title")}</SheetTitle>

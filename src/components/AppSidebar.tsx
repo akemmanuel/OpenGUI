@@ -298,9 +298,13 @@ export function AppSidebar({
 
   useEffect(() => {
     const focusSidebarSearch = () => {
-      setSidebarOpen(true);
+      if (isMobile) {
+        setOpenMobile(true);
+      } else {
+        setSidebarOpen(true);
+      }
       requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
+        searchInputRef.current?.focus({ preventScroll: true });
         searchInputRef.current?.select();
       });
     };
@@ -309,7 +313,7 @@ export function AppSidebar({
     return () => {
       window.removeEventListener("focus-sidebar-search", focusSidebarSearch);
     };
-  }, [setSidebarOpen]);
+  }, [isMobile, setOpenMobile, setSidebarOpen]);
 
   const handleAddProject = useCallback(async () => {
     const dir = supportsNativeDirectoryPicker
