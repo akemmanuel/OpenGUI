@@ -2,7 +2,7 @@
  * Leaf module: harness id constants only. No imports from codecs or session-identity
  * (avoids Rollup init cycles). Other modules derive lists from here.
  */
-export const HARNESS_ID_VALUES = ["opencode", "claude-code", "pi", "codex"] as const;
+export const HARNESS_ID_VALUES = ["opencode", "claude-code", "pi", "codex", "grok-build"] as const;
 
 export type HarnessId = (typeof HARNESS_ID_VALUES)[number];
 

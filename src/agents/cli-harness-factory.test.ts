@@ -3,7 +3,7 @@ import type { NativeBackendEvent } from "@/types/electron";
 import { HARNESS_BACKEND_META } from "./cli-harness-factory";
 
 type CliHarnessCase = readonly [
-  harnessId: "claude-code" | "codex" | "pi",
+  harnessId: "claude-code" | "codex" | "pi" | "grok-build",
   normalizeEvent: (event: NativeBackendEvent) => unknown,
 ];
 
@@ -11,6 +11,7 @@ const cliHarnessCases: readonly CliHarnessCase[] = [
   ["claude-code", HARNESS_BACKEND_META["claude-code"].normalizeEvent],
   ["codex", HARNESS_BACKEND_META.codex.normalizeEvent],
   ["pi", HARNESS_BACKEND_META.pi.normalizeEvent],
+  ["grok-build", HARNESS_BACKEND_META["grok-build"].normalizeEvent],
 ] as const;
 
 describe("CLI harness normalizers", () => {

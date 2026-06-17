@@ -51,7 +51,7 @@ describe("project hydration state", () => {
 describe("buildBootstrapHydrationTasks", () => {
   test("stripes backend work across projects instead of exhausting one backend first", () => {
     const items = ["/repo-1", "/repo-2", "/repo-3", "/repo-4"];
-    const harnessIds: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
+    const harnessIds: HarnessId[] = ["opencode", "claude-code", "pi", "codex", "grok-build"];
 
     const tasks = buildBootstrapHydrationTasks({
       items,

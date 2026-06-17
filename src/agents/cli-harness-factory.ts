@@ -100,4 +100,12 @@ export const HARNESS_BACKEND_META: Record<
     connection: LOCAL_CLI_CONNECTION,
     normalizeEvent: createCliHarnessNormalizer("codex"),
   },
+  "grok-build": {
+    capabilities: makeLocalCliCapabilities({
+      commands: true,
+      compact: true,
+    }),
+    connection: LOCAL_CLI_CONNECTION,
+    normalizeEvent: createCliHarnessNormalizer("grok-build"),
+  },
 };

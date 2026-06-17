@@ -3,7 +3,8 @@ import "./build/suppress-node-deprecations.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
@@ -43,14 +44,44 @@ function openguiElectronBuild() {
   };
 }
 
+function shouldRestartWebBackend(file: string) {
+  const normalized = file.replaceAll("\\", "/");
+  return (
+    normalized.includes("/server/") ||
+    normalized.includes("/packages/runtime/") ||
+    normalized.includes("/lib/harness-adapter-kit") ||
+    normalized.includes("/lib/grok-acp-client")
+  );
+}
+
+function freeWebBackendPort(port: number) {
+  if (process.platform === "win32") return;
+  spawnSync("fuser", ["-k", `${port}/tcp`], { stdio: "ignore" });
+}
+
+async function stopWebBackendChild(child: ChildProcess | undefined) {
+  if (!child || child.killed) return;
+  child.kill("SIGTERM");
+  await Promise.race([once(child, "exit"), new Promise((resolve) => setTimeout(resolve, 2000))]);
+  if (child.exitCode === null) {
+    child.kill("SIGKILL");
+    await once(child, "exit").catch(() => undefined);
+  }
+}
+
 function openguiWebBackend() {
   let backend: ChildProcess | undefined;
+  let restartTimer: ReturnType<typeof setTimeout> | undefined;
+  let starting: Promise<void> | undefined;
 
   return {
     name: "opengui-web-backend",
     apply: "serve",
     configureServer(server: {
       httpServer?: { once: (event: "close", listener: () => void) => void };
+      watcher?: {
+        on: (event: "change" | "add" | "unlink", listener: (file: string) => void) => void;
+      };
     }) {
       if (
         process.env.OPENGUI_SKIP_WEB_BACKEND === "1" ||
@@ -60,20 +91,64 @@ function openguiWebBackend() {
         return;
       }
 
-      backend = spawn(process.execPath, ["--experimental-strip-types", "server/web-server.ts"], {
-        cwd: process.cwd(),
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          HOST: "127.0.0.1",
-          PORT: String(webBackendPort),
-          NODE_ENV: "development",
-        },
+      const startBackend = async (options: { freePort?: boolean } = {}) => {
+        if (starting) await starting;
+        starting = (async () => {
+          await stopWebBackendChild(backend);
+          backend = undefined;
+          if (options.freePort) {
+            freeWebBackendPort(webBackendPort);
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+          const child = spawn(
+            process.execPath,
+            ["--experimental-strip-types", "server/web-server.ts"],
+            {
+              cwd: process.cwd(),
+              stdio: "inherit",
+              env: {
+                ...process.env,
+                HOST: "127.0.0.1",
+                PORT: String(webBackendPort),
+                NODE_ENV: "development",
+              },
+            },
+          );
+          child.once("exit", (code, signal) => {
+            if (backend !== child) return;
+            backend = undefined;
+            if (code === 0 || code === null) return;
+            console.error(
+              `[opengui-web-backend] Backend exited (${signal ?? code}). ` +
+                `If you see EADDRINUSE on port ${webBackendPort}, stop the old backend and restart dev.`,
+            );
+          });
+          backend = child;
+        })();
+        try {
+          await starting;
+        } finally {
+          starting = undefined;
+        }
+      };
+
+      void startBackend({ freePort: true });
+
+      server.watcher?.on("change", (file) => {
+        if (!shouldRestartWebBackend(file)) return;
+        if (restartTimer) clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          restartTimer = undefined;
+          console.log("[opengui-web-backend] Restarting backend after change:", file);
+          void startBackend({ freePort: true });
+        }, 250);
       });
 
       server.httpServer?.once("close", () => {
-        backend?.kill();
-        backend = undefined;
+        if (restartTimer) clearTimeout(restartTimer);
+        void stopWebBackendChild(backend).finally(() => {
+          backend = undefined;
+        });
       });
     },
   };

@@ -213,6 +213,10 @@ export function createLocalIntentOrchestrator(
       scheduleSessionMessageReconcile(sessionId, projectTarget);
     } catch (error) {
       dispatch({ type: "SET_BUSY", payload: false });
+      dispatch({
+        type: "SESSION_STATUS",
+        payload: { sessionID: sessionId, status: { type: "idle" } },
+      });
       dispatch({ type: "SET_ERROR", payload: getErrorMessage(error, "Failed to send prompt") });
     }
   };

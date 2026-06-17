@@ -3,6 +3,7 @@ import { HARNESS_ID_VALUES } from "../../../src/agents/harness-ids.ts";
 import { setupClaudeCodeBridge } from "./adapters/claude-code-bridge.ts";
 import { setupCodexBridge } from "./adapters/codex-bridge.ts";
 import { setupOpenCodeBridge } from "./adapters/opencode-bridge.ts";
+import { setupGrokBuildBridge } from "./adapters/grok-build-bridge.ts";
 import { setupPiBridge } from "./adapters/pi-bridge.ts";
 
 export type HarnessWindow = {
@@ -61,6 +62,11 @@ export const BRIDGE_SETUP_BY_HARNESS_ID: Record<HarnessId, RegisterBridgeFn> = {
       ipcMain as Parameters<typeof setupCodexBridge>[0],
       getAllWindows as Parameters<typeof setupCodexBridge>[1],
       { userData: dataDir },
+    ),
+  "grok-build": ({ ipcMain, getAllWindows }) =>
+    setupGrokBuildBridge(
+      ipcMain as Parameters<typeof setupGrokBuildBridge>[0],
+      getAllWindows as Parameters<typeof setupGrokBuildBridge>[1],
     ),
 };
 

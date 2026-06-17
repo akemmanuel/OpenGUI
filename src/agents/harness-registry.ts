@@ -13,6 +13,7 @@ export const HARNESS_REGISTRY: readonly HarnessRegistryEntry[] = [
   { id: "claude-code", label: "Claude", cliCommand: "claude" },
   { id: "pi", label: "Pi", cliCommand: "pi" },
   { id: "codex", label: "Codex", cliCommand: "codex" },
+  { id: "grok-build", label: "Grok Build", cliCommand: "grok" },
 ] as const;
 
 function assertRegistryMatchesIds() {

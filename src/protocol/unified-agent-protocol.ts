@@ -1,7 +1,7 @@
 // Experimental draft: one tiny unified protocol shape for OpenGUI <-> agents.
 // Intentionally rudimentary: only types, no implementation, no transport assumptions.
 
-export type AgentId = "opencode" | "claude-code" | "pi" | "codex" | (string & {});
+export type AgentId = "opencode" | "claude-code" | "pi" | "codex" | "grok-build" | (string & {});
 
 export type RequestId = string;
 export type EventId = string;

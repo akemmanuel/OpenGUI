@@ -66,6 +66,7 @@ OpenGUI currently supports these coding-agent Harnesses:
 - **Claude Code**
 - **Codex**
 - **Pi**
+- **Grok Build**
 
 Use one backend or switch between them per workflow.
 
@@ -82,6 +83,7 @@ Grab prebuilt app from [latest release](https://github.com/akemmanuel/OpenGUI/re
 Backend requirements depend on what you use:
 
 - **OpenCode Harness:** [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
+- **Grok Build Harness:** [Grok Build CLI](https://x.ai/cli) installed (`grok` on `PATH`) and authenticated (`grok login` or `XAI_API_KEY`)
 - **Other Harnesses:** local CLI/auth/config for that Harness available on your machine
 
 > **Windows prerequisite for OpenCode:** OpenCode must be available on your `PATH` or at `%USERPROFILE%\.opencode\bin\opencode.exe`.

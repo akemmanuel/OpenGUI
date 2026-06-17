@@ -32,6 +32,7 @@ function commonBinaryPaths(command: string): string[] {
   const home = homedir();
   const directories = [
     ...(command === "opencode" ? [join(home, ".opencode", "bin")] : []),
+    ...(command === "grok" ? [join(home, ".grok", "bin")] : []),
     join(home, ".claude", "local"),
     join(home, ".local", "bin"),
     join(home, ".bun", "bin"),
