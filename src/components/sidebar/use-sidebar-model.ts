@@ -13,7 +13,7 @@ import {
 } from "@/lib/worktree-placement";
 import { getProjectName, normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, Workspace } from "@/types/electron";
-import { getSessionHarnessId, parseProjectKey } from "@/hooks/agent-session-utils";
+import { parseProjectKey } from "@/hooks/agent-session-utils";
 import type { HarnessId } from "@/agents";
 
 function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {
@@ -46,15 +46,9 @@ export function shouldShowSessionInChatList({
 export function sortSessionsForSidebar(
   items: Session[],
   sessionMeta: SessionMetaMap,
-  preferredHarnessId?: HarnessId | null,
+  _preferredHarnessId?: HarnessId | null,
 ) {
   return [...items].sort((a, b) => {
-    if (preferredHarnessId) {
-      const aPreferred = getSessionHarnessId(a) === preferredHarnessId;
-      const bPreferred = getSessionHarnessId(b) === preferredHarnessId;
-      if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
-    }
-
     const byUpdated =
       getSidebarSessionSortTime(b, sessionMeta) - getSidebarSessionSortTime(a, sessionMeta);
     if (byUpdated !== 0) return byUpdated;
