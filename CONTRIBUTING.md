@@ -77,10 +77,7 @@ If you're new to the codebase, start with [CONTEXT.md](CONTEXT.md), [docs/archit
 ```
 main.ts              Desktop Shell main process (window management, IPC)
 preload.js           Desktop Shell preload API
-opencode-bridge.ts   OpenCode Harness adapter
-claude-code-bridge.ts Claude Code Harness adapter
-codex-bridge.ts      Codex Harness adapter
-pi-bridge.ts         Pi Harness adapter
+packages/runtime/src/adapters/   Harness adapters (OpenCode, Claude, Codex, Pi)
 server/web-server.ts OpenGUI Backend for browser mode (RPC, events, server FS browser)
 src/
   index.html          HTML entry point

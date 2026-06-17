@@ -458,3 +458,37 @@
   tab-size: 4;
   font-weight: 400;
 }
+
+/* Sonner: keep default light palette; align dark toasts with app tokens */
+[data-sonner-toaster][data-sonner-theme="dark"] {
+  --normal-bg: var(--popover);
+  --normal-bg-hover: var(--muted);
+  --normal-border: var(--border);
+  --normal-border-hover: var(--border);
+  --normal-text: var(--popover-foreground);
+  --border-radius: var(--radius);
+  --success-bg: oklch(0.22 0.06 145);
+  --success-border: oklch(0.32 0.08 145);
+  --success-text: oklch(0.78 0.14 145);
+  --info-bg: oklch(0.2 0.04 250);
+  --info-border: oklch(0.3 0.06 250);
+  --info-text: oklch(0.75 0.12 250);
+  --warning-bg: oklch(0.22 0.06 85);
+  --warning-border: oklch(0.32 0.08 85);
+  --warning-text: oklch(0.82 0.14 85);
+  --error-bg: oklch(0.22 0.06 25);
+  --error-border: oklch(0.35 0.1 25);
+  --error-text: oklch(0.78 0.16 25);
+}
+
+[data-sonner-toaster][data-sonner-theme="dark"]
+  [data-sonner-toast][data-styled="true"]
+  [data-description] {
+  color: var(--muted-foreground);
+}
+
+[data-rich-colors="true"][data-sonner-toaster][data-sonner-theme="dark"]
+  [data-sonner-toast][data-styled="true"]
+  [data-description] {
+  color: inherit;
+}

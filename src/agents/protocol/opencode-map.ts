@@ -5,14 +5,14 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import type { HarnessEvent } from "../backend.ts";
 import {
-  createBackendIdCodec,
+  createHarnessIdCodec,
   normalizeMessageSessionId,
   normalizePartSessionId,
-  tagBackendSession,
+  tagHarnessSession,
   type TaggedSession,
 } from "../shared.ts";
 
-const opencodeIdCodec = createBackendIdCodec("opencode");
+const opencodeIdCodec = createHarnessIdCodec("opencode");
 const toCompositeSessionId = (rawId: string) => opencodeIdCodec.compose(rawId);
 
 export interface OpenCodeEventContext {
@@ -72,7 +72,7 @@ function getSessionId(properties: EventProperties): string {
 }
 
 function tagSession(session: TaggedSession, context: OpenCodeEventContext): TaggedSession {
-  return tagBackendSession("opencode", session, context);
+  return tagHarnessSession("opencode", session, context);
 }
 
 function normalizeOpenCodePayload(raw: OpenCodeEvent | OpenCodeSyncEnvelope): OpenCodeEvent {

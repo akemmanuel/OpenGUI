@@ -4,25 +4,10 @@ import type { HarnessId } from "../../src/agents/index.ts";
 import type { QueueMode } from "../../src/lib/session-drafts.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
 
-const PROJECTS_FILE = "projects.json";
 const SETTINGS_FILE = "settings.json";
+const LEGACY_PROJECTS_JSON = "projects.json";
 const PROMPT_QUEUE_FILE = "prompt-queue.json";
 const SQLITE_FILE = "opengui.sqlite";
-
-export interface ProjectRecord {
-  id: string;
-  displayName: string;
-  path: string;
-  canonicalPath: string;
-  allowedRootId?: string;
-  workspaceId?: string;
-  git?: {
-    currentBranch?: string;
-    remoteUrl?: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
 
 export interface PromptQueueEntryRecord {
   id: string;
@@ -37,23 +22,6 @@ export interface PromptQueueEntryRecord {
   variant?: string;
   mode: QueueMode;
   order: number;
-}
-
-export interface CreateProjectInput {
-  displayName: string;
-  path: string;
-  canonicalPath?: string;
-  allowedRootId?: string;
-  workspaceId?: string;
-  git?: ProjectRecord["git"];
-}
-
-export interface UpdateProjectInput {
-  displayName?: string;
-  path?: string;
-  canonicalPath?: string;
-  allowedRootId?: string | null;
-  git?: ProjectRecord["git"];
 }
 
 export interface CreatePromptQueueEntryInput {
@@ -81,12 +49,6 @@ export interface UpdatePromptQueueEntryInput {
 }
 
 export interface StorageService {
-  listProjects(): Promise<ProjectRecord[]>;
-  getProject(id: string): Promise<ProjectRecord | null>;
-  createProject(input: CreateProjectInput): Promise<ProjectRecord>;
-  updateProject(id: string, input: UpdateProjectInput): Promise<ProjectRecord | null>;
-  deleteProject(id: string): Promise<boolean>;
-
   listPromptQueue(sessionId?: string): Promise<PromptQueueEntryRecord[]>;
   createPromptQueueEntry(input: CreatePromptQueueEntryInput): Promise<PromptQueueEntryRecord>;
   updatePromptQueueEntry(
@@ -95,6 +57,7 @@ export interface StorageService {
   ): Promise<PromptQueueEntryRecord | null>;
   deletePromptQueueEntry(id: string): Promise<boolean>;
   deletePromptQueueBySession(sessionId: string): Promise<PromptQueueEntryRecord[]>;
+  migratePromptQueueSessionId(oldSessionId: string, newSessionId: string): Promise<number>;
   replacePromptQueue(
     sessionId: string,
     entries: PromptQueueEntryRecord[],
@@ -109,10 +72,6 @@ export interface StorageService {
 
 function createId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
-}
-
-function generateProjectId(): string {
-  return createId("project");
 }
 
 function generatePromptQueueEntryId(): string {
@@ -163,7 +122,7 @@ function normalizeQueueEntries(entries: PromptQueueEntryRecord[]): PromptQueueEn
 }
 
 function hasLegacyJsonStorage(dataDir: string): boolean {
-  return [PROJECTS_FILE, SETTINGS_FILE, PROMPT_QUEUE_FILE].some((file) =>
+  return [LEGACY_PROJECTS_JSON, SETTINGS_FILE, PROMPT_QUEUE_FILE].some((file) =>
     existsSync(join(dataDir, file)),
   );
 }
@@ -288,17 +247,8 @@ function migrateLegacyPromptQueueSchema(db: SqliteSchemaDb): void {
 export function createJsonStorageService(dataDir: string): StorageService {
   mkdirSync(dataDir, { recursive: true });
 
-  const projectsPath = join(dataDir, PROJECTS_FILE);
   const settingsPath = join(dataDir, SETTINGS_FILE);
   const promptQueuePath = join(dataDir, PROMPT_QUEUE_FILE);
-
-  function loadProjects(): ProjectRecord[] {
-    return readJson<ProjectRecord[]>(projectsPath, []);
-  }
-
-  function saveProjects(projects: ProjectRecord[]): void {
-    writeJson(projectsPath, projects);
-  }
 
   function loadPromptQueue(): PromptQueueEntryRecord[] {
     return normalizeQueueEntries(readJson<PromptQueueEntryRecord[]>(promptQueuePath, []));
@@ -317,64 +267,6 @@ export function createJsonStorageService(dataDir: string): StorageService {
   }
 
   return {
-    async listProjects() {
-      return loadProjects();
-    },
-
-    async getProject(id: string) {
-      return loadProjects().find((project) => project.id === id) ?? null;
-    },
-
-    async createProject(input: CreateProjectInput) {
-      const projects = loadProjects();
-      const now = new Date().toISOString();
-      const project: ProjectRecord = {
-        id: generateProjectId(),
-        displayName: input.displayName,
-        path: input.path,
-        canonicalPath: input.canonicalPath ?? input.path,
-        allowedRootId: input.allowedRootId,
-        workspaceId: input.workspaceId,
-        git: input.git,
-        createdAt: now,
-        updatedAt: now,
-      };
-      projects.push(project);
-      saveProjects(projects);
-      return project;
-    },
-
-    async updateProject(id: string, input: UpdateProjectInput) {
-      const projects = loadProjects();
-      const index = projects.findIndex((project) => project.id === id);
-      if (index === -1) return null;
-      const existing = projects[index]!;
-      const updated: ProjectRecord = {
-        ...existing,
-        displayName: input.displayName ?? existing.displayName,
-        path: input.path ?? existing.path,
-        canonicalPath: input.canonicalPath ?? existing.canonicalPath,
-        allowedRootId:
-          input.allowedRootId === undefined
-            ? existing.allowedRootId
-            : (input.allowedRootId ?? undefined),
-        git: input.git ?? existing.git,
-        updatedAt: new Date().toISOString(),
-      };
-      projects[index] = updated;
-      saveProjects(projects);
-      return updated;
-    },
-
-    async deleteProject(id: string) {
-      const projects = loadProjects();
-      const index = projects.findIndex((project) => project.id === id);
-      if (index === -1) return false;
-      projects.splice(index, 1);
-      saveProjects(projects);
-      return true;
-    },
-
     async listPromptQueue(sessionId?: string) {
       const entries = loadPromptQueue();
       return sessionId ? entries.filter((entry) => entry.sessionId === sessionId) : entries;
@@ -446,6 +338,19 @@ export function createJsonStorageService(dataDir: string): StorageService {
       return normalizeQueueEntries(removed);
     },
 
+    async migratePromptQueueSessionId(oldSessionId: string, newSessionId: string) {
+      const entries = loadPromptQueue();
+      let count = 0;
+      for (const entry of entries) {
+        if (entry.sessionId === oldSessionId) {
+          entry.sessionId = newSessionId;
+          count++;
+        }
+      }
+      if (count > 0) savePromptQueue(entries);
+      return count;
+    },
+
     async replacePromptQueue(sessionId: string, entries: PromptQueueEntryRecord[]) {
       const current = loadPromptQueue().filter((entry) => entry.sessionId !== sessionId);
       const next = normalizeQueueEntries(entries.filter((entry) => entry.sessionId === sessionId));
@@ -497,17 +402,6 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(join(dataDir, SQLITE_FILE));
   db.exec(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      display_name TEXT NOT NULL,
-      path TEXT NOT NULL,
-      canonical_path TEXT NOT NULL,
-      allowed_root_id TEXT,
-      workspace_id TEXT,
-      git_json TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS prompt_queue (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -542,17 +436,6 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
       return undefined;
     }
   };
-  const projectFromRow = (row: Record<string, unknown>): ProjectRecord => ({
-    id: String(row.id),
-    displayName: String(row.display_name),
-    path: String(row.path),
-    canonicalPath: String(row.canonical_path),
-    allowedRootId: typeof row.allowed_root_id === "string" ? row.allowed_root_id : undefined,
-    workspaceId: typeof row.workspace_id === "string" ? row.workspace_id : undefined,
-    git: parseJson<ProjectRecord["git"]>(row.git_json),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-  });
   const queueFromRow = (row: Record<string, unknown>): PromptQueueEntryRecord => ({
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -569,73 +452,6 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
   });
 
   const service: StorageService = {
-    async listProjects() {
-      return db.prepare("SELECT * FROM projects ORDER BY created_at ASC").all().map(projectFromRow);
-    },
-    async getProject(id: string) {
-      const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
-      return row ? projectFromRow(row as Record<string, unknown>) : null;
-    },
-    async createProject(input: CreateProjectInput) {
-      const now = new Date().toISOString();
-      const project: ProjectRecord = {
-        id: generateProjectId(),
-        displayName: input.displayName,
-        path: input.path,
-        canonicalPath: input.canonicalPath ?? input.path,
-        allowedRootId: input.allowedRootId,
-        workspaceId: input.workspaceId,
-        git: input.git,
-        createdAt: now,
-        updatedAt: now,
-      };
-      db.prepare(
-        `INSERT INTO projects (id, display_name, path, canonical_path, allowed_root_id, workspace_id, git_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        project.id,
-        project.displayName,
-        project.path,
-        project.canonicalPath,
-        project.allowedRootId ?? null,
-        project.workspaceId ?? null,
-        project.git ? JSON.stringify(project.git) : null,
-        project.createdAt,
-        project.updatedAt,
-      );
-      return project;
-    },
-    async updateProject(id: string, input: UpdateProjectInput) {
-      const existing = await service.getProject(id);
-      if (!existing) return null;
-      const updated: ProjectRecord = {
-        ...existing,
-        displayName: input.displayName ?? existing.displayName,
-        path: input.path ?? existing.path,
-        canonicalPath: input.canonicalPath ?? existing.canonicalPath,
-        allowedRootId:
-          input.allowedRootId === undefined
-            ? existing.allowedRootId
-            : (input.allowedRootId ?? undefined),
-        git: input.git ?? existing.git,
-        updatedAt: new Date().toISOString(),
-      };
-      db.prepare(
-        `UPDATE projects SET display_name = ?, path = ?, canonical_path = ?, allowed_root_id = ?, git_json = ?, updated_at = ? WHERE id = ?`,
-      ).run(
-        updated.displayName,
-        updated.path,
-        updated.canonicalPath,
-        updated.allowedRootId ?? null,
-        updated.git ? JSON.stringify(updated.git) : null,
-        updated.updatedAt,
-        id,
-      );
-      return updated;
-    },
-    async deleteProject(id: string) {
-      return db.prepare("DELETE FROM projects WHERE id = ?").run(id).changes > 0;
-    },
     async listPromptQueue(sessionId?: string) {
       const rows = sessionId
         ? db
@@ -722,6 +538,12 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
       db.prepare("DELETE FROM prompt_queue WHERE session_id = ?").run(sessionId);
       return removed;
     },
+    async migratePromptQueueSessionId(oldSessionId: string, newSessionId: string) {
+      const result = db
+        .prepare("UPDATE prompt_queue SET session_id = ? WHERE session_id = ?")
+        .run(newSessionId, oldSessionId);
+      return Number(result.changes);
+    },
     async replacePromptQueue(sessionId: string, entries: PromptQueueEntryRecord[]) {
       await service.deletePromptQueueBySession(sessionId);
       for (const entry of normalizeQueueEntries(entries))
@@ -763,17 +585,7 @@ export async function createSqliteStorageService(dataDir: string): Promise<Stora
 
 async function migrateJsonStorageToSqlite(dataDir: string, storage: StorageService): Promise<void> {
   const legacy = createJsonStorageService(dataDir);
-  const [projects, settings, queue] = await Promise.all([
-    legacy.listProjects(),
-    legacy.getAllSettings(),
-    legacy.listPromptQueue(),
-  ]);
-
-  for (const project of projects) {
-    await storage.createProject({
-      ...project,
-    });
-  }
+  const [settings, queue] = await Promise.all([legacy.getAllSettings(), legacy.listPromptQueue()]);
 
   for (const entry of queue) {
     await storage.createPromptQueueEntry(entry);

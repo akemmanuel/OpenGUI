@@ -43,7 +43,7 @@ describe("session identity", () => {
   });
 
   test("builds storage mapping keys in one place", () => {
-    expect(scopedRawSessionKey({ projectId: "project-1", harnessId: "pi", rawId: "raw-1" })).toBe(
+    expect(scopedRawSessionKey({ directory: "project-1", harnessId: "pi", rawId: "raw-1" })).toBe(
       "project-1::pi::raw-1",
     );
     expect(harnessRawSessionKey("pi", "raw-1")).toBe("pi::raw-1");

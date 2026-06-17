@@ -1,7 +1,7 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { Session } from "@opencode-ai/sdk/v2/client";
 import type { NativeBackendEvent } from "@/types/electron";
-import { normalizeTaggedBackendEvent } from "./shared";
+import { normalizeTaggedHarnessEvent } from "./shared";
 
 const session = {
   id: "raw-session",
@@ -9,7 +9,7 @@ const session = {
   directory: "/repo",
 } as unknown as Session;
 
-describe("normalizeTaggedBackendEvent", () => {
+describe("normalizeTaggedHarnessEvent", () => {
   test("normalizes connection status events", () => {
     const event = {
       type: "connection:status",
@@ -24,7 +24,7 @@ describe("normalizeTaggedBackendEvent", () => {
       },
     } as unknown as NativeBackendEvent;
 
-    expect(normalizeTaggedBackendEvent("codex", event, "codex:event")).toEqual({
+    expect(normalizeTaggedHarnessEvent("codex", event, "codex:event")).toEqual({
       type: "connection.status",
       directory: "/repo",
       workspaceId: "workspace-1",
@@ -49,7 +49,7 @@ describe("normalizeTaggedBackendEvent", () => {
       },
     } as unknown as NativeBackendEvent;
 
-    const normalized = normalizeTaggedBackendEvent("pi", event, "pi:event");
+    const normalized = normalizeTaggedHarnessEvent("pi", event, "pi:event");
 
     expect(normalized).toMatchObject({
       type: "session.created",
@@ -76,7 +76,7 @@ describe("normalizeTaggedBackendEvent", () => {
       },
     } as unknown as NativeBackendEvent;
 
-    const normalized = normalizeTaggedBackendEvent("opencode", event, "opencode:event");
+    const normalized = normalizeTaggedHarnessEvent("opencode", event, "opencode:event");
 
     expect(normalized).toMatchObject({
       type: "session.created",
@@ -99,7 +99,7 @@ describe("normalizeTaggedBackendEvent", () => {
       },
     } as unknown as NativeBackendEvent;
 
-    expect(normalizeTaggedBackendEvent("claude-code", event, "claude-code:event")).toEqual({
+    expect(normalizeTaggedHarnessEvent("claude-code", event, "claude-code:event")).toEqual({
       type: "message.part.delta",
       sessionID: "claude-code:raw-session",
       messageID: "message-1",
@@ -119,7 +119,7 @@ describe("normalizeTaggedBackendEvent", () => {
       },
     } as unknown as NativeBackendEvent;
 
-    expect(normalizeTaggedBackendEvent("pi", event, "pi:event")).toEqual({
+    expect(normalizeTaggedHarnessEvent("pi", event, "pi:event")).toEqual({
       type: "session.error",
       sessionID: "pi:raw-session",
       error: "Claude auth expired",
@@ -132,6 +132,6 @@ describe("normalizeTaggedBackendEvent", () => {
       payload: { type: "session.deleted", sessionId: "raw-session", directory: "/repo" },
     } as unknown as NativeBackendEvent;
 
-    expect(normalizeTaggedBackendEvent("codex", event, "codex:event")).toBeNull();
+    expect(normalizeTaggedHarnessEvent("codex", event, "codex:event")).toBeNull();
   });
 });

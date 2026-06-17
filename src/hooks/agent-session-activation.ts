@@ -83,7 +83,8 @@ type SessionActivationDispatch = (
           mode?: "replace" | "prepend" | "append";
         };
       }
-    | { type: "SESSION_STATUS"; payload: { sessionID: string; status: { type: string } } },
+    | { type: "SESSION_STATUS"; payload: { sessionID: string; status: { type: string } } }
+    | { type: "SESSION_ERROR"; payload: { sessionID?: string; error: string } },
 ) => void;
 
 type ProjectTarget = { directory?: string; workspaceId?: string };
@@ -190,20 +191,21 @@ export function useAgentSessionActivation({
       let page: Awaited<ReturnType<typeof fetchMessagePage>>;
       try {
         page = await fetchMessagePage(id, undefined, projectTarget ?? undefined);
-      } catch {
+      } catch (error) {
         if (requestId !== selectSessionRequestRef.current) return;
-        if (options?.preserveSelectionOnFailure) {
-          dispatch({
-            type: "SET_MESSAGES",
-            payload: { messages: [], hasMore: false, nextCursor: null },
-          });
-          return;
-        }
-        dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+        const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+        const errorText = raw.trim() || "sessionError.messagesLoadFailed";
         dispatch({
           type: "SET_MESSAGES",
           payload: { messages: [], hasMore: false, nextCursor: null },
         });
+        dispatch({
+          type: "SESSION_ERROR",
+          payload: { sessionID: id, error: errorText },
+        });
+        if (!options?.preserveSelectionOnFailure) {
+          dispatch({ type: "SET_ACTIVE_SESSION", payload: null });
+        }
         return;
       }
       const { messages, hasMore, nextCursor } = page;

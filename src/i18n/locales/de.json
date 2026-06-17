@@ -336,7 +336,8 @@
   "sessionError": {
     "title": "Agentenfehler",
     "nextStep": "Nächster Schritt: Führe diesen Befehl im Terminal aus und versuche es erneut:",
-    "openTerminal": "Terminal öffnen"
+    "openTerminal": "Terminal öffnen",
+    "messagesLoadFailed": "Nachrichten für diese Sitzung konnten nicht geladen werden."
   },
   "updateDialog": {
     "title": "Update verfügbar",

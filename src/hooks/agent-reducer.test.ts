@@ -49,7 +49,7 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     queuedPrompts: {},
     defaultChatDirectory: null,
     activeTargetDirectory: null,
-    activeTargetBackendId: null,
+    activeTargetHarnessId: null,
     namingSessionIds: new Set(),
     unreadSessionIds: new Set(),
     sessionDrafts: {},
@@ -214,6 +214,7 @@ describe("mergeProjectBackendSessions", () => {
     expect(next.sessionErrors[sessionId]).toBe("Claude auth expired");
     expect(next.lastError).toBe("Claude auth expired");
     expect(next.turnRuns["turn-1"]?.status).toBe("error");
+    expect(next.isLoadingMessages).toBe(false);
   });
 
   test("retry session status keeps session busy and records message", () => {

@@ -18,12 +18,12 @@ function getStoredHarnessId(): ActiveHarnessId {
 }
 
 export function useCurrentHarnessId(): ActiveHarnessId {
-  const [harnessId, setBackendId] = useState<ActiveHarnessId>(() => getStoredHarnessId());
+  const [harnessId, setHarnessId] = useState<ActiveHarnessId>(() => getStoredHarnessId());
 
   useEffect(() => {
     return onSettingsChange((change) => {
       if (change.key !== STORAGE_KEYS.HARNESS) return;
-      setBackendId(getStoredHarnessId());
+      setHarnessId(getStoredHarnessId());
     });
   }, []);
 
@@ -42,22 +42,22 @@ function useAllHarnesses() {
 }
 
 export function useActiveResourceHarnessRoute(): HarnessRoute {
-  const preferredBackendId = useCurrentHarnessId();
-  const { sessions, activeSessionId, activeTargetBackendId } = useSessionState();
+  const preferredHarnessId = useCurrentHarnessId();
+  const { sessions, activeSessionId, activeTargetHarnessId } = useSessionState();
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   return resolveActiveResourceHarnessRoute({
     activeSession,
-    activeTargetBackendId,
-    preferredBackendId,
+    activeTargetHarnessId,
+    preferredHarnessId,
   });
 }
 
 export function useRoutedHarness(harnessId?: HarnessId) {
-  const allBackends = useAllHarnesses();
+  const allHarnesses = useAllHarnesses();
   const route = useActiveResourceHarnessRoute();
-  const resolvedBackendId = harnessId ?? route.harnessId;
+  const resolvedHarnessId = harnessId ?? route.harnessId;
   const openGuiClient = useOpenGuiClient();
-  const backend = allBackends[resolvedBackendId] ?? openGuiClient.harnesses.get(resolvedBackendId);
+  const backend = allHarnesses[resolvedHarnessId] ?? openGuiClient.harnesses.get(resolvedHarnessId);
   return { backend, route };
 }
 
@@ -66,8 +66,8 @@ export function useHarness(harnessId?: HarnessId) {
 }
 
 export function useAvailableHarnessIds() {
-  const allBackends = useAllHarnesses();
-  return HARNESS_IDS.filter((harnessId) => Boolean(allBackends[harnessId]));
+  const allHarnesses = useAllHarnesses();
+  return HARNESS_IDS.filter((harnessId) => Boolean(allHarnesses[harnessId]));
 }
 
 export function useBackendCapabilities() {

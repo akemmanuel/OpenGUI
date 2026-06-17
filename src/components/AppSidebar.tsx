@@ -86,6 +86,7 @@ export function AppSidebar({
     worktreeParents,
     projectMeta,
     isLocalWorkspace,
+    supportsNativeDirectoryPicker,
     activeWorkspace,
     workspaceDirectory,
     defaultChatDirectory,
@@ -108,8 +109,6 @@ export function AppSidebar({
 
   const homeDir = useHomeDir();
   const normalizedRemoteProjectPath = normalizeProjectPath(remoteProjectPath);
-  const isWebRuntime =
-    typeof navigator !== "undefined" && !navigator.userAgent.includes("Electron");
   const requestProjectPath = useCallback(
     (initialPath?: string) =>
       new Promise<string | null>((resolve) => {
@@ -313,15 +312,13 @@ export function AppSidebar({
   }, [setSidebarOpen]);
 
   const handleAddProject = useCallback(async () => {
-    const dir =
-      isLocalWorkspace && !isWebRuntime
-        ? await openDirectory()
-        : await requestProjectPath(workspaceDirectory ?? undefined);
+    const dir = supportsNativeDirectoryPicker
+      ? await openDirectory()
+      : await requestProjectPath(workspaceDirectory ?? undefined);
     if (dir) void connectToProject(dir);
   }, [
     connectToProject,
-    isLocalWorkspace,
-    isWebRuntime,
+    supportsNativeDirectoryPicker,
     openDirectory,
     requestProjectPath,
     workspaceDirectory,

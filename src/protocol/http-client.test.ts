@@ -21,8 +21,8 @@ describe("createHttpOpenGuiClient", () => {
           value: {
             protocolVersion: 1,
             server: {
-              workspaces: true,
-              projects: true,
+              workspaces: false,
+              projects: false,
               sessions: true,
               events: "sse",
               auth: false,
@@ -64,32 +64,6 @@ describe("createHttpOpenGuiClient", () => {
         recoverable: true,
       });
     }
-  });
-
-  test("attaches Workspace presentation state to Backend Project records", async () => {
-    const client = createHttpOpenGuiClient({
-      baseUrl: "http://example.test",
-      fetchImpl: async (input) => {
-        expect(String(input)).toBe("http://example.test/api/projects");
-        return json({
-          ok: true,
-          value: [
-            {
-              id: "project_1",
-              displayName: "repo",
-              path: "/repo",
-              canonicalPath: "/repo",
-              createdAt: "2026-05-12T00:00:00.000Z",
-              updatedAt: "2026-05-12T00:00:00.000Z",
-            },
-          ],
-        });
-      },
-    });
-
-    await expect(client.projects.list("workspace-1")).resolves.toEqual([
-      expect.objectContaining({ id: "project_1", workspaceId: "workspace-1" }),
-    ]);
   });
 
   test("loads remote harness resources over HTTP instead of Electron RPC", async () => {
@@ -179,31 +153,14 @@ describe("createHttpOpenGuiClient", () => {
     expect(client.harnesses.get("pi")).toBeUndefined();
   });
 
-  test("connectProject creates the project over HTTP and then connects requested harnesses", async () => {
+  test("registerDirectory registers harnesses for a directory over HTTP", async () => {
     const calls: Array<{ input: string; method?: string }> = [];
     const client = createHttpOpenGuiClient({
       baseUrl: "http://example.test",
       fetchImpl: async (input, init) => {
         calls.push({ input, method: init?.method });
         const url = String(input);
-        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
-          return json({ ok: true, value: [] });
-        }
-        if (url.endsWith("/api/projects") && init?.method === "POST") {
-          return json({
-            ok: true,
-            value: {
-              id: "project_1",
-              workspaceId: "local",
-              displayName: "repo",
-              path: "/repo",
-              canonicalPath: "/repo",
-              createdAt: "2026-05-12T00:00:00.000Z",
-              updatedAt: "2026-05-12T00:00:00.000Z",
-            },
-          });
-        }
-        if (url.endsWith("/api/projects/project_1/connect") && init?.method === "POST") {
+        if (url.endsWith("/api/directories/%2Frepo/register") && init?.method === "POST") {
           expect(init.body).toBe(
             JSON.stringify({
               harnessIds: ["opencode", "pi"],
@@ -224,7 +181,7 @@ describe("createHttpOpenGuiClient", () => {
       },
     });
 
-    const result = await client.harnesses.connectProject({
+    const result = await client.harnesses.registerDirectory({
       config: {
         workspaceId: "local",
         baseUrl: "http://127.0.0.1:4096",
@@ -237,11 +194,8 @@ describe("createHttpOpenGuiClient", () => {
       connectedHarnessIds: ["opencode", "pi"],
       errors: [],
     });
-    expect(calls.map((call) => `${call.method ?? "GET"} ${call.input}`)).toEqual([
-      "GET http://127.0.0.1:4096/api/projects",
-      "POST http://127.0.0.1:4096/api/projects",
-      "POST http://127.0.0.1:4096/api/projects/project_1/connect",
-    ]);
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]?.input)).toContain("/api/directories/%2Frepo/register");
   });
 
   test("creates sessions over HTTP and maps them into frontend session ids", async () => {
@@ -249,22 +203,6 @@ describe("createHttpOpenGuiClient", () => {
       baseUrl: "http://example.test",
       fetchImpl: async (input, init) => {
         const url = String(input);
-        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
-          return json({
-            ok: true,
-            value: [
-              {
-                id: "project_1",
-                workspaceId: "local",
-                displayName: "repo",
-                path: "/repo",
-                canonicalPath: "/repo",
-                createdAt: "2026-05-12T00:00:00.000Z",
-                updatedAt: "2026-05-12T00:00:00.000Z",
-              },
-            ],
-          });
-        }
         if (url.endsWith("/api/sessions") && init?.method === "POST") {
           return json({
             ok: true,
@@ -272,7 +210,7 @@ describe("createHttpOpenGuiClient", () => {
               id: "session_1",
               rawId: "native-1",
               workspaceId: "local",
-              projectId: "project_1",
+              directory: "project_1",
               harnessId: "pi",
               title: "Chat",
               status: "unknown",
@@ -306,18 +244,10 @@ describe("createHttpOpenGuiClient", () => {
     const sessionRecord = {
       id: "session_1",
       rawId: "native-1",
-      projectId: "project_1",
+      directory: "project_1",
       harnessId: "opencode",
       title: "Chat",
       status: "unknown",
-      createdAt: "2026-05-12T00:00:00.000Z",
-      updatedAt: "2026-05-12T00:00:00.000Z",
-    };
-    const projectRecord = {
-      id: "project_1",
-      displayName: "repo",
-      path: "/repo",
-      canonicalPath: "/repo",
       createdAt: "2026-05-12T00:00:00.000Z",
       updatedAt: "2026-05-12T00:00:00.000Z",
     };
@@ -328,15 +258,9 @@ describe("createHttpOpenGuiClient", () => {
         const method = init?.method ?? "GET";
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
         calls.push({ url, method, body });
-        if (url.endsWith("/api/projects") && method === "GET") {
-          return json({ ok: true, value: [projectRecord] });
-        }
-        if (url.endsWith("/api/projects/project_1") && method === "GET") {
-          return json({ ok: true, value: projectRecord });
-        }
         if (
-          url ===
-            "http://example.test/api/sessions/opencode%3Asession_1/revert?harnessId=opencode&projectId=project_1" &&
+          url.includes("/api/sessions/opencode%3Asession_1/revert") &&
+          url.includes("directory=%2Frepo") &&
           method === "POST"
         ) {
           return json({ ok: true, value: sessionRecord });
@@ -354,11 +278,10 @@ describe("createHttpOpenGuiClient", () => {
 
     expect(session).toMatchObject({ id: "opencode:native-1", _projectDir: "/repo" });
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      "GET http://example.test/api/projects",
-      "POST http://example.test/api/sessions/opencode%3Asession_1/revert?harnessId=opencode&projectId=project_1",
-      "GET http://example.test/api/projects/project_1",
+      expect.stringContaining("POST http://example.test/api/sessions/opencode%3Asession_1/revert"),
     ]);
-    expect(calls[1]?.body).toEqual({ messageId: "msg_1" });
+    expect(calls[0]?.url).toContain("directory=%2Frepo");
+    expect(calls[0]?.body).toEqual({ messageId: "msg_1" });
   });
 
   test("sends session and project context with question replies", async () => {
@@ -370,21 +293,6 @@ describe("createHttpOpenGuiClient", () => {
         const method = init?.method ?? "GET";
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
         calls.push({ url, method, body });
-        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
-          return json({
-            ok: true,
-            value: [
-              {
-                id: "project_1",
-                displayName: "repo",
-                path: "/repo",
-                canonicalPath: "/repo",
-                createdAt: "2026-05-12T00:00:00.000Z",
-                updatedAt: "2026-05-12T00:00:00.000Z",
-              },
-            ],
-          });
-        }
         if (url.endsWith("/api/questions/question_1/reply") && init?.method === "POST") {
           return json({ ok: true, value: true });
         }
@@ -408,13 +316,12 @@ describe("createHttpOpenGuiClient", () => {
         answers: [["Yes"]],
         harnessId: "opencode",
         workspaceId: "workspace-1",
-        projectId: "project_1",
         directory: "/repo",
       },
     });
   });
 
-  test("does not create project records for question replies", async () => {
+  test("does not call project API for question replies", async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = [];
     const client = createHttpOpenGuiClient({
       baseUrl: "http://example.test",
@@ -423,9 +330,6 @@ describe("createHttpOpenGuiClient", () => {
         const method = init?.method ?? "GET";
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
         calls.push({ url, method, body });
-        if (url.endsWith("/api/projects") && method === "GET") {
-          return json({ ok: true, value: [] });
-        }
         if (url.endsWith("/api/questions/question_1/reply") && method === "POST") {
           return json({ ok: true, value: true });
         }
@@ -442,7 +346,6 @@ describe("createHttpOpenGuiClient", () => {
     });
 
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      "GET http://example.test/api/projects",
       "POST http://example.test/api/questions/question_1/reply",
     ]);
     expect(calls.at(-1)?.body).toEqual({
@@ -568,7 +471,7 @@ describe("createHttpOpenGuiClient", () => {
                       id: "session_1",
                       rawId: "native-1",
                       workspaceId: "workspace-1",
-                      projectId: "project_1",
+                      directory: "project_1",
                       harnessId: "opencode",
                       title: "Remote chat",
                       status: "unknown",
@@ -582,7 +485,12 @@ describe("createHttpOpenGuiClient", () => {
             },
           });
         }
-        if (url === "http://remote.test/api/sessions/session_1" && init?.method === "DELETE") {
+        if (
+          url.startsWith("http://remote.test/api/sessions/session_1") &&
+          init?.method === "DELETE" &&
+          url.includes("directory=%2Frepo") &&
+          url.includes("harnessId=opencode")
+        ) {
           return json({ ok: true, value: true });
         }
         throw new Error(`Unexpected fetch: ${url}`);
@@ -606,10 +514,11 @@ describe("createHttpOpenGuiClient", () => {
       target: { directory: "/repo", workspaceId: "workspace-1" },
     });
 
-    expect(calls).toEqual([
-      "POST http://remote.test/api/sessions/query",
-      "DELETE http://remote.test/api/sessions/session_1",
-    ]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toBe("POST http://remote.test/api/sessions/query");
+    expect(calls[1]).toMatch(/^DELETE http:\/\/remote\.test\/api\/sessions\/session_1\?/);
+    expect(calls[1]).toContain("directory=%2Frepo");
+    expect(calls[1]).toContain("harnessId=opencode");
   });
 
   test("scopes aliased session requests to the resolved project", async () => {
@@ -619,25 +528,9 @@ describe("createHttpOpenGuiClient", () => {
       fetchImpl: async (input, init) => {
         const url = String(input);
         calls.push(`${init?.method ?? "GET"} ${url}`);
-        if (url.endsWith("/api/projects") && (!init?.method || init.method === "GET")) {
-          return json({
-            ok: true,
-            value: [
-              {
-                id: "project_1",
-                workspaceId: "workspace-1",
-                displayName: "repo",
-                path: "/repo",
-                canonicalPath: "/repo",
-                createdAt: "2026-05-12T00:00:00.000Z",
-                updatedAt: "2026-05-12T00:00:00.000Z",
-              },
-            ],
-          });
-        }
         if (
-          url ===
-            "http://example.test/api/sessions/pi%3Anative-1/abort?harnessId=pi&projectId=project_1" &&
+          url.includes("/api/sessions/pi%3Anative-1/abort") &&
+          url.includes("directory=%2Frepo") &&
           init?.method === "POST"
         ) {
           return json({ ok: true, value: true });
@@ -652,9 +545,40 @@ describe("createHttpOpenGuiClient", () => {
       target: { directory: "/repo", workspaceId: "workspace-1" },
     });
 
-    expect(calls).toEqual([
-      "GET http://example.test/api/projects",
-      "POST http://example.test/api/sessions/pi%3Anative-1/abort?harnessId=pi&projectId=project_1",
-    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("/api/sessions/pi%3Anative-1/abort");
+    expect(calls[0]).toContain("directory=%2Frepo");
+  });
+
+  test("propagates RPC errors from getMessages instead of returning an empty page", async () => {
+    const client = createHttpOpenGuiClient({
+      baseUrl: "http://example.test",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/messages") && url.includes("pi%3Amissing")) {
+          return json(
+            {
+              ok: false,
+              error: "Session not found",
+              code: "NOT_FOUND",
+              recoverable: false,
+            },
+            { status: 404 },
+          );
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+    });
+
+    await expect(
+      client.sessions.getMessages({
+        sessionId: "pi:missing",
+        harnessId: "pi",
+        options: { directory: "/repo", limit: 30 },
+      }),
+    ).rejects.toMatchObject({
+      message: "Session not found",
+      code: "NOT_FOUND",
+    });
   });
 });

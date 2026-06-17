@@ -2,8 +2,7 @@ import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { BackendServiceContext } from "../server/services/index.ts";
-import { resolveSessionProjectRecord } from "../server/services/session-project-scope.ts";
-import type { ProjectRecord } from "../server/services/storage-service.ts";
+import { resolveSessionDirectoryScopeRecord } from "../server/services/directory-scope.ts";
 import type { SessionRecord } from "../server/services/session-types.ts";
 
 async function resolveSafeDirectory(inputPath: string): Promise<string> {
@@ -14,22 +13,14 @@ async function resolveSafeDirectory(inputPath: string): Promise<string> {
   return actual;
 }
 
-describe("resolveSessionProjectRecord", () => {
-  test("finds connected Project by path when session.projectId is canonical path", async () => {
+describe("resolveSessionDirectoryScopeRecord", () => {
+  test("uses canonical path when session.directory is a filesystem path", async () => {
     const repoPath = await resolveSafeDirectory(process.cwd());
     const now = "2026-01-01T00:00:00.000Z";
-    const project: ProjectRecord = {
-      id: "proj_uuid_connected",
-      displayName: "OpenGUI",
-      path: repoPath,
-      canonicalPath: repoPath,
-      createdAt: now,
-      updatedAt: now,
-    };
     const session: SessionRecord = {
       id: "session_1",
       rawId: "raw-1",
-      projectId: repoPath,
+      directory: repoPath,
       harnessId: "opencode",
       title: "Test",
       status: "idle",
@@ -37,20 +28,15 @@ describe("resolveSessionProjectRecord", () => {
       updatedAt: now,
     };
 
-    const services = {
-      projects: {
-        getProject: async (id: string) => (id === project.id ? project : null),
-        findProjectByPath: async () => project,
-      },
-    } as unknown as BackendServiceContext;
+    const services = {} as unknown as BackendServiceContext;
 
-    const resolved = await resolveSessionProjectRecord({
+    const resolved = await resolveSessionDirectoryScopeRecord({
       services,
       session,
       resolveSafeDirectory,
     });
 
-    expect(resolved.id).toBe("proj_uuid_connected");
+    expect(resolved.id).toBe(repoPath);
     expect(resolved.canonicalPath).toBe(repoPath);
   });
 
@@ -60,7 +46,7 @@ describe("resolveSessionProjectRecord", () => {
     const session: SessionRecord = {
       id: "session_2",
       rawId: "raw-2",
-      projectId: "missing-project-id",
+      directory: "missing-project-id",
       harnessId: "opencode",
       title: "Test",
       status: "idle",
@@ -69,14 +55,9 @@ describe("resolveSessionProjectRecord", () => {
       metadata: { directory: repoPath },
     };
 
-    const services = {
-      projects: {
-        getProject: async () => null,
-        findProjectByPath: async () => null,
-      },
-    } as unknown as BackendServiceContext;
+    const services = {} as unknown as BackendServiceContext;
 
-    const resolved = await resolveSessionProjectRecord({
+    const resolved = await resolveSessionDirectoryScopeRecord({
       services,
       session,
       resolveSafeDirectory,

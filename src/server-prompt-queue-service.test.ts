@@ -1,5 +1,6 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { PromptQueueService } from "../server/services/prompt-queue-service.ts";
+import type { BackendServiceContext } from "../server/services/index.ts";
 import type { PromptQueueEntryRecord, StorageService } from "../server/services/storage-service.ts";
 import type { SessionRecord } from "../server/services/session-types.ts";
 
@@ -36,7 +37,7 @@ describe("PromptQueueService", () => {
     const session: SessionRecord = {
       id: "session_1",
       rawId: "raw-1",
-      projectId: "missing-project",
+      directory: "missing-project",
       harnessId: "opencode",
       title: "Running",
       status: "running",
@@ -44,20 +45,24 @@ describe("PromptQueueService", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
       metadata: { directory: "/repo" },
     };
-    const queue = new PromptQueueService(
-      makeStorage(),
-      {
+    const storage = makeStorage();
+    const services = {
+      storage,
+      sessions: {
         getSession: async () => session,
-      } as never,
-      {
-        getProject: async () => null,
-      } as never,
+      },
+      harnesses: {},
+      events: undefined,
+    } as unknown as BackendServiceContext;
+
+    const queue = new PromptQueueService(services, async (path) =>
+      path === "missing-project" ? "/repo" : path,
     );
 
     const entries = await queue.enqueue(
       "opencode:raw-1",
       { text: "Continue", mode: "queue" },
-      { projectId: session.projectId, harnessId: session.harnessId },
+      { directory: "/repo", harnessId: session.harnessId },
     );
 
     expect(entries).toEqual([

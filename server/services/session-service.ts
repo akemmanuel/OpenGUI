@@ -1,7 +1,10 @@
 import type { HarnessId } from "../../src/agents/index.ts";
 import {
+  composeFrontendSessionId,
+  decodeCanonicalDirectorySessionId,
   harnessRawSessionKey,
   parseFrontendSessionId,
+  resolveWireSessionIdentity,
   scopedRawSessionKey,
 } from "../../src/lib/session-identity.ts";
 import type { BackendEventBus } from "./event-bus.ts";
@@ -16,17 +19,11 @@ import type {
 
 interface SessionMappingRecord {
   canonicalSessionId: string;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
   rawId: string;
   createdAt: string;
   updatedAt: string;
-}
-
-function createCanonicalSessionId(
-  input: Pick<CreateSessionInput, "projectId" | "harnessId" | "rawId">,
-): string {
-  return `session_${Buffer.from(scopedRawSessionKey(input), "utf8").toString("base64url")}`;
 }
 
 function encodeCursor(offset: number): string {
@@ -80,6 +77,10 @@ export class SessionService {
     await this.initPromise;
   }
 
+  /**
+   * In-memory index pagination only — not a product session list (ADR 0004/0006).
+   * Sidebar and APIs use `listDirectorySessionsFromHarness`.
+   */
   async listSessions(input: ListSessionsInput = {}): Promise<ListSessionsResult> {
     await this.ensureInitialized();
     const limit =
@@ -89,7 +90,7 @@ export class SessionService {
     const offset = decodeCursor(input.cursor);
     const filtered = [...this.sessions.values()]
       .filter((session) => {
-        if (input.projectId && session.projectId !== input.projectId) return false;
+        if (input.directory && session.directory !== input.directory) return false;
         if (input.harnessId && session.harnessId !== input.harnessId) return false;
         return true;
       })
@@ -105,7 +106,7 @@ export class SessionService {
 
   async getSession(
     idOrAlias: string,
-    input: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    input: Pick<ListSessionsInput, "directory" | "harnessId"> = {},
   ): Promise<SessionRecord | null> {
     await this.ensureInitialized();
     const canonicalId = this.resolveSessionId(idOrAlias, input);
@@ -113,7 +114,7 @@ export class SessionService {
   }
 
   async getSessionByRawId(input: {
-    projectId: string;
+    directory: string;
     harnessId: HarnessId;
     rawId: string;
   }): Promise<SessionRecord | null> {
@@ -127,7 +128,7 @@ export class SessionService {
     const now = new Date().toISOString();
     const session: SessionRecord = {
       ...input,
-      id: input.id ?? createCanonicalSessionId(input),
+      id: input.id ?? composeFrontendSessionId(input.harnessId, input.rawId),
       title: input.title ?? "Untitled",
       status: input.status ?? "unknown",
       createdAt: input.createdAt ?? now,
@@ -139,7 +140,7 @@ export class SessionService {
       "session.created",
       { sessionId: session.id, session },
       {
-        projectId: session.projectId,
+        directory: session.directory,
         sessionId: session.id,
         harnessId: session.harnessId,
       },
@@ -150,7 +151,7 @@ export class SessionService {
   async ensureSession(input: CreateSessionInput): Promise<SessionRecord> {
     await this.ensureInitialized();
     const existing = await this.getSessionByRawId({
-      projectId: input.projectId,
+      directory: input.directory,
       harnessId: input.harnessId,
       rawId: input.rawId,
     });
@@ -184,7 +185,7 @@ export class SessionService {
       "session.updated",
       { sessionId: nextSession.id, session: nextSession },
       {
-        projectId: nextSession.projectId,
+        directory: nextSession.directory,
         sessionId: nextSession.id,
         harnessId: nextSession.harnessId,
       },
@@ -195,7 +196,7 @@ export class SessionService {
   async updateSession(
     idOrAlias: string,
     input: UpdateSessionInput,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Pick<ListSessionsInput, "directory" | "harnessId"> = {},
   ): Promise<SessionRecord | null> {
     await this.ensureInitialized();
     const existing = await this.getSession(idOrAlias, scope);
@@ -207,7 +208,7 @@ export class SessionService {
       "session.updated",
       { sessionId: updated.id, session: updated },
       {
-        projectId: updated.projectId,
+        directory: updated.directory,
         sessionId: updated.id,
         harnessId: updated.harnessId,
       },
@@ -217,7 +218,7 @@ export class SessionService {
 
   async deleteSession(
     idOrAlias: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Pick<ListSessionsInput, "directory" | "harnessId"> = {},
   ): Promise<boolean> {
     await this.ensureInitialized();
     const existing = await this.getSession(idOrAlias, scope);
@@ -228,7 +229,7 @@ export class SessionService {
       "session.deleted",
       { sessionId: existing.id, session: existing },
       {
-        projectId: existing.projectId,
+        directory: existing.directory,
         sessionId: existing.id,
         harnessId: existing.harnessId,
       },
@@ -236,10 +237,10 @@ export class SessionService {
     return true;
   }
 
-  async deleteSessionsByProject(projectId: string): Promise<SessionRecord[]> {
+  async deleteSessionsByDirectory(directory: string): Promise<SessionRecord[]> {
     await this.ensureInitialized();
     const sessions = [...this.sessions.values()].filter(
-      (session) => session.projectId === projectId,
+      (session) => session.directory === directory,
     );
     for (const session of sessions) {
       await this.deleteSession(session.id);
@@ -247,34 +248,20 @@ export class SessionService {
     return sessions;
   }
 
-  async replaceScopeSessions(
-    scope: { projectId: string; harnessId: HarnessId },
-    nextSessions: CreateSessionInput[],
-  ): Promise<SessionRecord[]> {
-    await this.ensureInitialized();
-    const seenRawIds = new Set(nextSessions.map((session) => session.rawId));
-    const currentScopeSessions = [...this.sessions.values()].filter(
-      (session) => session.projectId === scope.projectId && session.harnessId === scope.harnessId,
-    );
-
-    for (const session of currentScopeSessions) {
-      if (!seenRawIds.has(session.rawId)) {
-        await this.deleteSession(session.id);
-      }
-    }
-
-    const records: SessionRecord[] = [];
-    for (const session of nextSessions) {
-      records.push(await this.ensureSession(session));
-    }
-    return records;
-  }
-
   resolveSessionId(
     idOrAlias: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId"> = {},
+    scope: Pick<ListSessionsInput, "directory" | "harnessId"> = {},
   ): string | null {
     if (this.sessions.has(idOrAlias)) return idOrAlias;
+
+    const wire = resolveWireSessionIdentity(idOrAlias, scope.harnessId);
+    if (wire && this.sessions.has(wire.wireId)) return wire.wireId;
+
+    const legacy = decodeCanonicalDirectorySessionId(idOrAlias);
+    if (legacy) {
+      const legacyWire = composeFrontendSessionId(legacy.harnessId, legacy.rawId);
+      if (this.sessions.has(legacyWire)) return legacyWire;
+    }
 
     const parsed = parseFrontendSessionId(idOrAlias);
     if (parsed) {
@@ -288,7 +275,7 @@ export class SessionService {
 
     const matches = [...this.sessions.values()].filter((session) => {
       if (session.rawId !== idOrAlias) return false;
-      if (scope.projectId && session.projectId !== scope.projectId) return false;
+      if (scope.directory && session.directory !== scope.directory) return false;
       if (scope.harnessId && session.harnessId !== scope.harnessId) return false;
       return true;
     });
@@ -300,7 +287,7 @@ export class SessionService {
   private resolveByHarnessRawId(
     harnessId: HarnessId,
     rawId: string,
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId">,
+    scope: Pick<ListSessionsInput, "directory" | "harnessId">,
   ): string | null {
     const matches = [
       ...(this.harnessRawToCanonical.get(harnessRawSessionKey(harnessId, rawId)) ?? []),
@@ -308,7 +295,7 @@ export class SessionService {
       .map((id) => this.sessions.get(id))
       .filter((session): session is SessionRecord => Boolean(session))
       .filter((session) => {
-        if (scope.projectId && session.projectId !== scope.projectId) return false;
+        if (scope.directory && session.directory !== scope.directory) return false;
         if (scope.harnessId && session.harnessId !== scope.harnessId) return false;
         return true;
       })
@@ -320,7 +307,7 @@ export class SessionService {
     this.sessions.set(session.id, session);
     await this.upsertMapping({
       canonicalSessionId: session.id,
-      projectId: session.projectId,
+      directory: session.directory,
       harnessId: session.harnessId,
       rawId: session.rawId,
       createdAt: session.createdAt,
@@ -335,7 +322,7 @@ export class SessionService {
   private storeMapping(mapping: SessionMappingRecord) {
     this.rawToCanonical.set(
       scopedRawSessionKey({
-        projectId: mapping.projectId,
+        directory: mapping.directory,
         harnessId: mapping.harnessId,
         rawId: mapping.rawId,
       }),
@@ -350,7 +337,7 @@ export class SessionService {
   private async removeStoredSession(session: SessionRecord) {
     this.sessions.delete(session.id);
     const rawKey = scopedRawSessionKey({
-      projectId: session.projectId,
+      directory: session.directory,
       harnessId: session.harnessId,
       rawId: session.rawId,
     });

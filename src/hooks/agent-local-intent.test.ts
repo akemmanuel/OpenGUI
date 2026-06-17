@@ -36,7 +36,7 @@ function makeState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     queuedPrompts: {},
     defaultChatDirectory: null,
     activeTargetDirectory: null,
-    activeTargetBackendId: null,
+    activeTargetHarnessId: null,
     namingSessionIds: new Set(),
     unreadSessionIds: new Set(),
     sessionDrafts: {},

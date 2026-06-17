@@ -28,33 +28,33 @@ export function resolveSessionHarnessRoute(
 }
 
 export function resolvePendingPromptCreationHarnessRoute({
-  activeTargetBackendId,
-  preferredBackendId,
+  activeTargetHarnessId,
+  preferredHarnessId,
 }: {
-  activeTargetBackendId: HarnessId | null;
-  preferredBackendId: HarnessId;
+  activeTargetHarnessId: HarnessId | null;
+  preferredHarnessId: HarnessId;
 }): HarnessRoute {
-  if (activeTargetBackendId) {
-    return { harnessId: activeTargetBackendId, reason: "active-target", locked: false };
+  if (activeTargetHarnessId) {
+    return { harnessId: activeTargetHarnessId, reason: "active-target", locked: false };
   }
-  return { harnessId: preferredBackendId, reason: "preferred", locked: false };
+  return { harnessId: preferredHarnessId, reason: "preferred", locked: false };
 }
 
 export function resolveActiveResourceHarnessRoute({
   activeSession,
-  activeTargetBackendId,
-  preferredBackendId,
+  activeTargetHarnessId,
+  preferredHarnessId,
 }: {
   activeSession: Session | null | undefined;
-  activeTargetBackendId: HarnessId | null;
-  preferredBackendId: HarnessId;
+  activeTargetHarnessId: HarnessId | null;
+  preferredHarnessId: HarnessId;
 }): HarnessRoute {
-  const sessionBackendId = getSessionHarnessId(activeSession);
-  if (sessionBackendId) {
-    return { harnessId: sessionBackendId, reason: "session", locked: true };
+  const sessionHarnessId = getSessionHarnessId(activeSession);
+  if (sessionHarnessId) {
+    return { harnessId: sessionHarnessId, reason: "session", locked: true };
   }
-  if (activeTargetBackendId) {
-    return { harnessId: activeTargetBackendId, reason: "active-target", locked: false };
+  if (activeTargetHarnessId) {
+    return { harnessId: activeTargetHarnessId, reason: "active-target", locked: false };
   }
-  return { harnessId: preferredBackendId, reason: "preferred", locked: false };
+  return { harnessId: preferredHarnessId, reason: "preferred", locked: false };
 }

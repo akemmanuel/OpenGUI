@@ -2,7 +2,7 @@ import type { NativeBackendEvent } from "@/types/electron";
 import type { HarnessCapabilities, HarnessEvent } from "./backend.ts";
 import type { ActiveHarnessId, HarnessId } from "./index.ts";
 import { mapOpenCodeEvent } from "./protocol/opencode-map.ts";
-import { normalizeTaggedBackendEvent } from "./shared.ts";
+import { normalizeTaggedHarnessEvent } from "./shared.ts";
 
 export const LOCAL_CLI_CONNECTION = {
   kind: "local-cli",
@@ -45,12 +45,12 @@ export function makeLocalCliCapabilities(
 export function createCliHarnessNormalizer(harnessId: HarnessId, nativeEventType?: string) {
   const eventType = nativeEventType ?? `${harnessId}:event`;
   return (event: NativeBackendEvent): HarnessEvent | null =>
-    normalizeTaggedBackendEvent(harnessId, event, eventType);
+    normalizeTaggedHarnessEvent(harnessId, event, eventType);
 }
 
 function normalizeOpenCodeEvent(event: NativeBackendEvent): HarnessEvent | null {
   if (event.type === "connection:status") {
-    return normalizeTaggedBackendEvent("opencode", event, "opencode:event");
+    return normalizeTaggedHarnessEvent("opencode", event, "opencode:event");
   }
   if (event.type !== "opencode:event" || !event.payload) return null;
   return mapOpenCodeEvent(event.payload, {

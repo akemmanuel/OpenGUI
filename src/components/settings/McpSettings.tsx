@@ -18,14 +18,14 @@ import { useOpenGuiClient } from "@/protocol/provider";
 
 export function McpTabContent() {
   const { t } = useTranslation();
-  const initialBackendId = useCurrentHarnessId();
-  const availableBackendIds = useAvailableHarnessIds();
+  const initialHarnessId = useCurrentHarnessId();
+  const availableHarnessIds = useAvailableHarnessIds();
   const openGuiClient = useOpenGuiClient();
   const mcpHarnessIds = useMemo(
-    () => availableBackendIds.filter((id) => openGuiClient.harnesses.get(id)?.capabilities.mcp),
-    [availableBackendIds, openGuiClient],
+    () => availableHarnessIds.filter((id) => openGuiClient.harnesses.get(id)?.capabilities.mcp),
+    [availableHarnessIds, openGuiClient],
   );
-  const [harnessId, setBackendId] = useState<ActiveHarnessId>(initialBackendId);
+  const [harnessId, setHarnessId] = useState<ActiveHarnessId>(initialHarnessId);
   const backend = useHarness(harnessId);
   const mcpApi = backend?.platform?.mcp;
   const configApi = backend?.platform?.config;
@@ -41,7 +41,7 @@ export function McpTabContent() {
 
   useEffect(() => {
     if (mcpHarnessIds.length === 0 || mcpHarnessIds.includes(harnessId)) return;
-    setBackendId(mcpHarnessIds[0]!);
+    setHarnessId(mcpHarnessIds[0]!);
   }, [harnessId, mcpHarnessIds]);
 
   const refresh = useCallback(async () => {
@@ -139,7 +139,7 @@ export function McpTabContent() {
               variant={harnessId === id ? "default" : "outline"}
               size="sm"
               className="h-7 px-2 text-[11px]"
-              onClick={() => setBackendId(id)}
+              onClick={() => setHarnessId(id)}
             >
               {HARNESS_LABELS[id]}
             </Button>

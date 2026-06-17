@@ -2,15 +2,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { HARNESS_IDS, HARNESS_LABELS, type ActiveHarnessId } from "../src/agents/index.ts";
+import {
+  CLI_COMMAND_BY_HARNESS,
+  HARNESS_IDS,
+  HARNESS_LABELS,
+  type ActiveHarnessId,
+} from "../src/agents/index.ts";
 import type { HarnessInventory, HarnessInventoryCliDiagnostics } from "../src/types/electron.d.ts";
-
-const BINARY_BY_HARNESS: Record<ActiveHarnessId, string> = {
-  opencode: "opencode",
-  "claude-code": "claude",
-  pi: "pi",
-  codex: "codex",
-};
 
 function safeDiagnosticCwd() {
   // Version/path probes do not need a project cwd. Avoid inheriting a cwd inside
@@ -62,7 +60,7 @@ function commandFromShell(command: string): string | null {
 }
 
 export function resolveHarnessCli(harnessId: ActiveHarnessId): HarnessInventoryCliDiagnostics {
-  const command = BINARY_BY_HARNESS[harnessId];
+  const command = CLI_COMMAND_BY_HARNESS[harnessId];
   const checkedPaths = commonBinaryPaths(command);
   for (const candidate of checkedPaths) {
     if (existsSync(candidate)) {

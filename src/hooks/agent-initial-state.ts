@@ -43,7 +43,7 @@ export const initialAgentState: InternalAgentState = {
   queuedPrompts: {},
   defaultChatDirectory: null,
   activeTargetDirectory: null,
-  activeTargetBackendId: null,
+  activeTargetHarnessId: null,
   namingSessionIds: new Set(),
   unreadSessionIds: getUnreadSessionIds(),
   sessionDrafts: getSessionDrafts(),

@@ -138,11 +138,11 @@ export function ModelSelector() {
   const { t } = useTranslation();
   const { setModel, setActiveTargetBackend } = useActions();
   const { providers, selectedModel } = useModelState();
-  const availableBackendIds = useAvailableHarnessIds();
+  const availableHarnessIds = useAvailableHarnessIds();
   const { backend, route: selectedHarnessRoute } = useRoutedHarness();
   const capabilities = backend?.capabilities;
-  const lockedBackendId = selectedHarnessRoute.locked ? selectedHarnessRoute.harnessId : null;
-  const selectedBackendId = selectedHarnessRoute.harnessId;
+  const lockedHarnessId = selectedHarnessRoute.locked ? selectedHarnessRoute.harnessId : null;
+  const selectedHarnessId = selectedHarnessRoute.harnessId;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -441,11 +441,11 @@ export function ModelSelector() {
           <DialogTitle className="text-base">{t("modelSelector.selectModel")}</DialogTitle>
         </DialogHeader>
 
-        {availableBackendIds.length > 1 && (
+        {availableHarnessIds.length > 1 && (
           <div className="px-4 pb-2">
             <div className="flex flex-wrap gap-1.5">
-              {availableBackendIds.map((harnessId) => {
-                const isSelected = selectedBackendId === harnessId;
+              {availableHarnessIds.map((harnessId) => {
+                const isSelected = selectedHarnessId === harnessId;
                 return (
                   <Button
                     key={harnessId}
@@ -453,7 +453,7 @@ export function ModelSelector() {
                     variant={isSelected ? "default" : "outline"}
                     size="sm"
                     className="h-7 px-2 text-[11px]"
-                    disabled={!!lockedBackendId}
+                    disabled={!!lockedHarnessId}
                     onClick={() => setActiveTargetBackend(harnessId)}
                   >
                     {HARNESS_LABELS[harnessId]}
@@ -461,7 +461,7 @@ export function ModelSelector() {
                 );
               })}
             </div>
-            {lockedBackendId && (
+            {lockedHarnessId && (
               <p className="mt-2 text-[11px] text-muted-foreground">
                 {t("modelSelector.backendLocked")}
               </p>

@@ -49,48 +49,18 @@ export interface UpdateFrontendWorkspaceInput {
   settings?: Record<string, unknown>;
 }
 
-export interface OpenGuiProject {
-  id: string;
-  workspaceId: string;
-  displayName: string;
-  path: string;
-  canonicalPath: string;
-  allowedRootId?: string;
-  git?: {
-    currentBranch?: string;
-    remoteUrl?: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateProjectInput {
-  displayName?: string;
-  path: string;
-  canonicalPath?: string;
-  allowedRootId?: string;
-  workspaceId?: string;
-}
-
-export interface UpdateProjectInput {
-  displayName?: string;
-  path?: string;
-  canonicalPath?: string;
-  allowedRootId?: string | null;
-}
-
 export interface HarnessResourceBundle {
   providersData: ProvidersData;
   agentsData: Agent[];
   commandsData: Command[];
 }
 
-export interface ProjectConnectResult {
+export interface DirectoryRegisterResult {
   connectedHarnessIds: HarnessId[];
   errors: Array<{ harnessId: HarnessId; error: string }>;
 }
 
-export interface HarnessProjectSessionsResult {
+export interface HarnessDirectorySessionsResult {
   harnessId: HarnessId;
   sessions: Session[];
 }
@@ -142,13 +112,6 @@ export interface QueueScopeInput {
 
 export interface OpenGuiClient {
   capabilities(): Promise<OpenGuiCapabilities>;
-  projects: {
-    list(workspaceId: string): Promise<OpenGuiProject[]>;
-    get(id: string): Promise<OpenGuiProject | null>;
-    create(workspaceId: string, input: CreateProjectInput): Promise<OpenGuiProject>;
-    update(id: string, input: UpdateProjectInput): Promise<OpenGuiProject | null>;
-    delete(id: string): Promise<boolean>;
-  };
   harnesses: {
     list(): HarnessDescriptor[];
     get(harnessId?: HarnessId): HarnessDescriptor | undefined;
@@ -158,26 +121,31 @@ export interface OpenGuiClient {
       harnessId: HarnessId;
       target?: HarnessTarget;
     }): Promise<HarnessResourceBundle>;
-    connectProject(input: {
+    registerDirectory(input: {
       config: ConnectionConfig;
       harnessIds?: HarnessId[];
-    }): Promise<ProjectConnectResult>;
-    disconnectProject(input: { target: HarnessTarget; harnessIds?: HarnessId[] }): Promise<void>;
-    listProjectSessions(input: {
+    }): Promise<DirectoryRegisterResult>;
+    releaseDirectory(input: {
+      target: HarnessTarget & { directory: string };
+      harnessIds?: HarnessId[];
+    }): Promise<void>;
+    /**
+     * @deprecated Prefer `sessions.query` for sidebar refresh (same harness-only list semantics).
+     */
+    listDirectorySessions(input: {
       harnessIds: HarnessId[];
       target: HarnessTarget;
-      sync?: boolean;
-    }): Promise<HarnessProjectSessionsResult[]>;
-    listProjectSessionStatuses(input: {
+    }): Promise<HarnessDirectorySessionsResult[]>;
+    listDirectorySessionStatuses(input: {
       harnessIds: HarnessId[];
       target: HarnessTarget;
     }): Promise<Record<string, { type: string }>>;
   };
   sessions: {
+    /** Canonical multi-project session list (harness fan-out per directory + harnessId). */
     query(input: {
       projects: SessionQueryProject[];
       harnessIds: HarnessId[];
-      sync?: boolean;
     }): Promise<SessionQueryResult>;
     create(input: {
       harnessId: HarnessId;

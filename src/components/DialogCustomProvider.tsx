@@ -8,7 +8,7 @@
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,6 @@ import { Label } from "@/components/ui/label";
 import type { HarnessId } from "@/agents";
 import { useHarness } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
-import { getErrorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -196,7 +195,7 @@ export function DialogCustomProvider({
 
       const validationError = validate(providerId, name, baseUrl, models);
       if (validationError) {
-        toast.error(t(validationError));
+        notifyError(t(validationError));
         return;
       }
 
@@ -252,7 +251,7 @@ export function DialogCustomProvider({
         await providersApi.dispose(target);
         onSaved();
       } catch (err) {
-        toast.error(getErrorMessage(err, "Failed to save"));
+        notifyUnknownError(err, "Failed to save");
       } finally {
         setSaving(false);
       }

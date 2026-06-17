@@ -1,10 +1,10 @@
 import type { HarnessId } from "@/agents";
 
 export interface ProjectHydrationState {
-  desiredBackendIds: HarnessId[];
-  loadingBackendIds: HarnessId[];
-  completedBackendIds: HarnessId[];
-  failedBackendIds: HarnessId[];
+  desiredHarnessIds: HarnessId[];
+  loadingHarnessIds: HarnessId[];
+  completedHarnessIds: HarnessId[];
+  failedHarnessIds: HarnessId[];
   errors: Partial<Record<HarnessId, string>>;
   lastStartedAt: number | null;
   lastSettledAt: number | null;
@@ -15,11 +15,11 @@ export interface BootstrapHydrationTask<T> {
   harnessId: HarnessId;
 }
 
-function uniqueBackendIds(harnessIds: readonly HarnessId[]) {
+function uniqueHarnessIds(harnessIds: readonly HarnessId[]) {
   return Array.from(new Set(harnessIds));
 }
 
-function rotateBackendIds(harnessIds: readonly HarnessId[], offset: number) {
+function rotateHarnessIds(harnessIds: readonly HarnessId[], offset: number) {
   if (harnessIds.length === 0) return [];
   const normalizedOffset = ((offset % harnessIds.length) + harnessIds.length) % harnessIds.length;
   return [
@@ -28,16 +28,16 @@ function rotateBackendIds(harnessIds: readonly HarnessId[], offset: number) {
   ] as HarnessId[];
 }
 
-function withoutBackendIds(source: readonly HarnessId[], removed: Set<HarnessId>) {
+function withoutHarnessIds(source: readonly HarnessId[], removed: Set<HarnessId>) {
   return source.filter((harnessId) => !removed.has(harnessId));
 }
 
 export function createEmptyProjectHydrationState(): ProjectHydrationState {
   return {
-    desiredBackendIds: [],
-    loadingBackendIds: [],
-    completedBackendIds: [],
-    failedBackendIds: [],
+    desiredHarnessIds: [],
+    loadingHarnessIds: [],
+    completedHarnessIds: [],
+    failedHarnessIds: [],
     errors: {},
     lastStartedAt: null,
     lastSettledAt: null,
@@ -50,10 +50,10 @@ export function startProjectHydration(
   now = Date.now(),
 ): ProjectHydrationState {
   const existing = current ?? createEmptyProjectHydrationState();
-  const requested = uniqueBackendIds(harnessIds);
+  const requested = uniqueHarnessIds(harnessIds);
   if (requested.length === 0) return existing;
 
-  const completedSet = new Set(existing.completedBackendIds);
+  const completedSet = new Set(existing.completedHarnessIds);
   const retried = requested.filter((harnessId) => !completedSet.has(harnessId));
   const retriedSet = new Set(retried);
   const nextErrors = { ...existing.errors };
@@ -62,10 +62,10 @@ export function startProjectHydration(
   }
 
   return {
-    desiredBackendIds: uniqueBackendIds([...existing.desiredBackendIds, ...requested]),
-    loadingBackendIds: uniqueBackendIds([...existing.loadingBackendIds, ...retried]),
-    completedBackendIds: existing.completedBackendIds,
-    failedBackendIds: withoutBackendIds(existing.failedBackendIds, retriedSet),
+    desiredHarnessIds: uniqueHarnessIds([...existing.desiredHarnessIds, ...requested]),
+    loadingHarnessIds: uniqueHarnessIds([...existing.loadingHarnessIds, ...retried]),
+    completedHarnessIds: existing.completedHarnessIds,
+    failedHarnessIds: withoutHarnessIds(existing.failedHarnessIds, retriedSet),
     errors: nextErrors,
     lastStartedAt: now,
     lastSettledAt: existing.lastSettledAt,
@@ -75,35 +75,35 @@ export function startProjectHydration(
 export function settleProjectHydration(
   current: ProjectHydrationState | undefined,
   input: {
-    completedBackendIds?: readonly HarnessId[];
+    completedHarnessIds?: readonly HarnessId[];
     failedBackends?: Partial<Record<HarnessId, string>>;
     now?: number;
   },
 ): ProjectHydrationState {
   const existing = current ?? createEmptyProjectHydrationState();
-  const completedBackendIds = uniqueBackendIds(input.completedBackendIds ?? []);
+  const completedHarnessIds = uniqueHarnessIds(input.completedHarnessIds ?? []);
   const failedBackends = input.failedBackends ?? {};
-  const failedBackendIds = uniqueBackendIds(Object.keys(failedBackends) as HarnessId[]);
-  const settledSet = new Set<HarnessId>([...completedBackendIds, ...failedBackendIds]);
+  const failedHarnessIds = uniqueHarnessIds(Object.keys(failedBackends) as HarnessId[]);
+  const settledSet = new Set<HarnessId>([...completedHarnessIds, ...failedHarnessIds]);
   const nextErrors = { ...existing.errors, ...failedBackends };
-  for (const harnessId of completedBackendIds) {
+  for (const harnessId of completedHarnessIds) {
     delete nextErrors[harnessId];
   }
 
   return {
-    desiredBackendIds: uniqueBackendIds([
-      ...existing.desiredBackendIds,
-      ...completedBackendIds,
-      ...failedBackendIds,
+    desiredHarnessIds: uniqueHarnessIds([
+      ...existing.desiredHarnessIds,
+      ...completedHarnessIds,
+      ...failedHarnessIds,
     ]),
-    loadingBackendIds: withoutBackendIds(existing.loadingBackendIds, settledSet),
-    completedBackendIds: uniqueBackendIds([
-      ...existing.completedBackendIds,
-      ...completedBackendIds,
+    loadingHarnessIds: withoutHarnessIds(existing.loadingHarnessIds, settledSet),
+    completedHarnessIds: uniqueHarnessIds([
+      ...existing.completedHarnessIds,
+      ...completedHarnessIds,
     ]),
-    failedBackendIds: uniqueBackendIds([
-      ...withoutBackendIds(existing.failedBackendIds, new Set(completedBackendIds)),
-      ...failedBackendIds,
+    failedHarnessIds: uniqueHarnessIds([
+      ...withoutHarnessIds(existing.failedHarnessIds, new Set(completedHarnessIds)),
+      ...failedHarnessIds,
     ]),
     errors: nextErrors,
     lastStartedAt: existing.lastStartedAt,
@@ -111,52 +111,52 @@ export function settleProjectHydration(
   };
 }
 
-export function getPendingProjectHydrationBackendIds(
+export function getPendingProjectHydrationHarnessIds(
   current: ProjectHydrationState | undefined,
-  desiredBackendIds: readonly HarnessId[],
+  desiredHarnessIds: readonly HarnessId[],
 ) {
-  const desired = uniqueBackendIds(desiredBackendIds);
+  const desired = uniqueHarnessIds(desiredHarnessIds);
   if (!current) return desired;
   const seen = new Set<HarnessId>([
-    ...current.loadingBackendIds,
-    ...current.completedBackendIds,
-    ...current.failedBackendIds,
+    ...current.loadingHarnessIds,
+    ...current.completedHarnessIds,
+    ...current.failedHarnessIds,
   ]);
   return desired.filter((harnessId) => !seen.has(harnessId));
 }
 
 export function hasProjectHydrationInFlight(
   current: ProjectHydrationState | undefined,
-  desiredBackendIds: readonly HarnessId[],
+  desiredHarnessIds: readonly HarnessId[],
 ) {
   if (!current) return false;
-  const desired = new Set(uniqueBackendIds(desiredBackendIds));
-  return current.loadingBackendIds.some((harnessId) => desired.has(harnessId));
+  const desired = new Set(uniqueHarnessIds(desiredHarnessIds));
+  return current.loadingHarnessIds.some((harnessId) => desired.has(harnessId));
 }
 
 export function isProjectHydrationComplete(
   current: ProjectHydrationState | undefined,
-  desiredBackendIds: readonly HarnessId[],
+  desiredHarnessIds: readonly HarnessId[],
 ) {
-  const desired = uniqueBackendIds(desiredBackendIds);
+  const desired = uniqueHarnessIds(desiredHarnessIds);
   if (desired.length === 0) return true;
   if (!current) return false;
-  const settled = new Set<HarnessId>([...current.completedBackendIds, ...current.failedBackendIds]);
+  const settled = new Set<HarnessId>([...current.completedHarnessIds, ...current.failedHarnessIds]);
   return desired.every((harnessId) => settled.has(harnessId));
 }
 
 export function buildBootstrapHydrationTasks<T>(input: {
   items: readonly T[];
   harnessIds: readonly HarnessId[];
-  preferredBackendId?: HarnessId;
+  preferredHarnessId?: HarnessId;
 }): Array<BootstrapHydrationTask<T>> {
-  const baseBackendIds = uniqueBackendIds(input.harnessIds);
-  const orderedBackendIds = input.preferredBackendId
-    ? uniqueBackendIds([input.preferredBackendId, ...baseBackendIds])
-    : baseBackendIds;
+  const baseHarnessIds = uniqueHarnessIds(input.harnessIds);
+  const orderedHarnessIds = input.preferredHarnessId
+    ? uniqueHarnessIds([input.preferredHarnessId, ...baseHarnessIds])
+    : baseHarnessIds;
   const queues = input.items.map((item, index) => ({
     item,
-    harnessIds: rotateBackendIds(orderedBackendIds, index),
+    harnessIds: rotateHarnessIds(orderedHarnessIds, index),
   }));
   const tasks: Array<BootstrapHydrationTask<T>> = [];
 

@@ -58,6 +58,7 @@ import {
   persistWorktreeParents,
   type SessionColor,
 } from "@/hooks/agent-state-persistence";
+import { resolveWorkspacePresentation } from "@/hooks/workspace-presentation";
 import { initialAgentState } from "@/hooks/agent-initial-state";
 import {
   isModelAvailable,
@@ -79,7 +80,7 @@ import {
   shouldSnapshotProjectConnectionForRestart,
 } from "@/hooks/agent-project-connection";
 import {
-  getPendingProjectHydrationBackendIds,
+  getPendingProjectHydrationHarnessIds,
   hasProjectHydrationInFlight,
   runWithConcurrency,
   settleProjectHydration,
@@ -162,7 +163,7 @@ function InternalAgentProvider({
   const [state, dispatch] = useReducer(reducer, initialAgentState);
   const [workspaceStateReady, setWorkspaceStateReady] = useState(false);
   const shellWorkspacePolicy = useMemo(() => getShellWorkspacePolicy(), []);
-  const [preferredBackendId, setPreferredBackendId] = useState<HarnessId>(() => {
+  const [preferredHarnessId, setPreferredHarnessId] = useState<HarnessId>(() => {
     const stored = storageGet(STORAGE_KEYS.HARNESS);
     return HARNESS_IDS.includes(stored as ActiveHarnessId)
       ? (stored as ActiveHarnessId)
@@ -170,22 +171,22 @@ function InternalAgentProvider({
   });
 
   const openGuiClient = useOpenGuiClient();
-  const allBackends = useMemo(() => openGuiClient.harnesses.list(), [openGuiClient]);
+  const allHarnesses = useMemo(() => openGuiClient.harnesses.list(), [openGuiClient]);
   const backendsById = useMemo(
     () =>
       Object.fromEntries(
-        allBackends.map((backend) => [backend.id as HarnessId, backend]),
-      ) as Record<HarnessId, (typeof allBackends)[number]>,
-    [allBackends],
+        allHarnesses.map((backend) => [backend.id as HarnessId, backend]),
+      ) as Record<HarnessId, (typeof allHarnesses)[number]>,
+    [allHarnesses],
   );
   const activeSession = state.activeSessionId
     ? (state.sessions.find((session) => session.id === state.activeSessionId) ?? null)
     : null;
   const activeSessionHarnessRoute = resolveSessionHarnessRoute(activeSession);
-  const activeSessionBackendId = activeSessionHarnessRoute.harnessId;
-  const discoveryBackendIds = useMemo(
-    () => allBackends.map((backend) => backend.id as HarnessId),
-    [allBackends],
+  const activeSessionHarnessId = activeSessionHarnessRoute.harnessId;
+  const discoveryHarnessIds = useMemo(
+    () => allHarnesses.map((backend) => backend.id as HarnessId),
+    [allHarnesses],
   );
   const expectedDirectoriesRef = useRef<Set<string>>(new Set());
   const forcedSessionTitlesRef = useRef<Map<string, string>>(new Map());
@@ -221,7 +222,7 @@ function InternalAgentProvider({
     }
   }, []);
   const loadedResourceProjectKeyRef = useRef<string | null>(null);
-  const loadedResourceBackendIdRef = useRef<HarnessId | null>(null);
+  const loadedResourceHarnessIdRef = useRef<HarnessId | null>(null);
   const resourceLoadRequestRef = useRef(0);
   const resourceLoadInFlightKeyRef = useRef<string | null>(null);
   const projectHydrationRef = useRef<Record<string, ProjectHydrationState>>({});
@@ -242,7 +243,7 @@ function InternalAgentProvider({
   useEffect(() => {
     return onSettingsChange((change) => {
       if (change.key !== STORAGE_KEYS.HARNESS) return;
-      setPreferredBackendId(
+      setPreferredHarnessId(
         HARNESS_IDS.includes(change.value as ActiveHarnessId)
           ? (change.value as ActiveHarnessId)
           : DEFAULT_HARNESS_ID,
@@ -289,7 +290,7 @@ function InternalAgentProvider({
   }, [openGuiClient]);
 
   useBackendEventSubscription({
-    allBackendsCount: allBackends.length,
+    allHarnessesCount: allHarnesses.length,
     cleanupSessionRefs,
     dispatch,
     openGuiClient,
@@ -391,7 +392,7 @@ function InternalAgentProvider({
       const loadKey = `${harnessId}\u0000${projectKey}`;
       if (
         resourceLoadInFlightKeyRef.current === loadKey ||
-        (loadedResourceBackendIdRef.current === harnessId &&
+        (loadedResourceHarnessIdRef.current === harnessId &&
           loadedResourceProjectKeyRef.current === (targetDirectory ? projectKey : null))
       ) {
         return;
@@ -413,7 +414,7 @@ function InternalAgentProvider({
         if (requestId !== resourceLoadRequestRef.current) return;
 
         loadedResourceProjectKeyRef.current = targetDirectory ? projectKey : null;
-        loadedResourceBackendIdRef.current = harnessId;
+        loadedResourceHarnessIdRef.current = harnessId;
 
         const currentSelection = stateRef.current.selectedModel;
         const nextSelection = isModelAvailable(providersData.providers, currentSelection)
@@ -515,7 +516,7 @@ function InternalAgentProvider({
       const connection = createProjectConnectionDescriptor({ config, workspaceId });
       updateProjectHydration(projectKey, (current) => startProjectHydration(current, [harnessId]));
       try {
-        const connectResult = await openGuiClient.harnesses.connectProject({
+        const connectResult = await openGuiClient.harnesses.registerDirectory({
           config: connection.config,
           harnessIds: [harnessId],
         });
@@ -542,7 +543,7 @@ function InternalAgentProvider({
         // when a specific Harness is currently unhealthy/unavailable for new
         // work. Keep loading the session index after a failed connect and only
         // mark Harness hydration as failed after history has merged.
-        const sessionResults = await openGuiClient.harnesses.listProjectSessions({
+        const sessionResults = await openGuiClient.harnesses.listDirectorySessions({
           harnessIds: [harnessId],
           target: connection.target,
         });
@@ -585,7 +586,7 @@ function InternalAgentProvider({
         }
 
         try {
-          const statuses = await openGuiClient.harnesses.listProjectSessionStatuses({
+          const statuses = await openGuiClient.harnesses.listDirectorySessionStatuses({
             harnessIds: [harnessId],
             target: connection.target,
           });
@@ -599,7 +600,7 @@ function InternalAgentProvider({
 
         updateProjectHydration(projectKey, (current) =>
           settleProjectHydration(current, {
-            completedBackendIds: [harnessId],
+            completedHarnessIds: [harnessId],
           }),
         );
         return { harnessId, success: true as const };
@@ -629,7 +630,7 @@ function InternalAgentProvider({
         harnessIds?: HarnessId[];
       },
     ) => {
-      if (allBackends.length === 0 || !config.directory) return;
+      if (allHarnesses.length === 0 || !config.directory) return;
       const workspaceId =
         config.workspaceId ?? stateRef.current.activeWorkspaceId ?? LOCAL_WORKSPACE_ID;
       const connection = createProjectConnectionDescriptor({ config, workspaceId });
@@ -665,22 +666,22 @@ function InternalAgentProvider({
         },
       });
       const currentHydration = projectHydrationRef.current[projectKey];
-      const requestedBackendIds = options?.harnessIds?.length
+      const requestedHarnessIds = options?.harnessIds?.length
         ? options.harnessIds
-        : discoveryBackendIds;
-      const targetBackendIds = options?.harnessIds?.length
-        ? requestedBackendIds.filter((harnessId) => {
-            const completed = currentHydration?.completedBackendIds.includes(harnessId) ?? false;
-            const loading = currentHydration?.loadingBackendIds.includes(harnessId) ?? false;
+        : discoveryHarnessIds;
+      const targetHarnessIds = options?.harnessIds?.length
+        ? requestedHarnessIds.filter((harnessId) => {
+            const completed = currentHydration?.completedHarnessIds.includes(harnessId) ?? false;
+            const loading = currentHydration?.loadingHarnessIds.includes(harnessId) ?? false;
             return !completed && !loading;
           })
-        : getPendingProjectHydrationBackendIds(currentHydration, requestedBackendIds);
-      if (targetBackendIds.length === 0) {
+        : getPendingProjectHydrationHarnessIds(currentHydration, requestedHarnessIds);
+      if (targetHarnessIds.length === 0) {
         return;
       }
 
       const hydrationResults = await Promise.allSettled(
-        targetBackendIds.map(
+        targetHarnessIds.map(
           async (harnessId) =>
             await hydrateProjectBackend({
               config: connection.config,
@@ -703,7 +704,7 @@ function InternalAgentProvider({
       });
       if (
         successfulHydrations.length === 0 &&
-        targetBackendIds.length === discoveryBackendIds.length
+        targetHarnessIds.length === discoveryHarnessIds.length
       ) {
         expectedDirectoriesRef.current.delete(projectKey);
         const firstError = failedHydrations[0]?.error || "Connection failed";
@@ -771,7 +772,7 @@ function InternalAgentProvider({
         storageSetOrRemove(STORAGE_KEYS.USERNAME, connection.config.username);
       }
     },
-    [allBackends, discoveryBackendIds, hydrateProjectBackend],
+    [allHarnesses, discoveryHarnessIds, hydrateProjectBackend],
   );
 
   const ensureDirectoryConnection = useCallback(
@@ -788,21 +789,21 @@ function InternalAgentProvider({
       const workspaceId = workspace.id;
       const projectKey = makeProjectKey(workspaceId, normalizedDirectory);
       const status = stateRef.current.connections[projectKey];
-      const requestedBackendIds = options?.harnessIds?.length
+      const requestedHarnessIds = options?.harnessIds?.length
         ? options.harnessIds
-        : discoveryBackendIds;
+        : discoveryHarnessIds;
       const currentHydration = projectHydrationRef.current[projectKey];
-      const missingBackendIds = getPendingProjectHydrationBackendIds(
+      const missingHarnessIds = getPendingProjectHydrationHarnessIds(
         currentHydration,
-        requestedBackendIds,
+        requestedHarnessIds,
       );
-      const completedRequestedBackends = requestedBackendIds.every(
-        (harnessId) => currentHydration?.completedBackendIds.includes(harnessId) ?? false,
+      const completedRequestedBackends = requestedHarnessIds.every(
+        (harnessId) => currentHydration?.completedHarnessIds.includes(harnessId) ?? false,
       );
-      if (missingBackendIds.length === 0) {
+      if (missingHarnessIds.length === 0) {
         const hasInFlightHydration = hasProjectHydrationInFlight(
           currentHydration,
-          requestedBackendIds,
+          requestedHarnessIds,
         );
         if (
           hasInFlightHydration ||
@@ -821,28 +822,28 @@ function InternalAgentProvider({
           suppressError: true,
           hidden: options?.hidden,
           transient: options?.transient,
-          harnessIds: missingBackendIds.length > 0 ? missingBackendIds : requestedBackendIds,
+          harnessIds: missingHarnessIds.length > 0 ? missingHarnessIds : requestedHarnessIds,
         },
       );
 
       if (options?.harnessIds?.length) {
         const nextHydration = projectHydrationRef.current[projectKey];
-        const completedExplicitBackends = requestedBackendIds.every(
-          (harnessId) => nextHydration?.completedBackendIds.includes(harnessId) ?? false,
+        const completedExplicitBackends = requestedHarnessIds.every(
+          (harnessId) => nextHydration?.completedHarnessIds.includes(harnessId) ?? false,
         );
         const stillLoadingExplicitBackends = hasProjectHydrationInFlight(
           nextHydration,
-          requestedBackendIds,
+          requestedHarnessIds,
         );
         if (!completedExplicitBackends && !stillLoadingExplicitBackends) {
-          const firstError = requestedBackendIds
+          const firstError = requestedHarnessIds
             .map((harnessId) => nextHydration?.errors?.[harnessId])
             .find((value) => typeof value === "string" && value.length > 0);
           throw new Error(firstError || "Connection failed");
         }
       }
     },
-    [addProject, discoveryBackendIds],
+    [addProject, discoveryHarnessIds],
   );
 
   const restartHarnesses = useCallback(async () => {
@@ -887,15 +888,15 @@ function InternalAgentProvider({
         await addProject(createWorkspaceConnectionConfig({ workspace, directory }), {
           suppressError: true,
           hidden: stateRef.current.projectMeta[projectKey]?.hidden === true,
-          harnessIds: discoveryBackendIds,
+          harnessIds: discoveryHarnessIds,
         });
       }),
     );
-  }, [addProject, discoveryBackendIds, openGuiClient]);
+  }, [addProject, discoveryHarnessIds, openGuiClient]);
 
   const removeProject = useCallback(
     async (directory: string) => {
-      if (allBackends.length === 0) return;
+      if (allHarnesses.length === 0) return;
       const workspaceId = stateRef.current.activeWorkspaceId;
       const worktreeParentMap = getWorktreeParents();
       const { directoriesToRemove } = createProjectRemovalPlan({
@@ -923,7 +924,7 @@ function InternalAgentProvider({
         cleanupSessionRefs(removedSessionIds);
         expectedDirectoriesRef.current.delete(projectKey);
         clearProjectHydration(projectKey);
-        await openGuiClient.harnesses.disconnectProject({
+        await openGuiClient.harnesses.releaseDirectory({
           target: { directory: dir, workspaceId },
         });
         dispatch({
@@ -946,7 +947,7 @@ function InternalAgentProvider({
       }
     },
     [
-      allBackends,
+      allHarnesses,
       cleanupSessionRefs,
       clearProjectHydration,
       openGuiClient,
@@ -963,7 +964,7 @@ function InternalAgentProvider({
         baseUrl?: string;
         authToken?: string;
       }>,
-      harnessIds: HarnessId[] = discoveryBackendIds,
+      harnessIds: HarnessId[] = discoveryHarnessIds,
     ) => {
       const uniqueProjects = Array.from(
         new Map(
@@ -981,7 +982,7 @@ function InternalAgentProvider({
       if (uniqueProjects.length === 0 || harnessIds.length === 0) return;
 
       await runWithConcurrency(uniqueProjects, 4, async (project) => {
-        const results = await openGuiClient.harnesses.listProjectSessions({
+        const results = await openGuiClient.harnesses.listDirectorySessions({
           harnessIds: harnessIds,
           target: {
             directory: project.directory,
@@ -1004,7 +1005,7 @@ function InternalAgentProvider({
         }
       });
     },
-    [discoveryBackendIds, openGuiClient],
+    [discoveryHarnessIds, openGuiClient],
   );
 
   // --- Startup bootstrap: ensure local server, then auto-connect open projects ---
@@ -1016,7 +1017,7 @@ function InternalAgentProvider({
 
     const bootstrap = async () => {
       const localServerBackend =
-        allBackends.find((backend) => backend.capabilities.localServer) ?? null;
+        allHarnesses.find((backend) => backend.capabilities.localServer) ?? null;
       const localServerPlatform = localServerBackend?.platform;
       const shouldEnsureLocalServer =
         shellWorkspacePolicy.localWorkspaceMode === "desktop-local" &&
@@ -1111,7 +1112,7 @@ function InternalAgentProvider({
             },
           });
           updateProjectHydration(projectKey, (current) =>
-            settleProjectHydration(current, { completedBackendIds: discoveryBackendIds }),
+            settleProjectHydration(current, { completedHarnessIds: discoveryHarnessIds }),
           );
         }
 
@@ -1121,13 +1122,13 @@ function InternalAgentProvider({
         );
         if (activeWorkspaceProject) {
           void loadServerResources(
-            preferredBackendId,
+            preferredHarnessId,
             activeWorkspaceProject.directory,
             activeWorkspaceProject.workspaceId,
           );
         }
 
-        void loadSessionIndex(allProjectConfigs, discoveryBackendIds).catch(() => {
+        void loadSessionIndex(allProjectConfigs, discoveryHarnessIds).catch(() => {
           /* startup session index is best effort */
         });
       } catch {
@@ -1142,12 +1143,12 @@ function InternalAgentProvider({
       cancelled = true;
     };
   }, [
-    allBackends,
+    allHarnesses,
     detachedProject,
-    discoveryBackendIds,
+    discoveryHarnessIds,
     loadServerResources,
     loadSessionIndex,
-    preferredBackendId,
+    preferredHarnessId,
     updateProjectHydration,
     workspaceStateReady,
     shellWorkspacePolicy.localWorkspaceMode,
@@ -1161,12 +1162,12 @@ function InternalAgentProvider({
       type: "SET_ACTIVE_TARGET",
       payload: {
         directory: state.defaultChatDirectory,
-        harnessId: preferredBackendId,
+        harnessId: preferredHarnessId,
       },
     });
   }, [
     detachedProject,
-    preferredBackendId,
+    preferredHarnessId,
     state.activeSessionId,
     state.activeTargetDirectory,
     state.defaultChatDirectory,
@@ -1178,6 +1179,11 @@ function InternalAgentProvider({
       state.workspaces[0] ??
       null,
     [state.workspaces, state.activeWorkspaceId],
+  );
+
+  const workspacePresentation = useMemo(
+    () => resolveWorkspacePresentation(activeWorkspace),
+    [activeWorkspace],
   );
 
   const activeWorkspaceProjectSet = useMemo(() => {
@@ -1270,23 +1276,6 @@ function InternalAgentProvider({
     state.activeTargetDirectory,
   ]);
 
-  const workspaceConnection = useMemo(() => {
-    if (workspaceDirectory) {
-      const match = Object.entries(visibleWorkspaceConnections).find(
-        ([projectKey]) => parseProjectKey(projectKey).directory === workspaceDirectory,
-      );
-      return match?.[1] ?? null;
-    }
-    if (!activeWorkspace) return null;
-    return {
-      state: "idle",
-      serverUrl: activeWorkspace.serverUrl,
-      serverVersion: null,
-      error: null,
-      lastEventAt: null,
-    } satisfies ConnectionStatus;
-  }, [visibleWorkspaceConnections, workspaceDirectory, activeWorkspace]);
-
   const connectedDirectorySet = useMemo(
     () =>
       new Set(
@@ -1302,31 +1291,30 @@ function InternalAgentProvider({
   const activeHarnessScope = resolveActiveHarnessScope({
     activeSession,
     activeTargetDirectory: state.activeTargetDirectory,
-    activeTargetBackendId: state.activeTargetBackendId,
+    activeTargetHarnessId: state.activeTargetHarnessId,
     workspaceDirectory,
-    preferredBackendId,
+    preferredHarnessId,
     backendsById,
     openGuiClient,
   });
-  const activeResourceBackendId = activeHarnessScope.harnessId;
+  const activeResourceHarnessId = activeHarnessScope.harnessId;
   const activeResourceDirectory = activeHarnessScope.directory;
   const resourceHarness = activeHarnessScope.harness;
-  const connectionProfile = activeHarnessScope.connectionProfile;
   const runtime = activeHarnessScope.runtime;
   useEffect(() => {
-    if (!state.activeTargetBackendId) return;
-    if (backendsById[state.activeTargetBackendId]) return;
-    if (!activeResourceDirectory || !backendsById[preferredBackendId]) return;
+    if (!state.activeTargetHarnessId) return;
+    if (backendsById[state.activeTargetHarnessId]) return;
+    if (!activeResourceDirectory || !backendsById[preferredHarnessId]) return;
     dispatch({
       type: "SET_ACTIVE_TARGET",
-      payload: { directory: activeResourceDirectory, harnessId: preferredBackendId },
+      payload: { directory: activeResourceDirectory, harnessId: preferredHarnessId },
     });
   }, [
     activeResourceDirectory,
     backendsById,
     dispatch,
-    preferredBackendId,
-    state.activeTargetBackendId,
+    preferredHarnessId,
+    state.activeTargetHarnessId,
   ]);
   useEffect(() => {
     if (!resourceHarness || !activeResourceDirectory) return;
@@ -1337,7 +1325,7 @@ function InternalAgentProvider({
     const cached = activeWorkspaceId ? state.workspaceResources[activeWorkspaceId] : undefined;
     if (
       activeWorkspaceId &&
-      cached?.loadedBackendId === activeResourceBackendId &&
+      cached?.loadedHarnessId === activeResourceHarnessId &&
       cached.loadedProjectKey === activeProjectKey
     ) {
       dispatch({
@@ -1347,14 +1335,14 @@ function InternalAgentProvider({
       return;
     }
     if (
-      loadedResourceBackendIdRef.current === activeResourceBackendId &&
+      loadedResourceHarnessIdRef.current === activeResourceHarnessId &&
       loadedResourceProjectKeyRef.current === activeProjectKey
     )
       return;
-    void loadServerResources(activeResourceBackendId, activeResourceDirectory, activeWorkspace?.id);
+    void loadServerResources(activeResourceHarnessId, activeResourceDirectory, activeWorkspace?.id);
   }, [
     resourceHarness,
-    activeResourceBackendId,
+    activeResourceHarnessId,
     activeResourceDirectory,
     activeWorkspace?.id,
     loadServerResources,
@@ -1363,11 +1351,11 @@ function InternalAgentProvider({
   ]);
 
   const openDirectory = useCallback(async (): Promise<string | null> => {
-    if (!(connectionProfile?.kind === "local-cli" || activeWorkspace?.isLocal)) {
+    if (!workspacePresentation.supportsNativeDirectoryPicker) {
       return null;
     }
     return await openGuiClient.desktop.openDirectory();
-  }, [connectionProfile?.kind, activeWorkspace?.isLocal, openGuiClient]);
+  }, [workspacePresentation.supportsNativeDirectoryPicker, openGuiClient]);
 
   const connectToProject = useCallback(
     async (
@@ -1388,7 +1376,7 @@ function InternalAgentProvider({
       const password = passwordOverride ?? workspace.password ?? undefined;
       const authToken = workspace.authToken ?? undefined;
       const workspaceId = workspace.id;
-      const localServerApi = backendsById[preferredBackendId]?.platform?.server;
+      const localServerApi = backendsById[preferredHarnessId]?.platform?.server;
       if (
         workspace.isLocal &&
         localServerApi &&
@@ -1470,7 +1458,7 @@ function InternalAgentProvider({
         storageSet(STORAGE_KEYS.SERVER_URL, url);
       }
     },
-    [addProject, backendsById, preferredBackendId, connectedDirectorySet, loadSessionIndex],
+    [addProject, backendsById, preferredHarnessId, connectedDirectorySet, loadSessionIndex],
   );
 
   // Single ref to avoid stale closures and prevent unnecessary callback recreation
@@ -1620,7 +1608,7 @@ function InternalAgentProvider({
         const session = stateRef.current.sessions.find((item) => item.id === sessionId);
         const harnessId = resolveSessionHarnessRoute(session).harnessId;
         if (!harnessId || !projectTarget?.directory) return;
-        const statuses = await openGuiClient.harnesses.listProjectSessionStatuses({
+        const statuses = await openGuiClient.harnesses.listDirectorySessionStatuses({
           harnessIds: [harnessId],
           target: projectTarget,
         });
@@ -1708,9 +1696,16 @@ function InternalAgentProvider({
   }, []);
 
   const loadOlderMessages = useCallback(async (): Promise<boolean> => {
+    const sessionId = stateRef.current.activeSessionId;
+    const session = sessionId
+      ? stateRef.current.sessions.find((candidate) => candidate.id === sessionId)
+      : undefined;
+    const projectTarget = session
+      ? (getSessionProjectTarget(session, stateRef.current.sessionMeta[session.id]) ?? undefined)
+      : undefined;
     return await loadOlderSessionMessages({
       state: stateRef.current,
-      fetchMessagePage,
+      fetchMessagePage: (id, options) => fetchMessagePage(id, options, projectTarget),
       dispatch,
     });
   }, [fetchMessagePage]);
@@ -1721,7 +1716,7 @@ function InternalAgentProvider({
         title,
         directory,
         state: {
-          activeTargetBackendId: stateRef.current.activeTargetBackendId,
+          activeTargetHarnessId: stateRef.current.activeTargetHarnessId,
           sessions: stateRef.current.sessions,
           activeSessionId: stateRef.current.activeSessionId,
           activeWorkspaceId: stateRef.current.activeWorkspaceId,
@@ -1729,7 +1724,7 @@ function InternalAgentProvider({
             (workspace) => workspace.id === stateRef.current.activeWorkspaceId,
           )?.serverUrl,
         },
-        preferredBackendId,
+        preferredHarnessId,
         ensureDirectoryConnection,
         sessionsClient: openGuiClient.sessions,
         isChatDirectory,
@@ -1737,7 +1732,7 @@ function InternalAgentProvider({
         dispatch,
       });
     },
-    [openGuiClient, preferredBackendId, selectSession, ensureDirectoryConnection, isChatDirectory],
+    [openGuiClient, preferredHarnessId, selectSession, ensureDirectoryConnection, isChatDirectory],
   );
 
   const deleteSession = useCallback(
@@ -1951,10 +1946,10 @@ function InternalAgentProvider({
         directory,
         harnessId:
           harnessId ??
-          activeSessionBackendId ??
+          activeSessionHarnessId ??
           resolvePendingPromptCreationHarnessRoute({
-            activeTargetBackendId: stateRef.current.activeTargetBackendId,
-            preferredBackendId,
+            activeTargetHarnessId: stateRef.current.activeTargetHarnessId,
+            preferredHarnessId,
           }).harnessId,
       };
 
@@ -1976,7 +1971,7 @@ function InternalAgentProvider({
 
       dispatch({ type: "SET_ACTIVE_TARGET", payload });
     },
-    [activeSessionBackendId, preferredBackendId],
+    [activeSessionHarnessId, preferredHarnessId],
   );
 
   const startNewChat = useCallback(async () => {
@@ -1985,20 +1980,20 @@ function InternalAgentProvider({
     // Opening a blank chat should not touch the filesystem. The project connection is
     // created lazily when the user sends a prompt or explicitly connects a project,
     // which avoids unnecessary macOS Documents/Desktop permission prompts.
-    setActiveTarget(defaultChatDirectory, preferredBackendId, { newChat: true });
-  }, [preferredBackendId, setActiveTarget]);
+    setActiveTarget(defaultChatDirectory, preferredHarnessId, { newChat: true });
+  }, [preferredHarnessId, setActiveTarget]);
 
   const setActiveTargetDirectory = useCallback(
     (directory: string) => {
       const harnessId =
-        activeSessionBackendId ??
+        activeSessionHarnessId ??
         resolvePendingPromptCreationHarnessRoute({
-          activeTargetBackendId: stateRef.current.activeTargetBackendId,
-          preferredBackendId,
+          activeTargetHarnessId: stateRef.current.activeTargetHarnessId,
+          preferredHarnessId,
         }).harnessId;
       dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, harnessId } });
     },
-    [activeSessionBackendId, preferredBackendId],
+    [activeSessionHarnessId, preferredHarnessId],
   );
 
   const setActiveTargetBackend = useCallback((harnessId: HarnessId) => {
@@ -2010,14 +2005,14 @@ function InternalAgentProvider({
   /** Re-fetch providers from the server and update global state. */
   const refreshProviders = useCallback(async () => {
     await loadServerResources(
-      activeResourceBackendId,
+      activeResourceHarnessId,
       activeResourceDirectory ??
         (loadedResourceProjectKeyRef.current
           ? parseProjectKey(loadedResourceProjectKeyRef.current).directory
           : null),
       activeWorkspace?.id,
     );
-  }, [activeResourceBackendId, activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
+  }, [activeResourceHarnessId, activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
 
   const clearError = useCallback(() => {
     dispatch({ type: "SET_ERROR", payload: null });
@@ -2391,7 +2386,7 @@ function InternalAgentProvider({
       pendingPermissions: state.pendingPermissions,
       pendingQuestions: state.pendingQuestions,
       activeTargetDirectory: state.activeTargetDirectory,
-      activeTargetBackendId: state.activeTargetBackendId,
+      activeTargetHarnessId: state.activeTargetHarnessId,
       namingSessionIds: state.namingSessionIds,
       unreadSessionIds: state.unreadSessionIds,
       sessionDrafts: state.sessionDrafts,
@@ -2410,7 +2405,7 @@ function InternalAgentProvider({
       state.pendingPermissions,
       state.pendingQuestions,
       state.activeTargetDirectory,
-      state.activeTargetBackendId,
+      state.activeTargetHarnessId,
       state.namingSessionIds,
       state.unreadSessionIds,
       state.sessionDrafts,
@@ -2510,13 +2505,10 @@ function InternalAgentProvider({
       ),
       workspaceDirectory,
       defaultChatDirectory: state.defaultChatDirectory,
-      workspaceServerUrl: connectionProfile?.fields.serverUrl
-        ? (activeWorkspace?.serverUrl ?? workspaceConnection?.serverUrl ?? null)
-        : null,
-      isLocalWorkspace:
-        connectionProfile?.kind === "local-cli"
-          ? true
-          : (activeWorkspace?.isLocal ?? isLocalServer()),
+      workspaceServerUrl: workspacePresentation.activeBackendUrl,
+      isLocalWorkspace: workspacePresentation.isLocalWorkspace,
+      supportsNativeDirectoryPicker: workspacePresentation.supportsNativeDirectoryPicker,
+      attachmentBaseUrl: workspacePresentation.attachmentBaseUrl,
       activeDirectory: activeResourceDirectory,
       bootState: state.bootState,
       bootError: state.bootError,
@@ -2547,8 +2539,7 @@ function InternalAgentProvider({
       visibleWorkspaceConnections,
       workspaceDirectory,
       state.defaultChatDirectory,
-      workspaceConnection,
-      connectionProfile,
+      workspacePresentation,
       activeResourceDirectory,
       state.bootState,
       state.bootError,

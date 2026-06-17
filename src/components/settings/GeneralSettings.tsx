@@ -457,7 +457,7 @@ function TerminalSetting() {
 function DefaultChatDirectorySetting() {
   const { t } = useTranslation();
   const { setDefaultChatDirectory, openDirectory } = useActions();
-  const { defaultChatDirectory, isLocalWorkspace } = useConnectionState();
+  const { defaultChatDirectory, supportsNativeDirectoryPicker } = useConnectionState();
   const [value, setValue] = useState(defaultChatDirectory ?? "");
 
   useEffect(() => {
@@ -491,7 +491,7 @@ function DefaultChatDirectorySetting() {
           placeholder="/absolute/path/to/chats"
           className="font-mono text-sm"
         />
-        {isLocalWorkspace && (
+        {supportsNativeDirectoryPicker && (
           <Button
             type="button"
             variant="outline"

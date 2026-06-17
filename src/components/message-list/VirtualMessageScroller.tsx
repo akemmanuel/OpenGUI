@@ -92,6 +92,12 @@ export function getScrollSnapshotFlags(
   };
 }
 
+/** Instant pin: DOM bottom (includes trailing UI below the virtual spacer). */
+function pinScrollToBottom(scrollEl: HTMLElement) {
+  const maxTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+  if (scrollEl.scrollTop !== maxTop) scrollEl.scrollTop = maxTop;
+}
+
 export function VirtualMessageScroller({
   scrollKey,
   scrollSnapshotsRef,
@@ -141,8 +147,16 @@ export function VirtualMessageScroller({
       return sizeCacheRef.current.get(message.info.id) ?? estimateMessageSize(message);
     },
     overscan: isBusy ? OVERSCAN_BUSY : OVERSCAN_IDLE,
-    useAnimationFrameWithResizeObserver: true,
+    useAnimationFrameWithResizeObserver: false,
   });
+
+  const endProgrammaticScrollSoon = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        programmaticScrollRef.current = false;
+      });
+    });
+  }, []);
 
   const writeScrollSnapshot = useCallback(
     (sessionId: string) => {
@@ -176,6 +190,26 @@ export function VirtualMessageScroller({
       captureScrollSnapshot();
     });
   }, [captureScrollSnapshot]);
+
+  const setProgrammaticScrollTop = useCallback(
+    (scrollTop: number) => {
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return;
+      programmaticScrollRef.current = true;
+      scrollEl.scrollTop = Math.max(0, scrollTop);
+      endProgrammaticScrollSoon();
+    },
+    [endProgrammaticScrollSoon],
+  );
+
+  const maintainPinIfNeeded = useCallback(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl || !pinnedToBottomRef.current || messages.length === 0) return;
+    if (distanceFromBottom(scrollEl) <= 0.5) return;
+    programmaticScrollRef.current = true;
+    pinScrollToBottom(scrollEl);
+    endProgrammaticScrollSoon();
+  }, [endProgrammaticScrollSoon, messages.length]);
 
   const capturePaginationAnchor = useCallback(() => {
     const scrollEl = scrollRef.current;
@@ -223,25 +257,13 @@ export function VirtualMessageScroller({
     virtualizer,
   ]);
 
-  const setProgrammaticScrollTop = useCallback((scrollTop: number) => {
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
-    programmaticScrollRef.current = true;
-    scrollEl.scrollTop = Math.max(0, scrollTop);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        programmaticScrollRef.current = false;
-      });
-    });
-  }, []);
-
   const restorePaginationAnchor = useCallback(() => {
     const scrollEl = scrollRef.current;
     const anchor = paginationAnchorRef.current;
     if (!scrollEl || !anchor) return false;
     const index = keyIndex.get(anchor.key);
     if (index == null) return false;
-    virtualizer.scrollToIndex(index, { align: "start" });
+    virtualizer.scrollToIndex(index, { align: "start", behavior: "auto" });
     requestAnimationFrame(() => {
       const row = virtualizer.getVirtualItems().find((item) => String(item.key) === anchor.key);
       const nextStart = row?.start;
@@ -253,40 +275,29 @@ export function VirtualMessageScroller({
     return true;
   }, [keyIndex, setProgrammaticScrollTop, virtualizer]);
 
-  const scrollToLatest = useCallback(() => {
-    if (messages.length === 0) return;
-    pinnedToBottomRef.current = true;
-    programmaticScrollRef.current = true;
-    virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
-    requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      requestAnimationFrame(() => {
-        programmaticScrollRef.current = false;
-        captureScrollSnapshot();
-      });
-    });
-  }, [captureScrollSnapshot, messages.length, virtualizer]);
-
   const restoreScrollSnapshot = useCallback(
     (snapshot: ScrollSnapshot) => {
       const scrollEl = scrollRef.current;
       if (!scrollEl) return false;
 
       if (snapshot.pinnedToBottom) {
-        scrollToLatest();
+        pinnedToBottomRef.current = true;
+        programmaticScrollRef.current = true;
+        pinScrollToBottom(scrollEl);
+        endProgrammaticScrollSoon();
+        captureScrollSnapshot();
         return true;
       }
 
       if (snapshot.atTop) {
-        virtualizer.scrollToIndex(0, { align: "start" });
+        virtualizer.scrollToIndex(0, { align: "start", behavior: "auto" });
         setProgrammaticScrollTop(0);
         return true;
       }
 
       const index = snapshot.anchorKey ? keyIndex.get(snapshot.anchorKey) : undefined;
       if (index != null && snapshot.anchorKey) {
-        virtualizer.scrollToIndex(index, { align: "start" });
+        virtualizer.scrollToIndex(index, { align: "start", behavior: "auto" });
         let attempts = 0;
         const applyAnchor = () => {
           const row = virtualizer
@@ -305,15 +316,18 @@ export function VirtualMessageScroller({
         return true;
       }
 
-      const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-      const nextScrollTop = Math.min(
-        maxScrollTop,
-        Math.max(0, maxScrollTop - snapshot.distanceFromBottom),
-      );
+      const maxTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      const nextScrollTop = Math.min(maxTop, Math.max(0, maxTop - snapshot.distanceFromBottom));
       setProgrammaticScrollTop(Number.isFinite(nextScrollTop) ? nextScrollTop : snapshot.scrollTop);
       return true;
     },
-    [keyIndex, scrollToLatest, setProgrammaticScrollTop, virtualizer],
+    [
+      captureScrollSnapshot,
+      endProgrammaticScrollSoon,
+      keyIndex,
+      setProgrammaticScrollTop,
+      virtualizer,
+    ],
   );
 
   const detachFromBottom = useCallback((force = false) => {
@@ -392,25 +406,20 @@ export function VirtualMessageScroller({
       pinnedToBottomRef.current = snapshot.pinnedToBottom;
       restoreScrollSnapshot(snapshot);
     } else {
-      scrollToLatest();
+      pinnedToBottomRef.current = true;
+      maintainPinIfNeeded();
     }
 
     lastMessageKeyRef.current = keys.at(-1) ?? null;
     restoredScrollKeyRef.current = scrollKey;
-  }, [keys, messages.length, restoreScrollSnapshot, scrollKey, scrollSnapshotsRef, scrollToLatest]);
-
-  useLayoutEffect(() => {
-    const lastKey = keys.at(-1) ?? null;
-    const previousLastKey = lastMessageKeyRef.current;
-    lastMessageKeyRef.current = lastKey;
-    if (!lastKey) return;
-    if (scrollKey && restoredScrollKeyRef.current !== scrollKey) return;
-    if (previousLastKey === null || pinnedToBottomRef.current) {
-      scrollToLatest();
-      return;
-    }
-    captureScrollSnapshot();
-  }, [captureScrollSnapshot, keys, scrollKey, scrollToLatest]);
+  }, [
+    keys,
+    maintainPinIfNeeded,
+    messages.length,
+    restoreScrollSnapshot,
+    scrollKey,
+    scrollSnapshotsRef,
+  ]);
 
   const virtualItems = virtualizer.getVirtualItems();
   const firstVirtualIndex = virtualItems[0]?.index;
@@ -418,9 +427,18 @@ export function VirtualMessageScroller({
 
   useLayoutEffect(() => {
     if (!scrollKey || restoredScrollKeyRef.current !== scrollKey) return;
-    if (!pinnedToBottomRef.current) return;
-    scrollToLatest();
-  }, [scrollKey, scrollToLatest, totalSize]);
+
+    const lastKey = keys.at(-1) ?? null;
+    lastMessageKeyRef.current = lastKey;
+    if (!lastKey) return;
+
+    if (!pinnedToBottomRef.current) {
+      captureScrollSnapshot();
+      return;
+    }
+
+    maintainPinIfNeeded();
+  }, [captureScrollSnapshot, keys, maintainPinIfNeeded, scrollKey, totalSize]);
 
   useEffect(() => {
     maybeLoadOlder();
@@ -439,7 +457,7 @@ export function VirtualMessageScroller({
         detachFromBottom(true);
         requestAnimationFrame(maybeLoadOlder);
       }}
-      className="relative flex-1 overflow-auto px-4 py-4"
+      className="relative flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 [overflow-anchor:none]"
     >
       <div className="max-w-[640px] mx-auto">
         {isLoadingOlder && (
@@ -447,7 +465,7 @@ export function VirtualMessageScroller({
             <Spinner className="size-4 text-muted-foreground" />
           </div>
         )}
-        <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        <div className="relative w-full" style={{ height: totalSize }}>
           {virtualItems.map((virtualItem) => {
             const message = messages[virtualItem.index];
             if (!message) return null;

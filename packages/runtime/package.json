@@ -1,0 +1,16 @@
+{
+  "name": "@opengui/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "In-process OpenGUI Runtime: Harness adapters, events, and Agent sends (SDK v1)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

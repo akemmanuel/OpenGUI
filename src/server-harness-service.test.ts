@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { HarnessService } from "../server/services/harness-service.ts";
+import { HarnessService } from "@opengui/runtime";
 import type { SessionRecord } from "../server/services/session-types.ts";
 
 describe("HarnessService.respondPermission", () => {
@@ -14,7 +14,7 @@ describe("HarnessService.respondPermission", () => {
     const session: SessionRecord = {
       id: "session-1",
       rawId: "raw-session-1",
-      projectId: "project-1",
+      directory: "project-1",
       harnessId: "opencode",
       title: "Work",
       status: "running",

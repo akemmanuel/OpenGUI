@@ -2,7 +2,7 @@ import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { HarnessId } from "@/agents";
 import {
   buildBootstrapHydrationTasks,
-  getPendingProjectHydrationBackendIds,
+  getPendingProjectHydrationHarnessIds,
   hasProjectHydrationInFlight,
   isProjectHydrationComplete,
   runWithConcurrency,
@@ -13,22 +13,22 @@ import {
 describe("project hydration state", () => {
   test("tracks pending, loading, completed, and failed backends", () => {
     const started = startProjectHydration(undefined, ["opencode", "pi"], 10);
-    expect(started.loadingBackendIds.sort()).toEqual(["opencode", "pi"]);
-    expect(getPendingProjectHydrationBackendIds(started, ["opencode", "pi", "codex"])).toEqual([
+    expect(started.loadingHarnessIds.sort()).toEqual(["opencode", "pi"]);
+    expect(getPendingProjectHydrationHarnessIds(started, ["opencode", "pi", "codex"])).toEqual([
       "codex",
     ]);
     expect(hasProjectHydrationInFlight(started, ["opencode"])).toBe(true);
     expect(isProjectHydrationComplete(started, ["opencode", "pi"])).toBe(false);
 
     const settled = settleProjectHydration(started, {
-      completedBackendIds: ["opencode"],
+      completedHarnessIds: ["opencode"],
       failedBackends: { pi: "offline" },
       now: 20,
     });
 
-    expect(settled.loadingBackendIds).toEqual([]);
-    expect(settled.completedBackendIds).toEqual(["opencode"]);
-    expect(settled.failedBackendIds).toEqual(["pi"]);
+    expect(settled.loadingHarnessIds).toEqual([]);
+    expect(settled.completedHarnessIds).toEqual(["opencode"]);
+    expect(settled.failedHarnessIds).toEqual(["pi"]);
     expect(settled.errors.pi).toBe("offline");
     expect(isProjectHydrationComplete(settled, ["opencode", "pi"])).toBe(true);
     expect(hasProjectHydrationInFlight(settled, ["opencode", "pi"])).toBe(false);
@@ -42,8 +42,8 @@ describe("project hydration state", () => {
 
     const retried = startProjectHydration(failed, ["codex"], 10);
 
-    expect(retried.loadingBackendIds).toEqual(["codex"]);
-    expect(retried.failedBackendIds).toEqual([]);
+    expect(retried.loadingHarnessIds).toEqual(["codex"]);
+    expect(retried.failedHarnessIds).toEqual([]);
     expect(retried.errors.codex).toBeUndefined();
   });
 });
@@ -56,7 +56,7 @@ describe("buildBootstrapHydrationTasks", () => {
     const tasks = buildBootstrapHydrationTasks({
       items,
       harnessIds,
-      preferredBackendId: "opencode",
+      preferredHarnessId: "opencode",
     });
 
     expect(tasks.slice(0, 4).map((task) => task.harnessId)).toEqual([

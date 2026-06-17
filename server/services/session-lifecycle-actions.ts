@@ -1,23 +1,24 @@
 import type { HarnessId } from "../../src/agents/index.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
-import type { BackendServiceContext, ProjectRecord, SessionRecord } from "./index.ts";
+import type { DirectoryScopeRef } from "@opengui/runtime";
+import type { BackendServiceContext, SessionRecord } from "./index.ts";
 import { buildHarnessScope } from "./harness-scope.ts";
 import { ensureSessionFromRuntime } from "./runtime-session-mapper.ts";
 
 export async function createSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   harnessId: HarnessId;
   title?: string;
 }): Promise<SessionRecord> {
   const runtimeSession = await input.services.harnesses.createSession({
-    scope: buildHarnessScope({ project: input.project, harnessId: input.harnessId }),
+    scope: buildHarnessScope({ scopeRef: input.scopeRef, harnessId: input.harnessId }),
     title: input.title,
   });
   return await ensureSessionFromRuntime({
     sessions: input.services.sessions,
     runtimeSession,
-    projectId: input.project.id,
+    directory: input.scopeRef.id,
     harnessId: input.harnessId,
   });
 }
@@ -31,7 +32,6 @@ export async function createDirectorySessionThroughHarness(input: {
 }): Promise<SessionRecord> {
   const runtimeSession = await input.services.harnesses.createSession({
     scope: {
-      projectId: input.canonicalPath,
       harnessId: input.harnessId,
       directory: input.canonicalPath,
     },
@@ -40,71 +40,67 @@ export async function createDirectorySessionThroughHarness(input: {
   return await ensureSessionFromRuntime({
     sessions: input.services.sessions,
     runtimeSession,
-    projectId: input.canonicalPath,
+    directory: input.canonicalPath,
     harnessId: input.harnessId,
+  });
+}
+
+function scopeForSession(scopeRef: DirectoryScopeRef, session: SessionRecord) {
+  return buildHarnessScope({
+    scopeRef,
+    harnessId: session.harnessId,
+    sessionId: session.id,
   });
 }
 
 export async function renameSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   title: string;
 }): Promise<SessionRecord> {
   const runtimeSession = await input.services.harnesses.updateSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     title: input.title,
   });
   return await ensureSessionFromRuntime({
     sessions: input.services.sessions,
     runtimeSession,
-    projectId: input.session.projectId,
+    directory: input.session.directory,
     harnessId: input.session.harnessId,
   });
 }
 
 export async function forkSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   messageId?: string;
 }): Promise<SessionRecord> {
   const runtimeSession = await input.services.harnesses.forkSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     messageId: input.messageId,
   });
   return await ensureSessionFromRuntime({
     sessions: input.services.sessions,
     runtimeSession,
-    projectId: input.session.projectId,
+    directory: input.session.directory,
     harnessId: input.session.harnessId,
   });
 }
 
 export async function revertSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   messageId: string;
   partId?: string;
 }): Promise<SessionRecord | null> {
   const runtimeSession = await input.services.harnesses.revertSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     messageId: input.messageId,
     partId: input.partId,
   });
@@ -114,23 +110,19 @@ export async function revertSessionThroughHarness(input: {
   return await ensureSessionFromRuntime({
     sessions: input.services.sessions,
     runtimeSession,
-    projectId: input.session.projectId,
+    directory: input.session.directory,
     harnessId: input.session.harnessId,
   });
 }
 
 export async function unrevertSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
 }): Promise<SessionRecord | null> {
   const runtimeSession = await input.services.harnesses.unrevertSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
   });
   if (!runtimeSession || typeof runtimeSession !== "object" || Array.isArray(runtimeSession)) {
     return null;
@@ -138,31 +130,27 @@ export async function unrevertSessionThroughHarness(input: {
   return await ensureSessionFromRuntime({
     sessions: input.services.sessions,
     runtimeSession,
-    projectId: input.session.projectId,
+    directory: input.session.directory,
     harnessId: input.session.harnessId,
   });
 }
 
 export async function listSessionMessagesThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   options: { limit?: number; before?: string | null };
 }): Promise<unknown> {
   return await input.services.harnesses.listMessages({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     options: input.options,
   });
 }
 
 export async function promptSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   text: string;
   model?: SelectedModel;
@@ -171,11 +159,7 @@ export async function promptSessionThroughHarness(input: {
 }): Promise<void> {
   await input.services.harnesses.promptSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     text: input.text,
     model: input.model,
     agent: input.agent,
@@ -185,7 +169,7 @@ export async function promptSessionThroughHarness(input: {
 
 export async function sendCommandThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   command: string;
   args: string;
@@ -195,11 +179,7 @@ export async function sendCommandThroughHarness(input: {
 }): Promise<void> {
   await input.services.harnesses.sendCommand({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     command: input.command,
     args: input.args,
     model: input.model,
@@ -210,48 +190,36 @@ export async function sendCommandThroughHarness(input: {
 
 export async function compactSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
   model?: SelectedModel;
 }): Promise<void> {
   await input.services.harnesses.compactSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
     model: input.model,
   });
 }
 
 export async function deleteSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
 }): Promise<void> {
   await input.services.harnesses.deleteSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
   });
   await input.services.sessions.deleteSession(input.session.id);
 }
 
 export async function abortSessionThroughHarness(input: {
   services: BackendServiceContext;
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   session: SessionRecord;
 }): Promise<void> {
   await input.services.harnesses.abortSession({
     session: input.session,
-    scope: buildHarnessScope({
-      project: input.project,
-      harnessId: input.session.harnessId,
-      sessionId: input.session.id,
-    }),
+    scope: scopeForSession(input.scopeRef, input.session),
   });
 }

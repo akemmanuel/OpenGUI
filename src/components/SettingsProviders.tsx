@@ -12,7 +12,7 @@ import { HARNESS_LABELS } from "@/agents";
 import { Plus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { notifyUnknownError } from "@/lib/notify";
 import { DialogConnectProvider } from "@/components/DialogConnectProvider";
 import { DialogCustomProvider } from "@/components/DialogCustomProvider";
 import { DialogSelectProvider } from "@/components/DialogSelectProvider";
@@ -26,7 +26,7 @@ import { useHarness, useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
 import { useOpenGuiClient } from "@/protocol/provider";
 import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
-import { cn, getErrorMessage } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
 
 // ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ export function SettingsProviders() {
       await refresh();
       await refreshProviders();
     } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to disconnect"));
+      notifyUnknownError(err, "Failed to disconnect");
     } finally {
       setDisconnecting(null);
     }

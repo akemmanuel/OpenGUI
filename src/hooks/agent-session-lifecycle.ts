@@ -204,7 +204,7 @@ export async function createLifecycleSession({
   title,
   directory,
   state,
-  preferredBackendId,
+  preferredHarnessId,
   ensureDirectoryConnection,
   sessionsClient,
   isChatDirectory,
@@ -214,13 +214,13 @@ export async function createLifecycleSession({
   title?: string;
   directory?: string;
   state: {
-    activeTargetBackendId: HarnessId | null;
+    activeTargetHarnessId: HarnessId | null;
     sessions: Session[];
     activeSessionId: string | null;
     activeWorkspaceId: string;
     activeWorkspaceServerUrl?: string;
   };
-  preferredBackendId: HarnessId;
+  preferredHarnessId: HarnessId;
   ensureDirectoryConnection: (
     directory: string,
     options?: { harnessIds?: HarnessId[] },
@@ -234,8 +234,8 @@ export async function createLifecycleSession({
   dispatch: (action: LifecycleAction) => void;
 }): Promise<Session | null> {
   const harnessId = resolvePendingPromptCreationHarnessRoute({
-    activeTargetBackendId: state.activeTargetBackendId,
-    preferredBackendId,
+    activeTargetHarnessId: state.activeTargetHarnessId,
+    preferredHarnessId,
   }).harnessId;
 
   try {

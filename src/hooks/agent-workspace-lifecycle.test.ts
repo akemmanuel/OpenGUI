@@ -240,7 +240,7 @@ describe("removeLifecycleWorkspace", () => {
         activeWorkspaceId: "workspace-1",
         hasBackends: true,
       },
-      disconnectProject: async (input) => {
+      releaseDirectory: async (input) => {
         disconnects.push(input);
       },
       selectSession: async (sessionId) => {

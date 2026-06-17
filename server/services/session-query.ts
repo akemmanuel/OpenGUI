@@ -1,9 +1,7 @@
 import type { HarnessId } from "../../src/agents/index.ts";
 import type { BackendServiceContext } from "./index.ts";
 import { runJobsWithConcurrency } from "./concurrency.ts";
-import { listSessionRecords } from "./session-record-actions.ts";
-import { syncDirectorySessions, syncProjectSessions } from "./session-sync.ts";
-import { getProjectRecordOrThrow } from "./project-record-actions.ts";
+import { listDirectorySessionsFromHarness } from "./session-harness-list.ts";
 
 export interface ResolvedSessionQueryProject {
   directory: string;
@@ -24,24 +22,21 @@ export async function querySessionsForResolvedProjects(input: {
   services: BackendServiceContext;
   projects: ResolvedSessionQueryProject[];
   harnessIds: HarnessId[];
-  sync: boolean;
 }) {
   const sessionJobs = input.projects.flatMap(({ directory, canonicalPath }) =>
     input.harnessIds.map((harnessId) => async () => {
       try {
-        const page = input.sync
-          ? await syncDirectorySessions(input.services, { directory, canonicalPath }, harnessId)
-          : await listSessionRecords({
-              services: input.services,
-              projectId: canonicalPath,
-              harnessId,
-            });
+        const sessions = await listDirectorySessionsFromHarness(
+          input.services,
+          { directory, canonicalPath },
+          harnessId,
+        );
         return {
           ok: true as const,
           item: {
             directory,
             harnessId,
-            sessions: page.sessions,
+            sessions,
           },
         };
       } catch (error) {
@@ -113,32 +108,24 @@ export async function querySessionsFromFrontendProjects(input: {
     services: input.services,
     projects,
     harnessIds,
-    sync: input.body.sync === true,
   });
   return { items: queried.items, errors: [...errors, ...queried.errors] };
 }
 
 export async function listSessionsForRequest(input: {
   services: BackendServiceContext;
-  projectId?: string;
+  directory?: string;
   harnessId?: HarnessId;
-  sync: boolean;
-  cursor?: string | null;
-  limit?: number;
+  resolveDirectory: (directory: string) => Promise<{ directory: string; canonicalPath: string }>;
 }) {
-  if (input.projectId && input.harnessId && input.sync) {
-    return await syncProjectSessions(
-      input.services,
-      await getProjectRecordOrThrow({ services: input.services, projectId: input.projectId }),
-      input.harnessId,
-    );
-  }
-
-  return await listSessionRecords({
-    services: input.services,
-    projectId: input.projectId,
-    harnessId: input.harnessId,
-    cursor: input.cursor,
-    limit: input.limit,
-  });
+  const directory = input.directory?.trim();
+  if (!directory) throw new Error("directory is required");
+  if (!input.harnessId) throw new Error("harnessId is required");
+  const resolved = await input.resolveDirectory(directory);
+  const sessions = await listDirectorySessionsFromHarness(
+    input.services,
+    resolved,
+    input.harnessId,
+  );
+  return { sessions, nextCursor: null as string | null };
 }

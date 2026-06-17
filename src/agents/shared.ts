@@ -3,7 +3,7 @@ import type { NativeBackendEvent } from "@/types/electron";
 import type { HarnessEvent, HarnessTarget } from "./backend.ts";
 import type { HarnessId } from "./index.ts";
 import { normalizeProjectPath } from "../lib/path.ts";
-import { createBackendIdCodec } from "./id-codec.ts";
+import { createHarnessIdCodec } from "./id-codec.ts";
 
 type BridgeResult<T> =
   | { success: true; data?: T }
@@ -18,14 +18,14 @@ type SessionTags = {
 };
 
 export type TaggedSession = Session & SessionTags;
-type BackendEventTarget = { directory?: string; workspaceId?: string };
+type HarnessEventTarget = { directory?: string; workspaceId?: string };
 
 export function requireSuccess<T>(result: BridgeResult<T>, fallback: string): T {
   if (result.success) return result.data as T;
   throw new Error(result.error ?? fallback);
 }
 
-export { createBackendIdCodec } from "./id-codec.ts";
+export { createHarnessIdCodec } from "./id-codec.ts";
 
 export function getTarget(target?: HarnessTarget) {
   return {
@@ -43,7 +43,7 @@ function resolveTaggedSessionRawId(session: TaggedSession): string | null {
   return null;
 }
 
-export function tagBackendSession(
+export function tagHarnessSession(
   harnessId: HarnessId,
   session: TaggedSession,
   target?: { directory?: string; workspaceId?: string },
@@ -53,7 +53,7 @@ export function tagBackendSession(
   const projectDir = session.directory ?? session._projectDir ?? target?.directory;
   return {
     ...session,
-    id: createBackendIdCodec(harnessId).compose(rawId),
+    id: createHarnessIdCodec(harnessId).compose(rawId),
     _projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
     _workspaceId:
       target?.workspaceId ??
@@ -66,11 +66,14 @@ export function tagBackendSession(
   };
 }
 
+/** @deprecated Use tagHarnessSession */
+export const tagBackendSession = tagHarnessSession;
+
 export function normalizeMessageSessionId(harnessId: HarnessId, message: Message): Message {
   if (typeof message.sessionID !== "string" || message.sessionID.length === 0) return message;
   return {
     ...message,
-    sessionID: createBackendIdCodec(harnessId).compose(message.sessionID),
+    sessionID: createHarnessIdCodec(harnessId).compose(message.sessionID),
   };
 }
 
@@ -78,7 +81,7 @@ export function normalizePartSessionId(harnessId: HarnessId, part: Part): Part {
   return "sessionID" in part && typeof part.sessionID === "string"
     ? ({
         ...part,
-        sessionID: createBackendIdCodec(harnessId).compose(part.sessionID),
+        sessionID: createHarnessIdCodec(harnessId).compose(part.sessionID),
       } as Part)
     : part;
 }
@@ -93,7 +96,7 @@ function normalizeBridgeConnectionStatus(event: NativeBackendEvent): HarnessEven
   };
 }
 
-export function normalizeTaggedBackendEvent(
+export function normalizeTaggedHarnessEvent(
   harnessId: HarnessId,
   event: NativeBackendEvent,
   nativeEventType: string,
@@ -105,9 +108,9 @@ export function normalizeTaggedBackendEvent(
   const payload = (event.payload ?? null) as HarnessEvent | null;
   if (!payload) return null;
 
-  const codec = createBackendIdCodec(harnessId);
-  const tagSession = (session: TaggedSession, target: BackendEventTarget) =>
-    tagBackendSession(harnessId, session, target);
+  const codec = createHarnessIdCodec(harnessId);
+  const tagSession = (session: TaggedSession, target: HarnessEventTarget) =>
+    tagHarnessSession(harnessId, session, target);
 
   switch (payload.type) {
     case "session.created":
@@ -132,12 +135,15 @@ export function normalizeTaggedBackendEvent(
     case "session.deleted":
       return { ...payload, sessionId: codec.compose(payload.sessionId) };
     default:
-      return normalizeBackendEventPayload(harnessId, payload);
+      return normalizeHarnessEventPayload(harnessId, payload);
   }
 }
 
-function normalizeBackendEventPayload(harnessId: HarnessId, payload: HarnessEvent): HarnessEvent {
-  const codec = createBackendIdCodec(harnessId);
+/** @deprecated Use normalizeTaggedHarnessEvent */
+export const normalizeTaggedBackendEvent = normalizeTaggedHarnessEvent;
+
+function normalizeHarnessEventPayload(harnessId: HarnessId, payload: HarnessEvent): HarnessEvent {
+  const codec = createHarnessIdCodec(harnessId);
   switch (payload.type) {
     case "message.updated":
       return {

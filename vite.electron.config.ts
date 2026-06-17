@@ -127,7 +127,7 @@ export default defineConfig({
         });
 
         await buildWithEsbuild({
-          entryPoints: ["pi-daemon-server.ts"],
+          entryPoints: ["packages/runtime/src/adapters/pi-daemon-server.ts"],
           outfile: "dist-electron/pi-daemon-server.js",
           bundle: true,
           platform: "node",

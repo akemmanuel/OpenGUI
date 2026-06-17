@@ -27,14 +27,14 @@ type BackendEventTracking = {
 };
 
 export function useBackendEventSubscription(input: {
-  allBackendsCount: number;
+  allHarnessesCount: number;
   cleanupSessionRefs: (sessionIds?: Iterable<string>) => void;
   dispatch: Dispatch<Action>;
   openGuiClient: OpenGuiClient;
   tracking: BackendEventTracking;
   workspaces: InternalAgentState["workspaces"];
 }) {
-  const { allBackendsCount, cleanupSessionRefs, dispatch, openGuiClient, tracking, workspaces } =
+  const { allHarnessesCount, cleanupSessionRefs, dispatch, openGuiClient, tracking, workspaces } =
     input;
   const seenBackendEventIdsRef = useRef<string[]>([]);
   const seenBackendEventIdSetRef = useRef(new Set<string>());
@@ -98,7 +98,7 @@ export function useBackendEventSubscription(input: {
   }, [workspaces]);
 
   useEffect(() => {
-    if (allBackendsCount === 0) return;
+    if (allHarnessesCount === 0) return;
     const unsubscribers = [openGuiClient.harnesses.subscribe(handleBackendEvent)];
     for (const remote of remoteWorkspaceEventSources) {
       unsubscribers.push(
@@ -111,5 +111,5 @@ export function useBackendEventSubscription(input: {
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [allBackendsCount, handleBackendEvent, openGuiClient, remoteWorkspaceEventSources]);
+  }, [allHarnessesCount, handleBackendEvent, openGuiClient, remoteWorkspaceEventSources]);
 }

@@ -1,16 +1,50 @@
 # OpenGUI architecture notes
 
-This document is the contributor-facing map of the codebase as it exists today. For product terminology and ownership rules, read [`CONTEXT.md`](../CONTEXT.md). For accepted decisions, read [`docs/adr/`](./adr/).
+Contributor map of the repo **as it exists today**. Product language and ownership: [`CONTEXT.md`](../CONTEXT.md). Accepted decisions: [`docs/adr/`](./adr/).
 
-## Layers
+## Layers (canonical)
 
-OpenGUI keeps three layers separate:
+Four layers — same definitions as [`CONTEXT.md` → Architecture](../CONTEXT.md#architecture):
 
-- **OpenGUI Backend** owns Harness adapters, sessions/events, filesystem/git operations, queues, and backend persistence.
-- **OpenGUI Frontend** is the React presentation layer. It owns Workspaces, Projects, pending prompts, presentation metadata, and UI preferences.
-- **Shells** bootstrap the Frontend for Desktop, Web, and Mobile. Shell code should not own Harness execution or session truth.
+| Layer                | Owns                                                                                                                                                                                                                                           | Does not own                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **OpenGUI Runtime**  | Harness Adapters, normalized `HarnessEvent` stream, Harness Inventory, Agent sends on **Harness Scope** (`harnessId` + directory + harness session id). Session/transcript **truth** stays in the Harness.                                     | Queued prompts, multi-Frontend transport, Workspaces, queue UI, `OpenGuiClient`        |
+| **OpenGUI Backend**  | One embedded Runtime per process; HTTP/WebSocket/SSE and Desktop IPC transport; Queued prompts + Queue dispatch; Backend arbitration; backend access token auth; Backend persistence (queue, uploads cleanup). Delegates execution to Runtime. | Workspace identity, sidebar Project membership, Pending prompts, presentation metadata |
+| **OpenGUI Frontend** | Workspaces, Frontend Projects (saved paths), Pending prompts, queue UI, session presentation metadata, UI preferences (via **Frontend persistence**). Talks only to Backend via `OpenGuiClient`.                                               | Harness SDK/CLI, session/transcript source of truth, shared queue storage              |
+| **Shell**            | Bootstrap Frontend (Desktop / Web / Mobile): window chrome, file picker, sidecar lifecycle, static hosting.                                                                                                                                    | Harness execution, session truth, queue dispatch                                       |
 
-Use the project term **Harness** for coding-agent runtimes such as OpenCode, Claude Code, Codex, and Pi. Use **provider** only for model/API providers inside those Harnesses.
+**SDK v1** is in-process only: [`@opengui/runtime`](../packages/runtime/README.md). Target surface: `OpenGUI.create`, `at(directory)`, `SessionHandle` (`send`, `onStream`, `waitUntilIdle`) per [ADR 0007](./adr/0007-runtime-sdk-minimal-surface.md) and [`runtime-sdk-minimal-surface.md`](./plans/runtime-sdk-minimal-surface.md). No queue API in the SDK — use Backend for shared queues ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
+
+**Harness** = coding-agent CLI/runtime (OpenCode, Claude Code, Codex, Pi). **Provider** = model/API vendor inside a Harness. Never call the OpenGUI server process an “agent backend” ([ADR 0001](./adr/0001-harness-terminology.md)).
+
+## Where code lives today
+
+Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backend-sdk-split.md). Current mapping:
+
+| Layer               | Package / entry                  | Main paths                                                                                                        |
+| ------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Runtime             | `@opengui/runtime`               | `packages/runtime/src/` (`host.ts`, `harness-service.ts`, `harness-runtime.ts`, `open-gui.ts`)                    |
+| Harness Adapters    | `packages/runtime/src/adapters/` | `*-bridge.ts`, `lib/harness-adapter-kit.ts` (shared kit at repo root)                                             |
+| Runtime descriptors | Shared with Frontend protocol    | `src/agents/` (`backend.ts`, `cli-harness-factory.ts`, `protocol/`)                                               |
+| Backend             | Process entry still monolithic   | `server/web-server.ts` embeds `createRuntimeHost`; `server/services/*`; `@opengui/backend` is a **scaffold** only |
+| Frontend            | React app                        | `src/` (`App.tsx`, `components/`, `hooks/`, `features/`, `protocol/`)                                             |
+| Desktop Shell       | Electron                         | `main.ts`, `preload.ts`, `main/backend-sidecar.ts`                                                                |
+
+**Rule:** UI and hooks call **Backend** APIs only, not bridge IPC. Bridges register inside the Backend process via Runtime ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
+
+**Storage:** [ADR 0004](./adr/0004-storage-source-of-truth-boundaries.md) — Harness owns sessions/transcripts; Backend SQLite owns queues/uploads; Frontend persistence owns Workspaces/Projects/UI.
+
+**Session reads:** [ADR 0006](./adr/0006-harness-only-session-and-transcript-reads.md), plan [`session-read-slop-removal.md`](./plans/session-read-slop-removal.md).
+
+**Desktop transport:** [ADR 0003](./adr/0003-persistent-desktop-backend-transport.md) — Local Workspace uses private IPC, not loopback HTTP.
+
+Implementation checklists:
+
+- [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backend-sdk-split.md) — packages / SDK (Phases 1–3 largely done).
+- [`plans/contributor-experience-and-slop-removal.md`](./plans/contributor-experience-and-slop-removal.md) — docs, session index, naming, registry, guardrails.
+- [`plans/session-read-slop-removal.md`](./plans/session-read-slop-removal.md) — ADR 0006 detail.
+
+Optional CI: `node scripts/slop-check.mjs`.
 
 ## Harness architecture
 
@@ -27,12 +61,18 @@ When adding or changing a Harness, keep protocol-specific mapping out of UI code
 
 ## Adding a Harness
 
-1. Add the Harness ID/type information in `src/agents/index.ts` and any backend/runtime routing owned by the implementation slice.
-2. Define capabilities and workspace requirements in `src/agents/<harness>.ts`.
-   - If it is a tagged local CLI event stream, prefer `makeLocalCliCapabilities()`, `LOCAL_CLI_WORKSPACE`, and `createCliHarnessNormalizer()` from `cli-harness-factory.ts`.
-   - If it has custom SDK events, add a protocol mapper under `src/agents/protocol/` and test the mapper directly.
-3. Use `createBackendIdCodec()`/shared tagging helpers instead of composing session IDs by hand.
-4. Add tests for the normalizer or protocol mapper before wiring the Harness into UI selection.
+A **Harness Adapter** is a bridge (`setupXBridge`) plus metadata in `HARNESS_BACKEND_META`. Today you must touch several registries (consolidation planned):
+
+1. `src/agents/index.ts` — `HarnessId`, labels.
+2. `src/agents/cli-harness-factory.ts` — capabilities + `normalizeEvent`.
+3. `packages/runtime/src/harness-runtime.ts` — `MANAGED_HARNESS_IDS` + `registerHarnessAdapters`.
+4. New `*-bridge.ts` under `packages/runtime/src/adapters/` — IPC channels `${harnessId}:project:add`, `session:list`, `prompt`, … (see `HarnessService` in `packages/runtime/src/harness-service.ts`).
+5. `server/harness-inventory.ts` — CLI binary name.
+6. `src/lib/session-identity.ts` — `SESSION_ID_HARNESS_IDS` (kept local to avoid import cycles).
+
+Bridge IPC contract: [`docs/harness-bridge-contract.md`](./harness-bridge-contract.md).
+
+Descriptors in `src/agents/<harness>.ts`: use `makeLocalCliCapabilities()` and `createCliHarnessNormalizer()` for tagged CLI streams; custom SDK events go in `src/agents/protocol/` with tests. Session IDs: `composeFrontendSessionId` / codecs in `src/agents/shared.ts`, not ad-hoc strings.
 
 ## Frontend feature slices
 

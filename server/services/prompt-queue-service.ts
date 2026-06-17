@@ -1,8 +1,9 @@
 import type { QueueMode } from "../../src/lib/session-drafts.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
 import type { BackendEventBus } from "./event-bus.ts";
-import type { ProjectService } from "./project-service.ts";
-import type { SessionService } from "./session-service.ts";
+import { sessionDirectoryHint } from "./directory-scope.ts";
+import { resolveSessionRecordForMutation, wireSessionIdFromRecord } from "./session-resolve.ts";
+import type { BackendServiceContext } from "./index.ts";
 import type {
   PromptQueueEntryRecord,
   StorageService,
@@ -37,25 +38,23 @@ export interface CreatePromptQueueInput {
 
 export class PromptQueueService {
   private readonly storage: StorageService;
-  private readonly sessions: SessionService;
-  private readonly projects: ProjectService;
   private readonly events?: BackendEventBus;
+  private readonly services: BackendServiceContext;
+  private readonly resolveSafeDirectory: (path: string) => Promise<string>;
 
   constructor(
-    storage: StorageService,
-    sessions: SessionService,
-    projects: ProjectService,
-    events?: BackendEventBus,
+    services: BackendServiceContext,
+    resolveSafeDirectory: (path: string) => Promise<string>,
   ) {
-    this.storage = storage;
-    this.sessions = sessions;
-    this.projects = projects;
-    this.events = events;
+    this.storage = services.storage;
+    this.services = services;
+    this.resolveSafeDirectory = resolveSafeDirectory;
+    this.events = services.events;
   }
 
   async listSessionQueue(
     sessionIdOrAlias: string,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const entries = await this.storage.listPromptQueue(session.id);
@@ -63,27 +62,35 @@ export class PromptQueueService {
   }
 
   async listProjectQueues(
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId">,
+    scope: Pick<ListSessionsInput, "directory" | "harnessId">,
   ): Promise<Record<string, PromptQueueEntry[]>> {
-    const sessions = await this.listSessionsInScope(scope);
-    const entries = await Promise.all(
-      sessions.map(
-        async (session) =>
-          [
-            this.toFrontendSessionId(session),
-            (await this.storage.listPromptQueue(session.id)).map((entry) =>
-              this.toPublicEntry(session, entry),
-            ),
-          ] as const,
-      ),
-    );
-    return Object.fromEntries(entries);
+    const all = await this.storage.listPromptQueue();
+    const filtered = all.filter((entry) => {
+      if (scope.harnessId && entry.harnessId !== scope.harnessId) return false;
+      if (scope.directory && entry.projectDirectory !== scope.directory) return false;
+      return true;
+    });
+    const byWire = new Map<string, PromptQueueEntryRecord[]>();
+    for (const entry of filtered) {
+      const list = byWire.get(entry.sessionId) ?? [];
+      list.push(entry);
+      byWire.set(entry.sessionId, list);
+    }
+    const result: Record<string, PromptQueueEntry[]> = {};
+    for (const [canonicalSessionId, records] of byWire) {
+      const wireKey = records[0]
+        ? `${records[0].harnessId}:${records[0].harnessSessionId}`
+        : canonicalSessionId;
+      const stub = sessionRecordFromQueueEntry(records[0]!);
+      result[wireKey] = records.map((r) => this.toPublicEntry(stub, r));
+    }
+    return result;
   }
 
   async enqueue(
     sessionIdOrAlias: string,
     input: CreatePromptQueueInput,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const current = await this.storage.listPromptQueue(session.id);
@@ -109,13 +116,13 @@ export class PromptQueueService {
     this.events?.emit(
       "queue.added",
       {
-        sessionId: this.toFrontendSessionId(session),
+        sessionId: wireSessionIdFromRecord(session),
         canonicalSessionId: session.id,
         entry: publicCreated ?? this.toPublicEntry(session, created),
         entries: publicEntries,
       },
       {
-        projectId: session.projectId,
+        directory: session.directory,
         sessionId: session.id,
         harnessId: session.harnessId,
       },
@@ -126,7 +133,7 @@ export class PromptQueueService {
   async remove(
     sessionIdOrAlias: string,
     entryId: string,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const current = await this.storage.listPromptQueue(session.id);
@@ -138,13 +145,13 @@ export class PromptQueueService {
     this.events?.emit(
       "queue.removed",
       {
-        sessionId: this.toFrontendSessionId(session),
+        sessionId: wireSessionIdFromRecord(session),
         canonicalSessionId: session.id,
         entryId,
         entries: next.map((entry) => this.toPublicEntry(session, entry)),
       },
       {
-        projectId: session.projectId,
+        directory: session.directory,
         sessionId: session.id,
         harnessId: session.harnessId,
       },
@@ -156,7 +163,7 @@ export class PromptQueueService {
     sessionIdOrAlias: string,
     entryId: string,
     input: UpdatePromptQueueEntryInput,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const current = await this.storage.listPromptQueue(session.id);
@@ -168,13 +175,13 @@ export class PromptQueueService {
     this.events?.emit(
       "queue.updated",
       {
-        sessionId: this.toFrontendSessionId(session),
+        sessionId: wireSessionIdFromRecord(session),
         canonicalSessionId: session.id,
         entryId,
         entries: next.map((entry) => this.toPublicEntry(session, entry)),
       },
       {
-        projectId: session.projectId,
+        directory: session.directory,
         sessionId: session.id,
         harnessId: session.harnessId,
       },
@@ -186,7 +193,7 @@ export class PromptQueueService {
     sessionIdOrAlias: string,
     entryId: string,
     toIndex: number,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<PromptQueueEntry[]> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const current = await this.storage.listPromptQueue(session.id);
@@ -211,7 +218,7 @@ export class PromptQueueService {
     this.events?.emit(
       "queue.reordered",
       {
-        sessionId: this.toFrontendSessionId(session),
+        sessionId: wireSessionIdFromRecord(session),
         canonicalSessionId: session.id,
         entryId,
         fromIndex,
@@ -219,7 +226,7 @@ export class PromptQueueService {
         entries: persisted.map((entry) => this.toPublicEntry(session, entry)),
       },
       {
-        projectId: session.projectId,
+        directory: session.directory,
         sessionId: session.id,
         harnessId: session.harnessId,
       },
@@ -229,7 +236,7 @@ export class PromptQueueService {
 
   async clearSessionQueue(
     sessionIdOrAlias: string,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<boolean> {
     const session = await this.getSessionOrThrow(sessionIdOrAlias, scope);
     const removed = await this.storage.deletePromptQueueBySession(session.id);
@@ -237,11 +244,11 @@ export class PromptQueueService {
     this.events?.emit(
       "queue.cleared",
       {
-        sessionId: this.toFrontendSessionId(session),
+        sessionId: wireSessionIdFromRecord(session),
         canonicalSessionId: session.id,
       },
       {
-        projectId: session.projectId,
+        directory: session.directory,
         sessionId: session.id,
         harnessId: session.harnessId,
       },
@@ -251,43 +258,20 @@ export class PromptQueueService {
 
   private async getSessionOrThrow(
     sessionIdOrAlias: string,
-    scope: Required<Pick<ListSessionsInput, "projectId" | "harnessId">>,
+    scope: Required<Pick<ListSessionsInput, "directory" | "harnessId">>,
   ): Promise<SessionRecord> {
-    const session = await this.sessions.getSession(sessionIdOrAlias, scope);
-    if (!session) throw new Error("Session not found");
-    return session;
-  }
-
-  private async listSessionsInScope(
-    scope: Pick<ListSessionsInput, "projectId" | "harnessId">,
-  ): Promise<SessionRecord[]> {
-    const sessions: SessionRecord[] = [];
-    let cursor: string | null = null;
-    do {
-      const page = await this.sessions.listSessions({ ...scope, cursor, limit: 200 });
-      sessions.push(...page.sessions);
-      cursor = page.nextCursor;
-    } while (cursor);
-    return sessions;
+    return await resolveSessionRecordForMutation({
+      services: this.services,
+      sessionId: sessionIdOrAlias,
+      scope,
+      resolveSafeDirectory: this.resolveSafeDirectory,
+    });
   }
 
   private async getProjectDirectory(session: SessionRecord): Promise<string> {
-    const project = await this.projects.getProject(session.projectId);
-    if (project) return project.canonicalPath || project.path;
-
-    const metadataDirectory =
-      session.metadata && typeof session.metadata.directory === "string"
-        ? session.metadata.directory.trim()
-        : "";
-    if (metadataDirectory) return metadataDirectory;
-
-    // Older Session records sometimes used the directory itself as projectId.
-    // Keep queue usable for those records instead of failing a running Session.
-    if (session.projectId.startsWith("/") || session.projectId.startsWith("~")) {
-      return session.projectId;
-    }
-
-    throw new Error("Project not found");
+    const hint = sessionDirectoryHint(session);
+    if (!hint) throw new Error("Session directory not found");
+    return hint;
   }
 
   private async reindex(sessionId: string): Promise<PromptQueueEntryRecord[]> {
@@ -301,12 +285,22 @@ export class PromptQueueService {
   private toPublicEntry(session: SessionRecord, entry: PromptQueueEntryRecord): PromptQueueEntry {
     return {
       ...entry,
-      sessionId: this.toFrontendSessionId(session),
+      sessionId: wireSessionIdFromRecord(session),
       canonicalSessionId: session.id,
     };
   }
+}
 
-  private toFrontendSessionId(session: SessionRecord) {
-    return `${session.harnessId}:${session.rawId}`;
-  }
+function sessionRecordFromQueueEntry(entry: PromptQueueEntryRecord): SessionRecord {
+  const now = new Date().toISOString();
+  return {
+    id: entry.sessionId,
+    rawId: entry.harnessSessionId,
+    directory: entry.projectDirectory,
+    harnessId: entry.harnessId,
+    title: "Queued session",
+    status: "unknown",
+    createdAt: now,
+    updatedAt: now,
+  };
 }

@@ -36,9 +36,9 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleToolCall?: (partId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { isLocalWorkspace, workspaceServerUrl } = useConnectionState();
+  const { attachmentBaseUrl } = useConnectionState();
   const { sessions, activeTargetDirectory } = useSessionState();
-  const imageServerUrl = isLocalWorkspace ? null : workspaceServerUrl;
+  const imageServerUrl = attachmentBaseUrl;
   const { info, parts } = entry;
   const imageBaseDirectory =
     sessions.find((session) => session.id === info.sessionID)?._projectDir ??

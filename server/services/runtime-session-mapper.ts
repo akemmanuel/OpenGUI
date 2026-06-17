@@ -1,5 +1,8 @@
 import type { HarnessId } from "../../src/agents/index.ts";
-import { rawSessionIdForHarness } from "../../src/lib/session-identity.ts";
+import {
+  composeFrontendSessionId,
+  rawSessionIdForHarness,
+} from "../../src/lib/session-identity.ts";
 import { cleanSessionTitle } from "../../src/lib/session-title.ts";
 import type { SessionService } from "./session-service.ts";
 import type { CreateSessionInput, SessionRecord } from "./session-types.ts";
@@ -64,7 +67,7 @@ function extractRuntimeSessionMetadata(session: unknown): Record<string, unknown
 export function toSessionRecordInputFromRuntime(
   session: unknown,
   scope: {
-    projectId: string;
+    directory: string;
     harnessId: HarnessId;
   },
 ): CreateSessionInput {
@@ -75,8 +78,9 @@ export function toSessionRecordInputFromRuntime(
   if (!rawId) throw new Error("Runtime session is missing id");
   const timestamps = extractRuntimeSessionTimestamps(session);
   return {
+    id: composeFrontendSessionId(scope.harnessId, rawId),
     rawId,
-    projectId: scope.projectId,
+    directory: scope.directory,
     harnessId: scope.harnessId,
     title: extractRuntimeSessionTitle(session),
     status:
@@ -91,12 +95,12 @@ export function toSessionRecordInputFromRuntime(
 export async function ensureSessionFromRuntime(input: {
   sessions: SessionService;
   runtimeSession: unknown;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<SessionRecord> {
   return await input.sessions.ensureSession(
     toSessionRecordInputFromRuntime(input.runtimeSession, {
-      projectId: input.projectId,
+      directory: input.directory,
       harnessId: input.harnessId,
     }),
   );

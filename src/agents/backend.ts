@@ -19,7 +19,12 @@ import type {
 } from "@/types/electron";
 
 export interface HarnessTarget {
+  /** Harness scope: on-disk project root for session list and execution. */
   directory?: string;
+  /**
+   * Frontend connection routing only (multi-workspace UI). Not Harness scope identity;
+   * execution payloads use `directory` + `harnessId`.
+   */
   workspaceId?: string;
   baseUrl?: string;
   authToken?: string;

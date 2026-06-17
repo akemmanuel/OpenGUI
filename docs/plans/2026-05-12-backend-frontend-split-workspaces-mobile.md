@@ -2,26 +2,23 @@
 
 Date: 2026-05-12 (updated 2026-05-27)
 
-> Superseded by CONTEXT.md for current domain language. In particular, Workspace is frontend-local and is not an OpenGUI Backend primitive.
+> **Historical plan — do not use for layer ownership.** Current language: [`CONTEXT.md`](../../CONTEXT.md) (Architecture + glossary). Three-layer split updated to **Runtime / Backend / Frontend / Shell** in [ADR 0005](../adr/0005-opengui-runtime-backend-split-and-sdk.md). Contributor map: [`docs/architecture.md`](../architecture.md).
 
-## Summary
+## Summary (stale — kept for archaeology)
 
 OpenGUI becomes a client/server product with one backend and multiple shells.
 
-- **OpenGUI Backend** owns Harness adapters, project access, sessions, prompt queues, events, filesystem/git operations, and settings that affect execution. The only stateful layer. Deployable as Desktop sidecar, Docker container, or standalone server.
-- **OpenGUI Frontend** is the React UI layer. Stateless; renders chat, navigation, settings. Talks only to one OpenGUI Backend via `OpenGuiClient`. Same codebase runs in Desktop Shell, Web Shell, and Mobile Shell.
-- **Shell** is the platform-specific scaffold that bootstraps the Frontend. Three variants:
-  - **Desktop Shell** (Electron main+preload): window controls, native file picker, updater, OS notifications, backend sidecar lifecycle.
-  - **Web Shell** (browser): minimal -- no backend spawning, no native file dialog. Backend connection is same-origin or user-configured URL.
-  - **Mobile Shell** (Capacitor JS): native file picker, push notifications, secure token storage. Never spawns a Backend, never opens a file browser or terminal.
-- **Harness** is a coding-agent runtime (OpenCode, Claude Code, Codex, Pi) managed by the OpenGUI Backend. The Frontend never speaks to a Harness directly.
-- **Harness Adapter** is the integration code translating Backend operations into Harness SDK calls.
+- ~~**OpenGUI Backend** owns Harness adapters~~ → **OpenGUI Runtime** hosts Harness Adapters; **OpenGUI Backend** embeds Runtime and owns transport, queues, arbitration ([ADR 0005](../adr/0005-opengui-runtime-backend-split-and-sdk.md)).
+- **OpenGUI Frontend** is the React UI layer; it owns **Frontend persistence** (Workspaces, Projects, drafts, presentation metadata). It is not “stateless.” Talks only to Backend via `OpenGuiClient`.
+- **Shell** bootstraps the Frontend (Desktop / Web / Mobile) — unchanged intent.
+- **Harness** — coding-agent runtime; Frontend never speaks to a Harness directly.
+- **Harness Adapter** — lives in **Runtime**, not “Backend glue” alone.
 
-Core rule: no Harness SDK, CLI, filesystem, git, worktree, or runtime state should live in Frontend code. Frontends talk to one OpenGUI Backend protocol.
+Core rule (still valid): no Harness SDK, CLI, filesystem, git, worktree, or harness session truth in Frontend code. Frontends use the Backend protocol only.
 
-### Headless Backend (resolved)
+### Deployment modes (resolved)
 
-There is no separate "headless backend". The OpenGUI Backend is one binary. Only the deployment mode differs:
+Use **API-only Backend** or **Combined Backend + Frontend** in product copy — not "headless" ([CONTEXT.md](../../CONTEXT.md)). One OpenGUI Backend binary; deployment mode differs:
 
 | Mode               | Host               | Auth           | Use Case                            |
 | ------------------ | ------------------ | -------------- | ----------------------------------- |
@@ -453,7 +450,7 @@ Keep in Electron:
 
 Move out of Electron (into Backend):
 
-- Harness adapters (opencode-bridge, claude-code-bridge, etc.)
+- Harness adapters (`packages/runtime/src/adapters/*-bridge.ts`, etc.)
 - Session state
 - Prompt queue
 - Provider/model runtime state
@@ -612,7 +609,7 @@ Success:
 
 - Desktop renderer uses `HttpOpenGuiClient` like web.
 - Harness adapters run in Backend process, not Electron main.
-- Existing bridges moved to Backend codebase.
+- Existing bridges under `packages/runtime/src/adapters/` (Runtime layer; Backend embeds Runtime).
 
 ### Phase 5: Universal workspace/session persistence
 

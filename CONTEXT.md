@@ -1,20 +1,23 @@
 # OpenGUI Context
 
-OpenGUI is a command center for long-running coding-agent work across projects and backends. The core distinctions here are about where user intent lives locally versus when it is actually sent into a backend session.
+**Start here (contributors):** Architecture and glossary below → [`docs/adr/README.md`](docs/adr/README.md) (decisions) → [`docs/architecture.md`](docs/architecture.md) (repo map) → [`docs/plans/runtime-backend-sdk-split.md`](docs/plans/runtime-backend-sdk-split.md) (extraction status). SDK shape: [ADR 0007](docs/adr/0007-runtime-sdk-minimal-surface.md), plan [`runtime-sdk-minimal-surface.md`](docs/plans/runtime-sdk-minimal-surface.md). Improvement roadmap: [`docs/plans/contributor-experience-and-slop-removal.md`](docs/plans/contributor-experience-and-slop-removal.md).
+
+OpenGUI is a command center for long-running coding-agent work across projects and Harnesses. The core distinctions here are about where user intent lives in the **OpenGUI Frontend** versus when it becomes shared **OpenGUI Backend** state or a **Harness** operation through the **OpenGUI Runtime**.
 
 ## Architecture
 
-OpenGUI is split into three layers:
+OpenGUI is split into four layers:
 
-- **OpenGUI Backend** -- Node.js HTTP/WS server owning all Harness runtimes, project access, sessions, events, filesystem/git operations, prompt queues, and settings that affect agent execution. It does not define the Workspace primitive. Deployable as a Desktop sidecar, Docker container, or standalone server.
-- **OpenGUI Frontend** -- React UI rendering navigation, chat, and settings, and owning presentation state such as Workspaces, Project connections, Pending prompts, Queued prompts, and Session placement. Talks only to an OpenGUI Backend via `OpenGuiClient`. Runs identically in Desktop, Web, and Mobile.
+- **OpenGUI Runtime** -- In-process engine behind Harness execution: Harness Adapters, normalized Harness events, Harness Inventory, Agent sends, and Harness Scope operations (sessions and transcripts via the Harness, not durable OpenGUI caches). Single-process integrators and the OpenGUI SDK use the Runtime directly. It does not own Queued prompts, multi-client transport, or Frontend presentation.
+- **OpenGUI Backend** -- Networked host that embeds one OpenGUI Runtime and adds shared multi-Frontend concerns: HTTP/WebSocket/SSE (and Desktop private IPC transport), Queued prompts with Queue dispatch, Backend arbitration, backend access token auth, and Backend persistence for queue and uploaded-prompt cleanup. It does not define the Workspace primitive or sidebar Project membership. Deployable as a Desktop sidecar, Docker container, or standalone server.
+- **OpenGUI Frontend** -- React UI rendering navigation, chat, and settings, and owning presentation state such as Workspaces, Project connections, Pending prompts, Queued prompts UI, and Session placement. Talks only to an OpenGUI Backend via `OpenGuiClient`. Runs identically in Desktop, Web, and Mobile.
 - **Shell** -- Platform-specific scaffold that bootstraps the Frontend. Three variants:
   - **Desktop Shell** (Electron main+preload): window controls, native file picker, updater, OS notifications, backend sidecar lifecycle.
   - **Web Shell** (browser): minimal -- no backend spawning, no native file dialog. Backend connection is same-origin or user-configured URL.
   - **Mobile Shell** (Capacitor JS): native file picker, push notifications, secure token storage. Never spawns a backend or opens a terminal.
 
 **Harness**:
-A backend-wide coding-agent runtime (Claude Code, Codex, Pi, or another supported CLI) that OpenGUI Backend manages. Harness availability is not Project-specific. Harnesses are hosted inside the Backend process via adapters (`claude-code-bridge.ts`, `codex-bridge.ts`, etc.). The Frontend never speaks to a Harness directly.
+A coding-agent runtime (Claude Code, Codex, Pi, or another supported CLI) that OpenGUI Runtime manages through Harness Adapters. Harness availability is not Project-specific. The Frontend never speaks to a Harness directly; it reaches execution only through an OpenGUI Backend that embeds the Runtime.
 _Avoid_: Agent backend, agent runtime (in product UI), bridge, provider
 
 **Detected Harness**:
@@ -30,7 +33,7 @@ The setup wizard path where a user intentionally continues without a model-ready
 _Avoid_: skip onboarding, ready without harness, cancel setup, install another harness in setup
 
 **Harness Adapter**:
-The local integration code that translates OpenGUI Backend operations into Harness SDK calls. One adapter per Harness type.
+The local integration code in OpenGUI Runtime that translates normalized Runtime operations into Harness SDK or CLI calls. One adapter per Harness type.
 _Avoid_: Bridge, provider glue, agent SDK glue
 
 **Guided Harness Install**:
@@ -54,7 +57,7 @@ The user-facing availability state of a Harness: not installed, installed but no
 _Avoid_: installed means ready, backend available, binary found, hidden default model
 
 **Harness Inventory**:
-The backend-produced snapshot of a Harness's current usability: CLI availability, version, authentication state, runtime-discovered models, agents/options when available, diagnostic message, and check time. Harness Inventory is the source for model selection; OpenGUI does not invent fixed model lists when a Harness cannot report models.
+The Runtime-produced snapshot of a Harness's current usability: CLI availability, version, authentication state, runtime-discovered models, agents/options when available, diagnostic message, and check time. Harness Inventory is the source for model selection; OpenGUI does not invent fixed model lists when a Harness cannot report models.
 _Avoid_: static model catalog, guessed model list, CLI detection result
 
 **Model-ready Harness**:
@@ -62,12 +65,16 @@ A Harness whose Inventory says it is ready and includes at least one runtime-dis
 _Avoid_: usable because installed, send with CLI default, implicit model fallback
 
 **Harness Scope**:
-The project+path/session tuple that scopes a Harness operation inside an OpenGUI Backend. Frontend Workspaces may choose and route that scope, but they are not part of it.
+The harness+project-directory+session tuple that scopes a Harness operation inside OpenGUI Runtime. Frontend Workspaces may choose and route that scope, but they are not part of it.
 _Avoid_: Agent session context (vague), cwd (too narrow), workspace-scoped harness
 
-**OpenGUI Backend**:
-The Node.js server process that owns execution state and backend-facing resources: Harness Adapters, Sessions, Harness Sessions, project access, streaming events, filesystem/git operations, and settings that affect agent execution. It does not define Workspaces, accept Workspace IDs as domain identity, own Project connections, Pending prompts, or Session presentation assignment. Runs as Desktop sidecar, standalone server, or inside Docker. It may run API-only or serve a Hosted Frontend in addition to its API.
-_Avoid_: server, headless backend, daemon
+**OpenGUI Runtime**, **OpenGUI Backend**, and **OpenGUI Frontend** are defined in **Architecture** above. Use those bullets for layer ownership; the entries here only add _Avoid_ aliases where useful.
+
+**OpenGUI Runtime** — _Avoid_: SDK only, bridge folder, in-app backend server
+
+**OpenGUI Backend** — _Avoid_: server, headless backend, daemon, harness host without Runtime
+
+**OpenGUI Frontend** — _Avoid_: renderer, stateless client
 
 **Backend persistence**:
 The OpenGUI Backend's SQLite-backed storage boundary for OpenGUI-owned shared state that is not canonical Harness state, such as Queued prompts, queue dispatch state, backend execution settings, and uploaded prompt file cleanup records. Backend persistence is scoped to one OpenGUI Backend instance and must not store Frontend Workspace identity, Project navigation membership, Session lists, or Session transcripts.
@@ -79,7 +86,7 @@ _Avoid_: web backend, frontend backend, bundled app server
 
 **API-only Backend**:
 An OpenGUI Backend deployment that serves only backend APIs and no Web Shell assets. Desktop Shell, Mobile Shell, and a separately hosted Web Shell may connect to it; non-API browser routes return not found.
-_Avoid_: headless backend, backend without app
+_Avoid_: headless, headless backend, headless server, backend without app
 
 **Standalone Web Frontend**:
 A Web Shell deployment where static OpenGUI Frontend assets are hosted separately from the OpenGUI Backend and configured with a target backend URL. It requires the target OpenGUI Backend to allow the frontend origin.
@@ -88,10 +95,6 @@ _Avoid_: extra web workspace, frontend-only backend
 **Combined Backend + Frontend**:
 A convenience deployment where one process or container serves both the OpenGUI Backend API and the static OpenGUI Frontend assets. Web Shell uses the same origin by default in this mode.
 _Avoid_: monolith, web backend
-
-**OpenGUI Frontend**:
-The React UI layer and primary presentation layer. It owns frontend-local Workspaces, Project connections, Pending prompts, Queued prompts, and Session presentation, and talks only to one OpenGUI Backend via `OpenGuiClient` at a time.
-_Avoid_: renderer, stateless client
 
 **Frontend persistence**:
 The single Frontend-owned storage boundary for durable per-device presentation, connection, and preference state. Frontend persistence stores small typed documents for UI restoration and local intent, not canonical backend data, execution state, Session transcripts, or shared queues. App code should use one storage abstraction rather than scattering direct browser storage mechanisms.
@@ -231,6 +234,18 @@ _Avoid_: Session, canonical session, workspace session
 The shared message history for a Session, sourced on demand from the backing Harness Session through the OpenGUI Backend. OpenGUI does not persist a durable transcript cache as a source of truth; when messages for a Session are requested, the Backend asks the Harness. Frontends may render or filter transcript content locally but do not mutate canonical transcript content.
 _Avoid_: frontend transcript, local message history
 
+**Harness session summary**:
+The normalized session metadata returned on a Session list read or session-metadata read. It contains only fields the Harness reported for that Harness Scope; OpenGUI Backend does not add fields from memory, SSE, or recovered identity.
+_Avoid_: backend session row, cached session, SessionRecord as wire truth
+
+**Session list read**:
+A request that asks which Sessions exist for one Project directory and one Harness. The Harness is the only source for list membership; OpenGUI does not answer from backend persistence or an in-memory session index.
+_Avoid_: sync list, session query cache, SQLite session list
+
+**Session message page read**:
+A request for one page of Session transcript for an explicit Harness Scope. The Harness is the only source for page content; product calls require `directory`, `harnessId`, and session identity. Unknown session or missing scope is an error, not an empty success. While a Session is running, new transcript content arrives through the Live Session stream; message pages load history and gap-fill after reconnect.
+_Avoid_: silent empty messages, recovered session transcript, backend message cache
+
 **Session status**:
 The backend-owned execution state of a Session, such as idle, running, or error, derived from Harness state and backend orchestration. Frontends display Session status but do not own it.
 _Avoid_: frontend busy state, local status
@@ -283,8 +298,8 @@ _Avoid_: enqueue, draft
 The frontend-local orchestration around Pending prompts and send requests before they become shared backend actions. It coordinates with Queue dispatch, Project connection, and Session lifecycle rules.
 
 **Project connection**:
-The act or state of making a Workspace-scoped Frontend Project available for backend-backed operations such as Session listing or Agent send. It is frontend presentation/execution-readiness state, not a backend domain object. A failed Project connection leaves the Frontend Project visible in the sidebar with an error instead of deleting it.
-_Avoid_: mount, backend project binding, project deletion
+Frontend-local state that a Workspace-scoped Project path is selected for navigation and Agent sends. OpenGUI Runtime does not expose a separate connect or attach API; the first Session listing or Agent send for a directory establishes Harness access for that Harness Scope. Execution failures (disallowed path, missing folder, Harness not ready) surface on those operations; the Frontend may remember and display them beside the Project without removing it from the sidebar.
+_Avoid_: mount, backend project binding, attachDirectory, connectProject
 
 **Remove Project**:
 The sidebar action that removes a Workspace-scoped Frontend Project from that Workspace presentation. It must not delete files on disk or backend-owned Sessions. Sessions that were displayed under that Project survive in backend state and may become invisible in that Workspace until the Project is added again.
@@ -356,8 +371,8 @@ _Avoid_: server restart, selected backend restart, soft reconnect
 Resolved as invalid terminology. Any backend service, API route, storage table, or Session identity using `workspaceId` is describing either frontend **Workspace** state, a Workspace-scoped frontend **Project**, **Session presentation metadata**, or execution scope in the wrong layer.
 
 **Backend Project record**:
-An internal backend lookup or persistence record that maps a concrete directory to backend-owned Sessions and execution scope. It is not the product **Project**, does not own Workspace membership, and should not drive frontend navigation.
-_Avoid_: Project in product language, Workspace Project
+Legacy internal persistence that treated directories as backend CRUD entities with Workspace IDs. Invalid as a product concept; being removed in favor of Harness Scope keyed by directory on each Runtime operation and Frontend-owned Project paths.
+_Avoid_: Project in product language, Workspace Project, /api/projects
 
 ## Example dialogue
 

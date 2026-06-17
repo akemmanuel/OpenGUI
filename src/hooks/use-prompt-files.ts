@@ -1,5 +1,5 @@
 import * as React from "react";
-import { toast } from "sonner";
+import { notifyUnknownError } from "@/lib/notify";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 
 type UploadResponse = { ok?: boolean; value?: unknown; error?: string };
@@ -113,7 +113,7 @@ export function usePromptFiles({
       try {
         await uploadFiles(promptFiles);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : String(error));
+        notifyUnknownError(error);
         setIsUploading(false);
         setUploadProgress(null);
       }

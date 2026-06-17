@@ -3,7 +3,8 @@ import type { HarnessId } from "../../src/agents/index.ts";
 export interface SessionRecord {
   id: string;
   rawId: string;
-  projectId: string;
+  /** Canonical filesystem directory for harness scope (not a Frontend Project id). */
+  directory: string;
   harnessId: HarnessId;
   title: string;
   createdAt: string;
@@ -15,7 +16,7 @@ export interface SessionRecord {
 export interface CreateSessionInput {
   id?: string;
   rawId: string;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
   title?: string;
   status?: SessionRecord["status"];
@@ -31,10 +32,16 @@ export interface UpdateSessionInput {
 }
 
 export interface ListSessionsInput {
-  projectId?: string;
+  directory?: string;
   harnessId?: HarnessId;
   cursor?: string | null;
   limit?: number;
+}
+
+/** Resolved directory for harness list operations (canonical path on disk). */
+export interface ResolvedHarnessDirectory {
+  directory: string;
+  canonicalPath: string;
 }
 
 export interface ListSessionsResult {

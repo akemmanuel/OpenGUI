@@ -8,7 +8,10 @@ import {
   sendCommandToAgent,
   sendPromptToAgent,
 } from "@/hooks/agent-send";
-import { decidePromptIntentDispatch } from "@/hooks/local-intent-orchestration";
+import {
+  createAbortSessionViaClient,
+  executeLocalIntentSendPrompt,
+} from "@/hooks/local-intent-send-prompt";
 import { createSessionQueueOrchestrator } from "@/hooks/agent-session-queue";
 import { createPromptSendStartActions } from "@/hooks/agent-send-state";
 import {
@@ -276,67 +279,35 @@ export function createLocalIntentOrchestrator(
     return sessionId;
   };
 
+  const abortSession = createAbortSessionViaClient(sessionsClient);
+
   const sendPrompt = async (text: string, mode?: QueueMode) => {
-    const initialState = getState();
-    if (!initialState.activeSessionId && initialState.activeTargetDirectory) {
-      const selection = resolveAgentSendSelection(getSelectionSnapshot());
-      if (!selection.model) {
+    const state = getState();
+    await executeLocalIntentSendPrompt({
+      text,
+      mode,
+      activeSessionId: state.activeSessionId,
+      activeTargetDirectory: state.activeTargetDirectory,
+      busySessionIds: state.busySessionIds,
+      sessions: state.sessions,
+      sessionMeta: state.sessionMeta,
+      dispatch,
+      resolveSessionId: resolveNamedSession,
+      ensureModelSelectedForNewChat: () => {
+        const selection = resolveAgentSendSelection(getSelectionSnapshot());
+        if (selection.model) return true;
         dispatch({ type: "SET_ERROR", payload: "Choose a Harness model before sending." });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("open-model-selector"));
         }
-        return;
-      }
-    }
-
-    const sessionId = await resolveNamedSession(text);
-    if (!sessionId) return;
-
-    const current = getState();
-    const intent = decidePromptIntentDispatch({
-      sessionId,
-      requestedMode: mode,
-      busySessionIds: current.busySessionIds,
+        return false;
+      },
+      preparePromptText: prepareDirectoryChangePrompt,
+      enqueuePrompt: enqueueSelectedPrompt,
+      dispatchPromptNow: (sessionId, preparedText, promptMode) =>
+        dispatchPromptDirect(sessionId, preparedText, undefined, undefined, undefined, promptMode),
+      abortSession,
     });
-    if (!intent) return;
-
-    if (intent.type === "queue-after-part" || intent.type === "queue-prompt") {
-      const queued = await enqueueSelectedPrompt({
-        sessionId: intent.sessionId,
-        text,
-        mode: intent.mode,
-        insertAt: intent.insertAt,
-      });
-      if (!queued) return;
-
-      if (intent.type === "queue-after-part") {
-        dispatch({
-          type: "SET_AFTER_PART_PENDING",
-          payload: { sessionID: intent.sessionId, pending: true },
-        });
-        return;
-      }
-
-      if (intent.type === "queue-prompt" && intent.mode === "interrupt") {
-        const session = getState().sessions.find((item) => item.id === intent.sessionId);
-        await sessionsClient.abort({
-          sessionId: intent.sessionId,
-          harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
-          target:
-            getSessionProjectTarget(session, current.sessionMeta[intent.sessionId]) ?? undefined,
-        });
-      }
-      return;
-    }
-
-    await dispatchPromptDirect(
-      intent.sessionId,
-      prepareDirectoryChangePrompt(intent.sessionId, text),
-      undefined,
-      undefined,
-      undefined,
-      intent.mode,
-    );
   };
 
   const sendCommand = async (command: string, args: string) => {

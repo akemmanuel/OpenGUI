@@ -1,7 +1,11 @@
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
 import { getChildSessionId, MESSAGE_PAGE_SIZE } from "@/hooks/agent-message-state";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
-import { getSessionProjectTarget, type ProjectTarget } from "@/hooks/agent-session-utils";
+import {
+  directoryScopeForSessionApi,
+  getSessionProjectTarget,
+  type ProjectTarget,
+} from "@/hooks/agent-session-utils";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 
 interface SessionsMessagesClient {
@@ -56,15 +60,31 @@ export async function fetchSessionMessagePage({
   const pageSize = options?.limit ?? MESSAGE_PAGE_SIZE;
   const session = sessions.find((candidate) => candidate.id === sessionId);
   const resolvedTarget = projectTarget ?? getSessionProjectTarget(session);
+  const directory =
+    resolvedTarget?.directory ??
+    directoryScopeForSessionApi(session) ??
+    projectTarget?.directory ??
+    (session?._projectDir ? String(session._projectDir) : undefined) ??
+    (session?.directory ? String(session.directory) : undefined);
+  const harnessId =
+    resolveSessionHarnessRoute(session).harnessId ??
+    getHarnessIdFromSessionId(sessionId) ??
+    undefined;
+  if (!directory?.trim()) {
+    throw new Error("directory is required");
+  }
+  if (!harnessId) {
+    throw new Error("harnessId is required");
+  }
   const data = await sessionsClient.getMessages({
     sessionId,
-    harnessId: resolveSessionHarnessRoute(session).harnessId ?? undefined,
+    harnessId,
     options: {
       limit: pageSize,
       before: options?.before,
-      directory: resolvedTarget?.directory,
-      workspaceId: resolvedTarget?.workspaceId,
-      baseUrl: resolvedTarget?.baseUrl,
+      directory,
+      workspaceId: resolvedTarget?.workspaceId ?? projectTarget?.workspaceId,
+      baseUrl: resolvedTarget?.baseUrl ?? projectTarget?.baseUrl,
     },
   });
   const messages = data?.messages ?? [];
@@ -115,6 +135,8 @@ export function hydrateChildSessionMessages({
   const harnessId = parentSessionId
     ? (getHarnessIdFromSessionId(parentSessionId) ?? undefined)
     : undefined;
+  const directory = projectTarget?.directory?.trim();
+  if (!directory || !harnessId) return;
 
   for (const childSessionId of childSessionIds) {
     const nextVersion = (childHydrationVersions[childSessionId] ?? 0) + 1;
@@ -126,7 +148,7 @@ export function hydrateChildSessionMessages({
         harnessId,
         options: {
           limit: 10000,
-          directory: projectTarget?.directory,
+          directory,
           workspaceId: projectTarget?.workspaceId,
         },
       })

@@ -168,7 +168,7 @@ export function createWorkspaceRemovalPlan({
 export async function removeLifecycleWorkspace({
   workspaceId,
   state,
-  disconnectProject,
+  releaseDirectory,
   selectSession,
   dispatch,
 }: {
@@ -178,7 +178,7 @@ export async function removeLifecycleWorkspace({
     activeWorkspaceId: string;
     hasBackends: boolean;
   };
-  disconnectProject: (input: {
+  releaseDirectory: (input: {
     target: { directory: string; workspaceId: string };
   }) => Promise<unknown>;
   selectSession: (sessionId: string | null) => Promise<void>;
@@ -194,7 +194,7 @@ export async function removeLifecycleWorkspace({
   if (plan.type === "skip") return;
 
   for (const removal of plan.projectRemovals) {
-    await disconnectProject({
+    await releaseDirectory({
       target: { directory: removal.directory, workspaceId },
     });
     dispatch({

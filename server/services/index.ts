@@ -1,7 +1,6 @@
 import type { OpenGuiCapabilities } from "../../src/protocol/client.ts";
 import type { StorageService } from "./storage-service.ts";
-import type { ProjectService } from "./project-service.ts";
-import type { HarnessService } from "./harness-service.ts";
+import type { HarnessService } from "@opengui/runtime";
 import type { BackendEventBus } from "./event-bus.ts";
 import type { PromptQueueService } from "./prompt-queue-service.ts";
 import type { SessionService } from "./session-service.ts";
@@ -13,16 +12,12 @@ export {
 } from "./storage-service.ts";
 export type {
   StorageService,
-  ProjectRecord,
   PromptQueueEntryRecord,
-  CreateProjectInput,
-  UpdateProjectInput,
   CreatePromptQueueEntryInput,
   UpdatePromptQueueEntryInput,
 } from "./storage-service.ts";
-export { ProjectService } from "./project-service.ts";
-export { HarnessService } from "./harness-service.ts";
-export type { HarnessControl, HarnessScope } from "./harness-service.ts";
+export { HarnessService, createHarnessService } from "@opengui/runtime";
+export type { HarnessControl, HarnessScope, DirectoryConnectionConfig } from "@opengui/runtime";
 export { BackendEventBus } from "./event-bus.ts";
 export type { BackendEventMap } from "./event-bus.ts";
 export { SessionService } from "./session-service.ts";
@@ -32,14 +27,15 @@ export type {
   UpdateSessionInput,
   ListSessionsInput,
   ListSessionsResult,
-} from "./session-service.ts";
+  ResolvedHarnessDirectory,
+} from "./session-types.ts";
 export { PromptQueueService } from "./prompt-queue-service.ts";
 export type { PromptQueueEntry, CreatePromptQueueInput } from "./prompt-queue-service.ts";
 export { getBackendCapabilities } from "./capabilities.ts";
 export type { OpenGuiCapabilities };
 export { findFilesInDirectory } from "./file-search.ts";
 export { runJobsWithConcurrency } from "./concurrency.ts";
-export { buildHarnessScope, runtimeSessionBelongsToProject } from "./harness-scope.ts";
+export { buildHarnessScope, runtimeSessionBelongsToDirectory } from "./harness-scope.ts";
 export {
   rejectHarnessQuestion,
   replyToHarnessQuestion,
@@ -53,26 +49,15 @@ export {
   toQuestionAnswers,
   toQueueMode,
 } from "./http-input.ts";
+export { listManagedHarnessDescriptors } from "./harness-descriptors.ts";
 export {
-  connectProjectToHarnesses,
-  disconnectProjectFromHarnesses,
-  getProjectHarnessStatus,
-  listManagedHarnessDescriptors,
-  loadProjectHarnessResources,
-} from "./project-harness-actions.ts";
-export {
-  normalizeCreateProjectInput,
-  normalizeUpdateProjectInput,
-  parseCreateProjectInput,
-  parseUpdateProjectInput,
-} from "./project-input.ts";
-export {
-  createProjectRecord,
-  findOrCreateProjectRecordByPath,
-  getProjectRecordOrThrow,
-  listProjectRecords,
-  updateProjectRecord,
-} from "./project-record-actions.ts";
+  registerDirectoryWithHarnesses,
+  releaseDirectoryFromHarnesses,
+  getDirectoryHarnessStatus,
+  loadDirectoryHarnessResources,
+  directoryHarnessScope,
+} from "./directory-harness-actions.ts";
+export { resolveCanonicalDirectoryInput } from "./directory-input.ts";
 export {
   registerSharedSessionControl,
   sendQueuedPromptNow,
@@ -104,19 +89,23 @@ export {
 } from "./session-query.ts";
 export {
   enqueueSessionPrompt,
-  listProjectSessionQueues,
+  listDirectorySessionQueues,
   listSessionQueue,
   removeSessionPrompt,
   reorderSessionPrompt,
   updateSessionPrompt,
 } from "./session-queue-actions.ts";
+export { getSessionRecordOrThrow, updateSessionRecord } from "./session-record-actions.ts";
 export {
-  getSessionRecordOrThrow,
-  listSessionRecords,
-  updateSessionRecord,
-} from "./session-record-actions.ts";
-export { resolveSessionProjectRecord } from "./session-project-scope.ts";
-export { syncDirectorySessions, syncProjectSessions } from "./session-sync.ts";
+  harnessScopeForDirectory,
+  queueScopeForSession,
+  resolveSessionCanonicalDirectory,
+  resolveSessionDirectoryScope,
+  resolveSessionDirectoryScopeRecord,
+  sessionDirectoryHint,
+} from "./directory-scope.ts";
+export { listDirectorySessionsFromHarness } from "./session-harness-list.ts";
+export { resolveSessionRecordForMutation, resolveSessionRecordForRead } from "./session-resolve.ts";
 
 export interface HarnessAdapterDescriptor {
   id: string;
@@ -127,7 +116,6 @@ export interface BackendServiceContext {
   dataDir: string;
   storage: StorageService;
   events: BackendEventBus;
-  projects: ProjectService;
   sessions: SessionService;
   queues: PromptQueueService;
   harnesses: HarnessService;

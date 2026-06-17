@@ -47,6 +47,9 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.16.2
         version: 1.16.2
+      '@opengui/runtime':
+        specifier: workspace:*
+        version: link:packages/runtime
       '@tanstack/react-virtual':
         specifier: ^3.14.2
         version: 3.14.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -165,6 +168,14 @@ importers:
       which:
         specifier: ^7.0.0
         version: 7.0.0
+
+  packages/backend:
+    dependencies:
+      '@opengui/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
+  packages/runtime: {}
 
 packages:
 

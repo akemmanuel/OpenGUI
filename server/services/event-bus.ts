@@ -1,10 +1,9 @@
 import { EventEmitter } from "node:events";
 import type { PromptQueueEntry } from "./prompt-queue-service.ts";
-import type { ProjectRecord } from "./storage-service.ts";
 import type { SessionRecord } from "./session-types.ts";
 
 export interface BackendEventRefs {
-  projectId?: string;
+  directory?: string;
   sessionId?: string;
   harnessId?: string;
 }
@@ -17,9 +16,6 @@ export interface OpenGuiEventEnvelope<T = unknown> extends BackendEventRefs {
 }
 
 export interface BackendEventMap {
-  "project.created": { projectId: string; project: ProjectRecord };
-  "project.updated": { projectId: string; project: ProjectRecord };
-  "project.deleted": { projectId: string; project: ProjectRecord };
   "session.created": { sessionId: string; session: SessionRecord };
   "session.updated": { sessionId: string; session: SessionRecord };
   "session.deleted": { sessionId: string; session: SessionRecord };

@@ -35,7 +35,7 @@ export interface SessionContextValue {
   pendingPermissions: Record<string, PermissionRequest>;
   pendingQuestions: Record<string, QuestionRequest>;
   activeTargetDirectory: string | null;
-  activeTargetBackendId: HarnessId | null;
+  activeTargetHarnessId: HarnessId | null;
   namingSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
   sessionDrafts: Record<string, string>;
@@ -81,6 +81,10 @@ export interface ConnectionContextValue {
   defaultChatDirectory: string | null;
   workspaceServerUrl: string | null;
   isLocalWorkspace: boolean;
+  /** Desktop Shell + Local Workspace: native OS directory picker. */
+  supportsNativeDirectoryPicker: boolean;
+  /** Base URL for attachment/image paths; null for Electron local backend. */
+  attachmentBaseUrl: string | null;
   activeDirectory: string | null;
   bootState: InternalAgentState["bootState"];
   bootError: string | null;

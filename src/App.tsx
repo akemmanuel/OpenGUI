@@ -1,12 +1,10 @@
 import { ExternalLink, GitMerge } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { NoProjectConnected, NoSessionSelected } from "@/components/EmptyChatStates";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -28,6 +26,7 @@ import { storageGet } from "@/lib/safe-storage";
 import { OpenGuiClientProvider, useOpenGuiClient } from "@/protocol/provider";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { DesktopShellProvider } from "@/shell/provider";
+import { notifyError, notifyErrorDeduped, resetNotifyErrorDedup } from "@/lib/notify";
 import { normalizeTerminalOutput } from "@/lib/utils";
 import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShortcuts";
 import { useActiveSessionQueue } from "@/features/session/useActiveSessionQueue";
@@ -106,6 +105,7 @@ function AppContent({
     () => extractTerminalCommand(activeSessionError),
     [activeSessionError],
   );
+
   const {
     activeSession,
     activeSessionDirectory,
@@ -175,9 +175,8 @@ function AppContent({
     if (isBooting) return;
     const message = bootState === "error" ? bootError : lastError;
     if (!message) return;
-    toast.error(message, {
+    notifyError(message, {
       description: bootState === "error" && normalizedBootLogs ? normalizedBootLogs : undefined,
-      duration: 8000,
     });
   }, [bootState, bootError, isBooting, lastError, normalizedBootLogs, suppressBootErrors]);
 
@@ -197,6 +196,39 @@ function AppContent({
       .system.openInTerminal(activeSessionDirectory)
       .catch((error) => console.error(error));
   }, [activeSessionDirectory]);
+
+  useEffect(() => {
+    const dedupeKey =
+      activeSessionId && activeSessionError ? `${activeSessionId}:${activeSessionError}` : null;
+    if (!dedupeKey) {
+      resetNotifyErrorDedup();
+      return;
+    }
+
+    const descriptionParts = [activeSessionError];
+    if (activeSessionErrorCommand) {
+      descriptionParts.push(`${t("sessionError.nextStep")}\n${activeSessionErrorCommand}`);
+    }
+
+    notifyErrorDeduped(dedupeKey, t("sessionError.title"), {
+      description: descriptionParts.join("\n\n"),
+      ...(activeSessionErrorCommand && activeSessionDirectory
+        ? {
+            action: {
+              label: t("sessionError.openTerminal"),
+              onClick: () => openTerminalForSessionError(),
+            },
+          }
+        : {}),
+    });
+  }, [
+    activeSessionDirectory,
+    activeSessionError,
+    activeSessionErrorCommand,
+    activeSessionId,
+    openTerminalForSessionError,
+    t,
+  ]);
 
   // Check for app updates on startup
   const updateCheck = useUpdateCheck();
@@ -276,32 +308,6 @@ function AppContent({
                 {showPromptBox && (
                   <div className="shrink-0 px-4 pb-3">
                     <div className="max-w-2xl mx-auto">
-                      {activeSessionError && (
-                        <Alert variant="destructive" className="mb-2 select-text">
-                          <AlertTitle>{t("sessionError.title")}</AlertTitle>
-                          <AlertDescription className="space-y-2">
-                            <p className="whitespace-pre-wrap break-words">{activeSessionError}</p>
-                            {activeSessionErrorCommand && (
-                              <div className="space-y-1">
-                                <p>{t("sessionError.nextStep")}</p>
-                                <code className="block rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground">
-                                  {activeSessionErrorCommand}
-                                </code>
-                              </div>
-                            )}
-                            {activeSessionErrorCommand && activeSessionDirectory && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={openTerminalForSessionError}
-                              >
-                                {t("sessionError.openTerminal")}
-                              </Button>
-                            )}
-                          </AlertDescription>
-                        </Alert>
-                      )}
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">
                           <QueueList

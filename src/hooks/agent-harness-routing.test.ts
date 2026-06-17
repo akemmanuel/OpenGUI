@@ -33,8 +33,8 @@ describe("Harness routing", () => {
   test("creates Pending prompt Sessions with active target Harness first", () => {
     expect(
       resolvePendingPromptCreationHarnessRoute({
-        activeTargetBackendId: "pi",
-        preferredBackendId: "opencode",
+        activeTargetHarnessId: "pi",
+        preferredHarnessId: "opencode",
       }),
     ).toEqual({ harnessId: "pi", reason: "active-target", locked: false });
   });
@@ -42,8 +42,8 @@ describe("Harness routing", () => {
   test("creates Pending prompt Sessions with preferred Harness when there is no active target", () => {
     expect(
       resolvePendingPromptCreationHarnessRoute({
-        activeTargetBackendId: null,
-        preferredBackendId: "opencode",
+        activeTargetHarnessId: null,
+        preferredHarnessId: "opencode",
       }),
     ).toEqual({ harnessId: "opencode", reason: "preferred", locked: false });
   });
@@ -52,8 +52,8 @@ describe("Harness routing", () => {
     expect(
       resolveActiveResourceHarnessRoute({
         activeSession: session({ _harnessId: "claude-code" }),
-        activeTargetBackendId: "pi",
-        preferredBackendId: "opencode",
+        activeTargetHarnessId: "pi",
+        preferredHarnessId: "opencode",
       }),
     ).toEqual({ harnessId: "claude-code", reason: "session", locked: true });
   });
@@ -62,8 +62,8 @@ describe("Harness routing", () => {
     expect(
       resolveActiveResourceHarnessRoute({
         activeSession: null,
-        activeTargetBackendId: "pi",
-        preferredBackendId: "opencode",
+        activeTargetHarnessId: "pi",
+        preferredHarnessId: "opencode",
       }),
     ).toEqual({ harnessId: "pi", reason: "active-target", locked: false });
   });

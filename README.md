@@ -168,16 +168,18 @@ vp run dist:win
 
 ## Architecture
 
-OpenGUI has three layers: an **OpenGUI Backend** that owns Harness execution and filesystem/git operations, an **OpenGUI Frontend** that owns Workspaces, Projects, and presentation state, and platform **Shells** for Desktop, Web, and Mobile.
+Four layers ([`CONTEXT.md`](CONTEXT.md), [ADR 0005](docs/adr/0005-opengui-runtime-backend-split-and-sdk.md)):
+
+- **OpenGUI Runtime** — in-process Harness Adapters and execution (`@opengui/runtime`)
+- **OpenGUI Backend** — embeds Runtime; HTTP/SSE, queues, shared session control (`server/web-server.ts` today)
+- **OpenGUI Frontend** — React UI; Workspaces, Projects, pending/queued prompt UI (`src/`)
+- **Shell** — Desktop, Web, or Mobile bootstrap (`main.ts`, browser, Capacitor)
 
 ```
-main.ts              Desktop Shell main process (window management, IPC)
+main.ts              Desktop Shell (window, IPC, backend sidecar)
 preload.js           Desktop Shell preload API
-opencode-bridge.ts   OpenCode Harness adapter
-claude-code-bridge.ts Claude Code Harness adapter
-codex-bridge.ts      Codex Harness adapter
-pi-bridge.ts         Pi Harness adapter
-server/web-server.ts OpenGUI Backend for browser mode (RPC, events, server FS browser)
+packages/runtime/src/adapters/*  Harness Adapters (hosted inside Backend via Runtime)
+server/web-server.ts OpenGUI Backend (transport + queue + delegates to Runtime)
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point + web Electron shim install
@@ -198,6 +200,10 @@ See [docs/architecture.md](docs/architecture.md) for contributor architecture no
 OpenGUI stores connection and UI preferences via the app settings interface.
 
 Voice input (speech-to-text) requires a Whisper-compatible transcription server. Set the endpoint URL in **Settings > General > Voice transcription endpoint**. The microphone button only appears when an endpoint is configured. The server should accept a multipart `POST` with an `audio` file field and return `{ text, language, duration_seconds }`.
+
+## SDK (`@opengui/runtime`)
+
+Embed the same in-process harness runtime the app uses—list sessions, stream events, and send prompts on a filesystem **directory** without HTTP or React. Pi quickstart and API contracts: [`packages/runtime/README.md`](packages/runtime/README.md).
 
 ## Contributing
 

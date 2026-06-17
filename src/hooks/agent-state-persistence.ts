@@ -8,7 +8,7 @@ import {
 } from "@/lib/safe-storage";
 import { getWorkspaceRootProjectDirectory } from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
-import type { OpenGuiClient, OpenGuiProject, FrontendWorkspaceRecord } from "@/protocol/client";
+import type { OpenGuiClient, FrontendWorkspaceRecord } from "@/protocol/client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type { SelectedModel, Workspace } from "@/types/electron";
@@ -274,25 +274,22 @@ function getWorkspaceSettings(
   return settings;
 }
 
-function orderProjects(
-  projects: OpenGuiProject[],
+function orderProjectPaths(
+  paths: string[],
   order: string[] | undefined,
   hiddenProjects?: string[],
 ): string[] {
   const normalizedOrder = normalizeProjectList(order ?? []);
   const hidden = new Set(normalizeProjectList(hiddenProjects ?? []));
-  const byPath = new Map(
-    projects.map((project) => [normalizeProjectPath(project.path) || project.path, project.path]),
-  );
+  const uniquePaths = normalizeProjectList(paths);
   const ordered: string[] = [];
   for (const entry of normalizedOrder) {
-    const resolved = byPath.get(entry);
-    if (resolved && !ordered.includes(resolved)) ordered.push(resolved);
+    if (uniquePaths.includes(entry) && !ordered.includes(entry)) ordered.push(entry);
   }
-  for (const project of projects) {
-    if (!ordered.includes(project.path)) ordered.push(project.path);
+  for (const path of uniquePaths) {
+    if (!ordered.includes(path)) ordered.push(path);
   }
-  return normalizeProjectList(ordered).filter((project) => !hidden.has(project));
+  return ordered.filter((project) => !hidden.has(project));
 }
 
 function normalizeWorkspaceServerUrl(value: string | undefined) {
@@ -372,7 +369,7 @@ export function workspaceToUpdateInput(workspace: Workspace) {
 
 export function workspaceFromBackend(
   workspace: FrontendWorkspaceRecord,
-  projects: OpenGuiProject[] = [],
+  projectPaths: string[] = [],
 ): Workspace {
   const settings = getWorkspaceSettings(workspace);
   return normalizeWorkspace({
@@ -386,7 +383,7 @@ export function workspaceFromBackend(
     password: settings.password,
     authToken: settings.authToken ?? (!settings.username ? settings.password : undefined),
     isLocal: settings.isLocal === true,
-    projects: orderProjects(projects, settings.projectOrder, settings.hiddenProjects),
+    projects: orderProjectPaths(projectPaths, settings.projectOrder, settings.hiddenProjects),
     selectedModel: settings.selectedModel ?? null,
     selectedAgent: settings.selectedAgent ?? null,
     lastActiveSessionId: settings.lastActiveSessionId ?? null,

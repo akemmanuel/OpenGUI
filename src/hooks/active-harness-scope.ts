@@ -20,24 +20,24 @@ export interface ActiveHarnessScope {
 export function resolveActiveHarnessScope({
   activeSession,
   activeTargetDirectory,
-  activeTargetBackendId,
+  activeTargetHarnessId,
   workspaceDirectory,
-  preferredBackendId,
+  preferredHarnessId,
   backendsById,
   openGuiClient,
 }: {
   activeSession: Session | null | undefined;
   activeTargetDirectory: string | null;
-  activeTargetBackendId: HarnessId | null;
+  activeTargetHarnessId: HarnessId | null;
   workspaceDirectory: string | null;
-  preferredBackendId: HarnessId;
+  preferredHarnessId: HarnessId;
   backendsById: Partial<Record<HarnessId, HarnessDescriptor>>;
   openGuiClient: OpenGuiClient;
 }): ActiveHarnessScope {
   const route = resolveActiveResourceHarnessRoute({
     activeSession,
-    activeTargetBackendId,
-    preferredBackendId,
+    activeTargetHarnessId,
+    preferredHarnessId,
   });
   const directory =
     getSessionDirectory(activeSession) ?? activeTargetDirectory ?? workspaceDirectory;

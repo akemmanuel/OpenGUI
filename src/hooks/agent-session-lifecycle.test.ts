@@ -113,12 +113,12 @@ describe("createLifecycleSession", () => {
       title: "New",
       directory: "/chat",
       state: {
-        activeTargetBackendId: null,
+        activeTargetHarnessId: null,
         sessions: [],
         activeSessionId: null,
         activeWorkspaceId: "workspace-1",
       },
-      preferredBackendId: "claude-code",
+      preferredHarnessId: "claude-code",
       ensureDirectoryConnection: async (directory) => {
         ensured.push(directory);
       },

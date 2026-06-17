@@ -336,7 +336,8 @@
   "sessionError": {
     "title": "Agent error",
     "nextStep": "Next step: run this command in your terminal, then retry:",
-    "openTerminal": "Open terminal"
+    "openTerminal": "Open terminal",
+    "messagesLoadFailed": "Could not load messages for this session."
   },
   "updateDialog": {
     "title": "Update Available",

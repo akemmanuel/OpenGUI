@@ -4,13 +4,13 @@ import type { SelectedModel } from "../../src/types/electron.d.ts";
 import type { BackendServiceContext } from "./index.ts";
 import type { PromptQueueEntry } from "./prompt-queue-service.ts";
 
-export async function listProjectSessionQueues(input: {
+export async function listDirectorySessionQueues(input: {
   services: BackendServiceContext;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<Record<string, PromptQueueEntry[]>> {
   return await input.services.queues.listProjectQueues({
-    projectId: input.projectId,
+    directory: input.directory,
     harnessId: input.harnessId,
   });
 }
@@ -18,11 +18,11 @@ export async function listProjectSessionQueues(input: {
 export async function listSessionQueue(input: {
   services: BackendServiceContext;
   sessionId: string;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.listSessionQueue(input.sessionId, {
-    projectId: input.projectId,
+    directory: input.directory,
     harnessId: input.harnessId,
   });
 }
@@ -36,7 +36,7 @@ export async function enqueueSessionPrompt(input: {
   variant?: string;
   mode: QueueMode;
   insertAt?: "front" | "back";
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.enqueue(
@@ -49,7 +49,7 @@ export async function enqueueSessionPrompt(input: {
       mode: input.mode,
       insertAt: input.insertAt,
     },
-    { projectId: input.projectId, harnessId: input.harnessId },
+    { directory: input.directory, harnessId: input.harnessId },
   );
 }
 
@@ -58,11 +58,11 @@ export async function reorderSessionPrompt(input: {
   sessionId: string;
   entryId: string;
   index: number;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.reorder(input.sessionId, input.entryId, input.index, {
-    projectId: input.projectId,
+    directory: input.directory,
     harnessId: input.harnessId,
   });
 }
@@ -76,7 +76,7 @@ export async function updateSessionPrompt(input: {
   agent?: string | null;
   variant?: string | null;
   mode?: QueueMode;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.update(
@@ -89,7 +89,7 @@ export async function updateSessionPrompt(input: {
       variant: input.variant,
       mode: input.mode,
     },
-    { projectId: input.projectId, harnessId: input.harnessId },
+    { directory: input.directory, harnessId: input.harnessId },
   );
 }
 
@@ -97,11 +97,11 @@ export async function removeSessionPrompt(input: {
   services: BackendServiceContext;
   sessionId: string;
   entryId: string;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
 }): Promise<PromptQueueEntry[]> {
   return await input.services.queues.remove(input.sessionId, input.entryId, {
-    projectId: input.projectId,
+    directory: input.directory,
     harnessId: input.harnessId,
   });
 }

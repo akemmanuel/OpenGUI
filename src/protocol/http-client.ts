@@ -4,16 +4,13 @@ import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/ba
 import { HARNESS_BACKEND_META } from "@/agents/cli-harness-factory";
 import type {
   HarnessResourceBundle,
-  CreateProjectInput,
   MessagePageResult,
   OpenGuiCapabilities,
   OpenGuiClient,
   OpenGuiQueueEntry,
-  OpenGuiProject,
-  ProjectConnectResult,
-  HarnessProjectSessionsResult,
+  DirectoryRegisterResult,
+  HarnessDirectorySessionsResult,
   SessionQueryResult,
-  UpdateProjectInput,
 } from "@/protocol/client";
 import { mergeCanonicalEventForListener } from "@/hooks/backend-event-normalization";
 import { composeFrontendSessionId } from "@/lib/session-identity";
@@ -193,7 +190,7 @@ function eventUrl(
 interface SessionRecordResponse {
   id: string;
   rawId: string;
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
   title: string;
   createdAt: string;
@@ -202,10 +199,8 @@ interface SessionRecordResponse {
   metadata?: Record<string, unknown>;
 }
 
-type BackendProjectResponse = Omit<OpenGuiProject, "workspaceId"> & { workspaceId?: string };
-
-function toFrontendProject(project: BackendProjectResponse, workspaceId?: string): OpenGuiProject {
-  return { ...project, workspaceId: workspaceId ?? project.workspaceId ?? "local" };
+function directoryApiSegment(directory: string) {
+  return encodeURIComponent(directory);
 }
 
 interface SessionQueryResponse {
@@ -238,12 +233,6 @@ interface CanonicalEventEnvelope {
   sessionId?: string;
   harnessId?: string;
   payload: unknown;
-}
-
-function toProjectDisplayName(path: string) {
-  const trimmed = path.replace(/[\\/]+$/, "");
-  const parts = trimmed.split(/[\\/]/).filter(Boolean);
-  return parts.at(-1) || path || "Project";
 }
 
 function isCanonicalEventEnvelope(value: unknown): value is CanonicalEventEnvelope {
@@ -280,9 +269,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     const response = await fetchImpl(joinUrl(requestBaseUrl, path), { ...init, headers });
     const body = (await response.json().catch(() => null)) as RpcEnvelope<T> | null;
     if (!response.ok || !body?.ok) {
-      const isMissingSessionMessagePage =
-        body?.error === "Session not found" && path.includes("/messages");
-      if (import.meta.env.DEV && !isMissingSessionMessagePage) {
+      if (import.meta.env.DEV) {
         console.error(
           "[http] failed " +
             JSON.stringify({
@@ -311,23 +298,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const harnessIdsOrAll = (harnessIds?: HarnessId[]) =>
     harnessIds?.length ? harnessIds : HARNESS_IDS;
   const harnessChannel = (harnessId: HarnessId, suffix: string) => `${harnessId}:${suffix}`;
-  const projectById = new Map<string, Promise<OpenGuiProject | null>>();
   const sessionRecordByCanonicalId = new Map<string, SessionRecordResponse>();
   const sessionCanonicalIdsByFrontendId = new Map<string, Set<string>>();
-
-  const getProject = async (id: string): Promise<OpenGuiProject | null> => {
-    if (!id) return null;
-    const existing = projectById.get(id);
-    if (existing) return existing;
-    const promise = request<OpenGuiProject>(`/api/projects/${encodeURIComponent(id)}`)
-      .then((project) => project)
-      .catch((error) => {
-        if (error instanceof Error && error.message === "Project not found") return null;
-        throw error;
-      });
-    projectById.set(id, promise);
-    return promise;
-  };
 
   const rememberWorkspaceConnection = (target?: HarnessTarget) => {
     if (!target?.workspaceId) return;
@@ -390,51 +362,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
   const queueEntryPath = (entryId: string, action = "") =>
     `/queue/${encodeURIComponent(entryId)}${action}`;
 
-  const interactionTargetBody = async (target?: HarnessTarget, ensure = false) => {
-    const project = target
-      ? await (ensure ? ensureProjectForTarget(target) : findProjectForTarget(target))
-      : null;
-    return {
-      workspaceId: project?.workspaceId ?? target?.workspaceId,
-      projectId: project?.id,
-      directory: target?.directory,
-    };
-  };
-
-  const findProjectForTarget = async (target?: HarnessTarget): Promise<OpenGuiProject | null> => {
-    const directory = target?.directory;
-    if (!directory) return null;
-    const normalizedDirectory = directory.replace(/[\\/]+$/, "");
-    const projects = (
-      await requestAt<BackendProjectResponse[]>(requestBaseUrlForTarget(target), "/api/projects")
-    ).map((project) => toFrontendProject(project, target?.workspaceId));
-    return (
-      projects.find(
-        (project) =>
-          project.path === directory ||
-          project.canonicalPath === directory ||
-          project.path === normalizedDirectory ||
-          project.canonicalPath === normalizedDirectory,
-      ) ?? null
-    );
-  };
-
-  const ensureProjectForTarget = async (target?: HarnessTarget): Promise<OpenGuiProject | null> => {
-    if (!target?.directory) return null;
-    const existing = await findProjectForTarget(target);
-    if (existing) return existing;
-    return toFrontendProject(
-      await requestAt<BackendProjectResponse>(requestBaseUrlForTarget(target), "/api/projects", {
-        method: "POST",
-        ...jsonBody({
-          path: target.directory,
-          displayName: toProjectDisplayName(target.directory),
-          workspaceId: target.workspaceId,
-        } satisfies CreateProjectInput),
-      }),
-      target.workspaceId,
-    );
-  };
+  const interactionTargetBody = (target?: HarnessTarget) => ({
+    workspaceId: target?.workspaceId,
+    directory: target?.directory,
+  });
 
   const frontendSessionIdFromRecord = (record: SessionRecordResponse) =>
     composeFrontendSessionId(record.harnessId, record.rawId);
@@ -463,43 +394,85 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     });
   };
 
+  const sessionScopeFromInput = (
+    input: SessionLookupInput,
+    record?: SessionRecordResponse,
+  ): { directory?: string; harnessId?: HarnessId } => {
+    const harnessId =
+      input.harnessId ??
+      record?.harnessId ??
+      getHarnessIdFromSessionId(input.sessionId) ??
+      undefined;
+    const directory =
+      input.target?.directory ??
+      input.directory ??
+      record?.directory ??
+      (typeof record?.metadata?.directory === "string" ? record.metadata.directory : undefined);
+    return { directory, harnessId };
+  };
+
+  const withSessionScopeQuery = (
+    path: string,
+    input: SessionLookupInput,
+    record?: SessionRecordResponse,
+  ): string => {
+    const { directory, harnessId } = sessionScopeFromInput(input, record);
+    const params = new URLSearchParams();
+    if (harnessId) params.set("harnessId", harnessId);
+    if (directory) params.set("directory", directory);
+    if (!params.size) return path;
+    const separator = path.includes("?") ? "&" : "?";
+    return `${path}${separator}${params.toString()}`;
+  };
+
   const resolveSessionPath = async (input: SessionLookupInput, suffix = ""): Promise<string> => {
     const direct = sessionRecordByCanonicalId.get(input.sessionId);
-    if (direct) return `/api/sessions/${encodeURIComponent(direct.id)}${suffix}`;
+    if (direct) {
+      return withSessionScopeQuery(
+        `/api/sessions/${encodeURIComponent(direct.id)}${suffix}`,
+        input,
+        direct,
+      );
+    }
 
     let candidates = listSessionRecordCandidates(input);
     if (candidates.length === 1) {
-      return `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`;
+      return withSessionScopeQuery(
+        `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`,
+        input,
+        candidates[0],
+      );
     }
 
     const directory = input.target?.directory ?? input.directory;
     const harnessId = input.harnessId ?? getHarnessIdFromSessionId(input.sessionId) ?? undefined;
-    const params = new URLSearchParams();
-    if (harnessId) params.set("harnessId", harnessId);
 
     if (directory) {
-      const project = input.target ? await ensureProjectForTarget(input.target) : null;
-      params.set("projectId", project?.id ?? directory);
       candidates = candidates.filter(
         (record) =>
-          (record.projectId === (project?.id ?? directory) ||
-            record.metadata?.directory === directory) &&
+          (record.directory === directory || record.metadata?.directory === directory) &&
           (!harnessId || record.harnessId === harnessId),
       );
       if (candidates.length === 1) {
-        return `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`;
+        return withSessionScopeQuery(
+          `/api/sessions/${encodeURIComponent(candidates[0]!.id)}${suffix}`,
+          input,
+          candidates[0],
+        );
       }
     }
 
-    const search = params.size ? `?${params.toString()}` : "";
-    return `/api/sessions/${encodeURIComponent(input.sessionId)}${suffix}${search}`;
+    return withSessionScopeQuery(
+      `/api/sessions/${encodeURIComponent(input.sessionId)}${suffix}`,
+      input,
+    );
   };
 
   const toFrontendSessionFromDirectory = (
     record: SessionRecordResponse,
     directory: string,
     workspaceId?: string,
-  ): HarnessProjectSessionsResult["sessions"][number] => {
+  ): HarnessDirectorySessionsResult["sessions"][number] => {
     rememberSessionRecord(record);
     const resolvedWorkspaceId = workspaceId ?? "local";
     return {
@@ -517,17 +490,14 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       _workspaceId: resolvedWorkspaceId,
       _harnessId: record.harnessId,
       _rawId: record.rawId,
-    } as HarnessProjectSessionsResult["sessions"][number];
+    } as HarnessDirectorySessionsResult["sessions"][number];
   };
 
-  const toFrontendSession = async (
+  const toFrontendSession = (
     record: SessionRecordResponse,
-    project?: OpenGuiProject | null,
-  ): Promise<HarnessProjectSessionsResult["sessions"][number]> => {
-    const resolvedProject = project ?? (await getProject(record.projectId));
-    const directory = resolvedProject?.path ?? resolvedProject?.canonicalPath ?? "";
-    return toFrontendSessionFromDirectory(record, directory, resolvedProject?.workspaceId);
-  };
+    directory: string,
+    workspaceId?: string,
+  ) => toFrontendSessionFromDirectory(record, directory, workspaceId);
 
   const getSessionRecord = async (sessionId: string, input: SessionLookupInput = { sessionId }) =>
     await requestAt<SessionRecordResponse>(
@@ -596,7 +566,8 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           ...jsonBody({ title }),
         },
       );
-      return await toFrontendSession(record);
+      const dir = typeof record.metadata?.directory === "string" ? record.metadata.directory : "";
+      return toFrontendSession(record, dir, undefined);
     },
     compactSession: async (sessionId, model, target) => {
       await sessionAction<boolean>({ sessionId, harnessId, target }, "/compact", { model });
@@ -607,7 +578,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         "/fork",
         { messageId: messageID },
       );
-      return await toFrontendSession(record);
+      return toFrontendSession(record, target?.directory ?? "", target?.workspaceId);
     },
     revertSession: async (sessionId, messageID, partID, target) => {
       const value = await sessionAction<SessionRecordResponse | boolean>(
@@ -615,22 +586,22 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         "/revert",
         { messageId: messageID, partId: partID },
       );
-      return await toFrontendSession(
+      const resolved =
         typeof value === "boolean"
           ? await getSessionRecord(sessionId, { sessionId, harnessId, target })
-          : value,
-      );
+          : value;
+      return toFrontendSession(resolved, target?.directory ?? "", target?.workspaceId);
     },
     unrevertSession: async (sessionId, target) => {
       const value = await sessionAction<SessionRecordResponse | boolean>(
         { sessionId, harnessId, target },
         "/unrevert",
       );
-      return await toFrontendSession(
+      const resolved =
         typeof value === "boolean"
           ? await getSessionRecord(sessionId, { sessionId, harnessId, target })
-          : value,
-      );
+          : value;
+      return toFrontendSession(resolved, target?.directory ?? "", target?.workspaceId);
     },
     sendCommand: async (input) => {
       await request<boolean>(
@@ -675,7 +646,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             protocolVersion: 1,
             server: {
               workspaces: false,
-              projects: true,
+              projects: false,
               sessions: true,
               events: "sse",
               auth: false,
@@ -684,53 +655,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             harnesses: HARNESS_IDS,
           } satisfies OpenGuiCapabilities)
         : request<OpenGuiCapabilities>("/api/capabilities"),
-    projects: {
-      list: async (workspaceId: string) =>
-        (await request<BackendProjectResponse[]>("/api/projects")).map((project) =>
-          toFrontendProject(project, workspaceId),
-        ),
-      get: async (id: string) => {
-        try {
-          return toFrontendProject(
-            await request<BackendProjectResponse>(`/api/projects/${encodeURIComponent(id)}`),
-          );
-        } catch (error) {
-          if (error instanceof Error && error.message === "Project not found") return null;
-          throw error;
-        }
-      },
-      create: async (workspaceId: string, input: CreateProjectInput) =>
-        toFrontendProject(
-          await request<BackendProjectResponse>("/api/projects", {
-            method: "POST",
-            ...jsonBody(input),
-          }),
-          workspaceId,
-        ),
-      update: async (id: string, input: UpdateProjectInput) => {
-        try {
-          return toFrontendProject(
-            await request<BackendProjectResponse>(`/api/projects/${encodeURIComponent(id)}`, {
-              method: "PATCH",
-              ...jsonBody(input),
-            }),
-          );
-        } catch (error) {
-          if (error instanceof Error && error.message === "Project not found") return null;
-          throw error;
-        }
-      },
-      delete: async (id: string) => {
-        try {
-          return await request<boolean>(`/api/projects/${encodeURIComponent(id)}`, {
-            method: "DELETE",
-          });
-        } catch (error) {
-          if (error instanceof Error && error.message === "Project not found") return false;
-          throw error;
-        }
-      },
-    },
     harnesses: {
       list,
       get,
@@ -833,7 +757,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         ]);
         return { providersData, agentsData, commandsData };
       },
-      connectProject: async ({ config, harnessIds }) => {
+      registerDirectory: async ({ config, harnessIds }) => {
         const targetBackends = harnessIdsOrAll(harnessIds);
         if (!config.directory) {
           return {
@@ -851,19 +775,9 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           authToken: config.authToken,
         };
         rememberWorkspaceConnection(target);
-        const project = await ensureProjectForTarget(target);
-        if (!project) {
-          return {
-            connectedHarnessIds: [],
-            errors: targetBackends.map((harnessId) => ({
-              harnessId,
-              error: "Directory is required",
-            })),
-          };
-        }
-        return await requestAt<ProjectConnectResult>(
+        return await requestAt<DirectoryRegisterResult>(
           requestBaseUrlForTarget(target),
-          `/api/projects/${encodeURIComponent(project.id)}/connect`,
+          `/api/directories/${directoryApiSegment(config.directory)}/register`,
           {
             method: "POST",
             ...jsonBody({
@@ -873,19 +787,18 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           },
         );
       },
-      disconnectProject: async ({ target, harnessIds }) => {
-        const project = await findProjectForTarget(target);
-        if (!project) return;
+      releaseDirectory: async ({ target, harnessIds }) => {
+        if (!target.directory) return;
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
-          `/api/projects/${encodeURIComponent(project.id)}/disconnect`,
+          `/api/directories/${directoryApiSegment(target.directory)}/release`,
           {
             method: "POST",
             ...jsonBody({ harnessIds: harnessIdsOrAll(harnessIds) }),
           },
         );
       },
-      listProjectSessions: async ({ harnessIds, target }) => {
+      listDirectorySessions: async ({ harnessIds, target }) => {
         if (!target?.directory) return [];
         const response = await requestAt<SessionQueryResponse>(
           requestBaseUrlForTarget(target),
@@ -899,7 +812,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
                 },
               ],
               harnessIds,
-              sync: true,
             }),
           },
         );
@@ -910,7 +822,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           ),
         }));
       },
-      listProjectSessionStatuses: async ({ harnessIds, target }) => {
+      listDirectorySessionStatuses: async ({ harnessIds, target }) => {
         if (!target?.directory) return {};
         const entries = await Promise.all(
           harnessIds.map(async (harnessId) => {
@@ -931,7 +843,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       },
     },
     sessions: {
-      query: async ({ projects, harnessIds, sync = false }): Promise<SessionQueryResult> => {
+      query: async ({ projects, harnessIds }): Promise<SessionQueryResult> => {
         const groups = new Map<string, typeof projects>();
         for (const project of projects) {
           const baseUrl = requestBaseUrlForTarget(project);
@@ -949,7 +861,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
               ...jsonBody({
                 projects: group.projects.map(({ directory }) => ({ directory })),
                 harnessIds,
-                sync,
               }),
             }),
           ),
@@ -1023,7 +934,12 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             ...jsonBody({ title }),
           },
         );
-        return await toFrontendSession(record, null);
+        return toFrontendSession(
+          record,
+          target?.directory ??
+            (typeof record.metadata?.directory === "string" ? record.metadata.directory : ""),
+          target?.workspaceId,
+        );
       },
       getMessages: async ({ sessionId, harnessId, options }) => {
         const path = await resolveSessionPath(
@@ -1042,23 +958,16 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
           url.searchParams.set("direction", "older");
         }
         if (options?.limit) url.searchParams.set("limit", String(options.limit));
-        try {
-          return await requestAt<MessagePageResult>(
-            requestBaseUrlForSession({
-              sessionId,
-              harnessId,
-              directory: options?.directory,
-              workspaceId: options?.workspaceId,
-              baseUrl: options?.baseUrl,
-            }),
-            `${url.pathname}${url.search}`,
-          );
-        } catch (error) {
-          if (error instanceof OpenGuiRpcError && error.message === "Session not found") {
-            return { messages: [], nextCursor: null };
-          }
-          throw error;
-        }
+        return await requestAt<MessagePageResult>(
+          requestBaseUrlForSession({
+            sessionId,
+            harnessId,
+            directory: options?.directory,
+            workspaceId: options?.workspaceId,
+            baseUrl: options?.baseUrl,
+          }),
+          `${url.pathname}${url.search}`,
+        );
       },
       prompt: async ({ sessionId, text, model, agent, variant, mode, target, harnessId }) => {
         await sessionRequest<boolean>({ sessionId, harnessId, target }, "/prompt", {
@@ -1072,7 +981,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         });
       },
       respondPermission: async ({ sessionId, permissionId, response, harnessId, target }) => {
-        const targetBody = await interactionTargetBody(target, true);
+        const targetBody = interactionTargetBody(target);
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/permissions/${encodeURIComponent(permissionId)}/respond`,
@@ -1088,7 +997,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
       },
       replyQuestion: async ({ sessionId, requestId, answers, harnessId, target }) => {
-        const targetBody = await interactionTargetBody(target);
+        const targetBody = interactionTargetBody(target);
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/questions/${encodeURIComponent(requestId)}/reply`,
@@ -1104,7 +1013,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         );
       },
       rejectQuestion: async ({ sessionId, requestId, harnessId, target }) => {
-        const targetBody = await interactionTargetBody(target);
+        const targetBody = interactionTargetBody(target);
         await requestAt<boolean>(
           requestBaseUrlForTarget(target),
           `/api/questions/${encodeURIComponent(requestId)}/reject`,
@@ -1122,11 +1031,10 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
         list: async ({ sessionId, harnessId, target }) =>
           await sessionRequest<OpenGuiQueueEntry[]>({ sessionId, harnessId, target }, "/queue"),
         listProject: async ({ harnessId, target }) => {
-          const project = await ensureProjectForTarget(target);
-          if (!project) return {};
+          if (!target.directory) return {};
           return await requestAt<Record<string, OpenGuiQueueEntry[]>>(
             requestBaseUrlForTarget(target),
-            `/api/queues?projectId=${encodeURIComponent(project.id)}&harnessId=${encodeURIComponent(harnessId)}`,
+            `/api/queues?directory=${encodeURIComponent(target.directory)}&harnessId=${encodeURIComponent(harnessId)}`,
           );
         },
         enqueue: async ({

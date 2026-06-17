@@ -1,13 +1,16 @@
 import type { HarnessId } from "./index.ts";
 import { composeFrontendSessionId, rawSessionIdForHarness } from "../lib/session-identity.ts";
 
-export type BackendIdCodec = {
+export type HarnessIdCodec = {
   compose(rawId: string): string;
   decompose(sessionId: string): string;
   matches(sessionId: string | null | undefined): boolean;
 };
 
-export function createBackendIdCodec(prefix: HarnessId): BackendIdCodec {
+/** @deprecated Use HarnessIdCodec */
+export type BackendIdCodec = HarnessIdCodec;
+
+export function createHarnessIdCodec(prefix: HarnessId): HarnessIdCodec {
   const marker = `${prefix}:`;
   return {
     compose: (rawId: string) => composeFrontendSessionId(prefix, rawId),
@@ -15,3 +18,6 @@ export function createBackendIdCodec(prefix: HarnessId): BackendIdCodec {
     matches: (sessionId: string | null | undefined) => Boolean(sessionId?.startsWith(marker)),
   };
 }
+
+/** @deprecated Use createHarnessIdCodec */
+export const createBackendIdCodec = createHarnessIdCodec;

@@ -28,6 +28,7 @@
     "fmt": "vp fmt",
     "fmt:fix": "vp fmt --fix",
     "test": "vp test",
+    "slop-check": "node scripts/slop-check.mjs",
     "start": "NODE_ENV=production vp exec electron . --no-sandbox",
     "start:web": "HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
     "dist:linux": "vp build && electron-builder --linux deb AppImage",
@@ -40,7 +41,13 @@
     "mobile:open": "cap open android",
     "mobile:build:debug": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleDebug'",
     "mobile:build:release": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleRelease'",
-    "prototype:claude-sdk": "node scripts/prototype-claude-sdk-terminal.mjs"
+    "prototype:claude-sdk": "node scripts/prototype-claude-sdk-terminal.mjs",
+    "runtime:probe:inventories": "vp node scripts/runtime/probe-inventories.mjs",
+    "runtime:probe:sessions": "vp node scripts/runtime/probe-sessions.mjs",
+    "runtime:probe:resources": "vp node scripts/runtime/probe-resources.mjs",
+    "runtime:probe:messages": "vp node scripts/runtime/probe-messages.mjs",
+    "runtime:probe:status": "vp node scripts/runtime/probe-directory-status.mjs",
+    "runtime:probe:all": "vp node scripts/runtime/probe-all-readonly.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -56,6 +63,7 @@
     "@hono/node-server": "^2.0.4",
     "@openai/codex-sdk": "^0.137.0",
     "@opencode-ai/sdk": "^1.16.2",
+    "@opengui/runtime": "workspace:*",
     "@tanstack/react-virtual": "^3.14.2",
     "@wooorm/starry-night": "^3.9.0",
     "class-variance-authority": "^0.7.1",

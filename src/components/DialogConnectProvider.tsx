@@ -9,7 +9,7 @@
 import { Check, ExternalLink, Key, Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { SubDialogHeader } from "@/components/SubDialogHeader";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import type { HarnessId } from "@/agents";
 import { useHarness } from "@/hooks/use-agent-backend";
 import { useConnectionState } from "@/hooks/use-agent-state";
-import { getErrorMessage, openExternalLink } from "@/lib/utils";
+import { openExternalLink } from "@/lib/utils";
 import type { ProviderAuthMethod, ProviderOAuthAuthorization } from "@/types/electron";
 
 // ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ export function DialogConnectProvider({
       setSuccess(true);
       scheduleConnected();
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      notifyUnknownError(err);
     } finally {
       setConnecting(false);
     }
@@ -153,7 +153,7 @@ export function DialogConnectProvider({
         if (!pollingRef.current || attempts >= maxAttempts) {
           setOauthPolling(false);
           if (attempts >= maxAttempts) {
-            toast.error(t("providers.oauthTimeout"));
+            notifyError(t("providers.oauthTimeout"));
           }
           return;
         }
@@ -202,7 +202,7 @@ export function DialogConnectProvider({
           pollPromiseRef.current = pollPromise ?? null;
         }
       } catch (err) {
-        toast.error(getErrorMessage(err));
+        notifyUnknownError(err);
       } finally {
         setConnecting(false);
       }
@@ -226,10 +226,10 @@ export function DialogConnectProvider({
         setSuccess(true);
         scheduleConnected();
       } else {
-        toast.error(t("providers.invalidCode"));
+        notifyError(t("providers.invalidCode"));
       }
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      notifyUnknownError(err);
     } finally {
       setConnecting(false);
     }

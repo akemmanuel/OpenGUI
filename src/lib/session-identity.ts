@@ -1,4 +1,5 @@
-import type { HarnessId } from "../agents/index.ts";
+import type { HarnessId } from "../agents/harness-ids.ts";
+import { HARNESS_ID_VALUES } from "../agents/harness-ids.ts";
 
 export type SessionIdentityScope = {
   projectId?: string;
@@ -13,11 +14,8 @@ export type SessionIdentityLike = {
   _rawId?: string;
 };
 
-// Keep this list local instead of importing HARNESS_IDS from ../agents/index.ts.
-// The agents index re-exports createBackendIdCodec, which depends on this file;
-// importing its runtime constants here creates a production Rollup cycle where
-// HARNESS_IDS can be read before it is initialized.
-const SESSION_ID_HARNESS_IDS: HarnessId[] = ["opencode", "claude-code", "pi", "codex"];
+// Leaf ids from harness-ids.ts (no codec / index cycle).
+const SESSION_ID_HARNESS_IDS: HarnessId[] = [...HARNESS_ID_VALUES];
 
 export function composeFrontendSessionId(harnessId: HarnessId, rawId: string): string {
   if (typeof rawId !== "string" || rawId.length === 0) {
@@ -33,6 +31,48 @@ export function parseFrontendSessionId(
   for (const harnessId of SESSION_ID_HARNESS_IDS) {
     const marker = `${harnessId}:`;
     if (sessionId.startsWith(marker)) return { harnessId, rawId: sessionId.slice(marker.length) };
+  }
+  return null;
+}
+
+/** Legacy backend index id (`session_<base64url>`). Prefer `composeFrontendSessionId` for new records. */
+export function decodeCanonicalDirectorySessionId(
+  sessionId: string,
+): { directory: string; harnessId: HarnessId; rawId: string } | null {
+  if (!sessionId.startsWith("session_")) return null;
+  try {
+    const decoded = Buffer.from(sessionId.slice("session_".length), "base64url").toString("utf8");
+    const [directory, harnessId, rawId] = decoded.split("::");
+    if (!directory || !rawId) return null;
+    if (!SESSION_ID_HARNESS_IDS.includes(harnessId as HarnessId)) return null;
+    return { directory, harnessId: harnessId as HarnessId, rawId };
+  } catch {
+    return null;
+  }
+}
+
+export function resolveWireSessionIdentity(
+  sessionId: string,
+  scopeHarnessId?: HarnessId,
+): { harnessId: HarnessId; rawId: string; wireId: string } | null {
+  const parsed = parseFrontendSessionId(sessionId);
+  if (parsed) {
+    return { ...parsed, wireId: composeFrontendSessionId(parsed.harnessId, parsed.rawId) };
+  }
+  const legacy = decodeCanonicalDirectorySessionId(sessionId);
+  if (legacy) {
+    return {
+      harnessId: legacy.harnessId,
+      rawId: legacy.rawId,
+      wireId: composeFrontendSessionId(legacy.harnessId, legacy.rawId),
+    };
+  }
+  if (scopeHarnessId) {
+    return {
+      harnessId: scopeHarnessId,
+      rawId: sessionId,
+      wireId: composeFrontendSessionId(scopeHarnessId, sessionId),
+    };
   }
   return null;
 }
@@ -58,11 +98,11 @@ export function sameHarnessSessionIdentity(
 }
 
 export function scopedRawSessionKey(input: {
-  projectId: string;
+  directory: string;
   harnessId: HarnessId;
   rawId: string;
 }): string {
-  return [input.projectId, input.harnessId, input.rawId].join("::");
+  return [input.directory, input.harnessId, input.rawId].join("::");
 }
 
 export function harnessRawSessionKey(harnessId: HarnessId, rawId: string): string {

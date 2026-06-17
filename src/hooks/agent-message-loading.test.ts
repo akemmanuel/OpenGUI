@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test, vi } from "@voidzero-dev/vite-plus-test";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
 import {
   collectChildSessionIds,
@@ -70,6 +70,44 @@ describe("fetchSessionMessagePage", () => {
       },
     ]);
     expect(result).toEqual({ messages, hasMore: true, nextCursor: "cursor-1" });
+  });
+
+  test("propagates getMessages failures instead of returning an empty thread", async () => {
+    await expect(
+      fetchSessionMessagePage({
+        sessionsClient: {
+          getMessages: async () => {
+            throw new Error("Session not found");
+          },
+        },
+        sessions: [
+          makeSession({
+            id: "pi:ghost",
+            _harnessId: "pi",
+            _projectDir: "/repo",
+          }),
+        ],
+        sessionId: "pi:ghost",
+      }),
+    ).rejects.toThrow(/Session not found/);
+  });
+
+  test("requires directory before calling getMessages", async () => {
+    const getMessages = vi.fn();
+    await expect(
+      fetchSessionMessagePage({
+        sessionsClient: { getMessages },
+        sessions: [
+          makeSession({
+            id: "pi:session-1",
+            _harnessId: "pi",
+            directory: "",
+          }),
+        ],
+        sessionId: "pi:session-1",
+      }),
+    ).rejects.toThrow(/directory is required/);
+    expect(getMessages).not.toHaveBeenCalled();
   });
 });
 

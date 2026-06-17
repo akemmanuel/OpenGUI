@@ -6,7 +6,7 @@ export function getBackendCapabilities(): OpenGuiCapabilities {
     protocolVersion: 1,
     server: {
       workspaces: false,
-      projects: true,
+      projects: false,
       sessions: true,
       events: "sse",
       auth: false,

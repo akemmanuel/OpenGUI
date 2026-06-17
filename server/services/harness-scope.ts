@@ -1,25 +1,25 @@
 import { resolve } from "node:path";
 import type { HarnessId } from "../../src/agents/index.ts";
-import type { ProjectRecord } from "./storage-service.ts";
+import type { DirectoryScopeRef } from "@opengui/runtime";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 export function buildHarnessScope(input: {
-  project: ProjectRecord;
+  scopeRef: DirectoryScopeRef;
   harnessId: HarnessId;
   sessionId?: string;
 }) {
+  const directory = input.scopeRef.canonicalPath || input.scopeRef.path;
   return {
-    projectId: input.project.id,
     sessionId: input.sessionId,
     harnessId: input.harnessId,
-    directory: input.project.path,
+    directory,
   };
 }
 
-export function runtimeSessionBelongsToProject(session: unknown, projectPath: string) {
+export function runtimeSessionBelongsToDirectory(session: unknown, directoryPath: string) {
   if (!isPlainObject(session)) return true;
   const directory =
     typeof session.directory === "string"
@@ -34,5 +34,5 @@ export function runtimeSessionBelongsToProject(session: unknown, projectPath: st
             ? ((session.metadata as Record<string, unknown>).directory as string)
             : null;
   if (!directory) return true;
-  return resolve(directory) === resolve(projectPath);
+  return resolve(directory) === resolve(directoryPath);
 }

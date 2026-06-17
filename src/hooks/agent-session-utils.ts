@@ -117,6 +117,20 @@ export function getSessionProjectTarget(
   };
 }
 
+/** Filesystem directory for backend session APIs (messages, queue, …). */
+export function directoryScopeForSessionApi(
+  session: Session | undefined | null,
+  meta?: SessionMeta,
+): string | undefined {
+  const fromTarget = getSessionProjectTarget(session, meta)?.directory;
+  if (fromTarget) return fromTarget;
+  if (!session) return undefined;
+  const raw = session._projectDir ?? session.directory;
+  if (!raw) return undefined;
+  const normalized = normalizeProjectPath(raw);
+  return normalized || raw;
+}
+
 export function getSessionHarnessId(session: Session | undefined | null): HarnessId | null {
   return (
     session?._harnessId ?? session?._backendId ?? getHarnessIdFromSessionId(session?.id) ?? null
@@ -144,12 +158,22 @@ export function shouldAutoNameSession(session: Session | undefined | null) {
   return !title || title.toLowerCase() === "untitled";
 }
 
-function getSessionSortTime(session: Session): number {
-  return session.time.updated ?? session.time.created ?? 0;
+function getSessionSortTime(session: Session | undefined | null): number {
+  if (!session) return 0;
+  const time = session.time;
+  if (!time || typeof time !== "object") return 0;
+  const updated = time.updated;
+  const created = time.created;
+  if (typeof updated === "number" && Number.isFinite(updated)) return updated;
+  if (typeof created === "number" && Number.isFinite(created)) return created;
+  return 0;
 }
 
 export function sortSessionsNewestFirst(sessions: Session[]): Session[] {
-  return [...sessions].sort((a, b) => {
+  const defined = sessions.filter(
+    (session): session is Session => !!session && typeof session.id === "string",
+  );
+  return [...defined].sort((a, b) => {
     const byUpdated = getSessionSortTime(b) - getSessionSortTime(a);
     if (byUpdated !== 0) return byUpdated;
     return b.id.localeCompare(a.id);

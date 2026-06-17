@@ -336,7 +336,8 @@
   "sessionError": {
     "title": "Error del agente",
     "nextStep": "Siguiente paso: ejecuta este comando en tu terminal y vuelve a intentarlo:",
-    "openTerminal": "Abrir terminal"
+    "openTerminal": "Abrir terminal",
+    "messagesLoadFailed": "No se pudieron cargar los mensajes de esta sesión."
   },
   "updateDialog": {
     "title": "Actualización disponible",

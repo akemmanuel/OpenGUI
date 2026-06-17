@@ -38,9 +38,9 @@ describe("resolveActiveHarnessScope", () => {
     const scope = resolveActiveHarnessScope({
       activeSession: session({ _harnessId: "codex", _projectDir: "/session-repo" }),
       activeTargetDirectory: "/target-repo",
-      activeTargetBackendId: "pi",
+      activeTargetHarnessId: "pi",
       workspaceDirectory: "/workspace-repo",
-      preferredBackendId: "opencode",
+      preferredHarnessId: "opencode",
       backendsById: { codex },
       openGuiClient: client(harness("fallback")),
     });
@@ -58,9 +58,9 @@ describe("resolveActiveHarnessScope", () => {
     const scope = resolveActiveHarnessScope({
       activeSession: null,
       activeTargetDirectory: "/target-repo",
-      activeTargetBackendId: "pi",
+      activeTargetHarnessId: "pi",
       workspaceDirectory: "/workspace-repo",
-      preferredBackendId: "opencode",
+      preferredHarnessId: "opencode",
       backendsById: { pi },
       openGuiClient: client(harness("fallback")),
     });
@@ -76,9 +76,9 @@ describe("resolveActiveHarnessScope", () => {
     const scope = resolveActiveHarnessScope({
       activeSession: null,
       activeTargetDirectory: null,
-      activeTargetBackendId: null,
+      activeTargetHarnessId: null,
       workspaceDirectory: "/workspace-repo",
-      preferredBackendId: "opencode",
+      preferredHarnessId: "opencode",
       backendsById: {},
       openGuiClient: client(fallback),
     });

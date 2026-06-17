@@ -19,7 +19,7 @@ export function TextPartView({
   onImageOpen?: (image: ImageMention) => void;
   imageBaseDirectory?: string | null;
 }) {
-  const { isLocalWorkspace, workspaceServerUrl } = useConnectionState();
+  const { attachmentBaseUrl } = useConnectionState();
   if (!part.text) return null;
 
   if (isUser) {
@@ -34,7 +34,7 @@ export function TextPartView({
               key={`${segment.path}-${index}`}
               token={segment.token}
               image={{ path: segment.path, filename: segment.filename }}
-              serverUrl={isLocalWorkspace ? null : workspaceServerUrl}
+              serverUrl={attachmentBaseUrl}
               baseDirectory={imageBaseDirectory}
               active={activeImagePath === segment.path}
               onHover={onImageHover}

@@ -66,6 +66,14 @@ import {
   isModelAvailable,
   selectedModelsEqual,
 } from "@/hooks/agent-model-selection";
+import {
+  isQueuePresentationAction,
+  mergeQueuePresentationSlice,
+  pickQueuePresentationSlice,
+  reduceQueuePresentation,
+  removeSessionFromQueueSlice,
+  renameSessionIdInQueueSlice,
+} from "@/hooks/agent-reducer-queue-slice";
 
 const MAX_DELETED_SESSION_IDS = 200;
 
@@ -356,9 +364,12 @@ export function mergeProjectBackendSessions({
 }) {
   if (harnessIds && harnessIds.length === 0) return sortSessionsNewestFirst(current);
   const backendScope = harnessIds ? new Set(harnessIds) : null;
-  const incomingIds = new Set(incoming.map((session) => session.id));
-  const incomingBackendRawKeys = new Set(
-    incoming.flatMap((session) => {
+  const incomingDefined = incoming.filter(
+    (session): session is Session => !!session && typeof session.id === "string",
+  );
+  const incomingIds = new Set(incomingDefined.map((session) => session.id));
+  const incomingHarnessRawKeys = new Set(
+    incomingDefined.flatMap((session) => {
       const harnessId = getSessionHarnessId(session);
       const rawId = harnessId
         ? (session._rawId ?? rawSessionIdForHarness(session.id, harnessId))
@@ -369,11 +380,11 @@ export function mergeProjectBackendSessions({
   return sortSessionsNewestFirst([
     ...current.filter((session) => {
       if (incomingIds.has(session.id)) return false;
-      const sessionBackendId = getSessionHarnessId(session);
-      const sessionRawId = sessionBackendId
-        ? (session._rawId ?? rawSessionIdForHarness(session.id, sessionBackendId))
+      const sessionHarnessId = getSessionHarnessId(session);
+      const sessionRawId = sessionHarnessId
+        ? (session._rawId ?? rawSessionIdForHarness(session.id, sessionHarnessId))
         : session.id;
-      if (sessionBackendId && incomingBackendRawKeys.has(`${sessionBackendId}\0${sessionRawId}`)) {
+      if (sessionHarnessId && incomingHarnessRawKeys.has(`${sessionHarnessId}\0${sessionRawId}`)) {
         return false;
       }
       if (getSessionWorkspaceId(session) !== workspaceId) return true;
@@ -382,7 +393,7 @@ export function mergeProjectBackendSessions({
       const harnessId = getSessionHarnessId(session);
       return !harnessId || !backendScope.has(harnessId);
     }),
-    ...incoming,
+    ...incomingDefined,
   ]);
 }
 
@@ -415,6 +426,13 @@ function preserveChatSessionDirectory(state: InternalAgentState, incoming: Sessi
 }
 
 export function reducer(state: InternalAgentState, action: Action): InternalAgentState {
+  if (isQueuePresentationAction(action)) {
+    return mergeQueuePresentationSlice(
+      state,
+      reduceQueuePresentation(pickQueuePresentationSlice(state), action),
+    );
+  }
+
   switch (action.type) {
     case "SET_WORKSPACES":
       return {
@@ -665,8 +683,8 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           : {}),
         activeTargetDirectory:
           state.activeTargetDirectory === directory ? null : state.activeTargetDirectory,
-        activeTargetBackendId:
-          state.activeTargetDirectory === directory ? null : state.activeTargetBackendId,
+        activeTargetHarnessId:
+          state.activeTargetDirectory === directory ? null : state.activeTargetHarnessId,
       };
     }
 
@@ -828,7 +846,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         isBusy: sid ? state.busySessionIds.has(sid) || hasRunningTurn : false,
         unreadSessionIds: nextUnread,
         activeTargetDirectory: sid ? null : state.activeTargetDirectory,
-        activeTargetBackendId: sid ? null : state.activeTargetBackendId,
+        activeTargetHarnessId: sid ? null : state.activeTargetHarnessId,
         _pendingSnapshots: [],
         _sessionBuffers: isCompleteBuffer ? remainingBuffers : startingBuffers,
       };
@@ -986,7 +1004,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         busySessionIds: newBusy,
         turnRuns: nextTurnRuns,
         activeTurnRunBySession: nextActiveTurnRunBySession,
-        ...(sessionID === state.activeSessionId ? { isBusy: false } : {}),
+        ...(sessionID === state.activeSessionId ? { isBusy: false, isLoadingMessages: false } : {}),
       };
     }
 
@@ -1023,7 +1041,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         agents: agentsData,
         commands: commandsData,
         variantSelections: action.payload.variantSelections,
-        loadedBackendId: harnessId,
+        loadedHarnessId: harnessId,
         loadedProjectKey: projectKey,
       };
       const isActive = workspaceId === state.activeWorkspaceId;
@@ -1219,13 +1237,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         ]),
       );
 
-      const nextAfterPart = new Set([...state.afterPartPending].map(renameSessionId));
-      const nextAfterPartTriggered = new Set([...state._afterPartTriggered].map(renameSessionId));
-
-      const nextQueued: typeof state.queuedPrompts = {};
-      for (const [sid, q] of Object.entries(state.queuedPrompts)) {
-        nextQueued[renameSessionId(sid)] = q;
-      }
+      const queuePatch = renameSessionIdInQueueSlice(
+        pickQueuePresentationSlice(state),
+        oldId,
+        newId,
+      );
 
       // Rename the session buffer key if it exists.
       const nextBuffers = { ...state._sessionBuffers };
@@ -1244,9 +1260,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         activeTurnRunBySession: nextActiveTurnRunBySession,
         turnRuns: nextTurnRuns,
         namingSessionIds: nextNaming,
-        afterPartPending: nextAfterPart,
-        _afterPartTriggered: nextAfterPartTriggered,
-        queuedPrompts: nextQueued,
+        ...queuePatch,
         _sessionBuffers: nextBuffers,
       };
     }
@@ -1281,7 +1295,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         }
       }
 
-      const { [deletedId]: _deletedQueue, ...remainingQueues } = state.queuedPrompts;
+      const queuePatch = removeSessionFromQueueSlice(pickQueuePresentationSlice(state), deletedId);
       const { [deletedId]: _deletedBuffer, ...remainingBuffers } = state._sessionBuffers;
       const nextUnread = new Set(state.unreadSessionIds);
       nextUnread.delete(deletedId);
@@ -1339,7 +1353,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
             : workspace,
         ),
         sessions: state.sessions.filter((s) => s.id !== deletedId),
-        queuedPrompts: remainingQueues,
+        ...queuePatch,
         _sessionBuffers: remainingBuffers,
         unreadSessionIds: nextUnread,
         namingSessionIds: nextNaming,
@@ -1803,138 +1817,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       };
     }
 
-    case "SET_SESSION_QUEUE": {
-      const { sessionID, prompts } = action.payload;
-      if (prompts.length === 0) {
-        const { [sessionID]: _, ...rest } = state.queuedPrompts;
-        return { ...state, queuedPrompts: rest };
-      }
-      return {
-        ...state,
-        queuedPrompts: {
-          ...state.queuedPrompts,
-          [sessionID]: prompts,
-        },
-      };
-    }
-
-    case "QUEUE_ADD": {
-      const { sessionID, prompt } = action.payload;
-      const existing = state.queuedPrompts[sessionID] ?? [];
-      return {
-        ...state,
-        queuedPrompts: {
-          ...state.queuedPrompts,
-          [sessionID]: [...existing, prompt],
-        },
-      };
-    }
-
-    case "QUEUE_SHIFT": {
-      const { sessionID } = action.payload;
-      const existing = state.queuedPrompts[sessionID] ?? [];
-      if (existing.length <= 1) {
-        const { [sessionID]: _, ...rest } = state.queuedPrompts;
-        return { ...state, queuedPrompts: rest };
-      }
-      return {
-        ...state,
-        queuedPrompts: {
-          ...state.queuedPrompts,
-          [sessionID]: existing.slice(1),
-        },
-      };
-    }
-
-    case "QUEUE_REMOVE": {
-      const { sessionID, promptID } = action.payload;
-      const existing = state.queuedPrompts[sessionID] ?? [];
-      if (existing.length === 0) return state;
-      const next = existing.filter((item) => item.id !== promptID);
-      if (next.length === existing.length) return state;
-      if (next.length === 0) {
-        const { [sessionID]: _, ...rest } = state.queuedPrompts;
-        return { ...state, queuedPrompts: rest };
-      }
-      return {
-        ...state,
-        queuedPrompts: {
-          ...state.queuedPrompts,
-          [sessionID]: next,
-        },
-      };
-    }
-
-    case "QUEUE_REORDER": {
-      const { sessionID, fromIndex, toIndex } = action.payload;
-      const existing = state.queuedPrompts[sessionID] ?? [];
-      if (existing.length <= 1) return state;
-      if (fromIndex < 0 || fromIndex >= existing.length) return state;
-
-      const clampedTo = Math.max(0, Math.min(toIndex, existing.length - 1));
-      if (clampedTo === fromIndex) return state;
-
-      const next = [...existing];
-      const [moved] = next.splice(fromIndex, 1);
-      if (!moved) return state;
-      next.splice(clampedTo, 0, moved);
-
-      return {
-        ...state,
-        queuedPrompts: {
-          ...state.queuedPrompts,
-          [sessionID]: next,
-        },
-      };
-    }
-
-    case "QUEUE_UPDATE": {
-      const { sessionID, promptID, text } = action.payload;
-      const existing = state.queuedPrompts[sessionID] ?? [];
-      if (existing.length === 0) return state;
-
-      let changed = false;
-      const next = existing.map((item) => {
-        if (item.id !== promptID) return item;
-        if (item.text === text) return item;
-        changed = true;
-        return { ...item, text };
-      });
-
-      if (!changed) return state;
-      return {
-        ...state,
-        queuedPrompts: {
-          ...state.queuedPrompts,
-          [sessionID]: next,
-        },
-      };
-    }
-
-    case "QUEUE_CLEAR": {
-      const { sessionID } = action.payload;
-      const { [sessionID]: _, ...rest } = state.queuedPrompts;
-      return { ...state, queuedPrompts: rest };
-    }
-
-    case "SET_AFTER_PART_PENDING": {
-      const { sessionID, pending } = action.payload;
-      const next = new Set(state.afterPartPending);
-      if (pending) {
-        next.add(sessionID);
-      } else {
-        next.delete(sessionID);
-      }
-      return { ...state, afterPartPending: next };
-    }
-
-    case "CLEAR_AFTER_PART_TRIGGERED": {
-      const { sessionID } = action.payload;
-      const next = new Set(state._afterPartTriggered);
-      next.delete(sessionID);
-      return { ...state, _afterPartTriggered: next };
-    }
-
     case "SET_DEFAULT_CHAT_DIRECTORY":
       return { ...state, defaultChatDirectory: action.payload };
 
@@ -1942,7 +1824,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         activeTargetDirectory: action.payload.directory,
-        activeTargetBackendId: action.payload.harnessId,
+        activeTargetHarnessId: action.payload.harnessId,
         activeSessionId: null,
         selectedModel: Object.hasOwn(action.payload, "selectedModel")
           ? (action.payload.selectedModel ?? null)
@@ -1966,7 +1848,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         activeTargetDirectory: null,
-        activeTargetBackendId: null,
+        activeTargetHarnessId: null,
       };
 
     case "SET_SESSION_META": {

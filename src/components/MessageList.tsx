@@ -123,6 +123,7 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     sessions,
     activeTargetDirectory,
     sessionMeta,
+    sessionErrors,
   } = useSessionState();
   const { messages, turnRuns, messageHistoryHasMore, isLoadingOlderMessages } = useMessages();
   const activeSession = useMemo(
@@ -361,10 +362,25 @@ export function MessageList({ detachedProject: _detachedProject }: { detachedPro
     ],
   );
 
-  if (isLoadingMessages && visibleMessages.length === 0) {
+  const { t } = useTranslation();
+  const activeLoadError = activeSessionId ? (sessionErrors[activeSessionId] ?? null) : null;
+  const activeLoadErrorText =
+    activeLoadError && activeLoadError.startsWith("sessionError.")
+      ? t(activeLoadError)
+      : activeLoadError;
+
+  if (isLoadingMessages && visibleMessages.length === 0 && !activeLoadError) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Spinner className="size-6 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (activeSessionId && activeLoadError && visibleMessages.length === 0 && !isBusy) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-6">
+        <p className="max-w-md text-center text-sm text-muted-foreground">{activeLoadErrorText}</p>
       </div>
     );
   }

@@ -68,7 +68,7 @@ export interface WorkspaceResourceState {
   /** Per-model variant selections for this workspace. */
   variantSelections: VariantSelections;
   /** Backend that produced this resource catalog. */
-  loadedBackendId: HarnessId | null;
+  loadedHarnessId: HarnessId | null;
   /** Workspace-scoped project key that produced this resource catalog. */
   loadedProjectKey: string | null;
 }
@@ -137,7 +137,7 @@ export interface InternalAgentState {
   /** Directory selected for the next session before a session exists. */
   activeTargetDirectory: string | null;
   /** Backend selected for the next session before a session exists. */
-  activeTargetBackendId: HarnessId | null;
+  activeTargetHarnessId: HarnessId | null;
   /** Set of session IDs that are waiting for generated title */
   namingSessionIds: Set<string>;
   /** Set of session IDs that have unread content (finished generating while not active) */

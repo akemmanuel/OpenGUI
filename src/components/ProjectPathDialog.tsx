@@ -1,6 +1,6 @@
 import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { notifyUnknownError } from "@/lib/notify";
 import { useTranslation } from "react-i18next";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { FormField } from "@/components/ui/FormField";
@@ -56,8 +56,13 @@ function resolveBrowserApiBaseUrl(workspaceServerUrl: string | null | undefined)
 
 export function ProjectPathDialog() {
   const { t } = useTranslation();
-  const { activeWorkspace, isLocalWorkspace, workspaceServerUrl, workspaceDirectory } =
-    useConnectionState();
+  const {
+    activeWorkspace,
+    isLocalWorkspace,
+    workspaceServerUrl,
+    workspaceDirectory,
+    supportsNativeDirectoryPicker,
+  } = useConnectionState();
   const shell = useDesktopShell();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -125,7 +130,7 @@ export function ProjectPathDialog() {
       setServerListing(body.value);
       setValue(body.value.path);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      notifyUnknownError(error);
     } finally {
       setServerBrowserLoading(false);
     }
@@ -197,7 +202,7 @@ export function ProjectPathDialog() {
               type="button"
               variant="outline"
               onClick={async () => {
-                if (webRuntime || !isLocalWorkspace) {
+                if (!supportsNativeDirectoryPicker) {
                   openServerBrowser();
                   return;
                 }
@@ -206,7 +211,7 @@ export function ProjectPathDialog() {
               }}
             >
               <FolderOpen className="size-4" />
-              {webRuntime || !isLocalWorkspace ? t("projectPath.browseServer") : t("common.browse")}
+              {supportsNativeDirectoryPicker ? t("common.browse") : t("projectPath.browseServer")}
             </Button>
           </div>
           {showServerBrowser && (
