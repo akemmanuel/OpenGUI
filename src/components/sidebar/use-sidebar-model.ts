@@ -24,7 +24,7 @@ function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap
   if (meta?.assignedProjectDir && typeof meta.assignedProjectMovedAt === "number") {
     return meta.assignedProjectMovedAt;
   }
-  return session.time.updated ?? session.time.created ?? 0;
+  return session.time?.updated ?? session.time?.created ?? 0;
 }
 
 export function shouldShowSessionInChatList({

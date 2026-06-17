@@ -7,7 +7,7 @@ interface SidebarSortableSessionLike {
 }
 
 function getSidebarSessionSortTime(session: SidebarSortableSessionLike): number {
-  return session.time.updated ?? session.time.created ?? 0;
+  return session.time?.updated ?? session.time?.created ?? 0;
 }
 
 export function sortSidebarSessionsNewestFirst<TSession extends SidebarSortableSessionLike>(

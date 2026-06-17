@@ -35,6 +35,19 @@ describe("sortSessionsForSidebar", () => {
 
     expect(sorted.map((item) => item.id)).toEqual(["open-new", "open-old"]);
   });
+
+  test("handles sessions without time metadata", () => {
+    const withoutTime = session("no-time", "opencode", 0);
+    delete (withoutTime as { time?: Session["time"] }).time;
+
+    const sorted = sortSessionsForSidebar(
+      [withoutTime, session("with-time", "opencode", 20)],
+      {},
+      "opencode",
+    );
+
+    expect(sorted.map((item) => item.id)).toEqual(["with-time", "no-time"]);
+  });
 });
 
 describe("shouldShowSessionInChatList", () => {
