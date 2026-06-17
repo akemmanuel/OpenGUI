@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
@@ -62,6 +62,7 @@ export async function getSessionInfo(
   sessionId: string,
   opts: { dir?: string } = {},
 ): Promise<SessionInfo | null> {
+  const file = sessionFile(sessionId, opts.dir);
   const messages = await getSessionMessages(sessionId, {
     dir: opts.dir,
     includeSystemMessages: true,
@@ -71,6 +72,9 @@ export async function getSessionInfo(
     last = messages[messages.length - 1] as any;
   const firstUser = messages.find((m: any) => m.type === "user") as any;
   const firstPrompt = contentText(firstUser?.message?.content);
+  const fileMtime = await stat(file)
+    .then((s) => s.mtimeMs)
+    .catch(() => undefined);
   return {
     sessionId,
     summary: first?.summary ?? firstPrompt?.slice(0, 80),
@@ -78,8 +82,8 @@ export async function getSessionInfo(
     customTitle: first?.customTitle,
     cwd: first?.cwd ?? opts.dir,
     model: last?.message?.model ?? first?.model,
-    createdAt: timestamp(first) ?? Date.now(),
-    lastModified: timestamp(last) ?? Date.now(),
+    createdAt: firstTimestampInMessages(messages) ?? fileMtime ?? Date.now(),
+    lastModified: lastTimestampInMessages(messages) ?? fileMtime ?? Date.now(),
   };
 }
 
@@ -125,6 +129,22 @@ export async function forkSession(
     kept.map((m) => JSON.stringify({ ...m, session_id: newId })).join("\n") + "\n",
   );
   return { sessionId: newId };
+}
+
+function firstTimestampInMessages(messages: any[]): number | undefined {
+  for (const m of messages) {
+    const t = timestamp(m);
+    if (t !== undefined) return t;
+  }
+  return undefined;
+}
+
+function lastTimestampInMessages(messages: any[]): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const t = timestamp(messages[i]);
+    if (t !== undefined) return t;
+  }
+  return undefined;
 }
 
 function timestamp(m: any): number | undefined {

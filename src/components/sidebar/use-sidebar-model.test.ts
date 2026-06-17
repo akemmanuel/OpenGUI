@@ -16,14 +16,14 @@ function session(id: string, harnessId: HarnessId, updated: number): Session {
 }
 
 describe("sortSessionsForSidebar", () => {
-  test("keeps preferred Harness sessions above newer sessions from other Harnesses", () => {
+  test("sorts by newest update regardless of Harness", () => {
     const sorted = sortSessionsForSidebar(
       [session("claude-new", "claude-code", 20), session("open-old", "opencode", 10)],
       {},
       "opencode",
     );
 
-    expect(sorted.map((item) => item.id)).toEqual(["open-old", "claude-new"]);
+    expect(sorted.map((item) => item.id)).toEqual(["claude-new", "open-old"]);
   });
 
   test("sorts by newest update inside the same Harness", () => {
