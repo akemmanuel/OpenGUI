@@ -451,6 +451,10 @@ ipcMain.handle("window:isMaximized", (event) => {
   return win?.isMaximized() ?? false;
 });
 
+ipcMain.handle("window:focus", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.focus();
+});
+
 ipcMain.handle("window:detachProject", (_event, projectDir) => {
   if (typeof projectDir !== "string" || projectDir.length === 0) return;
   createProjectWindow(projectDir);

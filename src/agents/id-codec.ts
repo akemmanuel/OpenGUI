@@ -7,9 +7,6 @@ export type HarnessIdCodec = {
   matches(sessionId: string | null | undefined): boolean;
 };
 
-/** @deprecated Use HarnessIdCodec */
-export type BackendIdCodec = HarnessIdCodec;
-
 export function createHarnessIdCodec(prefix: HarnessId): HarnessIdCodec {
   const marker = `${prefix}:`;
   return {
@@ -18,6 +15,3 @@ export function createHarnessIdCodec(prefix: HarnessId): HarnessIdCodec {
     matches: (sessionId: string | null | undefined) => Boolean(sessionId?.startsWith(marker)),
   };
 }
-
-/** @deprecated Use createHarnessIdCodec */
-export const createBackendIdCodec = createHarnessIdCodec;

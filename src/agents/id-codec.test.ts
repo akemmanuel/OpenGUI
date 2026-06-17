@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { createBackendIdCodec, createHarnessIdCodec } from "./id-codec";
+import { createHarnessIdCodec } from "./id-codec";
 
 describe("createHarnessIdCodec", () => {
   test("composes and deconstructs frontend session ids through session identity helpers", () => {
@@ -17,12 +17,5 @@ describe("createHarnessIdCodec", () => {
     expect(codec.matches("pi:raw-session")).toBe(true);
     expect(codec.matches("codex:raw-session")).toBe(false);
     expect(codec.matches(null)).toBe(false);
-  });
-
-  test("deprecated createBackendIdCodec alias matches createHarnessIdCodec", () => {
-    const harness = createHarnessIdCodec("codex");
-    const backend = createBackendIdCodec("codex");
-    expect(backend.compose("x")).toBe(harness.compose("x"));
-    expect(backend.decompose("codex:x")).toBe(harness.decompose("codex:x"));
   });
 });

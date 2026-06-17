@@ -15,6 +15,7 @@ import type {
 
 export interface OpenGuiCapabilities {
   protocolVersion: number;
+  /** Backend feature flags. `workspaces` / `projects` are false per ADR 0005 (Frontend-owned). */
   server: {
     workspaces: boolean;
     projects: boolean;
@@ -60,13 +61,10 @@ export interface DirectoryRegisterResult {
   errors: Array<{ harnessId: HarnessId; error: string }>;
 }
 
-export interface HarnessDirectorySessionsResult {
-  harnessId: HarnessId;
-  sessions: Session[];
-}
-
 export interface SessionQueryProject {
+  /** Harness scope (required). */
   directory: string;
+  /** Frontend Workspace routing / remote auth only — not execution identity (ADR 0005). */
   workspaceId?: string;
   baseUrl?: string;
   authToken?: string;
@@ -129,13 +127,6 @@ export interface OpenGuiClient {
       target: HarnessTarget & { directory: string };
       harnessIds?: HarnessId[];
     }): Promise<void>;
-    /**
-     * @deprecated Prefer `sessions.query` for sidebar refresh (same harness-only list semantics).
-     */
-    listDirectorySessions(input: {
-      harnessIds: HarnessId[];
-      target: HarnessTarget;
-    }): Promise<HarnessDirectorySessionsResult[]>;
     listDirectorySessionStatuses(input: {
       harnessIds: HarnessId[];
       target: HarnessTarget;

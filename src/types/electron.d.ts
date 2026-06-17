@@ -392,6 +392,8 @@ export interface ElectronAPI {
   maximize: () => Promise<void>;
   close: () => Promise<void>;
   isMaximized: () => Promise<boolean>;
+  /** Focus this window (Wayland-safe via main process). */
+  focus: () => Promise<void>;
   getPlatform: () => Promise<string>;
   getSystemLocale: () => Promise<string>;
   isPackaged: () => Promise<boolean>;

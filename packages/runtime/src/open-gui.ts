@@ -13,7 +13,11 @@ import type { HarnessInventory } from "../../../src/types/electron.d.ts";
 import type { SelectedModel } from "../../../src/types/electron.d.ts";
 import { getHarnessInventories } from "../../../server/harness-inventory.ts";
 import { directoryRef } from "./directory-ref.ts";
-import { createHarnessService, type HarnessService } from "./harness-service.ts";
+import {
+  createHarnessService,
+  type HarnessService,
+  type RuntimeListedSession,
+} from "./harness-service.ts";
 import { resolveSafeDirectory, normalizeAllowedRoots } from "./directory-safety.ts";
 import {
   type ManagedHarnessId,
@@ -31,19 +35,18 @@ import {
   type SessionHandle,
   type SessionSummary,
 } from "./session-handle.ts";
+import { diagnoseFromInventories, type OpenGUIDiagnoseResult } from "./diagnose.ts";
 import { OpenGuiSdkError } from "./opengui-sdk-error.ts";
 
 export { OpenGuiSdkError } from "./opengui-sdk-error.ts";
+export type { OpenGUIDiagnoseResult, HarnessDiagnoseEntry } from "./diagnose.ts";
 
 export interface CreateOpenGUIOptions {
   /** Persistent config directory (bridges, caches). Default: `~/.config/opengui-runtime` */
   dataDir?: string;
   /** Filesystem roots allowed for `directory` operations. Default: home directory. */
   allowedRoots: string[];
-  /**
-   * Optional subset of harness adapters to load eagerly.
-   * @remarks Not implemented — all managed harnesses load today; reserved for lazy loading.
-   */
+  /** When set, only these harness adapters register at startup (faster cold start). */
   harnesses?: HarnessId[];
 }
 
@@ -105,6 +108,8 @@ export interface OpenGUI {
   }): Promise<DirectoryRegisterResult>;
   releaseDirectory(input: { directory: string; harnessIds?: HarnessId[] }): Promise<void>;
   getHarnessInventories(): HarnessInventory[];
+  /** Small readiness snapshot from inventories (ADR 0007). */
+  diagnose(): OpenGUIDiagnoseResult;
   close(): Promise<void>;
 }
 
@@ -228,6 +233,10 @@ class HarnessHandleImpl implements HarnessHandle {
     this.sessionStatus.set(sessionStatusKey(directory, this.harnessId, rawId), "running");
   }
 
+  private markSessionIdle(directory: string, rawId: string): void {
+    this.sessionStatus.set(sessionStatusKey(directory, this.harnessId, rawId), "idle");
+  }
+
   private makeSessionHandle(directory: string, sessionId: string): SessionHandle {
     return createSessionHandle({
       harnessId: this.harnessId,
@@ -237,6 +246,7 @@ class HarnessHandleImpl implements HarnessHandle {
       resolveSessionIds: (id) => this.resolveSessionIds(id),
       getSessionStatus: (dir, rawId) => this.getSessionStatus(dir, rawId),
       markSessionRunning: (dir, rawId) => this.markSessionRunning(dir, rawId),
+      markSessionIdle: (dir, rawId) => this.markSessionIdle(dir, rawId),
       subscribeHarnessEvents: (handler) => this.on("event", handler),
     });
   }
@@ -260,18 +270,31 @@ class HarnessHandleImpl implements HarnessHandle {
           ? (parseFrontendSessionId(session.id)?.rawId ?? session.id)
           : "";
       if (!rawId) continue;
-      const status =
-        typeof session.status === "string" ? (session.status as SessionRuntimeStatus) : "unknown";
+      const statusRaw = session.status;
+      const status: SessionRuntimeStatus =
+        typeof statusRaw === "string"
+          ? (statusRaw as SessionRuntimeStatus)
+          : typeof statusRaw === "object" && statusRaw?.type
+            ? (statusRaw.type as SessionRuntimeStatus)
+            : "unknown";
       this.sessionStatus.set(sessionStatusKey(directory, this.harnessId, rawId), status);
     }
-    return sessions.map((session) => ({
-      id: session.id,
-      title: session.title,
-      status: session.status,
-      directory: session.directory,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-    }));
+    return sessions.map((session: RuntimeListedSession) => {
+      const status =
+        typeof session.status === "string"
+          ? session.status
+          : typeof session.status === "object" && session.status?.type
+            ? session.status.type
+            : undefined;
+      return {
+        id: session.id,
+        title: session.title,
+        status,
+        directory: session.directory,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      };
+    });
   }
 
   private async createSession(input?: {
@@ -368,6 +391,7 @@ class HarnessHandleImpl implements HarnessHandle {
         sessionId: rawId,
       },
     });
+    this.sessionStatus.set(sessionStatusKey(directory, this.harnessId, rawId), "idle");
   }
 
   async loadResources(input?: { directory?: string }): Promise<HarnessResourceBundle> {
@@ -446,6 +470,7 @@ class HarnessHandleImpl implements HarnessHandle {
 class OpenGUIImpl implements OpenGUI {
   private readonly service: HarnessService;
   private readonly resolveDirectory: (path: string) => Promise<string>;
+  private readonly loadedHarnessIds: ReadonlySet<ManagedHarnessId>;
   private readonly handles = new Map<ManagedHarnessId, HarnessHandleImpl>();
   /** All handles per harness (primary + `og.at().harness()` bindings) for event fan-in. */
   private readonly handlesByHarness = new Map<ManagedHarnessId, Set<HarnessHandleImpl>>();
@@ -456,10 +481,12 @@ class OpenGUIImpl implements OpenGUI {
     service: HarnessService;
     allowedRoots: string[];
     sender: InProcessIpcSender;
+    loadedHarnessIds: readonly ManagedHarnessId[];
   }) {
     this.service = input.service;
     this.resolveDirectory = (path) => resolveSafeDirectory(path, input.allowedRoots);
     this.sender = input.sender;
+    this.loadedHarnessIds = new Set(input.loadedHarnessIds);
   }
 
   private trackHarnessHandle(handle: HarnessHandleImpl) {
@@ -489,10 +516,10 @@ class OpenGUIImpl implements OpenGUI {
   }
 
   createBoundHarness(harnessId: HarnessId, directoryPath: string): HarnessHandle {
-    if (!isManagedHarnessId(harnessId)) {
+    if (!isManagedHarnessId(harnessId) || !this.loadedHarnessIds.has(harnessId)) {
       throw new OpenGuiSdkError(
         "UNKNOWN_HARNESS",
-        `Unknown harness "${String(harnessId)}". Managed: ${MANAGED_HARNESS_IDS.join(", ")}`,
+        `Unknown or unloaded harness "${String(harnessId)}". Loaded: ${[...this.loadedHarnessIds].join(", ")}`,
       );
     }
     const handle = new HarnessHandleImpl(
@@ -506,10 +533,10 @@ class OpenGUIImpl implements OpenGUI {
   }
 
   harness(harnessId: HarnessId): HarnessHandle {
-    if (!isManagedHarnessId(harnessId)) {
+    if (!isManagedHarnessId(harnessId) || !this.loadedHarnessIds.has(harnessId)) {
       throw new OpenGuiSdkError(
         "UNKNOWN_HARNESS",
-        `Unknown harness "${String(harnessId)}". Managed: ${MANAGED_HARNESS_IDS.join(", ")}`,
+        `Unknown or unloaded harness "${String(harnessId)}". Loaded: ${[...this.loadedHarnessIds].join(", ")}`,
       );
     }
     let handle = this.handles.get(harnessId);
@@ -547,9 +574,14 @@ class OpenGUIImpl implements OpenGUI {
     return getHarnessInventories();
   }
 
+  diagnose(): OpenGUIDiagnoseResult {
+    return diagnoseFromInventories(this.getHarnessInventories());
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    await this.service.shutdownHarnessClients();
     this.sender.destroy?.();
   }
 }
@@ -582,7 +614,13 @@ export async function createOpenGUI(options: CreateOpenGUIOptions): Promise<Open
 
   const ipcMain = new InProcessIpcMain();
   const sender = new InProcessIpcSender(broadcast);
-  const host = createRuntimeHost({ ipcMain, sender, dataDir, broadcast });
+  const host = createRuntimeHost({
+    ipcMain,
+    sender,
+    dataDir,
+    broadcast,
+    harnessIds: options.harnesses,
+  });
   const service = createHarnessService({
     invoke: <T>(channel: string, args: unknown[] = []) =>
       ipcMain.invoke(channel, { sender }, args) as Promise<T>,
@@ -594,9 +632,10 @@ export async function createOpenGUI(options: CreateOpenGUIOptions): Promise<Open
     service,
     allowedRoots,
     sender,
+    loadedHarnessIds: host.managedHarnessIds,
   });
 
-  for (const harnessId of MANAGED_HARNESS_IDS) {
+  for (const harnessId of host.managedHarnessIds) {
     runtime.harness(harnessId);
   }
 

@@ -70,6 +70,7 @@ export interface SessionHandleDeps {
     rawId: string,
   ): "idle" | "running" | "error" | "unknown" | undefined;
   markSessionRunning(directory: string, rawId: string): void;
+  markSessionIdle?(directory: string, rawId: string): void;
   subscribeHarnessEvents(handler: (event: HarnessEvent) => void): () => void;
 }
 
@@ -109,10 +110,12 @@ function isWaitResolvedStatus(status: string | undefined): boolean {
 
 export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
   const { harnessId, directory, sessionId, service } = deps;
-  const resolveSessionIds = deps.resolveSessionIds;
-  const getSessionStatus = deps.getSessionStatus;
-  const markSessionRunning = deps.markSessionRunning;
-  const subscribeHarnessEvents = deps.subscribeHarnessEvents;
+  const resolveSessionIds = (id: string) => deps.resolveSessionIds(id);
+  const getSessionStatus = (dir: string, rawId: string) => deps.getSessionStatus(dir, rawId);
+  const markSessionRunning = (dir: string, rawId: string) => deps.markSessionRunning(dir, rawId);
+  const markSessionIdle = (dir: string, rawId: string) => deps.markSessionIdle?.(dir, rawId);
+  const subscribeHarnessEvents = (handler: (event: HarnessEvent) => void) =>
+    deps.subscribeHarnessEvents(handler);
 
   const streamHandlers = new Set<AgentStreamHandler>();
   let harnessUnsub: (() => void) | undefined;
@@ -256,6 +259,7 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
       } catch (error) {
         wrapBridgeError(error);
       }
+      markSessionIdle?.(directory, rawId);
     },
     async messages(options) {
       const { rawId } = resolveSessionIds(sessionId);

@@ -69,7 +69,11 @@ export function useDesktopNotification(
             body: sessionTitle,
           });
           notification.onclick = () => {
-            window.focus();
+            if (typeof window.electronAPI !== "undefined" && window.electronAPI.focus) {
+              void window.electronAPI.focus();
+            } else {
+              window.focus();
+            }
             selectSession(sessionId);
           };
           createdNotifications.push(notification);

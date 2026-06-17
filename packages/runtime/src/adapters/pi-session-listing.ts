@@ -106,6 +106,19 @@ async function mapPiSessionInfoWithConcurrency(items, limit, mapper) {
   return results;
 }
 
+export function invalidatePiSessionListCacheForDirectory(
+  directory,
+  agentDir,
+  cache,
+  directoryCache,
+) {
+  const sessionDir = getPiSessionDir(directory, agentDir);
+  directoryCache.delete(sessionDir);
+  for (const filePath of cache.keys()) {
+    if (filePath.startsWith(`${sessionDir}/`)) cache.delete(filePath);
+  }
+}
+
 export async function listFastPiSessionInfos(directory, agentDir, cache, directoryCache) {
   const sessionDir = getPiSessionDir(directory, agentDir);
   if (!existsSync(sessionDir)) return [];

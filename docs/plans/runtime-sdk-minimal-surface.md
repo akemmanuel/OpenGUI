@@ -76,10 +76,10 @@ Ship a **small, publishable** `@opengui/runtime` that feels like Pi's session lo
 
 **Outcome:** CONTEXT-aligned readiness + CI one-liner.
 
-- [ ] `og.diagnose()` → `{ ok, harnesses: [{ harnessId, cliOnPath, ready, hint? }] }` from `getHarnessInventories()` + registry labels.
-- [ ] `runAgent({ directory, harness, message, roots?, onStream? })` → `RunAgentResult` (`sessionId`, `assistantText?`, `reason`).
-- [ ] `packages/runtime/examples/` or `scripts/runtime/` ladder: (1) list (2) stream (3) create+send (4) diagnose.
-- [ ] Update `packages/runtime/README.md` quickstart to **create + send + onStream**; link ADR 0007.
+- [x] `og.diagnose()` → `{ ok, harnesses: [{ harnessId, cliOnPath, ready, hint? }] }` from `getHarnessInventories()` + registry labels.
+- [x] `runAgent(og, { directory, harness, message, onStream? })` → `RunAgentResult` (`sessionId`, `assistantText?`, `reason`).
+- [x] `scripts/runtime/run-agent.mjs` + existing probe ladder (list, inventories, messages, …).
+- [x] Update `packages/runtime/README.md` with diagnose + runAgent; quickstart already create + send + onStream.
 
 **Files:** `packages/runtime/src/run-agent.ts` (new), README, `scripts/runtime/`.
 
@@ -89,7 +89,7 @@ Ship a **small, publishable** `@opengui/runtime` that feels like Pi's session lo
 
 **Outcome:** Cold start and external consumers.
 
-- [ ] Implement `createOpenGUI({ harnesses?: HarnessId[] })` — register only listed adapters ([contributor plan](./contributor-experience-and-slop-removal.md) Track 6 item).
+- [x] Implement `createOpenGUI({ harnesses?: HarnessId[] })` — register only listed adapters ([contributor plan](./contributor-experience-and-slop-removal.md) Track 6 item).
 - [ ] Extract minimal types to `packages/protocol` or `runtime/src/protocol/` (HarnessId, `SessionSummary`, `AgentStreamEvent`, errors)—no `App.tsx` imports.
 - [ ] `package.json` `exports` → `dist/index.js` + types; build step in `vp build` or `packages/runtime` script.
 - [ ] `private: false` + publish checklist (when ready)—out of scope until dist clean.

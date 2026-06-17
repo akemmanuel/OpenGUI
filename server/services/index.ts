@@ -1,3 +1,8 @@
+/**
+ * Backend service barrel. Session list/message reads use harness-only paths
+ * (`listDirectorySessionsFromHarness`, `resolveSessionRecordForRead`) per ADR 0006.
+ * `SessionService.listSessions` is in-memory pagination for non-product use only.
+ */
 import type { OpenGuiCapabilities } from "../../src/protocol/client.ts";
 import type { StorageService } from "./storage-service.ts";
 import type { HarnessService } from "@opengui/runtime";

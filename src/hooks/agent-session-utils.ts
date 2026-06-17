@@ -132,6 +132,7 @@ export function directoryScopeForSessionApi(
 }
 
 export function getSessionHarnessId(session: Session | undefined | null): HarnessId | null {
+  // Prefer _harnessId; _backendId is legacy wire/persistence only (sunset 2026-08).
   return (
     session?._harnessId ?? session?._backendId ?? getHarnessIdFromSessionId(session?.id) ?? null
   );

@@ -5,7 +5,7 @@ export const NEW_CHAT_MODEL_BEHAVIORS = ["ask", "last", "workspace-default"] as 
 
 export type NewChatModelBehavior = (typeof NEW_CHAT_MODEL_BEHAVIORS)[number];
 
-export const DEFAULT_NEW_CHAT_MODEL_BEHAVIOR: NewChatModelBehavior = "ask";
+export const DEFAULT_NEW_CHAT_MODEL_BEHAVIOR: NewChatModelBehavior = "last";
 
 export function isNewChatModelBehavior(value: string | null): value is NewChatModelBehavior {
   return NEW_CHAT_MODEL_BEHAVIORS.includes(value as NewChatModelBehavior);

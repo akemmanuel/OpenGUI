@@ -31,7 +31,10 @@ import {
   tryPromiseEffect,
 } from "../../../../lib/effect-runtime.ts";
 import { buildAllProvidersData, buildProvidersData } from "./pi-providers.ts";
-import { listFastPiSessionInfos as listPiSessionInfosFromDisk } from "./pi-session-listing.ts";
+import {
+  invalidatePiSessionListCacheForDirectory,
+  listFastPiSessionInfos as listPiSessionInfosFromDisk,
+} from "./pi-session-listing.ts";
 
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
@@ -1591,6 +1594,31 @@ export class PiBridgeManager {
     throw new Error("Pi operation requires a Project directory");
   }
 
+  mergeLivePiSessionsForProject(project, diskSessions) {
+    const diskIds = new Set(diskSessions.map((session) => toRawSessionId(session.id)));
+    const liveExtras = [];
+    for (const [sessionId, context] of project.liveSessionContexts) {
+      if (diskIds.has(sessionId)) continue;
+      const session = context.runtime.session;
+      liveExtras.push(
+        normalizePiSession(
+          {
+            id: sessionId,
+            cwd: project.directory,
+            name: session.sessionName,
+            created: new Date(),
+            modified: new Date(),
+            firstMessage: session.sessionName || "",
+          },
+          project,
+        ),
+      );
+    }
+    return [...liveExtras, ...diskSessions].sort(
+      (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
+    );
+  }
+
   async listSessions(target) {
     if (target?.directory) {
       const project = this.getListProject(target);
@@ -1608,7 +1636,8 @@ export class PiBridgeManager {
           workspaceId: project.workspaceId,
         });
       }
-      return infos.map((info) => normalizePiSession(info, project));
+      const fromDisk = infos.map((info) => normalizePiSession(info, project));
+      return this.mergeLivePiSessionsForProject(project, fromDisk);
     }
     const sessions = [];
     for (const project of this.projects.values()) {
@@ -1745,6 +1774,12 @@ export class PiBridgeManager {
         firstMessage: input.title || "",
       },
       project,
+    );
+    invalidatePiSessionListCacheForDirectory(
+      project.directory,
+      this.agentDir,
+      this.sessionInfoCache,
+      this.directorySessionInfoCache,
     );
     this.sendBackendEvent(project, {
       type: "session.created",
@@ -2435,7 +2470,11 @@ async function fetchDaemonJson(baseUrl, token, path, options = {}) {
     ),
   );
 
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const detail = body.trim().slice(0, 800);
+    throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
+  }
   return await response.json();
 }
 
@@ -2661,6 +2700,7 @@ class PiDaemonClient {
     const baseUrl = `http://127.0.0.1:${port}`;
     const daemonPathCandidates = [
       join(process.cwd(), "packages/runtime/src/adapters/pi-daemon-server.ts"),
+      join(__dirname, "pi-daemon-server.ts"),
       join(__dirname, "pi-daemon-server.js"),
       join(process.cwd(), "dist-electron", "pi-daemon-server.js"),
     ];

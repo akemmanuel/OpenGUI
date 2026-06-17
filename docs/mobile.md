@@ -25,6 +25,6 @@ vp run mobile:open
 
 The release APK bundles the built Vite output from `dist` inside the app.
 
-Android cannot run the Electron/Node sidecar, so the app should connect to an OpenGUI backend/server that is reachable from the device.
+Android cannot run the Electron/Node sidecar, so the app connects to a remote or LAN **OpenGUI Backend** (an **API-only Backend** or **Combined Backend + Frontend** deployment).
 
-A follow-up change should add an in-app backend URL setting for LAN or hosted OpenGUI servers.
+Use in-app Workspace connection settings for the Backend URL and access token.

@@ -1687,14 +1687,18 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (!config || typeof config !== "object") {
       return { success: false, error: "Invalid config" };
     }
-    if (typeof config.baseUrl !== "string" || !config.baseUrl.trim()) {
-      return { success: false, error: "Server URL is required" };
-    }
     const directory = (config.directory ?? "").trim();
     if (!directory) {
       return { success: false, error: "Directory is required" };
     }
-    const normalizedConfig = normalizeServerConfig({ ...config, directory });
+    const normalizedConfig = normalizeServerConfig({
+      ...config,
+      directory,
+      baseUrl:
+        typeof config.baseUrl === "string" && config.baseUrl.trim()
+          ? config.baseUrl
+          : LOCAL_SERVER_URL,
+    });
     try {
       const conn = await connectConnectionForDirectory(
         windowState,

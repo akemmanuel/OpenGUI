@@ -58,7 +58,7 @@ One honest read path: **Harness session summary** on list; **Harness message pag
 - [x] **`docs/architecture.md`**: link ADR 0006 under Harness / read paths.
 - [x] **Comment** on `SessionService.listSessions`: not for product list reads (or delete if unused).
 - [x] **Optional**: `pnpm run slop-check` / `scripts/slop-check.mjs` guardrails (session index + protocol slop).
-- [ ] **Manual checklist** (Desktop or Web): add project → list sessions → open session → messages; kill harness → list error; wrong id → message error.
+- [ ] **Manual checklist** (Desktop or Web): [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md). _(Run before release; automated slop-check + tests are green.)_
 
   | Step                        | Expected                                                 |
   | --------------------------- | -------------------------------------------------------- |

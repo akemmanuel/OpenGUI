@@ -66,9 +66,6 @@ export function tagHarnessSession(
   };
 }
 
-/** @deprecated Use tagHarnessSession */
-export const tagBackendSession = tagHarnessSession;
-
 export function normalizeMessageSessionId(harnessId: HarnessId, message: Message): Message {
   if (typeof message.sessionID !== "string" || message.sessionID.length === 0) return message;
   return {
@@ -138,9 +135,6 @@ export function normalizeTaggedHarnessEvent(
       return normalizeHarnessEventPayload(harnessId, payload);
   }
 }
-
-/** @deprecated Use normalizeTaggedHarnessEvent */
-export const normalizeTaggedBackendEvent = normalizeTaggedHarnessEvent;
 
 function normalizeHarnessEventPayload(harnessId: HarnessId, payload: HarnessEvent): HarnessEvent {
   const codec = createHarnessIdCodec(harnessId);

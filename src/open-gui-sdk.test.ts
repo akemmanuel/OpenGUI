@@ -1,6 +1,29 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { homedir } from "node:os";
-import { OpenGuiSdkError } from "@opengui/runtime";
+import { diagnoseFromInventories, OpenGuiSdkError } from "@opengui/runtime";
+
+describe("diagnoseFromInventories", () => {
+  test("ok when at least one harness is ready", () => {
+    const result = diagnoseFromInventories([
+      {
+        harnessId: "pi",
+        displayName: "Pi",
+        enabled: true,
+        installed: true,
+        status: "ready",
+        auth: { status: "unknown" },
+        version: "1",
+        models: [],
+        agents: [],
+        message: "",
+        checkedAt: "",
+        diagnostics: { cli: { command: "pi", resolvedPath: "/usr/bin/pi", checkedPaths: [] } },
+      },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.harnesses[0]?.cliOnPath).toBe(true);
+  });
+});
 
 describe("OpenGuiSdkError", () => {
   test("exposes code for SESSION_BUSY", () => {
@@ -27,12 +50,16 @@ describe("createOpenGUI", () => {
     });
     try {
       expect(MANAGED_HARNESS_IDS).toContain("pi");
-      const pi = og.harness("pi");
+      const dir = await og.at(home);
+      const pi = dir.harness("pi");
       expect(pi.harnessId).toBe("pi");
+      expect(pi.directoryPath).toBe(home);
       expect(typeof pi.on).toBe("function");
       expect(typeof pi.sessions.list).toBe("function");
       const inventories = og.getHarnessInventories();
       expect(inventories.some((row) => row.harnessId === "pi")).toBe(true);
+      const diag = og.diagnose();
+      expect(diag.harnesses.length).toBeGreaterThan(0);
     } finally {
       await og.close();
     }
@@ -86,6 +113,23 @@ describe("og.at (Phase A)", () => {
       const pi = og.harness("pi");
       expect(pi.directoryPath).toBeUndefined();
       await expect(pi.sessions.list()).rejects.toMatchObject({ code: "DIRECTORY_REQUIRED" });
+    } finally {
+      await og.close();
+    }
+  }, 60_000);
+
+  test('createOpenGUI({ harnesses: ["pi"] }) loads only pi adapter', async () => {
+    const { createOpenGUI } = await import("@opengui/runtime");
+    const home = homedir();
+    const og = await createOpenGUI({
+      dataDir: joinTmpRuntimeDir(),
+      allowedRoots: [home],
+      harnesses: ["pi"],
+    });
+    try {
+      const dir = await og.at(home);
+      expect(dir.harness("pi").harnessId).toBe("pi");
+      await expect(() => dir.harness("opencode")).toThrow(/unloaded|opencode/i);
     } finally {
       await og.close();
     }

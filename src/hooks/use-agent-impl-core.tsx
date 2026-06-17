@@ -82,7 +82,6 @@ import {
 import {
   getPendingProjectHydrationHarnessIds,
   hasProjectHydrationInFlight,
-  runWithConcurrency,
   settleProjectHydration,
   startProjectHydration,
   type ProjectHydrationState,
@@ -543,11 +542,19 @@ function InternalAgentProvider({
         // when a specific Harness is currently unhealthy/unavailable for new
         // work. Keep loading the session index after a failed connect and only
         // mark Harness hydration as failed after history has merged.
-        const sessionResults = await openGuiClient.harnesses.listDirectorySessions({
+        const sessionQuery = await openGuiClient.sessions.query({
+          projects: [
+            {
+              directory: connection.directory,
+              workspaceId: connection.target.workspaceId,
+              baseUrl: connection.config.baseUrl,
+              authToken: connection.config.authToken,
+            },
+          ],
           harnessIds: [harnessId],
-          target: connection.target,
         });
-        const sessions = sessionResults[0]?.sessions ?? [];
+        const sessions =
+          sessionQuery.items.find((item) => item.harnessId === harnessId)?.sessions ?? [];
         dispatch({
           type: "MERGE_PROJECT_SESSIONS",
           payload: {
@@ -981,29 +988,34 @@ function InternalAgentProvider({
       );
       if (uniqueProjects.length === 0 || harnessIds.length === 0) return;
 
-      await runWithConcurrency(uniqueProjects, 4, async (project) => {
-        const results = await openGuiClient.harnesses.listDirectorySessions({
-          harnessIds: harnessIds,
-          target: {
-            directory: project.directory,
-            workspaceId: project.workspaceId,
-            baseUrl: project.baseUrl,
-            authToken: project.authToken,
+      const queryResult = await openGuiClient.sessions.query({
+        projects: uniqueProjects.map((project) => ({
+          directory: project.directory,
+          workspaceId: project.workspaceId,
+          baseUrl: project.baseUrl,
+          authToken: project.authToken,
+        })),
+        harnessIds,
+      });
+
+      for (const item of queryResult.items) {
+        const workspaceId =
+          item.workspaceId ??
+          uniqueProjects.find(
+            (project) =>
+              normalizeProjectPath(project.directory) === normalizeProjectPath(item.directory),
+          )?.workspaceId;
+        if (!workspaceId) continue;
+        dispatch({
+          type: "MERGE_PROJECT_SESSIONS",
+          payload: {
+            projectKey: makeProjectKey(workspaceId, item.directory),
+            directory: item.directory,
+            sessions: item.sessions,
+            harnessIds: [item.harnessId],
           },
         });
-
-        for (const item of results) {
-          dispatch({
-            type: "MERGE_PROJECT_SESSIONS",
-            payload: {
-              projectKey: makeProjectKey(project.workspaceId, project.directory),
-              directory: project.directory,
-              sessions: item.sessions,
-              harnessIds: [item.harnessId],
-            },
-          });
-        }
-      });
+      }
     },
     [discoveryHarnessIds, openGuiClient],
   );

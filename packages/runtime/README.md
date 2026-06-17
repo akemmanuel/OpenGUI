@@ -66,24 +66,48 @@ await og.close();
 - **List** returns harness session objects; `id` is often `pi:<rawId>` (see `parseFrontendSessionId` in the app).
 - **prompt** / **abort** accept either the listed `id` or the raw harness id.
 
-### Inventories
+### Inventories and diagnose
 
 ```ts
 const inventories = og.getHarnessInventories();
+const { ok, harnesses } = og.diagnose();
 ```
 
-Reports CLI install/auth diagnostics (same data as the desktop setup wizard).
+`diagnose()` is a small snapshot (`cliOnPath`, `ready`, `hint`) from inventories (CONTEXT **Harness Inventory**).
+
+### Script one-liner (`runAgent`)
+
+```ts
+import { createOpenGUI, runAgent } from "@opengui/runtime";
+
+const og = await createOpenGUI({ allowedRoots: [repo], harnesses: ["pi"] });
+try {
+  const result = await runAgent(og, {
+    directory: repo,
+    harness: "pi",
+    message: "List top-level files in one sentence.",
+  });
+  console.log(result.assistantText, result.reason);
+} finally {
+  await og.close();
+}
+```
+
+CLI: `vp node scripts/runtime/run-agent.mjs -d . -H pi "your prompt"` (uses tokens).
 
 ## Public API
 
-| Export                                      | Role                                     |
-| ------------------------------------------- | ---------------------------------------- |
-| `createOpenGUI(options)`                    | Boot in-process runtime                  |
-| `og.harness(id)`                            | Per-harness handle (`pi`, `opencode`, …) |
-| `og.registerDirectory` / `releaseDirectory` | Multi-harness directory registration     |
-| `og.getHarnessInventories()`                | CLI readiness                            |
-| `og.close()`                                | Tear down sender                         |
-| `OpenGuiSdkError`                           | `SESSION_BUSY`, `HARNESS_MISMATCH`, …    |
+| Export                                          | Role                                     |
+| ----------------------------------------------- | ---------------------------------------- |
+| `createOpenGUI(options)`                        | Boot in-process runtime                  |
+| `og.harness(id)`                                | Per-harness handle (`pi`, `opencode`, …) |
+| `og.registerDirectory` / `releaseDirectory`     | Multi-harness directory registration     |
+| `og.getHarnessInventories()`                    | CLI readiness                            |
+| `og.diagnose()`                                 | Compact readiness snapshot               |
+| `runAgent(og, { directory, harness, message })` | One-shot send + wait (scripts)           |
+| `createOpenGUI({ harnesses: ["pi"] })`          | Lazy adapter load (cold start)           |
+| `og.close()`                                    | Tear down sender                         |
+| `OpenGuiSdkError`                               | `SESSION_BUSY`, `HARNESS_MISMATCH`, …    |
 
 ### Agent streaming (`AgentStreamEvent`)
 

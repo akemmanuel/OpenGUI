@@ -34,7 +34,10 @@ export type Session = BaseSession & {
   _projectDir?: string;
   _workspaceId?: string;
   _harnessId?: HarnessId;
-  /** Legacy field persisted by versions before the Harness migration. */
+  /**
+   * Legacy Harness id from pre-migration sessions. Read-only compat; remove after 2026-08.
+   * @see getSessionHarnessId in agent-session-utils.ts
+   */
   _backendId?: HarnessId;
   _rawId?: string;
 };

@@ -9,9 +9,9 @@ import type {
   OpenGuiClient,
   OpenGuiQueueEntry,
   DirectoryRegisterResult,
-  HarnessDirectorySessionsResult,
   SessionQueryResult,
 } from "@/protocol/client";
+import type { Session } from "@/hooks/agent-state-types";
 import { mergeCanonicalEventForListener } from "@/hooks/backend-event-normalization";
 import { composeFrontendSessionId } from "@/lib/session-identity";
 import { normalizeProjectPath } from "@/lib/path";
@@ -472,7 +472,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
     record: SessionRecordResponse,
     directory: string,
     workspaceId?: string,
-  ): HarnessDirectorySessionsResult["sessions"][number] => {
+  ): Session => {
     rememberSessionRecord(record);
     const resolvedWorkspaceId = workspaceId ?? "local";
     return {
@@ -490,7 +490,7 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
       _workspaceId: resolvedWorkspaceId,
       _harnessId: record.harnessId,
       _rawId: record.rawId,
-    } as HarnessDirectorySessionsResult["sessions"][number];
+    } as Session;
   };
 
   const toFrontendSession = (
@@ -797,30 +797,6 @@ export function createHttpOpenGuiClient(options: HttpOpenGuiClientOptions = {}):
             ...jsonBody({ harnessIds: harnessIdsOrAll(harnessIds) }),
           },
         );
-      },
-      listDirectorySessions: async ({ harnessIds, target }) => {
-        if (!target?.directory) return [];
-        const response = await requestAt<SessionQueryResponse>(
-          requestBaseUrlForTarget(target),
-          "/api/sessions/query",
-          {
-            method: "POST",
-            ...jsonBody({
-              projects: [
-                {
-                  directory: target.directory,
-                },
-              ],
-              harnessIds,
-            }),
-          },
-        );
-        return response.items.map((item) => ({
-          harnessId: item.harnessId,
-          sessions: item.sessions.map((session) =>
-            toFrontendSessionFromDirectory(session, item.directory, target.workspaceId),
-          ),
-        }));
       },
       listDirectorySessionStatuses: async ({ harnessIds, target }) => {
         if (!target?.directory) return {};

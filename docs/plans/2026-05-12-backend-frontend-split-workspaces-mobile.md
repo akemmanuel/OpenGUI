@@ -737,7 +737,7 @@ Do not expose OpenCode server directly as OpenGUI Backend.
 4. **Backend serves Frontend assets**: Yes for Docker/Web. Keep Frontend static-hostable.
 5. **Multi-user**: No. Single-owner token auth. Design auth middleware for future extension.
 6. **Capacitor vs React Native**: Capacitor. Lets Mobile Shell use the same compiled React build.
-7. **No headless Backend product**: The Backend IS the headless Backend. One binary.
+7. **Deployment naming**: One OpenGUI Backend binary; product copy uses **API-only Backend** or **Combined Backend + Frontend** — not "headless" ([CONTEXT.md](../../CONTEXT.md)).
 
 ## First implementation checklist (updated)
 

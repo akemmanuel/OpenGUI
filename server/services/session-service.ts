@@ -148,6 +148,10 @@ export class SessionService {
     return session;
   }
 
+  /**
+   * In-memory index warm-up for **mutations and queue dispatch only** (ADR 0004/0006).
+   * Never call from session list or message **read** handlers.
+   */
   async ensureSession(input: CreateSessionInput): Promise<SessionRecord> {
     await this.ensureInitialized();
     const existing = await this.getSessionByRawId({

@@ -59,12 +59,23 @@ export interface RegisterHarnessAdaptersInput {
   sender: IpcSender;
   dataDir: string;
   broadcast: (channel: string, data: unknown) => void;
+  /** When set, only these adapters register (lazy cold start). */
+  harnessIds?: readonly HarnessId[];
+}
+
+function resolveManagedHarnessSubset(
+  harnessIds: readonly HarnessId[] | undefined,
+): ManagedHarnessId[] {
+  if (!harnessIds?.length) return [...MANAGED_HARNESS_IDS];
+  const wanted = new Set(harnessIds);
+  return MANAGED_HARNESS_IDS.filter((id) => wanted.has(id));
 }
 
 export function registerHarnessAdapters(
   input: RegisterHarnessAdaptersInput,
 ): ReadonlyMap<ManagedHarnessId, HarnessControl> {
   const { ipcMain, sender, dataDir, broadcast } = input;
+  const activeIds = resolveManagedHarnessSubset(input.harnessIds);
   const getAllWindows = (): HarnessWindow[] => [
     {
       isDestroyed: () => false,
@@ -74,7 +85,7 @@ export function registerHarnessAdapters(
 
   const ctx = { ipcMain, getAllWindows, dataDir, sender };
   const controls = new Map<ManagedHarnessId, HarnessControl>();
-  for (const harnessId of MANAGED_HARNESS_IDS) {
+  for (const harnessId of activeIds) {
     controls.set(harnessId, BRIDGE_SETUP_BY_HARNESS_ID[harnessId](ctx));
   }
   return controls;

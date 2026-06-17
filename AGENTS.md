@@ -24,6 +24,7 @@ Run the app with `pnpm run dev` (Electron) or `pnpm run dev:web` (browser). Use 
 
 ## Code quality
 
+- Run `pnpm run slop-check` when changing server session paths, `OpenGuiClient`, or harness registry
 - Prefer `vp check` before submit
 - Prefer `vp lint` / `vp fmt` when narrowing issues
 - Use `pnpm run` only when task is defined in `package.json`

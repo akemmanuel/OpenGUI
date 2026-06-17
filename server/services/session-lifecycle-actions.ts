@@ -1,3 +1,9 @@
+/**
+ * Harness-backed session mutations (create, fork, rename, …). Each success path calls
+ * `ensureSessionFromRuntime` → `SessionService.ensureSession` to warm the in-memory index
+ * for queue dispatch, SSE side effects, and mutation resolve — never for list/message reads
+ * (ADR 0004, ADR 0006). See `session-resolve.ts` for read vs mutation resolve.
+ */
 import type { HarnessId } from "../../src/agents/index.ts";
 import type { SelectedModel } from "../../src/types/electron.d.ts";
 import type { DirectoryScopeRef } from "@opengui/runtime";

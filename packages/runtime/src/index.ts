@@ -81,4 +81,12 @@ export type {
 } from "../../../src/protocol/client.ts";
 export type { HarnessInventory } from "../../../src/types/electron.d.ts";
 
+export {
+  diagnoseFromInventories,
+  type HarnessDiagnoseEntry,
+  type OpenGUIDiagnoseResult,
+} from "./diagnose.ts";
+
+export { runAgent, type RunAgentOptions, type RunAgentResult } from "./run-agent.ts";
+
 export const RUNTIME_PACKAGE_ID = "@opengui/runtime" as const;

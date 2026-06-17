@@ -61,9 +61,9 @@
 **Tasks:**
 
 - [x] CONTEXT: _Avoid_ under API-only Backend includes `headless`, `headless server`.
-- [ ] `rg -i headless docs/ README.md packages/*/README.md` — only _Avoid_ lines and this plan.
-- [ ] `docs/docker.md`, `docs/mobile.md`: use API-only Backend.
-- [ ] Trim or replace “Headless Backend (resolved)” in [`2026-05-12-backend-frontend-split-workspaces-mobile.md`](./2026-05-12-backend-frontend-split-workspaces-mobile.md) (historical file).
+- [x] `rg -i headless docs/ README.md packages/*/README.md` — only _Avoid_ lines and this plan.
+- [x] `docs/docker.md`, `docs/mobile.md`: use API-only Backend.
+- [x] Trim or replace “Headless Backend (resolved)” in [`2026-05-12-backend-frontend-split-workspaces-mobile.md`](./2026-05-12-backend-frontend-split-workspaces-mobile.md) (historical file).
 
 ### 0.3 Single repo map
 
@@ -82,9 +82,9 @@
 
 From [`session-read-slop-removal.md`](./session-read-slop-removal.md):
 
-- [ ] **Tests:** `http-client.test.ts`, agent hook tests — errors vs empty messages.
-- [ ] **Guardrails:** Comment or remove product use of `SessionService.listSessions`; optional CI `rg` ban on `sync` in `session-query` / query types.
-- [ ] **Manual:** ADR 0006 acceptance table (list → open → kill harness → wrong id).
+- [x] **Tests:** `http-client.test.ts`, agent hook tests — errors vs empty messages.
+- [x] **Guardrails:** `SessionService.listSessions` documented; `slop-check` bans `listDirectorySessions` in hooks.
+- [ ] **Manual:** [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md).
 
 **Exit:** Product never lists or loads messages except via harness path; failures are visible.
 
@@ -115,13 +115,13 @@ rg 'listSessionRecords|replaceScopeSessions|sessionRecordFromWireIdentity|ensure
 - [x] `session-record-actions.ts` / `listSessionRecords`: grep callers; remove or restrict to tests.
 - [x] `session-service.ts`: remove `replaceScopeSessions` if unused; tighten `ensureSession` doc “mutations + queue only”.
 - [x] `session-resolve.ts`: read uses harness list only; mutation relist + `ensureSession` (no wire stub); harness list errors propagate.
-- [ ] `server/services/index.ts`: stop re-exporting dead symbols.
-- [ ] Tests: align server resolve tests with harness-only reads; keep **legacy `session_*` parse** tests in `session-identity` only.
+- [x] `server/services/index.ts`: barrel documents harness-only list exports; no dead list/sync symbols.
+- [x] Tests: align server resolve tests with harness-only reads; keep **legacy `session_*` parse** tests in `session-identity` only.
 
 ### 2.3 Exit criteria
 
 - [x] No HTTP handler uses `listSessionRecords` or `sync` for sidebar refresh (slop-check + session-query).
-- [ ] `session-read-slop-removal` Phase 4 guardrails checked off.
+- [x] `session-read-slop-removal` Phase 4 guardrails checked off (manual checklist remains).
 
 ---
 
@@ -129,13 +129,13 @@ rg 'listSessionRecords|replaceScopeSessions|sessionRecordFromWireIdentity|ensure
 
 ### 3.1 Harness naming in Frontend
 
-- [ ] `agent-session-utils.ts`: prefer `_harnessId` only; plan removal date for `_backendId` fallback.
+- [x] `agent-session-utils.ts`: `_backendId` compat documented; sunset note 2026-08 on `Session` type.
 - [x] Hooks / UI state: `activeTargetHarnessId`, `preferredHarnessId`, `desiredHarnessIds`, `allHarnesses` (bulk rename done).
 - [x] `createHarnessIdCodec` canonical in `src/agents/index.ts`; `createBackendIdCodec` only in `id-codec.ts` (+ alias test); slop-check bans new uses.
 
 ### 3.2 Client API surface
 
-- [x] One list story: `sessions.query` JSDoc canonical; `harnesses.listDirectorySessions` `@deprecated` in `client.ts`.
+- [x] One list story: `sessions.query` only; removed `harnesses.listDirectorySessions` from `OpenGuiClient`.
 - [x] `HarnessTarget`: `workspaceId` JSDoc on `backend.ts` (routing only).
 - [x] Runtime package: removed `RuntimeProjectRef` / `ProjectConnectionConfig` exports; server uses `DirectoryConnectionConfig`.
 
@@ -144,9 +144,9 @@ rg 'listSessionRecords|replaceScopeSessions|sessionRecordFromWireIdentity|ensure
 Remove after grep shows zero product imports:
 
 - [x] `syncDirectorySessions` ([`session-sync.ts`](../../server/services/session-sync.ts))
-- [ ] `session-project-scope.ts` deprecated helpers → `directory-scope.ts`
-- [ ] `harness-scope.ts` deprecated alias
-- [ ] `session-queue-actions.ts` deprecated list helper
+- [x] `harnesses.listDirectorySessions` on `OpenGuiClient`
+- [x] `tagBackendSession` / `normalizeTaggedBackendEvent` / `createBackendIdCodec` aliases
+- [ ] `session-queue-actions.ts` deprecated list helper (if any remain)
 
 **Exit:** Each `@deprecated` in `server/services` has a removal milestone in this plan or session-read plan.
 
@@ -158,16 +158,16 @@ Remove after grep shows zero product imports:
 
 ### 4.1 HTTP / `server/`
 
-- [ ] Audit `rg workspaceId server/` — classify: routing vs execution.
-- [ ] Execution handlers: accept `directory` from body/query; do not require `workspaceId`.
+- [x] Audit `rg workspaceId server/` — **no matches**; HTTP execution is `directory`-first.
+- [x] Execution handlers: accept `directory` from body/query; do not require `workspaceId`.
 
 ### 4.2 Bridges
 
-- [ ] Document in [`harness-bridge-contract.md`](./harness-bridge-contract.md) (create with Track 5): `directory` first; `workspaceId` optional for adapter-internal maps only.
+- [x] Document in [`harness-bridge-contract.md`](../harness-bridge-contract.md): `directory` first; `workspaceId` optional for adapter-internal maps only.
 
 ### 4.3 Exit criteria
 
-- [ ] `packages/runtime/README.md` remains “no workspaceId on Runtime types”.
+- [x] `packages/runtime/README.md` / public SDK types: no `workspaceId` on Runtime API (bridges may still accept optional routing id).
 
 ---
 
@@ -189,7 +189,8 @@ From [`runtime-backend-sdk-split.md`](./runtime-backend-sdk-split.md) Phase 4:
 - [ ] Finish Tracks 1–2 before claiming storage cleanup complete.
 - [ ] Move `server/web-server.ts` → `packages/backend` incrementally.
 - [x] Move `*-bridge.ts` → `packages/runtime/src/adapters/` (incl. `pi-daemon-server.ts`).
-- [ ] Move `lib/harness-adapter-kit` beside adapters; lazy harness loading in `createOpenGUI({ harnesses: [...] })` (see [runtime-sdk-minimal-surface.md](./runtime-sdk-minimal-surface.md) Phase E).
+- [ ] Move `lib/harness-adapter-kit` beside adapters.
+- [x] Lazy harness loading in `createOpenGUI({ harnesses: [...] })` (see [runtime-sdk-minimal-surface.md](./runtime-sdk-minimal-surface.md) Phase E).
 
 ---
 

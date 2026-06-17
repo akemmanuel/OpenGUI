@@ -34,7 +34,7 @@ Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backe
 
 **Storage:** [ADR 0004](./adr/0004-storage-source-of-truth-boundaries.md) — Harness owns sessions/transcripts; Backend SQLite owns queues/uploads; Frontend persistence owns Workspaces/Projects/UI.
 
-**Session reads:** [ADR 0006](./adr/0006-harness-only-session-and-transcript-reads.md), plan [`session-read-slop-removal.md`](./plans/session-read-slop-removal.md).
+**Session reads:** [ADR 0006](./adr/0006-harness-only-session-and-transcript-reads.md), plan [`session-read-slop-removal.md`](./plans/session-read-slop-removal.md), manual [`session-read-acceptance.md`](./manual/session-read-acceptance.md).
 
 **Desktop transport:** [ADR 0003](./adr/0003-persistent-desktop-backend-transport.md) — Local Workspace uses private IPC, not loopback HTTP.
 
@@ -61,16 +61,14 @@ When adding or changing a Harness, keep protocol-specific mapping out of UI code
 
 ## Adding a Harness
 
-A **Harness Adapter** is a bridge (`setupXBridge`) plus metadata in `HARNESS_BACKEND_META`. Today you must touch several registries (consolidation planned):
+A **Harness Adapter** is a bridge (`setupXBridge`) plus registry metadata. Start with [`docs/harness-bridge-contract.md`](./harness-bridge-contract.md) and `node scripts/scaffold-harness.mjs <id>`.
 
-1. `src/agents/index.ts` — `HarnessId`, labels.
-2. `src/agents/cli-harness-factory.ts` — capabilities + `normalizeEvent`.
-3. `packages/runtime/src/harness-runtime.ts` — `MANAGED_HARNESS_IDS` + `registerHarnessAdapters`.
-4. New `*-bridge.ts` under `packages/runtime/src/adapters/` — IPC channels `${harnessId}:project:add`, `session:list`, `prompt`, … (see `HarnessService` in `packages/runtime/src/harness-service.ts`).
-5. `server/harness-inventory.ts` — CLI binary name.
-6. `src/lib/session-identity.ts` — `SESSION_ID_HARNESS_IDS` (kept local to avoid import cycles).
-
-Bridge IPC contract: [`docs/harness-bridge-contract.md`](./harness-bridge-contract.md).
+1. [`src/agents/harness-registry.ts`](../src/agents/harness-registry.ts) + [`harness-ids.ts`](../src/agents/harness-ids.ts) — id, label, CLI command.
+2. [`cli-harness-factory.ts`](../src/agents/cli-harness-factory.ts) — `HARNESS_BACKEND_META`, `normalizeEvent`.
+3. [`harness-bridge-registrations.ts`](../packages/runtime/src/harness-bridge-registrations.ts) — register bridge in `BRIDGE_SETUP_BY_HARNESS_ID`.
+4. New `*-bridge.ts` under `packages/runtime/src/adapters/`.
+5. [`server/harness-inventory.ts`](../server/harness-inventory.ts) — uses registry CLI map.
+6. [`session-identity.ts`](../src/lib/session-identity.ts) — parse legacy ids only; new ids via `composeFrontendSessionId`.
 
 Descriptors in `src/agents/<harness>.ts`: use `makeLocalCliCapabilities()` and `createCliHarnessNormalizer()` for tagged CLI streams; custom SDK events go in `src/agents/protocol/` with tests. Session IDs: `composeFrontendSessionId` / codecs in `src/agents/shared.ts`, not ad-hoc strings.
 

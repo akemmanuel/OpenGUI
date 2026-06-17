@@ -29,6 +29,13 @@ Broadcast on `${harnessId}:bridge-event`. Normalize via `HARNESS_BACKEND_META[id
 
 Use `composeFrontendSessionId(harnessId, rawId)`. Tag sessions with `_harnessId`, `_rawId`, directory.
 
-## workspaceId
+## Scope: `directory` first, `workspaceId` optional
 
-Optional for Frontend workspace routing only. Execution scope is `directory` + `harnessId` + session id ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
+**Product execution scope** is `directory` + `harnessId` + session id ([ADR 0005](../adr/0005-opengui-runtime-backend-split-and-sdk.md), [CONTEXT.md](../../CONTEXT.md) **Harness Scope**). HTTP and `OpenGuiClient` must not require `workspaceId` to run an Agent send or list sessions.
+
+**`workspaceId` on bridge IPC** is optional metadata for:
+
+- Frontend **Workspace** routing (e.g. remote OpenGUI Backend auth / Codex app-server workspace)
+- Adapter-internal project maps (`makeHarnessProjectKey(workspaceId, directory)`)
+
+Do not treat `workspaceId` as a backend domain id or session list filter on its own. Prefer `directory` on every new handler signature; pass `workspaceId` only when an adapter already needs it for remote workspace separation.

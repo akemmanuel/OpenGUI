@@ -3,17 +3,27 @@ import type { HarnessId } from "../../../src/agents/index.ts";
 import type {
   DirectoryRegisterResult,
   HarnessResourceBundle,
-  HarnessDirectorySessionsResult,
 } from "../../../src/protocol/client.ts";
 import type { SelectedModel } from "../../../src/types/electron.d.ts";
 import type { HarnessControl } from "./harness-runtime.ts";
 import type { DirectoryScopeRef } from "./directory-scope-types.ts";
 import { directoryRef } from "./directory-ref.ts";
+import { DEFAULT_OPENCODE_BASE_URL } from "./default-server-url.ts";
 
 interface BridgeResult<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+/** Session row from harness `session:list` RPC (runtime SDK). */
+export interface RuntimeListedSession {
+  id: string;
+  title?: string;
+  status?: string | { type?: string };
+  directory?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** Minimal session shape for harness RPC routing (backend session index). */
@@ -112,10 +122,13 @@ export class HarnessService {
     const results = await Promise.all(
       harnessIds.map(async (harnessId) => {
         try {
+          const baseUrl =
+            input.config?.baseUrl?.trim() ||
+            (harnessId === "opencode" ? DEFAULT_OPENCODE_BASE_URL : undefined);
           await this.backendRpc(harnessId, "project:add", [
             {
               directory: input.scope.directory,
-              baseUrl: input.config?.baseUrl,
+              baseUrl,
               username: input.config?.username,
               password: input.config?.password,
             },
@@ -144,6 +157,19 @@ export class HarnessService {
       this.harnessIdsOrAll(input.harnessIds).map((harnessId) =>
         this.backendRpc(harnessId, "project:remove", [input.directory]),
       ),
+    );
+  }
+
+  /** Tear down harness IPC clients (Pi daemon SSE, OpenCode connections) so Node can exit. */
+  async shutdownHarnessClients(): Promise<void> {
+    await Promise.all(
+      this.managedHarnessIds.map(async (harnessId) => {
+        try {
+          await this.invoke(`${harnessId}:disconnect`, []);
+        } catch {
+          /* harness may already be disconnected */
+        }
+      }),
     );
   }
 
@@ -184,14 +210,12 @@ export class HarnessService {
   async listDirectorySessions(input: {
     directory: string;
     harnessIds: HarnessId[];
-  }): Promise<
-    Array<{ harnessId: HarnessId; sessions: HarnessDirectorySessionsResult["sessions"] }>
-  > {
+  }): Promise<Array<{ harnessId: HarnessId; sessions: RuntimeListedSession[] }>> {
     const directory = input.directory;
     const results = await Promise.all(
       input.harnessIds.map(async (harnessId) => {
         try {
-          const sessions = await this.backendRpc<HarnessDirectorySessionsResult["sessions"]>(
+          const sessions = await this.backendRpc<RuntimeListedSession[]>(
             harnessId,
             "session:list",
             [directory],

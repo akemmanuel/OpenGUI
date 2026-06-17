@@ -78,6 +78,39 @@ describe("resolveSessionRecordForRead", () => {
 });
 
 describe("resolveSessionRecordForMutation", () => {
+  test("warms index via ensureSession when harness lists the session", async () => {
+    const harnessRow = {
+      id: "pi:raw-1",
+      rawId: "raw-1",
+      directory: "/repo",
+      harnessId: "pi" as const,
+      title: "T",
+      status: "idle" as const,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
+    const ensureSession = vi.fn(async () => harnessRow);
+    const services = {
+      harnesses: {
+        listDirectorySessions: vi.fn(async () => [
+          { harnessId: "pi" as const, sessions: [{ id: "raw-1", title: "T" }] },
+        ]),
+      },
+      sessions: {
+        getSession: vi.fn(async () => null),
+        ensureSession,
+      },
+    } as unknown as BackendServiceContext;
+    const row = await resolveSessionRecordForMutation({
+      services,
+      sessionId: "pi:raw-1",
+      scope: { directory: "/repo", harnessId: "pi" },
+      resolveSafeDirectory: async (p) => p,
+    });
+    expect(row.id).toBe("pi:raw-1");
+    expect(ensureSession).toHaveBeenCalledTimes(1);
+  });
+
   test("throws when session not in harness list (no recovered stub)", async () => {
     const services = harnessServices([]);
     await expect(

@@ -92,6 +92,7 @@ export function toSessionRecordInputFromRuntime(
   };
 }
 
+/** Maps a harness runtime session into `SessionService.ensureSession` (mutations + events only). */
 export async function ensureSessionFromRuntime(input: {
   sessions: SessionService;
   runtimeSession: unknown;

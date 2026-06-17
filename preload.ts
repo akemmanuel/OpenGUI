@@ -65,6 +65,7 @@ const electronAPI: ElectronAPI = {
   maximize: invoke("window:maximize"),
   close: invoke("window:close"),
   isMaximized: invoke("window:isMaximized"),
+  focus: invoke("window:focus"),
   getPlatform: invoke("platform:get"),
   getSystemLocale: invoke("platform:locale"),
   isPackaged: invoke("app:isPackaged"),

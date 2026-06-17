@@ -37,13 +37,38 @@ const checks = [
     forbid: (out) => out.trim().length > 0,
   },
   {
-    name: "no createBackendIdCodec outside id-codec",
-    cmd: `rg 'createBackendIdCodec' src/ packages/ --glob '!**/id-codec.ts' --glob '!**/id-codec.test.ts' 2>/dev/null || true`,
+    name: "no createBackendIdCodec",
+    cmd: `rg 'createBackendIdCodec' src/ packages/ 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
   {
-    name: "no tagBackendSession in product code",
-    cmd: `rg 'tagBackendSession' src/ packages/ --glob '!**/shared.ts' --glob '!**/*.test.*' 2>/dev/null || true`,
+    name: "no tagBackendSession",
+    cmd: `rg 'tagBackendSession' src/ packages/ 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no OpenGuiClient listDirectorySessions",
+    cmd: `rg 'listDirectorySessions' src/protocol/client.ts src/protocol/http-client.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no listDirectorySessions in frontend hooks",
+    cmd: `rg 'listDirectorySessions' src/hooks src/features --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no sync flag in session-query",
+    cmd: `rg '\\bsync\\b' server/services/session-query.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no BackendIdCodec alias",
+    cmd: `rg 'BackendIdCodec' src/ packages/ 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no ensureSession on harness list path",
+    cmd: `rg 'ensureSession' server/services/session-harness-list.ts server/services/session-query.ts 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
 ];
