@@ -18,15 +18,17 @@ import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 
 /** Preset accent colors: "default" = neutral (no custom accent). */
-const ACCENT_PRESETS: { id: string; color: string | null; label: string }[] = [
-  { id: "default", color: null, label: "Standard" },
-  { id: "blue", color: "#5482ff", label: "Blau" },
-  { id: "green", color: "#22c55e", label: "Grün" },
-  { id: "purple", color: "#a855f7", label: "Lila" },
-  { id: "orange", color: "#f97316", label: "Orange" },
-  { id: "red", color: "#e11d48", label: "Rot" },
-  { id: "teal", color: "#14b8a6", label: "Cyan" },
-];
+const ACCENT_PRESET_IDS = ["default", "blue", "green", "purple", "orange", "red", "teal"] as const;
+
+const ACCENT_PRESET_COLORS: Record<(typeof ACCENT_PRESET_IDS)[number], string | null> = {
+  default: null,
+  blue: "#5482ff",
+  green: "#22c55e",
+  purple: "#a855f7",
+  orange: "#f97316",
+  red: "#e11d48",
+  teal: "#14b8a6",
+};
 
 export function AppearanceSetting() {
   const { t } = useTranslation();
@@ -108,28 +110,28 @@ export function AppearanceSetting() {
         <Label className="text-sm font-normal shrink-0 w-20">{t("settings.general.accent")}</Label>
         <TooltipProvider delayDuration={300}>
           <div className="flex flex-1 items-center gap-2">
-            {ACCENT_PRESETS.map((preset) => {
-              const isActive = preset.color
-                ? accentColor.toLowerCase() === preset.color.toLowerCase()
+            {ACCENT_PRESET_IDS.map((presetId) => {
+              const color = ACCENT_PRESET_COLORS[presetId];
+              const label = t(`settings.general.accentPreset.${presetId}`);
+              const isActive = color
+                ? accentColor.toLowerCase() === color.toLowerCase()
                 : accentColor === "default";
 
               return (
-                <Tooltip key={preset.id}>
+                <Tooltip key={presetId}>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
                       className={cn(
                         "size-6 rounded-full border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background",
                         isActive && "ring-2 ring-foreground/70 ring-offset-2",
-                        preset.color
-                          ? "border-border"
-                          : "border-border flex items-center justify-center",
+                        color ? "border-border" : "border-border flex items-center justify-center",
                       )}
-                      style={preset.color ? { backgroundColor: preset.color } : undefined}
-                      aria-label={preset.label}
-                      onClick={() => setAccentColor(preset.color ?? "default")}
+                      style={color ? { backgroundColor: color } : undefined}
+                      aria-label={label}
+                      onClick={() => setAccentColor(color ?? "default")}
                     >
-                      {!preset.color && (
+                      {!color && (
                         <Ban
                           className={cn(
                             "size-3.5",
@@ -140,7 +142,7 @@ export function AppearanceSetting() {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs">
-                    {preset.label}
+                    {label}
                   </TooltipContent>
                 </Tooltip>
               );

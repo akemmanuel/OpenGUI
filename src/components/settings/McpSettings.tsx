@@ -37,6 +37,7 @@ export function McpTabContent() {
     [key: string]: "local" | "remote";
   }>({});
   const [loading, setLoading] = useState(true);
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function McpTabContent() {
   }, [harnessId, mcpHarnessIds]);
 
   const refresh = useCallback(async () => {
+    setLoadTimedOut(false);
     if (!mcpApi || !configApi) {
       setMcpStatus({});
       setMcpTypes({});
@@ -52,27 +54,37 @@ export function McpTabContent() {
       return;
     }
     const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
-    const [statusData, configData] = await Promise.all([
-      mcpApi.status(target),
-      configApi.get(target),
-    ]);
-    setMcpStatus(statusData);
-    if (configData?.mcp) {
-      const types: { [key: string]: "local" | "remote" } = {};
-      for (const [name, cfg] of Object.entries(configData.mcp)) {
-        if (cfg && typeof cfg === "object" && "type" in cfg) {
-          types[name] = (cfg as { type: "local" | "remote" }).type;
+    try {
+      const [statusData, configData] = await Promise.all([
+        mcpApi.status(target),
+        configApi.get(target),
+      ]);
+      setMcpStatus(statusData);
+      if (configData?.mcp) {
+        const types: { [key: string]: "local" | "remote" } = {};
+        for (const [name, cfg] of Object.entries(configData.mcp)) {
+          if (cfg && typeof cfg === "object" && "type" in cfg) {
+            types[name] = (cfg as { type: "local" | "remote" }).type;
+          }
         }
+        setMcpTypes(types);
       }
-      setMcpTypes(types);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [mcpApi, configApi, scopedDirectory, activeWorkspaceId]);
 
   useEffect(() => {
     setLoading(true);
+    setLoadTimedOut(false);
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!loading) return;
+    const timeout = window.setTimeout(() => setLoadTimedOut(true), 8000);
+    return () => window.clearTimeout(timeout);
+  }, [loading]);
 
   const handleToggle = async (name: string, currentStatus: McpServerStatus) => {
     if (!mcpApi) return;
@@ -120,10 +132,30 @@ export function McpTabContent() {
 
   const entries = Object.entries(mcpStatus).sort(([a], [b]) => a.localeCompare(b));
 
-  if (loading) {
+  if (loading && !loadTimedOut) {
     return (
       <div className="flex items-center justify-center py-8">
         <Spinner className="size-5" />
+      </div>
+    );
+  }
+
+  if (loading && loadTimedOut) {
+    return (
+      <div className="space-y-3 py-6 text-center text-sm text-muted-foreground">
+        <p>{t("mcp.loadTimedOut")}</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setLoading(true);
+            setLoadTimedOut(false);
+            void refresh();
+          }}
+        >
+          {t("mcp.retry")}
+        </Button>
       </div>
     );
   }

@@ -9,10 +9,12 @@ import {
 export function useSidebarCollapsedProjects({
   activeWorkspaceProjectDirectories,
   detachedProject,
+  hydrationReady,
   openDirectories,
 }: {
   activeWorkspaceProjectDirectories: string[];
   detachedProject?: string;
+  hydrationReady: boolean;
   openDirectories: string[];
 }) {
   const [collapsed, setCollapsed] = useState(() => getSidebarCollapsedProjects());
@@ -31,13 +33,13 @@ export function useSidebarCollapsedProjects({
     // Keep collapsed project state across app startup. Connections hydrate after
     // frontend-persisted state, so pruning against an empty/partial connection list can
     // delete saved collapsed projects before they reconnect. Use persisted
-    // workspace project list when available, and never let detached windows prune
-    // shared sidebar state for other projects.
+    // workspace project list when available, merge it with connected directories, and
+    // never let detached windows or not-yet-ready hydration prune shared sidebar state.
     if (detachedProject) return;
-    const collapsedPruneDirectories =
-      activeWorkspaceProjectDirectories.length > 0
-        ? activeWorkspaceProjectDirectories
-        : openDirectories;
+    if (!hydrationReady) return;
+    const collapsedPruneDirectories = Array.from(
+      new Set([...activeWorkspaceProjectDirectories, ...openDirectories]),
+    );
     if (collapsedPruneDirectories.length === 0) return;
 
     setCollapsed((prev) => {
@@ -49,7 +51,7 @@ export function useSidebarCollapsedProjects({
       }
       return next;
     });
-  }, [activeWorkspaceProjectDirectories, detachedProject, openDirectories]);
+  }, [activeWorkspaceProjectDirectories, detachedProject, hydrationReady, openDirectories]);
 
   useEffect(() => {
     persistSidebarCollapsedProjects(collapsed);

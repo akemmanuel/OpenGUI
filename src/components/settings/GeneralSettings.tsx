@@ -41,6 +41,7 @@ import { DEFAULT_MODEL_MAX_AGE_MONTHS, STORAGE_KEYS } from "@/lib/constants";
 import {
   getNewChatModelBehavior,
   isNewChatModelBehavior,
+  newChatModelBehaviorLabelKey,
   setNewChatModelBehavior,
   type NewChatModelBehavior,
 } from "@/lib/new-chat-model-behavior";
@@ -185,25 +186,31 @@ function LanguageSetting() {
   });
 
   useEffect(() => {
-    const storedLanguage = storageGet(STORAGE_KEYS.LANGUAGE);
-    if (isSupportedLanguage(storedLanguage)) {
-      setLanguage(storedLanguage);
-      return;
-    }
-    setLanguage("auto");
-  }, [i18n.resolvedLanguage]);
+    const onLanguageChanged = () => {
+      const storedLanguage = storageGet(STORAGE_KEYS.LANGUAGE);
+      if (isSupportedLanguage(storedLanguage)) {
+        setLanguage(storedLanguage);
+        return;
+      }
+      setLanguage("auto");
+    };
+    window.addEventListener("opengui-language-changed", onLanguageChanged);
+    return () => window.removeEventListener("opengui-language-changed", onLanguageChanged);
+  }, []);
 
   const handleChange = (value: string) => {
     if (value === "auto") {
       setLanguage("auto");
       storageRemove(STORAGE_KEYS.LANGUAGE);
       void detectSystemLanguage().then((detected) => i18n.changeLanguage(detected));
+      window.dispatchEvent(new Event("opengui-language-changed"));
       return;
     }
     if (!isSupportedLanguage(value)) return;
     setLanguage(value);
     storageSet(STORAGE_KEYS.LANGUAGE, value);
     void i18n.changeLanguage(value);
+    window.dispatchEvent(new Event("opengui-language-changed"));
   };
 
   const selectedLanguageLabel =
@@ -242,6 +249,12 @@ function NewChatModelBehaviorSetting() {
   const { t } = useTranslation();
   const [behavior, setBehavior] = useState<NewChatModelBehavior>(() => getNewChatModelBehavior());
 
+  useEffect(() => {
+    setBehavior(getNewChatModelBehavior());
+  }, []);
+
+  const selectedBehaviorLabel = t(newChatModelBehaviorLabelKey(behavior));
+
   const handleChange = (value: string) => {
     if (!isNewChatModelBehavior(value)) return;
     setBehavior(value);
@@ -263,7 +276,9 @@ function NewChatModelBehaviorSetting() {
       </div>
       <Select value={behavior} onValueChange={handleChange}>
         <SelectTrigger id="new-chat-model-behavior" className="w-[220px] h-8">
-          <SelectValue placeholder={t("settings.general.newChatModelBehavior")} />
+          <SelectValue placeholder={t("settings.general.newChatModelBehavior")}>
+            {selectedBehaviorLabel}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="ask">{t("settings.general.newChatModelAsk")}</SelectItem>
@@ -326,9 +341,17 @@ function ModelAgeFilterSetting() {
   const handleMonthsChange = (value: string) => {
     const digitsOnly = value.replace(/[^0-9]/g, "");
     setMonths(digitsOnly);
-    if (!enabled) return;
-    persistMonths(digitsOnly);
   };
+
+  useEffect(() => {
+    if (!enabled) return;
+    const timeout = window.setTimeout(() => {
+      if (months) persistMonths(months);
+    }, 400);
+    return () => window.clearTimeout(timeout);
+    // persistMonths is stable for this setting; debounce only months/enabled
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [months, enabled]);
 
   const handleMonthsBlur = () => {
     if (months) return;

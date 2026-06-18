@@ -250,9 +250,9 @@ export function SettingsProviders() {
                   />
                 );
               })}
-              {filteredProviders.length === 0 && (
+              {filteredProviders.length === 0 && lowerSearch.length > 0 && (
                 <div className="text-center py-6 text-sm text-muted-foreground">
-                  {t("providers.noProvidersFound", { query: search })}
+                  {t("providers.noProvidersFound", { query: search.trim() })}
                 </div>
               )}
             </div>

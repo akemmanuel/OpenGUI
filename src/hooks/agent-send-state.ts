@@ -4,18 +4,11 @@ import { createUuid } from "@/lib/utils";
 
 export interface PromptSendState {
   turnRun: TurnRun;
-  promptSubmitted: {
-    id: string;
-    sessionID: string;
-    text: string;
-    createdAt: number;
-  };
 }
 
 export type PromptSendStartAction =
   | { type: "SET_BUSY"; payload: true }
-  | { type: "TURN_RUN_STARTED"; payload: TurnRun }
-  | { type: "PROMPT_SUBMITTED"; payload: PromptSendState["promptSubmitted"] };
+  | { type: "TURN_RUN_STARTED"; payload: TurnRun };
 
 export function createTurnRunStart({
   sessionId,
@@ -41,7 +34,6 @@ export function createTurnRunStart({
 
 export function createPromptSendState({
   sessionId,
-  text,
   selection,
   startedAt = Date.now(),
   turnId = createUuid(),
@@ -54,12 +46,6 @@ export function createPromptSendState({
 }): PromptSendState {
   return {
     turnRun: createTurnRunStart({ sessionId, selection, startedAt, turnId }),
-    promptSubmitted: {
-      id: turnId,
-      sessionID: sessionId,
-      text,
-      createdAt: startedAt,
-    },
   };
 }
 
@@ -74,7 +60,6 @@ export function createPromptSendStartActions(input: {
   return [
     { type: "SET_BUSY", payload: true },
     { type: "TURN_RUN_STARTED", payload: promptSendState.turnRun },
-    { type: "PROMPT_SUBMITTED", payload: promptSendState.promptSubmitted },
   ];
 }
 

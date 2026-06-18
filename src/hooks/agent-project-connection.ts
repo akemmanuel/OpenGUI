@@ -1,4 +1,8 @@
-import { createLocalWorkspace, type WorktreeParentMap } from "@/hooks/agent-state-persistence";
+import {
+  createLocalWorkspace,
+  getWorkspaceDefaultChatDirectory,
+  type WorktreeParentMap,
+} from "@/hooks/agent-state-persistence";
 import {
   getWorkspaceRootProjectDirectory,
   listRelatedWorktreeDirectories,
@@ -19,6 +23,17 @@ type ProjectConfig = ConnectionConfig & {
   directory: string;
 };
 
+export type SessionListTargetSource = "workspace-project" | "default-chat";
+
+export type SessionListTarget = ProjectConfig & {
+  source: SessionListTargetSource;
+};
+
+export interface SessionIndexRootTarget {
+  directory: string;
+  source: SessionListTargetSource;
+}
+
 export interface ProjectConnectionDescriptor {
   workspaceId: string;
   directory: string;
@@ -34,6 +49,15 @@ export interface ProjectConnectionDescriptor {
 
 function uniqueOrdered(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function normalizeDirectorySet(directories: Iterable<string>): Set<string> {
+  const set = new Set<string>();
+  for (const directory of directories) {
+    const normalized = normalizeProjectPath(directory);
+    if (normalized) set.add(normalized);
+  }
+  return set;
 }
 
 export function createProjectConnectionStatus(
@@ -122,14 +146,15 @@ export function buildBootstrapProjectConfigs({
       ? { ...workspace, projects: [detachedProject] }
       : workspace,
   );
-  const projectConfigs: ProjectConfig[] = [];
+  const projectConfigs: SessionListTarget[] = [];
   const expectedProjectKeys: string[] = [];
   const seenProjectKeys = new Set<string>();
 
   for (const workspace of bootWorkspaces) {
-    for (const project of workspace.projects) {
+    const indexRootTargets = getSessionIndexRootTargets(workspace);
+    for (const target of indexRootTargets) {
       const plan = createWorkspaceProjectConnectionPlan({
-        directory: project,
+        directory: target.directory,
         workspaceId: workspace.id,
         worktreeParents,
       });
@@ -155,12 +180,36 @@ export function buildBootstrapProjectConfigs({
           username: workspace.username,
           password: workspace.password,
           authToken: workspace.authToken,
+          source: target.source,
         });
       }
     }
   }
 
   return { projectConfigs, expectedProjectKeys };
+}
+
+/** Workspace projects plus default chat directory when it is not already a project. */
+export function getSessionIndexRootDirectories(workspace: Workspace): string[] {
+  return getSessionIndexRootTargets(workspace).map((target) => target.directory);
+}
+
+/**
+ * Session list targets are not the same thing as visible Workspace Projects.
+ * Projects take precedence: when the default chat path is already a Project, do
+ * not classify existing Harness sessions from that path as chat-origin.
+ */
+export function getSessionIndexRootTargets(workspace: Workspace): SessionIndexRootTarget[] {
+  const projectSet = normalizeDirectorySet(workspace.projects ?? []);
+  const targets: SessionIndexRootTarget[] = Array.from(projectSet, (directory) => ({
+    directory,
+    source: "workspace-project",
+  }));
+  const defaultChat = getWorkspaceDefaultChatDirectory(workspace);
+  if (defaultChat && !projectSet.has(defaultChat)) {
+    targets.push({ directory: defaultChat, source: "default-chat" });
+  }
+  return targets;
 }
 
 export function createWorkspaceConnectionConfig({
@@ -212,6 +261,70 @@ export function createProjectConnectionDescriptor({
 
 export function shouldPersistWorkspaceProject(options?: { hidden?: boolean; transient?: boolean }) {
   return !options?.hidden && !options?.transient;
+}
+
+export type WorkspaceProjectPersistPlan = {
+  addWorkspaceProject: {
+    workspaceId: string;
+    directory: string;
+    serverUrl: string;
+    username?: string;
+    password?: string;
+  } | null;
+  persistLocalConnectionSettings: boolean;
+  serverUrl: string;
+  username?: string;
+};
+
+/** Promote a directory to a persisted Workspace Project (independent of Harness hydration). */
+export function buildWorkspaceProjectPersistPlan({
+  directory,
+  workspaceId,
+  worktreeParents,
+  workspace,
+  config,
+  options,
+}: {
+  directory: string;
+  workspaceId: string;
+  worktreeParents: WorktreeParentMap;
+  workspace: Workspace;
+  config: ConnectionConfig;
+  options?: { hidden?: boolean; transient?: boolean };
+}): WorkspaceProjectPersistPlan | null {
+  if (!shouldPersistWorkspaceProject(options)) return null;
+  const connectionPlan = createWorkspaceProjectConnectionPlan({
+    directory,
+    workspaceId,
+    worktreeParents,
+  });
+  const workspaceProjectDirectory = connectionPlan.workspaceProjectDirectory;
+  if (!workspaceProjectDirectory) {
+    return {
+      addWorkspaceProject: null,
+      persistLocalConnectionSettings: shouldPersistLocalConnectionSettings(
+        workspace.isLocal,
+        options,
+      ),
+      serverUrl: config.baseUrl,
+      username: config.username,
+    };
+  }
+  return {
+    addWorkspaceProject: {
+      workspaceId,
+      directory: workspaceProjectDirectory,
+      serverUrl: config.baseUrl,
+      username: config.username,
+      password: config.password,
+    },
+    persistLocalConnectionSettings: shouldPersistLocalConnectionSettings(
+      workspace.isLocal,
+      options,
+    ),
+    serverUrl: config.baseUrl,
+    username: config.username,
+  };
 }
 
 export function shouldPersistLocalConnectionSettings(

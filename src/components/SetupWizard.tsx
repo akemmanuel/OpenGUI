@@ -178,8 +178,14 @@ export function SetupWizard({ onComplete }: Props) {
               )}
 
               <div className="mt-5 flex flex-wrap justify-between gap-2">
-                <Button variant="ghost" onClick={() => void refreshHarnessStatus()}>
-                  <RotateCw className="mr-1.5 size-4" />
+                <Button
+                  variant="ghost"
+                  disabled={harnessState === "detecting"}
+                  onClick={() => void refreshHarnessStatus()}
+                >
+                  <RotateCw
+                    className={`mr-1.5 size-4 ${harnessState === "detecting" ? "animate-spin" : ""}`}
+                  />
                   {t("setupWizard.checkAgain")}
                 </Button>
                 <div className="flex flex-wrap gap-2">

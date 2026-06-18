@@ -61,6 +61,10 @@ export class GrokAcpClient {
 
   async request(method, params = {}, options = {}) {
     await this.ensureReady();
+    return await this.#requestReadyProcess(method, params, options);
+  }
+
+  async #requestReadyProcess(method, params = {}, options = {}) {
     if (!this.#child?.stdin) throw new Error("Grok ACP process is not running");
     const timeoutMs =
       typeof options.timeoutMs === "number" ? options.timeoutMs : this.#requestTimeoutMs;
@@ -176,7 +180,7 @@ export class GrokAcpClient {
       this.#startPromise = null;
     });
 
-    this.#initResult = await this.request("initialize", {
+    this.#initResult = await this.#requestReadyProcess("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },

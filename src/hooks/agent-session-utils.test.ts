@@ -52,6 +52,27 @@ describe("createSessionProjectMoveMeta", () => {
       detachedFromProjectAt: null,
     });
   });
+
+  test("moving a chat-origin session to its native project makes it project-origin", () => {
+    expect(
+      createSessionProjectMoveMeta(
+        session("/chat-root"),
+        { originMode: "chat", nativeProjectDir: "/chat-root", assignedProjectDir: null },
+        "/chat-root",
+        30,
+      ),
+    ).toEqual({
+      originMode: "project",
+      nativeProjectDir: "/chat-root",
+      assignedProjectDir: null,
+      assignedProjectMovedAt: null,
+      assignedProjectSourceDir: null,
+      pendingDirectoryChangeNotice: false,
+      hideSystemAppendBlocks: false,
+      detachedFromProject: false,
+      detachedFromProjectAt: null,
+    });
+  });
 });
 
 describe("createSessionProjectDetachMeta", () => {

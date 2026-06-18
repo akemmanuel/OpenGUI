@@ -2,11 +2,14 @@ import { ChevronLeft, Folder, FolderOpen, Server } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { notifyUnknownError } from "@/lib/notify";
 import { useTranslation } from "react-i18next";
+import { i18n } from "@/i18n";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { FormField } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConnectionState } from "@/hooks/use-agent-state";
+import { canManageProjects as resolveCanManageProjects } from "@/hooks/workspace-guards";
+import { notifyInfo } from "@/lib/notify";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 import { normalizeProjectPath } from "@/lib/utils";
 import { useDesktopShell } from "@/shell/provider";
@@ -58,6 +61,8 @@ export function ProjectPathDialog() {
   const { t } = useTranslation();
   const {
     activeWorkspace,
+    activeWorkspaceId,
+    workspaces,
     isLocalWorkspace,
     workspaceServerUrl,
     workspaceDirectory,
@@ -75,6 +80,11 @@ export function ProjectPathDialog() {
   useEffect(() => {
     const handleOpen = (event: Event) => {
       const customEvent = event as CustomEvent<OpenProjectPathDialogDetail>;
+      if (!resolveCanManageProjects(workspaces, activeWorkspaceId, activeWorkspace)) {
+        notifyInfo(i18n.t("workspace.requiredBeforeProject"));
+        customEvent.detail.resolve(null);
+        return;
+      }
       resolverRef.current?.(null);
       resolverRef.current = customEvent.detail.resolve;
       setValue(customEvent.detail.initialPath ?? workspaceDirectory ?? "");
@@ -88,7 +98,7 @@ export function ProjectPathDialog() {
       resolverRef.current?.(null);
       resolverRef.current = null;
     };
-  }, [workspaceDirectory]);
+  }, [activeWorkspace, activeWorkspaceId, workspaceDirectory, workspaces]);
 
   const closeWith = (nextValue: string | null) => {
     const normalizedValue = nextValue ? normalizeProjectPath(nextValue) : null;

@@ -16,7 +16,6 @@ import type {
 import {
   applyStreamingDeltaToPart,
   bufferNonActiveEvent,
-  createOptimisticUserMessage,
   createPlaceholderMessageEntry,
   createPlaceholderPart,
   finalizeRunningToolPartsForSession,
@@ -26,7 +25,6 @@ import {
   mergeMessageSnapshot,
   mergeSnapshotPartWithExisting,
   normalizeMessageEntries,
-  removeMatchingOptimisticUserMessage,
   tagPartWithDeltaPositions,
   updateMessageArray,
 } from "@/hooks/agent-message-state";
@@ -74,6 +72,7 @@ import {
   removeSessionFromQueueSlice,
   renameSessionIdInQueueSlice,
 } from "@/hooks/agent-reducer-queue-slice";
+import type { SessionListTargetSource } from "@/hooks/agent-project-connection";
 
 const MAX_DELETED_SESSION_IDS = 200;
 
@@ -182,6 +181,7 @@ export type Action =
         directory: string;
         sessions: Session[];
         harnessIds?: HarnessId[];
+        source?: SessionListTargetSource;
       };
     }
   | { type: "SET_ACTIVE_SESSION"; payload: string | null }
@@ -195,10 +195,6 @@ export type Action =
         nextCursor?: string | null;
         mode?: "replace" | "prepend" | "append";
       };
-    }
-  | {
-      type: "PROMPT_SUBMITTED";
-      payload: { id: string; sessionID: string; text: string; createdAt: number };
     }
   | { type: "SET_LOADING_OLDER_MESSAGES"; payload: boolean }
   | { type: "SET_BUSY"; payload: boolean }
@@ -423,6 +419,45 @@ function preserveChatSessionDirectory(state: InternalAgentState, incoming: Sessi
     directory,
     _projectDir: directory,
   };
+}
+
+function hasExplicitPlacementMeta(meta: SessionMeta | undefined): boolean {
+  if (!meta) return false;
+  return (
+    Object.hasOwn(meta, "originMode") ||
+    Object.hasOwn(meta, "nativeProjectDir") ||
+    Object.hasOwn(meta, "assignedProjectDir") ||
+    Object.hasOwn(meta, "detachedFromProject")
+  );
+}
+
+function markDefaultChatListedSessions({
+  current,
+  directory,
+  sessions,
+}: {
+  current: InternalAgentState["sessionMeta"];
+  directory: string;
+  sessions: Session[];
+}) {
+  const nativeProjectDir = normalizeProjectPath(directory);
+  if (!nativeProjectDir) return current;
+
+  let changed = false;
+  const next = { ...current };
+  for (const session of sessions) {
+    if (!session?.id) continue;
+    const existing = next[session.id];
+    if (hasExplicitPlacementMeta(existing)) continue;
+    next[session.id] = {
+      ...existing,
+      originMode: "chat",
+      nativeProjectDir,
+      assignedProjectDir: null,
+    };
+    changed = true;
+  }
+  return changed ? next : current;
 }
 
 export function reducer(state: InternalAgentState, action: Action): InternalAgentState {
@@ -698,10 +733,20 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     }
 
     case "MERGE_PROJECT_SESSIONS": {
-      const { projectKey, directory, sessions, harnessIds } = action.payload;
+      const { projectKey, directory, sessions, harnessIds, source } = action.payload;
       const { workspaceId } = parseProjectKey(projectKey);
+      const nextSessionMeta =
+        source === "default-chat"
+          ? markDefaultChatListedSessions({
+              current: state.sessionMeta,
+              directory,
+              sessions,
+            })
+          : state.sessionMeta;
+      if (nextSessionMeta !== state.sessionMeta) persistSessionMetaMap(nextSessionMeta);
       return {
         ...state,
+        sessionMeta: nextSessionMeta,
         sessions: mergeProjectBackendSessions({
           current: state.sessions,
           workspaceId,
@@ -920,21 +965,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         replayedState = reducer(replayedState, event);
       }
       return replayedState;
-    }
-
-    case "PROMPT_SUBMITTED": {
-      const message = createOptimisticUserMessage(action.payload);
-      if (message.info.sessionID !== state.activeSessionId) {
-        return bufferNonActiveEvent(state, message.info.sessionID, message.info.id, () => ({
-          info: message.info,
-          parts: Object.fromEntries(message.parts.map((part) => [part.id, part])),
-        }));
-      }
-      if (state.messages.some((entry) => entry.info.id === message.info.id)) return state;
-      return {
-        ...state,
-        messages: limitMessageWindow([...state.messages, message]),
-      };
     }
 
     case "SET_LOADING_OLDER_MESSAGES":
@@ -1572,12 +1602,8 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         }
       }
 
-      const canonicalEntry = updatedWindow.messages.find((m) => m.info.id === part.messageID);
-      const dedupedMessages = canonicalEntry
-        ? removeMatchingOptimisticUserMessage(updatedWindow.messages, canonicalEntry)
-        : updatedWindow.messages;
-      const partUpdatedMessages = limitMessageWindow(dedupedMessages);
-      const partDidTrim = partUpdatedMessages.length < dedupedMessages.length;
+      const partUpdatedMessages = limitMessageWindow(updatedWindow.messages);
+      const partDidTrim = partUpdatedMessages.length < updatedWindow.messages.length;
       return {
         ...state,
         ...childTrackPatch,

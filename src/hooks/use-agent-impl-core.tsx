@@ -59,6 +59,7 @@ import {
   type SessionColor,
 } from "@/hooks/agent-state-persistence";
 import { resolveWorkspacePresentation } from "@/hooks/workspace-presentation";
+import { canManageProjects as resolveCanManageProjects } from "@/hooks/workspace-guards";
 import { initialAgentState } from "@/hooks/agent-initial-state";
 import {
   isModelAvailable,
@@ -69,6 +70,7 @@ import {
 } from "@/hooks/agent-model-selection";
 import {
   buildBootstrapProjectConfigs,
+  buildWorkspaceProjectPersistPlan,
   createProjectConnectionDescriptor,
   createProjectConnectionStatus,
   createProjectRemovalPlan,
@@ -78,10 +80,12 @@ import {
   shouldPersistLocalConnectionSettings,
   shouldPersistWorkspaceProject,
   shouldSnapshotProjectConnectionForRestart,
+  type SessionListTargetSource,
 } from "@/hooks/agent-project-connection";
 import {
   getPendingProjectHydrationHarnessIds,
   hasProjectHydrationInFlight,
+  isProjectHydrationComplete,
   settleProjectHydration,
   startProjectHydration,
   type ProjectHydrationState,
@@ -91,6 +95,10 @@ import {
   hydrateChildSessionMessages,
   loadOlderSessionMessages,
 } from "@/hooks/agent-message-loading";
+import {
+  buildActiveWorkspaceProjectSet,
+  filterActiveWorkspaceSessions,
+} from "@/hooks/agent-workspace-session-scope";
 import {
   createSessionProjectDetachMeta,
   createSessionProjectMoveMeta,
@@ -136,6 +144,8 @@ import {
 import { useOpenGuiClient } from "@/protocol/provider";
 import { persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
+import { i18n } from "@/i18n";
+import { notifyInfo } from "@/lib/notify";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 import type {
   ConnectionConfig,
@@ -562,6 +572,7 @@ function InternalAgentProvider({
             directory: connection.directory,
             sessions,
             harnessIds: [harnessId],
+            source: connectionKind === "chat-infra" ? "default-chat" : "workspace-project",
           },
         });
 
@@ -683,7 +694,54 @@ function InternalAgentProvider({
             return !completed && !loading;
           })
         : getPendingProjectHydrationHarnessIds(currentHydration, requestedHarnessIds);
+
+      const applyVisibleWorkspaceProjectPersistence = () => {
+        const worktreeParentMap = getWorktreeParents();
+        const plan = buildWorkspaceProjectPersistPlan({
+          directory: connection.directory,
+          workspaceId: connection.workspaceId,
+          worktreeParents: worktreeParentMap,
+          workspace,
+          config: connection.config,
+          options,
+        });
+        if (!plan) return;
+        if (plan.addWorkspaceProject) {
+          dispatch({
+            type: "ADD_WORKSPACE_PROJECT",
+            payload: plan.addWorkspaceProject,
+          });
+        }
+        if (plan.persistLocalConnectionSettings) {
+          storageSet(STORAGE_KEYS.SERVER_URL, plan.serverUrl);
+          storageSetOrRemove(STORAGE_KEYS.USERNAME, plan.username);
+        }
+      };
+
       if (targetHarnessIds.length === 0) {
+        if (shouldPersistWorkspaceProject(options)) {
+          dispatch({
+            type: "SET_PROJECT_META",
+            payload: { projectKey, meta: { hidden: false } },
+          });
+          if (
+            isProjectHydrationComplete(currentHydration, requestedHarnessIds) &&
+            (currentHydration?.completedHarnessIds.length ?? 0) > 0
+          ) {
+            dispatch({
+              type: "SET_PROJECT_CONNECTION",
+              payload: {
+                projectKey,
+                status: createProjectConnectionStatus(
+                  "connected",
+                  connection.config.baseUrl,
+                  "project",
+                ),
+              },
+            });
+          }
+          applyVisibleWorkspaceProjectPersistence();
+        }
         return;
       }
 
@@ -756,28 +814,7 @@ function InternalAgentProvider({
         return;
       }
 
-      const worktreeParentMap = getWorktreeParents();
-      const connectionPlan = createWorkspaceProjectConnectionPlan({
-        directory: connection.directory,
-        workspaceId: connection.workspaceId,
-        worktreeParents: worktreeParentMap,
-      });
-      if (connectionPlan.workspaceProjectDirectory && shouldPersistWorkspaceProject(options)) {
-        dispatch({
-          type: "ADD_WORKSPACE_PROJECT",
-          payload: {
-            workspaceId: connection.workspaceId,
-            directory: connectionPlan.workspaceProjectDirectory,
-            serverUrl: connection.config.baseUrl,
-            username: connection.config.username,
-            password: connection.config.password,
-          },
-        });
-      }
-      if (shouldPersistLocalConnectionSettings(workspace.isLocal, options)) {
-        storageSet(STORAGE_KEYS.SERVER_URL, connection.config.baseUrl);
-        storageSetOrRemove(STORAGE_KEYS.USERNAME, connection.config.username);
-      }
+      applyVisibleWorkspaceProjectPersistence();
     },
     [allHarnesses, discoveryHarnessIds, hydrateProjectBackend],
   );
@@ -970,6 +1007,7 @@ function InternalAgentProvider({
         directory: string;
         baseUrl?: string;
         authToken?: string;
+        source?: SessionListTargetSource;
       }>,
       harnessIds: HarnessId[] = discoveryHarnessIds,
     ) => {
@@ -981,6 +1019,7 @@ function InternalAgentProvider({
               directory: normalizeProjectPath(project.directory),
               baseUrl: project.baseUrl,
               authToken: project.authToken,
+              source: project.source,
             }))
             .filter((project) => project.directory)
             .map((project) => [makeProjectKey(project.workspaceId, project.directory), project]),
@@ -1013,6 +1052,11 @@ function InternalAgentProvider({
             directory: item.directory,
             sessions: item.sessions,
             harnessIds: [item.harnessId],
+            source: uniqueProjects.find(
+              (project) =>
+                project.workspaceId === workspaceId &&
+                normalizeProjectPath(project.directory) === normalizeProjectPath(item.directory),
+            )?.source,
           },
         });
       }
@@ -1110,7 +1154,7 @@ function InternalAgentProvider({
           const projectKey = makeProjectKey(item.workspaceId, item.directory);
           dispatch({
             type: "SET_PROJECT_META",
-            payload: { projectKey, meta: { hidden: false } },
+            payload: { projectKey, meta: { hidden: item.source === "default-chat" } },
           });
           dispatch({
             type: "ASSIGN_PROJECT_WORKSPACE",
@@ -1120,7 +1164,11 @@ function InternalAgentProvider({
             type: "SET_PROJECT_CONNECTION",
             payload: {
               projectKey,
-              status: createProjectConnectionStatus("connected", item.baseUrl, "project"),
+              status: createProjectConnectionStatus(
+                "connected",
+                item.baseUrl,
+                item.source === "default-chat" ? "chat-infra" : "project",
+              ),
             },
           });
           updateProjectHydration(projectKey, (current) =>
@@ -1199,17 +1247,10 @@ function InternalAgentProvider({
   );
 
   const activeWorkspaceProjectSet = useMemo(() => {
-    const directories = new Set<string>();
-    if (!activeWorkspace) return directories;
-    for (const project of activeWorkspace.projects) {
-      directories.add(project);
-    }
-    for (const [projectKey, workspaceIds] of Object.entries(state.projectWorkspaceMap)) {
-      if (workspaceIds?.has(activeWorkspace.id)) {
-        directories.add(parseProjectKey(projectKey).directory);
-      }
-    }
-    return directories;
+    return buildActiveWorkspaceProjectSet({
+      activeWorkspace,
+      projectWorkspaceMap: state.projectWorkspaceMap,
+    });
   }, [activeWorkspace, state.projectWorkspaceMap]);
 
   const activeWorkspaceConnections = useMemo(
@@ -1248,20 +1289,11 @@ function InternalAgentProvider({
 
   const activeWorkspaceSessions = useMemo(
     () =>
-      state.sessions.filter((session) => {
-        if (!activeWorkspace) return false;
-        const assignedProjectDir = state.sessionMeta[session.id]?.assignedProjectDir;
-        if (
-          assignedProjectDir &&
-          activeWorkspaceProjectSet.has(normalizeProjectPath(assignedProjectDir))
-        ) {
-          return true;
-        }
-        if (getSessionWorkspaceId(session)) {
-          return getSessionWorkspaceId(session) === activeWorkspace.id;
-        }
-        const directory = normalizeProjectPath((session._projectDir ?? session.directory) || "");
-        return activeWorkspaceProjectSet.has(directory);
+      filterActiveWorkspaceSessions({
+        sessions: state.sessions,
+        sessionMeta: state.sessionMeta,
+        activeWorkspace,
+        activeWorkspaceProjectSet,
       }),
     [state.sessions, state.sessionMeta, activeWorkspace, activeWorkspaceProjectSet],
   );
@@ -1378,9 +1410,22 @@ function InternalAgentProvider({
     ) => {
       const trimmedDirectory = normalizeProjectPath(directory);
       if (!trimmedDirectory) return;
+      const currentState = stateRef.current;
+      const activeWorkspaceRecord =
+        currentState.workspaces.find((item) => item.id === currentState.activeWorkspaceId) ?? null;
+      if (
+        !resolveCanManageProjects(
+          currentState.workspaces,
+          currentState.activeWorkspaceId,
+          activeWorkspaceRecord,
+        )
+      ) {
+        notifyInfo(i18n.t("workspace.requiredBeforeProject"));
+        return;
+      }
       const workspace = resolveConnectionWorkspace(
-        stateRef.current.workspaces,
-        stateRef.current.activeWorkspaceId,
+        currentState.workspaces,
+        currentState.activeWorkspaceId,
       );
       const url = serverUrl ?? workspace.serverUrl ?? DEFAULT_SERVER_URL;
       const normalizedUrl = url.replace(/\/+$/, "");
@@ -1920,27 +1965,44 @@ function InternalAgentProvider({
     selectSession,
   );
 
-  const setDefaultChatDirectory = useCallback((directory: string | null) => {
-    const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
-    storageRemove(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
-    const workspaceId = stateRef.current.activeWorkspaceId;
-    const nextWorkspaces = stateRef.current.workspaces.map((workspace) =>
-      workspace.id === workspaceId
-        ? {
-            ...workspace,
-            settings: {
-              ...workspace.settings,
-              defaultChatDirectory: normalizedDirectory,
-            },
-          }
-        : workspace,
-    );
-    dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
-    dispatch({
-      type: "SET_DEFAULT_CHAT_DIRECTORY",
-      payload: normalizedDirectory,
-    });
-  }, []);
+  const setDefaultChatDirectory = useCallback(
+    (directory: string | null) => {
+      const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
+      storageRemove(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
+      const workspaceId = stateRef.current.activeWorkspaceId;
+      const nextWorkspaces = stateRef.current.workspaces.map((workspace) =>
+        workspace.id === workspaceId
+          ? {
+              ...workspace,
+              settings: {
+                ...workspace.settings,
+                defaultChatDirectory: normalizedDirectory,
+              },
+            }
+          : workspace,
+      );
+      dispatch({ type: "SET_WORKSPACES", payload: nextWorkspaces });
+      dispatch({
+        type: "SET_DEFAULT_CHAT_DIRECTORY",
+        payload: normalizedDirectory,
+      });
+
+      const workspace = nextWorkspaces.find((item) => item.id === workspaceId);
+      if (!workspace || !normalizedDirectory) return;
+      const alreadyProject = workspace.projects.some(
+        (project) => normalizeProjectPath(project) === normalizedDirectory,
+      );
+      if (alreadyProject) return;
+
+      void ensureDirectoryConnection(normalizedDirectory, {
+        hidden: true,
+        transient: true,
+      }).catch(() => {
+        /* default chat verification/indexing is best effort */
+      });
+    },
+    [ensureDirectoryConnection],
+  );
 
   const setActiveTarget = useCallback(
     (
@@ -2480,6 +2542,11 @@ function InternalAgentProvider({
       activeWorkspace,
       activeWorkspaceId: state.activeWorkspaceId,
       supportsMultipleWorkspaces: shellWorkspacePolicy.supportsMultipleWorkspaces,
+      canManageProjects: resolveCanManageProjects(
+        state.workspaces,
+        state.activeWorkspaceId,
+        activeWorkspace,
+      ),
       workspaceStatuses: Object.fromEntries(
         state.workspaces.map((workspace) => {
           const workspaceSessions = state.sessions.filter((session) => {
@@ -2527,14 +2594,7 @@ function InternalAgentProvider({
       bootLogs: state.bootLogs,
       lastError: state.lastError,
       worktreeParents: state.worktreeParents,
-      projectMeta: Object.fromEntries(
-        Object.entries(state.projectMeta)
-          .filter(([projectKey]) => {
-            const { workspaceId } = parseProjectKey(projectKey);
-            return workspaceId === state.activeWorkspaceId;
-          })
-          .map(([projectKey, meta]) => [parseProjectKey(projectKey).directory, meta]),
-      ),
+      projectMeta: state.projectMeta,
       pendingWorktreeCleanup: state.pendingWorktreeCleanup,
     }),
     [

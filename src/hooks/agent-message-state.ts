@@ -12,8 +12,6 @@ export const MAX_SESSION_BUFFER_CACHE = 8;
 
 type DeltaTrackedPart = Part & { _deltaPositions?: Record<string, number> };
 
-const OPTIMISTIC_USER_PREFIX = "local-user:";
-
 export function getMessageText(entry: MessageEntry): string {
   return entry.parts
     .flatMap((part) => {
@@ -22,69 +20,6 @@ export function getMessageText(entry: MessageEntry): string {
     })
     .join("\n")
     .trim();
-}
-
-function getMessageFileUrls(entry: MessageEntry): string[] {
-  return entry.parts.flatMap((part) => {
-    const record = part as Record<string, unknown>;
-    return part.type === "file" && typeof record.url === "string" ? [record.url] : [];
-  });
-}
-
-export function isOptimisticUserMessage(entry: MessageEntry): boolean {
-  return entry.info.id.startsWith(OPTIMISTIC_USER_PREFIX) && entry.info.role === "user";
-}
-
-export function removeMatchingOptimisticUserMessage(
-  messages: MessageEntry[],
-  canonical: MessageEntry,
-): MessageEntry[] {
-  if (canonical.info.role !== "user" || isOptimisticUserMessage(canonical)) return messages;
-  const canonicalText = getMessageText(canonical);
-  const canonicalFiles = getMessageFileUrls(canonical).join("\0");
-  if (!canonicalText && !canonicalFiles) return messages;
-  const key = `${canonical.info.sessionID}\0${canonicalText}\0${canonicalFiles}`;
-  const filtered = messages.filter(
-    (message) =>
-      !(
-        isOptimisticUserMessage(message) &&
-        `${message.info.sessionID}\0${getMessageText(message)}\0${getMessageFileUrls(message).join("\0")}` ===
-          key
-      ),
-  );
-  return filtered.length === messages.length ? messages : filtered;
-}
-
-export function createOptimisticUserMessage({
-  id,
-  sessionID,
-  text,
-  createdAt,
-}: {
-  id: string;
-  sessionID: string;
-  text: string;
-  createdAt: number;
-}): MessageEntry {
-  const messageID = `${OPTIMISTIC_USER_PREFIX}${id}`;
-  return {
-    info: {
-      id: messageID,
-      sessionID,
-      role: "user",
-      time: { created: createdAt },
-    } as Message,
-    parts: [
-      {
-        id: `${messageID}:text`,
-        type: "text",
-        text,
-        sessionID,
-        messageID,
-        time: { start: createdAt, end: createdAt },
-      } as Part,
-    ],
-  };
 }
 
 function getPartOrderValue(part: Part): number {
@@ -369,21 +304,6 @@ export function mergeMessageSnapshot(
   const normalizedMessages = normalizeMessageEntries(incomingMessages, existingMessages);
   if (normalizedMessages.length === 0) return limitMessageWindow(existingMessages);
 
-  const canonicalUserTexts = new Set(
-    normalizedMessages
-      .filter((message) => message.info.role === "user")
-      .map((message) => `${message.info.sessionID}\0${getMessageText(message)}`),
-  );
-  const optimisticIdsToDrop = new Set(
-    existingMessages
-      .filter(
-        (message) =>
-          isOptimisticUserMessage(message) &&
-          canonicalUserTexts.has(`${message.info.sessionID}\0${getMessageText(message)}`),
-      )
-      .map((message) => message.info.id),
-  );
-
   const existingByMsgId = new Map<string, MessageEntry>();
   for (const message of existingMessages) existingByMsgId.set(message.info.id, message);
 
@@ -411,7 +331,7 @@ export function mergeMessageSnapshot(
   const preservedOlder: MessageEntry[] = [];
   const preservedNewer: MessageEntry[] = [];
   for (const entry of existingMessages) {
-    if (incomingIds.has(entry.info.id) || optimisticIdsToDrop.has(entry.info.id)) continue;
+    if (incomingIds.has(entry.info.id)) continue;
     const entryCreated = entry.info.time.created ?? 0;
     if (options.preserveExistingBeforeIncoming && entryCreated < serverFirstCreated) {
       preservedOlder.push(entry);

@@ -69,6 +69,7 @@ interface UseSidebarRenderersArgs {
   visibleByProject: Record<string, number>;
   worktreeDirs: Set<string>;
   worktreeParents: WorktreeParentMap;
+  workspaceId?: string | null;
 }
 
 export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
@@ -126,6 +127,7 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     visibleByProject,
     worktreeDirs,
     worktreeParents,
+    workspaceId,
   } = args;
 
   const renderSessionRow: (
@@ -203,6 +205,7 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       remoteUrls={remoteUrls}
       worktreeDirs={worktreeDirs}
       projectMeta={projectMeta}
+      workspaceId={workspaceId}
       client={client}
       t={t}
       renderSessionRow={renderSessionRow}

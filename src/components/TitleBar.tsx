@@ -332,6 +332,18 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
     return () => unsubscribe();
   }, [shell]);
 
+  useEffect(() => {
+    const handleOpenWorkspaceDialog = (event: Event) => {
+      if (!canManageWorkspaces) return;
+      const mode = (event as CustomEvent<{ mode?: "add" | "edit" }>).detail?.mode ?? "add";
+      setDialogMode(mode);
+    };
+    window.addEventListener("opengui:open-workspace-dialog", handleOpenWorkspaceDialog);
+    return () => {
+      window.removeEventListener("opengui:open-workspace-dialog", handleOpenWorkspaceDialog);
+    };
+  }, [canManageWorkspaces]);
+
   const editingWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [workspaces, activeWorkspaceId],
@@ -368,12 +380,12 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: TitleBar double-click to toggle maximize */}
       <div
-        className="relative z-20 h-9 bg-sidebar border-b border-border select-none shrink-0"
+        className="relative z-20 app-safe-top-bar bg-sidebar border-b border-border select-none shrink-0"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         onDoubleClick={handleDoubleClick}
       >
         <div
-          className="absolute left-0 top-0 h-full flex items-center px-2"
+          className="absolute left-0 top-[var(--app-safe-top)] h-9 flex items-center px-2"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           {onToggleLeftSidebar && (
@@ -392,7 +404,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
         </div>
 
         <div
-          className={`absolute inset-y-0 ${isWebRuntime ? "left-9 right-2" : isMac ? "left-9 right-20" : "left-9 right-36"} flex items-center gap-1 px-2`}
+          className={`absolute top-[var(--app-safe-top)] h-9 ${isWebRuntime ? "left-9 right-2" : isMac ? "left-9 right-20" : "left-9 right-36"} flex items-center gap-1 px-2`}
         >
           <div
             ref={tabsRef}

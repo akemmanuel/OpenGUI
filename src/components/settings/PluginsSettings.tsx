@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useActions, useConnectionState } from "@/hooks/use-agent-state";
+import { useHomeDir } from "@/hooks/use-home-dir";
+import { isPlausiblePluginInstallSource } from "@/lib/plugin-install-source";
+import { abbreviatePath } from "@/lib/utils";
 import { useDesktopShell } from "@/shell/provider";
 import type { InstalledPluginInfo, PluginCatalogEntry } from "@/types/electron";
 
@@ -61,6 +64,10 @@ export function PluginsTabContent() {
       {activeTab === "installed" ? <InstalledPluginsView /> : <DiscoverPluginsView />}
     </div>
   );
+}
+
+function formatPluginLocation(path: string, homeDir: string) {
+  return abbreviatePath(path, homeDir);
 }
 
 function remoteKeyForPlugin(plugin: PluginCatalogEntry) {
@@ -141,6 +148,9 @@ function DiscoverPluginsView() {
     [installedPlugins],
   );
 
+  const manualSourceValid = isPlausiblePluginInstallSource(manualSource);
+  const manualSourceTouched = manualSource.trim().length > 0;
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/20 p-3">
@@ -150,17 +160,24 @@ function DiscoverPluginsView() {
             onChange={(event) => setManualSource(event.target.value)}
             placeholder={t("settings.plugins.installSourcePlaceholder")}
             className="h-9 flex-1"
+            aria-invalid={manualSourceTouched && !manualSourceValid}
           />
           <Button
             type="button"
             size="sm"
-            disabled={!manualSource.trim() || busyKey === "manual"}
+            disabled={!manualSourceValid || busyKey === "manual"}
+            aria-label={t("settings.plugins.install")}
             onClick={() => void installSource(manualSource, "manual")}
           >
             {busyKey === "manual" ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
             {t("settings.plugins.install")}
           </Button>
         </div>
+        {manualSourceTouched && !manualSourceValid ? (
+          <p className="mt-2 text-xs text-destructive">
+            {t("settings.plugins.invalidInstallSource")}
+          </p>
+        ) : null}
         <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -230,6 +247,11 @@ function DiscoverPluginsView() {
                     type="button"
                     size="sm"
                     disabled={installed || busyKey === key}
+                    aria-label={
+                      installed
+                        ? t("settings.plugins.installedNamed", { name: plugin.name })
+                        : t("settings.plugins.installNamed", { name: plugin.name })
+                    }
                     onClick={() => void installSource(source, key)}
                   >
                     {busyKey === key ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
@@ -520,6 +542,7 @@ function PluginGroupCard({
   onGroupAction: (plugins: InstalledPluginInfo[], action: "update" | "remove") => void;
 }) {
   const { t } = useTranslation();
+  const homeDir = useHomeDir();
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="flex items-start gap-3">
@@ -539,6 +562,7 @@ function PluginGroupCard({
             variant="outline"
             size="sm"
             className="h-7 px-2 text-[11px]"
+            aria-label={t("settings.plugins.updateGroupNamed", { name: item.name })}
             onClick={() => onGroupAction(item.capabilities, "update")}
           >
             {t("settings.plugins.updateGroup")}
@@ -548,6 +572,7 @@ function PluginGroupCard({
             variant="outline"
             size="sm"
             className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+            aria-label={t("settings.plugins.removeGroupNamed", { name: item.name })}
             onClick={() => onGroupAction(item.capabilities, "remove")}
           >
             <Trash2 className="size-3" />
@@ -564,8 +589,11 @@ function PluginGroupCard({
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium">{capability.name}</div>
                 <div className="mt-0.5 text-xs text-muted-foreground">{capability.description}</div>
-                <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                  {capability.location}
+                <div
+                  className="mt-1 truncate font-mono text-[10px] text-muted-foreground"
+                  title={capability.location}
+                >
+                  {formatPluginLocation(capability.location, homeDir ?? "")}
                 </div>
               </div>
               <div className="flex shrink-0 gap-1">
@@ -574,6 +602,7 @@ function PluginGroupCard({
                   variant="outline"
                   size="sm"
                   className="h-6 px-2 text-[10px]"
+                  aria-label={t("settings.plugins.updateNamed", { name: capability.name })}
                   onClick={() => onUpdateOne(capability)}
                 >
                   {t("settings.plugins.update")}
@@ -583,6 +612,7 @@ function PluginGroupCard({
                   variant="outline"
                   size="sm"
                   className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                  aria-label={t("settings.plugins.removeNamed", { name: capability.name })}
                   onClick={() => onRemoveOne(capability)}
                 >
                   <Trash2 className="size-3" />
@@ -606,6 +636,7 @@ function GeneralPluginCard({
   onRemove: (plugin: InstalledPluginInfo) => void;
 }) {
   const { t } = useTranslation();
+  const homeDir = useHomeDir();
   const plugin = item.capability;
   return (
     <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
@@ -616,8 +647,11 @@ function GeneralPluginCard({
           <PluginBadges scope={item.scope} origin={item.origin} />
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">{plugin.description}</p>
-        <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-          {plugin.location}
+        <p
+          className="mt-1 truncate font-mono text-[10px] text-muted-foreground"
+          title={plugin.location}
+        >
+          {formatPluginLocation(plugin.location, homeDir ?? "")}
         </p>
       </div>
       <div className="flex shrink-0 gap-1">
@@ -626,6 +660,7 @@ function GeneralPluginCard({
           variant="outline"
           size="sm"
           className="h-7 px-2 text-[11px]"
+          aria-label={t("settings.plugins.updateNamed", { name: plugin.name })}
           onClick={() => onUpdate(plugin)}
         >
           {t("settings.plugins.update")}
@@ -635,6 +670,7 @@ function GeneralPluginCard({
           variant="outline"
           size="sm"
           className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+          aria-label={t("settings.plugins.removeNamed", { name: plugin.name })}
           onClick={() => onRemove(plugin)}
         >
           <Trash2 className="size-3" />

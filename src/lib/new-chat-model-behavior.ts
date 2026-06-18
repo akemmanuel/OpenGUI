@@ -19,3 +19,21 @@ export function getNewChatModelBehavior(): NewChatModelBehavior {
 export function setNewChatModelBehavior(value: NewChatModelBehavior) {
   storageSet(STORAGE_KEYS.NEW_CHAT_MODEL_BEHAVIOR, value);
 }
+
+export type NewChatModelBehaviorLabelKey =
+  | "settings.general.newChatModelAsk"
+  | "settings.general.newChatModelLast"
+  | "settings.general.newChatModelWorkspaceDefault";
+
+export function newChatModelBehaviorLabelKey(
+  behavior: NewChatModelBehavior,
+): NewChatModelBehaviorLabelKey {
+  switch (behavior) {
+    case "ask":
+      return "settings.general.newChatModelAsk";
+    case "workspace-default":
+      return "settings.general.newChatModelWorkspaceDefault";
+    default:
+      return "settings.general.newChatModelLast";
+  }
+}

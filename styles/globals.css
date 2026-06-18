@@ -208,31 +208,27 @@
     scrollbar-color: color-mix(in oklab, var(--foreground) 25%, transparent) transparent;
   }
 
-  .capacitor-safe-area {
+  html {
+    --app-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --app-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+    --app-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --app-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  }
+
+  .app-safe-top-bar {
     box-sizing: border-box;
-    padding-top: env(safe-area-inset-top);
-    padding-right: env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
+    padding-top: var(--app-safe-top);
+    min-height: calc(2.25rem + var(--app-safe-top));
   }
 
-  .capacitor-native {
-    --capacitor-safe-area-top: 28px;
-    --capacitor-safe-area-bottom: 48px;
-    --capacitor-sidebar-safe-area-bottom: 68px;
+  .app-safe-bottom-inset {
+    padding-bottom: calc(0.75rem + var(--app-safe-bottom));
   }
 
-  .capacitor-native .capacitor-safe-area {
-    padding-top: var(--capacitor-safe-area-top);
-    padding-bottom: var(--capacitor-safe-area-bottom);
-  }
-
-  .capacitor-native [data-slot="sidebar-container"] {
-    top: var(--capacitor-safe-area-top) !important;
-    bottom: var(--capacitor-sidebar-safe-area-bottom) !important;
-    height: calc(
-      100dvh - var(--capacitor-safe-area-top) - var(--capacitor-sidebar-safe-area-bottom)
-    ) !important;
+  [data-slot="sidebar-container"].app-safe-sidebar {
+    top: 0;
+    bottom: 0;
+    height: 100dvh;
   }
 
   body {

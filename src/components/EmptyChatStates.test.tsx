@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeAll } from "@voidzero-dev/vite-plus-test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { initI18n } from "@/i18n";
-import { NoProjectConnected, NoSessionSelected } from "./EmptyChatStates";
+import { NoProjectConnected, NoSessionSelected, NoWorkspaceConfigured } from "./EmptyChatStates";
 
 describe("EmptyChatStates", () => {
   beforeAll(async () => {
@@ -26,6 +26,13 @@ describe("EmptyChatStates", () => {
     expect(markup).toContain("<button");
     expect(markup).toContain('type="button"');
     expect(markup).toContain("Start a chat");
+  });
+
+  test("NoWorkspaceConfigured prompts workspace creation", () => {
+    const markup = renderToStaticMarkup(<NoWorkspaceConfigured />);
+
+    expect(markup).toContain("No workspace configured");
+    expect(markup).toContain("Add workspace");
   });
 
   test("NoSessionSelected explains how to continue", () => {

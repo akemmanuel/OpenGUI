@@ -12,6 +12,8 @@ import { useActions, useConnectionState, useSessionState } from "@/hooks/use-age
 import { useOpenGuiClient } from "@/protocol/provider";
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import { POST_MERGE_DELAY_MS, SESSION_PAGE_SIZE } from "@/lib/constants";
+import { openAddWorkspaceDialog } from "@/hooks/workspace-guards";
+import { notifyInfo } from "@/lib/notify";
 import { normalizeProjectPath } from "@/lib/utils";
 import { MergeDialog } from "./MergeDialog";
 import { ProjectPathDialog } from "./ProjectPathDialog";
@@ -88,8 +90,11 @@ export function AppSidebar({
     isLocalWorkspace,
     supportsNativeDirectoryPicker,
     activeWorkspace,
+    workspaces,
+    canManageProjects,
     workspaceDirectory,
     defaultChatDirectory,
+    bootState,
   } = useConnectionState();
 
   // Inline rename state
@@ -203,6 +208,7 @@ export function AppSidebar({
     pinnedEntries,
     projectEntries: filteredProjectEntries,
     projectSessionsByDirectory,
+    showChatsSection,
   } = useSidebarModel({
     sessions,
     sessionMeta: mergedSessionMeta,
@@ -256,6 +262,7 @@ export function AppSidebar({
   const { collapsed, toggleCollapsed, revealCollapsedProject } = useSidebarCollapsedProjects({
     activeWorkspaceProjectDirectories,
     detachedProject,
+    hydrationReady: bootState === "ready",
     openDirectories,
   });
   const [visibleByProject, setVisibleByProject] = useState<Record<string, number>>({});
@@ -316,16 +323,24 @@ export function AppSidebar({
   }, [isMobile, setOpenMobile, setSidebarOpen]);
 
   const handleAddProject = useCallback(async () => {
+    if (!canManageProjects) {
+      notifyInfo(t("workspace.requiredBeforeProject"));
+      if (workspaces.length === 0) openAddWorkspaceDialog();
+      return;
+    }
     const dir = supportsNativeDirectoryPicker
       ? await openDirectory()
       : await requestProjectPath(workspaceDirectory ?? undefined);
     if (dir) void connectToProject(dir);
   }, [
+    canManageProjects,
     connectToProject,
     supportsNativeDirectoryPicker,
     openDirectory,
     requestProjectPath,
+    t,
     workspaceDirectory,
+    workspaces.length,
   ]);
 
   const hasUnsentDraft = useCallback(
@@ -400,6 +415,7 @@ export function AppSidebar({
     visibleByProject,
     worktreeDirs,
     worktreeParents,
+    workspaceId: activeWorkspace?.id,
   });
 
   return (
@@ -409,7 +425,7 @@ export function AppSidebar({
         searchQuery={searchQuery}
         hasActiveSearch={hasActiveSearch}
         detachedProject={detachedProject}
-        defaultChatDirectory={defaultChatDirectory}
+        showChatsSection={showChatsSection}
         labels={{
           searchPlaceholder: t("sidebar.searchPlaceholder"),
           clearSearch: t("sidebar.clearSearch"),
@@ -429,7 +445,7 @@ export function AppSidebar({
           filteredProjectEntries={filteredProjectEntries}
           hasActiveSearch={hasActiveSearch}
           detachedProject={detachedProject}
-          defaultChatDirectory={defaultChatDirectory}
+          showChatsSection={showChatsSection}
           visibleChatCount={visibleChatCount}
           hasMoreChats={hasMoreChats}
           canShowLessChats={canShowLessChats}
@@ -439,13 +455,19 @@ export function AppSidebar({
             pinned: t("sidebar.pinned"),
             chats: t("sidebar.chats"),
             projects: projectLabel,
+            newChat: t("sidebar.newChat"),
+            addProject: t("sidebar.addProject"),
             noMatches: t("sidebar.noMatches", { query: searchQuery.trim() }),
             noChats: t("sidebar.noChats"),
             loadMore: (count) => t("sidebar.loadMore", { count }),
             showLess: t("sidebar.showLess"),
             allProjectsPinned: t("sidebar.allProjectsPinned"),
-            noProjectsYet: "No projects yet",
+            noProjectsYet: t("sidebar.noProjectsYet"),
+            needWorkspaceBeforeProjects: t("sidebar.needWorkspaceBeforeProjects"),
+            addWorkspace: t("workspace.addWorkspace"),
           }}
+          canManageProjects={canManageProjects}
+          onAddWorkspace={openAddWorkspaceDialog}
           renderProjectEntry={renderProjectEntry}
           renderSessionRow={renderSessionRow}
           startNewChat={startNewChat}

@@ -8,12 +8,15 @@ if (typeof globalThis.window === "undefined") {
 }
 import {
   buildBootstrapProjectConfigs,
+  getSessionIndexRootDirectories,
+  getSessionIndexRootTargets,
   createProjectConnectionDescriptor,
   createProjectConnectionStatus,
   createProjectRemovalPlan,
   createWorkspaceConnectionConfig,
   createWorkspaceProjectConnectionPlan,
   resolveConnectionWorkspace,
+  buildWorkspaceProjectPersistPlan,
   shouldPersistLocalConnectionSettings,
   shouldPersistWorkspaceProject,
   shouldSnapshotProjectConnectionForRestart,
@@ -155,6 +158,7 @@ describe("buildBootstrapProjectConfigs", () => {
         directory: "/repo",
         username: undefined,
         password: undefined,
+        source: "workspace-project",
       },
       {
         workspaceId: "workspace-1",
@@ -162,8 +166,66 @@ describe("buildBootstrapProjectConfigs", () => {
         directory: "/repo/feature-a",
         username: undefined,
         password: undefined,
+        source: "workspace-project",
       },
     ]);
+  });
+
+  test("includes default chat directory in bootstrap index when it is not a workspace project", () => {
+    const result = buildBootstrapProjectConfigs({
+      workspaces: [
+        {
+          id: "workspace-1",
+          name: "Workspace",
+          serverUrl: "http://localhost:4096",
+          isLocal: true,
+          projects: ["/project-a"],
+          settings: { defaultChatDirectory: "/home/chats" },
+        },
+      ] as never,
+      worktreeParents: {},
+    });
+
+    const directories = result.projectConfigs.map((config) => config.directory).sort();
+    expect(directories).toEqual(["/home/chats", "/project-a"]);
+    expect(
+      result.projectConfigs
+        .map((config) => ({ directory: config.directory, source: config.source }))
+        .sort((a, b) => a.directory.localeCompare(b.directory)),
+    ).toEqual([
+      { directory: "/home/chats", source: "default-chat" },
+      { directory: "/project-a", source: "workspace-project" },
+    ]);
+  });
+});
+
+describe("getSessionIndexRootDirectories", () => {
+  test("does not duplicate default chat when it is already a project", () => {
+    expect(
+      getSessionIndexRootDirectories({
+        id: "ws",
+        name: "W",
+        serverUrl: "http://localhost:4096",
+        isLocal: true,
+        projects: ["/same"],
+        settings: { defaultChatDirectory: "/same" },
+      } as never),
+    ).toEqual(["/same"]);
+  });
+});
+
+describe("getSessionIndexRootTargets", () => {
+  test("keeps project source when default chat is already a project", () => {
+    expect(
+      getSessionIndexRootTargets({
+        id: "ws",
+        name: "W",
+        serverUrl: "http://localhost:4096",
+        isLocal: true,
+        projects: ["/same"],
+        settings: { defaultChatDirectory: "/same" },
+      } as never),
+    ).toEqual([{ directory: "/same", source: "workspace-project" }]);
   });
 });
 
@@ -258,6 +320,57 @@ describe("restart snapshot filtering", () => {
 });
 
 describe("workspace project persistence", () => {
+  test("buildWorkspaceProjectPersistPlan returns ADD payload for visible projects", () => {
+    const plan = buildWorkspaceProjectPersistPlan({
+      directory: "/repo",
+      workspaceId: "local",
+      worktreeParents: {},
+      workspace: {
+        id: "local",
+        name: "Local",
+        serverUrl: "http://localhost:4096",
+        isLocal: true,
+        projects: [],
+      },
+      config: {
+        baseUrl: "http://localhost:4096",
+        directory: "/repo",
+        username: "u",
+        password: "p",
+      },
+      options: { hidden: false, transient: false },
+    });
+    expect(plan).toMatchObject({
+      addWorkspaceProject: {
+        workspaceId: "local",
+        directory: "/repo",
+        serverUrl: "http://localhost:4096",
+        username: "u",
+        password: "p",
+      },
+      persistLocalConnectionSettings: true,
+    });
+  });
+
+  test("buildWorkspaceProjectPersistPlan is null for hidden transient chat-infra", () => {
+    expect(
+      buildWorkspaceProjectPersistPlan({
+        directory: "/chat",
+        workspaceId: "local",
+        worktreeParents: {},
+        workspace: {
+          id: "local",
+          name: "Local",
+          serverUrl: "http://localhost:4096",
+          isLocal: true,
+          projects: [],
+        },
+        config: { baseUrl: "http://localhost:4096", directory: "/chat" },
+        options: { hidden: true, transient: true },
+      }),
+    ).toBeNull();
+  });
+
   test("persists visible workspace projects", () => {
     expect(shouldPersistWorkspaceProject({ hidden: false, transient: false })).toBe(true);
     expect(shouldPersistWorkspaceProject({ hidden: true })).toBe(false);

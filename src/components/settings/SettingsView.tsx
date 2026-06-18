@@ -1,4 +1,5 @@
 import { ArrowLeft, ShoppingBag } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsProviders } from "@/components/SettingsProviders";
 import { GeneralSettings } from "@/components/settings/GeneralSettings";
@@ -9,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function SettingsView({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState("general");
 
   return (
     <div className="h-full overflow-y-auto">
@@ -23,7 +25,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
             <p className="text-sm text-muted-foreground">{t("settings.subtitle")}</p>
           </div>
         </div>
-        <Tabs defaultValue="general" className="gap-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
           <TabsList className="w-full">
             <TabsTrigger value="general" className="flex-1">
               {t("settings.tabs.general")}

@@ -42,7 +42,14 @@
       "general": "General",
       "capabilityCount": "{{count}} capacidades",
       "updateGroup": "Actualizar grupo",
-      "update": "Actualizar"
+      "update": "Actualizar",
+      "installNamed": "Instalar {{name}}",
+      "installedNamed": "{{name}} instalado",
+      "updateNamed": "Actualizar {{name}}",
+      "removeNamed": "Eliminar {{name}}",
+      "updateGroupNamed": "Actualizar grupo de plugins {{name}}",
+      "removeGroupNamed": "Eliminar grupo de plugins {{name}}",
+      "invalidInstallSource": "Introduce una fuente válida (p. ej. owner/repo@skill-name o una URL)."
     },
     "general": {
       "agentBackend": "Harness",
@@ -53,6 +60,15 @@
       "themeSystem": "Sistema",
       "contrast": "Contraste",
       "accent": "Acento",
+      "accentPreset": {
+        "default": "Estándar",
+        "blue": "Azul",
+        "green": "Verde",
+        "purple": "Morado",
+        "orange": "Naranja",
+        "red": "Rojo",
+        "teal": "Verde azulado"
+      },
       "customAccent": "Color de acento personalizado",
       "codeFontSize": "Tamaño de código",
       "language": "Idioma",
@@ -89,11 +105,14 @@
     "noSessionsYet": "Todavía no hay sesiones",
     "pinned": "Fijado",
     "projects": "Proyectos",
+    "addProject": "Añadir proyecto",
     "searchPlaceholder": "Buscar proyectos y sesiones...",
     "showLess": "Mostrar menos",
     "title": "Barra lateral",
     "mobileDescription": "Muestra la barra lateral móvil.",
-    "untitled": "Sin título"
+    "untitled": "Sin título",
+    "noProjectsYet": "Aún no hay proyectos",
+    "needWorkspaceBeforeProjects": "Añade un espacio de trabajo antes de conectar proyectos."
   },
   "sessionMenu": {
     "pin": "Fijar arriba",
@@ -104,7 +123,8 @@
     "addTag": "Añadir etiqueta...",
     "moveToProject": "Mover al proyecto",
     "removeFromProject": "Quitar de {{project}}",
-    "deleteSession": "Eliminar sesión"
+    "deleteSession": "Eliminar sesión",
+    "deleteSessionConfirm": "¿Eliminar \"{{title}}\"?\n\nEsta sesión se eliminará permanentemente y no se puede deshacer."
   },
   "projectMenu": {
     "pinProject": "Fijar proyecto",
@@ -188,7 +208,9 @@
     "optional": "opcional",
     "accessTokenPlaceholder": "Pega OPENGUI_AUTH_TOKEN",
     "addWorkspace": "Añadir espacio de trabajo",
-    "toggleSidebar": "Alternar barra lateral"
+    "toggleSidebar": "Alternar barra lateral",
+    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
+    "addProjectRequiresWorkspace": "Crea un espacio de trabajo primero"
   },
   "mcp": {
     "title": "MCPs",
@@ -200,7 +222,9 @@
     "failed": "Fallido",
     "needsAuth": "Requiere autenticación",
     "needsRegistration": "Requiere registro",
-    "unknown": "Desconocido"
+    "unknown": "Desconocido",
+    "loadTimedOut": "Cargar herramientas está tardando más de lo esperado.",
+    "retry": "Reintentar"
   },
   "contextStatus": {
     "compacting": "Compactando",
@@ -256,7 +280,9 @@
     "other": "Otros",
     "connected": "Conectado",
     "connect": "Conectar",
+    "connectNamed": "Conectar {{name}}",
     "disconnect": "Desconectar",
+    "disconnectNamed": "Desconectar {{name}}",
     "disconnectConfirm": "¿Desconectar {{name}}?",
     "fromEnv": "desde entorno",
     "fromEnvTitle": "Conectado desde tus variables de entorno",
@@ -417,7 +443,10 @@
     "noProjectConnect": "Conecta un proyecto para empezar a chatear.",
     "startChat": "Iniciar chat",
     "noSessionTitle": "No hay ninguna sesión seleccionada",
-    "noSessionDescription": "Selecciona una sesión o inicia una nueva desde un proyecto conectado."
+    "noSessionDescription": "Selecciona una sesión o inicia una nueva desde un proyecto conectado.",
+    "noWorkspaceTitle": "No hay ningún espacio de trabajo configurado",
+    "noWorkspaceDescription": "Un espacio de trabajo es tu backend de OpenGUI. Créalo y luego añade proyectos.",
+    "addWorkspace": "Añadir espacio de trabajo"
   },
   "mergeDialog": {
     "failed": "La fusión falló",

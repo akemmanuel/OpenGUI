@@ -52,12 +52,12 @@ export function createSessionProjectMoveMeta(
 
   const currentDirectory = getEffectiveSessionDirectory(session, meta) ?? nativeDirectory;
   const directoryChanged = currentDirectory !== normalizedTargetDirectory;
+  const targetIsNativeDirectory = nativeDirectory === normalizedTargetDirectory;
 
   return {
-    originMode: meta?.originMode === "chat" ? "chat" : "project",
+    originMode: targetIsNativeDirectory || meta?.originMode !== "chat" ? "project" : "chat",
     nativeProjectDir: nativeDirectory,
-    assignedProjectDir:
-      nativeDirectory === normalizedTargetDirectory ? null : normalizedTargetDirectory,
+    assignedProjectDir: targetIsNativeDirectory ? null : normalizedTargetDirectory,
     assignedProjectMovedAt: directoryChanged ? now : null,
     assignedProjectSourceDir: directoryChanged ? currentDirectory : null,
     pendingDirectoryChangeNotice: directoryChanged,

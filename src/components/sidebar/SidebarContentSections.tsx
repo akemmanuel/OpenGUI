@@ -41,7 +41,7 @@ export function SidebarContentSections({
   filteredProjectEntries,
   hasActiveSearch,
   detachedProject,
-  defaultChatDirectory,
+  showChatsSection,
   visibleChatCount,
   hasMoreChats,
   canShowLessChats,
@@ -55,6 +55,8 @@ export function SidebarContentSections({
   setVisibleChatCount,
   handleAddProject,
   reorderVisibleProjects,
+  canManageProjects,
+  onAddWorkspace,
 }: {
   pinnedEntries: PinnedEntry[];
   filteredChatSessions: Session[];
@@ -62,7 +64,7 @@ export function SidebarContentSections({
   filteredProjectEntries: ProjectEntryTuple[];
   hasActiveSearch: boolean;
   detachedProject?: string;
-  defaultChatDirectory?: string | null;
+  showChatsSection: boolean;
   visibleChatCount: number;
   hasMoreChats: boolean;
   canShowLessChats: boolean;
@@ -72,13 +74,19 @@ export function SidebarContentSections({
     pinned: string;
     chats: string;
     projects: string;
+    newChat: string;
+    addProject: string;
     noMatches: string;
     noChats: string;
     loadMore: (count: number) => string;
     showLess: string;
     allProjectsPinned: string;
     noProjectsYet: string;
+    needWorkspaceBeforeProjects: string;
+    addWorkspace: string;
   };
+  canManageProjects: boolean;
+  onAddWorkspace: () => void;
   renderProjectEntry: (
     directory: string,
     sessions: Session[],
@@ -127,17 +135,18 @@ export function SidebarContentSections({
           </SidebarGroupContent>
         </SidebarGroup>
       )}
-      {!detachedProject && defaultChatDirectory && (
+      {!detachedProject && showChatsSection && (
         <SidebarGroup>
           <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
             <span>{labels.chats}</span>
             <button
               type="button"
+              aria-label={labels.newChat}
               onClick={() => {
                 void startNewChat();
                 closeMobileSidebar();
               }}
-              disabled={!defaultChatDirectory}
+              disabled={!showChatsSection}
               className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
             >
               <SquarePen className="h-4 w-4" />
@@ -201,16 +210,30 @@ export function SidebarContentSections({
       <SidebarGroup>
         <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
           {labels.projects}
-          <button
-            type="button"
-            onClick={() => void handleAddProject()}
-            className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          {canManageProjects ? (
+            <button
+              type="button"
+              aria-label={labels.addProject}
+              onClick={() => void handleAddProject()}
+              className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          ) : null}
         </SidebarGroupLabel>
         <SidebarGroupContent>
-          {filteredProjectEntries.length === 0 ? (
+          {!canManageProjects ? (
+            <div className="space-y-2 px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+              <p>{labels.needWorkspaceBeforeProjects}</p>
+              <button
+                type="button"
+                className="text-left text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                onClick={onAddWorkspace}
+              >
+                {labels.addWorkspace}
+              </button>
+            </div>
+          ) : filteredProjectEntries.length === 0 ? (
             hasActiveSearch && pinnedEntries.length === 0 ? (
               <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
                 {labels.noMatches}

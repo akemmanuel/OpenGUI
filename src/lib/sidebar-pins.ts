@@ -3,6 +3,7 @@ import {
   type WorktreePlacementMap,
   type WorktreePlacementSessionLike,
 } from "@/lib/worktree-placement";
+import { getSidebarProjectMeta } from "@/lib/sidebar-project-meta";
 import { normalizeProjectPath } from "@/lib/utils";
 
 interface SidebarPinMetaLike {
@@ -54,11 +55,13 @@ export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
   projectEntries,
   sessionMeta,
   projectMeta,
+  workspaceId,
   worktreeParents,
 }: {
   projectEntries: Array<SidebarProjectEntry<TSession>>;
   sessionMeta: Record<string, SidebarPinMetaLike | undefined>;
   projectMeta: Record<string, SidebarPinMetaLike | undefined>;
+  workspaceId?: string | null;
   worktreeParents: WorktreePlacementMap;
 }): SidebarPinPartitionResult<TSession> {
   const pinnedProjectDirectories = new Set<string>();
@@ -67,7 +70,10 @@ export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
 
   for (const [directory, sessions] of projectEntries) {
     const normalizedDirectory = normalizeProjectPath(directory);
-    const pinnedAt = getPinnedAt(projectMeta[normalizedDirectory]);
+    const pinnedAt = getPinnedAt(
+      getSidebarProjectMeta(projectMeta, workspaceId, normalizedDirectory) ??
+        projectMeta[normalizedDirectory],
+    );
     if (pinnedAt) {
       pinnedProjectDirectories.add(normalizedDirectory);
       pinnedEntries.push({

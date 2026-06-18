@@ -1,11 +1,7 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { Message, Part } from "@/protocol/harness-types";
 import type { MessageEntry } from "@/hooks/agent-state-types";
-import {
-  createOptimisticUserMessage,
-  mergeMessageSnapshot,
-  removeMatchingOptimisticUserMessage,
-} from "./agent-message-state";
+import { mergeMessageSnapshot } from "./agent-message-state";
 
 function textPart(id: string, messageID: string, text: string, start = 1): Part {
   return {
@@ -97,69 +93,5 @@ describe("mergeMessageSnapshot", () => {
     const merged = mergeMessageSnapshot(incoming, existing);
 
     expect(merged.map((entry) => entry.info.id)).toEqual(["fresh"]);
-  });
-
-  test("canonical user message replaces matching optimistic user message", () => {
-    const optimistic = {
-      info: {
-        id: "local-user:turn-1",
-        sessionID: "session-1",
-        role: "user",
-        time: { created: 10 },
-      } as Message,
-      parts: [textPart("local-user:turn-1:text", "local-user:turn-1", "hello", 10)],
-    };
-    const canonical = {
-      info: {
-        id: "server-user",
-        sessionID: "session-1",
-        role: "user",
-        time: { created: 11 },
-      } as Message,
-      parts: [textPart("server-user:text", "server-user", "hello", 11)],
-    };
-
-    const merged = mergeMessageSnapshot([canonical], [optimistic]);
-
-    expect(merged.map((entry) => entry.info.id)).toEqual(["server-user"]);
-  });
-
-  test("live canonical user message removes matching optimistic user message", () => {
-    const optimistic = {
-      info: {
-        id: "local-user:turn-1",
-        sessionID: "session-1",
-        role: "user",
-        time: { created: 10 },
-      } as Message,
-      parts: [textPart("local-user:turn-1:text", "local-user:turn-1", "hello", 10)],
-    };
-    const canonical = {
-      info: {
-        id: "server-user",
-        sessionID: "session-1",
-        role: "user",
-        time: { created: 11 },
-      } as Message,
-      parts: [textPart("server-user:text", "server-user", "hello", 11)],
-    };
-
-    const merged = removeMatchingOptimisticUserMessage([optimistic, canonical], canonical);
-
-    expect(merged.map((entry) => entry.info.id)).toEqual(["server-user"]);
-  });
-
-  test("optimistic user message preserves image mentions as visible text", () => {
-    const optimistic = createOptimisticUserMessage({
-      id: "turn-1",
-      sessionID: "session-1",
-      text: "Bitte anschauen @/tmp/opengui-uploads/image.png",
-      createdAt: 10,
-    });
-
-    expect(optimistic.parts.map((part) => part.type)).toEqual(["text"]);
-    expect((optimistic.parts[0] as Record<string, unknown>).text).toBe(
-      "Bitte anschauen @/tmp/opengui-uploads/image.png",
-    );
   });
 });

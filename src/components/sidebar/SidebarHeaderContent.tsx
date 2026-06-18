@@ -12,7 +12,7 @@ export function SidebarHeaderContent({
   searchQuery,
   hasActiveSearch,
   detachedProject,
-  defaultChatDirectory,
+  showChatsSection,
   labels,
   setSearchQuery,
   onOpenChat,
@@ -23,7 +23,7 @@ export function SidebarHeaderContent({
   searchQuery: string;
   hasActiveSearch: boolean;
   detachedProject?: string;
-  defaultChatDirectory?: string | null;
+  showChatsSection: boolean;
   labels: {
     searchPlaceholder: string;
     clearSearch: string;
@@ -93,10 +93,11 @@ export function SidebarHeaderContent({
           )}
         </div>
       </div>
-      {!detachedProject && defaultChatDirectory && (
+      {!detachedProject && showChatsSection && (
         <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border">
           <button
             type="button"
+            aria-label={labels.newChat}
             onClick={() => {
               onOpenChat();
               void startNewChat();

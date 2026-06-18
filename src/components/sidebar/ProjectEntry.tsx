@@ -24,6 +24,7 @@ import type { ConnectionStatus, GitWorktree } from "@/types/electron";
 import { ProjectItemMenu, ProjectMenuContent } from "@/components/SidebarItemMenus";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import { isSidebarProjectPinned } from "@/lib/sidebar-project-meta";
 
 export function ProjectEntry({
   directory,
@@ -45,6 +46,7 @@ export function ProjectEntry({
   remoteUrls,
   worktreeDirs,
   projectMeta,
+  workspaceId,
   client,
   t,
   renderSessionRow,
@@ -80,6 +82,7 @@ export function ProjectEntry({
   remoteUrls: Record<string, string>;
   worktreeDirs: Set<string>;
   projectMeta: ProjectMetaMap;
+  workspaceId?: string | null;
   client: OpenGuiClient;
   t: (key: string, options?: Record<string, unknown>) => string;
   renderSessionRow: (
@@ -114,7 +117,7 @@ export function ProjectEntry({
   const hasMoreSessions = dirSessions.length > visibleCount;
   const canShowLess = visibleCount > SESSION_PAGE_SIZE;
   const normalizedDirectory = normalizeProjectPath(directory);
-  const isPinned = !!projectMeta[normalizedDirectory]?.pinnedAt;
+  const isPinned = isSidebarProjectPinned(projectMeta, workspaceId, directory);
   const canCloseOtherProjects = availableProjectDirectories.some(
     (projectDirectory) => normalizeProjectPath(projectDirectory) !== normalizedDirectory,
   );

@@ -42,7 +42,14 @@
       "general": "Allgemein",
       "capabilityCount": "{{count}} Funktionen",
       "updateGroup": "Gruppe aktualisieren",
-      "update": "Aktualisieren"
+      "update": "Aktualisieren",
+      "installNamed": "{{name}} installieren",
+      "installedNamed": "{{name}} installiert",
+      "updateNamed": "{{name}} aktualisieren",
+      "removeNamed": "{{name}} entfernen",
+      "updateGroupNamed": "Plugin-Gruppe {{name}} aktualisieren",
+      "removeGroupNamed": "Plugin-Gruppe {{name}} entfernen",
+      "invalidInstallSource": "Gültige Quelle eingeben (z. B. owner/repo@skill-name oder eine URL)."
     },
     "general": {
       "agentBackend": "Harness",
@@ -53,6 +60,15 @@
       "themeSystem": "System",
       "contrast": "Kontrast",
       "accent": "Akzent",
+      "accentPreset": {
+        "default": "Standard",
+        "blue": "Blau",
+        "green": "Grün",
+        "purple": "Lila",
+        "orange": "Orange",
+        "red": "Rot",
+        "teal": "Cyan"
+      },
       "customAccent": "Eigene Akzentfarbe",
       "codeFontSize": "Code-Schriftgröße",
       "language": "Sprache",
@@ -89,11 +105,14 @@
     "noSessionsYet": "Noch keine Sitzungen",
     "pinned": "Angeheftet",
     "projects": "Projekte",
+    "addProject": "Projekt hinzufügen",
     "searchPlaceholder": "Projekte und Sitzungen durchsuchen...",
     "showLess": "Weniger anzeigen",
     "title": "Sidebar",
     "mobileDescription": "Zeigt die mobile Sidebar an.",
-    "untitled": "Ohne Titel"
+    "untitled": "Ohne Titel",
+    "noProjectsYet": "Noch keine Projekte",
+    "needWorkspaceBeforeProjects": "Füge zuerst einen Workspace hinzu, um Projekte zu verbinden."
   },
   "sessionMenu": {
     "pin": "Oben anheften",
@@ -104,7 +123,8 @@
     "addTag": "Tag hinzufügen...",
     "moveToProject": "In Projekt verschieben",
     "removeFromProject": "Aus {{project}} entfernen",
-    "deleteSession": "Sitzung löschen"
+    "deleteSession": "Sitzung löschen",
+    "deleteSessionConfirm": "\"{{title}}\" löschen?\n\nDiese Sitzung wird dauerhaft gelöscht und kann nicht wiederhergestellt werden."
   },
   "projectMenu": {
     "pinProject": "Projekt anheften",
@@ -188,7 +208,9 @@
     "optional": "optional",
     "accessTokenPlaceholder": "OPENGUI_AUTH_TOKEN einfügen",
     "addWorkspace": "Workspace hinzufügen",
-    "toggleSidebar": "Sidebar umschalten"
+    "toggleSidebar": "Sidebar umschalten",
+    "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest.",
+    "addProjectRequiresWorkspace": "Zuerst einen Workspace anlegen"
   },
   "mcp": {
     "title": "MCPs",
@@ -200,7 +222,9 @@
     "failed": "Fehlgeschlagen",
     "needsAuth": "Authentifizierung nötig",
     "needsRegistration": "Registrierung nötig",
-    "unknown": "Unbekannt"
+    "unknown": "Unbekannt",
+    "loadTimedOut": "Das Laden der Werkzeuge dauert länger als erwartet.",
+    "retry": "Erneut versuchen"
   },
   "contextStatus": {
     "compacting": "Komprimiere",
@@ -256,7 +280,9 @@
     "other": "Weitere",
     "connected": "Verbunden",
     "connect": "Verbinden",
+    "connectNamed": "{{name}} verbinden",
     "disconnect": "Trennen",
+    "disconnectNamed": "{{name}} trennen",
     "disconnectConfirm": "{{name}} trennen?",
     "fromEnv": "aus Umgebung",
     "fromEnvTitle": "Über Umgebungsvariablen verbunden",
@@ -417,7 +443,10 @@
     "noProjectConnect": "Verbinde ein Projekt, um zu chatten.",
     "startChat": "Chat starten",
     "noSessionTitle": "Keine Sitzung ausgewählt",
-    "noSessionDescription": "Wähle eine Sitzung aus oder starte eine neue aus einem verbundenen Projekt."
+    "noSessionDescription": "Wähle eine Sitzung aus oder starte eine neue aus einem verbundenen Projekt.",
+    "noWorkspaceTitle": "Kein Workspace konfiguriert",
+    "noWorkspaceDescription": "Ein Workspace ist dein OpenGUI-Backend. Lege einen an und verbinde dann Projekte.",
+    "addWorkspace": "Workspace hinzufügen"
   },
   "mergeDialog": {
     "failed": "Merge fehlgeschlagen",

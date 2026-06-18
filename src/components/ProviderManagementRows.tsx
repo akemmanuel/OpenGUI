@@ -93,6 +93,7 @@ export function ProviderRow({
               className="h-7 px-2 text-xs text-destructive"
               disabled={disconnecting}
               onClick={onDisconnect}
+              aria-label={t("providers.disconnectNamed", { name })}
             >
               {disconnecting ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -109,6 +110,7 @@ export function ProviderRow({
             className="text-destructive shrink-0"
             disabled={disconnecting}
             onClick={onAskDisconnect}
+            aria-label={t("providers.disconnectNamed", { name })}
           >
             {disconnecting ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -119,7 +121,12 @@ export function ProviderRow({
           </Button>
         )
       ) : (
-        <Button variant="outline" size="sm" onClick={onConnect}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onConnect}
+          aria-label={t("providers.connectNamed", { name })}
+        >
           <Plus className="size-3.5 mr-1" />
           {t("providers.connect")}
         </Button>

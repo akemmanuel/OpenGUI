@@ -1,4 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { makeProjectKey } from "@/hooks/agent-session-utils";
 import { getSidebarSessionProjectDirectory, partitionSidebarPins } from "../sidebar-pins";
 
 describe("getSidebarSessionProjectDirectory", () => {
@@ -15,6 +16,7 @@ describe("getSidebarSessionProjectDirectory", () => {
 });
 
 describe("partitionSidebarPins", () => {
+  const workspaceId = "local";
   const projectEntries = [
     [
       "/repo-a",
@@ -40,8 +42,9 @@ describe("partitionSidebarPins", () => {
       ]),
       sessionMeta: {},
       projectMeta: {
-        "/repo-a": { pinnedAt: "2026-01-01T00:00:00.000Z" },
+        [makeProjectKey(workspaceId, "/repo-a")]: { pinnedAt: "2026-01-01T00:00:00.000Z" },
       },
+      workspaceId,
       worktreeParents: {
         "/repo-b/worktrees/feature": { parentDir: "/repo-b" },
       },
@@ -66,6 +69,7 @@ describe("partitionSidebarPins", () => {
         s4: { pinnedAt: "2026-01-02T00:00:00.000Z" },
       },
       projectMeta: {},
+      workspaceId,
       worktreeParents: {
         "/repo-b/worktrees/feature": { parentDir: "/repo-b" },
       },
@@ -98,8 +102,9 @@ describe("partitionSidebarPins", () => {
         s1: { pinnedAt: "2026-01-02T00:00:00.000Z" },
       },
       projectMeta: {
-        "/repo-a": { pinnedAt: "2026-01-01T00:00:00.000Z" },
+        [makeProjectKey(workspaceId, "/repo-a")]: { pinnedAt: "2026-01-01T00:00:00.000Z" },
       },
+      workspaceId,
       worktreeParents: {},
     });
 

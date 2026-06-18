@@ -517,19 +517,7 @@ class GrokBuildBridgeManager {
       );
       throw error;
     }
-    try {
-      await this.ensureAcp();
-      this.emitConnection(project, nowConnection({ state: "connected" }));
-    } catch (error) {
-      this.emitConnection(
-        project,
-        nowConnection({
-          state: "error",
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      throw error;
-    }
+    this.emitConnection(project, nowConnection({ state: "connected" }));
   }
 
   async removeProject(target) {

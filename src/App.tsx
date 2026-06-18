@@ -4,7 +4,11 @@ import { useTranslation } from "react-i18next";
 import { MergeDialog } from "@/components/MergeDialog";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import { NoProjectConnected, NoSessionSelected } from "@/components/EmptyChatStates";
+import {
+  NoProjectConnected,
+  NoSessionSelected,
+  NoWorkspaceConfigured,
+} from "@/components/EmptyChatStates";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -49,9 +53,11 @@ function extractTerminalCommand(message: string | null) {
 function AppContent({
   detachedProject,
   suppressBootErrors,
+  onDismissSetup,
 }: {
   detachedProject?: string;
   suppressBootErrors?: boolean;
+  onDismissSetup?: () => void;
 }) {
   const { t } = useTranslation();
   const client = useOpenGuiClient();
@@ -94,6 +100,8 @@ function AppContent({
     worktreeParents,
     defaultChatDirectory,
     connections,
+    workspaces,
+    supportsMultipleWorkspaces,
   } = useConnectionState();
   const normalizedBootLogs = useMemo(
     () => (bootLogs ? normalizeTerminalOutput(bootLogs) : null),
@@ -238,7 +246,10 @@ function AppContent({
       <AppSidebar
         detachedProject={detachedProject}
         highlightedSessionId={activeView === "chat" ? sessionActiveId : null}
-        onOpenSettings={() => setActiveView("settings")}
+        onOpenSettings={() => {
+          onDismissSetup?.();
+          setActiveView("settings");
+        }}
         onOpenChat={() => setActiveView("chat")}
         settingsActive={activeView === "settings"}
       />
@@ -288,8 +299,10 @@ function AppContent({
                     </div>
                   </div>
                 )}
-                {chatSurfaceState.kind === "no-project" ||
-                chatSurfaceState.kind === "default-chat" ? (
+                {workspaces.length === 0 && supportsMultipleWorkspaces ? (
+                  <NoWorkspaceConfigured />
+                ) : chatSurfaceState.kind === "no-project" ||
+                  chatSurfaceState.kind === "default-chat" ? (
                   hasConnectedProjects ? (
                     <NoSessionSelected />
                   ) : (
@@ -305,8 +318,8 @@ function AppContent({
                 )}
 
                 {/* Queue list + Prompt input */}
-                {showPromptBox && (
-                  <div className="shrink-0 px-4 pb-3">
+                {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
+                  <div className="shrink-0 px-4 app-safe-bottom-inset">
                     <div className="max-w-2xl mx-auto">
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">
@@ -373,8 +386,12 @@ export function App() {
     <DesktopShellProvider>
       <OpenGuiClientProvider>
         <HarnessProvider detachedProject={detachedProject}>
-          <SidebarProvider className="!h-dvh capacitor-safe-area">
-            <AppContent detachedProject={detachedProject} suppressBootErrors={showWizard} />
+          <SidebarProvider className="!h-dvh">
+            <AppContent
+              detachedProject={detachedProject}
+              suppressBootErrors={showWizard}
+              onDismissSetup={() => setShowWizard(false)}
+            />
             {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
             <Toaster richColors closeButton />
           </SidebarProvider>

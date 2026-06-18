@@ -28,7 +28,7 @@ preventDocumentPinchZoom();
 installWebElectronAPI();
 initializeRuntimeClients();
 if (window.Capacitor?.isNativePlatform?.() === true) {
-  document.documentElement.classList.add("capacitor-native");
+  document.documentElement.dataset.shell = "mobile";
 }
 applyStoredAppearance();
 

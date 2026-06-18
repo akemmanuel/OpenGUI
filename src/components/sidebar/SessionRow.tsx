@@ -1,4 +1,6 @@
 import { BadgeQuestionMark, GitBranch, MessageSquare, ShieldAlert } from "lucide-react";
+import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { HARNESS_LABELS } from "@/agents";
 import type { Session } from "@/hooks/agent-state-types";
 import { getSessionHarnessId } from "@/hooks/agent-session-utils";
@@ -82,6 +84,7 @@ export function SessionRow({
   currentProjectDir: string | null;
   deleteSession: (sessionId: string) => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   const isActive = session.id === activeSessionId;
   const isBusy = busySessionIds.has(session.id);
   const isUnread = unreadSessionIds.has(session.id);
@@ -131,6 +134,14 @@ export function SessionRow({
       }
     : null;
 
+  const confirmAndDeleteSession = useCallback(() => {
+    const confirmed = window.confirm(
+      t("sessionMenu.deleteSessionConfirm", { title: displayTitle }),
+    );
+    if (!confirmed) return;
+    void deleteSession(session.id);
+  }, [deleteSession, displayTitle, session.id, t]);
+
   return (
     <SessionContextMenu
       key={session.id}
@@ -146,7 +157,7 @@ export function SessionRow({
       onMoveToProject={moveToProject}
       onRemoveFromProject={removeFromProject}
       onRename={() => startEditing(session.id, isNaming ? "" : session.title || "")}
-      onDelete={() => deleteSession(session.id)}
+      onDelete={confirmAndDeleteSession}
     >
       <SidebarMenuItem>
         <SidebarMenuButton
@@ -286,7 +297,7 @@ export function SessionRow({
               onMoveToProject={moveToProject}
               onRemoveFromProject={removeFromProject}
               onRename={() => startEditing(session.id, session.title || "")}
-              onDelete={() => deleteSession(session.id)}
+              onDelete={confirmAndDeleteSession}
             />
           </div>
         </SidebarMenuButton>

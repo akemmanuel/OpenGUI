@@ -18,7 +18,7 @@ import type {
   Session,
 } from "@/hooks/agent-state-types";
 import type {
-  ProjectMeta,
+  ProjectMetaMap,
   SessionColor,
   SessionMetaMap,
   WorktreeParentMap,
@@ -67,6 +67,8 @@ export interface ConnectionContextValue {
   activeWorkspace: Workspace | null;
   activeWorkspaceId: string;
   supportsMultipleWorkspaces: boolean;
+  /** False when no workspace is configured; project connect actions must be blocked. */
+  canManageProjects: boolean;
   workspaceStatuses: Record<
     string,
     {
@@ -91,7 +93,7 @@ export interface ConnectionContextValue {
   bootLogs: string | null;
   lastError: string | null;
   worktreeParents: WorktreeParentMap;
-  projectMeta: Record<string, ProjectMeta>;
+  projectMeta: ProjectMetaMap;
   pendingWorktreeCleanup: InternalAgentState["pendingWorktreeCleanup"];
 }
 

@@ -14,6 +14,8 @@ import {
 import { getProjectName, normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, Workspace } from "@/types/electron";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
+import { isSidebarProjectHidden } from "@/lib/sidebar-project-meta";
+import { buildSidebarOrderedRootProjectDirectories } from "@/lib/sidebar-project-entries";
 import type { HarnessId } from "@/agents";
 
 function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {
@@ -40,6 +42,23 @@ export function shouldShowSessionInChatList({
   if (meta?.detachedFromProject === true) return true;
   if (meta?.originMode === "project") return false;
   if (normalizeProjectPath(meta?.assignedProjectDir ?? "")) return false;
+  return isDefaultChatDirectory(session._projectDir ?? session.directory);
+}
+
+export function shouldKeepSessionOutOfProjectGroups({
+  session,
+  meta,
+  assignedProjectDir,
+  isDefaultChatDirectory,
+}: {
+  session: Session;
+  meta: SessionMetaMap[string] | undefined;
+  assignedProjectDir: string;
+  isDefaultChatDirectory: (directory?: string | null) => boolean;
+}) {
+  if (assignedProjectDir) return false;
+  if (meta?.originMode === "project") return false;
+  if (meta?.originMode === "chat") return true;
   return isDefaultChatDirectory(session._projectDir ?? session.directory);
 }
 
@@ -87,9 +106,9 @@ export function useSidebarModel({
   const availableProjectDirectories = useMemo(
     () =>
       (activeWorkspace?.projects ?? []).filter(
-        (directory) => projectMeta[normalizeProjectPath(directory)]?.hidden !== true,
+        (directory) => !isSidebarProjectHidden(projectMeta, activeWorkspace?.id, directory),
       ),
-    [activeWorkspace?.projects, projectMeta],
+    [activeWorkspace?.id, activeWorkspace?.projects, projectMeta],
   );
 
   const isDefaultChatDirectory = useCallback(
@@ -132,19 +151,11 @@ export function useSidebarModel({
       ...visibleProjectDirectorySet,
     ]);
     const normalizedDetachedProject = normalizeProjectPath(detachedProject ?? "");
-    const orderedRootDirectories = detachedProject
-      ? rootOpenDirectories.filter((dir) => dir === normalizedDetachedProject)
-      : [
-          ...availableProjectDirectories
-            .map((dir) => normalizeProjectPath(dir))
-            .filter((dir) => rootOpenDirectories.includes(dir)),
-          ...rootOpenDirectories.filter(
-            (dir) =>
-              !availableProjectDirectories
-                .map((projectDir) => normalizeProjectPath(projectDir))
-                .includes(dir),
-          ),
-        ];
+    const orderedRootDirectories = buildSidebarOrderedRootProjectDirectories({
+      availableProjectDirectories,
+      connectedRootDirectories: rootOpenDirectories,
+      detachedProject: normalizedDetachedProject || undefined,
+    });
     const groups = new Map<string, Session[]>();
     for (const dir of orderedRootDirectories) groups.set(dir, []);
 
@@ -154,6 +165,16 @@ export function useSidebarModel({
         continue;
       }
       const assignedProjectDir = normalizeProjectPath(meta?.assignedProjectDir ?? "");
+      if (
+        shouldKeepSessionOutOfProjectGroups({
+          session,
+          meta,
+          assignedProjectDir,
+          isDefaultChatDirectory,
+        })
+      ) {
+        continue;
+      }
       const effectiveAssignedProjectDir =
         assignedProjectDir && projectDirectorySet.has(assignedProjectDir)
           ? assignedProjectDir
@@ -201,18 +222,25 @@ export function useSidebarModel({
     sortSidebarSessions,
   ]);
 
+  const showChatsSection = useMemo(
+    () => Boolean(normalizeProjectPath(defaultChatDirectory ?? "")),
+    [defaultChatDirectory],
+  );
+
   const chatSessions = useMemo(
     () =>
-      sortSidebarSessions(
-        sessions.filter((session) =>
-          shouldShowSessionInChatList({
-            session,
-            meta: sessionMeta[session.id],
-            isDefaultChatDirectory,
-          }),
-        ),
-      ),
-    [sessions, isDefaultChatDirectory, sessionMeta, sortSidebarSessions],
+      showChatsSection
+        ? sortSidebarSessions(
+            sessions.filter((session) =>
+              shouldShowSessionInChatList({
+                session,
+                meta: sessionMeta[session.id],
+                isDefaultChatDirectory,
+              }),
+            ),
+          )
+        : [],
+    [sessions, isDefaultChatDirectory, sessionMeta, showChatsSection, sortSidebarSessions],
   );
 
   const filteredChatSessions = useMemo(() => {
@@ -253,9 +281,10 @@ export function useSidebarModel({
         projectEntries: searchFilteredProjectEntries,
         sessionMeta,
         projectMeta,
+        workspaceId: activeWorkspace?.id,
         worktreeParents,
       }),
-    [projectMeta, searchFilteredProjectEntries, sessionMeta, worktreeParents],
+    [activeWorkspace?.id, projectMeta, searchFilteredProjectEntries, sessionMeta, worktreeParents],
   );
 
   return {
@@ -264,6 +293,7 @@ export function useSidebarModel({
     availableProjectDirectories,
     projectGroups,
     filteredChatSessions,
+    showChatsSection,
     ...pinnedModel,
   };
 }

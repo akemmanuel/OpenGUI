@@ -223,7 +223,7 @@ export async function createLifecycleSession({
   preferredHarnessId: HarnessId;
   ensureDirectoryConnection: (
     directory: string,
-    options?: { harnessIds?: HarnessId[] },
+    options?: { hidden?: boolean; transient?: boolean; harnessIds?: HarnessId[] },
   ) => Promise<void>;
   sessionsClient: SessionsClient;
   isChatDirectory: (directory?: string | null) => boolean;
@@ -240,7 +240,12 @@ export async function createLifecycleSession({
 
   try {
     if (directory) {
-      await ensureDirectoryConnection(directory, { harnessIds: [harnessId] });
+      const chatDirectory = isChatDirectory(directory);
+      await ensureDirectoryConnection(directory, {
+        harnessIds: [harnessId],
+        hidden: chatDirectory,
+        transient: chatDirectory,
+      });
     }
     const session = await sessionsClient.create({
       harnessId,

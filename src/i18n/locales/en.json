@@ -42,7 +42,14 @@
       "general": "General",
       "capabilityCount": "{{count}} capabilities",
       "updateGroup": "Update group",
-      "update": "Update"
+      "update": "Update",
+      "installNamed": "Install {{name}}",
+      "installedNamed": "{{name}} installed",
+      "updateNamed": "Update {{name}}",
+      "removeNamed": "Remove {{name}}",
+      "updateGroupNamed": "Update plugin group {{name}}",
+      "removeGroupNamed": "Remove plugin group {{name}}",
+      "invalidInstallSource": "Enter a valid source (e.g. owner/repo@skill-name or a URL)."
     },
     "general": {
       "agentBackend": "Harness",
@@ -53,6 +60,15 @@
       "themeSystem": "System",
       "contrast": "Contrast",
       "accent": "Accent",
+      "accentPreset": {
+        "default": "Standard",
+        "blue": "Blue",
+        "green": "Green",
+        "purple": "Purple",
+        "orange": "Orange",
+        "red": "Red",
+        "teal": "Teal"
+      },
       "customAccent": "Custom accent color",
       "codeFontSize": "Code font size",
       "language": "Language",
@@ -89,11 +105,14 @@
     "noSessionsYet": "No sessions yet",
     "pinned": "Pinned",
     "projects": "Projects",
+    "addProject": "Add project",
     "searchPlaceholder": "Search projects and sessions...",
     "showLess": "Show less",
     "title": "Sidebar",
     "mobileDescription": "Displays the mobile sidebar.",
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "noProjectsYet": "No projects yet",
+    "needWorkspaceBeforeProjects": "Add a workspace before you can connect projects."
   },
   "sessionMenu": {
     "pin": "Pin to top",
@@ -104,7 +123,8 @@
     "addTag": "Add tag...",
     "moveToProject": "Move to project",
     "removeFromProject": "Remove from {{project}}",
-    "deleteSession": "Delete session"
+    "deleteSession": "Delete session",
+    "deleteSessionConfirm": "Delete \"{{title}}\"?\n\nThis permanently deletes the session and cannot be undone."
   },
   "projectMenu": {
     "pinProject": "Pin project",
@@ -188,7 +208,9 @@
     "optional": "optional",
     "accessTokenPlaceholder": "Paste OPENGUI_AUTH_TOKEN",
     "addWorkspace": "Add workspace",
-    "toggleSidebar": "Toggle Sidebar"
+    "toggleSidebar": "Toggle Sidebar",
+    "requiredBeforeProject": "Add a workspace before connecting a project.",
+    "addProjectRequiresWorkspace": "Create a workspace first"
   },
   "mcp": {
     "title": "MCPs",
@@ -200,7 +222,9 @@
     "failed": "Failed",
     "needsAuth": "Needs auth",
     "needsRegistration": "Needs registration",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "loadTimedOut": "Loading tools is taking longer than expected.",
+    "retry": "Retry"
   },
   "contextStatus": {
     "compacting": "Compacting",
@@ -256,7 +280,9 @@
     "other": "Other",
     "connected": "Connected",
     "connect": "Connect",
+    "connectNamed": "Connect {{name}}",
     "disconnect": "Disconnect",
+    "disconnectNamed": "Disconnect {{name}}",
     "disconnectConfirm": "Disconnect {{name}}?",
     "fromEnv": "from env",
     "fromEnvTitle": "Connected from your environment variables",
@@ -417,7 +443,10 @@
     "noProjectConnect": "Connect a project to start chatting.",
     "startChat": "Start a chat",
     "noSessionTitle": "No session selected",
-    "noSessionDescription": "Select a session or start a new one from a connected project."
+    "noSessionDescription": "Select a session or start a new one from a connected project.",
+    "noWorkspaceTitle": "No workspace configured",
+    "noWorkspaceDescription": "A workspace is your OpenGUI backend. Create one, then add projects to it.",
+    "addWorkspace": "Add workspace"
   },
   "mergeDialog": {
     "failed": "Merge failed",

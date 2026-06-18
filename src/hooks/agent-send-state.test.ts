@@ -29,15 +29,6 @@ describe("createPromptSendStartActions", () => {
           thinkingLevel: "think",
         },
       },
-      {
-        type: "PROMPT_SUBMITTED",
-        payload: {
-          id: "turn-1",
-          sessionID: "opencode:raw-1",
-          text: "ship it",
-          createdAt: 123,
-        },
-      },
     ]);
   });
 });

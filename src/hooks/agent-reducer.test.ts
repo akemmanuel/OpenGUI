@@ -265,6 +265,29 @@ describe("mergeProjectBackendSessions", () => {
     expect(next.sessionErrors[sessionId]).toBeUndefined();
   });
 
+  test("promotes chat-infra to project when explicitly set to connected", () => {
+    const next = reducer(
+      baseState({
+        connections: {
+          "workspace-1\u0000/home/emmanuel": createProjectConnectionStatus(
+            "connected",
+            "http://localhost:4096",
+            "chat-infra",
+          ),
+        },
+      }),
+      {
+        type: "SET_PROJECT_CONNECTION",
+        payload: {
+          projectKey: "workspace-1\u0000/home/emmanuel",
+          status: createProjectConnectionStatus("connected", "http://localhost:4096", "project"),
+        },
+      } as Parameters<typeof reducer>[1],
+    );
+
+    expect(next.connections["workspace-1\u0000/home/emmanuel"]?.kind).toBe("project");
+  });
+
   test("preserves chat-infra connection kind across backend status updates", () => {
     const next = reducer(
       baseState({
@@ -346,5 +369,50 @@ describe("mergeProjectBackendSessions", () => {
 
     expect(next.sessions[0]?._projectDir).toBe("/home/tobias/Dokumente");
     expect(next.sessions[0]?.directory).toBe("/home/tobias/Dokumente");
+  });
+
+  test("marks sessions listed from default chat targets as chat-origin", () => {
+    const next = reducer(baseState({ defaultChatDirectory: "/home/chats" }), {
+      type: "MERGE_PROJECT_SESSIONS",
+      payload: {
+        projectKey: "workspace-1\u0000/home/chats",
+        directory: "/home/chats",
+        sessions: [session("opencode:chat-1", "opencode", "/home/chats", 1)],
+        harnessIds: ["opencode"],
+        source: "default-chat",
+      },
+    } as Parameters<typeof reducer>[1]);
+
+    expect(next.sessionMeta["opencode:chat-1"]).toMatchObject({
+      originMode: "chat",
+      nativeProjectDir: "/home/chats",
+      assignedProjectDir: null,
+    });
+  });
+
+  test("does not overwrite existing placement metadata when default chat target is listed", () => {
+    const next = reducer(
+      baseState({
+        defaultChatDirectory: "/home/chats",
+        sessionMeta: {
+          "opencode:project-1": {
+            originMode: "project",
+            nativeProjectDir: "/home/chats",
+          },
+        },
+      }),
+      {
+        type: "MERGE_PROJECT_SESSIONS",
+        payload: {
+          projectKey: "workspace-1\u0000/home/chats",
+          directory: "/home/chats",
+          sessions: [session("opencode:project-1", "opencode", "/home/chats", 1)],
+          harnessIds: ["opencode"],
+          source: "default-chat",
+        },
+      } as Parameters<typeof reducer>[1],
+    );
+
+    expect(next.sessionMeta["opencode:project-1"]?.originMode).toBe("project");
   });
 });
