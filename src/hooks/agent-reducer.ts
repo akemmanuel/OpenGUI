@@ -7,6 +7,7 @@ import type {
   QuestionRequest,
 } from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
+import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
 import type {
   InternalAgentState,
   MessageEntry,
@@ -171,6 +172,11 @@ export type Action =
       payload: { projectKey: string; status: ConnectionStatus };
     }
   | {
+      type: "SET_PROJECT_HYDRATION";
+      payload: { projectKey: string; hydration: ProjectHydrationState };
+    }
+  | { type: "RESET_PROJECT_HYDRATION" }
+  | {
       type: "REMOVE_PROJECT";
       payload: { projectKey: string; directory: string };
     }
@@ -243,6 +249,10 @@ export type Action =
   | { type: "EVICT_WORKSPACE_RESOURCES"; payload: { workspaceId: string } }
   | { type: "SET_PROVIDERS"; payload: ProvidersData }
   | { type: "SET_SELECTED_MODEL"; payload: SelectedModel | null }
+  | {
+      type: "SET_PROMPT_BOX_SELECTION";
+      payload: { harnessId: HarnessId; model: SelectedModel };
+    }
   | { type: "SET_AGENTS"; payload: Agent[] }
   | { type: "SET_COMMANDS"; payload: Command[] }
   | { type: "SET_SELECTED_AGENT"; payload: string | null }
@@ -586,6 +596,21 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       };
     }
 
+    case "SET_PROJECT_HYDRATION": {
+      const { projectKey, hydration } = action.payload;
+      return {
+        ...state,
+        projectHydration: {
+          ...state.projectHydration,
+          [projectKey]: hydration,
+        },
+      };
+    }
+
+    case "RESET_PROJECT_HYDRATION": {
+      return { ...state, projectHydration: {} };
+    }
+
     case "REMOVE_PROJECT": {
       const { projectKey, directory } = action.payload;
       const { workspaceId } = parseProjectKey(projectKey);
@@ -614,6 +639,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           : workspace,
       );
       const { [projectKey]: _, ...rest } = state.connections;
+      const { [projectKey]: _removedHydration, ...restProjectHydration } = state.projectHydration;
       const { [projectKey]: _removedWorkspace, ...restProjectWorkspaceMap } =
         state.projectWorkspaceMap;
       const nextBusy = new Set(
@@ -687,6 +713,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         workspaces: nextWorkspaces,
         projectMeta: nextProjectMeta,
         connections: rest,
+        projectHydration: restProjectHydration,
         projectWorkspaceMap: restProjectWorkspaceMap,
         sessions: state.sessions.filter((s) => {
           if (!isExplicitWorkspaceProject) return true;
@@ -1133,6 +1160,15 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
     case "SET_SELECTED_MODEL":
       return { ...state, selectedModel: action.payload };
+
+    case "SET_PROMPT_BOX_SELECTION":
+      return {
+        ...state,
+        selectedModel: action.payload.model,
+        ...(state.activeTargetDirectory && !state.activeSessionId
+          ? { activeTargetHarnessId: action.payload.harnessId }
+          : null),
+      };
 
     case "SET_AGENTS":
       return { ...state, agents: action.payload };

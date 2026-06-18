@@ -1,4 +1,4 @@
-import type { HarnessId } from "../../src/agents/index.ts";
+import type { HarnessId } from "@opengui/protocol";
 import { directoryRef } from "@opengui/runtime";
 import type { BackendServiceContext } from "./index.ts";
 import type { DirectoryConnectionConfig } from "@opengui/runtime";

@@ -163,7 +163,8 @@
     "stop": "Stop",
     "stopGenerating": "Stop generating",
     "send": "Send",
-    "sendMessage": "Send message"
+    "sendMessage": "Send message",
+    "chooseHarnessAndModelBeforeSend": "Choose a harness and model before sending."
   },
   "variantSelector": {
     "off": "off",
@@ -174,10 +175,23 @@
   },
   "modelSelector": {
     "selectModel": "Select model",
+    "chooseHarnessAndModel": "Choose harness & model",
+    "dialogTitle": "Choose harness & model",
     "searchPlaceholder": "Search provider, model, or id...",
     "favorites": "Favorites",
     "recent": "Recent",
+    "harnessLocked": "Harness is locked for this session.",
     "backendLocked": "Backend locked for this session.",
+    "changeHarness": "Change harness",
+    "loadingCatalog": "Loading models for this project…",
+    "noModelsForHarness": "No models for this harness in this project.",
+    "noModelsForHarnessHint": "Try another harness or check provider credentials in Settings.",
+    "openSettings": "Open Settings",
+    "harnessNotInstalled": "CLI not installed",
+    "noHarnessInstalled": "No harness CLI is installed. Install one in Settings to choose a model.",
+    "checkingHarnesses": "Checking installed harnesses…",
+    "harnessCliFound": "Installed — connect in Settings if models are missing",
+    "harnessReady": "{{count}} models in inventory",
     "noModelsMatch": "No models match \"{{query}}\".",
     "addFavorite": "Add to favorites",
     "removeFavorite": "Remove from favorites"
@@ -423,6 +437,11 @@
   "startup": {
     "checkingLocalServer": "Checking local server...",
     "startingLocalServer": "Starting local server..."
+  },
+  "projectHarnessStatus": {
+    "title": "Harness errors for {{project}}",
+    "hint": "You can still type and pick another harness in the model selector. Session history may be incomplete for the harnesses listed above.",
+    "sidebarSummary": "{{count}} harness error(s)"
   },
   "sessionError": {
     "title": "Agent error",

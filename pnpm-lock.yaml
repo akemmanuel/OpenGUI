@@ -47,6 +47,12 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.16.2
         version: 1.16.2
+      '@opengui/backend':
+        specifier: workspace:*
+        version: link:packages/backend
+      '@opengui/protocol':
+        specifier: workspace:*
+        version: link:packages/protocol
       '@opengui/runtime':
         specifier: workspace:*
         version: link:packages/runtime
@@ -171,9 +177,17 @@ importers:
 
   packages/backend:
     dependencies:
+      '@opengui/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@opengui/runtime':
         specifier: workspace:*
         version: link:../runtime
+      hono:
+        specifier: ^4.12.23
+        version: 4.12.23
+
+  packages/protocol: {}
 
   packages/runtime: {}
 
@@ -3089,10 +3103,6 @@ packages:
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
-
-  js-yaml@4.1.1:
-    resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
-    hasBin: true
 
   js-yaml@4.2.0:
     resolution: {integrity: sha512-ePWsvanv0DWuDRsW8dnt+R4jQ31SCRCQ7hhNcPXZPsoBZiemuZNYGf7adZdqX2D86j6rvKp3RpCxVTSb8WQlOw==}
@@ -6329,7 +6339,7 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 25.9.2
 
   '@types/hast@3.0.4':
     dependencies:
@@ -6564,7 +6574,7 @@ snapshots:
       hosted-git-info: 4.1.0
       isbinaryfile: 5.0.7
       jiti: 2.7.0
-      js-yaml: 4.1.1
+      js-yaml: 4.2.0
       json5: 2.2.3
       lazy-val: 1.0.5
       minimatch: 10.2.5
@@ -6738,7 +6748,7 @@ snapshots:
       fs-extra: 10.1.0
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
-      js-yaml: 4.1.1
+      js-yaml: 4.2.0
       sanitize-filename: 1.6.4
       source-map-support: 0.5.21
       stat-mode: 1.0.0
@@ -7125,7 +7135,7 @@ snapshots:
       app-builder-lib: 26.15.1(dmg-builder@26.15.1)(electron-builder-squirrel-windows@26.15.1)
       builder-util: 26.15.0
       fs-extra: 10.1.0
-      js-yaml: 4.1.1
+      js-yaml: 4.2.0
     transitivePeerDependencies:
       - electron-builder-squirrel-windows
       - supports-color
@@ -7887,10 +7897,6 @@ snapshots:
     optional: true
 
   js-tokens@4.0.0: {}
-
-  js-yaml@4.1.1:
-    dependencies:
-      argparse: 2.0.1
 
   js-yaml@4.2.0:
     dependencies:

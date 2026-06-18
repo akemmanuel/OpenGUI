@@ -2,30 +2,18 @@ import type { Agent, Command, QuestionAnswer } from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
 import type { HarnessDescriptor, HarnessEvent, HarnessTarget } from "@/agents/backend";
 import type { MessageEntry, Session } from "@/hooks/agent-state-types";
-import type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";
+import type { QueuedPrompt } from "@/lib/session-drafts";
+import type { OpenGuiCapabilities, QueueMode, SelectedModel } from "@opengui/protocol";
 import type {
   ConnectionConfig,
   GitMergeResult,
   GitWorktree,
   HarnessInventory,
   ProvidersData,
-  SelectedModel,
   WorktreeSetupDetection,
 } from "@/types/electron";
 
-export interface OpenGuiCapabilities {
-  protocolVersion: number;
-  /** Backend feature flags. `workspaces` / `projects` are false per ADR 0005 (Frontend-owned). */
-  server: {
-    workspaces: boolean;
-    projects: boolean;
-    sessions: boolean;
-    events: "websocket" | "sse" | false;
-    auth: boolean;
-    allowedRoots: boolean;
-  };
-  harnesses: HarnessId[];
-}
+export type { OpenGuiCapabilities } from "@opengui/protocol";
 
 export interface FrontendWorkspaceRecord {
   id: string;

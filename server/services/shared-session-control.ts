@@ -1,6 +1,5 @@
+import type { QueueMode, SelectedModel } from "@opengui/protocol";
 import { Effect } from "effect";
-import type { QueueMode } from "../../src/lib/session-drafts.ts";
-import type { SelectedModel } from "../../src/types/electron.d.ts";
 import { forkEffect, tryPromiseEffect } from "../../lib/effect-runtime.ts";
 import type { DirectoryScopeRef } from "@opengui/runtime";
 import type { BackendServiceContext, SessionRecord } from "./index.ts";

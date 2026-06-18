@@ -1,5 +1,16 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { resolveAgentSendSelection, sendCommandToAgent, sendPromptToAgent } from "./agent-send";
+import {
+  assertAgentSendSelection,
+  resolveAgentSendSelection,
+  sendCommandToAgent,
+  sendPromptToAgent,
+} from "./agent-send";
+
+describe("assertAgentSendSelection", () => {
+  test("throws when model is missing", () => {
+    expect(() => assertAgentSendSelection({})).toThrow("PROMPT_BOX_SELECTION_INCOMPLETE");
+  });
+});
 
 describe("resolveAgentSendSelection", () => {
   test("uses explicit override variant before fallback resolution", () => {
@@ -39,7 +50,10 @@ describe("sendPromptToAgent", () => {
       } as never,
       sessionId: "pi:session-1",
       text: "hello",
-      selection: { agent: "reviewer" },
+      selection: {
+        agent: "reviewer",
+        model: { providerID: "openai", modelID: "gpt-4" },
+      },
     });
 
     expect(calls).toHaveLength(1);
@@ -75,7 +89,10 @@ describe("sendPromptToAgent", () => {
       },
       sessionId: "opencode:session-1",
       text: "where are you?",
-      selection: { agent: "build" },
+      selection: {
+        agent: "build",
+        model: { providerID: "openai", modelID: "gpt-4" },
+      },
     });
 
     expect(calls[0]).toMatchObject({
@@ -102,7 +119,10 @@ describe("sendCommandToAgent", () => {
       sessionId: "session-1",
       command: "review",
       args: "--all",
-      selection: { variant: "high" },
+      selection: {
+        variant: "high",
+        model: { providerID: "openai", modelID: "gpt-4" },
+      },
     });
 
     expect(calls).toHaveLength(1);
@@ -139,7 +159,7 @@ describe("sendCommandToAgent", () => {
       sessionId: "opencode:session-1",
       command: "review",
       args: "",
-      selection: {},
+      selection: { model: { providerID: "openai", modelID: "gpt-4" } },
     });
 
     expect(calls[0]).toMatchObject({

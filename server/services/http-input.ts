@@ -1,6 +1,5 @@
+import type { QueueMode, SelectedModel } from "@opengui/protocol";
 import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
-import type { QueueMode } from "../../src/lib/session-drafts.ts";
-import type { SelectedModel } from "../../src/types/electron.d.ts";
 
 export async function readJsonBody(request: Request) {
   try {

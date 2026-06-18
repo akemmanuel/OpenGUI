@@ -1,6 +1,4 @@
-import type { HarnessId } from "../../src/agents/index.ts";
-import type { QueueMode } from "../../src/lib/session-drafts.ts";
-import type { SelectedModel } from "../../src/types/electron.d.ts";
+import type { HarnessId, QueueMode, SelectedModel } from "@opengui/protocol";
 import type { BackendServiceContext } from "./index.ts";
 import type { PromptQueueEntry } from "./prompt-queue-service.ts";
 

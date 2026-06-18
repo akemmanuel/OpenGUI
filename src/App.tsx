@@ -39,6 +39,7 @@ import { useActiveWorktreeMerge } from "@/features/worktree/useActiveWorktreeMer
 import { AppSidebar } from "./components/AppSidebar";
 import { SettingsView } from "./components/ConnectionPanel";
 import { MessageList } from "./components/MessageList";
+import { ProjectHarnessStatusBanner } from "./components/ProjectHarnessStatusBanner";
 import { PromptBox } from "./components/PromptBox";
 import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
@@ -84,7 +85,6 @@ function AppContent({
     sessions,
     activeSessionId: sessionActiveId,
     isBusy,
-    isLoadingMessages,
     activeTargetDirectory,
     sessionMeta,
     sessionErrors,
@@ -102,6 +102,7 @@ function AppContent({
     connections,
     workspaces,
     supportsMultipleWorkspaces,
+    activeWorkspaceId,
   } = useConnectionState();
   const normalizedBootLogs = useMemo(
     () => (bootLogs ? normalizeTerminalOutput(bootLogs) : null),
@@ -241,6 +242,15 @@ function AppContent({
   // Check for app updates on startup
   const updateCheck = useUpdateCheck();
 
+  useEffect(() => {
+    const openSettings = () => {
+      onDismissSetup?.();
+      setActiveView("settings");
+    };
+    window.addEventListener("opengui:open-settings", openSettings);
+    return () => window.removeEventListener("opengui:open-settings", openSettings);
+  }, [onDismissSetup]);
+
   return (
     <>
       <AppSidebar
@@ -317,6 +327,11 @@ function AppContent({
                   <MessageList detachedProject={detachedProject} />
                 )}
 
+                <ProjectHarnessStatusBanner
+                  activeSessionDirectory={activeSessionDirectory}
+                  activeWorkspaceId={activeWorkspaceId}
+                />
+
                 {/* Queue list + Prompt input */}
                 {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
                   <div className="shrink-0 px-4 app-safe-bottom-inset">
@@ -338,7 +353,6 @@ function AppContent({
                       )}
                       <PromptBox
                         autoFocus
-                        disabled={isBooting || isLoadingMessages}
                         isLoading={isBusy}
                         contextPercent={contextPercent}
                         contextTokens={contextInfo.tokens}

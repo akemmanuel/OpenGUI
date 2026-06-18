@@ -1,5 +1,5 @@
+import type { OpenGuiCapabilities } from "@opengui/protocol";
 import { HARNESS_IDS } from "../../src/agents/index.ts";
-import type { OpenGuiCapabilities } from "../../src/protocol/client.ts";
 
 export function getBackendCapabilities(): OpenGuiCapabilities {
   return {

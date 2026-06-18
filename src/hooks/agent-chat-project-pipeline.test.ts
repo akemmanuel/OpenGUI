@@ -41,6 +41,7 @@ function baseState(): InternalAgentState {
     ],
     activeWorkspaceId: "local",
     projectWorkspaceMap: {},
+    projectHydration: {},
     connections: {},
     sessions: [],
     activeSessionId: null,

@@ -1,12 +1,18 @@
 /**
- * Model selector dialog.
- * Adds searchable model picking with recent selections.
+ * Harness → Provider → Model selection dialog (PromptBox affordance).
  */
 
-import { BrainCircuit, Check, Lightbulb, Search, Star } from "lucide-react";
-import { type KeyboardEventHandler, useEffect, useMemo, useRef, useState } from "react";
+import { BrainCircuit, Check, Lightbulb, Loader2, Search, Star } from "lucide-react";
+import {
+  type KeyboardEventHandler,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { HARNESS_LABELS } from "@/agents";
+import { HARNESS_IDS, HARNESS_LABELS, type HarnessId } from "@/agents";
 import { ProviderIcon } from "@/components/provider-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,8 +23,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useAvailableHarnessIds, useRoutedHarness } from "@/hooks/use-agent-backend";
-import { useActions, useModelState } from "@/hooks/use-agent-state";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { createHarnessInventoryView } from "@/hooks/harness-inventory-view";
+import { resolvePromptBoxHarnessId } from "@/hooks/prompt-box-selection";
+import { getSessionDirectory } from "@/hooks/agent-session-utils";
+import {
+  useAvailableHarnessIds,
+  useCurrentHarnessId,
+  useRoutedHarness,
+} from "@/hooks/use-agent-backend";
+import {
+  useActions,
+  useConnectionState,
+  useModelState,
+  useSessionState,
+} from "@/hooks/use-agent-state";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
 import {
   filterModelSearchCandidates,
@@ -28,6 +47,9 @@ import {
 } from "@/lib/model-search";
 import { storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
+import { useOpenGuiClient } from "@/protocol/provider";
+import type { Provider } from "@/protocol/harness-types";
+import type { HarnessInventory } from "@/types/electron";
 
 type ModelOption = ModelSearchCandidate & {
   reasoning: boolean;
@@ -38,6 +60,28 @@ type ModelGroup = {
   name: string;
   models: ModelOption[];
 };
+
+type DialogCatalogTarget = {
+  directory: string | null;
+  workspaceId: string;
+  baseUrl?: string;
+  authToken?: string;
+};
+
+function createCatalogKey(harnessId: HarnessId, target: DialogCatalogTarget) {
+  return [harnessId, target.workspaceId, target.directory ?? ""].join("\u0000");
+}
+
+function harnessInventoryHint(
+  inventory: HarnessInventory | undefined,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (!inventory?.installed) return "";
+  if (inventory.status === "ready" && inventory.models.length > 0) {
+    return t("modelSelector.harnessReady", { count: inventory.models.length });
+  }
+  return t("modelSelector.harnessCliFound");
+}
 
 function getStoredModelMaxAgeMonths(): number {
   const raw = storageGet(STORAGE_KEYS.MODEL_MAX_AGE_MONTHS);
@@ -136,14 +180,40 @@ function ModelRow({
 
 export function ModelSelector() {
   const { t } = useTranslation();
-  const { setModel, setActiveTargetBackend } = useActions();
-  const { providers, selectedModel } = useModelState();
+  const client = useOpenGuiClient();
+  const { setPromptBoxSelection } = useActions();
+  const { providers: committedProviders, selectedModel } = useModelState();
+  const { activeSessionId, sessions, activeTargetDirectory, activeTargetHarnessId } =
+    useSessionState();
+  const { activeWorkspace, activeWorkspaceId } = useConnectionState();
+  const fallbackHarnessId = useCurrentHarnessId();
   const availableHarnessIds = useAvailableHarnessIds();
-  const { backend, route: selectedHarnessRoute } = useRoutedHarness();
-  const capabilities = backend?.capabilities;
+  const { route: selectedHarnessRoute } = useRoutedHarness();
   const lockedHarnessId = selectedHarnessRoute.locked ? selectedHarnessRoute.harnessId : null;
-  const selectedHarnessId = selectedHarnessRoute.harnessId;
+
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId) ?? null,
+    [sessions, activeSessionId],
+  );
+
+  const resolvedHarnessId = useMemo(
+    () =>
+      resolvePromptBoxHarnessId({
+        activeSession,
+        activeTargetHarnessId,
+        fallbackHarnessId,
+      }),
+    [activeSession, activeTargetHarnessId, fallbackHarnessId],
+  );
+
   const [open, setOpen] = useState(false);
+  const [dialogHarnessId, setDialogHarnessId] = useState<HarnessId>(resolvedHarnessId);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [draftCatalogHarnessId, setDraftCatalogHarnessId] = useState<HarnessId | null>(null);
+  const [draftCatalogKey, setDraftCatalogKey] = useState<string | null>(null);
+  const [draftProviders, setDraftProviders] = useState<Provider[]>([]);
+  const [inventories, setInventories] = useState<HarnessInventory[]>([]);
+  const [inventoriesReady, setInventoriesReady] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [recentValues, setRecentValues] = useState<string[]>([]);
@@ -151,6 +221,34 @@ export function ModelSelector() {
   const [modelMaxAgeMonths, setModelMaxAgeMonths] = useState(() => getStoredModelMaxAgeMonths());
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [activeValue, setActiveValue] = useState<string | null>(null);
+  const catalogRequestRef = useRef(0);
+
+  const inventoryView = useMemo(
+    () =>
+      createHarnessInventoryView({
+        status: inventoriesReady ? "ready" : "loading",
+        inventories,
+        candidateHarnessIds: availableHarnessIds,
+        lockedHarnessId,
+      }),
+    [availableHarnessIds, inventories, inventoriesReady, lockedHarnessId],
+  );
+  const inventoryByHarness = inventoryView.byHarnessId;
+
+  const dialogCatalogTarget = useMemo(() => {
+    const directory = activeTargetDirectory ?? getSessionDirectory(activeSession) ?? null;
+    return {
+      directory,
+      workspaceId: activeWorkspaceId,
+      baseUrl: activeWorkspace && !activeWorkspace.isLocal ? activeWorkspace.serverUrl : undefined,
+      authToken:
+        activeWorkspace && !activeWorkspace.isLocal ? activeWorkspace.authToken : undefined,
+    };
+  }, [activeSession, activeTargetDirectory, activeWorkspace, activeWorkspaceId]);
+
+  const catalogMatchesDialog =
+    dialogHarnessId === draftCatalogHarnessId &&
+    draftCatalogKey === createCatalogKey(dialogHarnessId, dialogCatalogTarget);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -189,10 +287,68 @@ export function ModelSelector() {
   }, [favoriteValues, storageHydrated]);
 
   useEffect(() => {
-    const handler = () => setOpen(true);
+    if (!open) {
+      setInventoriesReady(false);
+      return;
+    }
+    setInventoriesReady(false);
+    void client.runtime
+      .getHarnessInventories()
+      .then((rows) => {
+        setInventories(rows);
+        setInventoriesReady(true);
+      })
+      .catch(() => {
+        setInventories([]);
+        setInventoriesReady(true);
+      });
+  }, [open, client]);
+
+  const ensureCatalogForHarness = useCallback(
+    async (harnessId: HarnessId) => {
+      const key = createCatalogKey(harnessId, dialogCatalogTarget);
+      if (draftCatalogKey === key) return;
+      const requestId = ++catalogRequestRef.current;
+      setCatalogLoading(true);
+      try {
+        const { providersData } = await client.harnesses.loadResources({
+          harnessId,
+          target: {
+            directory: dialogCatalogTarget.directory ?? undefined,
+            workspaceId: dialogCatalogTarget.workspaceId,
+            baseUrl: dialogCatalogTarget.baseUrl,
+            authToken: dialogCatalogTarget.authToken,
+          },
+        });
+        if (requestId !== catalogRequestRef.current) return;
+        setDraftProviders(providersData.providers);
+        setDraftCatalogHarnessId(harnessId);
+        setDraftCatalogKey(key);
+      } catch {
+        if (requestId !== catalogRequestRef.current) return;
+        setDraftProviders([]);
+        setDraftCatalogHarnessId(harnessId);
+        setDraftCatalogKey(key);
+      } finally {
+        if (requestId === catalogRequestRef.current) {
+          setCatalogLoading(false);
+        }
+      }
+    },
+    [client, dialogCatalogTarget, draftCatalogKey],
+  );
+
+  const openDialog = useCallback(() => {
+    const harnessId = lockedHarnessId ?? resolvedHarnessId;
+    setDialogHarnessId(harnessId);
+    setOpen(true);
+  }, [lockedHarnessId, resolvedHarnessId]);
+
+  useEffect(() => {
+    const handler = () => openDialog();
     window.addEventListener("open-model-selector", handler);
     return () => window.removeEventListener("open-model-selector", handler);
-  }, []);
+  }, [openDialog]);
 
   useEffect(() => {
     if (!open) return;
@@ -201,7 +357,9 @@ export function ModelSelector() {
       inputRef.current?.select();
     });
     return () => cancelAnimationFrame(frame);
-  }, [open]);
+  }, [open, dialogHarnessId]);
+
+  const catalogProviders = open ? draftProviders : committedProviders;
 
   const groups = useMemo(() => {
     const now = Date.now();
@@ -215,7 +373,7 @@ export function ModelSelector() {
       alwaysIncludeValues.add(fav);
     }
 
-    return providers
+    return catalogProviders
       .filter((provider) => Object.keys(provider.models).length > 0)
       .map((provider) => {
         const modelEntries = Object.entries(provider.models);
@@ -246,7 +404,7 @@ export function ModelSelector() {
         };
       })
       .filter((group) => group.models.length > 0);
-  }, [providers, selectedModel, favoriteValues, modelMaxAgeMonths]);
+  }, [catalogProviders, selectedModel, favoriteValues, modelMaxAgeMonths]);
 
   const allModels = useMemo(() => groups.flatMap((group) => group.models), [groups]);
 
@@ -258,6 +416,16 @@ export function ModelSelector() {
     () => (currentValue ? allModels.find((model) => model.value === currentValue) : null),
     [allModels, currentValue],
   );
+
+  const triggerLabel = useMemo(() => {
+    if (!selectedModel) {
+      return t("modelSelector.chooseHarnessAndModel");
+    }
+    const harnessLabel = HARNESS_LABELS[resolvedHarnessId];
+    const modelLabel =
+      currentModel?.label ?? `${selectedModel.providerID}/${selectedModel.modelID}`;
+    return `${harnessLabel} · ${modelLabel}`;
+  }, [currentModel?.label, resolvedHarnessId, selectedModel, t]);
 
   const normalizedQuery = normalizeModelQuery(query);
 
@@ -331,7 +499,7 @@ export function ModelSelector() {
       }
       return visibleModels[0]?.value ?? null;
     });
-  }, [open, visibleModels]);
+  }, [open, dialogHarnessId, visibleModels]);
 
   const toggleFavorite = (value: string) => {
     setFavoriteValues((prev) => {
@@ -349,10 +517,14 @@ export function ModelSelector() {
     setOpen(false);
     setQuery("");
     setActiveValue(null);
+    setCatalogLoading(false);
   };
 
   const selectModel = (model: ModelOption) => {
-    setModel({ providerID: model.providerID, modelID: model.modelID });
+    setPromptBoxSelection({
+      harnessId: dialogHarnessId,
+      model: { providerID: model.providerID, modelID: model.modelID },
+    });
     setRecentValues((previous) => {
       const next = [model.value, ...previous.filter((v) => v !== model.value)];
       return next.slice(0, MAX_RECENT_MODELS);
@@ -360,12 +532,20 @@ export function ModelSelector() {
     closeSelector();
   };
 
+  const onHarnessTabChange = (value: string | number | null) => {
+    if (typeof value !== "string" || !HARNESS_IDS.includes(value as HarnessId)) return;
+    const harnessId = value as HarnessId;
+    setDialogHarnessId(harnessId);
+    setQuery("");
+    void ensureCatalogForHarness(harnessId);
+  };
+
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       closeSelector();
       return;
     }
-    setOpen(true);
+    openDialog();
   };
 
   const moveActive = (direction: -1 | 1) => {
@@ -409,8 +589,26 @@ export function ModelSelector() {
   };
 
   const hasResults = filteredGroups.some((group) => group.models.length > 0);
+  const showModelList = catalogMatchesDialog && !catalogLoading;
+  const showEmptyHarness =
+    catalogMatchesDialog && !catalogLoading && !hasResults && !normalizedQuery;
+  const harnessRows = inventoryView.selectorHarnessIds;
 
-  if (!capabilities?.models || providers.length === 0) return null;
+  useEffect(() => {
+    if (!open || harnessRows.length === 0) return;
+    if (harnessRows.includes(dialogHarnessId)) return;
+    const next =
+      lockedHarnessId && harnessRows.includes(lockedHarnessId) ? lockedHarnessId : harnessRows[0];
+    if (!next) return;
+    setDialogHarnessId(next);
+    void ensureCatalogForHarness(next);
+  }, [open, harnessRows, dialogHarnessId, lockedHarnessId, ensureCatalogForHarness]);
+
+  useEffect(() => {
+    if (!open || !inventoriesReady || harnessRows.length === 0) return;
+    if (!harnessRows.includes(dialogHarnessId)) return;
+    void ensureCatalogForHarness(dialogHarnessId);
+  }, [open, inventoriesReady, harnessRows, dialogHarnessId, ensureCatalogForHarness]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -419,15 +617,19 @@ export function ModelSelector() {
           type="button"
           variant="ghost"
           size="sm"
-          title={t("modelSelector.selectModel")}
+          title={t("modelSelector.dialogTitle")}
           className="!h-7 min-w-0 shrink gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={(event) => {
+            event.preventDefault();
+            openDialog();
+          }}
         >
-          {currentModel ? (
+          {selectedModel && currentModel ? (
             <ProviderIcon provider={currentModel.providerID} className="size-3.5 shrink-0" />
           ) : (
             <BrainCircuit className="size-3.5 shrink-0" />
           )}
-          <span className="truncate">{currentModel?.label ?? t("modelSelector.selectModel")}</span>
+          <span className="truncate">{triggerLabel}</span>
         </Button>
       </DialogTrigger>
 
@@ -438,123 +640,175 @@ export function ModelSelector() {
         }
       >
         <DialogHeader className="px-4 pt-4 pb-2">
-          <DialogTitle className="text-base">{t("modelSelector.selectModel")}</DialogTitle>
+          <DialogTitle className="text-base">{t("modelSelector.dialogTitle")}</DialogTitle>
         </DialogHeader>
 
-        {availableHarnessIds.length > 1 && (
-          <div className="px-4 pb-2">
-            <div className="flex flex-wrap gap-1.5">
-              {availableHarnessIds.map((harnessId) => {
-                const isSelected = selectedHarnessId === harnessId;
-                return (
-                  <Button
-                    key={harnessId}
-                    type="button"
-                    variant={isSelected ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 px-2 text-[11px]"
-                    disabled={!!lockedHarnessId}
-                    onClick={() => setActiveTargetBackend(harnessId)}
-                  >
-                    {HARNESS_LABELS[harnessId]}
-                  </Button>
-                );
-              })}
+        {!inventoriesReady ? (
+          <div className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            {t("modelSelector.checkingHarnesses")}
+          </div>
+        ) : harnessRows.length === 0 ? (
+          <div className="space-y-2 px-4 pb-6 text-sm text-muted-foreground">
+            <p>{t("modelSelector.noHarnessInstalled")}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                closeSelector();
+                window.dispatchEvent(new CustomEvent("opengui:open-settings"));
+              }}
+            >
+              {t("modelSelector.openSettings")}
+            </Button>
+          </div>
+        ) : (
+          <Tabs value={dialogHarnessId} onValueChange={onHarnessTabChange} className="gap-3">
+            <div className="px-4">
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-1 p-1">
+                {harnessRows.map((harnessId) => {
+                  const hint = harnessInventoryHint(inventoryByHarness.get(harnessId), t);
+                  const disabled = Boolean(lockedHarnessId && lockedHarnessId !== harnessId);
+                  return (
+                    <TabsTrigger
+                      key={harnessId}
+                      value={harnessId}
+                      disabled={disabled}
+                      title={hint || HARNESS_LABELS[harnessId]}
+                      className="min-w-0 flex-none px-3 py-1.5 text-xs"
+                    >
+                      {HARNESS_LABELS[harnessId]}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
             </div>
+
             {lockedHarnessId && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                {t("modelSelector.backendLocked")}
+              <p className="px-4 text-[11px] text-muted-foreground">
+                {t("modelSelector.harnessLocked")}
               </p>
             )}
-          </div>
-        )}
 
-        <div className="px-4 pb-3">
-          <div className="relative">
-            <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={handleInputKeyDown}
-              onFocus={(e) => e.target.select()}
-              placeholder={t("modelSelector.searchPlaceholder")}
-              className="h-8 pl-8 text-xs"
-            />
-          </div>
-        </div>
-
-        <div className="max-h-[60vh] space-y-4 overflow-y-auto px-2 pb-4">
-          {!normalizedQuery && favoriteModels.length > 0 && (
-            <div className="space-y-1">
-              <div className="px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                {t("modelSelector.favorites")}
-              </div>
-              {favoriteModels.map((model) => (
-                <ModelRow
-                  key={`fav-${model.value}`}
-                  model={model}
-                  isCurrent={model.value === currentValue}
-                  isActive={model.value === activeValue}
-                  isFavorite={true}
-                  onSelect={selectModel}
-                  onToggleFavorite={toggleFavorite}
-                  onMouseEnter={setActiveValue}
-                  showProvider
-                />
-              ))}
-            </div>
-          )}
-
-          {!normalizedQuery && recentModels.length > 0 && (
-            <div className="space-y-1">
-              <div className="px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                {t("modelSelector.recent")}
-              </div>
-              {recentModels.map((model) => (
-                <ModelRow
-                  key={`recent-${model.value}`}
-                  model={model}
-                  isCurrent={model.value === currentValue}
-                  isActive={model.value === activeValue}
-                  isFavorite={favoriteValues.has(model.value)}
-                  onSelect={selectModel}
-                  onToggleFavorite={toggleFavorite}
-                  onMouseEnter={setActiveValue}
-                  showProvider
-                />
-              ))}
-            </div>
-          )}
-
-          {hasResults ? (
-            filteredGroups.map((group) => (
-              <div key={group.id} className="space-y-1">
-                <div className="flex items-center gap-1.5 px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  <ProviderIcon provider={group.id} className="size-3.5 shrink-0" />
-                  {group.name}
-                </div>
-                {group.models.map((model) => (
-                  <ModelRow
-                    key={model.value}
-                    model={model}
-                    isCurrent={model.value === currentValue}
-                    isActive={model.value === activeValue}
-                    isFavorite={favoriteValues.has(model.value)}
-                    onSelect={selectModel}
-                    onToggleFavorite={toggleFavorite}
-                    onMouseEnter={setActiveValue}
-                    showProvider={Boolean(normalizedQuery)}
+            <TabsContent value={dialogHarnessId} className="mt-0 outline-none">
+              <div className="px-4 pb-3">
+                <div className="relative">
+                  <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    ref={inputRef}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onKeyDown={handleInputKeyDown}
+                    onFocus={(e) => e.target.select()}
+                    placeholder={t("modelSelector.searchPlaceholder")}
+                    className="h-8 pl-8 text-xs"
+                    disabled={!showModelList && !normalizedQuery}
                   />
-                ))}
+                </div>
               </div>
-            ))
-          ) : (
-            <div className="px-2 text-xs text-muted-foreground">
-              {t("modelSelector.noModelsMatch", { query: query.trim() })}
-            </div>
-          )}
-        </div>
+
+              <div className="max-h-[60vh] space-y-4 overflow-y-auto px-2 pb-4">
+                {(catalogLoading || !catalogMatchesDialog) && (
+                  <div className="flex items-center justify-center gap-2 px-2 py-8 text-xs text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    {t("modelSelector.loadingCatalog")}
+                  </div>
+                )}
+
+                {showEmptyHarness && (
+                  <div className="space-y-2 px-2 py-4 text-xs text-muted-foreground">
+                    <p>{t("modelSelector.noModelsForHarness")}</p>
+                    <p>{t("modelSelector.noModelsForHarnessHint")}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        closeSelector();
+                        window.dispatchEvent(new CustomEvent("opengui:open-settings"));
+                      }}
+                    >
+                      {t("modelSelector.openSettings")}
+                    </Button>
+                  </div>
+                )}
+
+                {showModelList && !normalizedQuery && favoriteModels.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                      {t("modelSelector.favorites")}
+                    </div>
+                    {favoriteModels.map((model) => (
+                      <ModelRow
+                        key={`fav-${model.value}`}
+                        model={model}
+                        isCurrent={model.value === currentValue}
+                        isActive={model.value === activeValue}
+                        isFavorite={true}
+                        onSelect={selectModel}
+                        onToggleFavorite={toggleFavorite}
+                        onMouseEnter={setActiveValue}
+                        showProvider
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {showModelList && !normalizedQuery && recentModels.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                      {t("modelSelector.recent")}
+                    </div>
+                    {recentModels.map((model) => (
+                      <ModelRow
+                        key={`recent-${model.value}`}
+                        model={model}
+                        isCurrent={model.value === currentValue}
+                        isActive={model.value === activeValue}
+                        isFavorite={favoriteValues.has(model.value)}
+                        onSelect={selectModel}
+                        onToggleFavorite={toggleFavorite}
+                        onMouseEnter={setActiveValue}
+                        showProvider
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {showModelList && hasResults ? (
+                  filteredGroups.map((group) => (
+                    <div key={group.id} className="space-y-1">
+                      <div className="flex items-center gap-1.5 px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                        <ProviderIcon provider={group.id} className="size-3.5 shrink-0" />
+                        {group.name}
+                      </div>
+                      {group.models.map((model) => (
+                        <ModelRow
+                          key={model.value}
+                          model={model}
+                          isCurrent={model.value === currentValue}
+                          isActive={model.value === activeValue}
+                          isFavorite={favoriteValues.has(model.value)}
+                          onSelect={selectModel}
+                          onToggleFavorite={toggleFavorite}
+                          onMouseEnter={setActiveValue}
+                          showProvider={Boolean(normalizedQuery)}
+                        />
+                      ))}
+                    </div>
+                  ))
+                ) : showModelList && normalizedQuery ? (
+                  <div className="px-2 text-xs text-muted-foreground">
+                    {t("modelSelector.noModelsMatch", { query: query.trim() })}
+                  </div>
+                ) : null}
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );

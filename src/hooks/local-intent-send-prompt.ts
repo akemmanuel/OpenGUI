@@ -1,7 +1,7 @@
 import type { HarnessId } from "@/agents";
 import type { HarnessTarget } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
-import { decidePromptIntentDispatch } from "@/hooks/local-intent-orchestration";
+import { decidePromptIntentDispatch } from "@/features/local-intent/decide-prompt-intent";
 import type { QueueMode } from "@/hooks/agent-state-types";
 import type { OpenGuiClient } from "@/protocol/client";
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";

@@ -1,4 +1,4 @@
-import type { HarnessId } from "../../src/agents/index.ts";
+import type { HarnessId } from "@opengui/protocol";
 import {
   composeFrontendSessionId,
   decodeCanonicalDirectorySessionId,
@@ -43,7 +43,7 @@ export async function resolveSessionRecordForRead(input: {
 }
 
 /**
- * Resolve a session for queue/control mutations: in-memory cache, then harness relist + `ensureSession`.
+ * Resolve a session for Queue dispatch and control mutations: dispatch index cache, then harness relist + `ensureSession`.
  * Never invents identity from wire id alone (ADR 0006).
  */
 export async function resolveSessionRecordForMutation(input: {

@@ -163,7 +163,8 @@
     "stop": "Detener",
     "stopGenerating": "Detener generación",
     "send": "Enviar",
-    "sendMessage": "Enviar mensaje"
+    "sendMessage": "Enviar mensaje",
+    "chooseHarnessAndModelBeforeSend": "Elige un harness y un modelo antes de enviar."
   },
   "variantSelector": {
     "off": "apagado",
@@ -174,10 +175,23 @@
   },
   "modelSelector": {
     "selectModel": "Seleccionar modelo",
+    "chooseHarnessAndModel": "Elegir harness y modelo",
+    "dialogTitle": "Elegir harness y modelo",
     "searchPlaceholder": "Buscar proveedor, modelo o ID...",
     "favorites": "Favoritos",
     "recent": "Recientes",
+    "harnessLocked": "El harness está fijado para esta sesión.",
     "backendLocked": "Backend bloqueado para esta sesión.",
+    "changeHarness": "Cambiar harness",
+    "loadingCatalog": "Cargando modelos para este proyecto…",
+    "noModelsForHarness": "No hay modelos para este harness en este proyecto.",
+    "noModelsForHarnessHint": "Prueba otro harness o revisa las credenciales en Ajustes.",
+    "openSettings": "Abrir ajustes",
+    "harnessNotInstalled": "CLI no instalado",
+    "noHarnessInstalled": "No hay ningún CLI de harness instalado. Instala uno en Ajustes para elegir un modelo.",
+    "checkingHarnesses": "Comprobando harnesses instalados…",
+    "harnessCliFound": "Instalado — conecta en Ajustes si faltan modelos",
+    "harnessReady": "{{count}} modelos en inventario",
     "noModelsMatch": "Ningún modelo coincide con \"{{query}}\".",
     "addFavorite": "Añadir a favoritos",
     "removeFavorite": "Quitar de favoritos"
@@ -423,6 +437,11 @@
   "startup": {
     "checkingLocalServer": "Comprobando servidor local...",
     "startingLocalServer": "Iniciando servidor local..."
+  },
+  "projectHarnessStatus": {
+    "title": "Errores de harness para {{project}}",
+    "hint": "Puedes seguir escribiendo y elegir otro harness en el selector de modelo. El historial de sesiones puede estar incompleto para los harnesses indicados.",
+    "sidebarSummary": "{{count}} error(es) de harness"
   },
   "sessionError": {
     "title": "Error del agente",

@@ -1,4 +1,4 @@
-import type { HarnessId } from "../../src/agents/index.ts";
+import type { HarnessId } from "@opengui/protocol";
 import {
   composeFrontendSessionId,
   decodeCanonicalDirectorySessionId,
@@ -12,7 +12,6 @@ import type { StorageService } from "./storage-service.ts";
 import type {
   CreateSessionInput,
   ListSessionsInput,
-  ListSessionsResult,
   SessionRecord,
   UpdateSessionInput,
 } from "./session-types.ts";
@@ -26,22 +25,6 @@ interface SessionMappingRecord {
   updatedAt: string;
 }
 
-function encodeCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset }), "utf8").toString("base64url");
-}
-
-function decodeCursor(cursor?: string | null): number {
-  if (!cursor) return 0;
-  try {
-    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
-      offset?: unknown;
-    };
-    return typeof parsed.offset === "number" && parsed.offset >= 0 ? parsed.offset : 0;
-  } catch {
-    return 0;
-  }
-}
-
 function sameMetadata(
   left: Record<string, unknown> | undefined,
   right: Record<string, unknown> | undefined,
@@ -49,7 +32,11 @@ function sameMetadata(
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
-export class SessionService {
+/**
+ * In-memory **Session dispatch index** for Queue dispatch and control mutations only.
+ * Not a Session list or transcript source (Harness owns those — ADR 0004/0006).
+ */
+export class SessionDispatchIndex {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly rawToCanonical = new Map<string, string>();
   private readonly harnessRawToCanonical = new Map<string, Set<string>>();
@@ -68,40 +55,11 @@ export class SessionService {
     if (this.initialized) return;
     if (this.initPromise) return await this.initPromise;
     this.initPromise = (async () => {
-      // Sessions and Session transcripts are Harness-owned. This in-memory index is
-      // rebuilt from Harness results during Project hydration and never restored
-      // from backend persistence.
+      // Never restored from backend persistence as session membership truth.
       this.initialized = true;
       this.initPromise = null;
     })();
     await this.initPromise;
-  }
-
-  /**
-   * In-memory index pagination only — not a product session list (ADR 0004/0006).
-   * Sidebar and APIs use `listDirectorySessionsFromHarness`.
-   */
-  async listSessions(input: ListSessionsInput = {}): Promise<ListSessionsResult> {
-    await this.ensureInitialized();
-    const limit =
-      typeof input.limit === "number" && Number.isFinite(input.limit)
-        ? Math.max(1, Math.min(200, Math.floor(input.limit)))
-        : 200;
-    const offset = decodeCursor(input.cursor);
-    const filtered = [...this.sessions.values()]
-      .filter((session) => {
-        if (input.directory && session.directory !== input.directory) return false;
-        if (input.harnessId && session.harnessId !== input.harnessId) return false;
-        return true;
-      })
-      .sort((left, right) => {
-        const byUpdated = right.updatedAt.localeCompare(left.updatedAt);
-        return byUpdated !== 0 ? byUpdated : right.id.localeCompare(left.id);
-      });
-
-    const sessions = filtered.slice(offset, offset + limit);
-    const nextCursor = offset + limit < filtered.length ? encodeCursor(offset + limit) : null;
-    return { sessions, nextCursor };
   }
 
   async getSession(
@@ -358,7 +316,6 @@ export class SessionService {
 export type {
   CreateSessionInput,
   ListSessionsInput,
-  ListSessionsResult,
   SessionRecord,
   UpdateSessionInput,
 } from "./session-types.ts";

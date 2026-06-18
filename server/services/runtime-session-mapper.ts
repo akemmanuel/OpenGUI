@@ -1,10 +1,10 @@
-import type { HarnessId } from "../../src/agents/index.ts";
+import type { HarnessId } from "@opengui/protocol";
 import {
   composeFrontendSessionId,
   rawSessionIdForHarness,
 } from "../../src/lib/session-identity.ts";
 import { cleanSessionTitle } from "../../src/lib/session-title.ts";
-import type { SessionService } from "./session-service.ts";
+import type { SessionDispatchIndex } from "./session-dispatch-index.ts";
 import type { CreateSessionInput, SessionRecord } from "./session-types.ts";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -92,9 +92,9 @@ export function toSessionRecordInputFromRuntime(
   };
 }
 
-/** Maps a harness runtime session into `SessionService.ensureSession` (mutations + events only). */
+/** Maps a harness runtime session into `SessionDispatchIndex.ensureSession` (mutations + events only). */
 export async function ensureSessionFromRuntime(input: {
-  sessions: SessionService;
+  sessions: SessionDispatchIndex;
   runtimeSession: unknown;
   directory: string;
   harnessId: HarnessId;

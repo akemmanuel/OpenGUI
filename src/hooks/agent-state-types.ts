@@ -15,6 +15,7 @@ import type {
   WorktreeParentMap,
 } from "@/hooks/agent-state-persistence";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
+import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
 import type { QueuedPrompt, SessionDraftMap } from "@/lib/session-drafts";
 import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
 
@@ -83,6 +84,8 @@ export interface InternalAgentState {
   activeWorkspaceId: string;
   /** Maps connected project directories to their workspace. */
   projectWorkspaceMap: Record<string, Set<string>>;
+  /** Per-project harness hydration (session list / connect), keyed by projectKey. */
+  projectHydration: Record<string, ProjectHydrationState | undefined>;
   /** Per-project connection statuses keyed by directory */
   connections: Record<string, ConnectionStatus>;
   /** All sessions from all connected projects */

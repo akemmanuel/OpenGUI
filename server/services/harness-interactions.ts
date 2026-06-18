@@ -1,5 +1,5 @@
+import type { HarnessId } from "@opengui/protocol";
 import type { QuestionAnswer } from "@opencode-ai/sdk/v2/client";
-import type { HarnessId } from "../../src/agents/index.ts";
 import type { BackendServiceContext, SessionRecord } from "./index.ts";
 
 export async function respondToHarnessPermission(input: {

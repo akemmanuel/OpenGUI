@@ -21,6 +21,7 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     workspaces: [],
     activeWorkspaceId: "workspace-1",
     projectWorkspaceMap: {},
+    projectHydration: {},
     connections: {},
     sessions: [],
     activeSessionId: null,

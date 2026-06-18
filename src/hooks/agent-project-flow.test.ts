@@ -23,6 +23,7 @@ function localWorkspaceState(): InternalAgentState {
     ],
     activeWorkspaceId: "local",
     projectWorkspaceMap: {},
+    projectHydration: {},
     connections: {
       "local\u0000/tmp/chat-root": createProjectConnectionStatus(
         "connected",

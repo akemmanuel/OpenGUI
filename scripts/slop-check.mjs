@@ -71,6 +71,21 @@ const checks = [
     cmd: `rg 'ensureSession' server/services/session-harness-list.ts server/services/session-query.ts 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
+  {
+    name: "no product listSessions on SessionDispatchIndex",
+    cmd: `rg 'listSessions(' server/services/session-dispatch-index.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no session-service.ts filename (renamed to session-dispatch-index)",
+    cmd: `test -f server/services/session-service.ts && echo found || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "backend routes use @opengui/protocol not src/agents",
+    cmd: `rg 'from "../../../../src/agents' packages/backend/src 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
 ];
 
 let failed = 0;

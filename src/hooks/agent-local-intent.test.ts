@@ -1,13 +1,15 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { initI18n, i18n } from "@/i18n";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
-import { createLocalIntentOrchestrator } from "./agent-local-intent";
+import { createLocalIntentOrchestrator } from "@/features/local-intent";
 
 function makeState(overrides: Partial<InternalAgentState> = {}): InternalAgentState {
   return {
     workspaces: [],
     activeWorkspaceId: "workspace-1",
     projectWorkspaceMap: {},
+    projectHydration: {},
     connections: {},
     sessions: [],
     activeSessionId: null,
@@ -103,6 +105,7 @@ describe("createLocalIntentOrchestrator", () => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendPrompt("Ship it");
@@ -123,6 +126,7 @@ describe("createLocalIntentOrchestrator", () => {
   });
 
   test("requires model before creating a fresh session", async () => {
+    await initI18n();
     const state = makeState({ activeTargetDirectory: "/repo", selectedModel: null });
     const actions: Array<Record<string, unknown>> = [];
     let created = false;
@@ -145,13 +149,17 @@ describe("createLocalIntentOrchestrator", () => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendPrompt("Ship it");
 
     expect(created).toBe(false);
     expect(actions).toEqual([
-      { type: "SET_ERROR", payload: "Choose a Harness model before sending." },
+      {
+        type: "SET_ERROR",
+        payload: i18n.t("prompt.chooseHarnessAndModelBeforeSend"),
+      },
     ]);
   });
 
@@ -194,6 +202,7 @@ describe("createLocalIntentOrchestrator", () => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendPrompt("Continue");
@@ -254,6 +263,7 @@ describe("createLocalIntentOrchestrator", () => {
       requestSessionAutoName: () => undefined,
       dispatch: () => undefined,
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendPrompt("Where are you?");
@@ -308,6 +318,7 @@ describe("createLocalIntentOrchestrator", () => {
         actions.push(action as unknown as Record<string, unknown>);
       },
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendPrompt("Queue this");
@@ -371,6 +382,7 @@ describe("createLocalIntentOrchestrator", () => {
       requestSessionAutoName: () => undefined,
       dispatch: () => undefined,
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendPrompt("Queue without directory");
@@ -422,6 +434,7 @@ describe("createLocalIntentOrchestrator", () => {
       requestSessionAutoName: () => undefined,
       dispatch: () => undefined,
       sessionCreatingRef: { current: false },
+      getFallbackHarnessId: () => "claude-code" as const,
     });
 
     await orchestrator.sendCommand("review", "--all");

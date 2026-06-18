@@ -21,14 +21,15 @@ Four layers — same definitions as [`CONTEXT.md` → Architecture](../CONTEXT.m
 
 Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backend-sdk-split.md). Current mapping:
 
-| Layer               | Package / entry                  | Main paths                                                                                                        |
-| ------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Runtime             | `@opengui/runtime`               | `packages/runtime/src/` (`host.ts`, `harness-service.ts`, `harness-runtime.ts`, `open-gui.ts`)                    |
-| Harness Adapters    | `packages/runtime/src/adapters/` | `*-bridge.ts`, `lib/harness-adapter-kit.ts` (shared kit at repo root)                                             |
-| Runtime descriptors | Shared with Frontend protocol    | `src/agents/` (`backend.ts`, `cli-harness-factory.ts`, `protocol/`)                                               |
-| Backend             | Process entry still monolithic   | `server/web-server.ts` embeds `createRuntimeHost`; `server/services/*`; `@opengui/backend` is a **scaffold** only |
-| Frontend            | React app                        | `src/` (`App.tsx`, `components/`, `hooks/`, `features/`, `protocol/`)                                             |
-| Desktop Shell       | Electron                         | `main.ts`, `preload.ts`, `main/backend-sidecar.ts`                                                                |
+| Layer               | Package / entry                  | Main paths                                                                                                                                                             |
+| ------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared wire types   | `@opengui/protocol`              | `packages/protocol/src/` (`HarnessId`, `OpenGuiCapabilities`, `QueueMode`, `SelectedModel`)                                                                            |
+| Runtime             | `@opengui/runtime`               | `packages/runtime/src/` (`host.ts`, `harness-service.ts`, `harness-runtime.ts`, `open-gui.ts`)                                                                         |
+| Harness Adapters    | `packages/runtime/src/adapters/` | `*-bridge.ts`, `lib/harness-adapter-kit.ts` (shared kit at repo root)                                                                                                  |
+| Runtime descriptors | Shared with Frontend protocol    | `src/agents/` (`backend.ts`, `cli-harness-factory.ts`, `protocol/`)                                                                                                    |
+| Backend             | Host entry + product HTTP routes | `server/web-server.ts` (SSE, RPC, FS, static); `registerProductApiRoutes` from `@opengui/backend`; `SessionDispatchIndex` for queue/control only (`server/services/*`) |
+| Frontend            | React app                        | `src/` (`App.tsx`, `components/`, `hooks/`, `features/`, `protocol/`)                                                                                                  |
+| Desktop Shell       | Electron                         | `main.ts`, `preload.ts`, `main/backend-sidecar.ts`                                                                                                                     |
 
 **Rule:** UI and hooks call **Backend** APIs only, not bridge IPC. Bridges register inside the Backend process via Runtime ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
 
@@ -80,6 +81,7 @@ The current frontend is still centered on `src/App.tsx`, but several orchestrati
 - `features/session/useActiveSessionQueue.ts` owns active-session queue UI handlers.
 - `features/session/useChatSessionSurface.ts` derives the active chat surface state.
 - `features/worktree/useActiveWorktreeMerge.ts` owns active worktree merge and pull-request actions.
+- `features/local-intent/` owns **Local intent orchestration** (Pending prompt → Agent send, Queued prompt dispatch from PromptBox). `HarnessProvider` (`use-agent-impl-core.tsx`) wires React state and delegates `sendPrompt` / `sendCommand` / queue side effects through `useLocalIntentOrchestration`.
 
 New UI orchestration should follow this direction: keep reusable visual pieces in `src/components/`, keep cross-component state orchestration in a named `src/features/<area>/` hook, and keep pure domain utilities in `src/lib/`.
 

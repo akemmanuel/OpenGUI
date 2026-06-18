@@ -1,5 +1,4 @@
-import type { QueueMode } from "../../src/lib/session-drafts.ts";
-import type { SelectedModel } from "../../src/types/electron.d.ts";
+import type { QueueMode, SelectedModel } from "@opengui/protocol";
 import type { BackendEventBus } from "./event-bus.ts";
 import { sessionDirectoryHint } from "./directory-scope.ts";
 import { resolveSessionRecordForMutation, wireSessionIdFromRecord } from "./session-resolve.ts";

@@ -1,9 +1,9 @@
-import type { SelectedModel } from "@/types/electron";
+import type { QueueMode, SelectedModel } from "@opengui/protocol";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { persistOrRemoveJSON, storageParsed } from "@/lib/safe-storage";
 
+export type { QueueMode } from "@opengui/protocol";
 export type SessionDraftMap = Record<string, string>;
-export type QueueMode = "queue" | "interrupt" | "after-part";
 export type QueuedPrompt = {
   id: string;
   text: string;

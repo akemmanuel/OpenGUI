@@ -8,6 +8,7 @@ import type {
   QuestionRequest,
 } from "@/protocol/harness-types";
 import type { HarnessId } from "@/agents";
+import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type {
   InternalAgentState,
@@ -16,6 +17,7 @@ import type {
   TurnRun,
   QueuedPrompt,
   Session,
+  WorkspaceResourceState,
 } from "@/hooks/agent-state-types";
 import type {
   ProjectMetaMap,
@@ -79,6 +81,8 @@ export interface ConnectionContextValue {
     }
   >;
   connections: Record<string, ConnectionStatus>;
+  /** Per-project harness hydration keyed by projectKey (directory in sidebar uses parseProjectKey). */
+  projectHydration: Record<string, ProjectHydrationState | undefined>;
   workspaceDirectory: string | null;
   defaultChatDirectory: string | null;
   workspaceServerUrl: string | null;
@@ -95,6 +99,7 @@ export interface ConnectionContextValue {
   worktreeParents: WorktreeParentMap;
   projectMeta: ProjectMetaMap;
   pendingWorktreeCleanup: InternalAgentState["pendingWorktreeCleanup"];
+  workspaceResources: Record<string, WorkspaceResourceState>;
 }
 
 export interface ActionsContextValue {
@@ -115,6 +120,7 @@ export interface ActionsContextValue {
   replyQuestion: (answers: QuestionAnswer[]) => Promise<void>;
   rejectQuestion: () => Promise<void>;
   setModel: (model: SelectedModel | null) => void;
+  setPromptBoxSelection: (input: { harnessId: HarnessId; model: SelectedModel }) => void;
   setAgent: (agent: string | null) => void;
   cycleVariant: () => void;
   revertVariant: () => void;
@@ -143,7 +149,6 @@ export interface ActionsContextValue {
   ) => void;
   setDefaultChatDirectory: (directory: string | null) => void;
   setActiveTargetDirectory: (directory: string) => void;
-  setActiveTargetBackend: (harnessId: HarnessId) => void;
   revertToMessage: (messageID: string) => Promise<void>;
   unrevert: () => Promise<void>;
   forkFromMessage: (messageID: string) => Promise<void>;

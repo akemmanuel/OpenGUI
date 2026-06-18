@@ -31,6 +31,8 @@ import {
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { getSessionDraftKey } from "@/lib/session-drafts";
+import { hasPromptBoxSelectionForSend } from "@/hooks/prompt-box-selection";
+import { useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { shouldShowSendButton, shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
@@ -95,10 +97,17 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       registerWorktree,
       connectToProject,
     } = useActions();
-    const { commands, agents, selectedAgent } = useModelState();
+    const { commands, agents, selectedAgent, selectedModel } = useModelState();
+    const fallbackHarnessId = useCurrentHarnessId();
     const capabilities = useBackendCapabilities();
     const canManageMcp = Boolean(capabilities?.mcp);
-    const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
+    const {
+      sessions,
+      activeSessionId,
+      activeTargetDirectory,
+      activeTargetHarnessId,
+      sessionDrafts,
+    } = useSessionState();
     const { messages } = useMessages();
 
     const promptCompaction = usePromptCompaction({
@@ -228,6 +237,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
     const hasPromptText = promptSubmit.hasValue;
     const isSessionRunning = Boolean(isLoading);
+    const canSendSelection = hasPromptBoxSelectionForSend({
+      activeSession,
+      activeTargetHarnessId,
+      fallbackHarnessId,
+      selectedModel,
+    });
 
     React.useEffect(() => {
       fileMention.reset();
@@ -444,7 +459,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                       : t("prompt.queue")
                     : t("prompt.send")
                 }
-                disabled={isDisabled || !hasPromptText}
+                disabled={isDisabled || !hasPromptText || !canSendSelection}
                 onClick={(e) => {
                   e.stopPropagation();
                   void promptSubmit.submit();

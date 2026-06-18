@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { decidePromptIntentDispatch } from "@/hooks/local-intent-orchestration";
+import { decidePromptIntentDispatch } from "@/features/local-intent/decide-prompt-intent";
 
 describe("decidePromptIntentDispatch", () => {
   test("returns no dispatch when there is no Session entry", () => {

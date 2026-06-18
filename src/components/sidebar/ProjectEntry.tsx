@@ -24,6 +24,9 @@ import type { ConnectionStatus, GitWorktree } from "@/types/electron";
 import { ProjectItemMenu, ProjectMenuContent } from "@/components/SidebarItemMenus";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
+import { listProjectHarnessSessionQueryErrors } from "@/hooks/session-query-errors";
+import { makeProjectKey } from "@/hooks/agent-session-utils";
 import { isSidebarProjectPinned } from "@/lib/sidebar-project-meta";
 
 export function ProjectEntry({
@@ -47,6 +50,7 @@ export function ProjectEntry({
   worktreeDirs,
   projectMeta,
   workspaceId,
+  projectHydration,
   client,
   t,
   renderSessionRow,
@@ -83,6 +87,7 @@ export function ProjectEntry({
   worktreeDirs: Set<string>;
   projectMeta: ProjectMetaMap;
   workspaceId?: string | null;
+  projectHydration: Record<string, ProjectHydrationState | undefined>;
   client: OpenGuiClient;
   t: (key: string, options?: Record<string, unknown>) => string;
   renderSessionRow: (
@@ -118,6 +123,11 @@ export function ProjectEntry({
   const canShowLess = visibleCount > SESSION_PAGE_SIZE;
   const normalizedDirectory = normalizeProjectPath(directory);
   const isPinned = isSidebarProjectPinned(projectMeta, workspaceId, directory);
+  const harnessErrorCount = workspaceId
+    ? listProjectHarnessSessionQueryErrors(
+        projectHydration[makeProjectKey(workspaceId, normalizedDirectory)],
+      ).length
+    : 0;
   const canCloseOtherProjects = availableProjectDirectories.some(
     (projectDirectory) => normalizeProjectPath(projectDirectory) !== normalizedDirectory,
   );
@@ -245,6 +255,14 @@ export function ProjectEntry({
                     />
                   )}
                   <span className="truncate min-w-0 flex-1">{getProjectName(directory)}</span>
+                  {harnessErrorCount > 0 && (
+                    <span
+                      className="shrink-0 text-[10px] font-medium text-destructive group-data-[collapsible=icon]:hidden"
+                      title={t("projectHarnessStatus.sidebarSummary", { count: harnessErrorCount })}
+                    >
+                      {t("projectHarnessStatus.sidebarSummary", { count: harnessErrorCount })}
+                    </span>
+                  )}
                   {isProjectConnected && (
                     <div
                       role="button"

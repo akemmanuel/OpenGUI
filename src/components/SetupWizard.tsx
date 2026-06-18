@@ -4,6 +4,7 @@ import { AlertCircle, ArrowRight, Check, Folder, LoaderCircle, RotateCw, X } fro
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { createHarnessInventoryView } from "@/hooks/harness-inventory-view";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageSet } from "@/lib/safe-storage";
 import { useOpenGuiClient } from "@/protocol/provider";
@@ -17,22 +18,8 @@ interface Props {
   onComplete: () => void;
 }
 
-function hasModelReadyHarness(inventories: HarnessInventory[]) {
-  return inventories.some(
-    (inventory) => inventory.status === "ready" && inventory.models.length > 0,
-  );
-}
-
-function hasInstalledHarness(inventories: HarnessInventory[]) {
-  return inventories.some((inventory) => inventory.installed);
-}
-
-function hasUsableHarness(inventories: HarnessInventory[]) {
-  return hasModelReadyHarness(inventories) || hasInstalledHarness(inventories);
-}
-
 function harnessStateFromInventories(inventories: HarnessInventory[]): HarnessState {
-  return hasUsableHarness(inventories) ? "ready" : "none";
+  return createHarnessInventoryView({ inventories }).hasUsableHarness ? "ready" : "none";
 }
 
 function stepNumber(step: Step) {
@@ -54,7 +41,7 @@ export function SetupWizard({ onComplete }: Props) {
   const [folder, setFolder] = useState("");
 
   const currentStepNumber = stepNumber(step);
-  const canUseAnyHarness = hasUsableHarness(inventories);
+  const canUseAnyHarness = createHarnessInventoryView({ inventories }).hasUsableHarness;
 
   const title = useMemo(() => {
     switch (step) {

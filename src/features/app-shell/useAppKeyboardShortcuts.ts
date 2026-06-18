@@ -95,18 +95,17 @@ export function useAppKeyboardShortcuts({
   );
   useKeyboardShortcuts(keyboardShortcuts);
 
-  useModelSelectorChord(capabilities?.models);
+  useModelSelectorChord();
 
   return { queueMode, setQueueMode };
 }
 
-function useModelSelectorChord(modelsEnabled: boolean | undefined) {
+function useModelSelectorChord() {
   useEffect(() => {
     let chordActive = false;
     let chordTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!modelsEnabled) return;
       if (event.key === "x" && (event.ctrlKey || event.metaKey)) {
         const selection = window.getSelection();
         if (selection && selection.toString().length > 0) return;
@@ -139,5 +138,5 @@ function useModelSelectorChord(modelsEnabled: boolean | undefined) {
       window.removeEventListener("keydown", handleKeyDown);
       if (chordTimer) clearTimeout(chordTimer);
     };
-  }, [modelsEnabled]);
+  }, []);
 }

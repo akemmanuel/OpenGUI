@@ -95,6 +95,7 @@ export function AppSidebar({
     workspaceDirectory,
     defaultChatDirectory,
     bootState,
+    projectHydration,
   } = useConnectionState();
 
   // Inline rename state
@@ -388,6 +389,7 @@ export function AppSidebar({
     pendingPermissions,
     pendingQuestions,
     projectMeta,
+    projectHydration,
     queuedPrompts,
     refreshGitInfo,
     remoteUrls,

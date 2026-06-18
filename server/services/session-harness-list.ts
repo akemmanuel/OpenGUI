@@ -1,4 +1,4 @@
-import type { HarnessId } from "../../src/agents/index.ts";
+import type { HarnessId } from "@opengui/protocol";
 import type { BackendServiceContext } from "./index.ts";
 import { runtimeSessionBelongsToDirectory } from "./harness-scope.ts";
 import { toSessionRecordInputFromRuntime } from "./runtime-session-mapper.ts";

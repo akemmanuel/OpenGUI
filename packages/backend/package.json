@@ -11,7 +11,9 @@
     }
   },
   "dependencies": {
-    "@opengui/runtime": "workspace:*"
+    "@opengui/protocol": "workspace:*",
+    "@opengui/runtime": "workspace:*",
+    "hono": "^4.12.23"
   },
   "engines": {
     "node": ">=20"

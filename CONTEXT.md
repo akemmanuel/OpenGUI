@@ -124,6 +124,10 @@ _Avoid_: Mobile app, phone client
 Backend-owned credentials or references needed for Harness execution, such as API keys, OAuth tokens, or CLI-authenticated provider state. The Frontend may collect or configure them, but execution uses credentials available to the OpenGUI Backend.
 _Avoid_: frontend secret, local browser credential
 
+**Provider (Harness catalog)**:
+A grouping of models reported by a Harness for a project scope (for example Anthropic or OpenAI sections inside the harness → provider → model selector). This is catalog structure from `loadResources`, not Provider credentials alone.
+_Avoid_: API vendor credentials, backend provider table
+
 **Everyday Builder**:
 A non-technical or lightly technical person using OpenGUI to get coding-agent help with practical software work, such as websites, WordPress, PHP, scripts, or small business tools. They may recognize terminals and files but should not need to understand package managers, daemon processes, ports, environment variables, or CLI authentication flows to use the product.
 _Avoid_: Normie, power user, professional developer only
@@ -167,7 +171,7 @@ A frontend state where the Shell has no saved Workspace and therefore no active 
 _Avoid_: disconnected workspace, empty local workspace
 
 **PromptBox selection**:
-Frontend-local composition state choosing the Harness, model, agent, and variant for the next Agent send. When a Frontend loads an existing Session, PromptBox selection is replaced by the latest User message selection in that Session; when a Frontend starts a new Pending prompt target, PromptBox selection is inherited from the immediately previous in-memory PromptBox selection.
+Frontend-local composition state for the next Agent send: an explicit **Harness**, then a **model** chosen within a **Provider (Harness catalog)** section in the harness → provider → model selector, plus agent and variant as today. When a Frontend loads an existing Session, PromptBox selection is replaced by the latest User message selection in that Session; when a Frontend starts a new Pending prompt target, PromptBox selection is inherited from the immediately previous in-memory PromptBox selection.
 _Avoid_: shared session setting, backend default, assistant model, persisted default, compatibility fallback
 
 **PromptBox action controls**:

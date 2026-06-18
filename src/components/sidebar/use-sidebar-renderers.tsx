@@ -8,6 +8,7 @@ import type {
   WorktreeParentMap,
 } from "@/hooks/agent-state-persistence";
 import type { OpenGuiClient } from "@/protocol/client";
+import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
 import type { ConnectionStatus, GitWorktree } from "@/types/electron";
 import type { SidebarCollapsedProjects } from "@/lib/sidebar-collapsed";
 
@@ -38,6 +39,7 @@ interface UseSidebarRenderersArgs {
   pendingPermissions: Record<string, unknown>;
   pendingQuestions: Record<string, unknown>;
   projectMeta: ProjectMetaMap;
+  projectHydration: Record<string, ProjectHydrationState | undefined>;
   queuedPrompts: Record<string, unknown[]>;
   refreshGitInfo: (directory: string) => void | Promise<void>;
   remoteUrls: Record<string, string>;
@@ -100,6 +102,7 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     pendingPermissions,
     pendingQuestions,
     projectMeta,
+    projectHydration,
     queuedPrompts,
     refreshGitInfo,
     remoteUrls,
@@ -206,6 +209,7 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       worktreeDirs={worktreeDirs}
       projectMeta={projectMeta}
       workspaceId={workspaceId}
+      projectHydration={projectHydration}
       client={client}
       t={t}
       renderSessionRow={renderSessionRow}

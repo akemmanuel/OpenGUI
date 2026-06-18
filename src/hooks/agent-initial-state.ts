@@ -15,6 +15,7 @@ export const initialAgentState: InternalAgentState = {
   workspaces: initialWorkspaces,
   activeWorkspaceId: getActiveWorkspaceId(initialWorkspaces),
   projectWorkspaceMap: {},
+  projectHydration: {},
   connections: {},
   sessions: [],
   activeSessionId: null,

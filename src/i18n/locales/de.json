@@ -163,7 +163,8 @@
     "stop": "Stoppen",
     "stopGenerating": "Generierung stoppen",
     "send": "Senden",
-    "sendMessage": "Nachricht senden"
+    "sendMessage": "Nachricht senden",
+    "chooseHarnessAndModelBeforeSend": "Wähle Harness und Modell, bevor du sendest."
   },
   "variantSelector": {
     "off": "aus",
@@ -174,10 +175,23 @@
   },
   "modelSelector": {
     "selectModel": "Modell auswählen",
+    "chooseHarnessAndModel": "Harness & Modell wählen",
+    "dialogTitle": "Harness & Modell wählen",
     "searchPlaceholder": "Anbieter, Modell oder ID suchen...",
     "favorites": "Favoriten",
     "recent": "Zuletzt verwendet",
+    "harnessLocked": "Harness ist für diese Sitzung festgelegt.",
     "backendLocked": "Backend ist für diese Sitzung festgelegt.",
+    "changeHarness": "Harness wechseln",
+    "loadingCatalog": "Modelle für dieses Projekt werden geladen…",
+    "noModelsForHarness": "Keine Modelle für diesen Harness in diesem Projekt.",
+    "noModelsForHarnessHint": "Anderen Harness wählen oder Anmeldedaten in den Einstellungen prüfen.",
+    "openSettings": "Einstellungen öffnen",
+    "harnessNotInstalled": "CLI nicht installiert",
+    "noHarnessInstalled": "Kein Harness-CLI installiert. Installiere einen in den Einstellungen, um ein Modell zu wählen.",
+    "checkingHarnesses": "Installierte Harnesses werden geprüft…",
+    "harnessCliFound": "Installiert — in Einstellungen verbinden, falls Modelle fehlen",
+    "harnessReady": "{{count}} Modelle im Inventar",
     "noModelsMatch": "Keine Modelle passen zu \"{{query}}\".",
     "addFavorite": "Zu Favoriten hinzufügen",
     "removeFavorite": "Aus Favoriten entfernen"
@@ -423,6 +437,11 @@
   "startup": {
     "checkingLocalServer": "Lokaler Server wird geprüft...",
     "startingLocalServer": "Lokaler Server wird gestartet..."
+  },
+  "projectHarnessStatus": {
+    "title": "Harness-Fehler für {{project}}",
+    "hint": "Du kannst weiter tippen und im Modell-Dialog einen anderen Harness wählen. Der Sitzungsverlauf kann für die genannten Harnesses unvollständig sein.",
+    "sidebarSummary": "{{count}} Harness-Fehler"
   },
   "sessionError": {
     "title": "Agentenfehler",

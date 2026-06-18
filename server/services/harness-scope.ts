@@ -1,5 +1,5 @@
+import type { HarnessId } from "@opengui/protocol";
 import { resolve } from "node:path";
-import type { HarnessId } from "../../src/agents/index.ts";
 import type { DirectoryScopeRef } from "@opengui/runtime";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -120,7 +120,7 @@ rg 'listSessionRecords|replaceScopeSessions|sessionRecordFromWireIdentity|ensure
 ### 2.2 Tasks
 
 - [x] `session-record-actions.ts` / `listSessionRecords`: grep callers; remove or restrict to tests.
-- [x] `session-service.ts`: remove `replaceScopeSessions` if unused; tighten `ensureSession` doc “mutations + queue only”.
+- [x] `session-dispatch-index.ts` (was `session-service.ts`): `SessionDispatchIndex`; removed `listSessions`; `ensureSession` documented for Queue dispatch + mutations only.
 - [x] `session-resolve.ts`: read uses harness list only; mutation relist + `ensureSession` (no wire stub); harness list errors propagate.
 - [x] `server/services/index.ts`: barrel documents harness-only list exports; no dead list/sync symbols.
 - [x] Tests: align server resolve tests with harness-only reads; keep **legacy `session_*` parse** tests in `session-identity` only.
@@ -194,7 +194,8 @@ Remove after grep shows zero product imports:
 From [`runtime-backend-sdk-split.md`](./runtime-backend-sdk-split.md) Phase 4:
 
 - [ ] Finish Tracks 1–2 before claiming storage cleanup complete.
-- [ ] Move `server/web-server.ts` → `packages/backend` incrementally.
+- [x] Product API handlers → `packages/backend` (`registerProductApiRoutes`); host stays in `server/web-server.ts`.
+- [ ] Move remaining host (SSE, RPC, FS) → `packages/backend` incrementally.
 - [x] Move `*-bridge.ts` → `packages/runtime/src/adapters/` (incl. `pi-daemon-server.ts`).
 - [ ] Move `lib/harness-adapter-kit` beside adapters.
 - [x] Lazy harness loading in `createOpenGUI({ harnesses: [...] })` (see [runtime-sdk-minimal-surface.md](./runtime-sdk-minimal-surface.md) Phase E).
@@ -254,4 +255,5 @@ Manual: add Project → list → send → queue → Desktop Local Workspace.
 - [docs/architecture.md](../architecture.md)
 - [docs/adr/README.md](../adr/README.md)
 - [session-read-slop-removal.md](./session-read-slop-removal.md)
+- [promptbox-harness-readiness.md](./promptbox-harness-readiness.md) (Harness → provider → model selection; `sessions.query` errors UI)
 - [runtime-backend-sdk-split.md](./runtime-backend-sdk-split.md)

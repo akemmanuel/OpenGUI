@@ -25,7 +25,8 @@ import {
   resolvePendingPromptCreationHarnessRoute,
   resolveSessionHarnessRoute,
 } from "@/hooks/agent-harness-routing";
-import { useLocalIntentOrchestration } from "@/hooks/agent-local-intent";
+import { useLocalIntentOrchestration } from "@/features/local-intent";
+import { resolvePromptBoxHarnessId } from "@/hooks/prompt-box-selection";
 import { useSessionInteractionOrchestration } from "@/hooks/agent-session-interactions";
 import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
@@ -83,6 +84,7 @@ import {
   type SessionListTargetSource,
 } from "@/hooks/agent-project-connection";
 import {
+  createEmptyProjectHydrationState,
   getPendingProjectHydrationHarnessIds,
   hasProjectHydrationInFlight,
   isProjectHydrationComplete,
@@ -90,6 +92,7 @@ import {
   startProjectHydration,
   type ProjectHydrationState,
 } from "@/hooks/agent-project-hydration";
+import { mapSessionQueryErrorsForProject } from "@/hooks/session-query-errors";
 import {
   fetchSessionMessagePage,
   hydrateChildSessionMessages,
@@ -234,19 +237,22 @@ function InternalAgentProvider({
   const loadedResourceHarnessIdRef = useRef<HarnessId | null>(null);
   const resourceLoadRequestRef = useRef(0);
   const resourceLoadInFlightKeyRef = useRef<string | null>(null);
-  const projectHydrationRef = useRef<Record<string, ProjectHydrationState>>({});
   const updateProjectHydration = useCallback(
     (
       projectKey: string,
       updater: (current: ProjectHydrationState | undefined) => ProjectHydrationState,
     ) => {
-      projectHydrationRef.current[projectKey] = updater(projectHydrationRef.current[projectKey]);
-      return projectHydrationRef.current[projectKey];
+      const hydration = updater(stateRef.current.projectHydration[projectKey]);
+      dispatch({ type: "SET_PROJECT_HYDRATION", payload: { projectKey, hydration } });
+      return hydration;
     },
     [],
   );
   const clearProjectHydration = useCallback((projectKey: string) => {
-    delete projectHydrationRef.current[projectKey];
+    dispatch({
+      type: "SET_PROJECT_HYDRATION",
+      payload: { projectKey, hydration: createEmptyProjectHydrationState() },
+    });
   }, []);
 
   useEffect(() => {
@@ -576,10 +582,17 @@ function InternalAgentProvider({
           },
         });
 
+        const queryScopeErrors = mapSessionQueryErrorsForProject({
+          projectKey,
+          directory: connection.directory,
+          harnessIds: [harnessId],
+          queryResult: sessionQuery,
+        });
+
         if (connectionError) {
           updateProjectHydration(projectKey, (current) =>
             settleProjectHydration(current, {
-              failedBackends: { [harnessId]: connectionError },
+              failedBackends: { [harnessId]: connectionError, ...queryScopeErrors },
             }),
           );
           return { harnessId, success: false as const, error: connectionError };
@@ -619,6 +632,7 @@ function InternalAgentProvider({
         updateProjectHydration(projectKey, (current) =>
           settleProjectHydration(current, {
             completedHarnessIds: [harnessId],
+            failedBackends: queryScopeErrors,
           }),
         );
         return { harnessId, success: true as const };
@@ -683,7 +697,7 @@ function InternalAgentProvider({
           ),
         },
       });
-      const currentHydration = projectHydrationRef.current[projectKey];
+      const currentHydration = stateRef.current.projectHydration[projectKey];
       const requestedHarnessIds = options?.harnessIds?.length
         ? options.harnessIds
         : discoveryHarnessIds;
@@ -836,7 +850,7 @@ function InternalAgentProvider({
       const requestedHarnessIds = options?.harnessIds?.length
         ? options.harnessIds
         : discoveryHarnessIds;
-      const currentHydration = projectHydrationRef.current[projectKey];
+      const currentHydration = stateRef.current.projectHydration[projectKey];
       const missingHarnessIds = getPendingProjectHydrationHarnessIds(
         currentHydration,
         requestedHarnessIds,
@@ -871,7 +885,7 @@ function InternalAgentProvider({
       );
 
       if (options?.harnessIds?.length) {
-        const nextHydration = projectHydrationRef.current[projectKey];
+        const nextHydration = stateRef.current.projectHydration[projectKey];
         const completedExplicitBackends = requestedHarnessIds.every(
           (harnessId) => nextHydration?.completedHarnessIds.includes(harnessId) ?? false,
         );
@@ -913,7 +927,7 @@ function InternalAgentProvider({
       dispatch({ type: "SET_ERROR", payload: message });
       throw new Error(message);
     }
-    projectHydrationRef.current = {};
+    dispatch({ type: "RESET_PROJECT_HYDRATION" });
 
     await Promise.allSettled(
       snapshot.map(async ({ projectKey, workspace, directory }) => {
@@ -1060,8 +1074,22 @@ function InternalAgentProvider({
           },
         });
       }
+
+      for (const project of uniqueProjects) {
+        const projectKey = makeProjectKey(project.workspaceId, project.directory);
+        const queryScopeErrors = mapSessionQueryErrorsForProject({
+          projectKey,
+          directory: project.directory,
+          harnessIds,
+          queryResult,
+        });
+        if (Object.keys(queryScopeErrors).length === 0) continue;
+        updateProjectHydration(projectKey, (current) =>
+          settleProjectHydration(current, { failedBackends: queryScopeErrors }),
+        );
+      }
     },
-    [discoveryHarnessIds, openGuiClient],
+    [discoveryHarnessIds, openGuiClient, updateProjectHydration],
   );
 
   // --- Startup bootstrap: ensure local server, then auto-connect open projects ---
@@ -1893,6 +1921,7 @@ function InternalAgentProvider({
       requestSessionAutoName,
       dispatch: (action) => dispatch(action as never),
       refreshSessionMessages: refreshActiveSessionMessages,
+      getFallbackHarnessId: () => preferredHarnessId,
     });
 
   const {
@@ -2070,11 +2099,33 @@ function InternalAgentProvider({
     [activeSessionHarnessId, preferredHarnessId],
   );
 
-  const setActiveTargetBackend = useCallback((harnessId: HarnessId) => {
-    const directory = stateRef.current.activeTargetDirectory;
-    if (!directory) return;
-    dispatch({ type: "SET_ACTIVE_TARGET", payload: { directory, harnessId } });
+  const persistPromptBoxHarnessId = useCallback((harnessId: HarnessId) => {
+    storageSet(STORAGE_KEYS.HARNESS, harnessId);
+    setPreferredHarnessId(harnessId);
   }, []);
+
+  const setPromptBoxSelection = useCallback(
+    (input: { harnessId: HarnessId; model: SelectedModel }) => {
+      dispatch({ type: "SET_PROMPT_BOX_SELECTION", payload: input });
+      persistPromptBoxHarnessId(input.harnessId);
+    },
+    [persistPromptBoxHarnessId],
+  );
+
+  const setModelWithHarnessPersistence = useCallback(
+    (model: SelectedModel | null) => {
+      setModel(model);
+      if (model && stateRef.current.activeTargetDirectory && !stateRef.current.activeSessionId) {
+        const harnessId = resolvePromptBoxHarnessId({
+          activeSession: null,
+          activeTargetHarnessId: stateRef.current.activeTargetHarnessId,
+          fallbackHarnessId: preferredHarnessId,
+        });
+        persistPromptBoxHarnessId(harnessId);
+      }
+    },
+    [persistPromptBoxHarnessId, preferredHarnessId, setModel],
+  );
 
   /** Re-fetch providers from the server and update global state. */
   const refreshProviders = useCallback(async () => {
@@ -2596,6 +2647,8 @@ function InternalAgentProvider({
       worktreeParents: state.worktreeParents,
       projectMeta: state.projectMeta,
       pendingWorktreeCleanup: state.pendingWorktreeCleanup,
+      workspaceResources: state.workspaceResources,
+      projectHydration: state.projectHydration,
     }),
     [
       state.workspaces,
@@ -2604,6 +2657,7 @@ function InternalAgentProvider({
       shellWorkspacePolicy.supportsMultipleWorkspaces,
       state.sessions,
       state.connections,
+      state.projectHydration,
       state.projectWorkspaceMap,
       state.busySessionIds,
       state.pendingPermissions,
@@ -2620,6 +2674,7 @@ function InternalAgentProvider({
       state.worktreeParents,
       state.projectMeta,
       state.pendingWorktreeCleanup,
+      state.workspaceResources,
     ],
   );
 
@@ -2638,7 +2693,8 @@ function InternalAgentProvider({
       respondPermission,
       replyQuestion,
       rejectQuestion,
-      setModel,
+      setModel: setModelWithHarnessPersistence,
+      setPromptBoxSelection,
       setAgent,
       cycleVariant: doCycleVariant,
       revertVariant: doRevertVariant,
@@ -2658,7 +2714,6 @@ function InternalAgentProvider({
       setActiveTarget,
       setDefaultChatDirectory,
       setActiveTargetDirectory,
-      setActiveTargetBackend,
       revertToMessage,
       unrevert,
       forkFromMessage,
@@ -2692,7 +2747,8 @@ function InternalAgentProvider({
       respondPermission,
       replyQuestion,
       rejectQuestion,
-      setModel,
+      setModelWithHarnessPersistence,
+      setPromptBoxSelection,
       setAgent,
       doCycleVariant,
       doRevertVariant,
@@ -2712,7 +2768,6 @@ function InternalAgentProvider({
       setActiveTarget,
       setDefaultChatDirectory,
       setActiveTargetDirectory,
-      setActiveTargetBackend,
       revertToMessage,
       unrevert,
       forkFromMessage,
