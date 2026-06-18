@@ -74,6 +74,13 @@
 
 - [x] [`docs/adr/README.md`](../adr/README.md) + link to this plan.
 
+### 0.5 Vite+ (`vp`) documentation ([#121](https://github.com/akemmanuel/OpenGUI/issues/121))
+
+- [x] README: no Electron prerequisite; Vite+ via `pnpm install`; examples use `pnpm vp` or `pnpm run`
+- [x] CONTRIBUTING + [`architecture.md`](../architecture.md) aligned
+- [x] AGENTS.md notes `pnpm vp` fallback
+- [x] User-facing docs (`docs/mobile.md`, `scripts/runtime/README.md`, `packages/runtime/README.md`, `docs/docker.md`) use `pnpm vp` / `pnpm run`
+
 ---
 
 ## Track 1 — Session read slop (finish ADR 0006)

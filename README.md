@@ -97,9 +97,8 @@ Backend requirements depend on what you use:
 - [Node.js](https://nodejs.org/) 24+
 - [pnpm](https://pnpm.io/) 11+ package manager
 - At least one supported Harness configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
-- [Electron](https://www.electronjs.org/) installed through project dependencies
 
-OpenGUI uses Node.js as the runtime for the Electron/web backend, pnpm for dependency management, and Vite+ (`vp`) as the development/build/check task runner.
+OpenGUI uses Node.js as the runtime for the Electron/web backend and pnpm for dependency management. **Vite+** ([vite-plus](https://github.com/mariozechner/vite-plus)) is a dev dependency: after `pnpm install`, run it as **`pnpm vp <command>`** (for example `pnpm vp build`). You do not install Electron or Vite+ globally—Electron and other app dependencies come from `pnpm install`.
 
 Install dependencies:
 
@@ -107,16 +106,22 @@ Install dependencies:
 pnpm install
 ```
 
+### Tooling (Vite+)
+
+Lint, format, typecheck, test, build, and named tasks use Vite+ (`vp`). Prefer **`pnpm vp …`** or **`pnpm run <script>`** when a script exists in `package.json`. A global `vp` on your `PATH` is optional, not required.
+
 No manual config file needed. Connection settings live in UI. Pick a Harness, connect a workspace, start prompting.
 
 ### Development
+
+Desktop: **`pnpm run dev`**. Web (browser + API): **`pnpm run dev:web`** — same task with **`:web`** appended.
 
 | Goal                               | Command            |
 | ---------------------------------- | ------------------ |
 | Desktop app (Electron, hot reload) | `pnpm run dev`     |
 | Web UI only (browser + API)        | `pnpm run dev:web` |
 
-For `dev:web`, open the URL Vite prints in the terminal (default port is often 5173). Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
+For web dev, open the URL Vite prints in the terminal (default port is often 5173). Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
 
 ### Docker
 
@@ -131,19 +136,16 @@ See [docs/docker.md](docs/docker.md) for GHCR install, Docker modes, and [docs/a
 Build frontend bundle:
 
 ```bash
-vp build
+pnpm run build
 ```
 
-Run Electron app in production mode:
+(`pnpm vp build` is equivalent.)
+
+Desktop production: **`pnpm run start`**. Web production: **`pnpm run start:web`** (append **`:web`** to the start task). Build the bundle first with `pnpm run build`.
 
 ```bash
-pnpm run start
-```
-
-Build and run web app in production mode:
-
-```bash
-pnpm run start:web
+pnpm run start      # Electron
+pnpm run start:web  # browser + backend API
 ```
 
 For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or another HTTPS reverse proxy in front.
@@ -153,19 +155,19 @@ For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or a
 Build Linux `.deb`:
 
 ```bash
-vp run dist:linux
+pnpm run dist:linux
 ```
 
 Build macOS `.dmg`:
 
 ```bash
-vp run dist:mac
+pnpm run dist:mac
 ```
 
 Build Windows `.exe` installer:
 
 ```bash
-vp run dist:win
+pnpm run dist:win
 ```
 
 ## Architecture

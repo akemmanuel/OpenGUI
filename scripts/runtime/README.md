@@ -2,15 +2,15 @@
 
 Scripts exercise **`@opengui/runtime`** without **prompts**, **abort**, or **session create**. Use them to verify harness CLIs, directory registration, sessions, models/agents/commands, status maps, and transcripts.
 
-Run from repo root with Vite+:
+Run from repo root (Vite+ is a dev dependency; use `pnpm vp`):
 
 ```bash
-vp node scripts/runtime/probe-inventories.mjs
-vp node scripts/runtime/probe-sessions.mjs -d .
-vp node scripts/runtime/probe-resources.mjs -d . -H pi
-vp node scripts/runtime/probe-directory-status.mjs -d .
-vp node scripts/runtime/probe-messages.mjs -d . -H pi --limit 10
-vp node scripts/runtime/probe-all-readonly.mjs -d .
+pnpm vp node scripts/runtime/probe-inventories.mjs
+pnpm vp node scripts/runtime/probe-sessions.mjs -d .
+pnpm vp node scripts/runtime/probe-resources.mjs -d . -H pi
+pnpm vp node scripts/runtime/probe-directory-status.mjs -d .
+pnpm vp node scripts/runtime/probe-messages.mjs -d . -H pi --limit 10
+pnpm vp node scripts/runtime/probe-all-readonly.mjs -d .
 ```
 
 ### Environment

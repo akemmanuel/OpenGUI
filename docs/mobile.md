@@ -5,8 +5,8 @@ OpenGUI's Android app is built with Capacitor from the existing Vite frontend. I
 ## Build locally
 
 ```bash
-vp run mobile:sync
-vp run mobile:build:debug
+pnpm run mobile:sync
+pnpm run mobile:build:debug
 ```
 
 The debug APK is written to:
@@ -18,7 +18,7 @@ android/app/build/outputs/apk/debug/
 To open the native project in Android Studio:
 
 ```bash
-vp run mobile:open
+pnpm run mobile:open
 ```
 
 ## Runtime model

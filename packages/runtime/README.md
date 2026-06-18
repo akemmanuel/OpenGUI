@@ -93,7 +93,7 @@ try {
 }
 ```
 
-CLI: `vp node scripts/runtime/run-agent.mjs -d . -H pi "your prompt"` (uses tokens).
+CLI: `pnpm vp node scripts/runtime/run-agent.mjs -d . -H pi "your prompt"` (uses tokens).
 
 ## Public API
 

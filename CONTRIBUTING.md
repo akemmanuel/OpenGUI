@@ -6,11 +6,11 @@ Thanks for your interest in contributing to OpenGUI. This guide covers what you 
 
 - [Node.js](https://nodejs.org/) 24+
 - [pnpm](https://pnpm.io/) 11+
-- [Vite+](https://github.com/mariozechner/vite-plus) (`vp`) available via project dependencies
+- [Vite+](https://github.com/mariozechner/vite-plus) (`vp`) — installed as a dev dependency; invoke with **`pnpm vp <command>`** after `pnpm install` (global `vp` is optional)
 - At least one supported backend available locally (OpenCode CLI, Claude Code, Codex, or Pi)
 - Git
 
-Tooling convention: Node.js runs the app/server code, pnpm owns dependency installation and lockfile changes, and Vite+ (`vp`) is the command surface for development, checks, tests, builds, and project tasks.
+Tooling convention: Node.js runs the app/server code, pnpm owns dependency installation and lockfile changes, and Vite+ (`vp`) is the command surface for checks, tests, builds, and project tasks. Use **`pnpm vp …`** or **`pnpm run <script>`**; do not assume `vp` is on your `PATH`.
 
 ## Setup
 
@@ -22,9 +22,11 @@ pnpm install
 
 ## Development
 
+Use **`pnpm run dev`** for desktop and **`pnpm run dev:web`** for web — append **`:web`** to the dev task for the browser stack.
+
 ```bash
 pnpm run dev       # Electron (desktop)
-pnpm run dev:web   # Browser + local backend API
+pnpm run dev:web   # browser + local backend API
 ```
 
 ## Code Style
@@ -34,15 +36,15 @@ This project uses Vite+ tasks:
 ```bash
 pnpm run dev     # desktop development
 pnpm run dev:web # web development
-vp lint          # lint check
-vp check         # lint, format, and type checks
-vp test          # unit tests
-vp fmt           # format
-vp build         # production build
-vp run <task>    # named project tasks, such as dist:linux
+pnpm vp lint     # lint check
+pnpm vp check    # lint, format, and type checks
+pnpm vp test     # unit tests
+pnpm vp fmt      # format
+pnpm run build   # production build (runs vp build)
+pnpm vp run <task>    # named project tasks, such as dist:linux
 ```
 
-Use pnpm for dependency changes (`pnpm install`, `pnpm add`, `pnpm remove`, `pnpm update`). Do not run `tsc` directly for typechecking. Run `vp check` and `vp test` before submitting a PR.
+Use pnpm for dependency changes (`pnpm install`, `pnpm add`, `pnpm remove`, `pnpm update`). Do not run `tsc` directly for typechecking. Run `pnpm vp check` and `pnpm vp test` before submitting a PR.
 
 ## Commit Messages
 
@@ -57,7 +59,7 @@ Write clear, concise commit messages. Focus on the "why" rather than the "what."
 1. Fork the repository
 2. Create a feature branch from `master`: `git checkout -b my-feature`
 3. Make your changes
-4. Run `vp check` and `vp test`
+4. Run `pnpm vp check` and `pnpm vp test`
 5. Commit your changes with a clear message
 6. Push to your fork and open a pull request against `master`
 

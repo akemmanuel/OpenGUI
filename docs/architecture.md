@@ -99,18 +99,18 @@ Provider icons are resolved by `src/components/provider-icons/ProviderIcon.tsx` 
 
 ## Commands
 
-Use Vite+ (`vp`) for project tasks and pnpm for dependency changes:
+Vite+ (`vp`) is a dev dependency. After `pnpm install`, use **`pnpm vp …`** or **`pnpm run <script>`** for tasks; a global `vp` on `PATH` is optional.
 
 ```bash
 pnpm install        # install dependencies
-pnpm run dev        # desktop development (Electron)
-pnpm run dev:web    # web development (browser)
-vp check            # lint, format, and type checks
-vp lint             # lint only
-vp fmt              # format only
-vp test             # tests
-vp build            # production build
-vp run <task>       # named project tasks such as dist:linux
+pnpm run dev        # desktop dev; use dev:web for browser (append :web)
+pnpm run start      # desktop prod; use start:web for browser (append :web)
+pnpm vp check       # lint, format, and type checks
+pnpm vp lint        # lint only
+pnpm vp fmt         # format only
+pnpm vp test        # tests
+pnpm run build      # production build
+pnpm vp run <task>  # named project tasks such as dist:linux
 pnpm add <pkg>      # dependency changes
 pnpm remove <pkg>   # dependency changes
 ```

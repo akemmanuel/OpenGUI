@@ -1,18 +1,17 @@
-Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands.
+Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands. Vite+ is a dev dependency: use **`pnpm vp <command>`** when `vp` is not on `PATH`, or **`pnpm run <script>`** when `package.json` defines the task.
 
-- Use `pnpm run dev` for desktop development (Electron)
-- Use `pnpm run dev:web` for web development (browser)
-- Use `pnpm run start` / `pnpm run start:web` for production runs
-- Use `vp check` for lint, format, and type checks
-- Use `vp lint` for lint only
-- Use `vp fmt` for format only
-- Use `vp test` for tests
-- Use `vp build` for production build
-- Use `vp run <task>` for project tasks
-- Use `vp exec <command>` for local binaries
-- Use `node --experimental-strip-types <file>` for project TypeScript scripts (or `vp node` when Vite+ env shims are installed)
-- Use `vp dlx <package> <command>` for one-off package binaries
-- Use `vp cache` for task cache
+- Use `pnpm run dev` for desktop development (Electron); use `pnpm run dev:web` for web (append `:web` to the dev task)
+- Use `pnpm run start` for desktop production; use `pnpm run start:web` for web (append `:web` to the start task)
+- Use `pnpm vp check` (or `pnpm run check`) for lint, format, and type checks
+- Use `pnpm vp lint` (or `pnpm run lint`) for lint only
+- Use `pnpm vp fmt` (or `pnpm run fmt`) for format only
+- Use `pnpm vp test` (or `pnpm run test`) for tests
+- Use `pnpm run build` for production build
+- Use `pnpm vp run <task>` or `pnpm run <script>` for project tasks
+- Use `pnpm vp exec <command>` for local binaries
+- Use `node --experimental-strip-types <file>` for project TypeScript scripts (or `pnpm vp node` when Vite+ env shims are installed)
+- Use `pnpm vp dlx <package> <command>` for one-off package binaries
+- Use `pnpm vp cache` for task cache
 - Use `pnpm install` to install dependencies
 - Use `pnpm add`, `pnpm remove`, `pnpm update`, etc. for dependency changes
 - Use `pnpm run <script>` for package scripts
@@ -20,13 +19,13 @@ Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands
 
 ## Development
 
-Run the app with `pnpm run dev` (Electron) or `pnpm run dev:web` (browser). Use Vite+ (`vp`) for lint, format, typecheck, test, and build—not for choosing dev vs prod.
+Run the app with `pnpm run dev` or `pnpm run start` on desktop; for the browser stack, use the same task with `:web` (`pnpm run dev:web`, `pnpm run start:web`). Use Vite+ (`vp`) for lint, format, typecheck, test, and build—not for choosing dev vs prod.
 
 ## Code quality
 
 - Run `pnpm run slop-check` when changing server session paths, `OpenGuiClient`, or harness registry
-- Prefer `vp check` before submit
-- Prefer `vp lint` / `vp fmt` when narrowing issues
+- Prefer `pnpm vp check` before submit
+- Prefer `pnpm vp lint` / `pnpm vp fmt` when narrowing issues
 - Use `pnpm run` only when task is defined in `package.json`
 
 ## Translations

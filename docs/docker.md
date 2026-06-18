@@ -1,6 +1,6 @@
 # Docker
 
-OpenGUI Docker images run the web backend with the Node.js runtime. Dependencies are installed with Bun for faster image builds, and the frontend bundle is built with Vite+ (`vp build`).
+OpenGUI Docker images run the web backend with the Node.js runtime. Dependencies are installed with Bun for faster image builds, and the frontend bundle is built with Vite+ (`pnpm vp build` locally; the image build invokes the same task).
 
 ## Quick Start
 
