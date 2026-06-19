@@ -103,7 +103,7 @@ Readiness is **per Harness** (and per project for catalogs), shown in:
 | `use-agent-backend.ts`    | `useCurrentHarnessId()` from storage                                  | Derive active harness from PromptBox selection + session lock              |
 | `ModelSelector` + routing | `setActiveTargetBackend` on chip click                                | `setPromptBoxSelection({ harnessId, model })`                              |
 | `App.tsx`                 | `disabled={isBooting \|\| isLoadingMessages}`                         | Do not disable textarea for load/boot (optional: disable Send only)        |
-| `agent-local-intent.ts`   | English errors, partial model gate                                    | Gate on `harnessId` + `selectedModel`; i18n                                |
+| `@/features/local-intent` | English errors, partial model gate                                    | Gate on `harnessId` + `selectedModel`; i18n                                |
 | `loadServerResources`     | Tied to routed harness                                                | Run for dialog-selected harness + active directory                         |
 
 ---

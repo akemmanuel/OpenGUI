@@ -12,7 +12,6 @@ import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type {
   InternalAgentState,
-  MessageEntry,
   QueueMode,
   TurnRun,
   QueuedPrompt,
@@ -31,7 +30,6 @@ export interface SessionContextValue {
   sessions: Session[];
   activeSessionId: string | null;
   isBusy: boolean;
-  isLoadingMessages: boolean;
   busySessionIds: Set<string>;
   queuedPrompts: Record<string, QueuedPrompt[]>;
   pendingPermissions: Record<string, PermissionRequest>;
@@ -46,11 +44,7 @@ export interface SessionContextValue {
 }
 
 export interface MessagesContextValue {
-  messages: MessageEntry[];
   turnRuns: Record<string, TurnRun>;
-  childSessions: InternalAgentState["childSessions"];
-  messageHistoryHasMore: boolean;
-  isLoadingOlderMessages: boolean;
 }
 
 export interface ModelContextValue {

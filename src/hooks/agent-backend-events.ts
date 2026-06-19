@@ -1,9 +1,14 @@
-import type { Message, Part, PermissionRequest, QuestionRequest } from "@/protocol/harness-types";
+import type { PermissionRequest, QuestionRequest } from "@/protocol/harness-types";
+
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
 import type { HarnessEvent } from "@/agents/backend";
-import { makeProjectKey } from "@/hooks/agent-session-utils";
+import { makeProjectKey, parseProjectKey } from "@/hooks/agent-session-utils";
 import type { Session } from "@/hooks/agent-state-types";
 import type { ConnectionStatus } from "@/types/electron";
+import type { ProjectedTranscriptEvent } from "@opengui/runtime/client";
+import { normalizeProjectPath } from "@/lib/utils";
+import { dispatchLiveSessionActivity } from "@/features/session-transcript/live-session-activity";
+import { asCanonicalLiveSessionEvent } from "@/hooks/live-session-event-types";
 
 type BackendEventDispatch = (
   action:
@@ -15,38 +20,6 @@ type BackendEventDispatch = (
       }
     | { type: "SESSION_UPDATED"; payload: Session }
     | { type: "SESSION_DELETED"; payload: string }
-    | {
-        type: "MESSAGE_UPDATED";
-        payload: Message;
-      }
-    | {
-        type: "MESSAGE_REPLACED";
-        payload: {
-          sessionID: string;
-          oldId: string;
-          message: Message;
-          parts: Part[];
-        };
-      }
-    | {
-        type: "PART_UPDATED";
-        payload: { part: Part };
-      }
-    | {
-        type: "PART_DELTA";
-        payload: {
-          sessionID: string;
-          messageID: string;
-          partID: string;
-          field: string;
-          delta: string;
-        };
-      }
-    | {
-        type: "PART_REMOVED";
-        payload: { sessionID: string; messageID: string; partID: string };
-      }
-    | { type: "MESSAGE_REMOVED"; payload: { sessionID: string; messageID: string } }
     | {
         type: "SESSION_STATUS";
         payload: {
@@ -65,8 +38,6 @@ type BackendEventDispatch = (
     | { type: "SET_ERROR"; payload: string | null }
     | { type: "SESSION_ERROR"; payload: { sessionID?: string; error: string } },
 ) => void;
-
-const seenDeltaEventIds = new Set<string>();
 
 interface SessionTitleTrackingState {
   forcedTitles: Map<string, string>;
@@ -117,6 +88,39 @@ function migrateReplacedSessionTracking({
   };
 }
 
+function isProjectedTranscriptEvent(
+  event: HarnessEvent,
+): event is HarnessEvent & ProjectedTranscriptEvent {
+  return (
+    event.type === "transcript.snapshot" ||
+    event.type === "transcript.message" ||
+    event.type === "transcript.message.removed"
+  );
+}
+
+function isExpectedProjectEvent({
+  directory,
+  workspaceId,
+  expectedProjectKeys,
+}: {
+  directory: string;
+  workspaceId?: string;
+  expectedProjectKeys: Set<string>;
+}): boolean {
+  if (workspaceId && expectedProjectKeys.has(makeProjectKey(workspaceId, directory))) return true;
+  if (workspaceId) return false;
+
+  // Canonical backend envelopes do not always know the Frontend workspace id.
+  // In that case, accept the event only if some expected project has the same
+  // canonical directory; never let directory-less transcript events bypass the
+  // project/worktree scope gate.
+  const normalizedDirectory = normalizeProjectPath(directory);
+  return [...expectedProjectKeys].some(
+    (projectKey) =>
+      normalizeProjectPath(parseProjectKey(projectKey).directory) === normalizedDirectory,
+  );
+}
+
 export function handleHarnessEvent({
   event,
   expectedProjectKeys,
@@ -124,6 +128,7 @@ export function handleHarnessEvent({
   cleanupSessionRefs,
   renameSession,
   dispatch,
+  ingestProjectedTranscriptEvent,
   warn = console.warn,
 }: {
   event: HarnessEvent;
@@ -136,20 +141,50 @@ export function handleHarnessEvent({
     harnessId?: HarnessId;
   }) => Promise<unknown>;
   dispatch: BackendEventDispatch;
+  ingestProjectedTranscriptEvent?: (event: ProjectedTranscriptEvent) => boolean;
   warn?: (message: string, details?: unknown) => void;
 }) {
+  const liveEvent = asCanonicalLiveSessionEvent(event as Record<string, unknown>);
+  if (liveEvent) {
+    dispatchLiveSessionActivity({
+      event: liveEvent,
+      expectedProjectKeys,
+      dispatch,
+    });
+    return;
+  }
+
   if ("directory" in event) {
-    const projectKey = makeProjectKey(event.workspaceId, event.directory);
-    if (!expectedProjectKeys.has(projectKey)) {
+    if (
+      !isExpectedProjectEvent({
+        directory: event.directory,
+        workspaceId: event.workspaceId,
+        expectedProjectKeys,
+      })
+    ) {
       return;
     }
     if (event.type === "connection.status") {
+      const projectKey = makeProjectKey(event.workspaceId, event.directory);
       dispatch({
         type: "SET_PROJECT_CONNECTION",
         payload: { projectKey, status: event.status },
       });
       return;
     }
+  }
+
+  if (isProjectedTranscriptEvent(event)) {
+    if (
+      !isExpectedProjectEvent({
+        directory: event.scope.directory,
+        expectedProjectKeys,
+      })
+    ) {
+      return;
+    }
+    ingestProjectedTranscriptEvent?.(event);
+    return;
   }
 
   switch (event.type) {
@@ -203,69 +238,17 @@ export function handleHarnessEvent({
       cleanupSessionRefs([event.sessionId]);
       dispatch({ type: "SESSION_DELETED", payload: event.sessionId });
       return;
-    case "message.updated":
-      dispatch({ type: "MESSAGE_UPDATED", payload: event.message });
-      return;
-    case "message.replaced":
-      dispatch({
-        type: "MESSAGE_REPLACED",
-        payload: {
-          sessionID: event.sessionID,
-          oldId: event.oldId,
-          message: event.message,
-          parts: event.parts,
-        },
-      });
-      return;
-    case "message.part.updated":
-      dispatch({ type: "PART_UPDATED", payload: { part: event.part } });
-      return;
-    case "message.part.delta": {
-      const eventId = (event as { id?: string }).id;
-      if (eventId) {
-        if (seenDeltaEventIds.has(eventId)) return;
-        seenDeltaEventIds.add(eventId);
-        if (seenDeltaEventIds.size > 1000) seenDeltaEventIds.clear();
-      }
-      dispatch({
-        type: "PART_DELTA",
-        payload: {
-          sessionID: event.sessionID,
-          messageID: event.messageID,
-          partID: event.partID,
-          field: event.field,
-          delta: event.delta,
-        },
-      });
-      return;
-    }
-    case "message.part.removed":
-      dispatch({
-        type: "PART_REMOVED",
-        payload: {
-          sessionID: event.sessionID,
-          messageID: event.messageID,
-          partID: event.partID,
-        },
-      });
-      return;
-    case "message.removed":
-      dispatch({
-        type: "MESSAGE_REMOVED",
-        payload: {
-          sessionID: event.sessionID,
-          messageID: event.messageID,
-        },
-      });
-      return;
     case "session.status":
-      dispatch({
-        type: "SESSION_STATUS",
-        payload: {
-          sessionID: event.sessionID,
-          status: event.status,
-        },
-      });
+      // Run lifecycle is driven by canonical run.started / run.finished when scoped live events arrive.
+      if (event.status?.type === "retry") {
+        dispatch({
+          type: "SESSION_STATUS",
+          payload: {
+            sessionID: event.sessionID,
+            status: event.status,
+          },
+        });
+      }
       return;
     case "permission.requested":
       dispatch({ type: "SET_PERMISSION", payload: event.request });
@@ -290,6 +273,8 @@ export function handleHarnessEvent({
         type: "SESSION_ERROR",
         payload: { sessionID: event.sessionID, error: event.error },
       });
+      return;
+    default:
       return;
   }
 }

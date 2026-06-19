@@ -1,5 +1,5 @@
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
-import { getChildSessionId, MESSAGE_PAGE_SIZE } from "@/hooks/agent-message-state";
+import { MESSAGE_PAGE_SIZE } from "@/hooks/agent-message-state";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import {
   directoryScopeForSessionApi,
@@ -25,37 +25,21 @@ interface SessionsMessagesClient {
   }>;
 }
 
-type MessageLoadingDispatch =
-  | {
-      type: "SET_MESSAGES";
-      payload: {
-        messages: MessageEntry[];
-        hasMore: boolean;
-        nextCursor?: string | null;
-        mode?: "replace" | "prepend" | "append";
-      };
-    }
-  | { type: "SET_LOADING_OLDER_MESSAGES"; payload: boolean }
-  | {
-      type: "LOAD_CHILD_SESSION";
-      payload: {
-        childSessionId: string;
-        messages: MessageEntry[];
-      };
-    };
-
 export async function fetchSessionMessagePage({
   sessionsClient,
   sessions,
   sessionId,
   options,
   projectTarget,
+  harnessId: harnessIdOverride,
 }: {
   sessionsClient: SessionsMessagesClient;
   sessions: Session[];
   sessionId: string;
   options?: { before?: string; limit?: number };
   projectTarget?: ProjectTarget;
+  /** Task/subagent child ids often omit a harness prefix; use the parent harness. */
+  harnessId?: HarnessId;
 }) {
   const pageSize = options?.limit ?? MESSAGE_PAGE_SIZE;
   const session = sessions.find((candidate) => candidate.id === sessionId);
@@ -67,6 +51,7 @@ export async function fetchSessionMessagePage({
     (session?._projectDir ? String(session._projectDir) : undefined) ??
     (session?.directory ? String(session.directory) : undefined);
   const harnessId =
+    harnessIdOverride ??
     resolveSessionHarnessRoute(session).harnessId ??
     getHarnessIdFromSessionId(sessionId) ??
     undefined;
@@ -95,146 +80,4 @@ export async function fetchSessionMessagePage({
     hasMore: nextCursor !== null,
     nextCursor,
   };
-}
-
-export function collectChildSessionIds(messages: MessageEntry[]) {
-  const childSessionIds = new Set<string>();
-  for (const message of messages) {
-    for (const part of message.parts) {
-      const childSessionId = getChildSessionId(part);
-      if (childSessionId) childSessionIds.add(childSessionId);
-    }
-  }
-  return [...childSessionIds];
-}
-
-export function hydrateChildSessionMessages({
-  messages,
-  parentSessionId,
-  requestId,
-  projectTarget,
-  childHydrationVersions,
-  getCurrentSelectSessionRequestId,
-  getCurrentActiveSessionId,
-  sessionsClient,
-  dispatch,
-}: {
-  messages: MessageEntry[];
-  parentSessionId?: string;
-  requestId?: number;
-  projectTarget?: ProjectTarget;
-  childHydrationVersions: Record<string, number>;
-  getCurrentSelectSessionRequestId: () => number;
-  getCurrentActiveSessionId: () => string | null;
-  sessionsClient: SessionsMessagesClient;
-  dispatch: (action: MessageLoadingDispatch) => void;
-}) {
-  if (messages.length === 0) return;
-
-  const childSessionIds = collectChildSessionIds(messages);
-  const harnessId = parentSessionId
-    ? (getHarnessIdFromSessionId(parentSessionId) ?? undefined)
-    : undefined;
-  const directory = projectTarget?.directory?.trim();
-  if (!directory || !harnessId) return;
-
-  for (const childSessionId of childSessionIds) {
-    const nextVersion = (childHydrationVersions[childSessionId] ?? 0) + 1;
-    childHydrationVersions[childSessionId] = nextVersion;
-
-    void sessionsClient
-      .getMessages({
-        sessionId: childSessionId,
-        harnessId,
-        options: {
-          limit: 10000,
-          directory,
-          workspaceId: projectTarget?.workspaceId,
-        },
-      })
-      .then((childResult) => {
-        if (childHydrationVersions[childSessionId] !== nextVersion) return;
-        if (requestId !== undefined && requestId !== getCurrentSelectSessionRequestId()) {
-          return;
-        }
-        if (parentSessionId && parentSessionId !== getCurrentActiveSessionId()) {
-          return;
-        }
-        const childMessages = childResult.messages;
-        if (!childMessages) return;
-        dispatch({
-          type: "LOAD_CHILD_SESSION",
-          payload: {
-            childSessionId,
-            messages: childMessages,
-          },
-        });
-      })
-      .catch(() => {
-        /* best-effort child session fetch */
-      });
-  }
-}
-
-export async function loadOlderSessionMessages({
-  state,
-  fetchMessagePage,
-  dispatch,
-}: {
-  state: {
-    activeSessionId: string | null;
-    messages: MessageEntry[];
-    isLoadingOlderMessages: boolean;
-    messageHistoryHasMore: boolean;
-    messageHistoryCursor: string | null;
-  };
-  fetchMessagePage: (
-    sessionId: string,
-    options?: { before?: string; limit?: number },
-  ) => Promise<{
-    messages: MessageEntry[];
-    hasMore: boolean;
-    nextCursor: string | null;
-  }>;
-  dispatch: (action: MessageLoadingDispatch) => void;
-}) {
-  const {
-    activeSessionId,
-    messages,
-    isLoadingOlderMessages,
-    messageHistoryHasMore,
-    messageHistoryCursor,
-  } = state;
-
-  if (
-    !activeSessionId ||
-    isLoadingOlderMessages ||
-    !messageHistoryHasMore ||
-    !messageHistoryCursor ||
-    messages.length === 0
-  ) {
-    return false;
-  }
-
-  dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: true });
-
-  try {
-    const result = await fetchMessagePage(activeSessionId, {
-      before: messageHistoryCursor,
-    });
-    if (state.activeSessionId !== activeSessionId) return false;
-    dispatch({
-      type: "SET_MESSAGES",
-      payload: {
-        messages: result.messages,
-        hasMore: result.hasMore,
-        nextCursor: result.nextCursor,
-        mode: "prepend",
-      },
-    });
-    return result.hasMore;
-  } catch {
-    dispatch({ type: "SET_LOADING_OLDER_MESSAGES", payload: false });
-    return false;
-  }
 }

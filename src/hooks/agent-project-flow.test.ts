@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { HarnessId } from "@/agents";
 import { createProjectConnectionStatus } from "@/hooks/agent-project-connection";
+import { initialAgentState } from "@/hooks/agent-initial-state";
 import type { InternalAgentState } from "@/hooks/agent-state-types";
 import {
   applyReducerActions,
@@ -12,6 +13,7 @@ const DISCOVERY: HarnessId[] = ["opencode", "pi"];
 
 function localWorkspaceState(): InternalAgentState {
   return {
+    ...initialAgentState,
     workspaces: [
       {
         id: "local",
@@ -22,8 +24,6 @@ function localWorkspaceState(): InternalAgentState {
       },
     ],
     activeWorkspaceId: "local",
-    projectWorkspaceMap: {},
-    projectHydration: {},
     connections: {
       "local\u0000/tmp/chat-root": createProjectConnectionStatus(
         "connected",
@@ -31,50 +31,9 @@ function localWorkspaceState(): InternalAgentState {
         "chat-infra",
       ),
     },
-    sessions: [],
-    activeSessionId: null,
-    messages: [],
-    messageHistoryHasMore: false,
-    messageHistoryCursor: null,
-    isLoadingMessages: false,
-    isLoadingOlderMessages: false,
-    isBusy: false,
-    pendingPermissions: {},
-    pendingQuestions: {},
-    lastError: null,
-    sessionErrors: {},
     bootState: "ready",
-    bootError: null,
-    bootLogs: null,
-    workspaceResources: {},
-    providers: [],
-    providerDefaults: {},
-    selectedModel: null,
-    busySessionIds: new Set(),
-    agents: [],
-    selectedAgent: null,
-    variantSelections: {},
-    commands: [],
-    queuedPrompts: {},
     defaultChatDirectory: "/tmp/chat-root",
-    activeTargetDirectory: null,
-    activeTargetHarnessId: null,
-    namingSessionIds: new Set(),
-    unreadSessionIds: new Set(),
-    sessionDrafts: {},
-    sessionMeta: {},
     projectMeta: { "local\u0000/tmp/chat-root": { hidden: true } },
-    worktreeParents: {},
-    pendingWorktreeCleanup: null,
-    turnRuns: {},
-    activeTurnRunBySession: {},
-    childSessions: {},
-    trackedChildSessionIds: new Set(),
-    _pendingSnapshots: [],
-    _sessionBuffers: {},
-    afterPartPending: new Set(),
-    _afterPartTriggered: new Set(),
-    _deletedSessionIds: new Set(),
   };
 }
 

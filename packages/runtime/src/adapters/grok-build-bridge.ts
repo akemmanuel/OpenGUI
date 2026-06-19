@@ -8,7 +8,7 @@ import {
   normalizeHarnessDirectory,
   nowHarnessConnection,
   ok,
-} from "../../../../lib/harness-adapter-kit.ts";
+} from "./harness-adapter-kit.ts";
 import {
   buildGrokProvidersFromModelState,
   DEFAULT_MODEL_ID,

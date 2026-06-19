@@ -11,6 +11,7 @@ Read these when code or docs disagree about **who owns what**.
 | [0005](./0005-opengui-runtime-backend-split-and-sdk.md)     | **Runtime / Backend / Frontend** split; `@opengui/runtime` SDK                   |
 | [0006](./0006-harness-only-session-and-transcript-reads.md) | Session list and message pages: Harness-only, strict scope                       |
 | [0007](./0007-runtime-sdk-minimal-surface.md)               | **`@opengui/runtime` minimal SDK** — SessionHandle, stream/wait; not Pi platform |
+| [0008](./0008-session-transcript-projection-in-runtime.md)  | **Session transcript projection** in Runtime; Frontend render-only               |
 
 Product glossary (no implementation detail): [`CONTEXT.md`](../../CONTEXT.md).
 

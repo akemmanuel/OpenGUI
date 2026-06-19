@@ -58,7 +58,6 @@ export interface SessionMeta {
   pendingDirectoryChangeNotice?: boolean;
   hideSystemAppendBlocks?: boolean;
   movedToSessionId?: string;
-  hiddenBootstrapPrefix?: string;
   detachedFromProject?: boolean;
   detachedFromProjectAt?: number | null;
 }
@@ -104,7 +103,6 @@ export function persistSessionMetaMap(meta: SessionMetaMap) {
       m.pendingDirectoryChangeNotice === true ||
       m.hideSystemAppendBlocks === true ||
       Object.hasOwn(m, "movedToSessionId") ||
-      Object.hasOwn(m, "hiddenBootstrapPrefix") ||
       m.detachedFromProject === true ||
       typeof m.detachedFromProjectAt === "number",
     ),

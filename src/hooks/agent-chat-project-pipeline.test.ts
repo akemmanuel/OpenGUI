@@ -1,5 +1,6 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { HarnessId } from "@/agents";
+import { initialAgentState } from "@/hooks/agent-initial-state";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
 import { buildSidebarOrderedRootProjectDirectories } from "@/lib/sidebar-project-entries";
 import { shouldShowSessionInChatList } from "@/components/sidebar/use-sidebar-model";
@@ -30,6 +31,7 @@ function session(id: string, directory: string, workspaceId?: string): Session {
 
 function baseState(): InternalAgentState {
   return {
+    ...initialAgentState,
     workspaces: [
       {
         id: "local",
@@ -40,53 +42,8 @@ function baseState(): InternalAgentState {
       },
     ],
     activeWorkspaceId: "local",
-    projectWorkspaceMap: {},
-    projectHydration: {},
-    connections: {},
-    sessions: [],
-    activeSessionId: null,
-    messages: [],
-    messageHistoryHasMore: false,
-    messageHistoryCursor: null,
-    isLoadingMessages: false,
-    isLoadingOlderMessages: false,
-    isBusy: false,
-    pendingPermissions: {},
-    pendingQuestions: {},
-    lastError: null,
-    sessionErrors: {},
     bootState: "ready",
-    bootError: null,
-    bootLogs: null,
-    workspaceResources: {},
-    providers: [],
-    providerDefaults: {},
-    selectedModel: null,
-    busySessionIds: new Set(),
-    agents: [],
-    selectedAgent: null,
-    variantSelections: {},
-    commands: [],
-    queuedPrompts: {},
     defaultChatDirectory: "/chat-root",
-    activeTargetDirectory: null,
-    activeTargetHarnessId: null,
-    namingSessionIds: new Set(),
-    unreadSessionIds: new Set(),
-    sessionDrafts: {},
-    sessionMeta: {},
-    projectMeta: {},
-    worktreeParents: {},
-    pendingWorktreeCleanup: null,
-    turnRuns: {},
-    activeTurnRunBySession: {},
-    childSessions: {},
-    trackedChildSessionIds: new Set(),
-    _pendingSnapshots: [],
-    _sessionBuffers: {},
-    afterPartPending: new Set(),
-    _afterPartTriggered: new Set(),
-    _deletedSessionIds: new Set(),
   };
 }
 

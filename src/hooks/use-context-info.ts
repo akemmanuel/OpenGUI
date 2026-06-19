@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { resolveServerDefaultModel, useMessages, useModelState } from "@/hooks/use-agent-state";
+import { resolveServerDefaultModel, useModelState } from "@/hooks/use-agent-state";
+import type { MessageEntry } from "@/hooks/agent-state-types";
 import { computeTokenTotal } from "@/lib/utils";
 
 export type ContextInfo = {
@@ -17,7 +18,7 @@ export function useContextInfo({
   providerDefaults,
 }: {
   activeSessionId: string | null;
-  messages: ReturnType<typeof useMessages>["messages"];
+  messages: MessageEntry[];
   providers: ReturnType<typeof useModelState>["providers"];
   selectedModel: ReturnType<typeof useModelState>["selectedModel"];
   providerDefaults: ReturnType<typeof useModelState>["providerDefaults"];

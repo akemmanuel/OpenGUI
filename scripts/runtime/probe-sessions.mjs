@@ -20,6 +20,7 @@ if (flags.help) {
 
 const harnessIds = flags.allHarnesses ? [...MANAGED_HARNESS_IDS] : [flags.harness];
 const { og, directory } = await createRuntime(flags);
+const dir = await og.at(directory);
 
 try {
   logSection(`directory ${directory}`);
@@ -30,7 +31,7 @@ try {
 
   const results = [];
   for (const harnessId of harnessIds) {
-    const handle = og.harness(harnessId);
+    const handle = dir.harness(harnessId);
     let sessions = [];
     let error;
     try {

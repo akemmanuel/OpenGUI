@@ -6,6 +6,8 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
 import { composeFrontendSessionId } from "../src/lib/session-identity.ts";
+import { publishLiveSessionHarnessEvent } from "./live-session-event-publish.ts";
+import { publishProjectedTranscriptEvent } from "./projected-transcript-publish.ts";
 import {
   BackendEventBus,
   createStorageService,
@@ -15,6 +17,7 @@ import {
   findFilesInDirectory,
   resolveSessionRecordForMutation,
   resolveSessionRecordForRead,
+  resolveTranscriptScopeForBridgeEvent,
   resolveCanonicalDirectoryInput,
   registerSharedSessionControl,
   toOptionalString,
@@ -36,6 +39,10 @@ import {
   isWithinAllowedRoot,
   normalizeAllowedRoots,
   resolveSafeDirectory as resolveSafeDirectoryInRoots,
+  createSessionTranscripts,
+  isTranscriptProjectionInput,
+  transcriptSessionId,
+  type SessionTranscriptScope,
 } from "@opengui/runtime";
 import { registerShellIpcHandlers } from "./shell-ipc-handlers.ts";
 import { registerProductApiRoutes } from "@opengui/backend";
@@ -104,6 +111,32 @@ function getBridgeEventRefs(event: HarnessEvent): {
   }
 }
 
+function bridgeDirectoryHintFromRaw(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const directory = (data as { directory?: unknown }).directory;
+  return typeof directory === "string" && directory.trim() ? directory.trim() : undefined;
+}
+
+async function ensureTranscriptProjectionHydrated(
+  services: BackendServiceContext,
+  input: { scope: SessionTranscriptScope; session: SessionRecord },
+) {
+  if (services.transcripts.isHydrated(input.scope)) return;
+  await services.transcripts.readPage({
+    scope: input.scope,
+    fetchHarnessPage: () =>
+      services.harnesses.listMessages({
+        session: input.session,
+        scope: {
+          directory: input.scope.directory,
+          harnessId: input.session.harnessId,
+          sessionId: input.scope.sessionId,
+        },
+        options: {},
+      }),
+  });
+}
+
 async function createBackendServiceContext(
   ipcMain: InProcessIpcMain,
   sender: InProcessIpcSender,
@@ -123,11 +156,13 @@ async function createBackendServiceContext(
     storage: Awaited<ReturnType<typeof createStorageService>>;
     events: BackendEventBus;
     sessions: SessionDispatchIndex;
+    transcripts: ReturnType<typeof createSessionTranscripts>;
   } = {
     dataDir,
     storage,
     events,
     sessions,
+    transcripts: createSessionTranscripts(),
   };
   const harnesses = createHarnessService({
     invoke: <T>(channel: string, args: unknown[] = []) =>
@@ -223,10 +258,73 @@ const broadcast = (channel: string, data: unknown) => {
   if (!servicesReady) return;
   void servicesReady.then(async (services) => {
     await applyCanonicalEventSideEffects(services, harnessId, normalizedEvent);
-    services.events.publish(getCanonicalEventType(normalizedEvent), normalizedEvent, {
-      ...getBridgeEventRefs(normalizedEvent),
+
+    if (!isTranscriptProjectionInput(normalizedEvent)) {
+      services.events.publish(getCanonicalEventType(normalizedEvent), normalizedEvent, {
+        ...getBridgeEventRefs(normalizedEvent),
+        harnessId,
+      });
+      return;
+    }
+
+    const transcriptContext = await resolveTranscriptScopeForBridgeEvent(
+      services,
       harnessId,
+      normalizedEvent,
+      resolveSafeDirectory,
+      bridgeDirectoryHintFromRaw(data),
+    );
+    if (!transcriptContext) {
+      const bridgeDirectory = bridgeDirectoryHintFromRaw(data);
+      services.events.publish(getCanonicalEventType(normalizedEvent), normalizedEvent, {
+        ...getBridgeEventRefs(normalizedEvent),
+        harnessId,
+        ...(bridgeDirectory ? { directory: bridgeDirectory } : {}),
+      });
+      if (normalizedEvent.type !== "session.status") {
+        console.warn("[transcript] published canonical fallback for unscoped transcript event", {
+          harnessId,
+          type: normalizedEvent.type,
+          sessionId: transcriptSessionId(normalizedEvent),
+        });
+      }
+      return;
+    }
+
+    const livePublished = publishLiveSessionHarnessEvent(services, {
+      directory: transcriptContext.scope.directory,
+      harnessId,
+      event: normalizedEvent,
     });
+
+    if (
+      normalizedEvent.type === "session.status" &&
+      (livePublished.length === 0 || normalizedEvent.status?.type === "retry")
+    ) {
+      services.events.publish(getCanonicalEventType(normalizedEvent), normalizedEvent, {
+        ...getBridgeEventRefs(normalizedEvent),
+        harnessId,
+        directory: transcriptContext.scope.directory,
+      });
+    }
+
+    try {
+      await ensureTranscriptProjectionHydrated(services, transcriptContext);
+    } catch (error) {
+      console.warn("[transcript] failed to hydrate projection before live event", {
+        harnessId,
+        type: normalizedEvent.type,
+        sessionId: transcriptSessionId(normalizedEvent),
+        error,
+      });
+    }
+
+    for (const projected of services.transcripts.ingest({
+      scope: transcriptContext.scope,
+      event: normalizedEvent,
+    })) {
+      publishProjectedTranscriptEvent(services, projected);
+    }
   });
 };
 

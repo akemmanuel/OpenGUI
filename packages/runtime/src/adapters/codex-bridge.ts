@@ -21,7 +21,7 @@ import {
   normalizeHarnessDirectory,
   nowHarnessConnection,
   ok,
-} from "../../../../lib/harness-adapter-kit.ts";
+} from "./harness-adapter-kit.ts";
 
 const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 const CODEX_PROVIDER_CACHE_TTL_MS = 60_000;
@@ -615,6 +615,14 @@ function stringifyUnknown(value) {
   } catch {
     return String(value);
   }
+}
+
+function appendOrReplaceCumulativeDelta(current, delta) {
+  const currentText = typeof current === "string" ? current : "";
+  if (currentText && delta.length > currentText.length && delta.startsWith(currentText)) {
+    return delta;
+  }
+  return `${currentText}${delta}`;
 }
 
 function mcpContentToText(result) {
@@ -1812,7 +1820,7 @@ class CodexBridgeManager {
       existing.aggregated_output = `${existing.aggregated_output ?? ""}${delta}`;
       existing.status = existing.status ?? "in_progress";
     } else {
-      existing[field] = `${existing[field] ?? ""}${delta}`;
+      existing[field] = appendOrReplaceCumulativeDelta(existing[field], delta);
     }
     cache.set(itemId, existing);
     if (fallbackType === "agent_message") {

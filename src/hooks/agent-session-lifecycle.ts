@@ -3,7 +3,7 @@ import type { HarnessTarget } from "@/agents/backend";
 import type { SessionMeta, WorktreeParentMap } from "@/hooks/agent-state-persistence";
 import { resolvePendingPromptCreationHarnessRoute } from "@/hooks/agent-harness-routing";
 import { getSessionHarnessId, getSessionProjectTarget } from "@/hooks/agent-session-utils";
-import type { MessageEntry, Session } from "@/hooks/agent-state-types";
+import type { Session } from "@/hooks/agent-state-types";
 import { getDirectoryPlacementInfo } from "@/lib/worktree-placement";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 
@@ -14,6 +14,7 @@ type LifecycleAction =
       type: "SET_ERROR";
       payload: string | null;
     }
+  | { type: "SESSION_ERROR"; payload: { sessionID?: string; error: string } }
   | { type: "SESSION_CREATED"; payload: Session }
   | { type: "SESSION_UPDATED"; payload: Session }
   | { type: "SESSION_DELETED"; payload: string }
@@ -22,14 +23,6 @@ type LifecycleAction =
       payload: {
         sessionId: string;
         meta: Partial<SessionMeta>;
-      };
-    }
-  | {
-      type: "SET_MESSAGES";
-      payload: {
-        messages: MessageEntry[];
-        hasMore: boolean;
-        nextCursor: string | null;
       };
     }
   | {
@@ -74,12 +67,6 @@ interface SessionRuntime {
     target?: HarnessTarget,
   ): Promise<Session>;
   unrevertSession(sessionId: string, target?: HarnessTarget): Promise<Session>;
-}
-
-interface SessionMutationResult {
-  messages: MessageEntry[];
-  hasMore: boolean;
-  nextCursor: string | null;
 }
 
 function getForkBaseTitle(title: string | null | undefined): string {
@@ -341,32 +328,34 @@ export async function deleteLifecycleSession({
 export async function refreshLifecycleSession({
   sessionId,
   mutateSession,
-  fetchMessagePage,
+  reloadTranscript,
   dispatch,
   errorMessage,
 }: {
   sessionId: string;
   mutateSession: () => Promise<Session>;
-  fetchMessagePage: (sessionId: string) => Promise<SessionMutationResult>;
+  reloadTranscript?: (sessionId: string) => Promise<boolean>;
   dispatch: (action: LifecycleAction) => void;
   errorMessage: string;
 }) {
   try {
     const session = await mutateSession();
     dispatch({ type: "SESSION_UPDATED", payload: session });
-    const refreshed = await fetchMessagePage(sessionId);
+    if (reloadTranscript) {
+      await reloadTranscript(sessionId);
+    }
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : errorMessage;
     dispatch({
-      type: "SET_MESSAGES",
+      type: "SESSION_ERROR",
       payload: {
-        messages: refreshed.messages,
-        hasMore: refreshed.hasMore,
-        nextCursor: refreshed.nextCursor,
+        sessionID: sessionId,
+        error: raw.trim() || "sessionError.messagesLoadFailed",
       },
     });
-  } catch (error) {
     dispatch({
       type: "SET_ERROR",
-      payload: error instanceof Error ? error.message : errorMessage,
+      payload: raw,
     });
   }
 }

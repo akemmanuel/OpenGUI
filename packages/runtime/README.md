@@ -30,19 +30,14 @@ const dir = await og.at(repo);
 await dir.connect({ harnesses: ["pi"] });
 const pi = dir.harness("pi");
 
-// Legacy: `og.harness("pi")` still works; pass `directory` on each call.
-
-const unsubscribe = pi.on("event", (event) => {
-  console.log("[pi]", event.type, event);
-});
-
 const sessions = await pi.sessions.list();
 const session =
   sessions[0] != null ? await pi.sessions.open(sessions[0].id) : await pi.sessions.create();
 
-await session.send("List the top-level files in this repo in one sentence.");
-
-// Legacy: pi.prompt({ directory: repo, sessionId, text }) still works.
+const liveTypes: string[] = [];
+const offLive = session.onEvent((event) => {
+  liveTypes.push(event.type);
+});
 
 const streamTypes: string[] = [];
 const offStream = session.onStream((event) => {
@@ -53,11 +48,11 @@ await session.send("List the top-level files in this repo in one sentence.");
 await session.waitUntilIdle({ timeoutMs: 90_000 });
 
 offStream();
+offLive();
 
 // SDK does not queue: if the session is busy, send throws SESSION_BUSY unless whileBusy: "wait"
 await session.abort().catch(() => undefined);
 
-unsubscribe();
 await og.close();
 ```
 
@@ -97,28 +92,26 @@ CLI: `pnpm vp node scripts/runtime/run-agent.mjs -d . -H pi "your prompt"` (uses
 
 ## Public API
 
-| Export                                          | Role                                     |
-| ----------------------------------------------- | ---------------------------------------- |
-| `createOpenGUI(options)`                        | Boot in-process runtime                  |
-| `og.harness(id)`                                | Per-harness handle (`pi`, `opencode`, …) |
-| `og.registerDirectory` / `releaseDirectory`     | Multi-harness directory registration     |
-| `og.getHarnessInventories()`                    | CLI readiness                            |
-| `og.diagnose()`                                 | Compact readiness snapshot               |
-| `runAgent(og, { directory, harness, message })` | One-shot send + wait (scripts)           |
-| `createOpenGUI({ harnesses: ["pi"] })`          | Lazy adapter load (cold start)           |
-| `og.close()`                                    | Tear down sender                         |
-| `OpenGuiSdkError`                               | `SESSION_BUSY`, `HARNESS_MISMATCH`, …    |
+| Export                                          | Role                                          |
+| ----------------------------------------------- | --------------------------------------------- |
+| `createOpenGUI(options)`                        | Boot in-process runtime                       |
+| `og.at(path).harness(id)`                       | Preferred: directory-scoped harness handle    |
+| `og.harness(id)`                                | Unbound handle; pass `directory` on each call |
+| `og.registerDirectory` / `releaseDirectory`     | Multi-harness directory registration          |
+| `og.getHarnessInventories()`                    | CLI readiness                                 |
+| `og.diagnose()`                                 | Compact readiness snapshot                    |
+| `runAgent(og, { directory, harness, message })` | One-shot send + wait (scripts)                |
+| `createOpenGUI({ harnesses: ["pi"] })`          | Lazy adapter load (cold start)                |
+| `og.close()`                                    | Tear down sender                              |
+| `OpenGuiSdkError`                               | `SESSION_BUSY`, `HARNESS_MISMATCH`, …         |
 
-### Agent streaming (`AgentStreamEvent`)
+### Live session events (`LiveSessionEvent`)
 
-Subscribe per session with `session.onStream(handler)`. Events are mapped from internal harness bridges—not full `HarnessEvent`.
+Subscribe per session with `session.onEvent(handler)`. This is the stable live stream contract for SDK users. Harness-native bridge events are normalized inside Runtime; normal SDK consumers should not subscribe to `harness.on("event")` except for explicit diagnostics.
 
-| Harness       | `text.delta` / `thinking.delta`             | `tool.*`                      | `run.start` / `run.end` |
-| ------------- | ------------------------------------------- | ----------------------------- | ----------------------- |
-| `codex`       | `message.part.delta`                        | `message.part.updated` (tool) | `session.status`        |
-| `claude-code` | `message.part.delta`                        | `message.part.updated`        | `session.status`        |
-| `pi`          | Often via full part updates only (no delta) | `message.part.updated`        | `session.status`        |
-| `opencode`    | Harness-dependent                           | Harness-dependent             | `session.status`        |
+`session.onStream(handler)` remains as a legacy ergonomic helper and is derived from `LiveSessionEvent`.
+
+**Diagnostics:** `harness.on("event", …)` still receives raw harness bridge events for debugging adapters. Do not build product logic on `message.part.delta` / `session.status` at this layer.
 
 For Pi extensions, tree navigation, or Pi RPC mode, use **`@earendil-works/pi-coding-agent`** directly (ADR 0007).
 

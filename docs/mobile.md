@@ -38,3 +38,9 @@ The web build uses `viewport-fit=cover` in `src/index.html`. Layout insets come 
 - On iOS, `env(safe-area-inset-*)` is used when injection is not present.
 
 The main column title bar, prompt footer, fixed sidebar, and mobile sidebar sheet each apply these tokens locally. Do not add fixed pixel offsets for status or navigation bars.
+
+## Android back navigation
+
+The hardware back button and predictive back gesture are handled in the web layer via `@capacitor/app` (`src/shell/useMobileBackButton.ts`). Default Capacitor behavior (finishing the activity) is disabled in `capacitor.config.ts` (`App.disableBackButtonHandler`).
+
+Back walks the in-app UI stack (dialogs, mobile sidebar sheet, settings, setup wizard steps, and similar). On the main chat screen, press back twice within two seconds to exit; a toast reminds you between presses.

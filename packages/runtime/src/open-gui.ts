@@ -5,6 +5,13 @@ import { EventEmitter } from "node:events";
 import type { HarnessEvent } from "../../../src/agents/backend.ts";
 import type { HarnessId } from "../../../src/agents/index.ts";
 import { parseFrontendSessionId } from "../../../src/lib/session-identity.ts";
+import { rawSessionIdFromWire } from "./live-session-events/live-session-scope.ts";
+import {
+  mapHarnessSessionStatus,
+  sessionStatusKey,
+  updateSessionStatusMap,
+  type SessionRuntimeStatus,
+} from "./session-runtime-status.ts";
 import type {
   DirectoryRegisterResult,
   HarnessResourceBundle,
@@ -37,6 +44,7 @@ import {
 } from "./session-handle.ts";
 import { diagnoseFromInventories, type OpenGUIDiagnoseResult } from "./diagnose.ts";
 import { OpenGuiSdkError } from "./opengui-sdk-error.ts";
+import { createSessionTranscripts, type SessionTranscripts } from "./session-transcripts.ts";
 
 export { OpenGuiSdkError } from "./opengui-sdk-error.ts";
 export type { OpenGUIDiagnoseResult, HarnessDiagnoseEntry } from "./diagnose.ts";
@@ -50,6 +58,7 @@ export interface CreateOpenGUIOptions {
   harnesses?: HarnessId[];
 }
 
+/** @deprecated Diagnostics only — prefer `SessionHandle.onEvent()` for canonical live events (ADR 0007). */
 export type HarnessEventHandler = (event: HarnessEvent) => void;
 
 export interface HarnessSessionsApi {
@@ -62,6 +71,7 @@ export interface HarnessHandle {
   readonly harnessId: ManagedHarnessId;
   /** Set when obtained via `og.at(path).harness(id)`; methods default `directory` to this path. */
   readonly directoryPath?: string;
+  /** @deprecated Raw harness events; use `sessions.open(id).onEvent()` for the stable live stream. */
   on(event: "event", handler: HarnessEventHandler): () => void;
   sessions: HarnessSessionsApi;
   registerDirectory(input?: { directory?: string }): Promise<DirectoryRegisterResult>;
@@ -113,25 +123,13 @@ export interface OpenGUI {
   close(): Promise<void>;
 }
 
-type SessionRuntimeStatus = "idle" | "running" | "error" | "unknown";
-
-function sessionStatusKey(directory: string, harnessId: HarnessId, rawId: string) {
-  return `${directory}::${harnessId}::${rawId}`;
-}
-
-function mapHarnessSessionStatus(type: string | undefined): SessionRuntimeStatus {
-  if (type === "busy" || type === "running") return "running";
-  if (type === "idle") return "idle";
-  if (type === "error") return "error";
-  return "unknown";
-}
-
 class HarnessHandleImpl implements HarnessHandle {
   readonly harnessId: ManagedHarnessId;
   readonly directoryPath: string | undefined;
   private readonly emitter = new EventEmitter();
   private readonly service: HarnessService;
   private readonly resolveDirectory: (path: string) => Promise<string>;
+  private readonly transcripts: SessionTranscripts;
   private readonly sessionStatus = new Map<string, SessionRuntimeStatus>();
   private readonly registeredDirectories = new Set<string>();
 
@@ -139,11 +137,13 @@ class HarnessHandleImpl implements HarnessHandle {
     harnessId: ManagedHarnessId,
     service: HarnessService,
     resolveDirectory: (path: string) => Promise<string>,
+    transcripts: SessionTranscripts,
     directoryPath?: string,
   ) {
     this.harnessId = harnessId;
     this.service = service;
     this.resolveDirectory = resolveDirectory;
+    this.transcripts = transcripts;
     this.directoryPath = directoryPath;
   }
 
@@ -161,28 +161,29 @@ class HarnessHandleImpl implements HarnessHandle {
   ingestCanonicalEvent(event: HarnessEvent) {
     this.emitter.emit("event", event);
     if (event.type === "session.status") {
-      const rawId = event.sessionID;
-      if (!rawId) return;
-      const directory = this.directoryFromEvent(event);
-      if (!directory) return;
-      this.sessionStatus.set(
-        sessionStatusKey(directory, this.harnessId, rawId),
-        mapHarnessSessionStatus(event.status?.type),
-      );
+      const wireId = event.sessionID;
+      if (!wireId) return;
+      const rawId = rawSessionIdFromWire(this.harnessId, wireId);
+      this.applySessionRuntimeStatus(rawId, mapHarnessSessionStatus(event.status?.type));
       return;
     }
     if (event.type === "session.error") {
-      const rawId = event.sessionID;
-      if (!rawId) return;
-      const directory = this.directoryFromEvent(event);
-      if (!directory) return;
-      this.sessionStatus.set(sessionStatusKey(directory, this.harnessId, rawId), "error");
+      const wireId = event.sessionID;
+      if (!wireId) return;
+      const rawId = rawSessionIdFromWire(this.harnessId, wireId);
+      this.applySessionRuntimeStatus(rawId, "error");
     }
   }
 
-  private directoryFromEvent(event: HarnessEvent): string | undefined {
-    if ("directory" in event && typeof event.directory === "string") return event.directory;
-    return undefined;
+  private applySessionRuntimeStatus(rawId: string, status: SessionRuntimeStatus): void {
+    updateSessionStatusMap({
+      map: this.sessionStatus,
+      harnessId: this.harnessId,
+      rawId,
+      status,
+      registeredDirectories: this.registeredDirectories,
+      directoryPath: this.directoryPath,
+    });
   }
 
   on(_event: "event", handler: HarnessEventHandler): () => void {
@@ -243,6 +244,7 @@ class HarnessHandleImpl implements HarnessHandle {
       directory,
       sessionId,
       service: this.service,
+      transcripts: this.transcripts,
       resolveSessionIds: (id) => this.resolveSessionIds(id),
       getSessionStatus: (dir, rawId) => this.getSessionStatus(dir, rawId),
       markSessionRunning: (dir, rawId) => this.markSessionRunning(dir, rawId),
@@ -414,26 +416,32 @@ class HarnessHandleImpl implements HarnessHandle {
     const directory = await this.ensureDirectory(input.directory);
     const { rawId } = this.resolveSessionIds(input.sessionId);
     const now = new Date().toISOString();
-    return await this.service.listMessages({
-      session: {
-        id: input.sessionId,
-        rawId,
-        directory,
-        harnessId: this.harnessId,
-        title: "",
-        status: "unknown",
-        createdAt: now,
-        updatedAt: now,
-      },
-      scope: {
-        directory,
-        harnessId: this.harnessId,
-        sessionId: rawId,
-      },
-      options: {
-        limit: input.limit,
-        before: input.before,
-      },
+    const sessionRef = {
+      id: input.sessionId,
+      rawId,
+      directory,
+      harnessId: this.harnessId,
+      title: "",
+      status: "unknown" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return await this.transcripts.readPage({
+      scope: { directory, harnessId: this.harnessId, sessionId: input.sessionId },
+      options: { limit: input.limit, before: input.before },
+      fetchHarnessPage: () =>
+        this.service.listMessages({
+          session: sessionRef,
+          scope: {
+            directory,
+            harnessId: this.harnessId,
+            sessionId: rawId,
+          },
+          options: {
+            limit: input.limit,
+            before: input.before,
+          },
+        }),
     });
   }
 
@@ -475,6 +483,7 @@ class OpenGUIImpl implements OpenGUI {
   /** All handles per harness (primary + `og.at().harness()` bindings) for event fan-in. */
   private readonly handlesByHarness = new Map<ManagedHarnessId, Set<HarnessHandleImpl>>();
   private readonly sender: InProcessIpcSender;
+  private readonly transcripts = createSessionTranscripts();
   private closed = false;
 
   constructor(input: {
@@ -500,14 +509,16 @@ class OpenGUIImpl implements OpenGUI {
 
   routeBridgeEvent(harnessId: ManagedHarnessId, event: HarnessEvent) {
     const targets = this.handlesByHarness.get(harnessId);
-    if (!targets?.size) {
-      const primary = this.handles.get(harnessId);
-      primary?.ingestCanonicalEvent(event);
-      return;
-    }
-    for (const handle of targets) {
-      handle.ingestCanonicalEvent(event);
-    }
+    const emit = (payload: HarnessEvent) => {
+      if (!targets?.size) {
+        this.handles.get(harnessId)?.ingestCanonicalEvent(payload);
+        return;
+      }
+      for (const handle of targets) {
+        handle.ingestCanonicalEvent(payload);
+      }
+    };
+    emit(event);
   }
 
   async at(directoryInput: string): Promise<DirectoryHandle> {
@@ -526,6 +537,7 @@ class OpenGUIImpl implements OpenGUI {
       harnessId,
       this.service,
       this.resolveDirectory,
+      this.transcripts,
       directoryPath,
     );
     this.trackHarnessHandle(handle);
@@ -541,7 +553,12 @@ class OpenGUIImpl implements OpenGUI {
     }
     let handle = this.handles.get(harnessId);
     if (!handle) {
-      handle = new HarnessHandleImpl(harnessId, this.service, this.resolveDirectory);
+      handle = new HarnessHandleImpl(
+        harnessId,
+        this.service,
+        this.resolveDirectory,
+        this.transcripts,
+      );
       this.handles.set(harnessId, handle);
       this.trackHarnessHandle(handle);
     }

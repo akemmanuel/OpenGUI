@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Sidebar, SidebarContent, useSidebar } from "@/components/ui/sidebar";
-import {
-  createSessionProjectMoveMeta,
-  getEffectiveSessionDirectory,
-} from "@/hooks/agent-session-utils";
+import { getEffectiveSessionDirectory } from "@/hooks/agent-session-utils";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import { useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
@@ -23,7 +19,6 @@ import { CollapsedProjectPopover } from "./sidebar/CollapsedProjectPopover";
 import { SidebarContentSections } from "./sidebar/SidebarContentSections";
 import { SidebarFooterContent } from "./sidebar/SidebarFooterContent";
 import { SidebarHeaderContent } from "./sidebar/SidebarHeaderContent";
-import { RemoteProjectInput } from "./sidebar/RemoteProjectInput";
 import { useSidebarCollapsedProjects } from "./sidebar/use-sidebar-collapsed-projects";
 import { useProjectGitInfo } from "./sidebar/use-project-git-info";
 import { useSidebarRename } from "./sidebar/use-sidebar-rename";
@@ -99,8 +94,6 @@ export function AppSidebar({
   } = useConnectionState();
 
   // Inline rename state
-  const [showRemoteProjectInput, setShowRemoteProjectInput] = useState(false);
-  const [remoteProjectPath, setRemoteProjectPath] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -114,7 +107,6 @@ export function AppSidebar({
   } = useSidebarRename({ sessions, renameSession });
 
   const homeDir = useHomeDir();
-  const normalizedRemoteProjectPath = normalizeProjectPath(remoteProjectPath);
   const requestProjectPath = useCallback(
     (initialPath?: string) =>
       new Promise<string | null>((resolve) => {
@@ -126,81 +118,14 @@ export function AppSidebar({
       }),
     [],
   );
-  const [optimisticSessionMeta, setOptimisticSessionMeta] = useState<typeof sessionMeta>({});
-  const mergedSessionMeta = useMemo(() => {
-    if (Object.keys(optimisticSessionMeta).length === 0) return sessionMeta;
-    const next = { ...sessionMeta };
-    for (const [sessionId, meta] of Object.entries(optimisticSessionMeta)) {
-      next[sessionId] = { ...next[sessionId], ...meta };
-    }
-    return next;
-  }, [optimisticSessionMeta, sessionMeta]);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeSessionDirectory =
     getEffectiveSessionDirectory(
       activeSession,
-      activeSessionId ? mergedSessionMeta[activeSessionId] : undefined,
+      activeSessionId ? sessionMeta[activeSessionId] : undefined,
     ) ||
     activeTargetDirectory ||
     null;
-
-  useEffect(() => {
-    if (Object.keys(optimisticSessionMeta).length === 0) return;
-    setOptimisticSessionMeta((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const [sessionId, optimisticMeta] of Object.entries(current)) {
-        const committedMeta = sessionMeta[sessionId];
-        if (
-          committedMeta?.originMode === optimisticMeta.originMode &&
-          normalizeProjectPath(committedMeta?.assignedProjectDir ?? "") ===
-            normalizeProjectPath(optimisticMeta.assignedProjectDir ?? "") &&
-          committedMeta?.detachedFromProject === optimisticMeta.detachedFromProject
-        ) {
-          delete next[sessionId];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [optimisticSessionMeta, sessionMeta]);
-
-  const moveSessionToProjectOptimistic = useCallback(
-    async (sessionId: string, directory: string) => {
-      const targetDirectory = normalizeProjectPath(directory);
-      const sourceSession = sessions.find((session) => session.id === sessionId);
-      const sourceDirectory = normalizeProjectPath(
-        (sourceSession?._projectDir ?? sourceSession?.directory) || "",
-      );
-      if (targetDirectory && sourceDirectory) {
-        const meta = createSessionProjectMoveMeta(
-          sourceSession,
-          mergedSessionMeta[sessionId],
-          targetDirectory,
-        );
-        if (!meta) return;
-        flushSync(() => {
-          setOptimisticSessionMeta((current) => ({
-            ...current,
-            [sessionId]: {
-              ...current[sessionId],
-              ...meta,
-            },
-          }));
-        });
-      }
-      try {
-        await moveSessionToProject(sessionId, directory);
-      } catch (error) {
-        setOptimisticSessionMeta((current) => {
-          const { [sessionId]: _removed, ...rest } = current;
-          return rest;
-        });
-        throw error;
-      }
-    },
-    [mergedSessionMeta, moveSessionToProject, sessions],
-  );
 
   const {
     hasActiveSearch,
@@ -212,7 +137,7 @@ export function AppSidebar({
     showChatsSection,
   } = useSidebarModel({
     sessions,
-    sessionMeta: mergedSessionMeta,
+    sessionMeta,
     projectMeta,
     worktreeParents,
     activeWorkspace,
@@ -384,7 +309,7 @@ export function AppSidebar({
     isGitRepo,
     isLocalWorkspace,
     knownWorktrees,
-    moveSessionToProject: moveSessionToProjectOptimistic,
+    moveSessionToProject,
     namingSessionIds,
     pendingPermissions,
     pendingQuestions,
@@ -397,7 +322,7 @@ export function AppSidebar({
     removeSessionFromProject,
     revealSessionInProject,
     selectSession,
-    sessionMeta: mergedSessionMeta,
+    sessionMeta,
     setActiveTarget,
     setEditValue,
     setMergeInfo,
@@ -452,7 +377,7 @@ export function AppSidebar({
           hasMoreChats={hasMoreChats}
           canShowLessChats={canShowLessChats}
           worktreeParents={worktreeParents}
-          sessionMeta={mergedSessionMeta}
+          sessionMeta={sessionMeta}
           labels={{
             pinned: t("sidebar.pinned"),
             chats: t("sidebar.chats"),
@@ -502,25 +427,6 @@ export function AppSidebar({
             selectSession={selectSession}
             closePopover={closeProjectPopover}
             closeMobileSidebar={closeMobileSidebar}
-          />
-        )}
-
-        {/* Remote path input (shown for remote workspaces, independent of project list) */}
-        {showRemoteProjectInput && !isLocalWorkspace && !detachedProject && (
-          <RemoteProjectInput
-            workspaceName={activeWorkspace?.name}
-            value={remoteProjectPath}
-            normalizedValue={normalizedRemoteProjectPath}
-            onChange={setRemoteProjectPath}
-            onCancel={() => {
-              setRemoteProjectPath("");
-              setShowRemoteProjectInput(false);
-            }}
-            onOpen={(path) => {
-              void connectToProject(path);
-              setRemoteProjectPath("");
-              setShowRemoteProjectInput(false);
-            }}
           />
         )}
       </SidebarContent>

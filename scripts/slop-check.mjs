@@ -86,6 +86,41 @@ const checks = [
     cmd: `rg 'from "../../../../src/agents' packages/backend/src 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
+  {
+    name: "no frontend-live-session-bridge module-global map",
+    cmd: `test -f src/hooks/frontend-live-session-bridge.ts && echo found || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "LiveSessionProjection only in session-transcript feature",
+    cmd: `rg 'new LiveSessionProjection' src --glob '!**/*.test.*' --glob '!src/features/session-transcript/**' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no agent-transcript-reducer module",
+    cmd: `test -f src/hooks/agent-transcript-reducer.ts && echo found || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no TRANSCRIPT_ actions in agent-reducer",
+    cmd: `rg 'TRANSCRIPT_' src/hooks/agent-reducer.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no SET_MESSAGES or LOAD_CHILD_SESSION in hooks",
+    cmd: `rg 'SET_MESSAGES|LOAD_CHILD_SESSION' src/hooks --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no _sessionBuffers in frontend hooks",
+    cmd: `rg '_sessionBuffers' src/hooks --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no VirtualMessageScroller in message list",
+    cmd: `rg 'VirtualMessageScroller|useVirtualMessageScroller|@tanstack/react-virtual' src/components/message-list --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
 ];
 
 let failed = 0;

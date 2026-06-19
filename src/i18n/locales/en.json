@@ -1,4 +1,7 @@
 {
+  "mobile": {
+    "backAgainToExit": "Press back again to exit"
+  },
   "common": {
     "autoDetect": "Auto-detect",
     "back": "Back",
@@ -13,6 +16,14 @@
     "version": "Version",
     "done": "Done",
     "loading": "Loading..."
+  },
+  "messageError": {
+    "showDetails": "Show details",
+    "hideDetails": "Hide details",
+    "copy": "Copy"
+  },
+  "messageList": {
+    "loadOlder": "Load older messages"
   },
   "settings": {
     "subtitle": "Manage app preferences and providers for active workspace.",

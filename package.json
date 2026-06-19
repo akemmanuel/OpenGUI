@@ -19,7 +19,7 @@
     "postinstall": "node ./scripts/ensure-electron.mjs",
     "prepare": "vp config",
     "dev": "node --experimental-strip-types scripts/dev-desktop.ts",
-    "dev:web": "vp dev",
+    "dev:web": "HOST=0.0.0.0 vp dev --host 0.0.0.0",
     "build": "vp build",
     "check": "vp check",
     "check:fix": "vp check --fix",
@@ -48,10 +48,12 @@
     "runtime:probe:resources": "vp node scripts/runtime/probe-resources.mjs",
     "runtime:probe:messages": "vp node scripts/runtime/probe-messages.mjs",
     "runtime:probe:status": "vp node scripts/runtime/probe-directory-status.mjs",
-    "runtime:probe:all": "vp node scripts/runtime/probe-all-readonly.mjs"
+    "runtime:probe:all": "vp node scripts/runtime/probe-all-readonly.mjs",
+    "runtime:debug:bridges": "node --experimental-strip-types scripts/runtime/debug-bridges.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.4.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",

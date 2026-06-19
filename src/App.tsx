@@ -14,12 +14,15 @@ import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sideb
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { WorktreeCleanupDialog } from "@/components/WorktreeCleanupDialog";
+import {
+  useActiveTranscriptContextMessages,
+  useActiveTranscriptMessageOrder,
+} from "@/features/session-transcript/active-session-transcript-provider";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
   HarnessProvider,
   useActions,
   useConnectionState,
-  useMessages,
   useModelState,
   useSessionState,
 } from "@/hooks/use-agent-state";
@@ -30,6 +33,9 @@ import { storageGet } from "@/lib/safe-storage";
 import { OpenGuiClientProvider, useOpenGuiClient } from "@/protocol/provider";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { DesktopShellProvider } from "@/shell/provider";
+import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
+import { useMobileBackButton } from "@/shell/useMobileBackButton";
+import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { notifyError, notifyErrorDeduped, resetNotifyErrorDedup } from "@/lib/notify";
 import { normalizeTerminalOutput } from "@/lib/utils";
 import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShortcuts";
@@ -38,9 +44,11 @@ import { useChatSessionSurface } from "@/features/session/useChatSessionSurface"
 import { useActiveWorktreeMerge } from "@/features/worktree/useActiveWorktreeMerge";
 import { AppSidebar } from "./components/AppSidebar";
 import { SettingsView } from "./components/ConnectionPanel";
+import { findLastUserMessageBeforeRevert } from "@/components/message-list/message-revert";
 import { MessageList } from "./components/MessageList";
 import { ProjectHarnessStatusBanner } from "./components/ProjectHarnessStatusBanner";
 import { PromptBox } from "./components/PromptBox";
+import { PromptSessionStatus } from "./components/PromptSessionStatus";
 import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
@@ -89,7 +97,8 @@ function AppContent({
     sessionMeta,
     sessionErrors,
   } = useSessionState();
-  const { messages } = useMessages();
+  const messageOrder = useActiveTranscriptMessageOrder();
+  const contextMessages = useActiveTranscriptContextMessages();
   const { providers, selectedModel, providerDefaults } = useModelState();
   const capabilities = useBackendCapabilities();
   const {
@@ -150,14 +159,9 @@ function AppContent({
   // Find the last user message (for undo keybind), respecting revert state
   const revertToLastMessage = useCallback(() => {
     if (!capabilities?.revert) return;
-    const revertMsgId = activeSession?.revert?.messageID;
-    const userMessages = messages.filter((m) => m.info.role === "user");
-    // Find the last user message before the current revert point (or the very last)
-    const target = revertMsgId
-      ? [...userMessages].reverse().find((m) => m.info.id < revertMsgId)
-      : userMessages[userMessages.length - 1];
+    const target = findLastUserMessageBeforeRevert(messageOrder, activeSession?.revert?.messageID);
     if (target) void revertToMessage(target.info.id);
-  }, [capabilities?.revert, activeSession, messages, revertToMessage]);
+  }, [capabilities?.revert, activeSession?.revert?.messageID, messageOrder, revertToMessage]);
 
   const { queueMode, setQueueMode } = useAppKeyboardShortcuts({
     capabilities,
@@ -191,7 +195,7 @@ function AppContent({
 
   const contextInfo = useContextInfo({
     activeSessionId,
-    messages,
+    messages: contextMessages,
     providers,
     selectedModel,
     providerDefaults,
@@ -241,6 +245,26 @@ function AppContent({
 
   // Check for app updates on startup
   const updateCheck = useUpdateCheck();
+
+  const handleMobileBackFromSettings = useCallback(() => {
+    setActiveView("chat");
+    return true;
+  }, []);
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.SETTINGS_VIEW,
+    activeView === "settings",
+    handleMobileBackFromSettings,
+  );
+
+  const handleMobileBackFromMerge = useCallback(() => {
+    setMergeInfo(null);
+    return true;
+  }, [setMergeInfo]);
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.MERGE,
+    mergeInfo !== null,
+    handleMobileBackFromMerge,
+  );
 
   useEffect(() => {
     const openSettings = () => {
@@ -324,7 +348,7 @@ function AppContent({
                     />
                   )
                 ) : (
-                  <MessageList detachedProject={detachedProject} />
+                  <MessageList />
                 )}
 
                 <ProjectHarnessStatusBanner
@@ -334,8 +358,8 @@ function AppContent({
 
                 {/* Queue list + Prompt input */}
                 {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
-                  <div className="shrink-0 px-4 app-safe-bottom-inset">
-                    <div className="max-w-2xl mx-auto">
+                  <div className="shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
+                    <div className="w-full md:max-w-2xl md:mx-auto">
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">
                           <QueueList
@@ -351,13 +375,16 @@ function AppContent({
                           />
                         </div>
                       )}
-                      <PromptBox
-                        autoFocus
-                        isLoading={isBusy}
+                      <PromptSessionStatus
                         contextPercent={contextPercent}
                         contextTokens={contextInfo.tokens}
                         contextCost={contextInfo.cost}
                         contextLimit={contextInfo.contextLimit}
+                        isLoading={isBusy}
+                      />
+                      <PromptBox
+                        autoFocus
+                        isLoading={isBusy}
                         queueMode={queueMode}
                         onQueueModeChange={setQueueMode}
                         onSubmit={(message, mode) => {
@@ -395,6 +422,8 @@ export function App() {
   const [showWizard, setShowWizard] = useState(
     () => storageGet(STORAGE_KEYS.SETUP_COMPLETE) !== "true",
   );
+
+  useMobileBackButton();
 
   return (
     <DesktopShellProvider>

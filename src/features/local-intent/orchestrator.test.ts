@@ -1,60 +1,14 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import { initI18n, i18n } from "@/i18n";
+import { initialAgentState } from "@/hooks/agent-initial-state";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
 import { createLocalIntentOrchestrator } from "@/features/local-intent";
 
 function makeState(overrides: Partial<InternalAgentState> = {}): InternalAgentState {
   return {
-    workspaces: [],
+    ...initialAgentState,
     activeWorkspaceId: "workspace-1",
-    projectWorkspaceMap: {},
-    projectHydration: {},
-    connections: {},
-    sessions: [],
-    activeSessionId: null,
-    messages: [],
-    messageHistoryHasMore: false,
-    messageHistoryCursor: null,
-    isLoadingMessages: false,
-    isLoadingOlderMessages: false,
-    isBusy: false,
-    pendingPermissions: {},
-    pendingQuestions: {},
-    lastError: null,
-    sessionErrors: {},
-    bootState: "idle",
-    bootError: null,
-    bootLogs: null,
-    workspaceResources: {},
-    providers: [],
-    providerDefaults: {},
-    selectedModel: null,
-    busySessionIds: new Set(),
-    agents: [],
-    selectedAgent: null,
-    variantSelections: {},
-    commands: [],
-    queuedPrompts: {},
-    defaultChatDirectory: null,
-    activeTargetDirectory: null,
-    activeTargetHarnessId: null,
-    namingSessionIds: new Set(),
-    unreadSessionIds: new Set(),
-    sessionDrafts: {},
-    sessionMeta: {},
-    projectMeta: {},
-    worktreeParents: {},
-    pendingWorktreeCleanup: null,
-    turnRuns: {},
-    activeTurnRunBySession: {},
-    childSessions: {},
-    trackedChildSessionIds: new Set(),
-    _pendingSnapshots: [],
-    _sessionBuffers: {},
-    afterPartPending: new Set(),
-    _afterPartTriggered: new Set(),
-    _deletedSessionIds: new Set(),
     ...overrides,
   };
 }

@@ -38,7 +38,13 @@ import {
   useModelState,
   useSessionState,
 } from "@/hooks/use-agent-state";
+import { fetchHarnessInventoriesCached } from "@/lib/harness-inventory-cache";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
+import {
+  ensureResourceCatalog,
+  getCachedResourceBundle,
+  makeCatalogKey,
+} from "@/lib/resource-catalog-cache";
 import {
   filterModelSearchCandidates,
   findExactModelReferenceMatch,
@@ -48,7 +54,8 @@ import {
 import { storageGet, storageParsed, storageSetJSON } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
 import { useOpenGuiClient } from "@/protocol/provider";
-import type { Provider } from "@/protocol/harness-types";
+import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
+import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import type { HarnessInventory } from "@/types/electron";
 
 type ModelOption = ModelSearchCandidate & {
@@ -60,17 +67,6 @@ type ModelGroup = {
   name: string;
   models: ModelOption[];
 };
-
-type DialogCatalogTarget = {
-  directory: string | null;
-  workspaceId: string;
-  baseUrl?: string;
-  authToken?: string;
-};
-
-function createCatalogKey(harnessId: HarnessId, target: DialogCatalogTarget) {
-  return [harnessId, target.workspaceId, target.directory ?? ""].join("\u0000");
-}
 
 function harnessInventoryHint(
   inventory: HarnessInventory | undefined,
@@ -209,9 +205,7 @@ export function ModelSelector() {
   const [open, setOpen] = useState(false);
   const [dialogHarnessId, setDialogHarnessId] = useState<HarnessId>(resolvedHarnessId);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [draftCatalogHarnessId, setDraftCatalogHarnessId] = useState<HarnessId | null>(null);
-  const [draftCatalogKey, setDraftCatalogKey] = useState<string | null>(null);
-  const [draftProviders, setDraftProviders] = useState<Provider[]>([]);
+  const [resolvedCatalogKey, setResolvedCatalogKey] = useState<string | null>(null);
   const [inventories, setInventories] = useState<HarnessInventory[]>([]);
   const [inventoriesReady, setInventoriesReady] = useState(false);
   const [query, setQuery] = useState("");
@@ -246,9 +240,19 @@ export function ModelSelector() {
     };
   }, [activeSession, activeTargetDirectory, activeWorkspace, activeWorkspaceId]);
 
-  const catalogMatchesDialog =
-    dialogHarnessId === draftCatalogHarnessId &&
-    draftCatalogKey === createCatalogKey(dialogHarnessId, dialogCatalogTarget);
+  const activeCatalogKey = useMemo(
+    () =>
+      makeCatalogKey({
+        harnessId: dialogHarnessId,
+        workspaceId: dialogCatalogTarget.workspaceId,
+        directory: dialogCatalogTarget.directory,
+        baseUrl: dialogCatalogTarget.baseUrl,
+        authToken: dialogCatalogTarget.authToken,
+      }),
+    [dialogHarnessId, dialogCatalogTarget],
+  );
+
+  const catalogMatchesDialog = resolvedCatalogKey === activeCatalogKey;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -287,55 +291,62 @@ export function ModelSelector() {
   }, [favoriteValues, storageHydrated]);
 
   useEffect(() => {
-    if (!open) {
-      setInventoriesReady(false);
-      return;
-    }
-    setInventoriesReady(false);
-    void client.runtime
-      .getHarnessInventories()
-      .then((rows) => {
-        setInventories(rows);
-        setInventoriesReady(true);
-      })
-      .catch(() => {
-        setInventories([]);
-        setInventoriesReady(true);
-      });
+    if (!open) return;
+    let cancelled = false;
+    void fetchHarnessInventoriesCached(client).then((rows) => {
+      if (cancelled) return;
+      setInventories(rows);
+      setInventoriesReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open, client]);
 
   const ensureCatalogForHarness = useCallback(
     async (harnessId: HarnessId) => {
-      const key = createCatalogKey(harnessId, dialogCatalogTarget);
-      if (draftCatalogKey === key) return;
+      const key = makeCatalogKey({
+        harnessId,
+        workspaceId: dialogCatalogTarget.workspaceId,
+        directory: dialogCatalogTarget.directory,
+        baseUrl: dialogCatalogTarget.baseUrl,
+        authToken: dialogCatalogTarget.authToken,
+      });
+      if (resolvedCatalogKey === key && getCachedResourceBundle(key)) {
+        setCatalogLoading(false);
+        return;
+      }
+      const cached = getCachedResourceBundle(key);
+      if (cached) {
+        setResolvedCatalogKey(key);
+        setCatalogLoading(false);
+        return;
+      }
       const requestId = ++catalogRequestRef.current;
       setCatalogLoading(true);
       try {
-        const { providersData } = await client.harnesses.loadResources({
+        await ensureResourceCatalog({
           harnessId,
           target: {
-            directory: dialogCatalogTarget.directory ?? undefined,
             workspaceId: dialogCatalogTarget.workspaceId,
+            directory: dialogCatalogTarget.directory,
             baseUrl: dialogCatalogTarget.baseUrl,
             authToken: dialogCatalogTarget.authToken,
           },
+          loadResources: client.harnesses.loadResources.bind(client.harnesses),
         });
         if (requestId !== catalogRequestRef.current) return;
-        setDraftProviders(providersData.providers);
-        setDraftCatalogHarnessId(harnessId);
-        setDraftCatalogKey(key);
+        setResolvedCatalogKey(key);
       } catch {
         if (requestId !== catalogRequestRef.current) return;
-        setDraftProviders([]);
-        setDraftCatalogHarnessId(harnessId);
-        setDraftCatalogKey(key);
+        setResolvedCatalogKey(key);
       } finally {
         if (requestId === catalogRequestRef.current) {
           setCatalogLoading(false);
         }
       }
     },
-    [client, dialogCatalogTarget, draftCatalogKey],
+    [client, dialogCatalogTarget, resolvedCatalogKey],
   );
 
   const openDialog = useCallback(() => {
@@ -359,7 +370,10 @@ export function ModelSelector() {
     return () => cancelAnimationFrame(frame);
   }, [open, dialogHarnessId]);
 
-  const catalogProviders = open ? draftProviders : committedProviders;
+  const catalogProviders = useMemo(() => {
+    if (!open) return committedProviders;
+    return getCachedResourceBundle(activeCatalogKey)?.providersData.providers ?? [];
+  }, [open, activeCatalogKey, committedProviders, resolvedCatalogKey]);
 
   const groups = useMemo(() => {
     const now = Date.now();
@@ -519,6 +533,19 @@ export function ModelSelector() {
     setActiveValue(null);
     setCatalogLoading(false);
   };
+
+  const handleMobileBackCloseModelSelector = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+    setActiveValue(null);
+    setCatalogLoading(false);
+    return true;
+  }, []);
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.MODEL_SELECTOR,
+    open,
+    handleMobileBackCloseModelSelector,
+  );
 
   const selectModel = (model: ModelOption) => {
     setPromptBoxSelection({

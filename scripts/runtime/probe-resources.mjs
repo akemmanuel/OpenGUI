@@ -20,7 +20,8 @@ if (flags.help) {
 }
 
 const { og, directory } = await createRuntime(flags);
-const handle = og.harness(flags.harness);
+const dir = await og.at(directory);
+const handle = dir.harness(flags.harness);
 
 try {
   await og.registerDirectory({ directory, harnessIds: [flags.harness] });

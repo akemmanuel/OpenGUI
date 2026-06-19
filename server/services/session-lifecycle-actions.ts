@@ -146,10 +146,19 @@ export async function listSessionMessagesThroughHarness(input: {
   session: SessionRecord;
   options: { limit?: number; before?: string | null };
 }): Promise<unknown> {
-  return await input.services.harnesses.listMessages({
-    session: input.session,
-    scope: scopeForSession(input.scopeRef, input.session),
+  return await input.services.transcripts.readPage({
+    scope: {
+      directory: input.session.directory,
+      harnessId: input.session.harnessId,
+      sessionId: input.session.id,
+    },
     options: input.options,
+    fetchHarnessPage: () =>
+      input.services.harnesses.listMessages({
+        session: input.session,
+        scope: scopeForSession(input.scopeRef, input.session),
+        options: input.options,
+      }),
   });
 }
 

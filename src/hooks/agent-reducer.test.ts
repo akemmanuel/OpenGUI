@@ -1,7 +1,8 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { HarnessId } from "@/agents";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
-import { mergeProjectBackendSessions, reducer } from "./agent-reducer";
+import { mergeProjectBackendSessions } from "./agent-session-index-merge";
+import { reducer } from "./agent-reducer";
 import { createProjectConnectionStatus } from "./agent-project-connection";
 
 function session(id: string, harnessId: HarnessId, directory = "/repo", updated = 1): Session {
@@ -25,11 +26,6 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     connections: {},
     sessions: [],
     activeSessionId: null,
-    messages: [],
-    messageHistoryHasMore: false,
-    messageHistoryCursor: null,
-    isLoadingMessages: false,
-    isLoadingOlderMessages: false,
     isBusy: false,
     pendingPermissions: {},
     pendingQuestions: {},
@@ -43,6 +39,7 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     providerDefaults: {},
     selectedModel: null,
     busySessionIds: new Set(),
+    liveSessionRetainUntil: {},
     agents: [],
     selectedAgent: null,
     variantSelections: {},
@@ -60,10 +57,6 @@ function baseState(overrides: Partial<InternalAgentState> = {}): InternalAgentSt
     pendingWorktreeCleanup: null,
     turnRuns: {},
     activeTurnRunBySession: {},
-    childSessions: {},
-    trackedChildSessionIds: new Set(),
-    _pendingSnapshots: [],
-    _sessionBuffers: {},
     afterPartPending: new Set(),
     _afterPartTriggered: new Set(),
     _deletedSessionIds: new Set(),
@@ -135,6 +128,11 @@ describe("mergeProjectBackendSessions", () => {
       directory: "/repo",
       incoming,
       harnessIds: ["pi"],
+      retain: {
+        busySessionIds: new Set(),
+        activeTurnRunBySession: {},
+        liveSessionRetainUntil: {},
+      },
     });
 
     expect(merged.map((item) => item.id).sort()).toEqual(["open-old", "pi-new"]);
@@ -149,9 +147,33 @@ describe("mergeProjectBackendSessions", () => {
       directory: "/repo",
       incoming: [],
       harnessIds: [],
+      retain: {
+        busySessionIds: new Set(),
+        activeTurnRunBySession: {},
+        liveSessionRetainUntil: {},
+      },
     });
 
     expect(merged.map((item) => item.id).sort()).toEqual(["open-old", "pi-old"]);
+  });
+
+  test("MERGE_PROJECT_SESSIONS keeps busy session missing from harness list", () => {
+    const sessionId = "pi:running";
+    const state = baseState({
+      sessions: [session(sessionId, "pi")],
+      busySessionIds: new Set([sessionId]),
+    });
+    const next = reducer(state, {
+      type: "MERGE_PROJECT_SESSIONS",
+      payload: {
+        projectKey: "workspace-1\u0000/repo",
+        directory: "/repo",
+        sessions: [],
+        harnessIds: ["pi"],
+        source: "workspace-project",
+      },
+    } as Parameters<typeof reducer>[1]);
+    expect(next.sessions.map((s) => s.id)).toEqual([sessionId]);
   });
 
   test("incoming id wins even when previous copy belonged to another directory", () => {
@@ -164,6 +186,11 @@ describe("mergeProjectBackendSessions", () => {
       directory: "/repo",
       incoming,
       harnessIds: ["opencode"],
+      retain: {
+        busySessionIds: new Set(),
+        activeTurnRunBySession: {},
+        liveSessionRetainUntil: {},
+      },
     });
 
     expect(merged).toHaveLength(1);
@@ -188,6 +215,51 @@ describe("mergeProjectBackendSessions", () => {
     } as Parameters<typeof reducer>[1]);
 
     expect(selected.isBusy).toBe(true);
+  });
+
+  test("binding assistant turn is idempotent and keeps non-empty send metadata", () => {
+    const sessionId = "pi:session-1";
+    const running = reducer(
+      baseState({ activeSessionId: sessionId, sessions: [session(sessionId, "pi")] }),
+      {
+        type: "TURN_RUN_STARTED",
+        payload: {
+          id: "turn-1",
+          sessionID: sessionId,
+          startedAt: 1,
+          status: "running",
+          providerID: "nvidia",
+          modelID: "openai/gpt-oss-20b",
+        },
+      } as Parameters<typeof reducer>[1],
+    );
+
+    const action = {
+      type: "BIND_ASSISTANT_TURN_FROM_TRANSCRIPT",
+      payload: {
+        entry: {
+          info: {
+            id: "assistant-1",
+            sessionID: sessionId,
+            role: "assistant",
+            time: { created: 2 },
+            providerID: "",
+            modelID: "",
+          },
+          parts: [],
+        },
+      },
+    } as Parameters<typeof reducer>[1];
+
+    const bound = reducer(running, action);
+    expect(bound.turnRuns["turn-1"]).toMatchObject({
+      assistantMessageID: "assistant-1",
+      providerID: "nvidia",
+      modelID: "openai/gpt-oss-20b",
+    });
+
+    const rebound = reducer(bound, action);
+    expect(rebound).toBe(bound);
   });
 
   test("session error stops active turn and records message", () => {
@@ -215,7 +287,6 @@ describe("mergeProjectBackendSessions", () => {
     expect(next.sessionErrors[sessionId]).toBe("Claude auth expired");
     expect(next.lastError).toBe("Claude auth expired");
     expect(next.turnRuns["turn-1"]?.status).toBe("error");
-    expect(next.isLoadingMessages).toBe(false);
   });
 
   test("retry session status keeps session busy and records message", () => {

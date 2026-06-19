@@ -1,4 +1,7 @@
 {
+  "mobile": {
+    "backAgainToExit": "Pulsa atrás otra vez para salir"
+  },
   "common": {
     "autoDetect": "Detectar automáticamente",
     "back": "Volver",
@@ -13,6 +16,14 @@
     "version": "Versión",
     "done": "Listo",
     "loading": "Cargando..."
+  },
+  "messageList": {
+    "loadOlder": "Cargar mensajes anteriores"
+  },
+  "messageError": {
+    "showDetails": "Mostrar detalles",
+    "hideDetails": "Ocultar detalles",
+    "copy": "Copiar"
   },
   "settings": {
     "subtitle": "Gestiona las preferencias de la app y los proveedores del espacio de trabajo activo.",

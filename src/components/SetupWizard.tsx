@@ -1,10 +1,13 @@
 /** First-run onboarding for Everyday Builders. */
 
 import { AlertCircle, ArrowRight, Check, Folder, LoaderCircle, RotateCw, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
+import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { createHarnessInventoryView } from "@/hooks/harness-inventory-view";
+import { fetchHarnessInventoriesCached } from "@/lib/harness-inventory-cache";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageSet } from "@/lib/safe-storage";
 import { useOpenGuiClient } from "@/protocol/provider";
@@ -39,6 +42,26 @@ export function SetupWizard({ onComplete }: Props) {
   const [inventories, setInventories] = useState<HarnessInventory[]>([]);
   const [harnessState, setHarnessState] = useState<HarnessState>("detecting");
   const [folder, setFolder] = useState("");
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.SETUP_WIZARD,
+    true,
+    useCallback(() => {
+      const current = stepRef.current;
+      if (current === "folder") {
+        setStep("harness");
+        return true;
+      }
+      if (current === "finish") {
+        setStep("folder");
+        return true;
+      }
+      onComplete();
+      return true;
+    }, [onComplete]),
+  );
 
   const currentStepNumber = stepNumber(step);
   const canUseAnyHarness = createHarnessInventoryView({ inventories }).hasUsableHarness;
@@ -54,10 +77,10 @@ export function SetupWizard({ onComplete }: Props) {
     }
   }, [canUseAnyHarness, step, t]);
 
-  async function refreshHarnessStatus(shouldUpdate = () => true) {
+  async function refreshHarnessStatus(shouldUpdate = () => true, force = false) {
     setHarnessState("detecting");
     try {
-      const result = await client.runtime.getHarnessInventories().catch(() => []);
+      const result = await fetchHarnessInventoriesCached(client, { force }).catch(() => []);
       if (!shouldUpdate()) return result;
       setInventories(result);
       setHarnessState(harnessStateFromInventories(result));
@@ -168,7 +191,7 @@ export function SetupWizard({ onComplete }: Props) {
                 <Button
                   variant="ghost"
                   disabled={harnessState === "detecting"}
-                  onClick={() => void refreshHarnessStatus()}
+                  onClick={() => void refreshHarnessStatus(() => true, true)}
                 >
                   <RotateCw
                     className={`mr-1.5 size-4 ${harnessState === "detecting" ? "animate-spin" : ""}`}

@@ -212,25 +212,23 @@ describe("refreshLifecycleSession", () => {
   test("reconciles the session and refreshed messages after a runtime mutation", async () => {
     const actions: Array<Record<string, unknown>> = [];
     const updated = makeSession({ id: "session-1", title: "Updated" });
-    const messages = [{ info: { id: "message-1" }, parts: [] }] as never;
 
+    let reloaded = false;
     await refreshLifecycleSession({
       sessionId: "session-1",
       mutateSession: async () => updated,
-      fetchMessagePage: async () => ({ messages, hasMore: true, nextCursor: "cursor-1" }),
+      reloadTranscript: async () => {
+        reloaded = true;
+        return true;
+      },
       dispatch: (action) => {
         actions.push(action as Record<string, unknown>);
       },
       errorMessage: "Failed to mutate session",
     });
 
-    expect(actions).toEqual([
-      { type: "SESSION_UPDATED", payload: updated },
-      {
-        type: "SET_MESSAGES",
-        payload: { messages, hasMore: true, nextCursor: "cursor-1" },
-      },
-    ]);
+    expect(actions).toEqual([{ type: "SESSION_UPDATED", payload: updated }]);
+    expect(reloaded).toBe(true);
   });
 });
 

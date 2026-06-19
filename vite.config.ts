@@ -13,6 +13,7 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const vpBin = path.join(path.dirname(require.resolve("vite-plus/package.json")), "bin", "vp");
 const webBackendPort = Number(process.env.OPENGUI_WEB_BACKEND_PORT || 3001);
+const webBackendHost = process.env.OPENGUI_WEB_BACKEND_HOST || "127.0.0.1";
 
 function openguiElectronBuild() {
   return {
@@ -108,7 +109,7 @@ function openguiWebBackend() {
               stdio: "inherit",
               env: {
                 ...process.env,
-                HOST: "127.0.0.1",
+                HOST: webBackendHost,
                 PORT: String(webBackendPort),
                 NODE_ENV: "development",
               },

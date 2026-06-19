@@ -43,23 +43,13 @@ function SheetContent({
   side = "right",
   showCloseButton = true,
   initialFocus: initialFocusProp,
-  onOpenAutoFocus,
   ...props
 }: SheetPrimitive.Popup.Props & {
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
-  /** @deprecated Radix-compat shim; prefer `initialFocus={false}`. */
-  onOpenAutoFocus?: (event: Event) => void;
 }) {
   const { t } = useTranslation();
-  const initialFocus =
-    initialFocusProp ??
-    (onOpenAutoFocus
-      ? () => {
-          onOpenAutoFocus(new Event("focus"));
-          return false;
-        }
-      : undefined);
+  const initialFocus = initialFocusProp;
 
   return (
     <SheetPortal>

@@ -1,6 +1,6 @@
 # Runtime read-only probes
 
-Scripts exercise **`@opengui/runtime`** without **prompts**, **abort**, or **session create**. Use them to verify harness CLIs, directory registration, sessions, models/agents/commands, status maps, and transcripts.
+Scripts exercise **`@opengui/runtime`** without **prompts**, **abort**, or **session create**. Use them to verify harness CLIs, directory registration, sessions, models/agents/commands, status maps, and transcripts. Probes use **`og.at(directory).harness(id)`** (ADR 0007).
 
 Run from repo root (Vite+ is a dev dependency; use `pnpm vp`):
 

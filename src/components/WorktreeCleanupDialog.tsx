@@ -1,5 +1,7 @@
 import { GitBranch, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
+import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { useTranslation } from "react-i18next";
 import { BaseDialog } from "@/components/ui/base-dialog";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,16 @@ export function WorktreeCleanupDialog() {
   const handleKeep = useCallback(() => {
     clearWorktreeCleanup();
   }, [clearWorktreeCleanup]);
+
+  const handleMobileBackWorktreeCleanup = useCallback(() => {
+    handleKeep();
+    return true;
+  }, [handleKeep]);
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.WORKTREE_CLEANUP,
+    isOpen,
+    handleMobileBackWorktreeCleanup,
+  );
 
   const handleRemove = useCallback(async () => {
     if (!worktreeDir || !parentDir) return;

@@ -2,7 +2,6 @@ import type {
   Agent,
   Command,
   Message,
-  Part,
   PermissionRequest,
   QuestionRequest,
 } from "@/protocol/harness-types";
@@ -14,21 +13,12 @@ import type {
   QueuedPrompt,
   Session,
 } from "@/hooks/agent-state-types";
+
 import {
-  applyStreamingDeltaToPart,
-  bufferNonActiveEvent,
-  createPlaceholderMessageEntry,
-  createPlaceholderPart,
-  finalizeRunningToolPartsForSession,
-  getChildSessionId,
-  limitMessageWindow,
-  MAX_SESSION_BUFFER_CACHE,
-  mergeMessageSnapshot,
-  mergeSnapshotPartWithExisting,
-  normalizeMessageEntries,
-  tagPartWithDeltaPositions,
-  updateMessageArray,
-} from "@/hooks/agent-message-state";
+  mergeProjectBackendSessions,
+  nextLiveSessionRetainUntil,
+  upsertSessionInList,
+} from "@/hooks/agent-session-index-merge";
 import {
   getSessionHarnessId,
   getSessionSelectedAgent,
@@ -36,7 +26,6 @@ import {
   getSessionSelectedVariant,
   getSessionWorkspaceId,
   parseProjectKey,
-  sortSessionsNewestFirst,
 } from "@/hooks/agent-session-utils";
 import {
   normalizeWorkspace,
@@ -55,11 +44,7 @@ import {
 import { prependProjectIfMissing } from "@/lib/sidebar-order";
 import { normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, ProvidersData, SelectedModel, Workspace } from "@/types/electron";
-import {
-  harnessSessionIdentity,
-  rawSessionIdForHarness,
-  sameHarnessSessionIdentity,
-} from "@/lib/session-identity";
+import { harnessSessionIdentity, sameHarnessSessionIdentity } from "@/lib/session-identity";
 import {
   isAgentAvailable,
   isModelAvailable,
@@ -119,25 +104,40 @@ function bindAssistantMessageToActiveTurn(state: InternalAgentState, msg: Messag
   const run = state.turnRuns[activeTurnId];
   if (!run || run.status !== "running") return null;
   const completedAt = typeof msg.time.completed === "number" ? msg.time.completed : undefined;
+  const providerID =
+    "providerID" in msg && typeof msg.providerID === "string" && msg.providerID.trim()
+      ? msg.providerID
+      : run.providerID;
+  const modelID =
+    "modelID" in msg && typeof msg.modelID === "string" && msg.modelID.trim()
+      ? msg.modelID
+      : run.modelID;
+  const nextRun = {
+    ...run,
+    assistantMessageID: msg.id,
+    providerID,
+    modelID,
+    thinkingLevel: run.thinkingLevel,
+    // OpenCode can emit several completed assistant messages for one user turn
+    // (assistant text, tool calls, follow-up assistant text, ...).  A
+    // message-level completed timestamp is not a turn-level completion
+    // signal; SESSION_STATUS idle is the canonical end of the live turn.
+    ...(completedAt ? { completedAt } : {}),
+  };
+
+  if (
+    run.assistantMessageID === nextRun.assistantMessageID &&
+    run.providerID === nextRun.providerID &&
+    run.modelID === nextRun.modelID &&
+    run.completedAt === nextRun.completedAt
+  ) {
+    return null;
+  }
 
   return {
     turnRuns: {
       ...state.turnRuns,
-      [activeTurnId]: {
-        ...run,
-        assistantMessageID: msg.id,
-        providerID:
-          "providerID" in msg && typeof msg.providerID === "string"
-            ? msg.providerID
-            : run.providerID,
-        modelID: "modelID" in msg && typeof msg.modelID === "string" ? msg.modelID : run.modelID,
-        thinkingLevel: run.thinkingLevel,
-        // OpenCode can emit several completed assistant messages for one user turn
-        // (assistant text, tool calls, follow-up assistant text, ...).  A
-        // message-level completed timestamp is not a turn-level completion
-        // signal; SESSION_STATUS idle is the canonical end of the live turn.
-        ...(completedAt ? { completedAt } : {}),
-      },
+      [activeTurnId]: nextRun,
     },
   } satisfies Partial<InternalAgentState>;
 }
@@ -193,16 +193,6 @@ export type Action =
   | { type: "SET_ACTIVE_SESSION"; payload: string | null }
   | { type: "SET_SESSION_DRAFT"; payload: { key: string; text: string } }
   | { type: "CLEAR_SESSION_DRAFT"; payload: string }
-  | {
-      type: "SET_MESSAGES";
-      payload: {
-        messages: MessageEntry[];
-        hasMore: boolean;
-        nextCursor?: string | null;
-        mode?: "replace" | "prepend" | "append";
-      };
-    }
-  | { type: "SET_LOADING_OLDER_MESSAGES"; payload: boolean }
   | { type: "SET_BUSY"; payload: boolean }
   | {
       type: "TURN_RUN_STARTED";
@@ -260,30 +250,7 @@ export type Action =
   | { type: "SESSION_CREATED"; payload: Session }
   | { type: "SESSION_UPDATED"; payload: Session }
   | { type: "SESSION_DELETED"; payload: string }
-  | { type: "MESSAGE_UPDATED"; payload: Message }
-  | {
-      type: "MESSAGE_REPLACED";
-      payload: { sessionID: string; oldId: string; message: Message; parts: Part[] };
-    }
-  | { type: "PART_UPDATED"; payload: { part: Part } }
-  | {
-      type: "PART_DELTA";
-      payload: {
-        sessionID: string;
-        messageID: string;
-        partID: string;
-        field: string;
-        delta: string;
-      };
-    }
-  | {
-      type: "PART_REMOVED";
-      payload: { sessionID: string; messageID: string; partID: string };
-    }
-  | {
-      type: "MESSAGE_REMOVED";
-      payload: { sessionID: string; messageID: string };
-    }
+  | { type: "BIND_ASSISTANT_TURN_FROM_TRANSCRIPT"; payload: { entry: MessageEntry } }
   | {
       type: "SESSION_STATUS";
       payload: { sessionID: string; status: { type: string } };
@@ -336,13 +303,6 @@ export type Action =
       payload: { worktreeDir: string; parentDir: string } | null;
     }
   | {
-      type: "LOAD_CHILD_SESSION";
-      payload: {
-        childSessionId: string;
-        messages: Array<{ info: Message; parts: Part[] }>;
-      };
-    }
-  | {
       type: "SET_AFTER_PART_PENDING";
       payload: { sessionID: string; pending: boolean };
     }
@@ -355,57 +315,13 @@ export type Action =
       payload: { oldId: string; newId: string; session: Session };
     };
 
-export function mergeProjectBackendSessions({
-  current,
-  workspaceId,
-  directory,
-  incoming,
-  harnessIds,
-}: {
-  current: Session[];
-  workspaceId: string;
-  directory: string;
-  incoming: Session[];
-  harnessIds?: HarnessId[];
-}) {
-  if (harnessIds && harnessIds.length === 0) return sortSessionsNewestFirst(current);
-  const backendScope = harnessIds ? new Set(harnessIds) : null;
-  const incomingDefined = incoming.filter(
-    (session): session is Session => !!session && typeof session.id === "string",
-  );
-  const incomingIds = new Set(incomingDefined.map((session) => session.id));
-  const incomingHarnessRawKeys = new Set(
-    incomingDefined.flatMap((session) => {
-      const harnessId = getSessionHarnessId(session);
-      const rawId = harnessId
-        ? (session._rawId ?? rawSessionIdForHarness(session.id, harnessId))
-        : session.id;
-      return harnessId ? [`${harnessId}\0${rawId}`] : [];
-    }),
-  );
-  return sortSessionsNewestFirst([
-    ...current.filter((session) => {
-      if (incomingIds.has(session.id)) return false;
-      const sessionHarnessId = getSessionHarnessId(session);
-      const sessionRawId = sessionHarnessId
-        ? (session._rawId ?? rawSessionIdForHarness(session.id, sessionHarnessId))
-        : session.id;
-      if (sessionHarnessId && incomingHarnessRawKeys.has(`${sessionHarnessId}\0${sessionRawId}`)) {
-        return false;
-      }
-      if (getSessionWorkspaceId(session) !== workspaceId) return true;
-      if ((session._projectDir ?? session.directory) !== directory) return true;
-      if (!backendScope) return false;
-      const harnessId = getSessionHarnessId(session);
-      return !harnessId || !backendScope.has(harnessId);
-    }),
-    ...incomingDefined,
-  ]);
-}
+export { mergeProjectBackendSessions } from "@/hooks/agent-session-index-merge";
 
-function getAssignedProjectDir(sessionMeta: InternalAgentState["sessionMeta"], sessionId: string) {
-  const assigned = sessionMeta[sessionId]?.assignedProjectDir;
-  return assigned ? normalizeProjectPath(assigned) : null;
+function touchLiveSessionRetain(
+  liveSessionRetainUntil: InternalAgentState["liveSessionRetainUntil"],
+  sessionId: string,
+): InternalAgentState["liveSessionRetainUntil"] {
+  return { ...liveSessionRetainUntil, [sessionId]: nextLiveSessionRetainUntil() };
 }
 
 function preserveChatSessionDirectory(state: InternalAgentState, incoming: Session): Session {
@@ -657,45 +573,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       for (const [sid, value] of Object.entries(state.queuedPrompts)) {
         if (!removedSessionIds.has(sid)) nextQueues[sid] = value;
       }
-      const nextBuffers: typeof state._sessionBuffers = {};
-      for (const [sid, value] of Object.entries(state._sessionBuffers)) {
-        if (!removedSessionIds.has(sid)) nextBuffers[sid] = value;
-      }
       const nextUnread = new Set(
         [...state.unreadSessionIds].filter((id) => !removedSessionIds.has(id)),
       );
-
-      // Clean up child session data for removed sessions.
-      // Find child session IDs referenced by the removed sessions' messages.
-      const childIdsToRemove = new Set<string>();
-      // If the active session is being removed, scan its messages
-      if (state.activeSessionId && removedSessionIds.has(state.activeSessionId)) {
-        for (const msg of state.messages) {
-          for (const part of msg.parts) {
-            const childSid = getChildSessionId(part);
-            if (childSid) {
-              childIdsToRemove.add(childSid);
-            }
-          }
-        }
-      }
-      // Also remove any removed session IDs that were tracked as children
-      for (const sid of removedSessionIds) {
-        childIdsToRemove.add(sid);
-      }
-
-      let nextChildSessions = state.childSessions;
-      let nextTracked = state.trackedChildSessionIds;
-      if (childIdsToRemove.size > 0) {
-        nextChildSessions = { ...state.childSessions };
-        for (const cid of childIdsToRemove) {
-          delete nextChildSessions[cid];
-        }
-        nextTracked = new Set(state.trackedChildSessionIds);
-        for (const cid of childIdsToRemove) {
-          nextTracked.delete(cid);
-        }
-      }
 
       const nextProjectMeta = { ...state.projectMeta };
       if (projectKey in nextProjectMeta) {
@@ -730,16 +610,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         pendingPermissions: nextPermissions,
         pendingQuestions: nextQuestions,
         queuedPrompts: nextQueues,
-        _sessionBuffers: nextBuffers,
-        childSessions: nextChildSessions,
-        trackedChildSessionIds: nextTracked,
         ...(state.activeSessionId && removedSessionIds.has(state.activeSessionId)
           ? {
               activeSessionId: null,
-              messages: [],
-              messageHistoryHasMore: false,
-              messageHistoryCursor: null,
-              isLoadingOlderMessages: false,
               isBusy: false,
             }
           : {}),
@@ -780,6 +653,11 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           directory,
           incoming: sessions,
           harnessIds,
+          retain: {
+            busySessionIds: state.busySessionIds,
+            activeTurnRunBySession: state.activeTurnRunBySession,
+            liveSessionRetainUntil: state.liveSessionRetainUntil,
+          },
         }),
       };
     }
@@ -829,62 +707,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           );
         }
       }
-      let startingBuffers = state._sessionBuffers;
-      const previousSid = state.activeSessionId;
-      // Always cache outgoing session messages (not just busy ones) for
-      // instant display when switching back.
-      if (previousSid && previousSid !== sid && state.messages.length > 0) {
-        const msgSnapshot: Record<string, { info: Message; parts: Record<string, Part> }> = {};
-        for (const msg of state.messages) {
-          const partsById: Record<string, Part> = {};
-          for (const p of msg.parts) {
-            partsById[p.id] = p;
-          }
-          msgSnapshot[msg.info.id] = { info: msg.info, parts: partsById };
-        }
-        startingBuffers = {
-          ...startingBuffers,
-          [previousSid]: {
-            messages: msgSnapshot,
-            hasMore: state.messageHistoryHasMore,
-            cursor: state.messageHistoryCursor,
-            complete: true,
-          },
-        };
-        // LRU eviction: keep at most MAX_SESSION_BUFFER_CACHE entries.
-        // Evict the oldest entries (first keys) when over the limit.
-        const bufferKeys = Object.keys(startingBuffers);
-        if (bufferKeys.length > MAX_SESSION_BUFFER_CACHE) {
-          const evictCount = bufferKeys.length - MAX_SESSION_BUFFER_CACHE;
-          const pruned = { ...startingBuffers };
-          for (let i = 0; i < evictCount; i++) {
-            const key = bufferKeys[i];
-            if (key) delete pruned[key];
-          }
-          startingBuffers = pruned;
-        }
-      }
-      // If we have a buffer for this session, use it for instant display.
-      // Incomplete buffers still help for freshly-started sessions while
-      // canonical history is loading.
-      const buffered = sid ? startingBuffers[sid] : undefined;
-      const isCompleteBuffer = !!buffered?.complete;
-      let initialMessages: MessageEntry[] = [];
-      let restoredHasMore = false;
-      let restoredCursor: string | null = null;
-      if (buffered) {
-        initialMessages = Object.values(buffered.messages).map((entry) => ({
-          info: entry.info,
-          parts: Object.values(entry.parts).map((p) => tagPartWithDeltaPositions(p)),
-        }));
-        if (isCompleteBuffer) {
-          restoredHasMore = buffered.hasMore;
-          restoredCursor = buffered.cursor;
-        }
-      }
-      // Remove consumed complete buffer only. Keep incomplete buffers until
-      // canonical history replaces them.
-      const { [sid ?? ""]: _consumed, ...remainingBuffers } = startingBuffers;
+
       // Clear unread flag for the session being viewed
       let nextUnread = state.unreadSessionIds;
       if (sid && state.unreadSessionIds.has(sid)) {
@@ -910,17 +733,10 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         selectedModel: nextSelectedModel,
         selectedAgent: nextSelectedAgent,
         variantSelections: nextVariantSelections,
-        messages: initialMessages,
-        messageHistoryHasMore: restoredHasMore,
-        messageHistoryCursor: restoredCursor,
-        isLoadingMessages: sid !== null && !!selectedSession && !isCompleteBuffer,
-        isLoadingOlderMessages: false,
         isBusy: sid ? state.busySessionIds.has(sid) || hasRunningTurn : false,
         unreadSessionIds: nextUnread,
         activeTargetDirectory: sid ? null : state.activeTargetDirectory,
         activeTargetHarnessId: sid ? null : state.activeTargetHarnessId,
-        _pendingSnapshots: [],
-        _sessionBuffers: isCompleteBuffer ? remainingBuffers : startingBuffers,
       };
     }
 
@@ -944,58 +760,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       const { [action.payload]: _removed, ...rest } = state.sessionDrafts;
       return { ...state, sessionDrafts: rest };
     }
-
-    case "SET_MESSAGES": {
-      const mode = action.payload.mode ?? "replace";
-      const normalizedMessages = normalizeMessageEntries(action.payload.messages, state.messages);
-
-      if (mode === "prepend") {
-        // Deduplicate: remove any incoming messages already in state
-        const existingIds = new Set(state.messages.map((m) => m.info.id));
-        const newOlder = normalizedMessages.filter((m) => !existingIds.has(m.info.id));
-        const combined = [...newOlder, ...state.messages];
-        return {
-          ...state,
-          messages: combined,
-          messageHistoryHasMore: action.payload.hasMore,
-          messageHistoryCursor: action.payload.nextCursor ?? null,
-          isLoadingOlderMessages: false,
-        };
-      }
-
-      if (mode === "append") {
-        const appendIds = new Set(normalizedMessages.map((message) => message.info.id));
-        const retainedMessages = state.messages.filter(
-          (message) => !appendIds.has(message.info.id),
-        );
-        const combinedMessages = [...retainedMessages, ...normalizedMessages];
-        return {
-          ...state,
-          messages: limitMessageWindow(combinedMessages),
-          messageHistoryHasMore: false,
-          messageHistoryCursor: null,
-        };
-      }
-
-      let replayedState: InternalAgentState = {
-        ...state,
-        messages: mergeMessageSnapshot(action.payload.messages, state.messages, {
-          preserveExistingBeforeIncoming: action.payload.hasMore || state.messageHistoryHasMore,
-        }),
-        messageHistoryHasMore: action.payload.hasMore,
-        messageHistoryCursor: action.payload.nextCursor ?? null,
-        isLoadingMessages: false,
-        isLoadingOlderMessages: false,
-        _pendingSnapshots: [],
-      };
-      for (const event of state._pendingSnapshots) {
-        replayedState = reducer(replayedState, event);
-      }
-      return replayedState;
-    }
-
-    case "SET_LOADING_OLDER_MESSAGES":
-      return { ...state, isLoadingOlderMessages: action.payload };
 
     case "SET_BUSY":
       return { ...state, isBusy: action.payload };
@@ -1061,7 +825,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         busySessionIds: newBusy,
         turnRuns: nextTurnRuns,
         activeTurnRunBySession: nextActiveTurnRunBySession,
-        ...(sessionID === state.activeSessionId ? { isBusy: false, isLoadingMessages: false } : {}),
+        ...(sessionID === state.activeSessionId ? { isBusy: false } : {}),
       };
     }
 
@@ -1203,11 +967,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       if (created.parentID) return state;
       // Ignore backend echoes for sessions that were optimistically deleted.
       if (state._deletedSessionIds.has(created.id)) return state;
-      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, created.id);
-      const sessionDirectory = normalizeProjectPath(
-        (created._projectDir ?? created.directory) || "",
-      );
-      if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
       const previousActiveSession = state.activeSessionId
         ? state.sessions.find((session) => session.id === state.activeSessionId)
         : null;
@@ -1217,10 +976,8 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         activeSessionId: shouldCanonicalizeActive ? created.id : state.activeSessionId,
-        sessions: sortSessionsNewestFirst([
-          created,
-          ...state.sessions.filter((s) => !sameBackendSession(s, created)),
-        ]),
+        liveSessionRetainUntil: touchLiveSessionRetain(state.liveSessionRetainUntil, created.id),
+        sessions: upsertSessionInList(state.sessions, created),
       };
     }
 
@@ -1232,11 +989,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       // Without this guard the session flickers back into the sidebar
       // between the optimistic removal and the server's session.deleted event.
       if (state._deletedSessionIds.has(updated.id)) return state;
-      const assignedProjectDir = getAssignedProjectDir(state.sessionMeta, updated.id);
-      const sessionDirectory = normalizeProjectPath(
-        (updated._projectDir ?? updated.directory) || "",
-      );
-      if (assignedProjectDir && sessionDirectory !== assignedProjectDir) return state;
       const exists = state.sessions.some((s) => sameBackendSession(s, updated));
       const previousActiveSession = state.activeSessionId
         ? state.sessions.find((session) => session.id === state.activeSessionId)
@@ -1249,6 +1001,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       return {
         ...state,
         activeSessionId: shouldCanonicalizeActive ? updated.id : state.activeSessionId,
+        liveSessionRetainUntil: touchLiveSessionRetain(state.liveSessionRetainUntil, updated.id),
         sessions: exists
           ? state.sessions.map((s) => (sameBackendSession(s, updated) ? updated : s))
           : [updated, ...state.sessions],
@@ -1280,14 +1033,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
 
       const nextSessions = state.sessions.map((s) => (s.id === oldId ? realSession : s));
 
-      const nextMessages = state.messages.map((m) => {
-        if (m.info.sessionID !== oldId) return m;
-        return {
-          info: { ...m.info, sessionID: newId },
-          parts: m.parts.map((p) => ("sessionID" in p ? { ...p, sessionID: newId } : p)),
-        };
-      });
-
       const nextBusy = new Set([...state.busySessionIds].map(renameSessionId));
       const nextNaming = new Set([...state.namingSessionIds].map(renameSessionId));
       const nextActiveTurnRunBySession = Object.fromEntries(
@@ -1309,25 +1054,24 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         newId,
       );
 
-      // Rename the session buffer key if it exists.
-      const nextBuffers = { ...state._sessionBuffers };
-      if (oldId in nextBuffers) {
-        nextBuffers[newId] = nextBuffers[oldId]!;
-        delete nextBuffers[oldId];
+      const nextLiveRetain = { ...state.liveSessionRetainUntil };
+      if (oldId in nextLiveRetain) {
+        nextLiveRetain[newId] = nextLiveRetain[oldId]!;
+        delete nextLiveRetain[oldId];
       }
+      nextLiveRetain[newId] = nextLiveSessionRetainUntil();
 
       return {
         ...state,
         sessions: nextSessions,
         sessionMeta: nextSessionMeta,
         activeSessionId: state.activeSessionId === oldId ? newId : state.activeSessionId,
-        messages: nextMessages,
         busySessionIds: nextBusy,
         activeTurnRunBySession: nextActiveTurnRunBySession,
         turnRuns: nextTurnRuns,
         namingSessionIds: nextNaming,
+        liveSessionRetainUntil: nextLiveRetain,
         ...queuePatch,
-        _sessionBuffers: nextBuffers,
       };
     }
 
@@ -1362,48 +1106,12 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
       }
 
       const queuePatch = removeSessionFromQueueSlice(pickQueuePresentationSlice(state), deletedId);
-      const { [deletedId]: _deletedBuffer, ...remainingBuffers } = state._sessionBuffers;
       const nextUnread = new Set(state.unreadSessionIds);
       nextUnread.delete(deletedId);
       const nextNaming = new Set(state.namingSessionIds);
       nextNaming.delete(deletedId);
       const nextDrafts = { ...state.sessionDrafts };
       delete nextDrafts[`session:${deletedId}`];
-
-      // Clean up child session data for the deleted session.
-      // Find child session IDs referenced by the deleted session's parts.
-      const deletedSession = state.sessions.find((s) => s.id === deletedId);
-      let nextChildSessions = state.childSessions;
-      let nextTracked = state.trackedChildSessionIds;
-      if (deletedSession) {
-        const childIdsToRemove = new Set<string>();
-        // Parts are not directly on session, but child sessions tracked in
-        // trackedChildSessionIds are keyed by their own IDs. We need to
-        // find which children are referenced by this session. Scan the
-        // messages that were loaded for this session.
-        const sessionMessages = state.activeSessionId === deletedId ? state.messages : [];
-        for (const msg of sessionMessages) {
-          for (const part of msg.parts) {
-            const childSid = getChildSessionId(part);
-            if (childSid) {
-              childIdsToRemove.add(childSid);
-            }
-          }
-        }
-        // Also remove the deleted session itself if tracked as a child
-        childIdsToRemove.add(deletedId);
-
-        if (childIdsToRemove.size > 0) {
-          nextChildSessions = { ...state.childSessions };
-          for (const cid of childIdsToRemove) {
-            delete nextChildSessions[cid];
-          }
-          nextTracked = new Set(state.trackedChildSessionIds);
-          for (const cid of childIdsToRemove) {
-            nextTracked.delete(cid);
-          }
-        }
-      }
 
       const nextSessionMeta = { ...state.sessionMeta };
       if (deletedId in nextSessionMeta) {
@@ -1420,374 +1128,23 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         ),
         sessions: state.sessions.filter((s) => s.id !== deletedId),
         ...queuePatch,
-        _sessionBuffers: remainingBuffers,
         unreadSessionIds: nextUnread,
         namingSessionIds: nextNaming,
         sessionDrafts: nextDrafts,
         sessionMeta: nextSessionMeta,
         _deletedSessionIds: nextDeleted,
-        childSessions: nextChildSessions,
-        trackedChildSessionIds: nextTracked,
         ...(state.activeSessionId === deletedId
           ? {
               activeSessionId: null,
-              messages: [],
-              messageHistoryHasMore: false,
-              messageHistoryCursor: null,
-              isLoadingOlderMessages: false,
               isBusy: false,
             }
           : {}),
       };
     }
 
-    case "MESSAGE_UPDATED": {
-      const msg = action.payload;
-      const turnPatch = bindAssistantMessageToActiveTurn(state, msg) ?? {};
-      if (msg.sessionID !== state.activeSessionId) {
-        return {
-          ...bufferNonActiveEvent(state, msg.sessionID, msg.id, (entry) => ({
-            ...entry,
-            info: msg,
-          })),
-          ...turnPatch,
-        };
-      }
-      // Queue snapshot if messages are still loading from the server
-      if (state.isLoadingMessages) {
-        return {
-          ...state,
-          ...turnPatch,
-          _pendingSnapshots: [...state._pendingSnapshots, action],
-        };
-      }
-      const existsInWindow = state.messages.some((m) => m.info.id === msg.id);
-      if (existsInWindow) {
-        return {
-          ...state,
-          ...turnPatch,
-          messages: state.messages.map((m) => (m.info.id === msg.id ? { ...m, info: msg } : m)),
-        };
-      }
-
-      const appendedMessages = limitMessageWindow([...state.messages, { info: msg, parts: [] }]);
-      const didTrim = appendedMessages.length < state.messages.length + 1;
-      return {
-        ...state,
-        ...turnPatch,
-        messages: appendedMessages,
-        // If limitMessageWindow trimmed messages, older history exists
-        ...(didTrim ? { messageHistoryHasMore: true } : {}),
-      };
-    }
-
-    case "MESSAGE_REPLACED": {
-      const { sessionID, oldId, message, parts } = action.payload;
-      const activeTurnId = state.activeTurnRunBySession[sessionID];
-      const activeTurn = activeTurnId ? state.turnRuns[activeTurnId] : undefined;
-      const turnPatch =
-        activeTurn?.assistantMessageID === oldId
-          ? {
-              turnRuns: {
-                ...state.turnRuns,
-                [activeTurn.id]: { ...activeTurn, assistantMessageID: message.id },
-              },
-            }
-          : {};
-      const replacement = { info: message, parts };
-      const replaceEntries = (entries: MessageEntry[]) => {
-        let replaced = false;
-        const next = entries
-          .filter((entry) => entry.info.id !== message.id)
-          .map((entry) => {
-            if (entry.info.id !== oldId) return entry;
-            replaced = true;
-            return replacement;
-          });
-        return replaced ? next : [...next, replacement];
-      };
-
-      if (sessionID === state.activeSessionId && state.isLoadingMessages) {
-        return {
-          ...state,
-          ...turnPatch,
-          _pendingSnapshots: [...state._pendingSnapshots, action],
-        };
-      }
-      if (sessionID !== state.activeSessionId) {
-        const sessionBuffer = state._sessionBuffers[sessionID];
-        if (!sessionBuffer) return { ...state, ...turnPatch };
-        const { [oldId]: _old, [message.id]: _existing, ...remaining } = sessionBuffer.messages;
-        return {
-          ...state,
-          ...turnPatch,
-          _sessionBuffers: {
-            ...state._sessionBuffers,
-            [sessionID]: {
-              ...sessionBuffer,
-              messages: {
-                ...remaining,
-                [message.id]: {
-                  info: message,
-                  parts: Object.fromEntries(parts.map((part) => [part.id, part])),
-                },
-              },
-            },
-          },
-        };
-      }
-
-      return {
-        ...state,
-        ...turnPatch,
-        messages: limitMessageWindow(replaceEntries(state.messages)),
-      };
-    }
-
-    case "PART_UPDATED": {
-      const { part } = action.payload;
-      if (part.sessionID !== state.activeSessionId) {
-        return bufferNonActiveEvent(state, part.sessionID, part.messageID, (entry) => {
-          const previous = entry.parts[part.id];
-          const tagged = tagPartWithDeltaPositions(part, previous);
-          return {
-            ...entry,
-            parts: { ...entry.parts, [part.id]: tagged },
-          };
-        });
-      }
-      // Track child session IDs from Task tool parts with metadata.sessionId
-      let childTrackPatch:
-        | {
-            trackedChildSessionIds: Set<string>;
-            childSessions: typeof state.childSessions;
-          }
-        | undefined;
-      const childSid = getChildSessionId(part);
-      if (childSid && !state.trackedChildSessionIds.has(childSid)) {
-        const nextTracked = new Set(state.trackedChildSessionIds);
-        nextTracked.add(childSid);
-        childTrackPatch = {
-          trackedChildSessionIds: nextTracked,
-          childSessions: {
-            ...state.childSessions,
-            [childSid]: state.childSessions[childSid] ?? {},
-          },
-        };
-      }
-      // Queue snapshot if messages are still loading from the server
-      if (state.isLoadingMessages) {
-        return {
-          ...state,
-          ...childTrackPatch,
-          _pendingSnapshots: [...state._pendingSnapshots, action],
-        };
-      }
-
-      const updateEntry = (entry?: MessageEntry): MessageEntry => {
-        const currentEntry = entry ?? createPlaceholderMessageEntry(part.sessionID, part.messageID);
-        const existingIdx = currentEntry.parts.findIndex((p) => p.id === part.id);
-        const previous = existingIdx >= 0 ? currentEntry.parts[existingIdx] : undefined;
-        const tagged = mergeSnapshotPartWithExisting(part, previous);
-        const newParts = [...currentEntry.parts];
-        if (existingIdx >= 0) newParts[existingIdx] = tagged;
-        else newParts.push(tagged);
-        return { ...currentEntry, parts: newParts };
-      };
-
-      const sourceEntry = state.messages.find((m) => m.info.id === part.messageID);
-      const prevPart = sourceEntry?.parts.find((p) => p.id === part.id);
-      const updatedWindow = updateMessageArray(state.messages, part.messageID, updateEntry);
-
-      // After-part trigger: detect when a part just finished while we're
-      // waiting for the current part to complete before aborting + sending.
-      let afterPartPatch:
-        | {
-            afterPartPending: Set<string>;
-            _afterPartTriggered: Set<string>;
-          }
-        | undefined;
-      if (state.afterPartPending.has(part.sessionID)) {
-        let justFinished = false;
-
-        if (part.type === "tool") {
-          const doneStatus = part.state.status === "completed" || part.state.status === "error";
-          const wasPending =
-            !prevPart ||
-            (prevPart.type === "tool" &&
-              (prevPart.state.status === "running" || prevPart.state.status === "pending"));
-          justFinished = doneStatus && wasPending;
-        } else if (part.type === "text") {
-          const hasEnd = part.time?.end !== undefined;
-          const prevHadEnd = prevPart?.type === "text" && prevPart.time?.end !== undefined;
-          justFinished = hasEnd && !prevHadEnd;
-        } else if (part.type === "step-finish") {
-          // StepFinishPart arrival always signals a step boundary
-          justFinished = !prevPart;
-        }
-
-        if (justFinished) {
-          const nextPending = new Set(state.afterPartPending);
-          nextPending.delete(part.sessionID);
-          const nextTriggered = new Set(state._afterPartTriggered);
-          nextTriggered.add(part.sessionID);
-          afterPartPatch = {
-            afterPartPending: nextPending,
-            _afterPartTriggered: nextTriggered,
-          };
-        }
-      }
-
-      const partUpdatedMessages = limitMessageWindow(updatedWindow.messages);
-      const partDidTrim = partUpdatedMessages.length < updatedWindow.messages.length;
-      return {
-        ...state,
-        ...childTrackPatch,
-        ...afterPartPatch,
-        messages: partUpdatedMessages,
-        // If limitMessageWindow trimmed messages, older history exists
-        ...(partDidTrim ? { messageHistoryHasMore: true } : {}),
-      };
-    }
-
-    case "PART_DELTA": {
-      const { sessionID, messageID, partID, field, delta } = action.payload;
-      if (sessionID !== state.activeSessionId) {
-        return bufferNonActiveEvent(state, sessionID, messageID, (entry) => {
-          const existing =
-            entry.parts[partID] ?? createPlaceholderPart(sessionID, messageID, partID, field);
-          const nextPart = applyStreamingDeltaToPart(existing, field, delta);
-          return {
-            ...entry,
-            parts: { ...entry.parts, [partID]: nextPart },
-          };
-        });
-      }
-
-      if (state.isLoadingMessages) {
-        return {
-          ...state,
-          _pendingSnapshots: [...state._pendingSnapshots, action],
-        };
-      }
-
-      const updateEntry = (entry?: MessageEntry): MessageEntry => {
-        const current = entry ?? createPlaceholderMessageEntry(sessionID, messageID);
-        const partIndex = current.parts.findIndex((p) => p.id === partID);
-        const existingPart = partIndex >= 0 ? current.parts[partIndex] : undefined;
-        const existing = existingPart ?? createPlaceholderPart(sessionID, messageID, partID, field);
-        const nextPart = applyStreamingDeltaToPart(existing, field, delta);
-        const nextParts = [...current.parts];
-        if (partIndex >= 0) nextParts[partIndex] = nextPart;
-        else nextParts.push(nextPart);
-        return { ...current, parts: nextParts };
-      };
-      const deltaUpdated = updateMessageArray(state.messages, messageID, updateEntry).messages;
-      const deltaMessages = limitMessageWindow(deltaUpdated);
-      const deltaDidTrim = deltaMessages.length < deltaUpdated.length;
-      return {
-        ...state,
-        messages: deltaMessages,
-        // If limitMessageWindow trimmed messages, older history exists
-        ...(deltaDidTrim ? { messageHistoryHasMore: true } : {}),
-      };
-    }
-
-    case "PART_REMOVED": {
-      const { sessionID, messageID, partID } = action.payload;
-      if (sessionID === state.activeSessionId && state.isLoadingMessages) {
-        return {
-          ...state,
-          _pendingSnapshots: [...state._pendingSnapshots, action],
-        };
-      }
-      if (sessionID !== state.activeSessionId) {
-        // Handle removal for tracked child sessions
-        if (state.trackedChildSessionIds.has(sessionID)) {
-          const childBuf = state.childSessions[sessionID];
-          if (!childBuf) return state;
-          const entry = childBuf[messageID];
-          if (!entry || !(partID in entry.parts)) return state;
-          const { [partID]: _removedChild, ...remainingChildParts } = entry.parts;
-          return {
-            ...state,
-            childSessions: {
-              ...state.childSessions,
-              [sessionID]: {
-                ...childBuf,
-                [messageID]: {
-                  ...entry,
-                  parts: remainingChildParts,
-                },
-              },
-            },
-          };
-        }
-        const sessionBuffer = state._sessionBuffers[sessionID];
-        if (!sessionBuffer) return state;
-        const entry = sessionBuffer.messages[messageID];
-        if (!entry || !(partID in entry.parts)) return state;
-        const { [partID]: _removed, ...remainingParts } = entry.parts;
-        const newBuffers = { ...state._sessionBuffers };
-        newBuffers[sessionID] = {
-          ...sessionBuffer,
-          messages: {
-            ...sessionBuffer.messages,
-            [messageID]: { ...entry, parts: remainingParts },
-          },
-        };
-        return { ...state, _sessionBuffers: newBuffers };
-      }
-      return {
-        ...state,
-        messages: state.messages.map((m) => {
-          if (m.info.id !== messageID) return m;
-          return {
-            ...m,
-            parts: m.parts.filter((p) => p.id !== partID),
-          };
-        }),
-      };
-    }
-
-    case "MESSAGE_REMOVED": {
-      const { sessionID, messageID } = action.payload;
-      if (sessionID === state.activeSessionId && state.isLoadingMessages) {
-        return {
-          ...state,
-          _pendingSnapshots: [...state._pendingSnapshots, action],
-        };
-      }
-      if (sessionID !== state.activeSessionId) {
-        // Handle removal for tracked child sessions
-        if (state.trackedChildSessionIds.has(sessionID)) {
-          const childBuf = state.childSessions[sessionID];
-          if (!childBuf) return state;
-          if (!(messageID in childBuf)) return state;
-          const { [messageID]: _removedMsg, ...remainingChildMsgs } = childBuf;
-          return {
-            ...state,
-            childSessions: {
-              ...state.childSessions,
-              [sessionID]: remainingChildMsgs,
-            },
-          };
-        }
-        const sessionBuffer = state._sessionBuffers[sessionID];
-        if (!sessionBuffer) return state;
-        if (!(messageID in sessionBuffer.messages)) return state;
-        const { [messageID]: _removed, ...remainingMsgs } = sessionBuffer.messages;
-        const newBuffers = { ...state._sessionBuffers };
-        newBuffers[sessionID] = {
-          ...sessionBuffer,
-          messages: remainingMsgs,
-        };
-        return { ...state, _sessionBuffers: newBuffers };
-      }
-      return {
-        ...state,
-        messages: state.messages.filter((m) => m.info.id !== messageID),
-      };
+    case "BIND_ASSISTANT_TURN_FROM_TRANSCRIPT": {
+      const patch = bindAssistantMessageToActiveTurn(state, action.payload.entry.info);
+      return patch ? { ...state, ...patch } : state;
     }
 
     case "SESSION_STATUS": {
@@ -1813,9 +1170,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
               Object.entries(state.sessionErrors).filter(([id]) => id !== sessionID),
             )
           : state.sessionErrors;
-      // Keep session buffer cached even when session goes idle so
-      // switching back to it is instant (LRU eviction handles cleanup).
-      const nextBuffers = state._sessionBuffers;
       // Mark session as unread when it finishes generating (busy -> idle)
       // and the user is not currently viewing it
       let nextUnread = state.unreadSessionIds;
@@ -1848,10 +1202,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
         sessionErrors: nextSessionErrors,
         ...(retryMessage ? { lastError: retryMessage } : {}),
         unreadSessionIds: nextUnread,
-        _sessionBuffers: nextBuffers,
-        ...(sessionID === state.activeSessionId && !isBusy
-          ? { messages: finalizeRunningToolPartsForSession(state.messages, sessionID) }
-          : {}),
         ...(sessionID === state.activeSessionId ? { isBusy } : {}),
       };
     }
@@ -1866,11 +1216,9 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           newBusy.delete(sessionID);
         }
       }
-      const nextBuffers = state._sessionBuffers;
       return {
         ...state,
         busySessionIds: newBusy,
-        _sessionBuffers: nextBuffers,
         ...(state.activeSessionId && statuses[state.activeSessionId]
           ? {
               isBusy: statuses[state.activeSessionId]?.type === "busy",
@@ -1898,11 +1246,6 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
           : action.payload.resetSelection
             ? null
             : state.selectedAgent,
-        messages: [],
-        messageHistoryHasMore: false,
-        messageHistoryCursor: null,
-        isLoadingMessages: false,
-        isLoadingOlderMessages: false,
         isBusy: false,
       };
 
@@ -1967,45 +1310,7 @@ export function reducer(state: InternalAgentState, action: Action): InternalAgen
     case "SET_PENDING_WORKTREE_CLEANUP":
       return { ...state, pendingWorktreeCleanup: action.payload };
 
-    case "LOAD_CHILD_SESSION": {
-      const { childSessionId, messages } = action.payload;
-      const existingChildBuf = state.childSessions[childSessionId] ?? {};
-      const childBuf: Record<string, { info: Message; parts: Record<string, Part> }> = {
-        ...existingChildBuf,
-      };
-      for (const msg of messages) {
-        const previousEntry = existingChildBuf[msg.info.id];
-        const partsById: Record<string, Part> = previousEntry ? { ...previousEntry.parts } : {};
-        for (const p of msg.parts) {
-          partsById[p.id] = p;
-        }
-        childBuf[msg.info.id] = {
-          info: msg.info,
-          parts: partsById,
-        };
-      }
-      const nextTracked = new Set(state.trackedChildSessionIds);
-      nextTracked.add(childSessionId);
-      return {
-        ...state,
-        trackedChildSessionIds: nextTracked,
-        childSessions: {
-          ...state.childSessions,
-          [childSessionId]: childBuf,
-        },
-      };
-    }
-
     default:
       return state;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Child session helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Collect all renderable parts (text + tool) from a child (subagent) session,
- * preserving transcript order. Excludes user-role messages.
- */

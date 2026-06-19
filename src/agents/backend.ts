@@ -60,6 +60,7 @@ interface HarnessConnectionProfile {
 
 interface HarnessSessionStatus {
   type: string;
+  message?: string;
 }
 
 export type HarnessEvent =
@@ -119,7 +120,8 @@ export type HarnessEvent =
   | { type: "permission.cleared"; sessionID: string }
   | { type: "question.requested"; request: QuestionRequest }
   | { type: "question.cleared"; sessionID: string }
-  | { type: "session.error"; error: string; sessionID?: string };
+  | { type: "session.error"; error: string; sessionID?: string }
+  | import("@opengui/runtime/client").ProjectedTranscriptEvent;
 
 interface HarnessRuntime {
   createSession(input?: {

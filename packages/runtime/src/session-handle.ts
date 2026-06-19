@@ -7,13 +7,20 @@ import {
 import type { SelectedModel } from "../../../src/types/electron.d.ts";
 import type { HarnessService } from "./harness-service.ts";
 import {
-  type AgentStreamEvent,
   type AgentStreamHandler,
   filterStreamEventsForSession,
-  harnessEventToAgentStreamEvents,
+  liveSessionEventToAgentStreamEvents,
+  streamEventMatchesSession,
 } from "./agent-stream.ts";
 import type { ManagedHarnessId } from "./harness-runtime.ts";
+import { harnessEventToAdapterObservations } from "./live-session-events/live-session-event-compat.ts";
+import type {
+  LiveSessionEvent,
+  LiveSessionEventHandler,
+} from "./live-session-events/live-session-event.ts";
+import { LiveSessionEventBus } from "./live-session-events/live-session-event-bus.ts";
 import { OpenGuiSdkError } from "./opengui-sdk-error.ts";
+import type { SessionTranscripts } from "./session-transcripts.ts";
 
 /** Harness session summary (list/create); `id` is opaque for `open()`. */
 export interface SessionSummary {
@@ -54,6 +61,7 @@ export interface SessionHandle {
   send(text: string, options?: SendOptions): Promise<void>;
   abort(): Promise<void>;
   messages(options?: MessagesOptions): Promise<unknown>;
+  onEvent(handler: LiveSessionEventHandler): () => void;
   onStream(handler: AgentStreamHandler): () => void;
   waitUntilIdle(options?: WaitUntilIdleOptions): Promise<void>;
   close(): void;
@@ -64,6 +72,7 @@ export interface SessionHandleDeps {
   directory: string;
   sessionId: string;
   service: HarnessService;
+  transcripts: SessionTranscripts;
   resolveSessionIds(sessionId: string): { rawId: string };
   getSessionStatus(
     directory: string,
@@ -109,7 +118,7 @@ function isWaitResolvedStatus(status: string | undefined): boolean {
 }
 
 export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
-  const { harnessId, directory, sessionId, service } = deps;
+  const { harnessId, directory, sessionId, service, transcripts } = deps;
   const resolveSessionIds = (id: string) => deps.resolveSessionIds(id);
   const getSessionStatus = (dir: string, rawId: string) => deps.getSessionStatus(dir, rawId);
   const markSessionRunning = (dir: string, rawId: string) => deps.markSessionRunning(dir, rawId);
@@ -118,26 +127,28 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
     deps.subscribeHarnessEvents(handler);
 
   const streamHandlers = new Set<AgentStreamHandler>();
+  const eventHandlers = new Set<LiveSessionEventHandler>();
+  const liveBus = new LiveSessionEventBus();
+  const liveBusOff = liveBus.onHarness(harnessId, (liveEvent) => {
+    if (!streamEventMatchesSession(sessionId, liveEvent.scope.sessionId, harnessId)) return;
+    for (const handler of eventHandlers) handler(liveEvent);
+    const streamEvents = liveSessionEventToAgentStreamEvents(liveEvent);
+    for (const streamEvent of filterStreamEventsForSession(streamEvents, sessionId, harnessId)) {
+      for (const handler of streamHandlers) handler(streamEvent);
+    }
+  });
   let harnessUnsub: (() => void) | undefined;
 
-  const dispatchMapped = (event: HarnessEvent) => {
-    const mapped = filterStreamEventsForSession(
-      harnessEventToAgentStreamEvents(event, { harnessId }),
-      sessionId,
-      harnessId,
-    );
-    for (const streamEvent of mapped) {
-      for (const handler of streamHandlers) {
-        handler(streamEvent);
-      }
-    }
-    return mapped;
+  const dispatchLive = (event: HarnessEvent): LiveSessionEvent[] => {
+    return liveBus
+      .publish(harnessEventToAdapterObservations({ directory, harnessId, event }))
+      .filter((item) => streamEventMatchesSession(sessionId, item.scope.sessionId, harnessId));
   };
 
   const ensureHarnessSubscription = () => {
     if (harnessUnsub) return;
     harnessUnsub = subscribeHarnessEvents((event) => {
-      dispatchMapped(event);
+      dispatchLive(event);
     });
   };
 
@@ -186,8 +197,15 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
       }, timeoutMs);
 
       harnessOff = subscribeHarnessEvents((event) => {
-        const mapped = dispatchMapped(event);
-        if (streamEventEndsRun(mapped) || maybeResolveIdle()) {
+        const observations = harnessEventToAdapterObservations({ directory, harnessId, event });
+        const sawIdle = observations.some(
+          (item) =>
+            item.kind === "activity" &&
+            item.state !== "running" &&
+            streamEventMatchesSession(sessionId, item.scope.sessionId, harnessId),
+        );
+        if (sawIdle || maybeResolveIdle()) {
+          markSessionIdle?.(directory, rawId);
           cleanup();
           resolve();
         }
@@ -195,6 +213,7 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
 
       poll = setInterval(() => {
         if (maybeResolveIdle()) {
+          markSessionIdle?.(directory, rawId);
           cleanup();
           resolve();
         }
@@ -264,21 +283,37 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
     async messages(options) {
       const { rawId } = resolveSessionIds(sessionId);
       try {
-        return await service.listMessages({
-          session: runtimeRef(rawId),
-          scope: { directory, harnessId, sessionId: rawId },
+        return await transcripts.readPage({
+          scope: { directory, harnessId, sessionId },
           options: { limit: options?.limit, before: options?.before },
+          fetchHarnessPage: () =>
+            service.listMessages({
+              session: runtimeRef(rawId),
+              scope: { directory, harnessId, sessionId: rawId },
+              options: { limit: options?.limit, before: options?.before },
+            }),
         });
       } catch (error) {
         wrapBridgeError(error);
       }
+    },
+    onEvent(handler) {
+      eventHandlers.add(handler);
+      ensureHarnessSubscription();
+      return () => {
+        eventHandlers.delete(handler);
+        if (eventHandlers.size === 0 && streamHandlers.size === 0 && harnessUnsub) {
+          harnessUnsub();
+          harnessUnsub = undefined;
+        }
+      };
     },
     onStream(handler) {
       streamHandlers.add(handler);
       ensureHarnessSubscription();
       return () => {
         streamHandlers.delete(handler);
-        if (streamHandlers.size === 0 && harnessUnsub) {
+        if (streamHandlers.size === 0 && eventHandlers.size === 0 && harnessUnsub) {
           harnessUnsub();
           harnessUnsub = undefined;
         }
@@ -287,14 +322,12 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
     waitUntilIdle,
     close() {
       streamHandlers.clear();
+      eventHandlers.clear();
+      liveBusOff();
       if (harnessUnsub) {
         harnessUnsub();
         harnessUnsub = undefined;
       }
     },
   };
-}
-
-function streamEventEndsRun(events: AgentStreamEvent[]): boolean {
-  return events.some((event) => event.type === "run.end");
 }

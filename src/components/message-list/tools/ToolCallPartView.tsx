@@ -33,17 +33,17 @@ function ToolCallIcon({
 export function ToolCallPartView({
   part,
   expandedToolCalls,
-  onToggleToolCall,
+  onSetToolCallExpanded,
 }: {
   part: ToolCallTranscriptPart;
   expandedToolCalls?: ReadonlySet<string>;
-  onToggleToolCall?: (partId: string, expanded: boolean) => void;
+  onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
 }) {
   const { workspaceServerUrl } = useConnectionState();
   const { t } = useTranslation();
   const tool = getToolCallViewModel(part, workspaceServerUrl, t);
   const expanded = expandedToolCalls?.has(part.id) ?? false;
-  const setExpanded = (nextExpanded: boolean) => onToggleToolCall?.(part.id, nextExpanded);
+  const setExpanded = (nextExpanded: boolean) => onSetToolCallExpanded?.(part.id, nextExpanded);
   const outputRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!expanded || tool.status !== "running" || (tool.kind !== "bash" && tool.kind !== "task")) {

@@ -24,7 +24,8 @@ if (flags.help) {
 
 const started = performance.now();
 const { og, directory, dataDir } = await createRuntime(flags);
-const handle = og.harness(flags.harness);
+const dir = await og.at(directory);
+const handle = dir.harness(flags.harness);
 const report = { directory, harnessId: flags.harness, dataDir, steps: {} };
 
 try {

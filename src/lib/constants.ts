@@ -112,6 +112,9 @@ export const DEFAULT_MODEL_MAX_AGE_MONTHS = 6;
 /** Threshold in px – if the user is within this distance of the bottom we consider them "at bottom". */
 export const NEAR_BOTTOM_PX = 80;
 
+/** Threshold in px – scrollTop at or below this counts as "at top" for pagination and snapshots. */
+export const NEAR_TOP_PX = 1;
+
 /** Character count threshold before a user message is collapsed. */
 export const USER_MSG_COLLAPSE_CHARS = 500;
 

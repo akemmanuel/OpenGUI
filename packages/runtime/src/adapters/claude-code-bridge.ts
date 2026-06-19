@@ -22,7 +22,7 @@ import {
   normalizeHarnessDirectory,
   nowHarnessConnection,
   ok,
-} from "../../../../lib/harness-adapter-kit.ts";
+} from "./harness-adapter-kit.ts";
 import {
   buildProvidersFromSupportedModels,
   buildVariantQueryOptions,

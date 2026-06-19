@@ -222,7 +222,18 @@
   }
 
   .app-safe-bottom-inset {
-    padding-bottom: calc(0.75rem + var(--app-safe-bottom));
+    padding-bottom: calc(0.375rem + var(--app-safe-bottom));
+  }
+
+  /* Prompt footer: dock PromptBox to the physical bottom on mobile; inset on md+. */
+  .app-safe-bottom-inset-prompt {
+    padding-bottom: 0;
+  }
+
+  @media (min-width: 768px) {
+    .app-safe-bottom-inset-prompt {
+      padding-bottom: calc(0.375rem + var(--app-safe-bottom));
+    }
   }
 
   [data-slot="sidebar-container"].app-safe-sidebar {

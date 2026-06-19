@@ -13,10 +13,12 @@ import {
   toHarnessEvent,
   type BackendEventEnvelope,
 } from "@/hooks/backend-event-normalization";
+import { asCanonicalLiveSessionEvent } from "@/hooks/live-session-event-types";
 import type { InternalAgentState } from "@/hooks/agent-state-types";
 import type { Action } from "@/hooks/agent-reducer";
 import { createHttpOpenGuiClient } from "@/protocol/http-client";
 import type { OpenGuiClient } from "@/protocol/client";
+import type { LiveSessionEvent, ProjectedTranscriptEvent } from "@opengui/runtime/client";
 
 type BackendEventTracking = {
   expectedProjectKeys: MutableRefObject<Set<string>>;
@@ -26,6 +28,11 @@ type BackendEventTracking = {
   namingRequestIds: MutableRefObject<Map<string, number>>;
 };
 
+export type TranscriptEventBridgeRef = MutableRefObject<{
+  ingestLiveEvent: (event: LiveSessionEvent) => void;
+  ingestProjectedTranscriptEvent: (event: ProjectedTranscriptEvent) => boolean;
+} | null>;
+
 export function useBackendEventSubscription(input: {
   allHarnessesCount: number;
   cleanupSessionRefs: (sessionIds?: Iterable<string>) => void;
@@ -33,17 +40,22 @@ export function useBackendEventSubscription(input: {
   openGuiClient: OpenGuiClient;
   tracking: BackendEventTracking;
   workspaces: InternalAgentState["workspaces"];
+  transcriptBridgeRef: TranscriptEventBridgeRef;
 }) {
-  const { allHarnessesCount, cleanupSessionRefs, dispatch, openGuiClient, tracking, workspaces } =
-    input;
+  const {
+    allHarnessesCount,
+    cleanupSessionRefs,
+    dispatch,
+    openGuiClient,
+    tracking,
+    workspaces,
+    transcriptBridgeRef,
+  } = input;
   const seenBackendEventIdsRef = useRef<string[]>([]);
   const seenBackendEventIdSetRef = useRef(new Set<string>());
 
   const handleBackendEvent = useCallback(
     (event: BackendEventEnvelope) => {
-      // Remote workspaces deliver events through the canonical SSE stream. A reconnect or
-      // overlapping subscription can surface the same canonical event more than once; streaming
-      // text events are mutations, so applying a duplicate delta duplicates visible text.
       if (typeof event.id === "string") {
         const seenIds = seenBackendEventIdSetRef.current;
         if (seenIds.has(event.id)) return;
@@ -69,6 +81,11 @@ export function useBackendEventSubscription(input: {
       if (isCanonicalSessionNotification(event)) {
         return;
       }
+      const liveEvent = asCanonicalLiveSessionEvent(event);
+      if (liveEvent) {
+        transcriptBridgeRef.current?.ingestLiveEvent(liveEvent);
+        return;
+      }
       handleHarnessEvent({
         event: toHarnessEvent(event),
         expectedProjectKeys: tracking.expectedProjectKeys.current,
@@ -81,9 +98,11 @@ export function useBackendEventSubscription(input: {
         cleanupSessionRefs,
         renameSession: (renameInput) => openGuiClient.sessions.rename(renameInput),
         dispatch,
+        ingestProjectedTranscriptEvent: (projected) =>
+          transcriptBridgeRef.current?.ingestProjectedTranscriptEvent(projected) ?? false,
       });
     },
-    [cleanupSessionRefs, dispatch, openGuiClient, tracking],
+    [cleanupSessionRefs, dispatch, openGuiClient, tracking, transcriptBridgeRef],
   );
 
   const remoteWorkspaceEventSources = useMemo(() => {

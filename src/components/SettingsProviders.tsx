@@ -11,6 +11,8 @@ import type { HarnessId } from "@/agents";
 import { HARNESS_LABELS } from "@/agents";
 import { Plus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
+import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { useTranslation } from "react-i18next";
 import { notifyUnknownError } from "@/lib/notify";
 import { DialogConnectProvider } from "@/components/DialogConnectProvider";
@@ -70,6 +72,28 @@ export function SettingsProviders() {
   const [connectProviderID, setConnectProviderID] = useState<string | null>(null);
   const [showCustom, setShowCustom] = useState(false);
   const [showSelectAll, setShowSelectAll] = useState(false);
+
+  const providerDialogOpen = connectProviderID !== null || showCustom || showSelectAll;
+  const handleMobileBackProviderDialog = useCallback(() => {
+    if (connectProviderID) {
+      setConnectProviderID(null);
+      return true;
+    }
+    if (showCustom) {
+      setShowCustom(false);
+      return true;
+    }
+    if (showSelectAll) {
+      setShowSelectAll(false);
+      return true;
+    }
+    return false;
+  }, [connectProviderID, showCustom, showSelectAll]);
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.PROVIDER_DIALOG,
+    providerDialogOpen,
+    handleMobileBackProviderDialog,
+  );
 
   // Search
   const [search, setSearch] = useState("");

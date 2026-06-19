@@ -1,5 +1,8 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
-import { mergeCanonicalEventForListener } from "./backend-event-normalization";
+import {
+  isCanonicalSessionNotification,
+  mergeCanonicalEventForListener,
+} from "./backend-event-normalization";
 
 describe("mergeCanonicalEventForListener", () => {
   test("keeps payload sessionId for queue events", () => {
@@ -34,5 +37,59 @@ describe("mergeCanonicalEventForListener", () => {
     });
 
     expect(merged?.sessionId).toBe("session_canonical_index");
+  });
+
+  test("preserves envelope directory for scoped projected transcript events", () => {
+    const merged = mergeCanonicalEventForListener({
+      id: "evt_3",
+      type: "transcript.message",
+      directory: "/repo",
+      sessionId: "opencode:raw-1",
+      harnessId: "opencode",
+      payload: {
+        scope: { directory: "/repo", harnessId: "opencode", sessionId: "opencode:raw-1" },
+        revision: 1,
+        entry: { info: { id: "m1" }, parts: [] },
+      },
+    });
+
+    expect(merged?.directory).toBe("/repo");
+    expect(merged?.sessionId).toBe("opencode:raw-1");
+  });
+
+  test("identifies backend SessionRecord notifications as non-Harness sidebar events", () => {
+    expect(
+      isCanonicalSessionNotification({
+        id: "evt_4",
+        type: "session.updated",
+        directory: "/repo",
+        harnessId: "opencode",
+        sessionId: "opencode:raw-1",
+        session: {
+          id: "opencode:raw-1",
+          rawId: "raw-1",
+          directory: "/repo",
+          harnessId: "opencode",
+          title: "Backend record",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      isCanonicalSessionNotification({
+        id: "evt_5",
+        type: "session.updated",
+        directory: "/repo",
+        harnessId: "opencode",
+        session: {
+          id: "opencode:raw-1",
+          _rawId: "raw-1",
+          _projectDir: "/repo",
+          time: { created: 1, updated: 2 },
+        },
+      }),
+    ).toBe(false);
   });
 });

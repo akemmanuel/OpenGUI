@@ -13,13 +13,29 @@ export function isQueueEvent(event: BackendEventEnvelope): event is QueueEvent {
 }
 
 export function isCanonicalSessionNotification(event: BackendEventEnvelope): boolean {
+  if (
+    event.type !== "session.created" &&
+    event.type !== "session.updated" &&
+    event.type !== "session.deleted"
+  ) {
+    return false;
+  }
+
+  const session = event.session;
+  if (!session || typeof session !== "object" || Array.isArray(session)) return false;
+  const record = session as Record<string, unknown>;
+
+  // Backend SessionDispatchIndex events carry SessionRecord shape. They are a
+  // queue/control cache notification, not a Harness session-list event. Let the
+  // raw Harness lifecycle event update the sidebar; accepting this record here
+  // replaces rich Frontend Session fields (_projectDir/_workspaceId/time) with a
+  // backend record and makes active sessions/worktrees disappear from the UI.
   return (
-    (event.type === "session.created" ||
-      event.type === "session.updated" ||
-      event.type === "session.deleted") &&
-    typeof event.projectId === "string" &&
-    typeof event.harnessId === "string" &&
-    !("directory" in event)
+    typeof record.rawId === "string" &&
+    typeof record.directory === "string" &&
+    typeof record.harnessId === "string" &&
+    typeof record.createdAt === "string" &&
+    typeof record.updatedAt === "string"
   );
 }
 
@@ -32,6 +48,7 @@ export function mergeCanonicalEventForListener(message: {
   id: string;
   type: string;
   projectId?: string;
+  directory?: string;
   sessionId?: string;
   harnessId?: string;
   payload: unknown;
@@ -43,6 +60,7 @@ export function mergeCanonicalEventForListener(message: {
     type: message.type,
     ...(message.payload as object),
     ...(message.projectId ? { projectId: message.projectId } : {}),
+    ...(message.directory ? { directory: message.directory } : {}),
     ...(useEnvelopeSessionId ? { sessionId: message.sessionId } : {}),
     ...(message.harnessId ? { harnessId: message.harnessId } : {}),
   };

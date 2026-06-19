@@ -19,12 +19,13 @@ if (flags.help) {
 
 const harnessIds = flags.allHarnesses ? [...MANAGED_HARNESS_IDS] : [flags.harness];
 const { og, directory } = await createRuntime(flags);
+const dir = await og.at(directory);
 
 try {
   await og.registerDirectory({ directory, harnessIds });
   const rows = [];
   for (const harnessId of harnessIds) {
-    const handle = og.harness(harnessId);
+    const handle = dir.harness(harnessId);
     let status;
     let error;
     try {

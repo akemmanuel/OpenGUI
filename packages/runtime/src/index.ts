@@ -52,11 +52,26 @@ export {
 
 export {
   filterStreamEventsForSession,
+  /** @deprecated Prefer `LiveSessionEvent` / `liveSessionEventToAgentStreamEvents`; harness-native mapping for legacy callers only. */
   harnessEventToAgentStreamEvents,
   streamEventMatchesSession,
   type AgentStreamEvent,
   type AgentStreamHandler,
 } from "./agent-stream.ts";
+
+export type {
+  LiveSessionEvent,
+  LiveSessionEventHandler,
+  LiveSessionEventType,
+  LiveSessionScope,
+} from "./live-session-events/live-session-event.ts";
+export { LiveSessionEventNormalizer } from "./live-session-events/live-session-normalizer.ts";
+export { LiveSessionEventBus } from "./live-session-events/live-session-event-bus.ts";
+export {
+  LiveSessionProjection,
+  type LiveSessionProjectedMessage,
+  type LiveSessionProjectedPart,
+} from "./live-session-events/live-session-projection.ts";
 
 export {
   InProcessIpcMain,
@@ -73,6 +88,7 @@ export {
 
 export { directoryRef } from "./directory-ref.ts";
 
+/** @deprecated Adapter diagnostics input — not the public SDK live contract (use `LiveSessionEvent`). */
 export type { HarnessEvent } from "../../../src/agents/backend.ts";
 export type { HarnessId } from "../../../src/agents/index.ts";
 export type {
@@ -88,5 +104,24 @@ export {
 } from "./diagnose.ts";
 
 export { runAgent, type RunAgentOptions, type RunAgentResult } from "./run-agent.ts";
+
+export {
+  createSessionTranscriptProjection,
+  type SessionTranscriptProjection,
+} from "./session-transcript-projection.ts";
+
+export {
+  createSessionTranscripts,
+  isTranscriptProjectionInput,
+  projectedEntryToHarnessEvents,
+  transcriptSessionId,
+  type MessagePageResult,
+  type ProjectedMessagePage,
+  type ProjectedTranscriptEvent,
+  type ProjectedTranscriptSnapshot,
+  type SessionTranscriptScope,
+  type SessionTranscripts,
+  type TranscriptMessageEntry,
+} from "./session-transcripts.ts";
 
 export const RUNTIME_PACKAGE_ID = "@opengui/runtime" as const;

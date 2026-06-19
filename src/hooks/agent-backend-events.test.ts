@@ -166,6 +166,140 @@ describe("handleHarnessEvent", () => {
     expect(actions).toEqual([{ type: "SESSION_DELETED", payload: "session-1" }]);
   });
 
+  test("ignores projected transcript.message in favor of canonical live-session updates", () => {
+    const actions: Array<Record<string, unknown>> = [];
+
+    handleHarnessEvent({
+      event: {
+        type: "transcript.message",
+        scope: { directory: "/repo", harnessId: "pi", sessionId: "pi:session-1" },
+        revision: 2,
+        entry: {
+          info: { id: "m1", sessionID: "pi:session-1", role: "assistant", time: { created: 1 } },
+          parts: [
+            { id: "p1", type: "text", text: "hi", sessionID: "pi:session-1", messageID: "m1" },
+          ],
+        },
+      } as unknown as HarnessEvent,
+      expectedProjectKeys: new Set(["local\u0000/repo"]),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
+      dispatch: (action) => {
+        actions.push(action as Record<string, unknown>);
+      },
+    });
+
+    expect(actions).toEqual([]);
+  });
+
+  test("delegates projected transcript.snapshot to ingestProjectedTranscriptEvent", () => {
+    const actions: Array<Record<string, unknown>> = [];
+    let ingested = false;
+
+    handleHarnessEvent({
+      event: {
+        type: "transcript.snapshot",
+        scope: { directory: "/repo", harnessId: "pi", sessionId: "pi:session-1" },
+        revision: 1,
+        page: {
+          revision: 1,
+          messages: [],
+          nextCursor: null,
+        },
+      } as unknown as HarnessEvent,
+      expectedProjectKeys: new Set(["local\u0000/repo"]),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
+      ingestProjectedTranscriptEvent: () => {
+        ingested = true;
+        return true;
+      },
+      dispatch: (action) => {
+        actions.push(action as Record<string, unknown>);
+      },
+    });
+
+    expect(ingested).toBe(true);
+    expect(actions).toHaveLength(0);
+  });
+
+  test("drops projected transcript events outside expected project scope", () => {
+    const actions: Array<Record<string, unknown>> = [];
+
+    handleHarnessEvent({
+      event: {
+        type: "transcript.message",
+        scope: { directory: "/other", harnessId: "pi", sessionId: "pi:session-1" },
+        revision: 2,
+        entry: {
+          info: { id: "m1", sessionID: "pi:session-1", role: "assistant", time: { created: 1 } },
+          parts: [],
+        },
+      } as unknown as HarnessEvent,
+      expectedProjectKeys: new Set(["local\u0000/repo"]),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
+      dispatch: (action) => {
+        actions.push(action as Record<string, unknown>);
+      },
+    });
+
+    expect(actions).toEqual([]);
+  });
+
+  test("ignores session.status busy/idle in favor of canonical live run events", () => {
+    const actions: Array<Record<string, unknown>> = [];
+
+    handleHarnessEvent({
+      event: {
+        type: "session.status",
+        sessionID: "session-1",
+        status: { type: "busy" },
+      },
+      expectedProjectKeys: new Set(),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
+      dispatch: (action) => {
+        actions.push(action as Record<string, unknown>);
+      },
+    });
+
+    expect(actions).toEqual([]);
+  });
+
+  test("still dispatches session.status retry for harness retry signals", () => {
+    const actions: Array<Record<string, unknown>> = [];
+
+    handleHarnessEvent({
+      event: {
+        type: "session.status",
+        sessionID: "session-1",
+        status: { type: "retry", message: "rate limited" },
+      },
+      expectedProjectKeys: new Set(),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
+      dispatch: (action) => {
+        actions.push(action as Record<string, unknown>);
+      },
+    });
+
+    expect(actions).toEqual([
+      {
+        type: "SESSION_STATUS",
+        payload: {
+          sessionID: "session-1",
+          status: { type: "retry", message: "rate limited" },
+        },
+      },
+    ]);
+  });
+
   test("surfaces session-scoped and global session errors", () => {
     const actions: Array<Record<string, unknown>> = [];
     const dispatch = (action: Record<string, unknown>) => {

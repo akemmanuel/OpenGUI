@@ -30,6 +30,11 @@ import { resolvePromptBoxHarnessId } from "@/hooks/prompt-box-selection";
 import { useSessionInteractionOrchestration } from "@/hooks/agent-session-interactions";
 import { nextNamingRequestId } from "@/hooks/agent-send-state";
 import { useAgentSessionActivation } from "@/hooks/agent-session-activation";
+import { ActiveSessionTranscriptProvider } from "@/features/session-transcript/active-session-transcript-provider";
+import {
+  useActiveSessionTranscriptOrchestration,
+  type TranscriptOrchestrationDispatch,
+} from "@/features/session-transcript/use-active-session-transcript-orchestration";
 import {
   createLifecycleSession,
   createSessionRenamePlan,
@@ -92,12 +97,9 @@ import {
   startProjectHydration,
   type ProjectHydrationState,
 } from "@/hooks/agent-project-hydration";
+import { refreshProjectSessionIndex } from "@/hooks/agent-session-index-refresh";
 import { mapSessionQueryErrorsForProject } from "@/hooks/session-query-errors";
-import {
-  fetchSessionMessagePage,
-  hydrateChildSessionMessages,
-  loadOlderSessionMessages,
-} from "@/hooks/agent-message-loading";
+import { fetchSessionMessagePage } from "@/hooks/agent-message-loading";
 import {
   buildActiveWorkspaceProjectSet,
   filterActiveWorkspaceSessions,
@@ -116,7 +118,7 @@ import {
 import { reducer } from "@/hooks/agent-reducer";
 import { useDesktopNotification } from "@/hooks/agent-notifications";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
-import type { InternalAgentState, MessageEntry, Session } from "@/hooks/agent-state-types";
+import type { InternalAgentState, Session } from "@/hooks/agent-state-types";
 import {
   ActionsContext,
   type ActionsContextValue,
@@ -149,6 +151,7 @@ import { persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
 import { i18n } from "@/i18n";
 import { notifyInfo } from "@/lib/notify";
+import { ensureResourceCatalog } from "@/lib/resource-catalog-cache";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 import type {
   ConnectionConfig,
@@ -166,6 +169,22 @@ import type {
 // ---------------------------------------------------------------------------
 
 function InternalAgentProvider({
+  children,
+  detachedProject,
+}: {
+  children: ReactNode;
+  detachedProject?: string;
+}) {
+  return (
+    <ActiveSessionTranscriptProvider>
+      <InternalAgentProviderBody detachedProject={detachedProject}>
+        {children}
+      </InternalAgentProviderBody>
+    </ActiveSessionTranscriptProvider>
+  );
+}
+
+function InternalAgentProviderBody({
   children,
   detachedProject,
 }: {
@@ -207,6 +226,7 @@ function InternalAgentProvider({
   const namingRequestIdsRef = useRef<Map<string, number>>(new Map());
 
   const selectSessionRequestRef = useRef(0);
+  const preservePromptBoxSelectionSessionsRef = useRef<Set<string>>(new Set());
   const childHydrationVersionRef = useRef<Record<string, number>>({});
   const sessionReconcileRequestRef = useRef<Record<string, number>>({});
   const cleanupSessionRefs = useCallback((sessionIds?: Iterable<string>) => {
@@ -215,6 +235,7 @@ function InternalAgentProvider({
       pendingTitlePersistenceRef.current.clear();
       sessionIdAliasesRef.current.clear();
       namingRequestIdsRef.current.clear();
+      preservePromptBoxSelectionSessionsRef.current.clear();
       childHydrationVersionRef.current = {};
       sessionReconcileRequestRef.current = {};
       return;
@@ -224,6 +245,7 @@ function InternalAgentProvider({
       forcedSessionTitlesRef.current.delete(id);
       pendingTitlePersistenceRef.current.delete(id);
       namingRequestIdsRef.current.delete(id);
+      preservePromptBoxSelectionSessionsRef.current.delete(id);
       delete childHydrationVersionRef.current[id];
       delete sessionReconcileRequestRef.current[id];
     }
@@ -235,8 +257,7 @@ function InternalAgentProvider({
   }, []);
   const loadedResourceProjectKeyRef = useRef<string | null>(null);
   const loadedResourceHarnessIdRef = useRef<HarnessId | null>(null);
-  const resourceLoadRequestRef = useRef(0);
-  const resourceLoadInFlightKeyRef = useRef<string | null>(null);
+  const resourceLoadRequestIdRef = useRef(0);
   const updateProjectHydration = useCallback(
     (
       projectKey: string,
@@ -303,21 +324,6 @@ function InternalAgentProvider({
       cancelled = true;
     };
   }, [openGuiClient]);
-
-  useBackendEventSubscription({
-    allHarnessesCount: allHarnesses.length,
-    cleanupSessionRefs,
-    dispatch,
-    openGuiClient,
-    tracking: {
-      expectedProjectKeys: expectedDirectoriesRef,
-      forcedTitles: forcedSessionTitlesRef,
-      pendingTitlePersistence: pendingTitlePersistenceRef,
-      sessionIdAliases: sessionIdAliasesRef,
-      namingRequestIds: namingRequestIdsRef,
-    },
-    workspaces: state.workspaces,
-  });
 
   useEffect(() => {
     if (!workspaceStateReady) return;
@@ -397,38 +403,45 @@ function InternalAgentProvider({
   // --- Actions ---
 
   const loadServerResources = useCallback(
-    async (harnessId: HarnessId, directory?: string | null, workspaceId?: string | null) => {
+    async (
+      harnessId: HarnessId,
+      directory?: string | null,
+      workspaceId?: string | null,
+      options?: { force?: boolean },
+    ) => {
       const targetDirectory = directory?.trim() || undefined;
       const targetWorkspaceId = workspaceId?.trim() || undefined;
       const targetWorkspace = targetWorkspaceId
         ? stateRef.current.workspaces.find((workspace) => workspace.id === targetWorkspaceId)
         : null;
       const projectKey = targetDirectory ? makeProjectKey(targetWorkspaceId, targetDirectory) : "";
-      const loadKey = `${harnessId}\u0000${projectKey}`;
+      const loadedProjectKeyForRef = targetDirectory ? projectKey : null;
       if (
-        resourceLoadInFlightKeyRef.current === loadKey ||
-        (loadedResourceHarnessIdRef.current === harnessId &&
-          loadedResourceProjectKeyRef.current === (targetDirectory ? projectKey : null))
+        !options?.force &&
+        loadedResourceHarnessIdRef.current === harnessId &&
+        loadedResourceProjectKeyRef.current === loadedProjectKeyForRef
       ) {
         return;
       }
-      resourceLoadInFlightKeyRef.current = loadKey;
-      const requestId = ++resourceLoadRequestRef.current;
+      const requestId = ++resourceLoadRequestIdRef.current;
       try {
-        const { providersData, agentsData, commandsData } =
-          await openGuiClient.harnesses.loadResources({
-            harnessId,
-            target: {
-              directory: targetDirectory,
-              workspaceId: targetWorkspaceId,
-              baseUrl: targetWorkspace?.isLocal ? undefined : targetWorkspace?.serverUrl,
-              authToken: targetWorkspace?.isLocal ? undefined : targetWorkspace?.authToken,
-            },
-          });
+        const { providersData, agentsData, commandsData } = await ensureResourceCatalog({
+          harnessId,
+          target: {
+            workspaceId: targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
+            directory: targetDirectory ?? null,
+            baseUrl: targetWorkspace?.isLocal ? undefined : targetWorkspace?.serverUrl,
+            authToken: targetWorkspace?.isLocal ? undefined : targetWorkspace?.authToken,
+          },
+          loadResources: openGuiClient.harnesses.loadResources.bind(openGuiClient.harnesses),
+          force: options?.force,
+        });
 
-        if (requestId !== resourceLoadRequestRef.current) return;
+        if (requestId !== resourceLoadRequestIdRef.current) {
+          return;
+        }
 
-        loadedResourceProjectKeyRef.current = targetDirectory ? projectKey : null;
+        loadedResourceProjectKeyRef.current = loadedProjectKeyForRef;
         loadedResourceHarnessIdRef.current = harnessId;
 
         const currentSelection = stateRef.current.selectedModel;
@@ -498,15 +511,11 @@ function InternalAgentProvider({
           },
         });
       } catch (error) {
-        if (requestId !== resourceLoadRequestRef.current) return;
+        if (requestId !== resourceLoadRequestIdRef.current) return;
         dispatch({
           type: "SET_ERROR",
           payload: getErrorMessage(error),
         });
-      } finally {
-        if (resourceLoadInFlightKeyRef.current === loadKey) {
-          resourceLoadInFlightKeyRef.current = null;
-        }
       }
     },
     [openGuiClient],
@@ -558,28 +567,15 @@ function InternalAgentProvider({
         // when a specific Harness is currently unhealthy/unavailable for new
         // work. Keep loading the session index after a failed connect and only
         // mark Harness hydration as failed after history has merged.
-        const sessionQuery = await openGuiClient.sessions.query({
-          projects: [
-            {
-              directory: connection.directory,
-              workspaceId: connection.target.workspaceId,
-              baseUrl: connection.config.baseUrl,
-              authToken: connection.config.authToken,
-            },
-          ],
-          harnessIds: [harnessId],
-        });
-        const sessions =
-          sessionQuery.items.find((item) => item.harnessId === harnessId)?.sessions ?? [];
-        dispatch({
-          type: "MERGE_PROJECT_SESSIONS",
-          payload: {
-            projectKey,
-            directory: connection.directory,
-            sessions,
-            harnessIds: [harnessId],
-            source: connectionKind === "chat-infra" ? "default-chat" : "workspace-project",
-          },
+        const { queryResult: sessionQuery } = await refreshProjectSessionIndex({
+          sessionsClient: openGuiClient.sessions,
+          dispatchMerge: (payload) => dispatch({ type: "MERGE_PROJECT_SESSIONS", payload }),
+          workspaceId: connection.target.workspaceId,
+          directory: connection.directory,
+          harnessId,
+          source: connectionKind === "chat-infra" ? "default-chat" : "workspace-project",
+          baseUrl: connection.config.baseUrl,
+          authToken: connection.config.authToken,
         });
 
         const queryScopeErrors = mapSessionQueryErrorsForProject({
@@ -1655,83 +1651,104 @@ function InternalAgentProvider({
     [openGuiClient],
   );
 
-  const hydrateChildSessionsForMessages = useCallback(
+  const noteSessionSelection = useCallback(
     (
-      messages: MessageEntry[],
+      id: string | null,
       options?: {
-        requestId?: number;
-        sessionId?: string;
-        directory?: string;
-        workspaceId?: string;
+        preservePromptBoxSelection?: boolean;
       },
     ) => {
-      hydrateChildSessionMessages({
-        messages,
-        parentSessionId: options?.sessionId,
-        requestId: options?.requestId,
-        projectTarget:
-          options?.directory || options?.workspaceId
-            ? {
-                directory: options.directory,
-                workspaceId: options.workspaceId,
-              }
-            : undefined,
-        childHydrationVersions: childHydrationVersionRef.current,
-        getCurrentSelectSessionRequestId: () => selectSessionRequestRef.current,
-        getCurrentActiveSessionId: () => stateRef.current.activeSessionId,
-        sessionsClient: openGuiClient.sessions,
-        dispatch,
-      });
+      if (!id) return;
+      if (options?.preservePromptBoxSelection) {
+        preservePromptBoxSelectionSessionsRef.current.add(id);
+      } else {
+        preservePromptBoxSelectionSessionsRef.current.delete(id);
+      }
     },
-    [openGuiClient],
+    [],
   );
 
-  const { selectSession, refreshActiveSessionMessages, scheduleSessionMessageReconcile } =
-    useAgentSessionActivation({
-      fetchMessagePage,
-      refreshSessionStatus: async (sessionId, projectTarget) => {
-        const session = stateRef.current.sessions.find((item) => item.id === sessionId);
-        const harnessId = resolveSessionHarnessRoute(session).harnessId;
-        if (!harnessId || !projectTarget?.directory) return;
-        const statuses = await openGuiClient.harnesses.listDirectorySessionStatuses({
-          harnessIds: [harnessId],
-          target: projectTarget,
-        });
-        const status = statuses[sessionId];
-        const activeTurnId = stateRef.current.activeTurnRunBySession[sessionId];
-        const activeTurn = activeTurnId ? stateRef.current.turnRuns[activeTurnId] : null;
-        const lastAssistant = stateRef.current.messages.findLast(
-          (message) => message.info.role === "assistant",
-        );
-        const completedAt = lastAssistant
-          ? (lastAssistant.info.time as { completed?: number }).completed
-          : undefined;
-        const hasRunningTool = lastAssistant?.parts.some(
-          (part) =>
-            part.type === "tool" &&
-            (part.state.status === "running" || part.state.status === "pending"),
-        );
-        const transcriptLooksSettled = Boolean(
-          activeTurn?.status === "running" &&
-          typeof completedAt === "number" &&
-          Date.now() - completedAt > 2000 &&
-          !hasRunningTool,
-        );
-        if (!status && !transcriptLooksSettled) return;
-        dispatch({
-          type: "SESSION_STATUS",
-          payload: {
-            sessionID: sessionId,
-            status: transcriptLooksSettled ? { type: "idle" } : status!,
-          },
-        });
-      },
-      hydrateChildSessionsForMessages,
-      dispatch,
-      stateRef,
-      selectSessionRequestRef,
-      sessionReconcileRequestRef,
-    });
+  const consumePreservePromptBoxSelection = useCallback((sessionId: string) => {
+    const preserve = preservePromptBoxSelectionSessionsRef.current.has(sessionId);
+    preservePromptBoxSelectionSessionsRef.current.delete(sessionId);
+    return preserve;
+  }, []);
+
+  const transcriptDispatch = useCallback<TranscriptOrchestrationDispatch>(
+    (action) => {
+      dispatch(action as never);
+    },
+    [dispatch],
+  );
+
+  const { selectSession } = useAgentSessionActivation({
+    dispatch,
+    stateRef,
+    noteSessionSelection,
+  });
+
+  const transcriptBridgeRef = useRef<{
+    ingestLiveEvent: (event: import("@opengui/runtime/client").LiveSessionEvent) => void;
+    ingestProjectedTranscriptEvent: (
+      event: import("@opengui/runtime/client").ProjectedTranscriptEvent,
+    ) => boolean;
+    loadOlderMessages: () => Promise<boolean>;
+    reloadActiveTranscript: (sessionId: string) => Promise<boolean>;
+    getTranscriptSnapshot: () => import("@/features/session-transcript/transcript-input").ActiveTranscriptSnapshot;
+  } | null>(null);
+
+  const {
+    ingestLiveEvent,
+    ingestProjectedTranscriptEvent,
+    loadOlderMessages: loadOlderFromTranscript,
+    reloadActiveTranscript,
+    getTranscriptSnapshot,
+  } = useActiveSessionTranscriptOrchestration({
+    activeSessionId: state.activeSessionId,
+    stateRef,
+    dispatch: transcriptDispatch,
+    openGuiClient,
+    selectSessionRequestRef,
+    expectedProjectKeysRef: expectedDirectoriesRef,
+    consumePreservePromptBoxSelection,
+  });
+
+  transcriptBridgeRef.current = {
+    ingestLiveEvent,
+    ingestProjectedTranscriptEvent,
+    reloadActiveTranscript,
+    loadOlderMessages: loadOlderFromTranscript,
+    getTranscriptSnapshot,
+  };
+
+  const scheduleSessionMessageReconcile = useCallback(
+    (sessionId: string, _projectTarget?: { directory?: string; workspaceId?: string }) => {
+      void reloadActiveTranscript(sessionId);
+    },
+    [reloadActiveTranscript],
+  );
+
+  const refreshActiveSessionMessages = useCallback(
+    (sessionId: string, _projectTarget?: { directory?: string; workspaceId?: string }) =>
+      reloadActiveTranscript(sessionId),
+    [reloadActiveTranscript],
+  );
+
+  useBackendEventSubscription({
+    allHarnessesCount: allHarnesses.length,
+    cleanupSessionRefs,
+    dispatch,
+    openGuiClient,
+    tracking: {
+      expectedProjectKeys: expectedDirectoriesRef,
+      forcedTitles: forcedSessionTitlesRef,
+      pendingTitlePersistence: pendingTitlePersistenceRef,
+      sessionIdAliases: sessionIdAliasesRef,
+      namingRequestIds: namingRequestIdsRef,
+    },
+    workspaces: state.workspaces,
+    transcriptBridgeRef,
+  });
 
   useEffect(() => {
     if (!workspaceStateReady) return;
@@ -1755,23 +1772,14 @@ function InternalAgentProvider({
 
   useEffect(() => {
     const sessionId = state.activeSessionId;
-    if (!sessionId || state.isLoadingMessages || state.messages.length > 0) return;
+    if (!sessionId) return;
+    const snap = transcriptBridgeRef.current?.getTranscriptSnapshot();
+    if (!snap || snap.scope?.sessionId !== sessionId) return;
+    if (snap.phase !== "empty" && snap.phase !== "error") return;
     if (attemptedEmptySessionLoadRef.current === sessionId) return;
-    const session = state.sessions.find((item) => item.id === sessionId);
-    if (!session) return;
     attemptedEmptySessionLoadRef.current = sessionId;
-    void selectSession(sessionId, {
-      session,
-      force: true,
-      preserveSelectionOnFailure: true,
-    });
-  }, [
-    selectSession,
-    state.activeSessionId,
-    state.isLoadingMessages,
-    state.messages.length,
-    state.sessions,
-  ]);
+    void transcriptBridgeRef.current?.reloadActiveTranscript(sessionId);
+  }, [state.activeSessionId]);
 
   const isChatDirectory = useCallback((directory?: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
@@ -1781,19 +1789,8 @@ function InternalAgentProvider({
   }, []);
 
   const loadOlderMessages = useCallback(async (): Promise<boolean> => {
-    const sessionId = stateRef.current.activeSessionId;
-    const session = sessionId
-      ? stateRef.current.sessions.find((candidate) => candidate.id === sessionId)
-      : undefined;
-    const projectTarget = session
-      ? (getSessionProjectTarget(session, stateRef.current.sessionMeta[session.id]) ?? undefined)
-      : undefined;
-    return await loadOlderSessionMessages({
-      state: stateRef.current,
-      fetchMessagePage: (id, options) => fetchMessagePage(id, options, projectTarget),
-      dispatch,
-    });
-  }, [fetchMessagePage]);
+    return (await transcriptBridgeRef.current?.loadOlderMessages()) ?? false;
+  }, []);
 
   const createSession = useCallback(
     async (title?: string, directory?: string): Promise<Session | null> => {
@@ -1942,6 +1939,7 @@ function InternalAgentProvider({
     ensureSession,
     resolveCurrentSessionId,
     dispatch,
+    reloadActiveTranscript: reloadActiveTranscript,
   });
 
   const findFiles = useCallback(
@@ -2129,14 +2127,16 @@ function InternalAgentProvider({
 
   /** Re-fetch providers from the server and update global state. */
   const refreshProviders = useCallback(async () => {
-    await loadServerResources(
-      activeResourceHarnessId,
+    const directory =
       activeResourceDirectory ??
-        (loadedResourceProjectKeyRef.current
-          ? parseProjectKey(loadedResourceProjectKeyRef.current).directory
-          : null),
-      activeWorkspace?.id,
-    );
+      (loadedResourceProjectKeyRef.current
+        ? parseProjectKey(loadedResourceProjectKeyRef.current).directory
+        : null);
+    loadedResourceHarnessIdRef.current = null;
+    loadedResourceProjectKeyRef.current = null;
+    await loadServerResources(activeResourceHarnessId, directory, activeWorkspace?.id, {
+      force: true,
+    });
   }, [activeResourceHarnessId, activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
 
   const clearError = useCallback(() => {
@@ -2184,7 +2184,7 @@ function InternalAgentProvider({
         sessionId: state.activeSessionId,
         mutateSession: () =>
           runtime.revertSession(state.activeSessionId!, messageID, undefined, projectTarget),
-        fetchMessagePage,
+        reloadTranscript: (id) => reloadActiveTranscript(id),
         dispatch,
         errorMessage: "Failed to revert session",
       });
@@ -2212,11 +2212,11 @@ function InternalAgentProvider({
     await refreshLifecycleSession({
       sessionId: state.activeSessionId,
       mutateSession: () => runtime.unrevertSession(state.activeSessionId!, projectTarget),
-      fetchMessagePage,
+      reloadTranscript: (id) => reloadActiveTranscript(id),
       dispatch,
       errorMessage: "Failed to unrevert session",
     });
-  }, [runtime, fetchMessagePage, state.activeSessionId]);
+  }, [runtime, reloadActiveTranscript, state.activeSessionId]);
 
   const forkFromMessage = useCallback(
     async (messageID: string) => {
@@ -2503,9 +2503,7 @@ function InternalAgentProvider({
         activeWorkspaceSessions.some((session) => session.id === state.activeSessionId)
           ? state.activeSessionId
           : null,
-      messages: state.messages,
       isBusy: state.isBusy,
-      isLoadingMessages: state.isLoadingMessages,
       busySessionIds: state.busySessionIds,
       queuedPrompts: state.queuedPrompts,
       pendingPermissions: state.pendingPermissions,
@@ -2517,14 +2515,11 @@ function InternalAgentProvider({
       sessionDrafts: state.sessionDrafts,
       sessionMeta: state.sessionMeta,
       sessionErrors: state.sessionErrors,
-      childSessions: state.childSessions,
     }),
     [
       activeWorkspaceSessions,
       state.activeSessionId,
-      state.messages,
       state.isBusy,
-      state.isLoadingMessages,
       state.busySessionIds,
       state.queuedPrompts,
       state.pendingPermissions,
@@ -2536,13 +2531,11 @@ function InternalAgentProvider({
       state.sessionDrafts,
       state.sessionMeta,
       state.sessionErrors,
-      state.childSessions,
     ],
   );
 
   const messagesCtx = useMemo<MessagesContextValue>(
     () => ({
-      messages: state.messages,
       turnRuns: state.activeSessionId
         ? Object.fromEntries(
             Object.entries(state.turnRuns).filter(
@@ -2550,18 +2543,8 @@ function InternalAgentProvider({
             ),
           )
         : {},
-      childSessions: state.childSessions,
-      messageHistoryHasMore: state.messageHistoryHasMore,
-      isLoadingOlderMessages: state.isLoadingOlderMessages,
     }),
-    [
-      state.messages,
-      state.activeSessionId,
-      state.turnRuns,
-      state.childSessions,
-      state.messageHistoryHasMore,
-      state.isLoadingOlderMessages,
-    ],
+    [state.activeSessionId, state.turnRuns],
   );
 
   const modelCtx = useMemo<ModelContextValue>(
@@ -2810,7 +2793,7 @@ function InternalAgentProvider({
  * Session-related state: sessions list, active session, busy state, queue,
  * permissions, questions, draft, unread, meta.
  *
- * Does NOT include messages or childSessions - use useMessages() for those.
+ * Does NOT include transcript messages - use useActiveTranscriptMessages() for those.
  * This split prevents streaming deltas from re-rendering the sidebar,
  * prompt box, and other components that only care about session metadata.
  */
@@ -2823,10 +2806,8 @@ export function useSessionState(): SessionContextValue {
 }
 
 /**
- * Messages and child sessions for the active session.
- *
- * Only components that render message content should use this hook.
- * Changes on every streaming delta - that's the whole point of isolating it.
+ * Turn-run metadata for the active session (footers). Transcript text lives in
+ * useActiveTranscriptMessages() from the session-transcript feature.
  */
 export function useMessages(): MessagesContextValue {
   const ctx = useContext(MessagesContext);

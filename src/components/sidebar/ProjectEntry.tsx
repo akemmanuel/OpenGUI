@@ -113,7 +113,8 @@ export function ProjectEntry({
   setVisibleByProject: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 }) {
   const isCollapsed = hasActiveSearch ? false : isSidebarProjectCollapsed(collapsed, directory);
-  const connStatus = connections[directory];
+  const projectKey = makeProjectKey(workspaceId, directory);
+  const connStatus = connections[projectKey] ?? connections[directory];
   const isProjectConnected = connStatus?.state === "connected";
   const isProjectConnecting =
     connStatus?.state === "connecting" || connStatus?.state === "reconnecting";
@@ -124,9 +125,7 @@ export function ProjectEntry({
   const normalizedDirectory = normalizeProjectPath(directory);
   const isPinned = isSidebarProjectPinned(projectMeta, workspaceId, directory);
   const harnessErrorCount = workspaceId
-    ? listProjectHarnessSessionQueryErrors(
-        projectHydration[makeProjectKey(workspaceId, normalizedDirectory)],
-      ).length
+    ? listProjectHarnessSessionQueryErrors(projectHydration[projectKey]).length
     : 0;
   const canCloseOtherProjects = availableProjectDirectories.some(
     (projectDirectory) => normalizeProjectPath(projectDirectory) !== normalizedDirectory,

@@ -5,6 +5,7 @@
 **Companion plans (do not duplicate detail here):**
 
 - Session/transcript reads: [`session-read-slop-removal.md`](./session-read-slop-removal.md) + [ADR 0006](../adr/0006-harness-only-session-and-transcript-reads.md)
+- Session transcript projection (Runtime, Frontend render-only): [`session-transcript-projection.md`](./session-transcript-projection.md) + [ADR 0008](../adr/0008-session-transcript-projection-in-runtime.md)
 - Runtime package / SDK: [`runtime-backend-sdk-split.md`](./runtime-backend-sdk-split.md) + [ADR 0005](../adr/0005-opengui-runtime-backend-split-and-sdk.md); minimal SDK API: [ADR 0007](../adr/0007-runtime-sdk-minimal-surface.md) + [`runtime-sdk-minimal-surface.md`](./runtime-sdk-minimal-surface.md)
 - Storage boundaries: [ADR 0004](../adr/0004-storage-source-of-truth-boundaries.md)
 
@@ -38,7 +39,7 @@
 | ----------------------------- | ----------------------------------------------------- | ------------------ |
 | **0 — Docs & language**       | Reading order, API-only vs headless, architecture map | Small              |
 | **1 — Session read slop**     | Finish existing plan                                  | Small–medium       |
-| **2 — Backend session index** | Shrink `SessionService` product use                   | Medium             |
+| **2 — Backend session index** | Shrink `SessionDispatchIndex` product use             | Medium             |
 | **3 — Protocol & naming**     | Client types, `_backendId`, deprecated exports        | Small, ongoing     |
 | **4 — workspaceId**           | Bridges + HTTP bodies directory-first                 | Large, incremental |
 | **5 — Harness registry**      | Before many new harnesses                             | Medium             |
@@ -90,8 +91,8 @@
 From [`session-read-slop-removal.md`](./session-read-slop-removal.md):
 
 - [x] **Tests:** `http-client.test.ts`, agent hook tests — errors vs empty messages.
-- [x] **Guardrails:** `SessionService.listSessions` documented; `slop-check` bans `listDirectorySessions` in hooks.
-- [ ] **Manual:** [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md).
+- [x] **Guardrails:** `SessionDispatchIndex` not used for product list reads; `slop-check` bans `listDirectorySessions` in hooks.
+- [ ] **Manual:** [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md). _(Automated guardrails green; message loads use `fetchSessionMessagePage` + `SESSION_ERROR` on failure; run before release.)_
 
 **Exit:** Product never lists or loads messages except via harness path; failures are visible.
 
@@ -99,7 +100,7 @@ From [`session-read-slop-removal.md`](./session-read-slop-removal.md):
 
 ## Track 2 — Backend session index slop
 
-**Problem:** `SessionService` still holds `ensureSession`, `replaceScopeSessions`, `listSessionRecords`, and resolve helpers that can invent or hydrate rows against ADR 0004/0006.
+**Problem (resolved):** `SessionDispatchIndex` formerly held list/sync helpers; product reads are harness-only per ADR 0006. Remaining `ensureSession` is queue/mutation-only.
 
 ### 2.1 Inventory call sites
 
@@ -153,7 +154,7 @@ Remove after grep shows zero product imports:
 - [x] `syncDirectorySessions` ([`session-sync.ts`](../../server/services/session-sync.ts))
 - [x] `harnesses.listDirectorySessions` on `OpenGuiClient`
 - [x] `tagBackendSession` / `normalizeTaggedBackendEvent` / `createBackendIdCodec` aliases
-- [ ] `session-queue-actions.ts` deprecated list helper (if any remain)
+- [x] `session-queue-actions.ts` deprecated list helper (none remain)
 
 **Exit:** Each `@deprecated` in `server/services` has a removal milestone in this plan or session-read plan.
 
@@ -193,11 +194,11 @@ Remove after grep shows zero product imports:
 
 From [`runtime-backend-sdk-split.md`](./runtime-backend-sdk-split.md) Phase 4:
 
-- [ ] Finish Tracks 1–2 before claiming storage cleanup complete.
+- [x] Tracks 1–2 automated cleanup complete; manual session-read checklist remains pre-release.
 - [x] Product API handlers → `packages/backend` (`registerProductApiRoutes`); host stays in `server/web-server.ts`.
 - [ ] Move remaining host (SSE, RPC, FS) → `packages/backend` incrementally.
 - [x] Move `*-bridge.ts` → `packages/runtime/src/adapters/` (incl. `pi-daemon-server.ts`).
-- [ ] Move `lib/harness-adapter-kit` beside adapters.
+- [ ] Move `lib/harness-adapter-kit` beside adapters (`packages/runtime/src/adapters/` per architecture.md).
 - [x] Lazy harness loading in `createOpenGUI({ harnesses: [...] })` (see [runtime-sdk-minimal-surface.md](./runtime-sdk-minimal-surface.md) Phase E).
 
 ---
@@ -227,13 +228,13 @@ Checks: no `/api/projects`, no `connectProject`, no `sync: true` in protocol, no
 
 ## Roadmap (suggested)
 
-| Sprint theme      | Tracks               | Outcome                          |
-| ----------------- | -------------------- | -------------------------------- |
-| **Hygiene**       | 0.2, 1 remainder, G1 | Docs + tests honest about errors |
-| **Index diet**    | 2, 3.3               | SessionService not on read path  |
-| **Harness scale** | 5, 4.2 docs          | N new harnesses from registry    |
-| **Packages**      | 6                    | Folders match mental model       |
-| **Naming**        | 3.1–3.2              | No `backendId` in new code       |
+| Sprint theme      | Tracks               | Outcome                               |
+| ----------------- | -------------------- | ------------------------------------- |
+| **Hygiene**       | 0.2, 1 remainder, G1 | Docs + tests honest about errors      |
+| **Index diet**    | 2, 3.3               | SessionDispatchIndex not on read path |
+| **Harness scale** | 5, 4.2 docs          | N new harnesses from registry         |
+| **Packages**      | 6                    | Folders match mental model            |
+| **Naming**        | 3.1–3.2              | No `backendId` in new code            |
 
 ---
 

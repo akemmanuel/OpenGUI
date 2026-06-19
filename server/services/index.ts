@@ -4,7 +4,7 @@
  * `SessionDispatchIndex` (`BackendServiceContext.sessions`) is queue/control cache only.
  */
 import type { StorageService } from "./storage-service.ts";
-import type { HarnessService } from "@opengui/runtime";
+import type { HarnessService, SessionTranscripts } from "@opengui/runtime";
 import type { BackendEventBus } from "./event-bus.ts";
 import type { PromptQueueService } from "./prompt-queue-service.ts";
 import type { SessionDispatchIndex } from "./session-dispatch-index.ts";
@@ -25,8 +25,6 @@ export type { HarnessControl, HarnessScope, DirectoryConnectionConfig } from "@o
 export { BackendEventBus } from "./event-bus.ts";
 export type { BackendEventMap } from "./event-bus.ts";
 export { SessionDispatchIndex } from "./session-dispatch-index.ts";
-/** @deprecated Use `SessionDispatchIndex` — alias until external imports are gone. */
-export { SessionDispatchIndex as SessionService } from "./session-dispatch-index.ts";
 export type {
   SessionRecord,
   CreateSessionInput,
@@ -112,6 +110,7 @@ export {
 } from "./directory-scope.ts";
 export { listDirectorySessionsFromHarness } from "./session-harness-list.ts";
 export { resolveSessionRecordForMutation, resolveSessionRecordForRead } from "./session-resolve.ts";
+export { resolveTranscriptScopeForBridgeEvent } from "./transcript-bridge-scope.ts";
 
 export interface HarnessAdapterDescriptor {
   id: string;
@@ -125,6 +124,7 @@ export interface BackendServiceContext {
   sessions: SessionDispatchIndex;
   queues: PromptQueueService;
   harnesses: HarnessService;
+  transcripts: SessionTranscripts;
   restartHarness: (harnessId: string) => Promise<void>;
   restartAllHarnesses: () => Promise<void>;
 }

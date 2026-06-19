@@ -4,6 +4,8 @@ import { PanelLeftIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useIsMobile } from "@/hooks/use-mobile";
+import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
+import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,6 +125,15 @@ function SidebarProvider({
       toggleSidebar,
     }),
     [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
+  );
+
+  useRegisterMobileBackHandler(
+    MOBILE_BACK_PRIORITY.SIDEBAR,
+    openMobile,
+    React.useCallback(() => {
+      setOpenMobile(false);
+      return true;
+    }, [setOpenMobile]),
   );
 
   return (

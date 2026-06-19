@@ -12,6 +12,9 @@ const config: CapacitorConfig = {
     androidScheme: "http",
   },
   plugins: {
+    App: {
+      disableBackButtonHandler: true,
+    },
     SystemBars: {
       insetsHandling: "css",
     },

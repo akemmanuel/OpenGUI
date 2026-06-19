@@ -92,16 +92,6 @@ export interface InternalAgentState {
   sessions: Session[];
   /** Currently selected session ID */
   activeSessionId: string | null;
-  /** Messages for the active session */
-  messages: MessageEntry[];
-  /** Whether older messages exist before the loaded active-session window */
-  messageHistoryHasMore: boolean;
-  /** Opaque cursor for fetching the next page of older messages */
-  messageHistoryCursor: string | null;
-  /** Whether messages are being fetched for a newly selected session */
-  isLoadingMessages: boolean;
-  /** Whether older messages are currently being prepended to the active window */
-  isLoadingOlderMessages: boolean;
   /** Whether a prompt response is in-flight */
   isBusy: boolean;
   /** Pending permission requests keyed by sessionID */
@@ -128,6 +118,8 @@ export interface InternalAgentState {
   selectedModel: SelectedModel | null;
   /** Set of session IDs that are currently busy (generating) */
   busySessionIds: Set<string>;
+  /** Session ids kept in sidebar after live events until harness list includes them. */
+  liveSessionRetainUntil: Record<string, number>;
   /** Available agents from the server */
   agents: Agent[];
   /** Currently selected agent name (null = server default) */
@@ -165,50 +157,6 @@ export interface InternalAgentState {
   turnRuns: Record<string, TurnRun>;
   /** Currently running turn ID per session. */
   activeTurnRunBySession: Record<string, string>;
-  /** Messages/parts for child (subagent) sessions, keyed by child sessionID */
-  childSessions: Record<string, Record<string, { info: Message; parts: Record<string, Part> }>>;
-  /** Set of child session IDs we're actively tracking (from running Task tool parts) */
-  trackedChildSessionIds: Set<string>;
-  /** Snapshot events queued while messages are loading for the active session */
-  _pendingSnapshots: Array<
-    | { type: "MESSAGE_UPDATED"; payload: Message }
-    | {
-        type: "MESSAGE_REPLACED";
-        payload: { sessionID: string; oldId: string; message: Message; parts: Part[] };
-      }
-    | { type: "PART_UPDATED"; payload: { part: Part } }
-    | {
-        type: "PART_DELTA";
-        payload: {
-          sessionID: string;
-          messageID: string;
-          partID: string;
-          field: string;
-          delta: string;
-        };
-      }
-    | {
-        type: "PART_REMOVED";
-        payload: { sessionID: string; messageID: string; partID: string };
-      }
-    | {
-        type: "MESSAGE_REMOVED";
-        payload: { sessionID: string; messageID: string };
-      }
-  >;
-  /** Buffered message snapshots for non-active sessions (keyed by sessionID) */
-  _sessionBuffers: Record<
-    string,
-    {
-      messages: Record<string, { info: Message; parts: Record<string, Part> }>;
-      hasMore: boolean;
-      cursor: string | null;
-      /** Whether this buffer was created from a full session snapshot (true)
-       *  or built incrementally from backend events only (false/undefined).
-       *  Incomplete buffers must trigger a fetchMessagePage when restored. */
-      complete?: boolean;
-    }
-  >;
   /** Session IDs that have an "after-part" queued prompt waiting for the current part to finish */
   afterPartPending: Set<string>;
   /** Session IDs where an after-part trigger just fired (effect picks this up to abort + dispatch) */

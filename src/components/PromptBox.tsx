@@ -7,25 +7,19 @@ import { PromptImageMentions, usePromptImages } from "@/components/PromptImageMe
 import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
 import { PromptAddMenu } from "@/components/PromptAddMenu";
-import { PromptContextStatus } from "@/components/PromptContextStatus";
-import { PromptWorktreeSelector } from "@/components/PromptWorktreeSelector";
 import { SlashCommandPopover } from "@/components/SlashCommandPopover";
 import { Button } from "@/components/ui/button";
 import { VariantSelector } from "@/components/VariantSelector";
-import { WorktreeDialog } from "@/components/WorktreeDialog";
-import { WorktreeSetupDialog } from "@/components/WorktreeSetupDialog";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigation";
-import { usePromptCompaction } from "@/hooks/use-prompt-compaction";
 import { usePromptDraft } from "@/hooks/use-prompt-draft";
 import { usePromptFiles } from "@/hooks/use-prompt-files";
-import { usePromptWorktreeSelector } from "@/hooks/use-prompt-worktree-selector";
 import { usePromptInputInteractions } from "@/components/use-prompt-input-interactions";
+import { useActiveTranscriptPromptHistory } from "@/features/session-transcript/active-session-transcript-provider";
 import {
   type QueueMode,
   useActions,
   useConnectionState,
-  useMessages,
   useModelState,
   useSessionState,
 } from "@/hooks/use-agent-state";
@@ -44,14 +38,6 @@ interface PromptBoxProps extends Omit<
   onStop?: () => void;
   isLoading?: boolean;
   autoFocus?: boolean;
-  /** Percentage of context window consumed (0-100), null if unknown */
-  contextPercent?: number | null;
-  /** Total tokens in the context window */
-  contextTokens?: number | null;
-  /** Cost of the last assistant message in USD */
-  contextCost?: number | null;
-  /** Maximum context window size in tokens */
-  contextLimit?: number | null;
   /** Current queue mode (controlled from parent) */
   queueMode: QueueMode;
   /** Callback to update queue mode */
@@ -60,20 +46,7 @@ interface PromptBoxProps extends Omit<
 
 export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
   (
-    {
-      className,
-      onSubmit,
-      onStop,
-      isLoading,
-      autoFocus,
-      contextPercent,
-      contextTokens,
-      contextCost,
-      contextLimit,
-      queueMode,
-      onQueueModeChange,
-      ...props
-    },
+    { className, onSubmit, onStop, isLoading, autoFocus, queueMode, onQueueModeChange, ...props },
     ref,
   ) => {
     const { t } = useTranslation();
@@ -81,22 +54,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
-    const [worktreeDialogDir, setWorktreeDialogDir] = React.useState<string | null>(null);
-    const [setupWorktreePath, setSetupWorktreePath] = React.useState<string | null>(null);
 
     const isDisabled = Boolean(props.disabled);
 
-    const {
-      setAgent,
-      sendCommand,
-      summarizeSession,
-      findFiles,
-      setActiveTargetDirectory,
-      setSessionDraft,
-      clearSessionDraft,
-      registerWorktree,
-      connectToProject,
-    } = useActions();
+    const { setAgent, sendCommand, findFiles, setSessionDraft, clearSessionDraft } = useActions();
     const { commands, agents, selectedAgent, selectedModel } = useModelState();
     const fallbackHarnessId = useCurrentHarnessId();
     const capabilities = useBackendCapabilities();
@@ -108,38 +69,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       activeTargetHarnessId,
       sessionDrafts,
     } = useSessionState();
-    const { messages } = useMessages();
+    const promptHistory = useActiveTranscriptPromptHistory();
 
-    const promptCompaction = usePromptCompaction({
-      isLoading,
-      messages,
-      summarizeSession,
-    });
-
-    const {
-      activeWorkspace,
-      activeWorkspaceId,
-      workspaceServerUrl,
-      worktreeParents,
-      isLocalWorkspace,
-    } = useConnectionState();
+    const { activeWorkspace, activeWorkspaceId, workspaceServerUrl } = useConnectionState();
     const activeSession = React.useMemo(
       () => sessions.find((session) => session.id === activeSessionId) ?? null,
       [sessions, activeSessionId],
     );
-    const worktreeSelector = usePromptWorktreeSelector({
-      activeSession,
-      activeSessionId,
-      activeTargetDirectory,
-      worktreeParents,
-      isLocalWorkspace,
-      registerWorktree,
-    });
-    const selectedWorktreeDirectory = worktreeSelector.selectedDirectory;
-    const projectDir = worktreeSelector.projectDir;
-
-    // Slash command popover state
-
     const primaryAgents = React.useMemo(
       () => getPrimaryAgents(agents).map((a) => a.name),
       [agents],
@@ -176,17 +112,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const promptImages = usePromptImages(value);
 
     const { handleHistoryKeyDown, noteManualInput, resetHistory } = usePromptHistoryNavigation({
-      messages,
+      userHistory: promptHistory,
       value,
       setValue,
       imageCount: 0,
       draftKey: currentDraftKey,
       textareaRef: internalTextareaRef,
     });
-
-    const worktreeOptions = worktreeSelector.options;
-    const selectedWorktreeOption = worktreeSelector.selectedOption;
-    const shouldShowWorktreeSelector = worktreeSelector.shouldShowSelector;
 
     React.useImperativeHandle(ref, () => internalTextareaRef.current as HTMLTextAreaElement, []);
 
@@ -258,7 +190,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         onDragLeave={promptFiles.handleDragLeave}
         onDrop={promptFiles.handleDrop}
         className={cn(
-          "flex flex-col border border-input bg-card px-2 pt-2 shadow-sm transition-colors cursor-text rounded-xl",
+          "flex flex-col border border-input border-b-0 bg-card px-2 pt-2 pb-[var(--app-safe-bottom)] shadow-none transition-colors cursor-text rounded-t-xl md:rounded-xl md:border-b md:pb-0 md:shadow-sm",
           "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
           "dark:bg-card/60 dark:border-input/80",
           promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
@@ -322,7 +254,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         <PromptImageMentions
           images={promptImages}
           serverUrl={promptImageServerUrl}
-          baseDirectory={projectDir ?? activeTargetDirectory ?? null}
+          baseDirectory={
+            activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null
+          }
         />
         <textarea
           ref={internalTextareaRef}
@@ -348,29 +282,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         />
 
         <McpDialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen} />
-        <WorktreeDialog
-          open={worktreeDialogDir !== null}
-          onOpenChange={(open) => {
-            if (!open) setWorktreeDialogDir(null);
-          }}
-          directory={worktreeDialogDir ?? ""}
-          onCreated={async (worktreePath, branch) => {
-            if (!worktreeDialogDir) return;
-            registerWorktree(worktreePath, worktreeDialogDir, branch);
-            await connectToProject(worktreePath);
-            setActiveTargetDirectory(worktreePath);
-            setSetupWorktreePath(worktreePath);
-            setWorktreeDialogDir(null);
-          }}
-        />
-        <WorktreeSetupDialog
-          open={setupWorktreePath !== null}
-          onOpenChange={(open) => {
-            if (!open) setSetupWorktreePath(null);
-          }}
-          worktreePath={setupWorktreePath ?? ""}
-        />
-
         <div className="flex min-w-0 items-center gap-1.5 px-1.5 pt-1 pb-2">
           <PromptAddMenu
             disabled={isDisabled}
@@ -384,19 +295,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             <AgentSelector />
             <VariantSelector />
           </div>
-
-          <PromptWorktreeSelector
-            shouldShow={shouldShowWorktreeSelector}
-            selectedOption={selectedWorktreeOption}
-            isPendingTargetSelection={worktreeSelector.isPendingTargetSelection}
-            options={worktreeOptions}
-            selectedDirectory={selectedWorktreeDirectory}
-            projectDir={projectDir}
-            worktreeParents={worktreeParents}
-            registerWorktree={registerWorktree}
-            setActiveTargetDirectory={setActiveTargetDirectory}
-            onNewWorktree={() => setWorktreeDialogDir(projectDir)}
-          />
 
           {isLoading && (
             <Button
@@ -418,19 +316,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           )}
 
           <div className="ml-auto flex items-center gap-1.5">
-            {capabilities?.compact && contextPercent != null && contextPercent >= 0 && (
-              <PromptContextStatus
-                contextPercent={contextPercent}
-                contextTokens={contextTokens}
-                contextCost={contextCost}
-                contextLimit={contextLimit}
-                isLoading={isLoading}
-                isDisabled={isDisabled}
-                isCompacting={promptCompaction.isCompacting}
-                isCompactingInProgress={promptCompaction.isCompactingInProgress}
-                onCompact={promptCompaction.compact}
-              />
-            )}
             {shouldShowStopButton({ isSessionRunning }) && (
               <Button
                 type="button"

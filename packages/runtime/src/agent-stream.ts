@@ -4,6 +4,7 @@ import {
   composeFrontendSessionId,
   parseFrontendSessionId,
 } from "../../../src/lib/session-identity.ts";
+import type { LiveSessionEvent } from "./live-session-events/live-session-event.ts";
 
 /** Small streaming union for SDK embedders (ADR 0007); not full HarnessEvent. */
 export type AgentStreamEvent =
@@ -169,6 +170,50 @@ export function harnessEventToAgentStreamEvents(
 }
 
 export type AgentStreamHandler = (event: AgentStreamEvent) => void;
+
+export function liveSessionEventToAgentStreamEvents(event: LiveSessionEvent): AgentStreamEvent[] {
+  const sessionId = normalizeStreamSessionId(event.scope.harnessId, event.scope.sessionId);
+  switch (event.type) {
+    case "run.started":
+      return [{ type: "run.start", sessionId }];
+    case "run.finished":
+      return [{ type: "run.end", sessionId, reason: event.reason }];
+    case "part.text.appended":
+      return [
+        {
+          type: event.partKind === "thinking" ? "thinking.delta" : "text.delta",
+          sessionId,
+          messageId: event.messageId ?? "",
+          partId: event.partId ?? "",
+          delta: event.text,
+        },
+      ];
+    case "tool.started":
+      return [
+        {
+          type: "tool.start",
+          sessionId,
+          messageId: event.messageId ?? "",
+          partId: event.partId ?? "",
+          tool: event.tool,
+        },
+      ];
+    case "tool.finished":
+      return [
+        {
+          type: "tool.end",
+          sessionId,
+          messageId: event.messageId ?? "",
+          partId: event.partId ?? "",
+          status: event.status,
+        },
+      ];
+    case "session.error":
+      return [{ type: "error", sessionId, message: event.message }];
+    default:
+      return [];
+  }
+}
 
 export function filterStreamEventsForSession(
   events: AgentStreamEvent[],

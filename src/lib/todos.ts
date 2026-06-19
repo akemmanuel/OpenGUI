@@ -2,7 +2,7 @@
  * Shared todo-list types and utilities.
  *
  * Shared todo-list types, status config, and extraction helpers used by the
- * inline TodoListView in MessageList.
+ * inline TodoListView in the message list tool UI.
  */
 
 import { Circle, CircleCheck, CircleDot, CircleOff } from "lucide-react";

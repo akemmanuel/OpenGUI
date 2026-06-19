@@ -10,7 +10,7 @@ export const PartView = memo(function PartView({
   part,
   isUser,
   expandedToolCalls,
-  onToggleToolCall,
+  onSetToolCallExpanded,
   activeImagePath,
   onImageHover,
   onImageOpen,
@@ -19,7 +19,7 @@ export const PartView = memo(function PartView({
   part: TranscriptPart;
   isUser?: boolean;
   expandedToolCalls?: ReadonlySet<string>;
-  onToggleToolCall?: (partId: string, expanded: boolean) => void;
+  onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
   activeImagePath?: string | null;
   onImageHover?: (path: string | null) => void;
   onImageOpen?: (image: ImageMention) => void;
@@ -46,7 +46,7 @@ export const PartView = memo(function PartView({
         <ToolCallPartView
           part={part}
           expandedToolCalls={expandedToolCalls}
-          onToggleToolCall={onToggleToolCall}
+          onSetToolCallExpanded={onSetToolCallExpanded}
         />
       );
     case "step-start":

@@ -1,4 +1,7 @@
 {
+  "mobile": {
+    "backAgainToExit": "Zum Beenden erneut Zurück drücken"
+  },
   "common": {
     "autoDetect": "Automatisch erkennen",
     "back": "Zurück",
@@ -13,6 +16,14 @@
     "version": "Version",
     "done": "Fertig",
     "loading": "Lade..."
+  },
+  "messageList": {
+    "loadOlder": "Ältere Nachrichten laden"
+  },
+  "messageError": {
+    "showDetails": "Details anzeigen",
+    "hideDetails": "Details ausblenden",
+    "copy": "Kopieren"
   },
   "settings": {
     "subtitle": "App-Einstellungen und Anbieter für den aktiven Workspace verwalten.",

@@ -4,13 +4,15 @@ import { canNavigateHistoryAtCursor } from "@/lib/prompt-history";
 
 export function usePromptHistoryNavigation({
   messages,
+  userHistory: providedUserHistory,
   value,
   setValue,
   imageCount,
   draftKey,
   textareaRef,
 }: {
-  messages: MessageEntry[];
+  messages?: MessageEntry[];
+  userHistory?: readonly string[];
   value: string;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   imageCount: number;
@@ -21,9 +23,9 @@ export function usePromptHistoryNavigation({
   const [savedDraft, setSavedDraft] = React.useState("");
   const isApplyingHistoryRef = React.useRef(false);
 
-  const userHistory = React.useMemo(
+  const computedUserHistory = React.useMemo(
     () =>
-      messages
+      (messages ?? [])
         .filter((m) => m.info.role === "user")
         .map((m) =>
           m.parts
@@ -35,6 +37,7 @@ export function usePromptHistoryNavigation({
         .reverse(),
     [messages],
   );
+  const userHistory = providedUserHistory ?? computedUserHistory;
 
   React.useEffect(() => {
     setHistoryIndex(-1);

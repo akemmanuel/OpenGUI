@@ -3,6 +3,7 @@ import { useCallback, type MutableRefObject } from "react";
 import type { HarnessDescriptor } from "@/agents/backend";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import type { Action } from "@/hooks/agent-reducer";
+
 import { getSessionProjectTarget } from "@/hooks/agent-session-utils";
 import type { InternalAgentState } from "@/hooks/agent-state-types";
 import { getErrorMessage } from "@/lib/utils";
@@ -20,6 +21,7 @@ export function useSessionInteractionOrchestration({
   ensureSession,
   resolveCurrentSessionId,
   dispatch,
+  reloadActiveTranscript,
 }: {
   state: InternalAgentState;
   stateRef: MutableRefObject<InternalAgentState>;
@@ -28,6 +30,7 @@ export function useSessionInteractionOrchestration({
   ensureSession: () => Promise<string | null>;
   resolveCurrentSessionId: (sessionId: string) => string;
   dispatch: Dispatch;
+  reloadActiveTranscript?: (sessionId: string) => Promise<boolean>;
 }) {
   const {
     activeSessionId,
@@ -137,7 +140,9 @@ export function useSessionInteractionOrchestration({
       }
 
       dispatch({ type: "SET_BUSY", payload: true });
+      let scopedSessionId: string | null = null;
       try {
+        scopedSessionId = sessionId;
         const projectTarget = getSessionProjectTarget(
           stateRef.current.sessions.find((session) => session.id === sessionId),
           stateRef.current.sessionMeta[sessionId],
@@ -156,15 +161,26 @@ export function useSessionInteractionOrchestration({
           }, 6000);
         });
         await new Promise((resolve) => setTimeout(resolve, 500));
-        const messages = (
-          await openGuiClient.sessions.getMessages({ sessionId, options: { limit: 100 } })
-        ).messages;
-        dispatch({ type: "SET_MESSAGES", payload: { messages, hasMore: false, nextCursor: null } });
+        if (stateRef.current.activeSessionId === sessionId && reloadActiveTranscript) {
+          await reloadActiveTranscript(sessionId);
+        }
       } catch (err) {
-        dispatch({ type: "SET_ERROR", payload: getErrorMessage(err) });
+        const raw = getErrorMessage(err);
+        if (scopedSessionId) {
+          dispatch({
+            type: "SESSION_ERROR",
+            payload: {
+              sessionID: scopedSessionId,
+              error: raw.trim() || "sessionError.messagesLoadFailed",
+            },
+          });
+        }
+        dispatch({ type: "SET_ERROR", payload: raw });
+      } finally {
+        dispatch({ type: "SET_BUSY", payload: false });
       }
     },
-    [dispatch, ensureSession, openGuiClient, runtime, stateRef],
+    [dispatch, ensureSession, reloadActiveTranscript, runtime, stateRef],
   );
 
   const abortSession = useCallback(async () => {
