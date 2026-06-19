@@ -7,6 +7,8 @@
  */
 import { resolve } from "node:path";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 
 const DEFAULT_PROMPT = "Reply with exactly: OPENGUI_STREAM_OK";
 const DEFAULT_MODELS = {
@@ -29,6 +31,7 @@ function parseArgs(argv) {
     directory: process.env.OPENGUI_RUNTIME_DIRECTORY || process.cwd(),
     harnesses: ["pi", "opencode"],
     prompt: DEFAULT_PROMPT,
+    promptFromCli: false,
     dataDir: "",
     json: false,
     showDuplicates: false,
@@ -46,8 +49,10 @@ function parseArgs(argv) {
     else if (arg === "--harness" || arg === "-H") {
       const value = String(argv[++i] || "").trim();
       flags.harnesses = value === "both" ? ["pi", "opencode"] : value.split(",").filter(Boolean);
-    } else if (arg === "--prompt" || arg === "-p") flags.prompt = argv[++i] || flags.prompt;
-    else if (arg === "--data-dir") flags.dataDir = argv[++i] || "";
+    } else if (arg === "--prompt" || arg === "-p") {
+      flags.prompt = argv[++i] ?? "";
+      flags.promptFromCli = true;
+    } else if (arg === "--data-dir") flags.dataDir = argv[++i] || "";
     else if (arg === "--timeout-ms") flags.timeoutMs = Number(argv[++i]) || flags.timeoutMs;
     else if (!arg.startsWith("-") && !flags._positionalDirectorySeen) {
       flags.directory = arg;
@@ -73,7 +78,7 @@ function usage() {
 Options:
   -d, --directory <path>     Repo/project directory (default: cwd)
   -H, --harness <id|both>    pi, opencode, comma-list, or both (default: both)
-  -p, --prompt <text>        Prompt to send (default: exact smoke-test reply)
+  -p, --prompt <text>        Prompt to send (skip to type at startup)
   --timeout-ms <ms>          Wait timeout per harness (default: 180000)
   --show-duplicates          Print duplicate canonical events too
   --debug-adapter-observations
@@ -379,6 +384,18 @@ if (flags.help) {
   process.exit(0);
 }
 
+if (!flags.promptFromCli && !flags.json) {
+  const rl = createInterface({ input, output });
+  try {
+    const entered = (await rl.question(`Prompt [${DEFAULT_PROMPT}]: `)).trim();
+    flags.prompt = entered || DEFAULT_PROMPT;
+  } finally {
+    rl.close();
+  }
+} else if (!flags.promptFromCli) {
+  flags.prompt = DEFAULT_PROMPT;
+}
+
 const { createOpenGUI } = await import("@opengui/runtime");
 const og = await createOpenGUI({ allowedRoots: [flags.directory], dataDir: flags.dataDir });
 const results = [];
@@ -387,6 +404,7 @@ try {
   if (!flags.json) {
     line(`${colors.bold}OpenGUI bridge debug${colors.reset}`);
     line(`${colors.dim}directory: ${flags.directory}${colors.reset}`);
+    line(`${colors.dim}prompt: ${oneLine(flags.prompt)}${colors.reset}`);
   }
 
   for (const harnessId of flags.harnesses) {

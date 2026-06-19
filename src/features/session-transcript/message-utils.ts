@@ -2,13 +2,12 @@ import type { Part } from "@/protocol/harness-types";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 
 export const MESSAGE_PAGE_SIZE = 30;
+
 /**
  * Keep a generous active-session window so long local transcripts do not appear truncated.
  * Rendering is virtualized, so the DOM cost stays bounded while we avoid discarding history early.
  */
 const MAX_MESSAGE_WINDOW = 1000;
-/** Maximum number of idle session message snapshots to keep in the LRU cache */
-export const MAX_SESSION_BUFFER_CACHE = 8;
 
 export function getMessageText(entry: MessageEntry): string {
   return entry.parts

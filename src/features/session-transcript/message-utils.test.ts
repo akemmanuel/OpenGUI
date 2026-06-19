@@ -1,9 +1,9 @@
 import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
 import type { Message, Part } from "@/protocol/harness-types";
-import { getMessageText, limitMessageWindow } from "./agent-message-state";
-import type { MessageEntry } from "./agent-state-types";
+import { getMessageText, limitMessageWindow } from "@/features/session-transcript/message-utils";
+import type { MessageEntry } from "@/hooks/agent-state-types";
 
-describe("agent-message-state", () => {
+describe("message-utils", () => {
   test("getMessageText joins text parts", () => {
     const entry: MessageEntry = {
       info: { id: "m1", sessionID: "s1", role: "assistant", time: { created: 0 } } as Message,

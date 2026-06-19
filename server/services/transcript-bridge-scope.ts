@@ -6,6 +6,21 @@ import { transcriptSessionId } from "@opengui/runtime";
 import type { BackendServiceContext } from "./index.ts";
 import type { SessionRecord } from "./session-types.ts";
 import { resolveSessionRecordForMutation } from "./session-resolve.ts";
+import { normalizeProjectPath } from "../../src/lib/path.ts";
+
+function normalizeDirectoryHint(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? normalizeProjectPath(value.trim()) : undefined;
+}
+
+function sessionDirectoryFromEvent(event: HarnessEvent): string | undefined {
+  if ((event.type === "session.created" || event.type === "session.updated") && event.session) {
+    return (
+      normalizeDirectoryHint((event.session as { _projectDir?: unknown })._projectDir) ??
+      normalizeDirectoryHint((event.session as { directory?: unknown }).directory)
+    );
+  }
+  return undefined;
+}
 
 export async function resolveTranscriptScopeForBridgeEvent(
   services: BackendServiceContext,
@@ -17,18 +32,22 @@ export async function resolveTranscriptScopeForBridgeEvent(
   const sessionId = transcriptSessionId(event);
   if (!sessionId) return null;
 
+  const directoryHint =
+    sessionDirectoryFromEvent(event) ??
+    normalizeDirectoryHint(bridgeDirectoryHint) ??
+    normalizeDirectoryHint(decodeCanonicalDirectorySessionId(sessionId)?.directory) ??
+    undefined;
+
   const cached = await services.sessions.getSession(sessionId, { harnessId });
   if (cached) {
-    return {
-      scope: { directory: cached.directory, harnessId: cached.harnessId, sessionId: cached.id },
-      session: cached,
-    };
+    if (!directoryHint || normalizeProjectPath(cached.directory) === directoryHint) {
+      return {
+        scope: { directory: cached.directory, harnessId: cached.harnessId, sessionId: cached.id },
+        session: cached,
+      };
+    }
   }
 
-  const directoryHint =
-    bridgeDirectoryHint?.trim() ||
-    decodeCanonicalDirectorySessionId(sessionId)?.directory ||
-    undefined;
   if (!directoryHint) return null;
 
   try {

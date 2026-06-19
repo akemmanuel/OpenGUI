@@ -2,6 +2,8 @@
 
 **Goal:** Docs match ADRs; code matches docs; adding harnesses and changing layers does not require archaeology. **Slop** = second sources of truth, deprecated paths still on product hot paths, and names that contradict CONTEXT.
 
+**LoC reduction execution:** [`loc-reduction-highest-impact.md`](./loc-reduction-highest-impact.md) (god-provider split, transcript finish).
+
 **Companion plans (do not duplicate detail here):**
 
 - Session/transcript reads: [`session-read-slop-removal.md`](./session-read-slop-removal.md) + [ADR 0006](../adr/0006-harness-only-session-and-transcript-reads.md)

@@ -1,5 +1,5 @@
 import type { MessageEntry } from "@/hooks/agent-state-types";
-import { limitMessageWindow } from "@/hooks/agent-message-state";
+import { limitMessageWindow } from "@/features/session-transcript/message-utils";
 
 function assistantTextLength(entry: MessageEntry): number {
   if (entry.info.role !== "assistant") return 0;

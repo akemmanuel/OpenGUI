@@ -1,5 +1,5 @@
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
-import { MESSAGE_PAGE_SIZE } from "@/hooks/agent-message-state";
+import { MESSAGE_PAGE_SIZE } from "@/features/session-transcript/message-utils";
 import { resolveSessionHarnessRoute } from "@/hooks/agent-harness-routing";
 import {
   directoryScopeForSessionApi,

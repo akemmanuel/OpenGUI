@@ -89,20 +89,5 @@ export function useAgentSessionActivation({
     [dispatch, noteSessionSelection, stateRef],
   );
 
-  const refreshActiveSessionMessages = useCallback(
-    async (_sessionId: string, _projectTarget?: { directory?: string; workspaceId?: string }) =>
-      false,
-    [],
-  );
-
-  const scheduleSessionMessageReconcile = useCallback(
-    (_sessionId: string, _projectTarget?: { directory?: string; workspaceId?: string }) => {},
-    [],
-  );
-
-  return {
-    selectSession,
-    refreshActiveSessionMessages,
-    scheduleSessionMessageReconcile,
-  };
+  return { selectSession };
 }

@@ -47,19 +47,13 @@ import {
   createWorkspaceSwitchPlan,
   createWorkspaceUpdatePlan,
 } from "@/hooks/agent-workspace-lifecycle";
-import { updateVariantSelections, useVariant, variantKey } from "@/hooks/use-agent-variant-core";
+import { useVariant } from "@/hooks/use-agent-variant-core";
 import {
-  getActiveWorkspaceId,
-  getLegacyStoredDefaultChatDirectory,
-  getVariantSelectionsForWorkspace,
   getWorkspaceDefaultChatDirectory,
   getWorkspaceRootDirectory,
   getWorktreeParents,
-  initializeBackendWorkspaceState,
-  isLocalServer,
   LOCAL_WORKSPACE_ID,
   persistUnreadSessionIds,
-  persistVariantSelectionsForWorkspace,
   persistWorkspaces,
   persistWorktreeParents,
   type SessionColor,
@@ -68,14 +62,11 @@ import { resolveWorkspacePresentation } from "@/hooks/workspace-presentation";
 import { canManageProjects as resolveCanManageProjects } from "@/hooks/workspace-guards";
 import { initialAgentState } from "@/hooks/agent-initial-state";
 import {
-  isModelAvailable,
-  resolveAvailableAgent,
   resolveServerDefaultModel,
   selectedModelsEqual,
   selectedVariantsEqual,
 } from "@/hooks/agent-model-selection";
 import {
-  buildBootstrapProjectConfigs,
   buildWorkspaceProjectPersistPlan,
   createProjectConnectionDescriptor,
   createProjectConnectionStatus,
@@ -108,7 +99,6 @@ import {
   createSessionProjectDetachMeta,
   createSessionProjectMoveMeta,
   getSessionProjectTarget,
-  getSessionSelectedAgent,
   getSessionWorkspaceId,
   isHiddenProject,
   makeProjectKey,
@@ -151,7 +141,8 @@ import { persistSessionDrafts } from "@/lib/session-drafts";
 import { generateSessionTitle } from "@/lib/session-namer";
 import { i18n } from "@/i18n";
 import { notifyInfo } from "@/lib/notify";
-import { ensureResourceCatalog } from "@/lib/resource-catalog-cache";
+import { useAgentProjectBootstrap, useAgentWorkspacePersistence } from "@/features/agent-bootstrap";
+import { useAgentResourceCatalog } from "@/features/agent-resources";
 import { getErrorMessage, normalizeProjectPath } from "@/lib/utils";
 import type {
   ConnectionConfig,
@@ -192,6 +183,9 @@ function InternalAgentProviderBody({
   detachedProject?: string;
 }) {
   const [state, dispatch] = useReducer(reducer, initialAgentState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const getState = useCallback(() => stateRef.current, []);
   const [workspaceStateReady, setWorkspaceStateReady] = useState(false);
   const shellWorkspacePolicy = useMemo(() => getShellWorkspacePolicy(), []);
   const [preferredHarnessId, setPreferredHarnessId] = useState<HarnessId>(() => {
@@ -255,9 +249,6 @@ function InternalAgentProviderBody({
       }
     }
   }, []);
-  const loadedResourceProjectKeyRef = useRef<string | null>(null);
-  const loadedResourceHarnessIdRef = useRef<HarnessId | null>(null);
-  const resourceLoadRequestIdRef = useRef(0);
   const updateProjectHydration = useCallback(
     (
       projectKey: string,
@@ -287,43 +278,15 @@ function InternalAgentProviderBody({
     });
   }, []);
 
-  const workspaceBootstrapRef = useRef(false);
   const pendingStartupSessionRestoreRef = useRef<string | null>(null);
   const attemptedStartupSessionRestoreRef = useRef<string | null>(null);
   const attemptedEmptySessionLoadRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (workspaceBootstrapRef.current) return;
-    workspaceBootstrapRef.current = true;
-    let cancelled = false;
-
-    void initializeBackendWorkspaceState(openGuiClient)
-      .then((workspaces) => {
-        if (cancelled) return;
-        dispatch({ type: "SET_WORKSPACES", payload: workspaces });
-        const activeWorkspaceId = getActiveWorkspaceId(workspaces);
-        dispatch({ type: "SET_ACTIVE_WORKSPACE", payload: activeWorkspaceId });
-        const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
-        const legacyDefaultChatDirectory = getLegacyStoredDefaultChatDirectory();
-        pendingStartupSessionRestoreRef.current = activeWorkspace?.lastActiveSessionId ?? null;
-        dispatch({
-          type: "SET_DEFAULT_CHAT_DIRECTORY",
-          payload: getWorkspaceDefaultChatDirectory(activeWorkspace) ?? legacyDefaultChatDirectory,
-        });
-        setWorkspaceStateReady(true);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        dispatch({
-          type: "SET_ERROR",
-          payload: getErrorMessage(error) || "Failed to load workspaces",
-        });
-        setWorkspaceStateReady(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [openGuiClient]);
+  useAgentWorkspacePersistence({
+    openGuiClient,
+    dispatch,
+    setWorkspaceStateReady,
+    pendingStartupSessionRestoreRef,
+  });
 
   useEffect(() => {
     if (!workspaceStateReady) return;
@@ -400,126 +363,12 @@ function InternalAgentProviderBody({
     state.sessionMeta,
   ]);
 
-  // --- Actions ---
-
-  const loadServerResources = useCallback(
-    async (
-      harnessId: HarnessId,
-      directory?: string | null,
-      workspaceId?: string | null,
-      options?: { force?: boolean },
-    ) => {
-      const targetDirectory = directory?.trim() || undefined;
-      const targetWorkspaceId = workspaceId?.trim() || undefined;
-      const targetWorkspace = targetWorkspaceId
-        ? stateRef.current.workspaces.find((workspace) => workspace.id === targetWorkspaceId)
-        : null;
-      const projectKey = targetDirectory ? makeProjectKey(targetWorkspaceId, targetDirectory) : "";
-      const loadedProjectKeyForRef = targetDirectory ? projectKey : null;
-      if (
-        !options?.force &&
-        loadedResourceHarnessIdRef.current === harnessId &&
-        loadedResourceProjectKeyRef.current === loadedProjectKeyForRef
-      ) {
-        return;
-      }
-      const requestId = ++resourceLoadRequestIdRef.current;
-      try {
-        const { providersData, agentsData, commandsData } = await ensureResourceCatalog({
-          harnessId,
-          target: {
-            workspaceId: targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
-            directory: targetDirectory ?? null,
-            baseUrl: targetWorkspace?.isLocal ? undefined : targetWorkspace?.serverUrl,
-            authToken: targetWorkspace?.isLocal ? undefined : targetWorkspace?.authToken,
-          },
-          loadResources: openGuiClient.harnesses.loadResources.bind(openGuiClient.harnesses),
-          force: options?.force,
-        });
-
-        if (requestId !== resourceLoadRequestIdRef.current) {
-          return;
-        }
-
-        loadedResourceProjectKeyRef.current = loadedProjectKeyForRef;
-        loadedResourceHarnessIdRef.current = harnessId;
-
-        const currentSelection = stateRef.current.selectedModel;
-        const nextSelection = isModelAvailable(providersData.providers, currentSelection)
-          ? currentSelection
-          : null;
-        dispatch({
-          type: "SET_SELECTED_MODEL",
-          payload: nextSelection ?? null,
-        });
-
-        dispatch({ type: "SET_AGENTS", payload: agentsData });
-        const activeSessionId = stateRef.current.activeSessionId;
-        const activeSession = activeSessionId
-          ? stateRef.current.sessions.find((session) => session.id === activeSessionId)
-          : null;
-        const activeSessionAgent = getSessionSelectedAgent(activeSession);
-        const activeSessionMeta = activeSessionId
-          ? stateRef.current.sessionMeta[activeSessionId]
-          : undefined;
-        const nextAgent = resolveAvailableAgent({
-          agents: agentsData,
-          sessionAgent: activeSessionAgent ?? activeSessionMeta?.selectedAgent,
-          hasSessionAgent: Boolean(
-            activeSessionAgent ||
-            (activeSessionMeta && Object.hasOwn(activeSessionMeta, "selectedAgent")),
-          ),
-          workspaceAgent: storageGet(STORAGE_KEYS.SELECTED_AGENT),
-        });
-        dispatch({ type: "SET_SELECTED_AGENT", payload: nextAgent });
-
-        let nextVariantSelections = getVariantSelectionsForWorkspace(
-          targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
-        );
-        if (
-          activeSessionMeta &&
-          Object.hasOwn(activeSessionMeta, "selectedVariant") &&
-          nextSelection
-        ) {
-          const key = variantKey(nextSelection.providerID, nextSelection.modelID);
-          const desiredVariant = activeSessionMeta.selectedVariant ?? undefined;
-          if (nextVariantSelections[key] !== desiredVariant) {
-            nextVariantSelections = updateVariantSelections(
-              nextVariantSelections,
-              key,
-              desiredVariant,
-            );
-          }
-        }
-        if (nextVariantSelections !== stateRef.current.variantSelections) {
-          persistVariantSelectionsForWorkspace(
-            targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
-            nextVariantSelections,
-          );
-        }
-
-        dispatch({
-          type: "SET_WORKSPACE_RESOURCES",
-          payload: {
-            workspaceId: targetWorkspaceId ?? stateRef.current.activeWorkspaceId,
-            harnessId,
-            projectKey: targetDirectory ? projectKey : null,
-            providersData,
-            agentsData,
-            commandsData,
-            variantSelections: nextVariantSelections,
-          },
-        });
-      } catch (error) {
-        if (requestId !== resourceLoadRequestIdRef.current) return;
-        dispatch({
-          type: "SET_ERROR",
-          payload: getErrorMessage(error),
-        });
-      }
-    },
-    [openGuiClient],
-  );
+  const {
+    loadServerResources,
+    loadedResourceProjectKeyRef,
+    loadedResourceHarnessIdRef,
+    clearResourceLoadDedupe,
+  } = useAgentResourceCatalog({ openGuiClient, dispatch, getState });
 
   const hydrateProjectBackend = useCallback(
     async ({
@@ -1088,155 +937,20 @@ function InternalAgentProviderBody({
     [discoveryHarnessIds, openGuiClient, updateProjectHydration],
   );
 
-  // --- Startup bootstrap: ensure local server, then auto-connect open projects ---
-  const startupAttempted = useRef(false);
-  useEffect(() => {
-    if (!workspaceStateReady || startupAttempted.current) return;
-    startupAttempted.current = true;
-    let cancelled = false;
-
-    const bootstrap = async () => {
-      const localServerBackend =
-        allHarnesses.find((backend) => backend.capabilities.localServer) ?? null;
-      const localServerPlatform = localServerBackend?.platform;
-      const shouldEnsureLocalServer =
-        shellWorkspacePolicy.localWorkspaceMode === "desktop-local" &&
-        Boolean(localServerBackend) &&
-        isLocalServer();
-      if (shouldEnsureLocalServer) {
-        dispatch({
-          type: "SET_BOOT_STATE",
-          payload: { state: "checking-server" },
-        });
-
-        if (!localServerPlatform?.server) {
-          if (cancelled) return;
-          dispatch({
-            type: "SET_BOOT_STATE",
-            payload: {
-              state: "error",
-              error: "Backend does not support local server control",
-            },
-          });
-          return;
-        }
-        let status: { running: boolean };
-        try {
-          status = await localServerPlatform.server.status();
-        } catch (error) {
-          if (cancelled) return;
-          dispatch({
-            type: "SET_BOOT_STATE",
-            payload: {
-              state: "error",
-              error: getErrorMessage(error),
-            },
-          });
-          return;
-        }
-
-        if (!status.running) {
-          dispatch({
-            type: "SET_BOOT_STATE",
-            payload: { state: "starting-server" },
-          });
-          try {
-            await localServerPlatform.server.start();
-          } catch (error) {
-            if (cancelled) return;
-            dispatch({
-              type: "SET_BOOT_STATE",
-              payload: {
-                state: "error",
-                error: getErrorMessage(error),
-              },
-            });
-            return;
-          }
-        }
-      }
-
-      if (cancelled) return;
-      dispatch({ type: "SET_ERROR", payload: null });
-      try {
-        const worktreeParentMap = getWorktreeParents();
-        const { projectConfigs: allProjectConfigs, expectedProjectKeys } =
-          buildBootstrapProjectConfigs({
-            workspaces: stateRef.current.workspaces,
-            detachedProject,
-            worktreeParents: worktreeParentMap,
-          });
-        expectedDirectoriesRef.current = new Set([
-          ...expectedDirectoriesRef.current,
-          ...expectedProjectKeys,
-        ]);
-
-        if (cancelled) return;
-        dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
-
-        for (const item of allProjectConfigs) {
-          const projectKey = makeProjectKey(item.workspaceId, item.directory);
-          dispatch({
-            type: "SET_PROJECT_META",
-            payload: { projectKey, meta: { hidden: item.source === "default-chat" } },
-          });
-          dispatch({
-            type: "ASSIGN_PROJECT_WORKSPACE",
-            payload: { projectKey, workspaceId: item.workspaceId },
-          });
-          dispatch({
-            type: "SET_PROJECT_CONNECTION",
-            payload: {
-              projectKey,
-              status: createProjectConnectionStatus(
-                "connected",
-                item.baseUrl,
-                item.source === "default-chat" ? "chat-infra" : "project",
-              ),
-            },
-          });
-          updateProjectHydration(projectKey, (current) =>
-            settleProjectHydration(current, { completedHarnessIds: discoveryHarnessIds }),
-          );
-        }
-
-        const activeWorkspaceId = stateRef.current.activeWorkspaceId;
-        const activeWorkspaceProject = allProjectConfigs.find(
-          (config) => config.workspaceId === activeWorkspaceId,
-        );
-        if (activeWorkspaceProject) {
-          void loadServerResources(
-            preferredHarnessId,
-            activeWorkspaceProject.directory,
-            activeWorkspaceProject.workspaceId,
-          );
-        }
-
-        void loadSessionIndex(allProjectConfigs, discoveryHarnessIds).catch(() => {
-          /* startup session index is best effort */
-        });
-      } catch {
-        /* ignore frontend persistence errors */
-        if (!cancelled) dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
-      }
-    };
-
-    void bootstrap();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
+  useAgentProjectBootstrap({
+    workspaceStateReady,
     allHarnesses,
     detachedProject,
     discoveryHarnessIds,
+    preferredHarnessId,
+    shellWorkspacePolicy,
+    dispatch,
+    getState,
+    expectedDirectoriesRef,
+    updateProjectHydration,
     loadServerResources,
     loadSessionIndex,
-    preferredHarnessId,
-    updateProjectHydration,
-    workspaceStateReady,
-    shellWorkspacePolicy.localWorkspaceMode,
-  ]);
+  });
 
   useEffect(() => {
     if (detachedProject) return;
@@ -1541,10 +1255,6 @@ function InternalAgentProviderBody({
     },
     [addProject, backendsById, preferredHarnessId, connectedDirectorySet, loadSessionIndex],
   );
-
-  // Single ref to avoid stale closures and prevent unnecessary callback recreation
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   const forceSessionTitle = useCallback(
     (sessionId: string, title: string) => {
@@ -2132,12 +1842,18 @@ function InternalAgentProviderBody({
       (loadedResourceProjectKeyRef.current
         ? parseProjectKey(loadedResourceProjectKeyRef.current).directory
         : null);
-    loadedResourceHarnessIdRef.current = null;
-    loadedResourceProjectKeyRef.current = null;
+    clearResourceLoadDedupe();
     await loadServerResources(activeResourceHarnessId, directory, activeWorkspace?.id, {
       force: true,
     });
-  }, [activeResourceHarnessId, activeResourceDirectory, activeWorkspace?.id, loadServerResources]);
+  }, [
+    activeResourceHarnessId,
+    activeResourceDirectory,
+    activeWorkspace?.id,
+    clearResourceLoadDedupe,
+    loadServerResources,
+    loadedResourceProjectKeyRef,
+  ]);
 
   const clearError = useCallback(() => {
     dispatch({ type: "SET_ERROR", payload: null });

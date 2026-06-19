@@ -1,0 +1,318 @@
+$ HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts
+OpenGUI combined running at http://0.0.0.0:3000
+[rpc] channel=platform:homeDir duration=4ms ok=true
+[rpc] channel=settings:remove duration=2ms ok=true
+[rpc] channel=platform:harnessInventory duration=6947ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:remove duration=3ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:remove duration=6ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=platform:homeDir duration=1ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=settings:set duration=12ms ok=true
+[rpc] channel=settings:remove duration=12ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=settings:set duration=14ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=claude-code:agents duration=1ms ok=true
+[rpc] channel=claude-code:commands duration=89ms ok=true
+[rpc] channel=settings:set duration=9ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): no stderr
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=git:worktree:list duration=2373ms ok=true
+[rpc] channel=git:is-repo duration=2397ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=claude-code:providers duration=7203ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=platform:harnessInventory duration=5253ms ok=true
+[rpc] channel=opencode:providers duration=243ms ok=true
+[rpc] channel=opencode:agents duration=261ms ok=true
+[rpc] channel=opencode:commands duration=264ms ok=true
+[rpc] channel=platform:homeDir duration=0ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=settings:set duration=10ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=settings:remove duration=2ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=claude-code:providers duration=0ms ok=true
+[rpc] channel=claude-code:agents duration=0ms ok=true
+[rpc] channel=claude-code:commands duration=3ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=15ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=git:worktree:list duration=116ms ok=true
+[rpc] channel=git:is-repo duration=75ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=platform:harnessInventory duration=4582ms ok=true
+[rpc] channel=opencode:providers duration=209ms ok=true
+[rpc] channel=opencode:agents duration=224ms ok=true
+[rpc] channel=opencode:commands duration=227ms ok=true
+[rpc] channel=platform:homeDir duration=1ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=settings:set duration=8ms ok=true
+[rpc] channel=settings:remove duration=3ms ok=true
+[rpc] channel=settings:remove duration=2ms ok=true
+[rpc] channel=settings:set duration=10ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=claude-code:providers duration=0ms ok=true
+[rpc] channel=claude-code:agents duration=1ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=claude-code:commands duration=16ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=git:is-repo duration=58ms ok=true
+[rpc] channel=settings:set duration=2ms ok=true
+[rpc] channel=git:worktree:list duration=49ms ok=true
+[rpc] channel=settings:remove duration=2ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=11ms ok=true
+[rpc] channel=settings:set duration=14ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=platform:harnessInventory duration=4470ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=opencode:agents duration=229ms ok=true
+[rpc] channel=opencode:commands duration=238ms ok=true
+[rpc] channel=opencode:providers duration=280ms ok=true
+[rpc] channel=settings:set duration=12ms ok=true
+[rpc] channel=settings:set duration=15ms ok=true
+[rpc] channel=settings:set duration=9ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=platform:homeDir duration=0ms ok=true
+[rpc] channel=settings:remove duration=8ms ok=true
+[rpc] channel=settings:set duration=8ms ok=true
+[rpc] channel=settings:set duration=12ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=20ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=claude-code:agents duration=11ms ok=true
+[rpc] channel=claude-code:commands duration=29ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[rpc] channel=settings:set duration=15ms ok=true
+[rpc] channel=settings:set duration=19ms ok=true
+[rpc] channel=settings:set duration=9ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=11ms ok=true
+[rpc] channel=git:is-repo duration=64ms ok=true
+[rpc] channel=git:worktree:list duration=37ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=12ms ok=true
+[rpc] channel=claude-code:providers duration=10066ms ok=true
+[rpc] channel=settings:remove duration=2ms ok=true
+[rpc] channel=settings:set duration=9ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=opencode:agents duration=637ms ok=true
+[rpc] channel=opencode:commands duration=506ms ok=true
+[rpc] channel=settings:set duration=37ms ok=true
+[rpc] channel=opencode:providers duration=808ms ok=true
+[rpc] channel=settings:remove duration=2ms ok=true
+[rpc] channel=settings:set duration=13ms ok=true
+[rpc] channel=platform:homeDir duration=2ms ok=true
+[rpc] channel=settings:set duration=32ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=9ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=2ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:remove duration=5ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+[rpc] channel=settings:remove duration=1ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[opencode-bridge] Joining in-flight OpenCode server start...
+[rpc] channel=opencode:providers duration=2327ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[rpc] channel=opencode:agents duration=4082ms ok=true
+[rpc] channel=opencode:commands duration=2051ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+Failed to discover Codex sessions via app-server: Error: Codex app-server exited early (1): file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100
+    throw new Error(
+          ^
+
+Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest
+    at file:///home/emmanuel/node_modules/.bun/@openai+codex@0.122.0/node_modules/@openai/codex/bin/codex.js:100:11
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:636:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v26.1.0
+    at ChildProcess.<anonymous> (file:///home/emmanuel/Code/OpenGUI/packages/runtime/src/adapters/codex-bridge.ts:143:9)
+    at Object.onceWrapper (node:events:631:12)
+    at ChildProcess.emit (node:events:509:20)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+[rpc] channel=git:is-repo duration=24ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=git:worktree:list duration=34ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=pi:providers duration=40ms ok=true
+[rpc] channel=pi:commands duration=58ms ok=true
+[rpc] channel=pi:agents duration=72ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=10ms ok=true
+[rpc] channel=settings:remove duration=7ms ok=true
+[rpc] channel=git:is-repo duration=68ms ok=true
+[rpc] channel=git:worktree:list duration=49ms ok=true
+[rpc] channel=pi:agents duration=50ms ok=true
+[rpc] channel=pi:commands duration=90ms ok=true
+[rpc] channel=pi:providers duration=127ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=platform:harnessInventory duration=6315ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=2ms ok=true
+[rpc] channel=settings:set duration=4ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=2ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=5ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=3ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true
+[rpc] channel=settings:set duration=7ms ok=true
+[rpc] channel=settings:set duration=6ms ok=true

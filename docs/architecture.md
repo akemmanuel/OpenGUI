@@ -82,6 +82,8 @@ The current frontend is still centered on `src/App.tsx`, but several orchestrati
 - `features/session/useChatSessionSurface.ts` derives the active chat surface state.
 - `features/worktree/useActiveWorktreeMerge.ts` owns active worktree merge and pull-request actions.
 - `features/local-intent/` owns **Local intent orchestration** (Pending prompt → Agent send, Queued prompt dispatch from PromptBox). `HarnessProvider` (`use-agent-impl-core.tsx`) wires React state and delegates `sendPrompt` / `sendCommand` / queue side effects through `useLocalIntentOrchestration`.
+- `features/agent-bootstrap/` — workspace persistence load + post-ready project/server bootstrap.
+- `features/agent-resources/` — `loadServerResources` / resource catalog dedupe (`useAgentResourceCatalog`).
 
 New UI orchestration should follow this direction: keep reusable visual pieces in `src/components/`, keep cross-component state orchestration in a named `src/features/<area>/` hook, and keep pure domain utilities in `src/lib/`.
 
