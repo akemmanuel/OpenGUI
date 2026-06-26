@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { Session } from "@/hooks/agent-state-types";
 import {
   processAfterPartQueueTriggers,

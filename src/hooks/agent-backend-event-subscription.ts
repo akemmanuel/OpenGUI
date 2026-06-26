@@ -28,10 +28,10 @@ type BackendEventTracking = {
   namingRequestIds: MutableRefObject<Map<string, number>>;
 };
 
-export type TranscriptEventBridgeRef = MutableRefObject<{
+export type TranscriptEventHandlers = {
   ingestLiveEvent: (event: LiveSessionEvent) => void;
   ingestProjectedTranscriptEvent: (event: ProjectedTranscriptEvent) => boolean;
-} | null>;
+};
 
 export function useBackendEventSubscription(input: {
   allHarnessesCount: number;
@@ -40,7 +40,7 @@ export function useBackendEventSubscription(input: {
   openGuiClient: OpenGuiClient;
   tracking: BackendEventTracking;
   workspaces: InternalAgentState["workspaces"];
-  transcriptBridgeRef: TranscriptEventBridgeRef;
+  transcriptHandlers: TranscriptEventHandlers;
 }) {
   const {
     allHarnessesCount,
@@ -49,7 +49,7 @@ export function useBackendEventSubscription(input: {
     openGuiClient,
     tracking,
     workspaces,
-    transcriptBridgeRef,
+    transcriptHandlers,
   } = input;
   const seenBackendEventIdsRef = useRef<string[]>([]);
   const seenBackendEventIdSetRef = useRef(new Set<string>());
@@ -83,7 +83,7 @@ export function useBackendEventSubscription(input: {
       }
       const liveEvent = asCanonicalLiveSessionEvent(event);
       if (liveEvent) {
-        transcriptBridgeRef.current?.ingestLiveEvent(liveEvent);
+        transcriptHandlers.ingestLiveEvent(liveEvent);
         return;
       }
       handleHarnessEvent({
@@ -98,11 +98,10 @@ export function useBackendEventSubscription(input: {
         cleanupSessionRefs,
         renameSession: (renameInput) => openGuiClient.sessions.rename(renameInput),
         dispatch,
-        ingestProjectedTranscriptEvent: (projected) =>
-          transcriptBridgeRef.current?.ingestProjectedTranscriptEvent(projected) ?? false,
+        ingestProjectedTranscriptEvent: transcriptHandlers.ingestProjectedTranscriptEvent,
       });
     },
-    [cleanupSessionRefs, dispatch, openGuiClient, tracking, transcriptBridgeRef],
+    [cleanupSessionRefs, dispatch, openGuiClient, tracking, transcriptHandlers],
   );
 
   const remoteWorkspaceEventSources = useMemo(() => {

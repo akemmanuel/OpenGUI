@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { LOCAL_WORKSPACE_ID } from "@/hooks/agent-state-persistence";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 import type { Workspace } from "@/types/electron";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { NativeBackendEvent } from "@/types/electron";
 import { HARNESS_BACKEND_META } from "./cli-harness-factory";
 

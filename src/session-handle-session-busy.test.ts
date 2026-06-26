@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { createSessionHandle } from "../packages/runtime/src/session-handle.ts";
 import { rawSessionIdFromWire } from "../packages/runtime/src/live-session-events/live-session-scope.ts";
 import {

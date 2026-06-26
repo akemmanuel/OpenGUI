@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { HARNESS_ID_VALUES } from "./agents/harness-ids.ts";
 import { BRIDGE_SETUP_BY_HARNESS_ID } from "../packages/runtime/src/harness-bridge-registrations.ts";
 

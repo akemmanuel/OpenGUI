@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isWithinAllowedRoot, normalizeAllowedRoots, resolveSafeDirectory } from "@opengui/runtime";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 
 if (typeof globalThis.window === "undefined") {
   Object.defineProperty(globalThis, "window", {

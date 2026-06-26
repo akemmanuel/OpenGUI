@@ -216,9 +216,6 @@ export function useActiveSessionTranscriptOrchestration(input: {
             phase: "initial",
           });
           return true;
-        // Product bus does not publish transcript.message (see server/projected-transcript-publish).
-        case "transcript.message":
-          return true;
         case "transcript.message.removed":
           store.dispatch({
             type: "message.removed",

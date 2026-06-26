@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { BackendServiceContext } from "../server/services/index.ts";

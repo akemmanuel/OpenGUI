@@ -1,6 +1,9 @@
 packages:
   - "packages/*"
 
+overrides:
+  vitest: 4.1.9
+
 allowBuilds:
   "@google/genai": true
   electron: true

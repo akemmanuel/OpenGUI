@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { findFilesInDirectory } from "../../../server/services/file-search.ts";
 
 async function withTempDir<T>(callback: (directory: string) => Promise<T>) {

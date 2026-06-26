@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { HarnessDescriptor } from "@/agents/backend";
 import { resolveActiveHarnessScope } from "@/hooks/active-harness-scope";
 import type { Session } from "@/hooks/agent-state-types";

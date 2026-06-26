@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import { mergeTranscriptPageWithLive } from "@/features/session-transcript/transcript-merge";
 

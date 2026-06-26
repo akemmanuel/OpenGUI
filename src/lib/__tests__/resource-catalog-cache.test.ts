@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import type { HarnessResourceBundle } from "@/protocol/client";
 import {
   ensureResourceCatalog,

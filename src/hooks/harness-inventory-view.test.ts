@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { HarnessId } from "@/agents";
 import { createHarnessInventoryView } from "@/hooks/harness-inventory-view";
 import type { HarnessInventory } from "@/types/electron";

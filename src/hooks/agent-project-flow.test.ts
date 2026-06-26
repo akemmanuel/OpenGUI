@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { HarnessId } from "@/agents";
 import { createProjectConnectionStatus } from "@/hooks/agent-project-connection";
 import { initialAgentState } from "@/hooks/agent-initial-state";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { HarnessEvent } from "@/agents/backend";
 import { LiveSessionEventBus } from "@opengui/runtime";
 import { BackendEventBus } from "../server/services/event-bus.ts";

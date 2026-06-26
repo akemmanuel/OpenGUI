@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { HarnessEvent } from "./agents/backend.ts";
 import { createSessionHandle } from "../packages/runtime/src/session-handle.ts";
 import { LiveSessionProjection } from "../packages/runtime/src/live-session-events/live-session-projection.ts";

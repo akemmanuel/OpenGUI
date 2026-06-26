@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { planDirectoryChangePrompt } from "@/hooks/agent-directory-change-notice";
 
 describe("planDirectoryChangePrompt", () => {

@@ -7,6 +7,7 @@ import { once } from "node:events";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import type { Plugin, ViteDevServer } from "vite";
 import { defineConfig } from "vite-plus";
 
 const configDir = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +16,7 @@ const vpBin = path.join(path.dirname(require.resolve("vite-plus/package.json")),
 const webBackendPort = Number(process.env.OPENGUI_WEB_BACKEND_PORT || 3001);
 const webBackendHost = process.env.OPENGUI_WEB_BACKEND_HOST || "127.0.0.1";
 
-function openguiElectronBuild() {
+function openguiElectronBuild(): Plugin {
   return {
     name: "opengui-electron-build",
     apply: "build",
@@ -70,7 +71,7 @@ async function stopWebBackendChild(child: ChildProcess | undefined) {
   }
 }
 
-function openguiWebBackend() {
+function openguiWebBackend(): Plugin {
   let backend: ChildProcess | undefined;
   let restartTimer: ReturnType<typeof setTimeout> | undefined;
   let starting: Promise<void> | undefined;
@@ -78,12 +79,7 @@ function openguiWebBackend() {
   return {
     name: "opengui-web-backend",
     apply: "serve",
-    configureServer(server: {
-      httpServer?: { once: (event: "close", listener: () => void) => void };
-      watcher?: {
-        on: (event: "change" | "add" | "unlink", listener: (file: string) => void) => void;
-      };
-    }) {
+    configureServer(server: ViteDevServer) {
       if (
         process.env.OPENGUI_SKIP_WEB_BACKEND === "1" ||
         process.env.NODE_ENV === "test" ||

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { Event as OpenCodeEvent, Message, Session } from "@opencode-ai/sdk/v2/client";
 import { mapOpenCodeEvent } from "./opencode-map";
 

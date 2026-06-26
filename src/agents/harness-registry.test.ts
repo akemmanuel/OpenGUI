@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { MANAGED_HARNESS_IDS } from "@opengui/runtime";
 import { HARNESS_ID_VALUES } from "./harness-ids.ts";
 import { CLI_COMMAND_BY_HARNESS, HARNESS_LABELS, HARNESS_REGISTRY } from "./harness-registry.ts";

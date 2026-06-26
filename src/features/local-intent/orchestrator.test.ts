@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { initI18n, i18n } from "@/i18n";
 import { initialAgentState } from "@/hooks/agent-initial-state";
 import type { InternalAgentState, Session } from "@/hooks/agent-state-types";

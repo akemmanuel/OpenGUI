@@ -1397,16 +1397,6 @@ function InternalAgentProviderBody({
     noteSessionSelection,
   });
 
-  const transcriptBridgeRef = useRef<{
-    ingestLiveEvent: (event: import("@opengui/runtime/client").LiveSessionEvent) => void;
-    ingestProjectedTranscriptEvent: (
-      event: import("@opengui/runtime/client").ProjectedTranscriptEvent,
-    ) => boolean;
-    loadOlderMessages: () => Promise<boolean>;
-    reloadActiveTranscript: (sessionId: string) => Promise<boolean>;
-    getTranscriptSnapshot: () => import("@/features/session-transcript/transcript-input").ActiveTranscriptSnapshot;
-  } | null>(null);
-
   const {
     ingestLiveEvent,
     ingestProjectedTranscriptEvent,
@@ -1423,13 +1413,10 @@ function InternalAgentProviderBody({
     consumePreservePromptBoxSelection,
   });
 
-  transcriptBridgeRef.current = {
-    ingestLiveEvent,
-    ingestProjectedTranscriptEvent,
-    reloadActiveTranscript,
-    loadOlderMessages: loadOlderFromTranscript,
-    getTranscriptSnapshot,
-  };
+  const transcriptHandlers = useMemo(
+    () => ({ ingestLiveEvent, ingestProjectedTranscriptEvent }),
+    [ingestLiveEvent, ingestProjectedTranscriptEvent],
+  );
 
   const scheduleSessionMessageReconcile = useCallback(
     (sessionId: string, _projectTarget?: { directory?: string; workspaceId?: string }) => {
@@ -1457,7 +1444,7 @@ function InternalAgentProviderBody({
       namingRequestIds: namingRequestIdsRef,
     },
     workspaces: state.workspaces,
-    transcriptBridgeRef,
+    transcriptHandlers,
   });
 
   useEffect(() => {
@@ -1483,13 +1470,13 @@ function InternalAgentProviderBody({
   useEffect(() => {
     const sessionId = state.activeSessionId;
     if (!sessionId) return;
-    const snap = transcriptBridgeRef.current?.getTranscriptSnapshot();
+    const snap = getTranscriptSnapshot();
     if (!snap || snap.scope?.sessionId !== sessionId) return;
     if (snap.phase !== "empty" && snap.phase !== "error") return;
     if (attemptedEmptySessionLoadRef.current === sessionId) return;
     attemptedEmptySessionLoadRef.current = sessionId;
-    void transcriptBridgeRef.current?.reloadActiveTranscript(sessionId);
-  }, [state.activeSessionId]);
+    void reloadActiveTranscript(sessionId);
+  }, [getTranscriptSnapshot, reloadActiveTranscript, state.activeSessionId]);
 
   const isChatDirectory = useCallback((directory?: string | null) => {
     const normalizedDirectory = directory ? normalizeProjectPath(directory) : null;
@@ -1499,8 +1486,8 @@ function InternalAgentProviderBody({
   }, []);
 
   const loadOlderMessages = useCallback(async (): Promise<boolean> => {
-    return (await transcriptBridgeRef.current?.loadOlderMessages()) ?? false;
-  }, []);
+    return loadOlderFromTranscript();
+  }, [loadOlderFromTranscript]);
 
   const createSession = useCallback(
     async (title?: string, directory?: string): Promise<Session | null> => {

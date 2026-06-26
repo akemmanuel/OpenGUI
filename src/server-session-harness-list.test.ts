@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { listDirectorySessionsFromHarness } from "../server/services/session-harness-list.ts";
 import type { BackendServiceContext } from "../server/services/index.ts";
 

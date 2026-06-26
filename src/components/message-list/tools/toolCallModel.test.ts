@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { ToolCallState } from "@/protocol/session-transcript";
 import { getToolCallViewModel } from "./toolCallModel";
 

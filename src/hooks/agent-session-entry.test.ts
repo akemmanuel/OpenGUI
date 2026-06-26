@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { decideSessionEntry } from "./agent-session-entry";
 
 describe("decideSessionEntry", () => {

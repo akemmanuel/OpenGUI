@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { PromptQueueService } from "../server/services/prompt-queue-service.ts";
 import type { BackendServiceContext } from "../server/services/index.ts";
 import type { PromptQueueEntryRecord, StorageService } from "../server/services/storage-service.ts";

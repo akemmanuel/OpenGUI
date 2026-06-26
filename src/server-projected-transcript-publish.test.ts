@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { BackendEventBus } from "../server/services/event-bus.ts";
 import { publishProjectedTranscriptEvent } from "../server/projected-transcript-publish.ts";
 

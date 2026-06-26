@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import type { HarnessEvent } from "@/agents/backend";
 import { harnessEventToAdapterObservations } from "../packages/runtime/src/live-session-events/live-session-event-compat.ts";
 import { LiveSessionEventBus } from "@opengui/runtime";

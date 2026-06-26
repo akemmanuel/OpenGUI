@@ -19,7 +19,7 @@ Runtime [`HarnessService`](../packages/runtime/src/harness-service.ts) calls `${
 
 Common suffixes: `project:add`, `project:remove`, `session:list`, `session:create`, `session:delete`, `session:update`, `messages`, `prompt`, `abort`, `command:send`, `permission`, `providers`, `agents`, `commands`.
 
-Return shape from [`lib/harness-adapter-kit.ts`](../lib/harness-adapter-kit.ts): `{ success: true, data }` or `{ success: false, error }`.
+Return shape from [`harness-adapter-kit.ts`](../packages/runtime/src/adapters/harness-adapter-kit.ts): `{ success: true, data }` or `{ success: false, error }`.
 
 ## Events
 

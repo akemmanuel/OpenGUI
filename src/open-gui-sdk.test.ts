@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { homedir } from "node:os";
 import { diagnoseFromInventories, OpenGuiSdkError } from "@opengui/runtime";
 
@@ -129,7 +129,7 @@ describe("og.at (Phase A)", () => {
     try {
       const dir = await og.at(home);
       expect(dir.harness("pi").harnessId).toBe("pi");
-      await expect(() => dir.harness("opencode")).toThrow(/unloaded|opencode/i);
+      expect(() => dir.harness("opencode")).toThrow(/unloaded|opencode/i);
     } finally {
       await og.close();
     }

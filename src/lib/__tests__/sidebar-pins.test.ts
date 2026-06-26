@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 import { getSidebarSessionProjectDirectory, partitionSidebarPins } from "../sidebar-pins";
 

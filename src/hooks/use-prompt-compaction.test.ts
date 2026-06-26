@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { isCompactionTurnInProgress } from "@/hooks/use-prompt-compaction";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 

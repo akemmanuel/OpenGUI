@@ -205,7 +205,7 @@ export function ModelSelector() {
   const [open, setOpen] = useState(false);
   const [dialogHarnessId, setDialogHarnessId] = useState<HarnessId>(resolvedHarnessId);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [resolvedCatalogKey, setResolvedCatalogKey] = useState<string | null>(null);
+  const [catalogFailedKey, setCatalogFailedKey] = useState<string | null>(null);
   const [inventories, setInventories] = useState<HarnessInventory[]>([]);
   const [inventoriesReady, setInventoriesReady] = useState(false);
   const [query, setQuery] = useState("");
@@ -215,8 +215,6 @@ export function ModelSelector() {
   const [modelMaxAgeMonths, setModelMaxAgeMonths] = useState(() => getStoredModelMaxAgeMonths());
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [activeValue, setActiveValue] = useState<string | null>(null);
-  const catalogRequestRef = useRef(0);
-
   const inventoryView = useMemo(
     () =>
       createHarnessInventoryView({
@@ -252,7 +250,9 @@ export function ModelSelector() {
     [dialogHarnessId, dialogCatalogTarget],
   );
 
-  const catalogMatchesDialog = resolvedCatalogKey === activeCatalogKey;
+  const catalogReady = Boolean(getCachedResourceBundle(activeCatalogKey));
+  const catalogFailed = catalogFailedKey === activeCatalogKey;
+  const catalogTerminal = catalogReady || catalogFailed;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -312,17 +312,12 @@ export function ModelSelector() {
         baseUrl: dialogCatalogTarget.baseUrl,
         authToken: dialogCatalogTarget.authToken,
       });
-      if (resolvedCatalogKey === key && getCachedResourceBundle(key)) {
+      if (getCachedResourceBundle(key)) {
         setCatalogLoading(false);
+        setCatalogFailedKey((failedKey) => (failedKey === key ? null : failedKey));
         return;
       }
-      const cached = getCachedResourceBundle(key);
-      if (cached) {
-        setResolvedCatalogKey(key);
-        setCatalogLoading(false);
-        return;
-      }
-      const requestId = ++catalogRequestRef.current;
+      setCatalogFailedKey((failedKey) => (failedKey === key ? null : failedKey));
       setCatalogLoading(true);
       try {
         await ensureResourceCatalog({
@@ -335,18 +330,14 @@ export function ModelSelector() {
           },
           loadResources: client.harnesses.loadResources.bind(client.harnesses),
         });
-        if (requestId !== catalogRequestRef.current) return;
-        setResolvedCatalogKey(key);
-      } catch {
-        if (requestId !== catalogRequestRef.current) return;
-        setResolvedCatalogKey(key);
+      } catch (error) {
+        console.error("Failed to load model catalog", error);
+        setCatalogFailedKey(key);
       } finally {
-        if (requestId === catalogRequestRef.current) {
-          setCatalogLoading(false);
-        }
+        setCatalogLoading(false);
       }
     },
-    [client, dialogCatalogTarget, resolvedCatalogKey],
+    [client, dialogCatalogTarget],
   );
 
   const openDialog = useCallback(() => {
@@ -373,7 +364,7 @@ export function ModelSelector() {
   const catalogProviders = useMemo(() => {
     if (!open) return committedProviders;
     return getCachedResourceBundle(activeCatalogKey)?.providersData.providers ?? [];
-  }, [open, activeCatalogKey, committedProviders, resolvedCatalogKey]);
+  }, [open, activeCatalogKey, committedProviders, catalogReady]);
 
   const groups = useMemo(() => {
     const now = Date.now();
@@ -616,9 +607,8 @@ export function ModelSelector() {
   };
 
   const hasResults = filteredGroups.some((group) => group.models.length > 0);
-  const showModelList = catalogMatchesDialog && !catalogLoading;
-  const showEmptyHarness =
-    catalogMatchesDialog && !catalogLoading && !hasResults && !normalizedQuery;
+  const showModelList = catalogReady && !catalogLoading;
+  const showEmptyHarness = catalogTerminal && !catalogLoading && !hasResults && !normalizedQuery;
   const harnessRows = inventoryView.selectorHarnessIds;
 
   useEffect(() => {
@@ -737,7 +727,7 @@ export function ModelSelector() {
               </div>
 
               <div className="max-h-[60vh] space-y-4 overflow-y-auto px-2 pb-4">
-                {(catalogLoading || !catalogMatchesDialog) && (
+                {(catalogLoading || !catalogTerminal) && (
                   <div className="flex items-center justify-center gap-2 px-2 py-8 text-xs text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" />
                     {t("modelSelector.loadingCatalog")}

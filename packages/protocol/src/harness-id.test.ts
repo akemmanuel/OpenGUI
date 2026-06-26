@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { DEFAULT_HARNESS_ID, HARNESS_ID_VALUES, isHarnessIdValue } from "./harness-id.ts";
 
 describe("@opengui/protocol harness ids", () => {

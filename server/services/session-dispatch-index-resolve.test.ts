@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { composeFrontendSessionId } from "../../src/lib/session-identity.ts";
 import type { StorageService } from "./storage-service.ts";
 import { SessionDispatchIndex } from "./session-dispatch-index.ts";

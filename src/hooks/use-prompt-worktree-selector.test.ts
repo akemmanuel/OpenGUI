@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@voidzero-dev/vite-plus-test";
+import { describe, expect, test } from "vite-plus/test";
 import { buildPromptWorktreeOptions } from "@/hooks/use-prompt-worktree-selector";
 import type { GitWorktree } from "@/types/electron";
 
