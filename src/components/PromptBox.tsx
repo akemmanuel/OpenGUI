@@ -181,6 +181,30 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       slashCommand.reset();
     }, [currentDraftKey, fileMention.reset, slashCommand.reset]);
 
+    const handlePromptSurfaceClick = (event: React.MouseEvent<HTMLElement>) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        target?.closest(
+          [
+            "button",
+            "a[href]",
+            "input",
+            "textarea",
+            "select",
+            '[role="button"]',
+            '[role="combobox"]',
+            '[role="menuitem"]',
+            '[data-slot="button"]',
+            '[data-slot="select-trigger"]',
+            '[data-slot="tabs-trigger"]',
+          ].join(","),
+        )
+      ) {
+        return;
+      }
+      internalTextareaRef.current?.focus();
+    };
+
     return (
       <section
         ref={containerRef}
@@ -196,7 +220,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
         )}
-        onClick={() => internalTextareaRef.current?.focus()}
+        onClick={handlePromptSurfaceClick}
         onKeyDown={(e) => {
           if (e.key === "Enter" && e.target === e.currentTarget) {
             internalTextareaRef.current?.focus();
