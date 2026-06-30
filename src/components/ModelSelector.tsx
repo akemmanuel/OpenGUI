@@ -40,9 +40,10 @@ import {
 } from "@/hooks/use-agent-state";
 import { fetchHarnessInventoriesCached } from "@/lib/harness-inventory-cache";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
+import { ensureHarnessResourceCatalog } from "@/lib/ensure-harness-resource-catalog";
 import {
-  ensureResourceCatalog,
   getCachedResourceBundle,
+  isCatalogKeyPending,
   makeCatalogKey,
 } from "@/lib/resource-catalog-cache";
 import {
@@ -204,7 +205,6 @@ export function ModelSelector() {
 
   const [open, setOpen] = useState(false);
   const [dialogHarnessId, setDialogHarnessId] = useState<HarnessId>(resolvedHarnessId);
-  const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailedKey, setCatalogFailedKey] = useState<string | null>(null);
   const [inventories, setInventories] = useState<HarnessInventory[]>([]);
   const [inventoriesReady, setInventoriesReady] = useState(false);
@@ -252,6 +252,8 @@ export function ModelSelector() {
 
   const catalogReady = Boolean(getCachedResourceBundle(activeCatalogKey));
   const catalogFailed = catalogFailedKey === activeCatalogKey;
+  const catalogLoading =
+    open && !catalogReady && !catalogFailed && isCatalogKeyPending(activeCatalogKey);
   const catalogTerminal = catalogReady || catalogFailed;
 
   useEffect(() => {
@@ -312,15 +314,9 @@ export function ModelSelector() {
         baseUrl: dialogCatalogTarget.baseUrl,
         authToken: dialogCatalogTarget.authToken,
       });
-      if (getCachedResourceBundle(key)) {
-        setCatalogLoading(false);
-        setCatalogFailedKey((failedKey) => (failedKey === key ? null : failedKey));
-        return;
-      }
       setCatalogFailedKey((failedKey) => (failedKey === key ? null : failedKey));
-      setCatalogLoading(true);
       try {
-        await ensureResourceCatalog({
+        await ensureHarnessResourceCatalog({
           harnessId,
           target: {
             workspaceId: dialogCatalogTarget.workspaceId,
@@ -328,13 +324,11 @@ export function ModelSelector() {
             baseUrl: dialogCatalogTarget.baseUrl,
             authToken: dialogCatalogTarget.authToken,
           },
-          loadResources: client.harnesses.loadResources.bind(client.harnesses),
+          client,
         });
       } catch (error) {
         console.error("Failed to load model catalog", error);
         setCatalogFailedKey(key);
-      } finally {
-        setCatalogLoading(false);
       }
     },
     [client, dialogCatalogTarget],
@@ -352,14 +346,14 @@ export function ModelSelector() {
     return () => window.removeEventListener("open-model-selector", handler);
   }, [openDialog]);
 
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [open, dialogHarnessId]);
+  const focusHarnessTabInDialog = useCallback(() => {
+    const root = document.querySelector('[data-slot="dialog-content"]');
+    if (!root) return null;
+    return (
+      root.querySelector<HTMLElement>('[data-slot="tabs-trigger"][data-active]') ??
+      root.querySelector<HTMLElement>('[data-slot="tabs-trigger"]')
+    );
+  }, []);
 
   const catalogProviders = useMemo(() => {
     if (!open) return committedProviders;
@@ -522,14 +516,12 @@ export function ModelSelector() {
     setOpen(false);
     setQuery("");
     setActiveValue(null);
-    setCatalogLoading(false);
   };
 
   const handleMobileBackCloseModelSelector = useCallback(() => {
     setOpen(false);
     setQuery("");
     setActiveValue(null);
-    setCatalogLoading(false);
     return true;
   }, []);
   useRegisterMobileBackHandler(
@@ -612,6 +604,14 @@ export function ModelSelector() {
   const harnessRows = inventoryView.selectorHarnessIds;
 
   useEffect(() => {
+    if (!open || !inventoriesReady || harnessRows.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      focusHarnessTabInDialog()?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, inventoriesReady, harnessRows.length, dialogHarnessId, focusHarnessTabInDialog]);
+
+  useEffect(() => {
     if (!open || harnessRows.length === 0) return;
     if (harnessRows.includes(dialogHarnessId)) return;
     const next =
@@ -636,10 +636,6 @@ export function ModelSelector() {
           size="sm"
           title={t("modelSelector.dialogTitle")}
           className="!h-7 min-w-0 shrink gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-          onClick={(event) => {
-            event.preventDefault();
-            openDialog();
-          }}
         >
           {selectedModel && currentModel ? (
             <ProviderIcon provider={currentModel.providerID} className="size-3.5 shrink-0" />
@@ -652,6 +648,7 @@ export function ModelSelector() {
 
       <DialogContent
         className="p-0 sm:max-w-2xl"
+        initialFocus={() => focusHarnessTabInDialog() ?? inputRef.current}
         finalFocus={() =>
           document.querySelector<HTMLTextAreaElement>('[data-slot="prompt-box-textarea"]')
         }
