@@ -1,6 +1,7 @@
 # Execution plan: highest-impact LoC reduction
 
 **Status:** Active (2026-06-19).  
+**Master plan (30% target):** [thirty-percent-loc-reduction.md](./thirty-percent-loc-reduction.md) · **ADR:** [0009](../adr/0009-frontend-composition-and-loc-reduction.md).  
 **Domain:** [CONTEXT.md](../../CONTEXT.md). **Slop taxonomy:** [contributor-experience-and-slop-removal.md](./contributor-experience-and-slop-removal.md).
 
 ## Executive summary

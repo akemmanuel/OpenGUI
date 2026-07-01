@@ -249,7 +249,7 @@ export async function createLifecycleSession({
         type: "SET_SESSION_META",
         payload: {
           sessionId: session.id,
-          meta: { originMode: "chat", nativeProjectDir: directory, assignedProjectDir: null },
+          meta: { sidebarSection: "chats", displayProjectDir: null },
         },
       });
     }

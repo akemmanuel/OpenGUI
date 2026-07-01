@@ -3,12 +3,14 @@ export {
   LOCAL_WORKSPACE_ID,
   NOTIFICATIONS_ENABLED_KEY,
   resolveServerDefaultModel,
+} from "./use-agent-impl-core";
+export {
   useActions,
   useConnectionState,
   useMessages,
   useModelState,
   useSessionState,
-} from "./use-agent-impl-core";
+} from "@/features/agent-provider-shell";
 
 export type {
   HarnessState,

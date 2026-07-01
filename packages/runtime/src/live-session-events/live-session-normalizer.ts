@@ -18,6 +18,7 @@ interface PartState {
   text: string;
   tool?: string;
   status?: string;
+  inputFingerprint?: string;
   output: string;
 }
 interface State {
@@ -104,7 +105,20 @@ export class LiveSessionEventNormalizer {
           observation.part,
         );
       case "transcript.replaced":
-        return [emit({ type: "transcript.rebased", reason: observation.reason })];
+        return [
+          emit({
+            type: "transcript.rebased",
+            reason: observation.reason,
+            ...(observation.oldMessageId && observation.newMessageId
+              ? {
+                  replacement: {
+                    oldMessageId: observation.oldMessageId,
+                    newMessageId: observation.newMessageId,
+                  },
+                }
+              : {}),
+          }),
+        ];
       case "error":
         return [emit({ type: "session.error", message: observation.message })];
     }
@@ -175,6 +189,51 @@ export class LiveSessionEventNormalizer {
         }),
       );
     }
+
+    const input = part.state && "input" in part.state ? part.state.input : undefined;
+    if (input !== undefined) {
+      const inputFingerprint = stableFingerprint(input);
+      if (inputFingerprint !== p.inputFingerprint) {
+        p.inputFingerprint = inputFingerprint;
+        out.push(
+          this.event(scope, state, {
+            type: "tool.input.updated",
+            runId: state.currentRunId,
+            messageId,
+            partId: part.id,
+            input,
+          }),
+        );
+      }
+    }
+
+    const output = toolSnapshotOutput(part);
+    if (output && output !== p.output) {
+      if (p.output && output.startsWith(p.output)) {
+        out.push(
+          this.event(scope, state, {
+            type: "tool.output.appended",
+            runId: state.currentRunId,
+            messageId,
+            partId: part.id,
+            text: output.slice(p.output.length),
+          }),
+        );
+      } else {
+        out.push(
+          this.event(scope, state, {
+            type: "tool.output.replaced",
+            runId: state.currentRunId,
+            messageId,
+            partId: part.id,
+            text: output,
+            reason: "snapshot-rewrite",
+          }),
+        );
+      }
+      p.output = output;
+    }
+
     const status = typeof part.state?.status === "string" ? part.state.status : undefined;
     if (status && status !== p.status) {
       p.status = status;
@@ -276,4 +335,24 @@ function key(scope: LiveSessionScope): string {
 
 function partKey(messageId: string, partId: string): string {
   return `${messageId}\u0000${partId}`;
+}
+
+function stableFingerprint(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function toolSnapshotOutput(part: NormalizedPartSnapshot): string {
+  const state = part.state;
+  if (!state || typeof state !== "object") return "";
+  if ("output" in state && typeof state.output === "string") return state.output;
+  if ("error" in state && typeof state.error === "string") return state.error;
+  if ("metadata" in state && state.metadata && typeof state.metadata === "object") {
+    const metadata = state.metadata as Record<string, unknown>;
+    if (typeof metadata.output === "string") return metadata.output;
+  }
+  return "";
 }

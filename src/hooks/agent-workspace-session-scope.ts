@@ -38,10 +38,10 @@ export function filterActiveWorkspaceSessions({
 }): Session[] {
   if (!activeWorkspace) return [];
   return sessions.filter((session) => {
-    const assignedProjectDir = normalizeProjectPath(
-      sessionMeta[session.id]?.assignedProjectDir ?? "",
+    const displayProjectDir = normalizeProjectPath(
+      sessionMeta[session.id]?.displayProjectDir ?? "",
     );
-    if (assignedProjectDir && activeWorkspaceProjectSet.has(assignedProjectDir)) {
+    if (displayProjectDir && activeWorkspaceProjectSet.has(displayProjectDir)) {
       return true;
     }
     const sessionWorkspaceId = getSessionWorkspaceId(session);

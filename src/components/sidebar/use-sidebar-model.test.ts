@@ -63,13 +63,16 @@ describe("shouldShowSessionInChatList", () => {
     expect(
       shouldShowSessionInChatList({
         session: item,
-        meta: { assignedProjectDir: "/home/tobias/Dokumente/Jutta Kürzl" },
+        meta: {
+          sidebarSection: "projects",
+          displayProjectDir: "/home/tobias/Dokumente/Jutta Kürzl",
+        },
         isDefaultChatDirectory: (directory) => directory === "/home/tobias/Dokumente",
       }),
     ).toBe(false);
   });
 
-  test("hides project-origin sessions even when assignment is same-directory", () => {
+  test("hides project-sidebar sessions from Chats", () => {
     const item = session("same-dir", "opencode", 20);
     item.directory = "/home/tobias/Dokumente/Jutta Kürzl";
     item._projectDir = "/home/tobias/Dokumente/Jutta Kürzl";
@@ -77,7 +80,10 @@ describe("shouldShowSessionInChatList", () => {
     expect(
       shouldShowSessionInChatList({
         session: item,
-        meta: { originMode: "project", assignedProjectDir: null },
+        meta: {
+          sidebarSection: "projects",
+          displayProjectDir: "/home/tobias/Dokumente/Jutta Kürzl",
+        },
         isDefaultChatDirectory: (directory) => directory === "/home/tobias/Dokumente/Jutta Kürzl",
       }),
     ).toBe(false);
@@ -97,7 +103,7 @@ describe("shouldShowSessionInChatList", () => {
     ).toBe(true);
   });
 
-  test("shows chat-origin sessions when default chat is also a project", () => {
+  test("shows chat-sidebar sessions when default chat is also a project", () => {
     const item = session("chat-row", "opencode", 20);
     item.directory = "/project-c";
     item._projectDir = "/project-c";
@@ -105,19 +111,19 @@ describe("shouldShowSessionInChatList", () => {
     expect(
       shouldShowSessionInChatList({
         session: item,
-        meta: { originMode: "chat", nativeProjectDir: "/project-c", assignedProjectDir: null },
+        meta: { sidebarSection: "chats", displayProjectDir: null },
         isDefaultChatDirectory: (directory) => directory === "/project-c",
       }),
     ).toBe(true);
   });
 
-  test("still shows explicitly detached project sessions in Chats", () => {
+  test("shows detached sessions in Chats", () => {
     const item = session("detached", "opencode", 20);
 
     expect(
       shouldShowSessionInChatList({
         session: item,
-        meta: { assignedProjectDir: "/other", detachedFromProject: true },
+        meta: { sidebarSection: "chats", displayProjectDir: null },
         isDefaultChatDirectory: () => false,
       }),
     ).toBe(true);
@@ -134,13 +140,13 @@ describe("shouldKeepSessionOutOfProjectGroups", () => {
       shouldKeepSessionOutOfProjectGroups({
         session: item,
         meta: undefined,
-        assignedProjectDir: "",
+        displayProjectDir: "",
         isDefaultChatDirectory: (directory) => directory === "/project-c",
       }),
     ).toBe(true);
   });
 
-  test("allows explicit project-origin sessions at the default-chat path into Projects", () => {
+  test("allows project-sidebar sessions at the default-chat path into Projects", () => {
     const item = session("project", "opencode", 20);
     item.directory = "/project-c";
     item._projectDir = "/project-c";
@@ -148,8 +154,8 @@ describe("shouldKeepSessionOutOfProjectGroups", () => {
     expect(
       shouldKeepSessionOutOfProjectGroups({
         session: item,
-        meta: { originMode: "project", assignedProjectDir: null },
-        assignedProjectDir: "",
+        meta: { sidebarSection: "projects", displayProjectDir: "/project-c" },
+        displayProjectDir: "",
         isDefaultChatDirectory: (directory) => directory === "/project-c",
       }),
     ).toBe(false);

@@ -2,7 +2,7 @@
 
 **Goal:** Docs match ADRs; code matches docs; adding harnesses and changing layers does not require archaeology. **Slop** = second sources of truth, deprecated paths still on product hot paths, and names that contradict CONTEXT.
 
-**LoC reduction execution:** [`loc-reduction-highest-impact.md`](./loc-reduction-highest-impact.md) (god-provider split, transcript finish).
+**LoC reduction execution:** [`thirty-percent-loc-reduction.md`](./thirty-percent-loc-reduction.md) (master phases, ~30% target); tactical [`loc-reduction-highest-impact.md`](./loc-reduction-highest-impact.md) (god-provider split, transcript finish). **ADR:** [0009](../adr/0009-frontend-composition-and-loc-reduction.md).
 
 **Companion plans (do not duplicate detail here):**
 

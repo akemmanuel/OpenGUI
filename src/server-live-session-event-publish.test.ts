@@ -98,4 +98,135 @@ describe("publishLiveSessionHarnessEvent", () => {
     expect(appended).toHaveLength(1);
     expect(appended[0]).toMatchObject({ type: "part.text.appended", text: "hello" });
   });
+
+  test("publishes tool input and output from tool snapshots", () => {
+    const events = new BackendEventBus();
+    const bus = new LiveSessionEventBus();
+    const emitted: unknown[] = [];
+    events.subscribe((envelope) => emitted.push(envelope.payload));
+
+    const toolSnapshot: HarnessEvent = {
+      type: "message.part.updated",
+      part: {
+        id: "tool-1",
+        sessionID: sessionId,
+        messageID: "m1",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        tokens: {},
+        state: {
+          status: "completed",
+          input: { path: "package.json" },
+          output: '{"name":"opengui"}',
+        },
+      },
+    };
+
+    publishLiveSessionHarnessEvent({ events }, { directory, harnessId, event: toolSnapshot }, bus);
+
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool.started", tool: "read" }),
+        expect.objectContaining({ type: "tool.input.updated", input: { path: "package.json" } }),
+        expect.objectContaining({
+          type: "tool.output.replaced",
+          text: '{"name":"opengui"}',
+        }),
+        expect.objectContaining({ type: "tool.finished", status: "completed" }),
+      ]),
+    );
+  });
+
+  test("preserves replacement identity for replaced messages", () => {
+    const events = new BackendEventBus();
+    const bus = new LiveSessionEventBus();
+    const rebased: unknown[] = [];
+    events.subscribe((envelope) => {
+      if (envelope.type === "transcript.rebased") rebased.push(envelope.payload);
+    });
+
+    const replaced: HarnessEvent = {
+      type: "message.replaced",
+      sessionID: sessionId,
+      oldId: "old-assistant",
+      message: {
+        id: "real-assistant",
+        sessionID: sessionId,
+        role: "assistant",
+        time: { created: 1, completed: 2 },
+        providerID: "pi",
+        modelID: "model",
+      },
+      parts: [],
+    };
+
+    publishLiveSessionHarnessEvent({ events }, { directory, harnessId, event: replaced }, bus);
+
+    expect(rebased).toHaveLength(1);
+    expect(rebased[0]).toMatchObject({
+      type: "transcript.rebased",
+      reason: "harness-replaced-message",
+      replacement: {
+        oldMessageId: "old-assistant",
+        newMessageId: "real-assistant",
+      },
+    });
+  });
+
+  test("replaced tool-call messages retain canonical tool input and output", () => {
+    const events = new BackendEventBus();
+    const bus = new LiveSessionEventBus();
+    const emitted: unknown[] = [];
+    events.subscribe((envelope) => emitted.push(envelope.payload));
+
+    const replaced: HarnessEvent = {
+      type: "message.replaced",
+      sessionID: sessionId,
+      oldId: "streaming-assistant",
+      message: {
+        id: "real-assistant",
+        sessionID: sessionId,
+        role: "assistant",
+        time: { created: 1, completed: 2 },
+        providerID: "pi",
+        modelID: "model",
+      },
+      parts: [
+        {
+          id: "tool-1",
+          sessionID: sessionId,
+          messageID: "real-assistant",
+          type: "tool",
+          callID: "call-1",
+          tool: "read",
+          tokens: {},
+          state: {
+            status: "completed",
+            input: { path: "package.json" },
+            output: '{"name":"opengui"}',
+          },
+        },
+      ],
+    };
+
+    publishLiveSessionHarnessEvent({ events }, { directory, harnessId, event: replaced }, bus);
+
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "transcript.rebased",
+          replacement: {
+            oldMessageId: "streaming-assistant",
+            newMessageId: "real-assistant",
+          },
+        }),
+        expect.objectContaining({ type: "tool.input.updated", input: { path: "package.json" } }),
+        expect.objectContaining({
+          type: "tool.output.replaced",
+          text: '{"name":"opengui"}',
+        }),
+      ]),
+    );
+  });
 });

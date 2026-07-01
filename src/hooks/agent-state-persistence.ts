@@ -50,16 +50,10 @@ export interface SessionMeta {
   selectedModel?: SelectedModel | null;
   selectedAgent?: string | null;
   selectedVariant?: string | null;
-  originMode?: "chat" | "project";
-  nativeProjectDir?: string | null;
-  assignedProjectDir?: string | null;
-  assignedProjectMovedAt?: number | null;
-  assignedProjectSourceDir?: string | null;
-  pendingDirectoryChangeNotice?: boolean;
-  hideSystemAppendBlocks?: boolean;
+  sidebarSection?: "chats" | "projects";
+  displayProjectDir?: string | null;
+  sidebarMovedAt?: number | null;
   movedToSessionId?: string;
-  detachedFromProject?: boolean;
-  detachedFromProjectAt?: number | null;
 }
 
 export interface ProjectMeta {
@@ -95,16 +89,11 @@ export function persistSessionMetaMap(meta: SessionMetaMap) {
       Object.hasOwn(m, "selectedModel") ||
       Object.hasOwn(m, "selectedAgent") ||
       Object.hasOwn(m, "selectedVariant") ||
-      m.originMode === "chat" ||
-      Object.hasOwn(m, "nativeProjectDir") ||
-      Object.hasOwn(m, "assignedProjectDir") ||
-      Object.hasOwn(m, "assignedProjectMovedAt") ||
-      Object.hasOwn(m, "assignedProjectSourceDir") ||
-      m.pendingDirectoryChangeNotice === true ||
-      m.hideSystemAppendBlocks === true ||
+      Object.hasOwn(m, "sidebarSection") ||
+      Object.hasOwn(m, "displayProjectDir") ||
+      Object.hasOwn(m, "sidebarMovedAt") ||
       Object.hasOwn(m, "movedToSessionId") ||
-      m.detachedFromProject === true ||
-      typeof m.detachedFromProjectAt === "number",
+      false,
     ),
   );
 }

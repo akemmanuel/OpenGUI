@@ -3,6 +3,7 @@ import type { Session } from "@/hooks/agent-state-types";
 import {
   createSessionProjectDetachMeta,
   createSessionProjectMoveMeta,
+  getSessionProjectTarget,
 } from "./agent-session-utils";
 
 function session(directory: string): Session {
@@ -16,103 +17,83 @@ function session(directory: string): Session {
 }
 
 describe("createSessionProjectMoveMeta", () => {
-  test("marks a normal project move as requiring a directory-change notice", () => {
+  test("moves session presentation into a Project without retargeting execution", () => {
     expect(
       createSessionProjectMoveMeta(session("/project-a"), undefined, "/project-b", 10),
     ).toEqual({
-      originMode: "project",
-      nativeProjectDir: "/project-a",
-      assignedProjectDir: "/project-b",
-      assignedProjectMovedAt: 10,
-      assignedProjectSourceDir: "/project-a",
-      pendingDirectoryChangeNotice: true,
-      hideSystemAppendBlocks: true,
-      detachedFromProject: false,
-      detachedFromProjectAt: null,
+      sidebarSection: "projects",
+      displayProjectDir: "/project-b",
+      sidebarMovedAt: 10,
     });
   });
 
-  test("still marks a move back to the native project as requiring a notice", () => {
+  test("updates the display Project when moving again", () => {
     expect(
       createSessionProjectMoveMeta(
         session("/project-b"),
-        { nativeProjectDir: "/project-a", assignedProjectDir: "/project-b" },
+        { displayProjectDir: "/project-b" },
         "/project-a",
         20,
       ),
     ).toEqual({
-      originMode: "project",
-      nativeProjectDir: "/project-a",
-      assignedProjectDir: null,
-      assignedProjectMovedAt: 20,
-      assignedProjectSourceDir: "/project-b",
-      pendingDirectoryChangeNotice: true,
-      hideSystemAppendBlocks: true,
-      detachedFromProject: false,
-      detachedFromProjectAt: null,
+      sidebarSection: "projects",
+      displayProjectDir: "/project-a",
+      sidebarMovedAt: 20,
     });
   });
 
-  test("moving a chat-origin session to its native project makes it project-origin", () => {
+  test("moving a Chat session to a Project switches only the sidebar bucket", () => {
     expect(
       createSessionProjectMoveMeta(
         session("/chat-root"),
-        { originMode: "chat", nativeProjectDir: "/chat-root", assignedProjectDir: null },
+        { sidebarSection: "chats", displayProjectDir: null },
         "/chat-root",
         30,
       ),
     ).toEqual({
-      originMode: "project",
-      nativeProjectDir: "/chat-root",
-      assignedProjectDir: null,
-      assignedProjectMovedAt: null,
-      assignedProjectSourceDir: null,
-      pendingDirectoryChangeNotice: false,
-      hideSystemAppendBlocks: false,
-      detachedFromProject: false,
-      detachedFromProjectAt: null,
+      sidebarSection: "projects",
+      displayProjectDir: "/chat-root",
+      sidebarMovedAt: 30,
     });
   });
 });
 
 describe("createSessionProjectDetachMeta", () => {
-  test("marks removing a moved session back to Chats as requiring a notice", () => {
+  test("moves a Project session back to Chats", () => {
     expect(
       createSessionProjectDetachMeta(
         session("/chat-root"),
-        { assignedProjectDir: "/project-b" },
+        { displayProjectDir: "/project-b" },
         30,
       ),
     ).toEqual({
-      originMode: "chat",
-      nativeProjectDir: "/chat-root",
-      assignedProjectDir: null,
-      assignedProjectMovedAt: null,
-      assignedProjectSourceDir: "/project-b",
-      pendingDirectoryChangeNotice: true,
-      hideSystemAppendBlocks: true,
-      detachedFromProject: true,
-      detachedFromProjectAt: 30,
+      sidebarSection: "chats",
+      displayProjectDir: null,
+      sidebarMovedAt: 30,
     });
   });
 
-  test("uses the stored native directory when backend echoes changed the session project", () => {
+  test("does not need native directory metadata when moving back to Chats", () => {
     expect(
       createSessionProjectDetachMeta(
         session("/project-b"),
-        { nativeProjectDir: "/chat-root", assignedProjectDir: "/project-b" },
+        { displayProjectDir: "/project-b" },
         40,
       ),
     ).toEqual({
-      originMode: "chat",
-      nativeProjectDir: "/chat-root",
-      assignedProjectDir: null,
-      assignedProjectMovedAt: null,
-      assignedProjectSourceDir: "/project-b",
-      pendingDirectoryChangeNotice: true,
-      hideSystemAppendBlocks: true,
-      detachedFromProject: true,
-      detachedFromProjectAt: 40,
+      sidebarSection: "chats",
+      displayProjectDir: null,
+      sidebarMovedAt: 40,
     });
+  });
+});
+
+describe("getSessionProjectTarget", () => {
+  test("uses the session execution directory", () => {
+    expect(
+      getSessionProjectTarget(session("/project-a"), {
+        displayProjectDir: "/project-b",
+      }),
+    ).toEqual({ directory: "/project-a", workspaceId: undefined });
   });
 });

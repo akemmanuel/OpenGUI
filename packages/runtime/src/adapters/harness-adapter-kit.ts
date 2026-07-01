@@ -20,6 +20,27 @@ export function makeHarnessProjectKey(workspaceId: unknown, directory: unknown) 
   return `${workspaceKey}:${normalizeHarnessDirectory(directory)}`;
 }
 
+export function makeHarnessSessionIdCodec(prefix: string) {
+  const normalizedPrefix = prefix.endsWith(":") ? prefix : `${prefix}:`;
+  const coerce = (id: unknown) => {
+    if (typeof id === "string") return id;
+    if (typeof id === "number" || typeof id === "boolean" || typeof id === "bigint") {
+      return String(id);
+    }
+    return "";
+  };
+  return {
+    toFrontendSessionId: (id: unknown) => {
+      const raw = coerce(id);
+      return raw.startsWith(normalizedPrefix) ? raw : `${normalizedPrefix}${raw}`;
+    },
+    toRawSessionId: (id: unknown) => {
+      const raw = coerce(id);
+      return raw.startsWith(normalizedPrefix) ? raw.slice(normalizedPrefix.length) : raw;
+    },
+  };
+}
+
 export function ok<T>(data: T) {
   return { success: true, data };
 }

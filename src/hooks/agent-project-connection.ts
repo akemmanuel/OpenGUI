@@ -136,10 +136,14 @@ export function buildBootstrapProjectConfigs({
   workspaces,
   detachedProject,
   worktreeParents,
+  activeWorkspaceId,
+  defaultChatDirectory,
 }: {
   workspaces: Workspace[];
   detachedProject?: string;
   worktreeParents: WorktreeParentMap;
+  activeWorkspaceId?: string | null;
+  defaultChatDirectory?: string | null;
 }) {
   const bootWorkspaces = workspaces.map((workspace) =>
     workspace.isLocal && detachedProject
@@ -151,7 +155,10 @@ export function buildBootstrapProjectConfigs({
   const seenProjectKeys = new Set<string>();
 
   for (const workspace of bootWorkspaces) {
-    const indexRootTargets = getSessionIndexRootTargets(workspace);
+    const indexRootTargets = getSessionIndexRootTargets(
+      workspace,
+      workspace.id === activeWorkspaceId ? defaultChatDirectory : null,
+    );
     for (const target of indexRootTargets) {
       const plan = createWorkspaceProjectConnectionPlan({
         directory: target.directory,
@@ -199,13 +206,17 @@ export function getSessionIndexRootDirectories(workspace: Workspace): string[] {
  * Projects take precedence: when the default chat path is already a Project, do
  * not classify existing Harness sessions from that path as chat-origin.
  */
-export function getSessionIndexRootTargets(workspace: Workspace): SessionIndexRootTarget[] {
+export function getSessionIndexRootTargets(
+  workspace: Workspace,
+  defaultChatDirectory?: string | null,
+): SessionIndexRootTarget[] {
   const projectSet = normalizeDirectorySet(workspace.projects ?? []);
   const targets: SessionIndexRootTarget[] = Array.from(projectSet, (directory) => ({
     directory,
     source: "workspace-project",
   }));
-  const defaultChat = getWorkspaceDefaultChatDirectory(workspace);
+  const defaultChat =
+    getWorkspaceDefaultChatDirectory(workspace) ?? normalizeProjectPath(defaultChatDirectory ?? "");
   if (defaultChat && !projectSet.has(defaultChat)) {
     targets.push({ directory: defaultChat, source: "default-chat" });
   }
@@ -337,7 +348,7 @@ export function shouldPersistLocalConnectionSettings(
 }
 
 export function shouldSnapshotProjectConnectionForRestart({
-  status,
+  status: _status,
   workspace,
   directory,
 }: {
@@ -345,5 +356,5 @@ export function shouldSnapshotProjectConnectionForRestart({
   workspace: Workspace;
   directory: string;
 }) {
-  return status.kind !== "chat-infra" && workspace.projects.includes(directory);
+  return workspace.projects.includes(directory);
 }

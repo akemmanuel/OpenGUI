@@ -197,6 +197,33 @@ describe("buildBootstrapProjectConfigs", () => {
       { directory: "/project-a", source: "workspace-project" },
     ]);
   });
+
+  test("indexes resolved active default chat even when workspace settings lack it", () => {
+    const result = buildBootstrapProjectConfigs({
+      workspaces: [
+        {
+          id: "local",
+          name: "Local",
+          serverUrl: "http://localhost:4096",
+          isLocal: true,
+          projects: ["/project-a"],
+          settings: {},
+        },
+      ] as never,
+      activeWorkspaceId: "local",
+      defaultChatDirectory: "/home/emmanuel",
+      worktreeParents: {},
+    });
+
+    expect(
+      result.projectConfigs
+        .map((config) => ({ directory: config.directory, source: config.source }))
+        .sort((a, b) => a.directory.localeCompare(b.directory)),
+    ).toEqual([
+      { directory: "/home/emmanuel", source: "default-chat" },
+      { directory: "/project-a", source: "workspace-project" },
+    ]);
+  });
 });
 
 describe("getSessionIndexRootDirectories", () => {
@@ -286,10 +313,10 @@ describe("createWorkspaceConnectionConfig", () => {
 });
 
 describe("restart snapshot filtering", () => {
-  test("skips chat infrastructure connections", () => {
+  test("skips directories that are not workspace Projects", () => {
     expect(
       shouldSnapshotProjectConnectionForRestart({
-        status: createProjectConnectionStatus("connected", "http://localhost:4096", "chat-infra"),
+        status: createProjectConnectionStatus("connected", "http://localhost:4096"),
         workspace: {
           id: "local",
           name: "Local",
@@ -297,7 +324,7 @@ describe("restart snapshot filtering", () => {
           isLocal: true,
           projects: ["/home/emmanuel"],
         },
-        directory: "/home/emmanuel",
+        directory: "/chat",
       }),
     ).toBe(false);
   });
@@ -352,7 +379,7 @@ describe("workspace project persistence", () => {
     });
   });
 
-  test("buildWorkspaceProjectPersistPlan is null for hidden transient chat-infra", () => {
+  test("buildWorkspaceProjectPersistPlan is null for hidden transient targets", () => {
     expect(
       buildWorkspaceProjectPersistPlan({
         directory: "/chat",

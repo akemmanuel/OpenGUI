@@ -337,14 +337,14 @@ describe("mergeProjectBackendSessions", () => {
     expect(next.sessionErrors[sessionId]).toBeUndefined();
   });
 
-  test("promotes chat-infra to project when explicitly set to connected", () => {
+  test("keeps project connection kind when explicitly set to connected", () => {
     const next = reducer(
       baseState({
         connections: {
           "workspace-1\u0000/home/emmanuel": createProjectConnectionStatus(
             "connected",
             "http://localhost:4096",
-            "chat-infra",
+            "project",
           ),
         },
       }),
@@ -360,14 +360,14 @@ describe("mergeProjectBackendSessions", () => {
     expect(next.connections["workspace-1\u0000/home/emmanuel"]?.kind).toBe("project");
   });
 
-  test("preserves chat-infra connection kind across backend status updates", () => {
+  test("preserves project connection kind across backend status updates", () => {
     const next = reducer(
       baseState({
         connections: {
           "workspace-1\u0000/home/emmanuel": createProjectConnectionStatus(
             "connected",
             "http://localhost:4096",
-            "chat-infra",
+            "project",
           ),
         },
       }),
@@ -386,7 +386,7 @@ describe("mergeProjectBackendSessions", () => {
       } as Parameters<typeof reducer>[1],
     );
 
-    expect(next.connections["workspace-1\u0000/home/emmanuel"]?.kind).toBe("chat-infra");
+    expect(next.connections["workspace-1\u0000/home/emmanuel"]?.kind).toBe("project");
   });
 
   test("does not delete sessions when removing a non-workspace infrastructure connection", () => {
@@ -405,7 +405,7 @@ describe("mergeProjectBackendSessions", () => {
         "workspace-1\u0000/home/emmanuel": createProjectConnectionStatus(
           "connected",
           "http://localhost:4096",
-          "chat-infra",
+          "project",
         ),
       },
     });
@@ -421,15 +421,14 @@ describe("mergeProjectBackendSessions", () => {
     expect(next.sessions.map((item) => item.id)).toEqual(["chat-1"]);
   });
 
-  test("keeps chat-origin sessions in the default chat directory when project indexes echo them", () => {
+  test("accepts harness session directory updates without sidebar placement rewrites", () => {
     const state = baseState({
       defaultChatDirectory: "/home/tobias/Dokumente",
       sessions: [session("opencode:chat-1", "opencode", "/home/tobias/Dokumente", 1)],
       sessionMeta: {
         "opencode:chat-1": {
-          originMode: "chat",
-          nativeProjectDir: "/home/tobias/Dokumente",
-          assignedProjectDir: null,
+          sidebarSection: "chats",
+          displayProjectDir: null,
         },
       },
     });
@@ -439,11 +438,11 @@ describe("mergeProjectBackendSessions", () => {
       payload: session("opencode:chat-1", "opencode", "/home/tobias/Dokumente/Jutta Kürzl", 2),
     } as Parameters<typeof reducer>[1]);
 
-    expect(next.sessions[0]?._projectDir).toBe("/home/tobias/Dokumente");
-    expect(next.sessions[0]?.directory).toBe("/home/tobias/Dokumente");
+    expect(next.sessions[0]?._projectDir).toBe("/home/tobias/Dokumente/Jutta Kürzl");
+    expect(next.sessions[0]?.directory).toBe("/home/tobias/Dokumente/Jutta Kürzl");
   });
 
-  test("marks sessions listed from default chat targets as chat-origin", () => {
+  test("marks sessions listed from default chat targets as Chats", () => {
     const next = reducer(baseState({ defaultChatDirectory: "/home/chats" }), {
       type: "MERGE_PROJECT_SESSIONS",
       payload: {
@@ -456,9 +455,8 @@ describe("mergeProjectBackendSessions", () => {
     } as Parameters<typeof reducer>[1]);
 
     expect(next.sessionMeta["opencode:chat-1"]).toMatchObject({
-      originMode: "chat",
-      nativeProjectDir: "/home/chats",
-      assignedProjectDir: null,
+      sidebarSection: "chats",
+      displayProjectDir: null,
     });
   });
 
@@ -468,8 +466,8 @@ describe("mergeProjectBackendSessions", () => {
         defaultChatDirectory: "/home/chats",
         sessionMeta: {
           "opencode:project-1": {
-            originMode: "project",
-            nativeProjectDir: "/home/chats",
+            sidebarSection: "projects",
+            displayProjectDir: "/home/chats",
           },
         },
       }),
@@ -485,6 +483,6 @@ describe("mergeProjectBackendSessions", () => {
       } as Parameters<typeof reducer>[1],
     );
 
-    expect(next.sessionMeta["opencode:project-1"]?.originMode).toBe("project");
+    expect(next.sessionMeta["opencode:project-1"]?.sidebarSection).toBe("projects");
   });
 });

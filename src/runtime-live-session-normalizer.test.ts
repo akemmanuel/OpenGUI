@@ -92,6 +92,38 @@ describe("LiveSessionEventNormalizer", () => {
     });
   });
 
+  test("replaceMessageId preserves streamed parts for harness replacement", () => {
+    const projection = new LiveSessionProjection();
+    projection.apply({
+      version: 1,
+      id: "1",
+      seq: 1,
+      scope: { directory: "/r", harnessId: "pi", sessionId: "pi:s1" },
+      time: { observed: 1 },
+      type: "message.started",
+      messageId: "pi:stream:s1:assistant:0",
+      role: "assistant",
+    });
+    projection.apply({
+      version: 1,
+      id: "2",
+      seq: 2,
+      scope: { directory: "/r", harnessId: "pi", sessionId: "pi:s1" },
+      time: { observed: 1 },
+      type: "part.text.appended",
+      messageId: "pi:stream:s1:assistant:0",
+      partId: "p1",
+      partKind: "thinking",
+      text: "think",
+    });
+    projection.replaceMessageId("pi:stream:s1:assistant:0", "real-id");
+    const message = projection.getMessages().find((m) => m.id === "real-id");
+    expect(message?.parts[0]).toMatchObject({ type: "thinking", text: "think" });
+    expect(
+      projection.getMessages().find((m) => m.id === "pi:stream:s1:assistant:0"),
+    ).toBeUndefined();
+  });
+
   test("delta and snapshot paths converge in projection", () => {
     const snapshotNormalizer = new LiveSessionEventNormalizer();
     const deltaNormalizer = new LiveSessionEventNormalizer();

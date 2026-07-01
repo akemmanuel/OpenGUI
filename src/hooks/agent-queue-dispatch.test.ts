@@ -44,14 +44,14 @@ describe("processBusyToIdleTransitions", () => {
     ]);
   });
 
-  test("refreshes newly idle moved sessions at the assigned project target", () => {
+  test("refreshes newly idle moved sessions at the execution target", () => {
     const refreshed: Array<Record<string, unknown>> = [];
 
     processBusyToIdleTransitions({
       previousBusySessionIds: new Set(["session-1"]),
       currentBusySessionIds: new Set(),
       activeSessionId: "session-1",
-      sessionMeta: { "session-1": { assignedProjectDir: "/project-b" } },
+      sessionMeta: { "session-1": { displayProjectDir: "/project-b" } },
       sessions: [
         makeSession({
           id: "session-1",
@@ -67,7 +67,7 @@ describe("processBusyToIdleTransitions", () => {
     expect(refreshed).toEqual([
       {
         sessionId: "session-1",
-        projectTarget: { directory: "/project-b", workspaceId: "workspace-1" },
+        projectTarget: { directory: "/project-a", workspaceId: "workspace-1" },
       },
     ]);
   });

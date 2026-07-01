@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Sidebar, SidebarContent, useSidebar } from "@/components/ui/sidebar";
-import { getEffectiveSessionDirectory } from "@/hooks/agent-session-utils";
+import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import { useHomeDir } from "@/hooks/use-home-dir";
 import { useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
@@ -120,12 +120,7 @@ export function AppSidebar({
   );
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeSessionDirectory =
-    getEffectiveSessionDirectory(
-      activeSession,
-      activeSessionId ? sessionMeta[activeSessionId] : undefined,
-    ) ||
-    activeTargetDirectory ||
-    null;
+    getSessionExecutionDirectory(activeSession) || activeTargetDirectory || null;
 
   const {
     hasActiveSearch,

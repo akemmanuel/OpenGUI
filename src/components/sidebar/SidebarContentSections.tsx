@@ -173,7 +173,7 @@ export function SidebarContentSections({
                     getSessionPlacementInfo(
                       session,
                       worktreeParents,
-                      sessionMeta[session.id]?.assignedProjectDir ?? null,
+                      sessionMeta[session.id]?.displayProjectDir ?? null,
                     )?.displayDirectory ?? getSessionExecutionDirectory(session),
                     { currentProjectDir: null },
                   ),

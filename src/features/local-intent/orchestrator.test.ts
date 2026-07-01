@@ -117,7 +117,7 @@ describe("createLocalIntentOrchestrator", () => {
     ]);
   });
 
-  test("prepends the directory-change notice before prompting the backend", async () => {
+  test("sends prompt text unchanged when session was moved between projects", async () => {
     const session = makeSession({
       id: "session-1",
       directory: "/original",
@@ -130,73 +130,7 @@ describe("createLocalIntentOrchestrator", () => {
       sessions: [session],
       sessionMeta: {
         [session.id]: {
-          assignedProjectDir: "/target",
-          assignedProjectSourceDir: "/original",
-          pendingDirectoryChangeNotice: true,
-        },
-      },
-    });
-    const prompts: Array<Record<string, unknown>> = [];
-    const actions: Array<Record<string, unknown>> = [];
-
-    const orchestrator = createLocalIntentOrchestrator({
-      getState: () => state,
-      getResourceRuntime: () => undefined,
-      getCurrentVariant: () => undefined,
-      sessionsClient: {
-        prompt: async (input: Record<string, unknown>) => {
-          prompts.push(input);
-        },
-        abort: async () => undefined,
-      } as never,
-      createSession: async () => null,
-      scheduleSessionMessageReconcile: () => undefined,
-      requestSessionAutoName: () => undefined,
-      dispatch: (action) => {
-        actions.push(action as unknown as Record<string, unknown>);
-      },
-      sessionCreatingRef: { current: false },
-      getFallbackHarnessId: () => "claude-code" as const,
-    });
-
-    await orchestrator.sendPrompt("Continue");
-
-    expect(prompts).toHaveLength(1);
-    expect(String(prompts[0]?.text)).toContain("<SYSTEM-APPEND>");
-    expect(String(prompts[0]?.text)).toContain("/target");
-    expect(actions).toEqual(
-      expect.arrayContaining([
-        {
-          type: "SET_SESSION_META",
-          payload: {
-            sessionId: "session-1",
-            meta: expect.objectContaining({
-              pendingDirectoryChangeNotice: false,
-              hideSystemAppendBlocks: true,
-            }),
-          },
-        },
-      ]),
-    );
-  });
-
-  test("prepends a directory-change notice when a session is moved back to its original project", async () => {
-    const session = makeSession({
-      id: "session-1",
-      directory: "/project-b",
-      _projectDir: "/project-b",
-      _workspaceId: "workspace-1",
-    });
-    const state = makeState({
-      activeSessionId: session.id,
-      selectedModel: { providerID: "openai", modelID: "gpt-5" },
-      sessions: [session],
-      sessionMeta: {
-        [session.id]: {
-          nativeProjectDir: "/original",
-          assignedProjectDir: null,
-          assignedProjectSourceDir: "/project-b",
-          pendingDirectoryChangeNotice: true,
+          displayProjectDir: "/target",
         },
       },
     });
@@ -220,11 +154,10 @@ describe("createLocalIntentOrchestrator", () => {
       getFallbackHarnessId: () => "claude-code" as const,
     });
 
-    await orchestrator.sendPrompt("Where are you?");
+    await orchestrator.sendPrompt("Continue");
 
     expect(prompts).toHaveLength(1);
-    expect(String(prompts[0]?.text)).toContain("`/project-b`");
-    expect(String(prompts[0]?.text)).toContain("`/original`");
+    expect(prompts[0]?.text).toBe("Continue");
     expect(prompts[0]).toMatchObject({
       target: { directory: "/original", workspaceId: "workspace-1" },
     });

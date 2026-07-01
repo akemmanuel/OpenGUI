@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { useConnectionState, useSessionState } from "@/hooks/use-agent-state";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
-import { getEffectiveSessionDirectory } from "@/hooks/agent-session-utils";
+import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import { getChatSurfaceState, hasProjectConnectedPrompt } from "@/lib/chat-surface";
 import { normalizeProjectPath } from "@/lib/utils";
 
@@ -21,7 +21,6 @@ export function useChatSessionSurface({
   sessions,
   activeSessionId,
   activeTargetDirectory,
-  sessionMeta,
   connections,
   defaultChatDirectory,
 }: UseChatSessionSurfaceParams) {
@@ -31,12 +30,7 @@ export function useChatSessionSurface({
   );
 
   const activeSessionDirectory =
-    getEffectiveSessionDirectory(
-      activeSession,
-      activeSessionId ? sessionMeta[activeSessionId] : undefined,
-    ) ||
-    activeTargetDirectory ||
-    null;
+    getSessionExecutionDirectory(activeSession) || activeTargetDirectory || null;
 
   const connectedTargetDirectories = useMemo(
     () =>
@@ -49,7 +43,7 @@ export function useChatSessionSurface({
   const connectedProjectDirectories = useMemo(
     () =>
       Object.entries(connections)
-        .filter(([, status]) => status.state === "connected" && status.kind !== "chat-infra")
+        .filter(([, status]) => status.state === "connected")
         .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory)),
     [connections],
   );

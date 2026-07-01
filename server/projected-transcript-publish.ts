@@ -5,8 +5,6 @@ export function publishProjectedTranscriptEvent(
   services: Pick<BackendServiceContext, "events">,
   projected: ProjectedTranscriptEvent,
 ): boolean {
-  if (projected.type === "transcript.message") return false;
-
   const refs = {
     directory: projected.scope.directory,
     sessionId: projected.scope.sessionId,

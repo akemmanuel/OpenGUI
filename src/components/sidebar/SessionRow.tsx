@@ -105,7 +105,7 @@ export function SessionRow({
   const placement = getSessionPlacementInfo(
     session,
     worktreeParents,
-    meta?.assignedProjectDir ?? null,
+    meta?.displayProjectDir ?? null,
   );
   const isWorktreeSession = placement?.isKnownWorktree ?? false;
   const knownWorktree = placement?.rootDirectory
@@ -148,7 +148,7 @@ export function SessionRow({
       currentColor={meta?.color}
       currentTags={tags}
       availableProjects={availableProjectDirectories}
-      assignedProjectDir={meta?.assignedProjectDir ?? null}
+      displayProjectDir={meta?.displayProjectDir ?? null}
       currentProjectDir={currentProjectDir}
       pinned={isPinned}
       onTogglePin={() => setSessionPinned(session.id, !isPinned)}
@@ -289,7 +289,7 @@ export function SessionRow({
               currentColor={meta?.color}
               currentTags={tags}
               availableProjects={availableProjectDirectories}
-              assignedProjectDir={meta?.assignedProjectDir ?? null}
+              displayProjectDir={meta?.displayProjectDir ?? null}
               currentProjectDir={currentProjectDir}
               onTogglePin={() => setSessionPinned(session.id, !isPinned)}
               onSetColor={(color) => setSessionColor(session.id, color)}

@@ -3,12 +3,6 @@ import type { MessageEntry } from "@/hooks/agent-state-types";
 
 export const MESSAGE_PAGE_SIZE = 30;
 
-/**
- * Keep a generous active-session window so long local transcripts do not appear truncated.
- * Rendering is virtualized, so the DOM cost stays bounded while we avoid discarding history early.
- */
-const MAX_MESSAGE_WINDOW = 1000;
-
 export function getMessageText(entry: MessageEntry): string {
   return entry.parts
     .flatMap((part) => {
@@ -30,9 +24,4 @@ export function getChildSessionId(part: Part): string | undefined {
     if (typeof meta.sessionId === "string") return meta.sessionId;
   }
   return undefined;
-}
-
-export function limitMessageWindow(messages: MessageEntry[]): MessageEntry[] {
-  if (messages.length <= MAX_MESSAGE_WINDOW) return messages;
-  return messages.slice(messages.length - MAX_MESSAGE_WINDOW);
 }

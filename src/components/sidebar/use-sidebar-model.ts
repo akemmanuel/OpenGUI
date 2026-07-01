@@ -20,11 +20,8 @@ import type { HarnessId } from "@/agents";
 
 function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {
   const meta = sessionMeta[session.id];
-  if (meta?.detachedFromProject && typeof meta.detachedFromProjectAt === "number") {
-    return meta.detachedFromProjectAt;
-  }
-  if (meta?.assignedProjectDir && typeof meta.assignedProjectMovedAt === "number") {
-    return meta.assignedProjectMovedAt;
+  if (typeof meta?.sidebarMovedAt === "number") {
+    return meta.sidebarMovedAt;
   }
   return session.time?.updated ?? session.time?.created ?? 0;
 }
@@ -39,27 +36,23 @@ export function shouldShowSessionInChatList({
   isDefaultChatDirectory: (directory?: string | null) => boolean;
 }) {
   if (session.parentID || meta?.movedToSessionId) return false;
-  if (meta?.detachedFromProject === true) return true;
-  if (meta?.originMode === "project") return false;
-  if (normalizeProjectPath(meta?.assignedProjectDir ?? "")) return false;
+  if (meta?.sidebarSection) return meta.sidebarSection === "chats";
   return isDefaultChatDirectory(session._projectDir ?? session.directory);
 }
 
 export function shouldKeepSessionOutOfProjectGroups({
   session,
   meta,
-  assignedProjectDir,
+  displayProjectDir,
   isDefaultChatDirectory,
 }: {
   session: Session;
   meta: SessionMetaMap[string] | undefined;
-  assignedProjectDir: string;
+  displayProjectDir: string;
   isDefaultChatDirectory: (directory?: string | null) => boolean;
 }) {
-  if (assignedProjectDir) return false;
-  if (meta?.originMode === "project") return false;
-  if (meta?.originMode === "chat") return true;
-  return isDefaultChatDirectory(session._projectDir ?? session.directory);
+  if (meta?.sidebarSection) return meta.sidebarSection === "chats";
+  return !displayProjectDir && isDefaultChatDirectory(session._projectDir ?? session.directory);
 }
 
 export function sortSessionsForSidebar(
@@ -136,7 +129,7 @@ export function useSidebarModel({
         .filter(Boolean),
     );
     const openDirectories = Object.entries(connections)
-      .filter(([, status]) => status.state === "connected" && status.kind !== "chat-infra")
+      .filter(([, status]) => status.state === "connected")
       .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory))
       .filter((dir): dir is string => Boolean(dir) && visibleProjectDirectorySet.has(dir));
     const rootOpenDirectories = openDirectories.filter(
@@ -161,29 +154,27 @@ export function useSidebarModel({
 
     for (const session of sessions) {
       const meta = sessionMeta[session.id];
-      if (session.parentID || meta?.movedToSessionId || meta?.detachedFromProject === true) {
+      if (session.parentID || meta?.movedToSessionId) {
         continue;
       }
-      const assignedProjectDir = normalizeProjectPath(meta?.assignedProjectDir ?? "");
+      const displayProjectDir = normalizeProjectPath(meta?.displayProjectDir ?? "");
       if (
         shouldKeepSessionOutOfProjectGroups({
           session,
           meta,
-          assignedProjectDir,
+          displayProjectDir,
           isDefaultChatDirectory,
         })
       ) {
         continue;
       }
-      const effectiveAssignedProjectDir =
-        assignedProjectDir && projectDirectorySet.has(assignedProjectDir)
-          ? assignedProjectDir
-          : null;
+      const effectiveDisplayProjectDir =
+        displayProjectDir && projectDirectorySet.has(displayProjectDir) ? displayProjectDir : null;
       if (
         !shouldShowSessionInProjectList(session, {
           worktreeParents,
           visibleProjectDirectories: visibleProjectDirectorySet,
-          assignedProjectDir: effectiveAssignedProjectDir,
+          displayProjectDir: effectiveDisplayProjectDir,
         })
       ) {
         continue;
@@ -191,7 +182,7 @@ export function useSidebarModel({
       const placement = getSessionPlacementInfo(
         session,
         worktreeParents,
-        effectiveAssignedProjectDir,
+        effectiveDisplayProjectDir,
       );
       if (!placement) continue;
       if (

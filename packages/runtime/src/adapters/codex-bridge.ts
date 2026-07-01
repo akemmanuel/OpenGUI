@@ -16,26 +16,20 @@ import {
   STATIC_CODEX_PROVIDER,
 } from "./codex-models.ts";
 import {
-  fail,
-  makeHarnessProjectKey,
-  normalizeHarnessDirectory,
-  nowHarnessConnection,
-  ok,
+  makeHarnessProjectKey as makeProjectKey,
+  makeHarnessSessionIdCodec,
+  normalizeHarnessDirectory as normalizeDir,
+  nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
+import {
+  makeHarnessBridgeEventEmitter,
+  registerObjectTargetHarnessRpcHandlers,
+} from "./harness-adapter-host.ts";
 
 const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 const CODEX_PROVIDER_CACHE_TTL_MS = 60_000;
 const CODEX_SESSION_PREFIX = "codex:";
-
-function toFrontendSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(CODEX_SESSION_PREFIX) ? raw : `${CODEX_SESSION_PREFIX}${raw}`;
-}
-
-function toRawSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(CODEX_SESSION_PREFIX) ? raw.slice(CODEX_SESSION_PREFIX.length) : raw;
-}
+const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(CODEX_SESSION_PREFIX);
 
 let codexProviderCache = {
   expiresAt: 0,
@@ -446,18 +440,6 @@ async function resolveSupportedCodexVariant(model, variant) {
   );
   if (variants.length === 0) return undefined;
   return variants.includes(normalized) ? normalized : undefined;
-}
-
-function normalizeDir(directory) {
-  return normalizeHarnessDirectory(directory);
-}
-
-function makeProjectKey(workspaceId, directory) {
-  return makeHarnessProjectKey(workspaceId, directory);
-}
-
-function nowConnection(status = {}) {
-  return nowHarnessConnection(status);
 }
 
 const MAX_CODEX_SESSION_INDEX_ENTRIES = 1000;
@@ -986,7 +968,7 @@ function buildToolPartFromItem(sessionId, messageId, item, existingPart, phase) 
 
 class CodexBridgeManager {
   constructor(getAllWindows, options = {}) {
-    this.getAllWindows = getAllWindows;
+    this.emitBridgeEvent = makeHarnessBridgeEventEmitter("codex", getAllWindows);
     this.projects = new Map();
     this.sessionIndex = new Map();
     this.transcriptCache = new Map();
@@ -1000,10 +982,7 @@ class CodexBridgeManager {
   }
 
   emit(event) {
-    for (const window of this.getAllWindows()) {
-      if (!window || window.isDestroyed()) continue;
-      window.webContents.send("codex:bridge-event", event);
-    }
+    this.emitBridgeEvent(event);
   }
 
   emitConnection(project, status) {
@@ -2139,177 +2118,7 @@ class CodexBridgeManager {
 export function setupCodexBridge(ipcMain, getAllWindows, options = {}) {
   let manager = new CodexBridgeManager(getAllWindows, options);
 
-  ipcMain.handle("codex:project:add", async (_event, config) => {
-    try {
-      await manager.addProject(config);
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:project:remove", async (_event, directory, workspaceId) => {
-    try {
-      await manager.removeProject({ directory, workspaceId });
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:disconnect", async () => {
-    try {
-      manager.disconnect();
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:session:list", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.listSessions({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:session:create", async (_event, title, directory, workspaceId) => {
-    try {
-      return ok(await manager.createSession({ title, directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:session:delete", async (_event, sessionId, directory, workspaceId) => {
-    try {
-      return ok(await manager.deleteSession(sessionId, { directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "codex:session:update",
-    async (_event, sessionId, title, directory, workspaceId) => {
-      try {
-        return ok(await manager.updateSession(sessionId, title, { directory, workspaceId }));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("codex:session:statuses", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getSessionStatuses({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:providers", async () => {
-    try {
-      return ok(await manager.getProviders());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:agents", async () => {
-    try {
-      return ok(await manager.getAgents());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:commands", async () => {
-    try {
-      return ok(await manager.getCommands());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:messages", async (_event, sessionId, _options, directory, workspaceId) => {
-    try {
-      return ok(await manager.getMessages(sessionId, { directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("codex:session:start", async (_event, input) => {
-    try {
-      return ok(await manager.startSession(input ?? {}));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "codex:prompt",
-    async (_event, sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.prompt(
-          sessionId,
-          text,
-          images,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("codex:abort", async (_event, sessionId) => {
-    try {
-      return ok(await manager.abort(sessionId));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "codex:command:send",
-    async (_event, sessionId, command, args, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.sendCommand(
-          sessionId,
-          command,
-          args,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "codex:session:summarize",
-    async (_event, sessionId, model, directory, workspaceId) => {
-      try {
-        await manager.summarizeSession(sessionId, model, directory, workspaceId);
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
+  registerObjectTargetHarnessRpcHandlers("codex", ipcMain, () => manager);
 
   return {
     async restart() {

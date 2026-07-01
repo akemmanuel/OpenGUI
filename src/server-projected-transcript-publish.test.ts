@@ -5,35 +5,6 @@ import { publishProjectedTranscriptEvent } from "../server/projected-transcript-
 const scope = { directory: "/repo", harnessId: "pi" as const, sessionId: "pi:s1" };
 
 describe("publishProjectedTranscriptEvent", () => {
-  test("does not publish transcript.message on the canonical bus", () => {
-    const events = new BackendEventBus();
-    const published: string[] = [];
-    events.subscribe((envelope) => published.push(envelope.type));
-
-    const ok = publishProjectedTranscriptEvent(
-      { events },
-      {
-        type: "transcript.message",
-        scope,
-        revision: 1,
-        entry: {
-          info: {
-            id: "m1",
-            sessionID: "pi:s1",
-            role: "assistant",
-            time: { created: 1 },
-            providerID: "",
-            modelID: "",
-          },
-          parts: [],
-        },
-      },
-    );
-
-    expect(ok).toBe(false);
-    expect(published).toEqual([]);
-  });
-
   test("publishes transcript.snapshot and transcript.message.removed", () => {
     const events = new BackendEventBus();
     const published: string[] = [];

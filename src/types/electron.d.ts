@@ -40,7 +40,7 @@ export interface AllProvidersData {
 // ---------------------------------------------------------------------------
 
 export type ConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "error";
-export type ConnectionKind = "project" | "chat-infra";
+export type ConnectionKind = "project";
 
 export interface ConnectionStatus {
   state: ConnectionState;

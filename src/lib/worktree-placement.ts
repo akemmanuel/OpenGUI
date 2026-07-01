@@ -132,12 +132,12 @@ export function getWorktreeDisplayLabel(
 export function getDirectoryPlacementInfo(
   directory: string | null | undefined,
   worktreeParents: WorktreePlacementMap,
-  assignedProjectDir?: string | null,
+  displayProjectDir?: string | null,
 ): WorktreePlacementInfo | null {
   const executionDirectory = normalizeOptionalDirectory(directory);
   if (!executionDirectory) return null;
   const rootDirectory = getWorkspaceRootProjectDirectory(executionDirectory, worktreeParents);
-  const displayDirectory = normalizeOptionalDirectory(assignedProjectDir) || rootDirectory;
+  const displayDirectory = normalizeOptionalDirectory(displayProjectDir) || rootDirectory;
   return {
     executionDirectory,
     rootDirectory,
@@ -150,12 +150,12 @@ export function getDirectoryPlacementInfo(
 export function getSessionPlacementInfo(
   session: WorktreePlacementSessionLike | null | undefined,
   worktreeParents: WorktreePlacementMap,
-  assignedProjectDir?: string | null,
+  displayProjectDir?: string | null,
 ): WorktreePlacementInfo | null {
   return getDirectoryPlacementInfo(
     getSessionExecutionDirectory(session),
     worktreeParents,
-    assignedProjectDir,
+    displayProjectDir,
   );
 }
 
@@ -164,14 +164,14 @@ export function shouldShowSessionInProjectList(
   {
     worktreeParents,
     visibleProjectDirectories,
-    assignedProjectDir,
+    displayProjectDir,
   }: {
     worktreeParents: WorktreePlacementMap;
     visibleProjectDirectories: Iterable<string>;
-    assignedProjectDir?: string | null;
+    displayProjectDir?: string | null;
   },
 ): boolean {
-  const placement = getSessionPlacementInfo(session, worktreeParents, assignedProjectDir);
+  const placement = getSessionPlacementInfo(session, worktreeParents, displayProjectDir);
   if (!placement) return false;
   const visibleDirectorySet = new Set(
     Array.from(visibleProjectDirectories)

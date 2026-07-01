@@ -67,6 +67,10 @@ export type LiveSessionEvent =
   | (LiveSessionEventBase & {
       type: "transcript.rebased";
       reason: "harness-replaced-message" | "reconnect" | "final-read";
+      replacement?: {
+        oldMessageId: string;
+        newMessageId: string;
+      };
     })
   | (LiveSessionEventBase & { type: "session.error"; message: string });
 

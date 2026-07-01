@@ -25,15 +25,16 @@ function emptySlice() {
 }
 
 describe("reduceQueuePresentation", () => {
-  test("QUEUE_ADD then QUEUE_REMOVE clears session key", () => {
-    let slice = emptySlice();
-    slice = reduceQueuePresentation(slice, {
-      type: "QUEUE_ADD",
-      payload: { sessionID: "s1", prompt: prompt("q1") },
+  test("SET_SESSION_QUEUE mirrors backend snapshots and clears empty queues", () => {
+    let slice = reduceQueuePresentation(emptySlice(), {
+      type: "SET_SESSION_QUEUE",
+      payload: { sessionID: "s1", prompts: [prompt("q1")] },
     });
+    expect(slice.queuedPrompts.s1).toEqual([prompt("q1")]);
+
     slice = reduceQueuePresentation(slice, {
-      type: "QUEUE_REMOVE",
-      payload: { sessionID: "s1", promptID: "q1" },
+      type: "SET_SESSION_QUEUE",
+      payload: { sessionID: "s1", prompts: [] },
     });
     expect(slice.queuedPrompts).toEqual({});
   });
@@ -56,8 +57,8 @@ describe("reduceQueuePresentation", () => {
 describe("renameSessionIdInQueueSlice", () => {
   test("renames queue bucket and after-part sets", () => {
     const slice = reduceQueuePresentation(emptySlice(), {
-      type: "QUEUE_ADD",
-      payload: { sessionID: "old", prompt: prompt("q1") },
+      type: "SET_SESSION_QUEUE",
+      payload: { sessionID: "old", prompts: [prompt("q1")] },
     });
     const renamed = renameSessionIdInQueueSlice(
       reduceQueuePresentation(slice, {
@@ -76,8 +77,8 @@ describe("renameSessionIdInQueueSlice", () => {
 describe("removeSessionFromQueueSlice", () => {
   test("drops queued prompts for deleted Session", () => {
     let slice = reduceQueuePresentation(emptySlice(), {
-      type: "QUEUE_ADD",
-      payload: { sessionID: "gone", prompt: prompt("q1") },
+      type: "SET_SESSION_QUEUE",
+      payload: { sessionID: "gone", prompts: [prompt("q1")] },
     });
     slice = removeSessionFromQueueSlice(slice, "gone");
     expect(slice.queuedPrompts).toEqual({});

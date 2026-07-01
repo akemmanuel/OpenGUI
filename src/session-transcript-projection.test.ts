@@ -320,7 +320,7 @@ describe("session-transcript-projection", () => {
     expect(part.text).toBe("hello world");
   });
 
-  test("session transcripts emit a snapshot when message order changes", async () => {
+  test("message order changes do not emit transcript.snapshot (live events + idle reconcile)", async () => {
     const transcripts = createSessionTranscripts();
     await transcripts.readPage({
       scope: SCOPE,
@@ -348,12 +348,10 @@ describe("session-transcript-projection", () => {
         message: message("a-live", "assistant", 10, "u-live"),
       },
     });
-    const snapshot = events.find((event) => event.type === "transcript.snapshot");
-    expect(snapshot?.type).toBe("transcript.snapshot");
-    expect(snapshot?.page.messages.map((entry) => entry.info.id)).toEqual(["u-live", "a-live"]);
+    expect(events.find((event) => event.type === "transcript.snapshot")).toBeUndefined();
   });
 
-  test("live order snapshots preserve the last harness page cursor", async () => {
+  test("idle status still emits transcript.snapshot with page cursor", async () => {
     const transcripts = createSessionTranscripts();
     await transcripts.readPage({
       scope: SCOPE,
@@ -370,20 +368,33 @@ describe("session-transcript-projection", () => {
         delta: "answer",
       },
     });
-    transcripts.ingest({
-      scope: SCOPE,
-      event: { type: "message.updated", message: message("u-live", "user", 10) },
-    });
     const events = transcripts.ingest({
       scope: SCOPE,
-      event: {
-        type: "message.updated",
-        message: message("a-live", "assistant", 10, "u-live"),
-      },
+      event: { type: "session.status", sessionID: SCOPE.sessionId, status: { type: "idle" } },
     });
     const snapshot = events.find((event) => event.type === "transcript.snapshot");
     expect(snapshot?.type).toBe("transcript.snapshot");
     expect(snapshot?.page.nextCursor).toBe("older-cursor");
+  });
+
+  test("part mutations do not emit transcript.message (live SSE uses LiveSessionEvent)", async () => {
+    const transcripts = createSessionTranscripts();
+    await transcripts.readPage({
+      scope: SCOPE,
+      fetchHarnessPage: async () => ({ messages: [], nextCursor: null }),
+    });
+    const events = transcripts.ingest({
+      scope: SCOPE,
+      event: {
+        type: "message.part.delta",
+        sessionID: SCOPE.sessionId,
+        messageID: "a-live",
+        partID: "a-text",
+        field: "text",
+        delta: "answer",
+      },
+    });
+    expect(events.map((event) => event.type as string)).not.toContain("transcript.message");
   });
 
   test("idle status does not publish an empty unhydrated transcript snapshot", () => {

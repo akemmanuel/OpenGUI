@@ -60,7 +60,7 @@ export function SessionItemMenu({
   currentColor,
   currentTags,
   availableProjects,
-  assignedProjectDir,
+  displayProjectDir,
   currentProjectDir,
   onTogglePin,
   onSetColor,
@@ -74,7 +74,7 @@ export function SessionItemMenu({
   currentColor: SessionColor | undefined;
   currentTags: string[];
   availableProjects: string[];
-  assignedProjectDir: string | null;
+  displayProjectDir: string | null;
   currentProjectDir: string | null;
   onTogglePin: () => void;
   onSetColor: (color: SessionColor) => void;
@@ -233,7 +233,7 @@ export function SessionItemMenu({
                     }}
                   >
                     <span>{getProjectName(directory)}</span>
-                    {assignedProjectDir === directory && <Check className="ml-auto size-3.5" />}
+                    {displayProjectDir === directory && <Check className="ml-auto size-3.5" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>

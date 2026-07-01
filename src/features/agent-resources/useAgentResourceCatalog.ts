@@ -10,7 +10,7 @@ import {
 import { getSessionSelectedAgent, makeProjectKey } from "@/hooks/agent-session-utils";
 import { updateVariantSelections, variantKey } from "@/hooks/use-agent-variant-core";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { ensureResourceCatalog } from "@/lib/resource-catalog-cache";
+import { ensureHarnessResourceCatalog } from "@/lib/ensure-harness-resource-catalog";
 import { storageGet } from "@/lib/safe-storage";
 import { getErrorMessage } from "@/lib/utils";
 import type { OpenGuiClient } from "@/protocol/client";
@@ -54,7 +54,7 @@ export function useAgentResourceCatalog(input: {
       }
       const requestId = ++resourceLoadRequestIdRef.current;
       try {
-        const { providersData, agentsData, commandsData } = await ensureResourceCatalog({
+        const { providersData, agentsData, commandsData } = await ensureHarnessResourceCatalog({
           harnessId,
           target: {
             workspaceId: targetWorkspaceId ?? state.activeWorkspaceId,
@@ -62,7 +62,7 @@ export function useAgentResourceCatalog(input: {
             baseUrl: targetWorkspace?.isLocal ? undefined : targetWorkspace?.serverUrl,
             authToken: targetWorkspace?.isLocal ? undefined : targetWorkspace?.authToken,
           },
-          loadResources: openGuiClient.harnesses.loadResources.bind(openGuiClient.harnesses),
+          client: openGuiClient,
           force: options?.force,
         });
 

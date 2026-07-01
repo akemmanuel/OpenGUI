@@ -24,6 +24,7 @@ function emptySnapshot(): ActiveTranscriptSnapshot {
     hasOlder: false,
     olderCursor: null,
     loadingOlder: false,
+    olderError: null,
     error: null,
     revision: 0,
     running: false,
@@ -40,6 +41,27 @@ function upsertMessage(messages: MessageEntry[], entry: MessageEntry): MessageEn
 
 function removeMessage(messages: MessageEntry[], messageId: string): MessageEntry[] {
   return messages.filter((m) => m.info.id !== messageId);
+}
+
+function rebaseMessageId(
+  messages: MessageEntry[],
+  oldMessageId: string,
+  newMessageId: string,
+): MessageEntry[] {
+  if (oldMessageId === newMessageId) return messages;
+  const index = messages.findIndex((m) => m.info.id === oldMessageId);
+  if (index < 0) return messages;
+  const entry = messages[index]!;
+  const rebased: MessageEntry = {
+    info: { ...entry.info, id: newMessageId },
+    parts: entry.parts.map((part) => ({
+      ...part,
+      messageID: newMessageId,
+    })),
+  };
+  const next = [...messages];
+  next[index] = rebased;
+  return next;
 }
 
 function promptHistoryFromMessages(messages: MessageEntry[]): { key: string; history: string[] } {
@@ -236,11 +258,21 @@ export class ActiveSessionTranscriptStore {
         return;
       case "page.failed":
         if (!scopesEqual(this.snapshot.scope, input.scope)) return;
+        if (input.phase === "older") {
+          this.commit({
+            ...this.snapshot,
+            loadingOlder: false,
+            olderError: input.error,
+            revision: this.snapshot.revision + 1,
+          });
+          return;
+        }
         this.commit({
           ...this.snapshot,
           phase: "error",
           error: input.error,
           loadingOlder: false,
+          revision: this.snapshot.revision + 1,
         });
         return;
       case "page.loaded":
@@ -283,6 +315,7 @@ export class ActiveSessionTranscriptStore {
       phase: "ready",
       messages: merged,
       error: null,
+      olderError: null,
       revision: this.snapshot.revision + 1,
       loadingOlder: input.phase === "older" ? false : this.snapshot.loadingOlder,
     };
@@ -310,6 +343,22 @@ export class ActiveSessionTranscriptStore {
     if (event.type === "run.finished") {
       this.commit({ ...this.snapshot, running: false });
       this.scheduleFinalReconcile(scope);
+      return;
+    }
+
+    if (event.type === "transcript.rebased" && event.replacement) {
+      const { oldMessageId, newMessageId } = event.replacement;
+      this.liveProjection.ingest(event);
+      const hadOldMessage = this.snapshot.messages.some(
+        (message) => message.info.id === oldMessageId,
+      );
+      if (hadOldMessage && oldMessageId && newMessageId) {
+        this.commit({
+          ...this.snapshot,
+          messages: rebaseMessageId(this.snapshot.messages, oldMessageId, newMessageId),
+          revision: this.snapshot.revision + 1,
+        });
+      }
       return;
     }
 
@@ -371,7 +420,7 @@ export class ActiveSessionTranscriptStore {
     ) {
       return false;
     }
-    this.commit({ ...this.snapshot, loadingOlder: true });
+    this.commit({ ...this.snapshot, loadingOlder: true, olderError: null });
     return true;
   }
 

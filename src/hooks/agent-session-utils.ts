@@ -26,71 +26,41 @@ export function getSessionDirectory(session: Session | undefined | null) {
   return session._projectDir ?? session.directory ?? null;
 }
 
-export function getEffectiveSessionDirectory(
-  session: Session | undefined | null,
-  meta?: SessionMeta,
-) {
-  const assignedDirectory = meta?.assignedProjectDir
-    ? normalizeProjectPath(meta.assignedProjectDir)
-    : "";
-  const nativeDirectory = meta?.nativeProjectDir ? normalizeProjectPath(meta.nativeProjectDir) : "";
+export function getSessionExecutionDirectory(session: Session | undefined | null) {
   const sessionDirectory = normalizeProjectPath(getSessionDirectory(session) ?? "");
-  return assignedDirectory || nativeDirectory || sessionDirectory || null;
+  return sessionDirectory || null;
 }
 
 export function createSessionProjectMoveMeta(
   session: Session | undefined | null,
-  meta: SessionMeta | undefined,
+  _meta: SessionMeta | undefined,
   targetDirectory: string,
   now = Date.now(),
 ): Partial<SessionMeta> | null {
-  const nativeDirectory = normalizeProjectPath(
-    meta?.nativeProjectDir ?? getSessionDirectory(session) ?? "",
-  );
   const normalizedTargetDirectory = normalizeProjectPath(targetDirectory);
-  if (!nativeDirectory || !normalizedTargetDirectory) return null;
-
-  const currentDirectory = getEffectiveSessionDirectory(session, meta) ?? nativeDirectory;
-  const directoryChanged = currentDirectory !== normalizedTargetDirectory;
-  const targetIsNativeDirectory = nativeDirectory === normalizedTargetDirectory;
+  if (!getSessionExecutionDirectory(session) || !normalizedTargetDirectory) return null;
 
   return {
-    originMode: targetIsNativeDirectory || meta?.originMode !== "chat" ? "project" : "chat",
-    nativeProjectDir: nativeDirectory,
-    assignedProjectDir: targetIsNativeDirectory ? null : normalizedTargetDirectory,
-    assignedProjectMovedAt: directoryChanged ? now : null,
-    assignedProjectSourceDir: directoryChanged ? currentDirectory : null,
-    pendingDirectoryChangeNotice: directoryChanged,
-    hideSystemAppendBlocks: directoryChanged,
-    detachedFromProject: false,
-    detachedFromProjectAt: null,
+    sidebarSection: "projects",
+    displayProjectDir: normalizedTargetDirectory,
+    sidebarMovedAt: now,
   };
 }
 
 export function createSessionProjectDetachMeta(
   session: Session | undefined | null,
-  meta: SessionMeta | undefined,
+  _meta: SessionMeta | undefined,
   now = Date.now(),
   fallbackDirectory?: string | null,
 ): Partial<SessionMeta> | null {
-  const nativeDirectory = normalizeProjectPath(
-    meta?.nativeProjectDir ?? fallbackDirectory ?? getSessionDirectory(session) ?? "",
-  );
-  if (!nativeDirectory) return null;
-
-  const currentDirectory = getEffectiveSessionDirectory(session, meta) ?? nativeDirectory;
-  const directoryChanged = currentDirectory !== nativeDirectory;
+  if (!getSessionExecutionDirectory(session) && !normalizeProjectPath(fallbackDirectory ?? "")) {
+    return null;
+  }
 
   return {
-    originMode: "chat",
-    nativeProjectDir: nativeDirectory,
-    assignedProjectDir: null,
-    assignedProjectMovedAt: null,
-    assignedProjectSourceDir: directoryChanged ? currentDirectory : null,
-    pendingDirectoryChangeNotice: directoryChanged,
-    hideSystemAppendBlocks: directoryChanged,
-    detachedFromProject: true,
-    detachedFromProjectAt: now,
+    sidebarSection: "chats",
+    displayProjectDir: null,
+    sidebarMovedAt: now,
   };
 }
 
@@ -107,9 +77,9 @@ export type ProjectTarget = {
 
 export function getSessionProjectTarget(
   session: Session | undefined | null,
-  meta?: SessionMeta,
+  _meta?: SessionMeta,
 ): ProjectTarget | null {
-  const directory = getEffectiveSessionDirectory(session, meta);
+  const directory = getSessionExecutionDirectory(session);
   if (!directory) return null;
   return {
     directory,

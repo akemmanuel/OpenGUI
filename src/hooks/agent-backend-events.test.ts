@@ -166,36 +166,8 @@ describe("handleHarnessEvent", () => {
     expect(actions).toEqual([{ type: "SESSION_DELETED", payload: "session-1" }]);
   });
 
-  test("ignores projected transcript.message in favor of canonical live-session updates", () => {
+  test("ignores server-projected transcript envelopes (handled in backend subscription)", () => {
     const actions: Array<Record<string, unknown>> = [];
-
-    handleHarnessEvent({
-      event: {
-        type: "transcript.message",
-        scope: { directory: "/repo", harnessId: "pi", sessionId: "pi:session-1" },
-        revision: 2,
-        entry: {
-          info: { id: "m1", sessionID: "pi:session-1", role: "assistant", time: { created: 1 } },
-          parts: [
-            { id: "p1", type: "text", text: "hi", sessionID: "pi:session-1", messageID: "m1" },
-          ],
-        },
-      } as unknown as HarnessEvent,
-      expectedProjectKeys: new Set(["local\u0000/repo"]),
-      tracking: createTrackingState(),
-      cleanupSessionRefs: () => undefined,
-      renameSession: async () => undefined,
-      dispatch: (action) => {
-        actions.push(action as Record<string, unknown>);
-      },
-    });
-
-    expect(actions).toEqual([]);
-  });
-
-  test("delegates projected transcript.snapshot to ingestProjectedTranscriptEvent", () => {
-    const actions: Array<Record<string, unknown>> = [];
-    let ingested = false;
 
     handleHarnessEvent({
       event: {
@@ -212,31 +184,23 @@ describe("handleHarnessEvent", () => {
       tracking: createTrackingState(),
       cleanupSessionRefs: () => undefined,
       renameSession: async () => undefined,
-      ingestProjectedTranscriptEvent: () => {
-        ingested = true;
-        return true;
-      },
       dispatch: (action) => {
         actions.push(action as Record<string, unknown>);
       },
     });
 
-    expect(ingested).toBe(true);
-    expect(actions).toHaveLength(0);
+    expect(actions).toEqual([]);
   });
 
-  test("drops projected transcript events outside expected project scope", () => {
+  test("ignores canonical LiveSessionEvent envelopes (handled in backend subscription)", () => {
     const actions: Array<Record<string, unknown>> = [];
 
     handleHarnessEvent({
       event: {
-        type: "transcript.message",
-        scope: { directory: "/other", harnessId: "pi", sessionId: "pi:session-1" },
-        revision: 2,
-        entry: {
-          info: { id: "m1", sessionID: "pi:session-1", role: "assistant", time: { created: 1 } },
-          parts: [],
-        },
+        type: "run.started",
+        id: "live-1",
+        scope: { directory: "/repo", harnessId: "pi", sessionId: "pi:s1" },
+        runId: "run-1",
       } as unknown as HarnessEvent,
       expectedProjectKeys: new Set(["local\u0000/repo"]),
       tracking: createTrackingState(),
@@ -250,8 +214,11 @@ describe("handleHarnessEvent", () => {
     expect(actions).toEqual([]);
   });
 
-  test("ignores session.status busy/idle in favor of canonical live run events", () => {
+  test("dispatches raw idle session.status as an idempotent fallback when no live transition was emitted", () => {
     const actions: Array<Record<string, unknown>> = [];
+    const dispatch = (action: Record<string, unknown>) => {
+      actions.push(action);
+    };
 
     handleHarnessEvent({
       event: {
@@ -263,12 +230,60 @@ describe("handleHarnessEvent", () => {
       tracking: createTrackingState(),
       cleanupSessionRefs: () => undefined,
       renameSession: async () => undefined,
+      dispatch: dispatch as never,
+    });
+    handleHarnessEvent({
+      event: {
+        type: "session.status",
+        sessionID: "session-1",
+        status: { type: "idle" },
+      },
+      expectedProjectKeys: new Set(),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
+      dispatch: dispatch as never,
+    });
+
+    expect(actions).toEqual([
+      {
+        type: "SESSION_STATUS",
+        payload: {
+          sessionID: "session-1",
+          status: { type: "idle" },
+        },
+      },
+    ]);
+  });
+
+  test("normalizes raw Pi session.status fallback ids before clearing stale busy state", () => {
+    const actions: Array<Record<string, unknown>> = [];
+
+    handleHarnessEvent({
+      event: {
+        type: "session.status",
+        harnessId: "pi",
+        sessionID: "raw-session",
+        status: { type: "idle" },
+      } as unknown as HarnessEvent,
+      expectedProjectKeys: new Set(),
+      tracking: createTrackingState(),
+      cleanupSessionRefs: () => undefined,
+      renameSession: async () => undefined,
       dispatch: (action) => {
         actions.push(action as Record<string, unknown>);
       },
     });
 
-    expect(actions).toEqual([]);
+    expect(actions).toEqual([
+      {
+        type: "SESSION_STATUS",
+        payload: {
+          sessionID: "pi:raw-session",
+          status: { type: "idle" },
+        },
+      },
+    ]);
   });
 
   test("still dispatches session.status retry for harness retry signals", () => {

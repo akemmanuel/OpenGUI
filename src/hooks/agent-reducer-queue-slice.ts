@@ -9,17 +9,6 @@ export interface QueuePresentationSlice {
 
 export type QueuePresentationAction =
   | { type: "SET_SESSION_QUEUE"; payload: { sessionID: string; prompts: QueuedPrompt[] } }
-  | { type: "QUEUE_ADD"; payload: { sessionID: string; prompt: QueuedPrompt } }
-  | { type: "QUEUE_SHIFT"; payload: { sessionID: string } }
-  | { type: "QUEUE_REMOVE"; payload: { sessionID: string; promptID: string } }
-  | {
-      type: "QUEUE_REORDER";
-      payload: { sessionID: string; fromIndex: number; toIndex: number };
-    }
-  | {
-      type: "QUEUE_UPDATE";
-      payload: { sessionID: string; promptID: string; text: string };
-    }
   | { type: "QUEUE_CLEAR"; payload: { sessionID: string } }
   | {
       type: "SET_AFTER_PART_PENDING";
@@ -80,99 +69,6 @@ export function reduceQueuePresentation(
       };
     }
 
-    case "QUEUE_ADD": {
-      const { sessionID, prompt } = action.payload;
-      const existing = slice.queuedPrompts[sessionID] ?? [];
-      return {
-        ...slice,
-        queuedPrompts: {
-          ...slice.queuedPrompts,
-          [sessionID]: [...existing, prompt],
-        },
-      };
-    }
-
-    case "QUEUE_SHIFT": {
-      const { sessionID } = action.payload;
-      const existing = slice.queuedPrompts[sessionID] ?? [];
-      if (existing.length <= 1) {
-        const { [sessionID]: _, ...rest } = slice.queuedPrompts;
-        return { ...slice, queuedPrompts: rest };
-      }
-      return {
-        ...slice,
-        queuedPrompts: {
-          ...slice.queuedPrompts,
-          [sessionID]: existing.slice(1),
-        },
-      };
-    }
-
-    case "QUEUE_REMOVE": {
-      const { sessionID, promptID } = action.payload;
-      const existing = slice.queuedPrompts[sessionID] ?? [];
-      if (existing.length === 0) return slice;
-      const next = existing.filter((item) => item.id !== promptID);
-      if (next.length === existing.length) return slice;
-      if (next.length === 0) {
-        const { [sessionID]: _, ...rest } = slice.queuedPrompts;
-        return { ...slice, queuedPrompts: rest };
-      }
-      return {
-        ...slice,
-        queuedPrompts: {
-          ...slice.queuedPrompts,
-          [sessionID]: next,
-        },
-      };
-    }
-
-    case "QUEUE_REORDER": {
-      const { sessionID, fromIndex, toIndex } = action.payload;
-      const existing = slice.queuedPrompts[sessionID] ?? [];
-      if (existing.length <= 1) return slice;
-      if (fromIndex < 0 || fromIndex >= existing.length) return slice;
-
-      const clampedTo = Math.max(0, Math.min(toIndex, existing.length - 1));
-      if (clampedTo === fromIndex) return slice;
-
-      const next = [...existing];
-      const [moved] = next.splice(fromIndex, 1);
-      if (!moved) return slice;
-      next.splice(clampedTo, 0, moved);
-
-      return {
-        ...slice,
-        queuedPrompts: {
-          ...slice.queuedPrompts,
-          [sessionID]: next,
-        },
-      };
-    }
-
-    case "QUEUE_UPDATE": {
-      const { sessionID, promptID, text } = action.payload;
-      const existing = slice.queuedPrompts[sessionID] ?? [];
-      if (existing.length === 0) return slice;
-
-      let changed = false;
-      const next = existing.map((item) => {
-        if (item.id !== promptID) return item;
-        if (item.text === text) return item;
-        changed = true;
-        return { ...item, text };
-      });
-
-      if (!changed) return slice;
-      return {
-        ...slice,
-        queuedPrompts: {
-          ...slice.queuedPrompts,
-          [sessionID]: next,
-        },
-      };
-    }
-
     case "QUEUE_CLEAR": {
       const { sessionID } = action.payload;
       const { [sessionID]: _, ...rest } = slice.queuedPrompts;
@@ -207,11 +103,6 @@ export function isQueuePresentationAction(action: {
 }): action is QueuePresentationAction {
   switch (action.type) {
     case "SET_SESSION_QUEUE":
-    case "QUEUE_ADD":
-    case "QUEUE_SHIFT":
-    case "QUEUE_REMOVE":
-    case "QUEUE_REORDER":
-    case "QUEUE_UPDATE":
     case "QUEUE_CLEAR":
     case "SET_AFTER_PART_PENDING":
     case "CLEAR_AFTER_PART_TRIGGERED":

@@ -17,12 +17,15 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import {
-  fail,
-  makeHarnessProjectKey,
-  normalizeHarnessDirectory,
-  nowHarnessConnection,
-  ok,
+  makeHarnessProjectKey as makeProjectKey,
+  makeHarnessSessionIdCodec,
+  normalizeHarnessDirectory as normalizeDir,
+  nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
+import {
+  makeHarnessBridgeEventEmitter,
+  registerHarnessRpcHandlers,
+} from "./harness-adapter-host.ts";
 import {
   pollUntilEffect,
   runEffect,
@@ -41,30 +44,10 @@ const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
 const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
 // Bump when daemon import/runtime behavior changes. Existing healthy daemon gets reused
 // across app restarts; failed lazy ESM imports inside pi-ai stay poisoned in-process.
-const PI_DAEMON_VERSION = "2026-06-15-dev-source-daemon-v1";
+const PI_DAEMON_VERSION = "2026-06-30-pi-tool-live-state-v1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function normalizeDir(directory) {
-  return normalizeHarnessDirectory(directory);
-}
-
-function makeProjectKey(workspaceId, directory) {
-  return makeHarnessProjectKey(workspaceId, directory);
-}
-
-function toFrontendSessionId(id) {
-  const value = String(id || "");
-  return value.startsWith("pi:") ? value : `pi:${value}`;
-}
-
-function toRawSessionId(id) {
-  const value = String(id || "");
-  return value.startsWith("pi:") ? value.slice(3) : value;
-}
-
-function nowConnection(status = {}) {
-  return nowHarnessConnection(status);
-}
+const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("pi:");
 
 function coerceTimestamp(timestamp) {
   if (typeof timestamp === "number" && Number.isFinite(timestamp)) return timestamp;
@@ -764,7 +747,7 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
 
 export class PiBridgeManager {
   constructor(getAllWindows) {
-    this.getAllWindows = getAllWindows;
+    this.emitBridgeEvent = makeHarnessBridgeEventEmitter("pi", getAllWindows);
     this.agentDir = getAgentDir();
     this.projects = new Map();
     this.projectInitPromises = new Map();
@@ -775,10 +758,7 @@ export class PiBridgeManager {
   }
 
   sendNativeEvent(event) {
-    for (const window of this.getAllWindows()) {
-      if (window?.isDestroyed?.()) continue;
-      window.webContents.send("pi:bridge-event", event);
-    }
+    this.emitBridgeEvent(event);
   }
 
   sendConnectionStatus(project, status) {
@@ -799,10 +779,21 @@ export class PiBridgeManager {
     });
   }
 
+  ensureProjectRuntimeState(project) {
+    if (project && !project.abortedSessionIds) {
+      project.abortedSessionIds = new Set();
+    }
+    return project;
+  }
+
   getProject(target = {}) {
     const directory = normalizeDir(target.directory);
     if (!directory) return null;
-    return this.projects.get(makeProjectKey(target.workspaceId, directory)) || null;
+    return (
+      this.ensureProjectRuntimeState(
+        this.projects.get(makeProjectKey(target.workspaceId, directory)),
+      ) || null
+    );
   }
 
   getOrThrowProject(target = {}) {
@@ -814,6 +805,7 @@ export class PiBridgeManager {
   }
 
   getLiveSessionContext(project, sessionId) {
+    this.ensureProjectRuntimeState(project);
     return project.liveSessionContexts.get(sessionId) || null;
   }
 
@@ -825,8 +817,9 @@ export class PiBridgeManager {
     project.liveSessionContexts.delete(sessionId);
     project.sessionContextInitPromises.delete(sessionId);
     project.busySessionIds.delete(sessionId);
+    project.abortedSessionIds?.delete(sessionId);
     if (!keepCache) {
-      project.syntheticStateBySessionId.delete(sessionId);
+      project.liveStateBySessionId.delete(sessionId);
       project.sessionCaches.delete(sessionId);
       this.sessionIndex.delete(sessionId);
     }
@@ -854,13 +847,20 @@ export class PiBridgeManager {
     project.runtime = firstContext?.runtime || null;
   }
 
-  setSessionActivity(project, sessionId, nextType, { emitEvent = true } = {}) {
+  setSessionActivity(
+    project,
+    sessionId,
+    nextType,
+    { emitEvent = true, preserveAbort = false } = {},
+  ) {
     const wasBusy = project.busySessionIds.has(sessionId);
     const isBusy = nextType === "busy";
     if (isBusy) {
+      project.abortedSessionIds?.delete(sessionId);
       project.busySessionIds.add(sessionId);
     } else {
       project.busySessionIds.delete(sessionId);
+      if (!preserveAbort) project.abortedSessionIds?.delete(sessionId);
     }
     if (!emitEvent || wasBusy === isBusy) return nextType;
     this.sendBackendEvent(project, {
@@ -871,7 +871,18 @@ export class PiBridgeManager {
     return nextType;
   }
 
+  markSessionAbortedIdle(project, sessionId) {
+    project.abortedSessionIds?.add(sessionId);
+    return this.setSessionActivity(project, sessionId, "idle", { preserveAbort: true });
+  }
+
   syncLiveSessionStatus(project, session, options = {}) {
+    if (project.abortedSessionIds?.has(session.sessionId)) {
+      return this.setSessionActivity(project, session.sessionId, "idle", {
+        ...options,
+        preserveAbort: true,
+      });
+    }
     return this.setSessionActivity(
       project,
       session.sessionId,
@@ -880,7 +891,7 @@ export class PiBridgeManager {
     );
   }
 
-  makeSyntheticState() {
+  makeLiveState() {
     return {
       nextSeq: 0,
       currentUserMessageId: null,
@@ -888,7 +899,6 @@ export class PiBridgeManager {
       assistantStartedAt: null,
       reasoningTimesByContentIndex: new Map(),
       syntheticToReal: new Map(),
-      pendingAssistantResolution: null,
       pendingAssistantResolutions: [],
     };
   }
@@ -910,8 +920,8 @@ export class PiBridgeManager {
       sessionId,
       buildTranscriptFromSessionManager(session.sessionManager, project.directory),
     );
-    if (!project.syntheticStateBySessionId.has(sessionId)) {
-      project.syntheticStateBySessionId.set(sessionId, this.makeSyntheticState());
+    if (!project.liveStateBySessionId.has(sessionId)) {
+      project.liveStateBySessionId.set(sessionId, this.makeLiveState());
     }
     if (session.sessionFile) {
       this.sessionIndex.set(sessionId, {
@@ -962,7 +972,7 @@ export class PiBridgeManager {
     }
     const workspaceId = target.workspaceId;
     const key = makeProjectKey(workspaceId, directory);
-    const existingProject = this.projects.get(key);
+    const existingProject = this.ensureProjectRuntimeState(this.projects.get(key));
     if (existingProject?.runtime || existingProject?.liveSessionContexts?.size > 0) {
       this.syncProjectRuntime(existingProject);
       this.sendConnectionStatus(existingProject, nowConnection({ state: "connected" }));
@@ -977,8 +987,9 @@ export class PiBridgeManager {
       directory,
       workspaceId,
       busySessionIds: new Set(),
+      abortedSessionIds: new Set(),
       sessionCaches: new Map(),
-      syntheticStateBySessionId: new Map(),
+      liveStateBySessionId: new Map(),
       liveSessionContexts: new Map(),
       sessionContextInitPromises: new Map(),
       runtime: null,
@@ -1058,8 +1069,8 @@ export class PiBridgeManager {
     project.currentSessionFile = session.sessionFile;
     const cache = buildTranscriptFromSessionManager(session.sessionManager, project.directory);
     project.sessionCaches.set(session.sessionId, cache);
-    if (!project.syntheticStateBySessionId.has(session.sessionId)) {
-      project.syntheticStateBySessionId.set(session.sessionId, this.makeSyntheticState());
+    if (!project.liveStateBySessionId.has(session.sessionId)) {
+      project.liveStateBySessionId.set(session.sessionId, this.makeLiveState());
     }
     if (session.sessionFile) {
       this.sessionIndex.set(session.sessionId, {
@@ -1080,11 +1091,11 @@ export class PiBridgeManager {
     });
   }
 
-  getSyntheticState(project, sessionId) {
-    if (!project.syntheticStateBySessionId.has(sessionId)) {
-      project.syntheticStateBySessionId.set(sessionId, this.makeSyntheticState());
+  getLiveState(project, sessionId) {
+    if (!project.liveStateBySessionId.has(sessionId)) {
+      project.liveStateBySessionId.set(sessionId, this.makeLiveState());
     }
-    return project.syntheticStateBySessionId.get(sessionId);
+    return project.liveStateBySessionId.get(sessionId);
   }
 
   getSessionCache(project, sessionId) {
@@ -1184,7 +1195,7 @@ export class PiBridgeManager {
   }
 
   emitCanonicalTranscript(project, session) {
-    const state = this.getSyntheticState(project, session.sessionId);
+    const state = this.getLiveState(project, session.sessionId);
     const previous = project.sessionCaches.get(session.sessionId)?.messages ?? [];
     const previousById = new Map(previous.map((bundle) => [bundle.info.id, bundle]));
     const cache = buildTranscriptFromSessionManager(session.sessionManager, project.directory);
@@ -1203,6 +1214,7 @@ export class PiBridgeManager {
       const bundle = newCanonicalAssistants[i];
       replacementIds.add(bundle.info.id);
       replacedSyntheticIds.add(pending.syntheticId);
+      state.syntheticToReal.set(pending.syntheticId, bundle.info.id);
       this.sendBackendEvent(project, {
         type: "message.replaced",
         sessionID: bundle.info.sessionID,
@@ -1250,11 +1262,7 @@ export class PiBridgeManager {
   }
 
   flushPendingAssistantResolution(project, session) {
-    const state = project.syntheticStateBySessionId.get(session.sessionId);
-    const pending = state?.pendingAssistantResolution;
-    if (!pending) return;
-    state.pendingAssistantResolution = null;
-    this.emitRealMessage(project, session, "assistant", pending.timestamp, pending.contentText);
+    this.emitCanonicalTranscript(project, session);
   }
 
   findCurrentAssistantBundle(project, sessionId, state) {
@@ -1262,13 +1270,9 @@ export class PiBridgeManager {
     if (typeof state.currentAssistantMessageId === "string") {
       candidateIds.push(state.currentAssistantMessageId);
     }
-    const pendingSyntheticId = state.pendingAssistantResolution?.syntheticId;
-    if (typeof pendingSyntheticId === "string") {
-      candidateIds.push(pendingSyntheticId);
-    }
     for (let i = 0; i < candidateIds.length; i += 1) {
       const id = candidateIds[i];
-      const mapped = state.syntheticToReal.get(id);
+      const mapped = state.syntheticToReal?.get(id);
       if (mapped) candidateIds.push(mapped);
     }
     const seen = new Set();
@@ -1283,7 +1287,7 @@ export class PiBridgeManager {
 
   async handleSessionEvent(project, session, event) {
     const sessionId = session.sessionId;
-    const state = this.getSyntheticState(project, sessionId);
+    const state = this.getLiveState(project, sessionId);
     if (event.type === "turn_end") {
       this.flushPendingAssistantResolution(project, session);
       this.emitCanonicalTranscript(project, session);
@@ -1565,15 +1569,16 @@ export class PiBridgeManager {
     if (!directory) throw new Error("Directory required for Pi backend");
     const workspaceId = target.workspaceId;
     const key = makeProjectKey(workspaceId, directory);
-    const existing = this.projects.get(key);
+    const existing = this.ensureProjectRuntimeState(this.projects.get(key));
     if (existing) return existing;
     return {
       key,
       directory,
       workspaceId,
       busySessionIds: new Set(),
+      abortedSessionIds: new Set(),
       sessionCaches: new Map(),
-      syntheticStateBySessionId: new Map(),
+      liveStateBySessionId: new Map(),
       liveSessionContexts: new Map(),
       sessionContextInitPromises: new Map(),
       runtime: null,
@@ -1704,8 +1709,8 @@ export class PiBridgeManager {
   }
 
   resolveRealMessageId(project, sessionId, messageId) {
-    const state = this.getSyntheticState(project, sessionId);
-    return state.syntheticToReal.get(messageId) || messageId;
+    const state = this.getLiveState(project, sessionId);
+    return state.syntheticToReal?.get(messageId) || messageId;
   }
 
   async addProject(config) {
@@ -1734,7 +1739,8 @@ export class PiBridgeManager {
     );
     project.liveSessionContexts.clear();
     project.sessionCaches.clear();
-    project.syntheticStateBySessionId.clear();
+    project.liveStateBySessionId.clear();
+    project.abortedSessionIds?.clear();
     project.sessionContextInitPromises.clear();
     project.runtime = null;
     project.sessionUnsubscribe = null;
@@ -1941,7 +1947,7 @@ export class PiBridgeManager {
     await unlink(info.path);
     this.sessionIndex.delete(rawSessionId);
     project.sessionCaches.delete(rawSessionId);
-    project.syntheticStateBySessionId.delete(rawSessionId);
+    project.liveStateBySessionId.delete(rawSessionId);
     this.sendBackendEvent(project, {
       type: "session.deleted",
       directory: project.directory,
@@ -2030,15 +2036,18 @@ export class PiBridgeManager {
       for (const session of sessions) {
         const rawSessionId = toRawSessionId(session.id);
         const liveContext = this.getLiveSessionContext(project, rawSessionId);
-        if (liveContext) {
+        const abortRequested = project.abortedSessionIds?.has(rawSessionId);
+        if (liveContext && !abortRequested) {
           this.syncLiveSessionStatus(project, liveContext.runtime.session, { emitEvent: false });
         }
         statuses[session.id] = sessionStatus(
-          liveContext
-            ? getSessionActivityType(liveContext.runtime.session)
-            : project.busySessionIds.has(rawSessionId)
-              ? "busy"
-              : "idle",
+          abortRequested
+            ? "idle"
+            : liveContext
+              ? getSessionActivityType(liveContext.runtime.session)
+              : project.busySessionIds.has(rawSessionId)
+                ? "busy"
+                : "idle",
         );
       }
       return statuses;
@@ -2052,15 +2061,18 @@ export class PiBridgeManager {
       for (const session of sessions) {
         const rawSessionId = toRawSessionId(session.id);
         const liveContext = this.getLiveSessionContext(project, rawSessionId);
-        if (liveContext) {
+        const abortRequested = project.abortedSessionIds?.has(rawSessionId);
+        if (liveContext && !abortRequested) {
           this.syncLiveSessionStatus(project, liveContext.runtime.session, { emitEvent: false });
         }
         statuses[session.id] = sessionStatus(
-          liveContext
-            ? getSessionActivityType(liveContext.runtime.session)
-            : project.busySessionIds.has(rawSessionId)
-              ? "busy"
-              : "idle",
+          abortRequested
+            ? "idle"
+            : liveContext
+              ? getSessionActivityType(liveContext.runtime.session)
+              : project.busySessionIds.has(rawSessionId)
+                ? "busy"
+                : "idle",
         );
       }
     }
@@ -2390,9 +2402,44 @@ export class PiBridgeManager {
     const project = await this.resolveProjectForSession(rawSessionId, { directory, workspaceId });
     const liveContext = this.getLiveSessionContext(project, rawSessionId);
     if (!liveContext) {
-      throw new Error("Pi session not active");
+      if (project.busySessionIds.has(rawSessionId)) {
+        this.setSessionActivity(project, rawSessionId, "idle");
+      }
+      return true;
     }
-    await liveContext.runtime.session.abort();
+    this.markSessionAbortedIdle(project, rawSessionId);
+    try {
+      void Promise.resolve(liveContext.runtime.session.abort()).catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (/not active|not running|already idle|session is idle/i.test(errorMessage)) {
+          this.markSessionAbortedIdle(project, rawSessionId);
+          return;
+        }
+        this.sendBackendEvent(project, {
+          type: "session.error",
+          error: errorMessage,
+          sessionID: rawSessionId,
+        });
+        if (project.busySessionIds.has(rawSessionId)) {
+          this.setSessionActivity(project, rawSessionId, "idle");
+        }
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (/not active|not running|already idle|session is idle/i.test(errorMessage)) {
+        this.markSessionAbortedIdle(project, rawSessionId);
+        return true;
+      }
+      this.sendBackendEvent(project, {
+        type: "session.error",
+        error: errorMessage,
+        sessionID: rawSessionId,
+      });
+      if (project.busySessionIds.has(rawSessionId)) {
+        this.setSessionActivity(project, rawSessionId, "idle");
+      }
+    }
+    return true;
   }
 
   async summarizeSession(sessionId, model, directory, workspaceId) {
@@ -2480,7 +2527,7 @@ async function fetchDaemonJson(baseUrl, token, path, options = {}) {
 
 class PiDaemonClient {
   constructor(getAllWindows, options = {}) {
-    this.getAllWindows = getAllWindows;
+    this.emitBridgeEvent = makeHarnessBridgeEventEmitter("pi", getAllWindows);
     this.userData = options.userData || process.cwd();
     this.infoPath = daemonInfoPath(this.userData);
     this.info = null;
@@ -2815,263 +2862,92 @@ class PiDaemonClient {
   }
 
   forwardEvent(event) {
-    for (const window of this.getAllWindows()) {
-      if (window?.isDestroyed?.()) continue;
-      window.webContents.send("pi:bridge-event", event);
-    }
+    this.emitBridgeEvent(event);
   }
 }
 
 export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
   const manager = new PiDaemonClient(getAllWindows, options);
 
-  ipcMain.handle("pi:project:add", async (_event, config) => {
-    try {
+  registerHarnessRpcHandlers("pi", ipcMain, {
+    "project:add": async (config) => {
       await manager.addProject(config);
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:project:remove", async (_event, directory, workspaceId) => {
-    try {
+      return true;
+    },
+    "project:remove": async (directory, workspaceId) => {
       await manager.removeProject({ directory, workspaceId });
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:disconnect", async () => {
-    try {
+      return true;
+    },
+    disconnect: async () => {
       await manager.disconnect();
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:session:list", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.listSessions({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:session:create", async (_event, title, directory, workspaceId) => {
-    try {
-      return ok(await manager.createSession({ title, directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:session:delete", async (_event, sessionId, directory, workspaceId) => {
-    try {
-      return ok(await manager.deleteSession(sessionId, { directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:session:update", async (_event, sessionId, title, directory, workspaceId) => {
-    try {
-      return ok(await manager.updateSession(sessionId, title, { directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:session:statuses", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getSessionStatuses({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "pi:session:fork",
-    async (_event, sessionId, messageID, directory, workspaceId) => {
-      try {
-        return ok(await manager.forkSession(sessionId, messageID, { directory, workspaceId }));
-      } catch (error) {
-        return fail(error);
-      }
+      return true;
     },
-  );
-
-  ipcMain.handle("pi:providers", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getProviders({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:provider:list", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.listAllProviders({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:provider:auth-methods", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getProviderAuthMethods({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "pi:provider:connect",
-    async (_event, directory, workspaceId, providerID, auth) => {
-      try {
-        return ok(await manager.connectProvider({ directory, workspaceId }, providerID, auth));
-      } catch (error) {
-        return fail(error);
-      }
+    "session:list": (directory, workspaceId) => manager.listSessions({ directory, workspaceId }),
+    "session:create": (title, directory, workspaceId) =>
+      manager.createSession({ title, directory, workspaceId }),
+    "session:delete": (sessionId, directory, workspaceId) =>
+      manager.deleteSession(sessionId, { directory, workspaceId }),
+    "session:update": (sessionId, title, directory, workspaceId) =>
+      manager.updateSession(sessionId, title, { directory, workspaceId }),
+    "session:statuses": (directory, workspaceId) =>
+      manager.getSessionStatuses({ directory, workspaceId }),
+    "session:fork": (sessionId, messageID, directory, workspaceId) =>
+      manager.forkSession(sessionId, messageID, { directory, workspaceId }),
+    providers: (directory, workspaceId) => manager.getProviders({ directory, workspaceId }),
+    "provider:list": (directory, workspaceId) =>
+      manager.listAllProviders({ directory, workspaceId }),
+    "provider:auth-methods": (directory, workspaceId) =>
+      manager.getProviderAuthMethods({ directory, workspaceId }),
+    "provider:connect": (directory, workspaceId, providerID, auth) =>
+      manager.connectProvider({ directory, workspaceId }, providerID, auth),
+    "provider:disconnect": (directory, workspaceId, providerID) =>
+      manager.disconnectProvider({ directory, workspaceId }, providerID),
+    "provider:oauth:authorize": (directory, workspaceId, providerID, method) =>
+      manager.oauthAuthorize({ directory, workspaceId }, providerID, method),
+    "provider:oauth:callback": (directory, workspaceId, providerID, method, code) =>
+      manager.oauthCallback({ directory, workspaceId }, providerID, method, code),
+    "instance:dispose": (directory, workspaceId) =>
+      manager.disposeProviderInstance({ directory, workspaceId }),
+    agents: () => manager.getAgents(),
+    commands: (directory, workspaceId) => manager.getCommands({ directory, workspaceId }),
+    messages: (sessionId, options, directory, workspaceId) =>
+      manager.getMessages(sessionId, options, { directory, workspaceId }),
+    "session:start": (input) => manager.startSession(input),
+    prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
+      await manager.prompt(sessionId, text, images, model, agent, variant, directory, workspaceId);
+      return true;
     },
-  );
-
-  ipcMain.handle("pi:provider:disconnect", async (_event, directory, workspaceId, providerID) => {
-    try {
-      return ok(await manager.disconnectProvider({ directory, workspaceId }, providerID));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "pi:provider:oauth:authorize",
-    async (_event, directory, workspaceId, providerID, method) => {
-      try {
-        return ok(await manager.oauthAuthorize({ directory, workspaceId }, providerID, method));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "pi:provider:oauth:callback",
-    async (_event, directory, workspaceId, providerID, method, code) => {
-      try {
-        return ok(
-          await manager.oauthCallback({ directory, workspaceId }, providerID, method, code),
-        );
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("pi:instance:dispose", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.disposeProviderInstance({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:agents", async () => {
-    try {
-      return ok(await manager.getAgents());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:commands", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getCommands({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:messages", async (_event, sessionId, options, directory, workspaceId) => {
-    try {
-      return ok(await manager.getMessages(sessionId, options, { directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("pi:session:start", async (_event, input) => {
-    try {
-      return ok(await manager.startSession(input));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "pi:prompt",
-    async (_event, sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.prompt(
-          sessionId,
-          text,
-          images,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("pi:abort", async (_event, sessionId, directory, workspaceId) => {
-    try {
+    abort: async (sessionId, directory, workspaceId) => {
       await manager.abort(sessionId, directory, workspaceId);
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
+      return true;
+    },
+    "command:send": async (
+      sessionId,
+      command,
+      args,
+      model,
+      agent,
+      variant,
+      directory,
+      workspaceId,
+    ) => {
+      await manager.sendCommand(
+        sessionId,
+        command,
+        args,
+        model,
+        agent,
+        variant,
+        directory,
+        workspaceId,
+      );
+      return true;
+    },
+    "session:summarize": async (sessionId, model, directory, workspaceId) => {
+      await manager.summarizeSession(sessionId, model, directory, workspaceId);
+      return true;
+    },
   });
-
-  ipcMain.handle(
-    "pi:command:send",
-    async (_event, sessionId, command, args, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.sendCommand(
-          sessionId,
-          command,
-          args,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "pi:session:summarize",
-    async (_event, sessionId, model, directory, workspaceId) => {
-      try {
-        await manager.summarizeSession(sessionId, model, directory, workspaceId);
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
 
   return {
     restart: () => manager.restart(),

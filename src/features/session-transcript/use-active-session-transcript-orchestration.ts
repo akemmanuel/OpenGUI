@@ -83,11 +83,14 @@ export function useActiveSessionTranscriptOrchestration(input: {
         type: "page.failed",
         scope,
         error: errorText,
+        phase,
       });
-      dispatch({
-        type: "SESSION_ERROR",
-        payload: { sessionID: scope.sessionId, error: errorText },
-      });
+      if (phase !== "older") {
+        dispatch({
+          type: "SESSION_ERROR",
+          payload: { sessionID: scope.sessionId, error: errorText },
+        });
+      }
     }
   };
 
@@ -206,16 +209,19 @@ export function useActiveSessionTranscriptOrchestration(input: {
       if (!scopesEqual(event.scope, activeScope)) return false;
 
       switch (event.type) {
-        case "transcript.snapshot":
+        case "transcript.snapshot": {
+          const running = store.getSnapshot().running;
+          if (running) return true;
           store.dispatch({
             type: "page.loaded",
             scope: activeScope,
             messages: event.page.messages,
             hasMore: event.page.nextCursor !== null,
             nextCursor: event.page.nextCursor,
-            phase: "initial",
+            phase: "final",
           });
           return true;
+        }
         case "transcript.message.removed":
           store.dispatch({
             type: "message.removed",

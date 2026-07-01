@@ -55,6 +55,8 @@ export type AdapterObservation =
       kind: "transcript.replaced";
       scope: LiveSessionScope;
       reason: "harness-replaced-message" | "reconnect" | "final-read";
+      oldMessageId?: string;
+      newMessageId?: string;
       source?: AdapterObservationSource;
     }
   | { kind: "error"; scope: LiveSessionScope; message: string; source?: AdapterObservationSource };

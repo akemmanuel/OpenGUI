@@ -2,14 +2,10 @@ import type { PermissionRequest, QuestionRequest } from "@/protocol/harness-type
 
 import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
 import type { HarnessEvent } from "@/agents/backend";
-import { makeProjectKey, parseProjectKey } from "@/hooks/agent-session-utils";
+import { makeProjectKey } from "@/hooks/agent-session-utils";
 import type { Session } from "@/hooks/agent-state-types";
 import type { ConnectionStatus } from "@/types/electron";
-import type { ProjectedTranscriptEvent } from "@opengui/runtime/client";
-import { normalizeProjectPath } from "@/lib/utils";
-import { dispatchLiveSessionActivity } from "@/features/session-transcript/live-session-activity";
-import { asCanonicalLiveSessionEvent } from "@/hooks/live-session-event-types";
-
+import { isExpectedProjectEvent } from "@/hooks/projected-transcript-events";
 type BackendEventDispatch = (
   action:
     | { type: "SET_PROJECT_CONNECTION"; payload: { projectKey: string; status: ConnectionStatus } }
@@ -55,6 +51,14 @@ function enforceTrackedSessionTitle(
   return { ...session, title: forcedTitle };
 }
 
+function canonicalSessionIdForHarnessEvent(event: HarnessEvent, sessionID: string): string {
+  if (getHarnessIdFromSessionId(sessionID)) return sessionID;
+  const harnessId = (event as { harnessId?: unknown }).harnessId;
+  return typeof harnessId === "string" && harnessId.trim()
+    ? `${harnessId}:${sessionID}`
+    : sessionID;
+}
+
 function migrateReplacedSessionTracking({
   oldId,
   newId,
@@ -88,39 +92,6 @@ function migrateReplacedSessionTracking({
   };
 }
 
-function isProjectedTranscriptEvent(
-  event: HarnessEvent,
-): event is HarnessEvent & ProjectedTranscriptEvent {
-  return (
-    event.type === "transcript.snapshot" ||
-    event.type === "transcript.message" ||
-    event.type === "transcript.message.removed"
-  );
-}
-
-function isExpectedProjectEvent({
-  directory,
-  workspaceId,
-  expectedProjectKeys,
-}: {
-  directory: string;
-  workspaceId?: string;
-  expectedProjectKeys: Set<string>;
-}): boolean {
-  if (workspaceId && expectedProjectKeys.has(makeProjectKey(workspaceId, directory))) return true;
-  if (workspaceId) return false;
-
-  // Canonical backend envelopes do not always know the Frontend workspace id.
-  // In that case, accept the event only if some expected project has the same
-  // canonical directory; never let directory-less transcript events bypass the
-  // project/worktree scope gate.
-  const normalizedDirectory = normalizeProjectPath(directory);
-  return [...expectedProjectKeys].some(
-    (projectKey) =>
-      normalizeProjectPath(parseProjectKey(projectKey).directory) === normalizedDirectory,
-  );
-}
-
 export function handleHarnessEvent({
   event,
   expectedProjectKeys,
@@ -128,7 +99,6 @@ export function handleHarnessEvent({
   cleanupSessionRefs,
   renameSession,
   dispatch,
-  ingestProjectedTranscriptEvent,
   warn = console.warn,
 }: {
   event: HarnessEvent;
@@ -141,19 +111,8 @@ export function handleHarnessEvent({
     harnessId?: HarnessId;
   }) => Promise<unknown>;
   dispatch: BackendEventDispatch;
-  ingestProjectedTranscriptEvent?: (event: ProjectedTranscriptEvent) => boolean;
   warn?: (message: string, details?: unknown) => void;
 }) {
-  const liveEvent = asCanonicalLiveSessionEvent(event as Record<string, unknown>);
-  if (liveEvent) {
-    dispatchLiveSessionActivity({
-      event: liveEvent,
-      expectedProjectKeys,
-      dispatch,
-    });
-    return;
-  }
-
   if ("directory" in event) {
     if (
       !isExpectedProjectEvent({
@@ -172,19 +131,6 @@ export function handleHarnessEvent({
       });
       return;
     }
-  }
-
-  if (isProjectedTranscriptEvent(event)) {
-    if (
-      !isExpectedProjectEvent({
-        directory: event.scope.directory,
-        expectedProjectKeys,
-      })
-    ) {
-      return;
-    }
-    ingestProjectedTranscriptEvent?.(event);
-    return;
   }
 
   switch (event.type) {
@@ -239,12 +185,17 @@ export function handleHarnessEvent({
       dispatch({ type: "SESSION_DELETED", payload: event.sessionId });
       return;
     case "session.status":
-      // Run lifecycle is driven by canonical run.started / run.finished when scoped live events arrive.
-      if (event.status?.type === "retry") {
+      // Run lifecycle normally arrives as canonical run.started / run.finished live events.
+      // The Backend only republishes raw session.status when the live normalizer had no
+      // transition to emit (for example after a reconnect, duplicate status, or stale
+      // Frontend busy state). Treat it as an idempotent fallback so Stop can clear a
+      // Session that is already idle in the Runtime.
+      if (event.status?.type && event.status.type !== "busy" && event.status.type !== "running") {
+        const sessionID = canonicalSessionIdForHarnessEvent(event, event.sessionID);
         dispatch({
           type: "SESSION_STATUS",
           payload: {
-            sessionID: event.sessionID,
+            sessionID,
             status: event.status,
           },
         });
@@ -271,7 +222,12 @@ export function handleHarnessEvent({
     case "session.error":
       dispatch({
         type: "SESSION_ERROR",
-        payload: { sessionID: event.sessionID, error: event.error },
+        payload: {
+          sessionID: event.sessionID
+            ? canonicalSessionIdForHarnessEvent(event, event.sessionID)
+            : undefined,
+          error: event.error,
+        },
       });
       return;
     default:

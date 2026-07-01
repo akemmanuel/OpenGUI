@@ -58,10 +58,7 @@ export function planAddProjectFlow(input: AddProjectFlowInput): AddProjectFlowPl
     input.state.workspaces.find((candidate) => candidate.id === connection.workspaceId) ??
     input.workspace;
 
-  const connectionKind: ConnectionStatus["kind"] =
-    input.options?.transient === true && !workspace.projects.includes(connection.directory)
-      ? "chat-infra"
-      : "project";
+  const connectionKind: ConnectionStatus["kind"] = "project";
 
   const currentHydration = input.hydrationByProjectKey[projectKey];
   const requestedHarnessIds = input.options?.harnessIds?.length

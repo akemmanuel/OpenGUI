@@ -18,7 +18,8 @@
     "loading": "Lade..."
   },
   "messageList": {
-    "loadOlder": "Ältere Nachrichten laden"
+    "loadOlder": "Ältere Nachrichten laden",
+    "loadOlderFailed": "Ältere Nachrichten konnten nicht geladen werden. Versuche es erneut."
   },
   "messageError": {
     "showDetails": "Details anzeigen",

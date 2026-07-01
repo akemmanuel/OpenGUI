@@ -27,12 +27,6 @@ export type ProjectedTranscriptEvent =
       page: ProjectedMessagePage;
     }
   | {
-      type: "transcript.message";
-      scope: SessionTranscriptScope;
-      revision: number;
-      entry: TranscriptMessageEntry;
-    }
-  | {
       type: "transcript.message.removed";
       scope: SessionTranscriptScope;
       revision: number;
@@ -64,22 +58,6 @@ function normalizeHarnessMessagePage(raw: unknown): MessagePageResult {
   };
 }
 
-function messageIdForEvent(event: HarnessEvent): string | null {
-  switch (event.type) {
-    case "message.updated":
-      return event.message.id;
-    case "message.replaced":
-      return event.message.id;
-    case "message.part.updated":
-      return event.part.messageID;
-    case "message.part.delta":
-    case "message.part.removed":
-      return event.messageID;
-    default:
-      return null;
-  }
-}
-
 function isTranscriptMutation(event: HarnessEvent): boolean {
   switch (event.type) {
     case "message.updated":
@@ -93,22 +71,6 @@ function isTranscriptMutation(event: HarnessEvent): boolean {
     default:
       return false;
   }
-}
-
-function findMessage(
-  messages: readonly TranscriptMessageEntry[],
-  messageID: string,
-): TranscriptMessageEntry | null {
-  return messages.find((entry) => entry.info.id === messageID) ?? null;
-}
-
-function messageIds(messages: readonly TranscriptMessageEntry[]): string[] {
-  return messages.map((entry) => entry.info.id);
-}
-
-function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((value, index) => value === b[index]);
 }
 
 export function createSessionTranscripts(): SessionTranscripts {
@@ -132,16 +94,12 @@ export function createSessionTranscripts(): SessionTranscripts {
       const key = scopeKey(scope);
       const projection = getProjection(scope);
       const cursor = pageCursors.get(key) ?? null;
-      const beforeIds = messageIds(projection.getMessages());
       const removedMessageID = event.type === "message.removed" ? event.messageID : null;
-      const affectedMessageID = messageIdForEvent(event);
 
       const projectedInputs = projection.ingestHarnessEvent(event);
       if (projectedInputs.length === 0) return [];
       const revision = projection.getRevision();
       const messages = projection.getMessages();
-      const afterIds = messageIds(messages);
-      const orderChanged = !sameStringArray(beforeIds, afterIds);
       const canEmitWholeSnapshot = hydratedScopes.has(key) && messages.length > 0;
 
       if (event.type === "session.status") {
@@ -161,20 +119,8 @@ export function createSessionTranscripts(): SessionTranscripts {
         ];
       }
 
-      const events: ProjectedTranscriptEvent[] = [];
-      if (orderChanged && canEmitWholeSnapshot) {
-        events.push({
-          type: "transcript.snapshot",
-          scope,
-          revision,
-          page: { messages, nextCursor: cursor, revision },
-        });
-      }
-      if (affectedMessageID) {
-        const entry = findMessage(messages, affectedMessageID);
-        if (entry) events.push({ type: "transcript.message", scope, revision, entry });
-      }
-      return events;
+      // Order-only changes are covered by LiveSessionEvent + run.finished final page reconcile.
+      return [];
     },
 
     isHydrated(scope) {

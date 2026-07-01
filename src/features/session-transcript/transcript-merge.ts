@@ -1,5 +1,5 @@
 import type { MessageEntry } from "@/hooks/agent-state-types";
-import { limitMessageWindow } from "@/features/session-transcript/message-utils";
+import type { Part } from "@/protocol/harness-types";
 
 function assistantTextLength(entry: MessageEntry): number {
   if (entry.info.role !== "assistant") return 0;
@@ -14,10 +14,66 @@ function mergeEntryPreferLongerLive(live: MessageEntry, page: MessageEntry): Mes
   if (live.info.role === "assistant" && page.info.role === "assistant") {
     if (assistantTextLength(page) > assistantTextLength(live)) return page;
   }
+  const pagePartsById = new Map(page.parts.map((p) => [p.id, p]));
   const livePartIds = new Set(live.parts.map((p) => p.id));
+  let changed = false;
+  const mergedParts = live.parts.map((livePart) => {
+    const pagePart = pagePartsById.get(livePart.id);
+    if (!pagePart) return livePart;
+    const merged = mergePartPreferRichPage(livePart, pagePart);
+    if (merged !== livePart) changed = true;
+    return merged;
+  });
   const pageOnlyParts = page.parts.filter((p) => !livePartIds.has(p.id));
-  if (pageOnlyParts.length === 0) return live;
-  return { ...live, parts: [...live.parts, ...pageOnlyParts] };
+  if (pageOnlyParts.length === 0 && !changed) return live;
+  return { ...live, parts: [...mergedParts, ...pageOnlyParts] };
+}
+
+function mergePartPreferRichPage(live: Part, page: Part): Part {
+  if (live.type !== "tool" || page.type !== "tool") return live;
+
+  const liveState = live.state ?? { status: "pending", input: {} };
+  const pageState = page.state ?? { status: "pending", input: {} };
+  const nextState = { ...liveState } as Record<string, unknown>;
+  let changed = false;
+
+  const copyIfPageHasValue = (key: "input" | "output" | "error" | "metadata" | "attachments") => {
+    if (!(key in pageState)) return;
+    const pageValue = (pageState as unknown as Record<string, unknown>)[key];
+    if (pageValue === undefined) return;
+    if (
+      JSON.stringify((liveState as unknown as Record<string, unknown>)[key]) ===
+      JSON.stringify(pageValue)
+    ) {
+      return;
+    }
+    nextState[key] = pageValue;
+    changed = true;
+  };
+
+  copyIfPageHasValue("input");
+  copyIfPageHasValue("output");
+  copyIfPageHasValue("error");
+  copyIfPageHasValue("metadata");
+  copyIfPageHasValue("attachments");
+
+  const pageStatus = pageState.status;
+  const liveStatus = liveState.status;
+  if (
+    typeof pageStatus === "string" &&
+    pageStatus !== liveStatus &&
+    (pageStatus === "completed" || pageStatus === "error" || liveStatus !== "running")
+  ) {
+    nextState.status = pageStatus;
+    changed = true;
+  }
+
+  if (!changed) return live;
+  return {
+    ...live,
+    tool: page.tool || live.tool,
+    state: nextState as unknown as typeof live.state,
+  };
 }
 
 function mergePageWithoutShorteningLive(
@@ -43,7 +99,7 @@ function mergePageWithoutShorteningLive(
     return ta - tb;
   });
 
-  return limitMessageWindow(merged);
+  return merged;
 }
 
 /**
@@ -62,11 +118,14 @@ export function mergeTranscriptPageWithLive(
   if (options.phase === "older") {
     const liveIds = new Set(liveMessages.map((m) => m.info.id));
     const olderOnly = pageMessages.filter((m) => !liveIds.has(m.info.id));
-    return limitMessageWindow([...olderOnly, ...liveMessages]);
+    return [...olderOnly, ...liveMessages];
   }
 
   if (!options.running) {
-    return limitMessageWindow(pageMessages);
+    if (liveMessages.length > 0) {
+      return mergePageWithoutShorteningLive(liveMessages, pageMessages);
+    }
+    return pageMessages;
   }
   return mergePageWithoutShorteningLive(liveMessages, pageMessages);
 }

@@ -81,7 +81,7 @@ describe("default-chat to project pipeline", () => {
         type: "SET_PROJECT_CONNECTION",
         payload: {
           projectKey,
-          status: createProjectConnectionStatus("connected", "http://localhost:4096", "chat-infra"),
+          status: createProjectConnectionStatus("connected", "http://localhost:4096", "project"),
         },
       },
       {

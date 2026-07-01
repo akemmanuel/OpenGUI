@@ -1,7 +1,6 @@
-import { useMemo } from "react";
 import { MessageListTrailing } from "@/components/message-list/MessageListTrailing";
 import type { useMessageListModel } from "@/components/message-list/useMessageListModel";
-import { buildTranscriptRows } from "@/features/session-transcript/transcript-row-model";
+import { useMessageListTranscriptRows } from "@/features/session-transcript/build-message-list-transcript-rows";
 import { TranscriptMessageRow } from "@/features/session-transcript/transcript-rows";
 import { TranscriptViewport } from "@/features/session-transcript/transcript-viewport";
 import { useActions } from "@/hooks/use-agent-state";
@@ -24,15 +23,16 @@ export function MessageListTranscript({ model }: { model: MessageListModel }) {
     activeSessionId,
     isBusy,
     transcriptRevision,
-    visibleMessages,
-    turnFooterByMessageId,
-    firstUserMessageIndex,
+    messages,
+    sessionMetaForActive,
+    turnRuns,
     revertMessageID,
     revertedCount,
     pendingPermission,
     pendingQuestion,
     messageHistoryHasMore,
     isLoadingOlderMessages,
+    olderMessagesError,
     expandedUserMessages,
     expandedToolCalls,
     toggleUserMessage,
@@ -41,25 +41,15 @@ export function MessageListTranscript({ model }: { model: MessageListModel }) {
     attachmentBaseUrl,
   } = model;
 
-  const rows = useMemo(
-    () =>
-      buildTranscriptRows({
-        visibleMessages,
-        turnFooterByMessageId,
-        firstUserMessageIndex,
-        capabilities,
-        forkFromMessage,
-        revertToMessage,
-      }),
-    [
-      capabilities,
-      firstUserMessageIndex,
-      forkFromMessage,
-      revertToMessage,
-      turnFooterByMessageId,
-      visibleMessages,
-    ],
-  );
+  const { rows, visibleMessages } = useMessageListTranscriptRows({
+    messages,
+    sessionMetaForActive,
+    revertMessageID,
+    turnRuns,
+    capabilities,
+    forkFromMessage,
+    revertToMessage,
+  });
 
   const contentKey = `${activeSessionId ?? ""}:${transcriptRevision}:${visibleMessages.length}:${isBusy ? 1 : 0}`;
 
@@ -83,6 +73,7 @@ export function MessageListTranscript({ model }: { model: MessageListModel }) {
       contentKey={contentKey}
       pinWhenNearBottom={isBusy}
       isLoadingOlder={isLoadingOlderMessages}
+      loadOlderError={olderMessagesError}
       onLoadOlder={loadOlderMessages}
       showLoadOlderRow={messageHistoryHasMore}
       trailingContent={trailingContent}

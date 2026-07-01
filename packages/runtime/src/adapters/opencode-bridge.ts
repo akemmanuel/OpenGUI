@@ -18,6 +18,8 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { pollUntilEffect, runEffect, sleepEffect } from "../../../../lib/effect-runtime.ts";
 import { getOpenCodeProviderAuthKinds } from "./opencode-config.ts";
 import { OpencodeProjectRegistry } from "./opencode-project-registry.ts";
+import { makeHarnessSessionIdCodec } from "./harness-adapter-kit.ts";
+import { makeHarnessBridgeEventSender } from "./harness-adapter-host.ts";
 import { resolveHarnessCli } from "../../../../server/harness-inventory.ts";
 import { normalizeProjectPath } from "../../../../src/lib/path.ts";
 
@@ -206,16 +208,7 @@ const BACKOFF_STEPS = [500, 1000, 2000, 5000]; // ms – fast first attempt
 const HEALTH_INTERVAL = 30_000; // ms
 const SSE_STALE_THRESHOLD = 45_000; // ms – restart SSE if no event for this long
 const OPENCODE_SESSION_PREFIX = "opencode:";
-
-function toFrontendSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(OPENCODE_SESSION_PREFIX) ? raw : `${OPENCODE_SESSION_PREFIX}${raw}`;
-}
-
-function toRawSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(OPENCODE_SESSION_PREFIX) ? raw.slice(OPENCODE_SESSION_PREFIX.length) : raw;
-}
+const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(OPENCODE_SESSION_PREFIX);
 
 function tagOpenCodeSession(session, dir, workspaceId) {
   if (!session) return session;
@@ -1317,11 +1310,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     };
   }
 
-  function sendEvent(sender, event) {
-    if (!sender.isDestroyed()) {
-      sender.send("opencode:bridge-event", event);
-    }
-  }
+  const sendEvent = makeHarnessBridgeEventSender("opencode");
 
   function makeProjectKey(windowState, workspaceId, directory) {
     return windowState.projectRegistry.createProjectKey(workspaceId, directory);
@@ -1628,6 +1617,29 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     });
   }
 
+  function successResult(data) {
+    return data === undefined ? { success: true } : { success: true, data };
+  }
+
+  function failureResult(error) {
+    return { success: false, error: error?.message ?? String(error) };
+  }
+
+  function isResultEnvelope(value) {
+    return value && typeof value === "object" && typeof value.success === "boolean";
+  }
+
+  function handleResultOp(channel, fn) {
+    ipcMain.handle(channel, async (event, ...args) => {
+      try {
+        const result = await fn(event, ...args);
+        return isResultEnvelope(result) ? result : successResult(result);
+      } catch (error) {
+        return failureResult(error);
+      }
+    });
+  }
+
   const WINDOWS_SHELL_COMMANDS = new Set(["npm", "pnpm", "yarn", "pip"]);
   const WORKTREE_SETUP_CHECKS = [
     {
@@ -1784,14 +1796,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   // --- Project management ---
 
-  ipcMain.handle("opencode:project:add", async (event, config) => {
+  handleResultOp("opencode:project:add", async (event, config) => {
     const windowState = getWindowState(event.sender);
     if (!config || typeof config !== "object") {
-      return { success: false, error: "Invalid config" };
+      return failureResult("Invalid config");
     }
     const directory = (config.directory ?? "").trim();
     if (!directory) {
-      return { success: false, error: "Directory is required" };
+      return failureResult("Directory is required");
     }
     const normalizedConfig = normalizeServerConfig({
       ...config,
@@ -1801,25 +1813,21 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           ? config.baseUrl
           : LOCAL_SERVER_URL,
     });
-    try {
-      const conn = await connectConnectionForDirectory(
-        windowState,
-        event.sender,
-        directory,
-        config.workspaceId,
-        normalizedConfig,
-        { replaceExisting: true },
-      );
-      return { success: true, status: conn.getStatus() };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
+    const conn = await connectConnectionForDirectory(
+      windowState,
+      event.sender,
+      directory,
+      config.workspaceId,
+      normalizedConfig,
+      { replaceExisting: true },
+    );
+    return { success: true, status: conn.getStatus() };
   });
 
-  ipcMain.handle("opencode:project:remove", async (event, directory, workspaceId) => {
+  handleResultOp("opencode:project:remove", async (event, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
     if (typeof directory !== "string" || !directory.trim()) {
-      return { success: false, error: "Directory is required" };
+      return failureResult("Directory is required");
     }
     const projectKey = makeProjectKey(windowState, workspaceId, directory);
     const pending = windowState.pendingConnections.get(projectKey);
@@ -1831,10 +1839,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (windowState.projectRegistry.size === 0) {
       windowState.serverConfig = null;
     }
-    return { success: true };
   });
 
-  ipcMain.handle("opencode:disconnect", async (event) => {
+  handleResultOp("opencode:disconnect", async (event) => {
     const windowState = getWindowState(event.sender);
     await Promise.all(
       [...windowState.pendingConnections.values()].map((pending) => pending.catch(() => {})),
@@ -1846,7 +1853,6 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
     windowState.projectRegistry.clear();
     windowState.serverConfig = null;
-    return { success: true };
   });
 
   // --- Session operations ---
@@ -1864,111 +1870,84 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     });
   }
 
-  ipcMain.handle("opencode:session:list", async (event, directory, workspaceId) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      if (directory) {
-        const conn = await ensureConnectionForDirectory(
-          windowState,
-          event.sender,
-          directory,
-          workspaceId,
-        );
-        if (!conn) return { success: false, error: "No connection available" };
-        const sessions = await listAndCacheSessions(windowState, conn, directory, workspaceId);
-        return {
-          success: true,
-          data: sessions,
-        };
-      }
-      // List sessions from ALL projects
-      const allSessions = [];
-      for (const [projectKey, conn] of windowState.projectRegistry.entries()) {
-        try {
-          const currentWorkspaceId =
-            windowState.projectRegistry.getWorkspaceIdFromProjectKey(projectKey) || undefined;
-          const dir = conn.getDirectory() ?? "";
-          const sessions = await listAndCacheSessions(windowState, conn, dir, currentWorkspaceId);
-          allSessions.push(...sessions);
-        } catch {
-          // Skip failed connections
-        }
-      }
-      return { success: true, data: allSessions };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle("opencode:session:create", async (event, title, directory, workspaceId) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const conn = directory
-        ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
-        : getAnyConnection(windowState, workspaceId);
-      if (!conn) return { success: false, error: "No connection available" };
-      const session = await conn.createSession(title);
-      const dir = directory || conn.getDirectory();
-      const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
-      rememberOpenCodeSessionDirectory(
+  handleResultOp("opencode:session:list", async (event, directory, workspaceId) => {
+    const windowState = getWindowState(event.sender);
+    if (directory) {
+      const conn = await ensureConnectionForDirectory(
         windowState,
-        taggedSession._rawId ?? taggedSession.id,
-        taggedSession._projectDir ?? dir,
+        event.sender,
+        directory,
+        workspaceId,
       );
-      return { success: true, data: taggedSession };
-    } catch (err) {
-      return { success: false, error: err.message };
+      return conn
+        ? await listAndCacheSessions(windowState, conn, directory, workspaceId)
+        : failureResult("No connection available");
     }
+    const allSessions = [];
+    for (const [projectKey, conn] of windowState.projectRegistry.entries()) {
+      try {
+        const currentWorkspaceId =
+          windowState.projectRegistry.getWorkspaceIdFromProjectKey(projectKey) || undefined;
+        const dir = conn.getDirectory() ?? "";
+        allSessions.push(
+          ...(await listAndCacheSessions(windowState, conn, dir, currentWorkspaceId)),
+        );
+      } catch {
+        // Skip failed connections
+      }
+    }
+    return allSessions;
   });
 
-  ipcMain.handle("opencode:session:delete", async (event, id, directory, workspaceId) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const rawId = toRawSessionId(id);
-      const entry = directory
-        ? await (async () => {
-            const conn = await ensureConnectionForDirectory(
-              windowState,
-              event.sender,
-              directory,
-              workspaceId,
-            );
-            const projectKey = makeProjectKey(windowState, workspaceId, directory);
-            return conn ? { projectKey, connection: conn } : null;
-          })()
-        : getConnectionEntryForSession(windowState, rawId, directory, workspaceId);
-      const conn = entry?.connection ?? null;
-      if (!conn) {
-        return { success: false, error: "Session connection not found" };
-      }
-      const result = await conn.deleteSession(rawId);
-      return { success: true, data: result };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  handleResultOp("opencode:session:create", async (event, title, directory, workspaceId) => {
+    const windowState = getWindowState(event.sender);
+    const conn = directory
+      ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
+      : getAnyConnection(windowState, workspaceId);
+    if (!conn) return failureResult("No connection available");
+    const session = await conn.createSession(title);
+    const dir = directory || conn.getDirectory();
+    const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
+    rememberOpenCodeSessionDirectory(
+      windowState,
+      taggedSession._rawId ?? taggedSession.id,
+      taggedSession._projectDir ?? dir,
+    );
+    return taggedSession;
+  });
+
+  handleResultOp("opencode:session:delete", async (event, id, directory, workspaceId) => {
+    const windowState = getWindowState(event.sender);
+    const rawId = toRawSessionId(id);
+    const entry = directory
+      ? await (async () => {
+          const conn = await ensureConnectionForDirectory(
+            windowState,
+            event.sender,
+            directory,
+            workspaceId,
+          );
+          return conn ? { connection: conn } : null;
+        })()
+      : getConnectionEntryForSession(windowState, rawId, directory, workspaceId);
+    const conn = entry?.connection ?? null;
+    return conn ? await conn.deleteSession(rawId) : failureResult("Session connection not found");
   });
 
   handleSessionOp("opencode:session:update", async (conn, id, title) =>
     tagOpenCodeSession(await conn.updateSession(id, title), conn.getDirectory()),
   );
 
-  ipcMain.handle("opencode:session:statuses", async (event, directory, workspaceId) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const conn = directory
-        ? getConnectionForDirectory(windowState, directory, workspaceId)
-        : getAnyConnection(windowState, workspaceId);
-      if (!conn) return { success: false, error: "No connection available" };
-      const statuses = await conn.getSessionStatuses();
-      return {
-        success: true,
-        data: Object.fromEntries(
-          Object.entries(statuses ?? {}).map(([id, status]) => [toFrontendSessionId(id), status]),
-        ),
-      };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  handleResultOp("opencode:session:statuses", async (event, directory, workspaceId) => {
+    const windowState = getWindowState(event.sender);
+    const conn = directory
+      ? getConnectionForDirectory(windowState, directory, workspaceId)
+      : getAnyConnection(windowState, workspaceId);
+    if (!conn) return failureResult("No connection available");
+    const statuses = await conn.getSessionStatuses();
+    return Object.fromEntries(
+      Object.entries(statuses ?? {}).map(([id, status]) => [toFrontendSessionId(id), status]),
+    );
   });
 
   handleSessionOp("opencode:session:revert", async (conn, id, messageID, partID) =>
@@ -1978,17 +1957,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     tagOpenCodeSession(await conn.unrevertSession(id), conn.getDirectory()),
   );
 
-  ipcMain.handle("opencode:session:fork", async (event, id, messageID, directory, workspaceId) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const entry = getConnectionEntryForSession(windowState, id, directory, workspaceId);
-      if (!entry) return { success: false, error: "Session connection not found" };
-      const result = await entry.connection.forkSession(toRawSessionId(id), messageID);
-      const taggedResult = tagOpenCodeSession(result, entry.connection.getDirectory());
-      return { success: true, data: taggedResult };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  handleResultOp("opencode:session:fork", async (event, id, messageID, directory, workspaceId) => {
+    const windowState = getWindowState(event.sender);
+    const entry = getConnectionEntryForSession(windowState, id, directory, workspaceId);
+    if (!entry) return failureResult("Session connection not found");
+    return tagOpenCodeSession(
+      await entry.connection.forkSession(toRawSessionId(id), messageID),
+      entry.connection.getDirectory(),
+    );
   });
 
   // --- Providers / models (directory-aware) ---
@@ -2019,25 +1995,14 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   // --- Message operations (routed to session's connection) ---
 
-  ipcMain.handle("opencode:messages", async (event, sessionId, options, directory, workspaceId) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const rawSessionId = toRawSessionId(sessionId);
-      let conn = getConnectionForSession(windowState, rawSessionId, directory, workspaceId);
-      if (!conn && directory) {
-        conn = getConnectionForDirectory(windowState, directory, workspaceId);
-      }
-      if (!conn) {
-        return { success: false, error: "Session connection not found" };
-      }
-      const data = await conn.getMessages(rawSessionId, options);
-      return {
-        success: true,
-        data: { ...data, messages: (data.messages ?? []).map(tagOpenCodeMessageEntry) },
-      };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  handleResultOp("opencode:messages", async (event, sessionId, options, directory, workspaceId) => {
+    const windowState = getWindowState(event.sender);
+    const rawSessionId = toRawSessionId(sessionId);
+    let conn = getConnectionForSession(windowState, rawSessionId, directory, workspaceId);
+    if (!conn && directory) conn = getConnectionForDirectory(windowState, directory, workspaceId);
+    if (!conn) return failureResult("Session connection not found");
+    const data = await conn.getMessages(rawSessionId, options);
+    return { ...data, messages: (data.messages ?? []).map(tagOpenCodeMessageEntry) };
   });
   handleSessionOp("opencode:prompt", (conn, sessionId, text, images, model, agent, variant) =>
     conn.promptAsync(sessionId, text, images, model, agent, variant),
@@ -2070,35 +2035,31 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     conn.summarizeSession(sessionId, model),
   );
 
-  ipcMain.handle("opencode:session:start", async (event, input = {}) => {
-    try {
-      const windowState = getWindowState(event.sender);
-      const directory = input.directory;
-      const workspaceId = input.workspaceId;
-      const conn = directory
-        ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
-        : getAnyConnection(windowState, workspaceId);
-      if (!conn) return { success: false, error: "No connection available" };
-      const session = await conn.createSession(input.title);
-      const dir = directory || conn.getDirectory();
-      const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
-      rememberOpenCodeSessionDirectory(
-        windowState,
-        taggedSession._rawId ?? taggedSession.id,
-        taggedSession._projectDir ?? dir,
-      );
-      await conn.promptAsync(
-        session.id,
-        input.text ?? "",
-        input.images,
-        input.model,
-        input.agent,
-        input.variant,
-      );
-      return { success: true, data: taggedSession };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  handleResultOp("opencode:session:start", async (event, input = {}) => {
+    const windowState = getWindowState(event.sender);
+    const directory = input.directory;
+    const workspaceId = input.workspaceId;
+    const conn = directory
+      ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
+      : getAnyConnection(windowState, workspaceId);
+    if (!conn) return failureResult("No connection available");
+    const session = await conn.createSession(input.title);
+    const dir = directory || conn.getDirectory();
+    const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
+    rememberOpenCodeSessionDirectory(
+      windowState,
+      taggedSession._rawId ?? taggedSession.id,
+      taggedSession._projectDir ?? dir,
+    );
+    await conn.promptAsync(
+      session.id,
+      input.text ?? "",
+      input.images,
+      input.model,
+      input.agent,
+      input.variant,
+    );
+    return taggedSession;
   });
   handleQuestionOp("opencode:question:reject", (conn, requestID) => conn.rejectQuestion(requestID));
 
@@ -2113,18 +2074,11 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   handleDirectoryOp("opencode:config:get", (conn) => conn.getConfig());
 
-  ipcMain.handle("opencode:config:update", async (event, directory, workspaceId, config) => {
-    try {
-      if (!config || typeof config !== "object") {
-        return { success: false, error: "Invalid config" };
-      }
-      const windowState = getWindowState(event.sender);
-      const conn = getConnectionForDirectory(windowState, directory, workspaceId);
-      if (!conn) return { success: false, error: "No connection available" };
-      return { success: true, data: await conn.updateConfig(config) };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  handleResultOp("opencode:config:update", async (event, directory, workspaceId, config) => {
+    if (!config || typeof config !== "object") return failureResult("Invalid config");
+    const windowState = getWindowState(event.sender);
+    const conn = getConnectionForDirectory(windowState, directory, workspaceId);
+    return conn ? await conn.updateConfig(config) : failureResult("No connection available");
   });
 
   // --- Local server management ---
@@ -2133,14 +2087,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   ipcMain.handle("opencode:server:stop", stopLocalOpenCodeServer);
 
-  ipcMain.handle("opencode:server:status", async () => {
-    try {
-      const running = (await fetchLocalHealth()).healthy;
-      return { success: true, data: { running } };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
-  });
+  handleResultOp("opencode:server:status", async () => ({
+    running: (await fetchLocalHealth()).healthy,
+  }));
 
   // --- Git helpers ---
 
@@ -2153,82 +2102,54 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
   });
 
-  ipcMain.handle("git:branch:list", async (_event, directory) => {
-    try {
-      const raw = await runGit(directory, ["branch", "--format=%(refname:short)"]);
-      const branches = raw
-        .split(/\r?\n/)
-        .map((b) => b.trim())
-        .filter(Boolean);
-      return { success: true, data: branches };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
-  });
+  handleResultOp("git:branch:list", async (_event, directory) =>
+    (await runGit(directory, ["branch", "--format=%(refname:short)"]))
+      .split(/\r?\n/)
+      .map((branch) => branch.trim())
+      .filter(Boolean),
+  );
 
-  ipcMain.handle("git:current-branch", async (_event, directory) => {
-    try {
-      const branch = (await runGit(directory, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
-      return { success: true, data: branch };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
-  });
+  handleResultOp("git:current-branch", async (_event, directory) =>
+    (await runGit(directory, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(),
+  );
 
-  ipcMain.handle("git:worktree:list", async (_event, directory) => {
-    try {
-      const raw = await runGit(directory, ["worktree", "list", "--porcelain"]);
-      const worktrees = [];
-      let current = {};
-      for (const line of raw.split(/\r?\n/)) {
-        if (line.startsWith("worktree ")) {
-          if (current.path) worktrees.push(current);
-          current = { path: line.slice("worktree ".length) };
-        } else if (line.startsWith("HEAD ")) {
-          current.head = line.slice("HEAD ".length);
-        } else if (line.startsWith("branch ")) {
-          current.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
-        } else if (line === "bare") {
-          current.bare = true;
-        } else if (line === "detached") {
-          current.detached = true;
-        } else if (line === "") {
-          if (current.path) worktrees.push(current);
-          current = {};
-        }
+  handleResultOp("git:worktree:list", async (_event, directory) => {
+    const raw = await runGit(directory, ["worktree", "list", "--porcelain"]);
+    const worktrees = [];
+    let current = {};
+    for (const line of raw.split(/\r?\n/)) {
+      if (line.startsWith("worktree ")) {
+        if (current.path) worktrees.push(current);
+        current = { path: line.slice("worktree ".length) };
+      } else if (line.startsWith("HEAD ")) {
+        current.head = line.slice("HEAD ".length);
+      } else if (line.startsWith("branch ")) {
+        current.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
+      } else if (line === "bare") {
+        current.bare = true;
+      } else if (line === "detached") {
+        current.detached = true;
+      } else if (line === "") {
+        if (current.path) worktrees.push(current);
+        current = {};
       }
-      if (current.path) worktrees.push(current);
-      return { success: true, data: worktrees };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
     }
+    if (current.path) worktrees.push(current);
+    return worktrees;
   });
 
-  ipcMain.handle(
+  handleResultOp(
     "git:worktree:add",
     async (_event, directory, worktreePath, branch, isNewBranch) => {
-      try {
-        const args = ["worktree", "add"];
-        if (isNewBranch) {
-          args.push("-b", branch, worktreePath);
-        } else {
-          args.push(worktreePath, branch);
-        }
-        await runGit(directory, args);
-        return { success: true, data: { path: worktreePath } };
-      } catch (err) {
-        return { success: false, error: err.message ?? String(err) };
-      }
+      const args = ["worktree", "add"];
+      args.push(...(isNewBranch ? ["-b", branch, worktreePath] : [worktreePath, branch]));
+      await runGit(directory, args);
+      return { path: worktreePath };
     },
   );
 
-  ipcMain.handle("git:worktree:remove", async (_event, directory, worktreePath) => {
-    try {
-      await runGit(directory, ["worktree", "remove", worktreePath]);
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
+  handleResultOp("git:worktree:remove", async (_event, directory, worktreePath) => {
+    await runGit(directory, ["worktree", "remove", worktreePath]);
   });
 
   // -----------------------------------------------------------------------
@@ -2296,23 +2217,13 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
   });
 
-  ipcMain.handle("git:merge:abort", async (_event, directory) => {
-    try {
-      await runGit(directory, ["merge", "--abort"]);
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
+  handleResultOp("git:merge:abort", async (_event, directory) => {
+    await runGit(directory, ["merge", "--abort"]);
   });
 
-  ipcMain.handle("git:remote:url", async (_event, directory) => {
-    try {
-      const url = (await runGit(directory, ["remote", "get-url", "origin"])).trim();
-      return { success: true, data: url };
-    } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
-    }
-  });
+  handleResultOp("git:remote:url", async (_event, directory) =>
+    (await runGit(directory, ["remote", "get-url", "origin"])).trim(),
+  );
 
   return {
     async restart() {

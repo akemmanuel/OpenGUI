@@ -20,7 +20,12 @@ export type ActiveTranscriptInput =
       nextCursor: string | null;
       phase: ActiveTranscriptPagePhase;
     }
-  | { type: "page.failed"; scope: ActiveTranscriptScope; error: string }
+  | {
+      type: "page.failed";
+      scope: ActiveTranscriptScope;
+      error: string;
+      phase: ActiveTranscriptPagePhase;
+    }
   | { type: "live"; event: LiveSessionEvent }
   | { type: "message.removed"; scope: ActiveTranscriptScope; messageId: string }
   | { type: "reset" };
@@ -34,6 +39,7 @@ export type ActiveTranscriptSnapshot = {
   hasOlder: boolean;
   olderCursor: string | null;
   loadingOlder: boolean;
+  olderError: string | null;
   error: string | null;
   revision: number;
   running: boolean;

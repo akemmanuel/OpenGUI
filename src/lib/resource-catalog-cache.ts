@@ -43,6 +43,11 @@ export function getCachedResourceBundle(catalogKey: string): HarnessResourceBund
   return catalogCache.get(catalogKey) ?? null;
 }
 
+/** True while `ensureResourceCatalog` is in flight for this key (shared dedupe map). */
+export function isCatalogKeyPending(catalogKey: string): boolean {
+  return inFlight.has(catalogKey);
+}
+
 export function getCachedProviders(catalogKey: string) {
   return catalogCache.get(catalogKey)?.providersData.providers ?? null;
 }

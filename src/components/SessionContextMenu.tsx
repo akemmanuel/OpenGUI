@@ -100,7 +100,7 @@ interface SessionContextMenuProps {
   currentColor: SessionColor | undefined;
   currentTags: string[];
   availableProjects: string[];
-  assignedProjectDir: string | null;
+  displayProjectDir: string | null;
   currentProjectDir: string | null;
   onSetColor: (color: SessionColor) => void;
   onSetTags: (tags: string[]) => void;
@@ -117,7 +117,7 @@ export function SessionContextMenu({
   currentColor,
   currentTags,
   availableProjects,
-  assignedProjectDir,
+  displayProjectDir,
   currentProjectDir,
   onSetColor,
   onSetTags,
@@ -291,7 +291,7 @@ export function SessionContextMenu({
                         onClick={() => onMoveToProject(directory)}
                       >
                         <span>{getProjectName(directory)}</span>
-                        {assignedProjectDir === directory && <Check className="ml-auto size-3.5" />}
+                        {displayProjectDir === directory && <Check className="ml-auto size-3.5" />}
                       </ContextMenu.Item>
                     ))}
                   </ContextMenu.SubContent>

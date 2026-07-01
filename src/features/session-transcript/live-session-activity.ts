@@ -1,6 +1,5 @@
 import type { LiveSessionEvent } from "@opengui/runtime/client";
-import { normalizeProjectPath } from "@/lib/utils";
-import { parseProjectKey } from "@/hooks/agent-session-utils";
+import { isExpectedProjectedTranscriptScope } from "@/hooks/projected-transcript-events";
 
 export type LiveSessionActivityDispatch = (
   action:
@@ -14,17 +13,6 @@ export type LiveSessionActivityDispatch = (
       },
 ) => void;
 
-function isExpectedLiveScope(
-  scope: LiveSessionEvent["scope"],
-  expectedProjectKeys: Set<string>,
-): boolean {
-  const normalizedDirectory = normalizeProjectPath(scope.directory);
-  return [...expectedProjectKeys].some(
-    (projectKey) =>
-      normalizeProjectPath(parseProjectKey(projectKey).directory) === normalizedDirectory,
-  );
-}
-
 /** Busy/idle/error only — no transcript buffers (active transcript store owns message content). */
 export function dispatchLiveSessionActivity(input: {
   event: LiveSessionEvent;
@@ -32,7 +20,7 @@ export function dispatchLiveSessionActivity(input: {
   dispatch: LiveSessionActivityDispatch;
 }): boolean {
   const { event, expectedProjectKeys, dispatch } = input;
-  if (!isExpectedLiveScope(event.scope, expectedProjectKeys)) return false;
+  if (!isExpectedProjectedTranscriptScope(event.scope, expectedProjectKeys)) return false;
 
   const sessionID = event.scope.sessionId;
 

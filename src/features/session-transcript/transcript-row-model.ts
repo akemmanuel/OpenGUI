@@ -1,4 +1,3 @@
-import { messageBubbleSpacingClass } from "@/components/message-list/visible-transcript";
 import type { TurnFooter } from "@/components/message-list/types";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import type { TranscriptMessageEntry } from "@/protocol/session-transcript";
@@ -7,6 +6,16 @@ export type TranscriptMessageRowActions = {
   onFork?: () => void;
   onRevert?: () => void;
 };
+
+export function messageBubbleSpacingClass(
+  index: number,
+  entry: MessageEntry,
+  prevRole: string | null,
+): string {
+  if (index === 0) return "";
+  const isConsecutive = prevRole !== null && prevRole === entry.info.role;
+  return isConsecutive ? "mt-1" : "mt-4";
+}
 
 export type TranscriptRow = {
   kind: "message";

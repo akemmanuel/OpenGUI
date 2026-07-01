@@ -47,7 +47,14 @@ export function harnessEventToAdapterObservations(input: {
       const scope = scopeFor(event.sessionID);
       if (!scope) return [];
       return [
-        { kind: "transcript.replaced", scope, reason: "harness-replaced-message", source },
+        {
+          kind: "transcript.replaced",
+          scope,
+          reason: "harness-replaced-message",
+          oldMessageId: event.oldId,
+          newMessageId: event.message.id,
+          source,
+        },
         { kind: "message.snapshot", scope, message: event.message, source },
         ...event.parts.map((part) =>
           part.type === "tool"

@@ -117,8 +117,38 @@ const checks = [
     forbid: (out) => out.trim().length > 0,
   },
   {
+    name: "no local Queued prompt mutation actions",
+    cmd: `rg 'QUEUE_(ADD|SHIFT|REMOVE|REORDER|UPDATE)' src/hooks src/features --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
     name: "no VirtualMessageScroller in message list",
     cmd: `rg 'VirtualMessageScroller|useVirtualMessageScroller|@tanstack/react-virtual' src/components/message-list --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no harness-native part deltas in frontend hooks/features",
+    cmd: `rg 'message\\.part\\.(delta|updated)|message\\.replaced' src/hooks src/features --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "harnessEventToAgentStreamEvents only in runtime agent-stream",
+    cmd: `rg 'harnessEventToAgentStreamEvents' src packages --glob '!**/*.test.*' --glob '!packages/runtime/src/agent-stream.ts' --glob '!packages/runtime/src/index.ts' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "projected transcript ingest only in backend subscription",
+    cmd: `rg 'ingestProjectedTranscriptEvent' src/hooks/agent-backend-events.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no transcript.message in runtime session transcripts",
+    cmd: `rg "type: \\"transcript\\.message\\"" packages/runtime/src/session-transcripts.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no legacy chat/project placement metadata",
+    cmd: `rg 'originMode|nativeProjectDir|assignedProjectDir|detachedFromProject|pendingDirectoryChangeNotice|hideSystemAppendBlocks|getEffectiveSessionDirectory|chat-infra' src/ --glob '!**/*.test.*' 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
 ];

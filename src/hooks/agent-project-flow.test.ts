@@ -28,7 +28,7 @@ function localWorkspaceState(): InternalAgentState {
       "local\u0000/tmp/chat-root": createProjectConnectionStatus(
         "connected",
         "http://localhost:4096",
-        "chat-infra",
+        "project",
       ),
     },
     bootState: "ready",
@@ -81,7 +81,7 @@ describe("planAddProjectFlow", () => {
     expect(next.connections[projectKey]?.state).toBe("connected");
   });
 
-  test("does not add workspace project for hidden transient chat-infra", () => {
+  test("does not add workspace project for hidden transient targets", () => {
     const state = localWorkspaceState();
     const projectKey = "local\u0000/tmp/chat-root";
     const plan = planAddProjectFlow({

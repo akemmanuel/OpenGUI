@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
-import { buildTranscriptRows } from "@/features/session-transcript/transcript-row-model";
+import {
+  buildTranscriptRows,
+  messageBubbleSpacingClass,
+} from "@/features/session-transcript/transcript-row-model";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 
 function entry(id: string, role: "user" | "assistant"): MessageEntry {
@@ -17,6 +20,20 @@ function entry(id: string, role: "user" | "assistant"): MessageEntry {
     ],
   };
 }
+
+describe("messageBubbleSpacingClass", () => {
+  test("first row has no margin class", () => {
+    expect(messageBubbleSpacingClass(0, entry("u1", "user"), null)).toBe("");
+  });
+
+  test("same role consecutive uses tight spacing", () => {
+    expect(messageBubbleSpacingClass(1, entry("u2", "user"), "user")).toBe("mt-1");
+  });
+
+  test("role change uses loose spacing", () => {
+    expect(messageBubbleSpacingClass(1, entry("a1", "assistant"), "user")).toBe("mt-4");
+  });
+});
 
 describe("buildTranscriptRows", () => {
   test("omits fork on first user message", () => {

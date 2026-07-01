@@ -137,11 +137,14 @@ export function useAgentProjectBootstrap(input: {
       dispatch({ type: "SET_ERROR", payload: null });
       try {
         const worktreeParentMap = getWorktreeParents();
+        const state = getState();
         const { projectConfigs: allProjectConfigs, expectedProjectKeys } =
           buildBootstrapProjectConfigs({
-            workspaces: getState().workspaces,
+            workspaces: state.workspaces,
             detachedProject,
             worktreeParents: worktreeParentMap,
+            activeWorkspaceId: state.activeWorkspaceId,
+            defaultChatDirectory: state.defaultChatDirectory,
           });
         expectedDirectoriesRef.current = new Set([
           ...expectedDirectoriesRef.current,
@@ -165,11 +168,7 @@ export function useAgentProjectBootstrap(input: {
             type: "SET_PROJECT_CONNECTION",
             payload: {
               projectKey,
-              status: createProjectConnectionStatus(
-                "connected",
-                item.baseUrl,
-                item.source === "default-chat" ? "chat-infra" : "project",
-              ),
+              status: createProjectConnectionStatus("connected", item.baseUrl, "project"),
             },
           });
           updateProjectHydration(projectKey, (current) =>

@@ -52,8 +52,7 @@ export {
 
 export {
   filterStreamEventsForSession,
-  /** @deprecated Prefer `LiveSessionEvent` / `liveSessionEventToAgentStreamEvents`; harness-native mapping for legacy callers only. */
-  harnessEventToAgentStreamEvents,
+  liveSessionEventToAgentStreamEvents,
   streamEventMatchesSession,
   type AgentStreamEvent,
   type AgentStreamHandler,

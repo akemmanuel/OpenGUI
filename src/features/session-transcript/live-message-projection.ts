@@ -117,9 +117,14 @@ export class ActiveSessionLiveProjection {
         return null;
       case "session.error":
         return null;
-      case "transcript.rebased":
-        this.projections.delete(scopeKey(scope));
+      case "transcript.rebased": {
+        const replacement = event.replacement;
+        if (replacement?.oldMessageId && replacement?.newMessageId) {
+          const projection = this.projectionFor(scope);
+          projection.replaceMessageId(replacement.oldMessageId, replacement.newMessageId);
+        }
         return null;
+      }
       default:
         break;
     }

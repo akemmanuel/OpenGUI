@@ -15,14 +15,17 @@ import {
   listSessions,
   query,
   renameSession,
-} from "../../../../BetterSDK/src/index.ts";
+} from "../../../../BetterSDK/dist/index.js";
 import {
-  fail,
-  makeHarnessProjectKey,
-  normalizeHarnessDirectory,
-  nowHarnessConnection,
-  ok,
+  makeHarnessProjectKey as makeProjectKey,
+  makeHarnessSessionIdCodec,
+  normalizeHarnessDirectory as normalizeDir,
+  nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
+import {
+  makeHarnessBridgeEventEmitter,
+  registerHarnessRpcHandlers,
+} from "./harness-adapter-host.ts";
 import {
   buildProvidersFromSupportedModels,
   buildVariantQueryOptions,
@@ -40,18 +43,9 @@ import {
 const CLAUDE_EXECUTABLE_PATH = process.env.CLAUDE_CODE_EXECUTABLE?.trim() || "claude";
 
 const CLAUDE_CODE_SESSION_PREFIX = "claude-code:";
-
-function toFrontendSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(CLAUDE_CODE_SESSION_PREFIX) ? raw : `${CLAUDE_CODE_SESSION_PREFIX}${raw}`;
-}
-
-function toRawSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(CLAUDE_CODE_SESSION_PREFIX)
-    ? raw.slice(CLAUDE_CODE_SESSION_PREFIX.length)
-    : raw;
-}
+const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(
+  CLAUDE_CODE_SESSION_PREFIX,
+);
 
 function tagMessageEntrySession(entry) {
   const sessionID = toFrontendSessionId(entry?.info?.sessionID);
@@ -129,18 +123,6 @@ function makeClaudeQueryOptions({
 async function* holdOpenPrompt() {
   yield* [];
   await new Promise(() => {});
-}
-
-function normalizeDir(directory) {
-  return normalizeHarnessDirectory(directory);
-}
-
-function makeProjectKey(workspaceId, directory) {
-  return makeHarnessProjectKey(workspaceId, directory);
-}
-
-function nowConnection(status = {}) {
-  return nowHarnessConnection(status);
 }
 
 function makeSessionTitle(text, title) {
@@ -1817,214 +1799,51 @@ class ClaudeCodeBridgeManager {
 }
 
 export function setupClaudeCodeBridge(ipcMain, getWindows) {
-  const emit = (data) => {
-    for (const win of getWindows()) {
-      if (!win || win.isDestroyed?.()) continue;
-      try {
-        win.webContents.send("claude-code:bridge-event", data);
-      } catch {
-        // Window may have closed between enumeration and send.
-      }
-    }
-  };
+  const emit = makeHarnessBridgeEventEmitter("claude-code", getWindows);
   let manager = new ClaudeCodeBridgeManager(emit);
 
-  ipcMain.handle("claude-code:project:add", async (_event, config) => {
-    try {
+  registerHarnessRpcHandlers("claude-code", ipcMain, {
+    "project:add": (config) => {
       manager.attachProject(config ?? {});
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:project:remove", async (_event, directory, workspaceId) => {
-    try {
+      return true;
+    },
+    "project:remove": (directory, workspaceId) => {
       manager.removeProject(directory, workspaceId);
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:disconnect", async () => {
-    try {
+      return true;
+    },
+    disconnect: () => {
       manager.disconnect();
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:session:list", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.listSessions(directory, workspaceId));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:session:create", async (_event, title, directory, workspaceId) => {
-    try {
-      return ok(await manager.createSession({ title, directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "claude-code:session:delete",
-    async (_event, sessionId, directory, workspaceId) => {
-      try {
-        return ok(await manager.deleteSession(sessionId, directory, workspaceId));
-      } catch (error) {
-        return fail(error);
-      }
+      return true;
     },
-  );
-
-  ipcMain.handle(
-    "claude-code:session:update",
-    async (_event, sessionId, title, directory, workspaceId) => {
-      try {
-        return ok(await manager.renameSession(sessionId, title, directory, workspaceId));
-      } catch (error) {
-        return fail(error);
-      }
+    "session:list": (directory, workspaceId) => manager.listSessions(directory, workspaceId),
+    "session:create": (title, directory, workspaceId) =>
+      manager.createSession({ title, directory, workspaceId }),
+    "session:delete": (sessionId, directory, workspaceId) =>
+      manager.deleteSession(sessionId, directory, workspaceId),
+    "session:update": (sessionId, title, directory, workspaceId) =>
+      manager.renameSession(sessionId, title, directory, workspaceId),
+    "session:statuses": (directory, workspaceId) =>
+      manager.listSessionStatuses(directory, workspaceId),
+    "session:fork": (sessionId, messageID, directory, workspaceId) =>
+      manager.forkSession(sessionId, messageID, directory, workspaceId),
+    providers: (directory, workspaceId) => manager.getProviders(directory, workspaceId),
+    agents: () => manager.getAgents(),
+    commands: (directory, workspaceId) => manager.getCommands(directory, workspaceId),
+    messages: (sessionId, options, directory, workspaceId) =>
+      manager.getMessages(sessionId, options, directory, workspaceId),
+    "session:start": (input) => manager.startSession(input ?? {}),
+    prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
+      await manager.prompt(sessionId, text, images, model, agent, variant, directory, workspaceId);
+      return true;
     },
-  );
-
-  ipcMain.handle("claude-code:session:statuses", async (_event, directory, workspaceId) => {
-    try {
-      return ok(manager.listSessionStatuses(directory, workspaceId));
-    } catch (error) {
-      return fail(error);
-    }
+    abort: (sessionId) => manager.abort(sessionId),
+    permission: (sessionId, permissionId, response) =>
+      manager.respondPermission(sessionId, permissionId, response),
+    "command:send": (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
+      manager.sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId),
+    "session:summarize": (sessionId, model, directory, workspaceId) =>
+      manager.summarizeSession(sessionId, model, directory, workspaceId),
   });
-
-  ipcMain.handle(
-    "claude-code:session:fork",
-    async (_event, sessionId, messageID, directory, workspaceId) => {
-      try {
-        return ok(await manager.forkSession(sessionId, messageID, directory, workspaceId));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("claude-code:providers", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getProviders(directory, workspaceId));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:agents", async () => {
-    try {
-      return ok(await manager.getAgents());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:commands", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getCommands(directory, workspaceId));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "claude-code:messages",
-    async (_event, sessionId, options, directory, workspaceId) => {
-      try {
-        return ok(await manager.getMessages(sessionId, options, directory, workspaceId));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("claude-code:session:start", async (_event, input) => {
-    try {
-      return ok(await manager.startSession(input ?? {}));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "claude-code:prompt",
-    async (_event, sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.prompt(
-          sessionId,
-          text,
-          images,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("claude-code:abort", async (_event, sessionId) => {
-    try {
-      return ok(await manager.abort(sessionId));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("claude-code:permission", async (_event, sessionId, permissionId, response) => {
-    try {
-      return ok(await manager.respondPermission(sessionId, permissionId, response));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "claude-code:command:send",
-    async (_event, sessionId, command, args, model, agent, variant, directory, workspaceId) => {
-      try {
-        return ok(
-          await manager.sendCommand(
-            sessionId,
-            command,
-            args,
-            model,
-            agent,
-            variant,
-            directory,
-            workspaceId,
-          ),
-        );
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "claude-code:session:summarize",
-    async (_event, sessionId, model, directory, workspaceId) => {
-      try {
-        return ok(await manager.summarizeSession(sessionId, model, directory, workspaceId));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
 
   return {
     async restart() {

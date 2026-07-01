@@ -23,7 +23,8 @@
     "copy": "Copy"
   },
   "messageList": {
-    "loadOlder": "Load older messages"
+    "loadOlder": "Load older messages",
+    "loadOlderFailed": "Could not load older messages. Try again."
   },
   "settings": {
     "subtitle": "Manage app preferences and providers for active workspace.",

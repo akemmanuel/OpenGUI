@@ -135,7 +135,11 @@ export default defineConfig({
           target: "node20",
           sourcemap: true,
           minify: true,
-          external: ["electron"],
+          // Keep Pi packages external in the daemon. Pi's extension loader computes
+          // module aliases from its package location; when bundled, those aliases
+          // point at OpenGUI's dist folder instead of node_modules and global Pi
+          // extensions that import @earendil-works/* fail to load.
+          external: ["electron", ...bundledPackagePrefixes],
           banner: {
             js: nodeEsmCompatBanner,
           },

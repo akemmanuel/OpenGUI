@@ -18,7 +18,8 @@
     "loading": "Cargando..."
   },
   "messageList": {
-    "loadOlder": "Cargar mensajes anteriores"
+    "loadOlder": "Cargar mensajes anteriores",
+    "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo."
   },
   "messageError": {
     "showDetails": "Mostrar detalles",

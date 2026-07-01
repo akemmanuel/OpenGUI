@@ -79,6 +79,26 @@ export class LiveSessionProjection {
     }
   }
 
+  /** Pi-style harness replacement: keep streamed parts under the canonical message id. */
+  replaceMessageId(oldMessageId: string, newMessageId: string): void {
+    if (oldMessageId === newMessageId) return;
+    const existing = this.messages.get(oldMessageId);
+    if (!existing) return;
+    const replacement = this.messages.get(newMessageId);
+    if (replacement) {
+      replacement.parts = existing.parts.map((part) => ({ ...part }));
+      if (!replacement.role && existing.role) replacement.role = existing.role;
+      this.messages.delete(oldMessageId);
+      return;
+    }
+    this.messages.set(newMessageId, {
+      ...existing,
+      id: newMessageId,
+      parts: existing.parts.map((part) => ({ ...part })),
+    });
+    this.messages.delete(oldMessageId);
+  }
+
   getMessages(): LiveSessionProjectedMessage[] {
     return [...this.messages.values()].map((message) => ({
       ...message,

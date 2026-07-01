@@ -4,6 +4,7 @@ import {
   ensureResourceCatalog,
   getCachedResourceBundle,
   invalidateResourceCatalogCache,
+  isCatalogKeyPending,
   makeCatalogKey,
   resetResourceCatalogCacheForTests,
 } from "../resource-catalog-cache";
@@ -68,13 +69,16 @@ describe("ensureResourceCatalog", () => {
     );
     const target = { workspaceId: "local", directory: "/repo" };
 
+    const key = makeCatalogKey({ harnessId: "pi", workspaceId: "local", directory: "/repo" });
     const p1 = ensureResourceCatalog({ harnessId: "pi", target, loadResources });
     const p2 = ensureResourceCatalog({ harnessId: "pi", target, loadResources });
     expect(loadResources).toHaveBeenCalledTimes(1);
+    expect(isCatalogKeyPending(key)).toBe(true);
 
     resolve(bundle());
     const [r1, r2] = await Promise.all([p1, p2]);
     expect(r1).toBe(r2);
+    expect(isCatalogKeyPending(key)).toBe(false);
   });
 
   test("force refresh calls loadResources again", async () => {

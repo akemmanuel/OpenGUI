@@ -23,23 +23,6 @@ export function hasVisibleContent(entry: MessageEntry): boolean {
   return false;
 }
 
-const SYSTEM_APPEND_RE = /^\s*<SYSTEM-APPEND>[\s\S]*?<\/SYSTEM-APPEND>\s*/;
-
-function stripLeadingSystemAppend(entry: MessageEntry): MessageEntry {
-  if (entry.info.role !== "user") return entry;
-  let stripped = false;
-  const parts = entry.parts.map((part) => {
-    if (stripped || part.type !== "text" || typeof part.text !== "string") {
-      return part;
-    }
-    const nextText = part.text.replace(SYSTEM_APPEND_RE, "");
-    if (nextText === part.text) return part;
-    stripped = true;
-    return { ...part, text: nextText };
-  });
-  return stripped ? { ...entry, parts } : entry;
-}
-
 export function buildVisibleMessages(
   messages: MessageEntry[],
   options: {
@@ -48,10 +31,6 @@ export function buildVisibleMessages(
   },
 ): MessageEntry[] {
   let rendered = messages.filter(hasVisibleContent);
-
-  if (options.sessionMeta?.hideSystemAppendBlocks) {
-    rendered = rendered.map(stripLeadingSystemAppend);
-  }
 
   const revertMessageID = options.revertMessageID;
   if (!revertMessageID) return rendered;
@@ -76,14 +55,4 @@ export function countRevertedVisibleMessages(
     if (!hasVisibleContent(m)) return false;
     return !isBeforeRevertPoint(messages, m.info.id, revertMessageID, indexById);
   }).length;
-}
-
-export function messageBubbleSpacingClass(
-  index: number,
-  entry: MessageEntry,
-  prevRole: string | null,
-): string {
-  if (index === 0) return "";
-  const isConsecutive = prevRole !== null && prevRole === entry.info.role;
-  return isConsecutive ? "mt-1" : "mt-4";
 }

@@ -42,14 +42,14 @@ describe("mergeCanonicalEventForListener", () => {
   test("preserves envelope directory for scoped projected transcript events", () => {
     const merged = mergeCanonicalEventForListener({
       id: "evt_3",
-      type: "transcript.message",
+      type: "transcript.snapshot",
       directory: "/repo",
       sessionId: "opencode:raw-1",
       harnessId: "opencode",
       payload: {
         scope: { directory: "/repo", harnessId: "opencode", sessionId: "opencode:raw-1" },
         revision: 1,
-        entry: { info: { id: "m1" }, parts: [] },
+        page: { revision: 1, messages: [], nextCursor: null },
       },
     });
 

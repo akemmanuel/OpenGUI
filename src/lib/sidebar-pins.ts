@@ -8,7 +8,7 @@ import { normalizeProjectPath } from "@/lib/utils";
 
 interface SidebarPinMetaLike {
   pinnedAt?: string | null;
-  assignedProjectDir?: string | null;
+  displayProjectDir?: string | null;
 }
 
 interface SidebarPinSessionLike extends WorktreePlacementSessionLike {
@@ -95,11 +95,11 @@ export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
     for (const session of sessions) {
       const pinnedAt = getPinnedAt(sessionMeta[session.id]);
       if (!pinnedAt) continue;
-      const assignedProjectDir = normalizeProjectPath(
-        sessionMeta[session.id]?.assignedProjectDir ?? "",
+      const displayProjectDir = normalizeProjectPath(
+        sessionMeta[session.id]?.displayProjectDir ?? "",
       );
       const projectDirectory =
-        assignedProjectDir || getSidebarSessionProjectDirectory(session, worktreeParents);
+        displayProjectDir || getSidebarSessionProjectDirectory(session, worktreeParents);
       if (pinnedProjectDirectories.has(projectDirectory)) continue;
       pinnedEntries.push({
         kind: "session",

@@ -9,6 +9,7 @@ export function TranscriptViewport({
   contentKey,
   pinWhenNearBottom,
   isLoadingOlder,
+  loadOlderError,
   onLoadOlder,
   showLoadOlderRow,
   children,
@@ -18,6 +19,7 @@ export function TranscriptViewport({
   contentKey: string;
   pinWhenNearBottom: boolean;
   isLoadingOlder: boolean;
+  loadOlderError?: string | null;
   onLoadOlder: () => Promise<boolean>;
   showLoadOlderRow: boolean;
   children: ReactNode;
@@ -48,13 +50,18 @@ export function TranscriptViewport({
     >
       <div className="max-w-2xl mx-auto flex flex-col gap-0">
         {showLoadOlderRow && (
-          <div className="flex items-center justify-center py-2">
+          <div className="flex flex-col items-center justify-center gap-1 py-2">
             {isLoadingOlder ? (
               <Spinner className="size-4 text-muted-foreground" />
             ) : (
               <Button type="button" variant="ghost" size="sm" onClick={handleLoadOlder}>
                 {t("messageList.loadOlder")}
               </Button>
+            )}
+            {loadOlderError && !isLoadingOlder && (
+              <div className="max-w-md text-center text-xs text-destructive">
+                {t("messageList.loadOlderFailed")}
+              </div>
             )}
           </div>
         )}

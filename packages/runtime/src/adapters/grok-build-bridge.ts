@@ -3,12 +3,15 @@ import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { GrokAcpClient } from "../../../../lib/grok-acp-client.ts";
 import {
-  fail,
-  makeHarnessProjectKey,
-  normalizeHarnessDirectory,
-  nowHarnessConnection,
-  ok,
+  makeHarnessProjectKey as makeProjectKey,
+  makeHarnessSessionIdCodec,
+  normalizeHarnessDirectory as normalizeDir,
+  nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
+import {
+  makeHarnessBridgeEventEmitter,
+  registerObjectTargetHarnessRpcHandlers,
+} from "./harness-adapter-host.ts";
 import {
   buildGrokProvidersFromModelState,
   DEFAULT_MODEL_ID,
@@ -17,30 +20,8 @@ import {
 } from "./grok-build-models.ts";
 
 const GROK_BUILD_SESSION_PREFIX = "grok-build:";
-
-function normalizeDir(directory) {
-  return normalizeHarnessDirectory(directory);
-}
-
-function makeProjectKey(workspaceId, directory) {
-  return makeHarnessProjectKey(workspaceId, directory);
-}
-
-function nowConnection(status = {}) {
-  return nowHarnessConnection(status);
-}
-
-function toFrontendSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(GROK_BUILD_SESSION_PREFIX) ? raw : `${GROK_BUILD_SESSION_PREFIX}${raw}`;
-}
-
-function toRawSessionId(id) {
-  const raw = String(id || "");
-  return raw.startsWith(GROK_BUILD_SESSION_PREFIX)
-    ? raw.slice(GROK_BUILD_SESSION_PREFIX.length)
-    : raw;
-}
+const { toFrontendSessionId, toRawSessionId } =
+  makeHarnessSessionIdCodec(GROK_BUILD_SESSION_PREFIX);
 
 function firstLine(text) {
   return (
@@ -146,6 +127,7 @@ function getSessionPreview(messages) {
 class GrokBuildBridgeManager {
   constructor(getAllWindows) {
     this.getAllWindows = getAllWindows;
+    this.emitBridgeEvent = makeHarnessBridgeEventEmitter("grok-build", getAllWindows);
     this.projects = new Map();
     this.sessionIndex = new Map();
     this.liveSessions = new Map();
@@ -158,10 +140,7 @@ class GrokBuildBridgeManager {
   }
 
   emit(event) {
-    for (const window of this.getAllWindows()) {
-      if (!window || window.isDestroyed()) continue;
-      window.webContents.send("grok-build:bridge-event", event);
-    }
+    this.emitBridgeEvent(event);
   }
 
   emitConnection(project, status) {
@@ -834,180 +813,7 @@ class GrokBuildBridgeManager {
 export function setupGrokBuildBridge(ipcMain, getAllWindows) {
   let manager = new GrokBuildBridgeManager(getAllWindows);
 
-  ipcMain.handle("grok-build:project:add", async (_event, config) => {
-    try {
-      await manager.addProject(config);
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:project:remove", async (_event, directory, workspaceId) => {
-    try {
-      await manager.removeProject({ directory, workspaceId });
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:disconnect", async () => {
-    try {
-      manager.disconnect();
-      return ok(true);
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:session:list", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.listSessions({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:session:create", async (_event, title, directory, workspaceId) => {
-    try {
-      return ok(await manager.createSession({ title, directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:session:delete", async (_event, sessionId, directory, workspaceId) => {
-    try {
-      return ok(await manager.deleteSession(sessionId, { directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "grok-build:session:update",
-    async (_event, sessionId, title, directory, workspaceId) => {
-      try {
-        return ok(await manager.updateSession(sessionId, title, { directory, workspaceId }));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("grok-build:session:statuses", async (_event, directory, workspaceId) => {
-    try {
-      return ok(await manager.getSessionStatuses({ directory, workspaceId }));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:providers", async () => {
-    try {
-      return ok(await manager.getProviders());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:agents", async () => {
-    try {
-      return ok(await manager.getAgents());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle("grok-build:commands", async () => {
-    try {
-      return ok(await manager.getCommands());
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "grok-build:messages",
-    async (_event, sessionId, _options, directory, workspaceId) => {
-      try {
-        return ok(await manager.getMessages(sessionId, { directory, workspaceId }));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("grok-build:session:start", async (_event, input) => {
-    try {
-      return ok(await manager.startSession(input ?? {}));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "grok-build:prompt",
-    async (_event, sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.prompt(
-          sessionId,
-          text,
-          images,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle("grok-build:abort", async (_event, sessionId) => {
-    try {
-      return ok(await manager.abort(sessionId));
-    } catch (error) {
-      return fail(error);
-    }
-  });
-
-  ipcMain.handle(
-    "grok-build:command:send",
-    async (_event, sessionId, command, args, model, agent, variant, directory, workspaceId) => {
-      try {
-        await manager.sendCommand(
-          sessionId,
-          command,
-          args,
-          model,
-          agent,
-          variant,
-          directory,
-          workspaceId,
-        );
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "grok-build:session:summarize",
-    async (_event, sessionId, model, directory, workspaceId) => {
-      try {
-        await manager.summarizeSession(sessionId, model, directory, workspaceId);
-        return ok(true);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
+  registerObjectTargetHarnessRpcHandlers("grok-build", ipcMain, () => manager);
 
   return {
     async restart() {
