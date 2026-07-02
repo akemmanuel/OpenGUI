@@ -84,7 +84,7 @@ describe("SessionHandle", () => {
     expect(promptCalls).toEqual(["after-idle"]);
   });
 
-  test("waitUntilIdle does not duplicate onEvent or onStream output", async () => {
+  test("waitUntilIdle uses single harness subscription with onStream", async () => {
     let status: "idle" | "running" = "running";
     const subscribers = new Set<(event: HarnessEvent) => void>();
     const session = createSessionHandle({
@@ -114,6 +114,7 @@ describe("SessionHandle", () => {
       status: { type: "running" },
     });
     const waiting = session.waitUntilIdle({ timeoutMs: 1_000 });
+    expect(subscribers.size).toBe(1);
     status = "idle";
     emitHarness(subscribers, {
       type: "session.status",

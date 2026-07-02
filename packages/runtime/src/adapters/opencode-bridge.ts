@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ESM bridge module loaded by main.ts via dynamic import().
  * Hosts OpenCodeConnection instances (one per project) and wires IPC handlers.
@@ -28,6 +27,10 @@ import {
 import { makeHarnessBridgeEventSender } from "./harness-adapter-host.ts";
 import { resolveHarnessCli } from "../../../../server/harness-inventory.ts";
 import { normalizeProjectPath } from "../../../../src/lib/path.ts";
+import {
+  abortOpenCodeSseBeforeRestart,
+  shouldStopOpenCodeSseRead,
+} from "./opencode-sse-lifecycle.ts";
 
 // ---------------------------------------------------------------------------
 // Local server management
@@ -302,7 +305,24 @@ function stripMessagePayloadBloat(messages) {
 }
 
 export class OpenCodeConnection {
-  constructor(emit) {
+  _emit: (event: Record<string, unknown>) => void;
+  _lifecycle: number;
+  _streamGeneration: number;
+  _client: unknown;
+  _config: { baseUrl: string; username?: string; password?: string; directory?: string } | null;
+  _abortController: AbortController | null;
+  _reconnectTimer: ReturnType<typeof setTimeout> | null;
+  _healthTimer: ReturnType<typeof setInterval> | null;
+  _reconnectAttempt: number;
+  _status: {
+    state: string;
+    serverUrl: string | null;
+    serverVersion: string | null;
+    error: string | null;
+    lastEventAt: number | null;
+  };
+
+  constructor(emit: (event: Record<string, unknown>) => void) {
     this._emit = emit;
     this._lifecycle = 0;
     this._streamGeneration = 0;
@@ -778,6 +798,8 @@ export class OpenCodeConnection {
   async _startSSE(lifecycle) {
     if (!this._isCurrent(lifecycle)) return;
     this._requireClient();
+    await abortOpenCodeSseBeforeRestart(this._abortController);
+    if (!this._isCurrent(lifecycle)) return;
     const streamGeneration = ++this._streamGeneration;
     const abortController = new AbortController();
     this._abortController = abortController;
@@ -800,9 +822,13 @@ export class OpenCodeConnection {
         buffer = chunks.pop() ?? "";
         for (const chunk of chunks) {
           if (
-            abortController.signal.aborted ||
-            this._streamGeneration !== streamGeneration ||
-            !this._isCurrent(lifecycle)
+            shouldStopOpenCodeSseRead({
+              aborted: abortController.signal.aborted,
+              streamGeneration: this._streamGeneration,
+              expectedGeneration: streamGeneration,
+              lifecycle,
+              currentLifecycle: this._lifecycle,
+            })
           ) {
             break;
           }
@@ -830,9 +856,13 @@ export class OpenCodeConnection {
       }
     } catch (err) {
       if (
-        abortController.signal.aborted ||
-        this._streamGeneration !== streamGeneration ||
-        !this._isCurrent(lifecycle)
+        shouldStopOpenCodeSseRead({
+          aborted: abortController.signal.aborted,
+          streamGeneration: this._streamGeneration,
+          expectedGeneration: streamGeneration,
+          lifecycle,
+          currentLifecycle: this._lifecycle,
+        })
       ) {
         return;
       }
@@ -889,10 +919,8 @@ export class OpenCodeConnection {
           this._status.state === "connected"
         ) {
           console.warn("[OpenCodeConnection] SSE stream appears stale, restarting...");
-          // Abort the old stream and wait briefly for it to unwind
-          // before starting a fresh one to avoid overlapping streams.
-          this._abortController?.abort();
-          await new Promise((r) => setTimeout(r, 100));
+          await abortOpenCodeSseBeforeRestart(this._abortController);
+          if (!this._isCurrent(lifecycle)) return;
           void this._startSSE(lifecycle);
         }
       } catch {
@@ -900,7 +928,8 @@ export class OpenCodeConnection {
         // waiting for the SSE stream to eventually break on its own.
         if (this._status.state === "connected") {
           console.warn("[OpenCodeConnection] Health check failed while connected, reconnecting...");
-          this._abortController?.abort();
+          await abortOpenCodeSseBeforeRestart(this._abortController);
+          if (!this._isCurrent(lifecycle)) return;
           this._stopHealthTimer();
           this._scheduleReconnect(lifecycle);
         }
@@ -1461,7 +1490,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   /**
    * Register a directory-aware IPC handler whose first arg is a directory.
    * @param {string} channel - IPC channel name
-   * @param {(conn: OpenCodeConnection, ...args: any[]) => Promise<any>} fn
+   * @param {(conn: OpenCodeConnection, ...args: unknown[]) => Promise<unknown>} fn
    */
   function handleDirectoryOp(channel, fn) {
     ipcMain.handle(channel, async (event, directory, workspaceId, ...args) => {
@@ -1486,7 +1515,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * Register a session-routed IPC handler that uses getConnectionForSession().
    * The first arg after _event is always sessionId.
    * @param {string} channel - IPC channel name
-   * @param {(conn: OpenCodeConnection, sessionId: string, ...args: any[]) => Promise<any>} fn
+   * @param {(conn: OpenCodeConnection, sessionId: string, ...args: unknown[]) => Promise<unknown>} fn
    */
   function handleSessionOp(channel, fn) {
     ipcMain.handle(channel, async (event, sessionId, ...args) => {
@@ -1512,7 +1541,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * explicit target routing, then requestID -> directory routing,
    * then falls back to a single connected connection.
    * @param {string} channel - IPC channel name
-   * @param {(conn: OpenCodeConnection, requestID: string, ...args: any[]) => Promise<any>} fn
+   * @param {(conn: OpenCodeConnection, requestID: string, ...args: unknown[]) => Promise<unknown>} fn
    */
   function handleQuestionOp(channel, fn) {
     ipcMain.handle(channel, async (event, requestID, ...args) => {

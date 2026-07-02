@@ -66,6 +66,7 @@ export type {
 } from "./live-session-events/live-session-event.ts";
 export { LiveSessionEventNormalizer } from "./live-session-events/live-session-normalizer.ts";
 export { LiveSessionEventBus } from "./live-session-events/live-session-event-bus.ts";
+export { harnessEventsToLiveSessionEvents } from "./live-session-events/harness-events-to-live.ts";
 export {
   LiveSessionProjection,
   type LiveSessionProjectedMessage,

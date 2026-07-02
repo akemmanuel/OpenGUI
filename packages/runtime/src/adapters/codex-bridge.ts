@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
@@ -802,7 +801,20 @@ function buildToolPartFromItem(sessionId, messageId, item, existingPart, phase) 
 }
 
 class CodexBridgeManager {
-  constructor(getAllWindows, options = {}) {
+  emitBridgeEvent: (event: Record<string, unknown>) => void;
+  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
+  sessionIndex: Map<string, unknown>;
+  transcriptCache: Map<string, unknown>;
+  liveSessions: Map<string, unknown>;
+  aliases: Map<string, string>;
+  paths: ReturnType<typeof makeStoragePaths>;
+  storageReady: Promise<void>;
+  codex: ReturnType<typeof createCodexClient>;
+
+  constructor(
+    getAllWindows: () => Iterable<unknown>,
+    options: { userData?: string } = {},
+  ) {
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("codex", getAllWindows);
     this.projects = new Map();
     this.sessionIndex = new Map();

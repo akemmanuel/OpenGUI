@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
@@ -45,13 +44,12 @@ import {
   createAssistantInfo,
   createBundle,
   createUserInfo,
+  type PiMessageBundle,
   extractPiThinkingVariant,
   getSessionActivityType,
   inferPiSessionModelFromManager,
   makeSessionTitleFromText,
-  makeStreamingMessageId,
   makeTextPartId,
-  makeToolPartId,
   normalizePiSession,
   normalizeToolInput,
   parseDataUrl,
@@ -61,6 +59,27 @@ import {
   syncAssistantParts,
   toolResultContentToText,
 } from "./pi-bridge-mapping.ts";
+import {
+  findCurrentAssistantBundleInCache,
+  pairPendingAssistantsWithCanonical,
+  resolvePiProjectForSession,
+} from "./pi-bridge-live-resolution.ts";
+import { createEmptyPiProjectShell, resolvePiProjectKeyFromTarget } from "./pi-project-slot.ts";
+import {
+  handlePiAssistantMessageStart,
+  handlePiToolExecutionStart,
+} from "./pi-bridge-session-events.ts";
+import type {
+  HarnessBridgeNativeEvent,
+  PiBranchEntry,
+  PiConnectionStatusPayload,
+  PiLiveSessionLike,
+  PiLiveState,
+  PiModelRef,
+  PiNativeSessionEvent,
+  PiSessionManagerLike,
+} from "./pi-bridge-types.ts";
+import type { PiBridgeProject, PiLiveSessionContext } from "./pi-project-slot.ts";
 
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
@@ -72,20 +91,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("pi:");
 
-function visibleUiBranchEntries(sessionManager) {
+function visibleUiBranchEntries(sessionManager: PiSessionManagerLike) {
   const branch = sessionManager.getBranch();
-  let latestCompaction = null;
+  let latestCompaction: PiBranchEntry | null = null;
   for (const entry of branch) {
     if (entry.type === "compaction") latestCompaction = entry;
   }
-  if (!latestCompaction) return { entries: branch, seedEntries: [] };
-  const compactionIdx = branch.findIndex((entry) => entry.id === latestCompaction.id);
+  if (!latestCompaction) return { entries: branch, seedEntries: [] as PiBranchEntry[] };
+  const compactionIdx = branch.findIndex((entry) => entry.id === latestCompaction!.id);
   if (compactionIdx < 0) return { entries: branch, seedEntries: [] };
   const visible = [];
   let foundFirstKept = false;
   let visibleStartIdx = compactionIdx;
   for (let i = 0; i < compactionIdx; i++) {
     const entry = branch[i];
+    if (!entry) continue;
     if (entry.id === latestCompaction.firstKeptEntryId) {
       foundFirstKept = true;
       visibleStartIdx = i;
@@ -99,7 +119,21 @@ function visibleUiBranchEntries(sessionManager) {
   return { entries: visible, seedEntries: branch.slice(0, visibleStartIdx) };
 }
 
-function createSummaryUserBundle({ sessionId, messageId, timestamp, text, model, directory }) {
+function createSummaryUserBundle({
+  sessionId,
+  messageId,
+  timestamp,
+  text,
+  model,
+  directory,
+}: {
+  sessionId: string;
+  messageId: string;
+  timestamp: number;
+  text: string;
+  model?: PiModelRef;
+  directory: string;
+}) {
   return createBundle(
     createUserInfo({ sessionId, messageId, timestamp, model, directory }),
     text
@@ -125,6 +159,15 @@ function createCompactionAssistantBundle({
   directory,
   parentID,
   tailStartId,
+}: {
+  sessionId: string;
+  messageId: string;
+  timestamp: number;
+  summary: string;
+  model?: PiModelRef | null;
+  directory: string;
+  parentID: string;
+  tailStartId: string;
 }) {
   const info = {
     id: messageId,
@@ -171,13 +214,13 @@ function createCompactionAssistantBundle({
   return createBundle(info, parts);
 }
 
-function buildTranscriptFromSessionManager(sessionManager, directory) {
+function buildTranscriptFromSessionManager(sessionManager: PiSessionManagerLike, directory: string) {
   const sessionId = toFrontendSessionId(sessionManager.getSessionId());
   const { entries, seedEntries } = visibleUiBranchEntries(sessionManager);
   const bundles = [];
   const toolPartByCallId = new Map();
   let lastUserMessageId = "";
-  let currentModel = null;
+  let currentModel: PiModelRef | null = null;
   let currentThinkingLevel;
   let lastTimelineTimestamp = null;
 
@@ -226,13 +269,13 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
       bundles.push(
         createCompactionAssistantBundle({
           sessionId,
-          messageId: entry.id,
+          messageId: entry.id ?? `${sessionId}:compaction:${entryTimestamp}`,
           timestamp: entryTimestamp,
-          summary: entry.summary,
-          model: currentModel,
+          summary: entry.summary ?? "",
+          model: currentModel ?? undefined,
           directory,
           parentID: lastUserMessageId,
-          tailStartId: entry.firstKeptEntryId,
+          tailStartId: entry.firstKeptEntryId ?? "",
         }),
       );
       lastTimelineTimestamp = entryTimestamp;
@@ -388,7 +431,21 @@ function buildTranscriptFromSessionManager(sessionManager, directory) {
 }
 
 export class PiBridgeManager {
-  constructor(getAllWindows) {
+  emitBridgeEvent: (event: HarnessBridgeNativeEvent) => void;
+  agentDir: string;
+  projects: Map<string, PiBridgeProject>;
+  projectInitPromises: Map<string, Promise<PiBridgeProject>>;
+  sessionIndex: Map<
+    string,
+    { projectKey: string; path?: string; directory: string; workspaceId?: string }
+  >;
+  sessionInfoCache: Map<string, { size: number; mtimeMs: number; info: unknown }>;
+  directorySessionInfoCache: Map<string, { signature: string; infos: unknown[] }>;
+  pendingOAuth: Map<string, unknown>;
+
+  constructor(
+    getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>,
+  ) {
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("pi", getAllWindows);
     this.agentDir = getAgentDir();
     this.projects = new Map();
@@ -399,11 +456,11 @@ export class PiBridgeManager {
     this.pendingOAuth = new Map();
   }
 
-  sendNativeEvent(event) {
+  sendNativeEvent(event: HarnessBridgeNativeEvent) {
     this.emitBridgeEvent(event);
   }
 
-  sendConnectionStatus(project, status) {
+  sendConnectionStatus(project: PiBridgeProject, status: PiConnectionStatusPayload) {
     this.sendNativeEvent({
       type: "connection:status",
       directory: project.directory,
@@ -412,7 +469,7 @@ export class PiBridgeManager {
     });
   }
 
-  sendBackendEvent(project, payload) {
+  sendBackendEvent(project: PiBridgeProject, payload: Record<string, unknown>) {
     this.sendNativeEvent({
       type: "pi:event",
       directory: project.directory,
@@ -421,14 +478,14 @@ export class PiBridgeManager {
     });
   }
 
-  ensureProjectRuntimeState(project) {
+  ensureProjectRuntimeState(project: PiBridgeProject | undefined): PiBridgeProject | undefined {
     if (project && !project.abortedSessionIds) {
       project.abortedSessionIds = new Set();
     }
     return project;
   }
 
-  getProject(target = {}) {
+  getProject(target: { directory?: string; workspaceId?: string } = {}) {
     const directory = normalizeDir(target.directory);
     if (!directory) return null;
     return (
@@ -438,7 +495,7 @@ export class PiBridgeManager {
     );
   }
 
-  getOrThrowProject(target = {}) {
+  getOrThrowProject(target: { directory?: string; workspaceId?: string } = {}) {
     const project = this.getProject(target);
     if (!project) {
       throw new Error("Pi project not connected");
@@ -446,12 +503,16 @@ export class PiBridgeManager {
     return project;
   }
 
-  getLiveSessionContext(project, sessionId) {
+  getLiveSessionContext(project: PiBridgeProject, sessionId: string) {
     this.ensureProjectRuntimeState(project);
     return project.liveSessionContexts.get(sessionId) || null;
   }
 
-  async disposeLiveSessionContext(project, sessionId, { keepCache = true } = {}) {
+  async disposeLiveSessionContext(
+    project: PiBridgeProject,
+    sessionId: string,
+    { keepCache = true }: { keepCache?: boolean } = {},
+  ) {
     const context = this.getLiveSessionContext(project, sessionId);
     if (!context) return;
     context.unsubscribe?.();
@@ -468,7 +529,7 @@ export class PiBridgeManager {
     this.syncProjectRuntime(project);
   }
 
-  async disposeIdleLiveSessionsExcept(project, keepSessionIds = []) {
+  async disposeIdleLiveSessionsExcept(project: PiBridgeProject, keepSessionIds: string[] = []) {
     const keep = new Set(keepSessionIds.filter(Boolean));
     for (const sessionId of project.liveSessionContexts.keys()) {
       if (keep.has(sessionId) || project.busySessionIds.has(sessionId)) continue;
@@ -476,7 +537,7 @@ export class PiBridgeManager {
     }
   }
 
-  findLiveSessionContext(sessionId) {
+  findLiveSessionContext(sessionId: string) {
     for (const project of this.projects.values()) {
       const context = this.getLiveSessionContext(project, sessionId);
       if (context) return { project, context };
@@ -484,16 +545,16 @@ export class PiBridgeManager {
     return null;
   }
 
-  syncProjectRuntime(project) {
+  syncProjectRuntime(project: PiBridgeProject) {
     const firstContext = project.liveSessionContexts.values().next().value || null;
     project.runtime = firstContext?.runtime || null;
   }
 
   setSessionActivity(
-    project,
-    sessionId,
-    nextType,
-    { emitEvent = true, preserveAbort = false } = {},
+    project: PiBridgeProject,
+    sessionId: string,
+    nextType: string,
+    { emitEvent = true, preserveAbort = false }: { emitEvent?: boolean; preserveAbort?: boolean } = {},
   ) {
     const wasBusy = project.busySessionIds.has(sessionId);
     const isBusy = nextType === "busy";
@@ -513,12 +574,16 @@ export class PiBridgeManager {
     return nextType;
   }
 
-  markSessionAbortedIdle(project, sessionId) {
+  markSessionAbortedIdle(project: PiBridgeProject, sessionId: string) {
     project.abortedSessionIds?.add(sessionId);
     return this.setSessionActivity(project, sessionId, "idle", { preserveAbort: true });
   }
 
-  syncLiveSessionStatus(project, session, options = {}) {
+  syncLiveSessionStatus(
+    project: PiBridgeProject,
+    session: PiLiveSessionLike,
+    options: { emitEvent?: boolean; preserveAbort?: boolean } = {},
+  ) {
     if (project.abortedSessionIds?.has(session.sessionId)) {
       return this.setSessionActivity(project, session.sessionId, "idle", {
         ...options,
@@ -533,7 +598,7 @@ export class PiBridgeManager {
     );
   }
 
-  makeLiveState() {
+  makeLiveState(): PiLiveState {
     return {
       nextSeq: 0,
       currentUserMessageId: null,
@@ -545,7 +610,10 @@ export class PiBridgeManager {
     };
   }
 
-  registerLiveSessionContext(project, runtime) {
+  registerLiveSessionContext(
+    project: PiBridgeProject,
+    runtime: PiLiveSessionContext["runtime"],
+  ): PiLiveSessionContext {
     const session = runtime.session;
     const sessionId = session.sessionId;
     const existing = project.liveSessionContexts.get(sessionId);
@@ -587,7 +655,7 @@ export class PiBridgeManager {
     return context;
   }
 
-  async createRuntime(sessionManager) {
+  async createRuntime(sessionManager: PiSessionManagerLike & { getCwd(): string }) {
     const createRuntime = async ({ cwd, sessionManager, sessionStartEvent, agentDir }) => {
       const services = await createAgentSessionServices({ cwd, agentDir });
       return {
@@ -607,13 +675,8 @@ export class PiBridgeManager {
     });
   }
 
-  async ensureProject(target = {}) {
-    const directory = normalizeDir(target.directory);
-    if (!directory) {
-      throw new Error("Directory required for Pi backend");
-    }
-    const workspaceId = target.workspaceId;
-    const key = makeProjectKey(workspaceId, directory);
+  async ensureProject(target: { directory?: string; workspaceId?: string } = {}) {
+    const { key, directory, workspaceId } = resolvePiProjectKeyFromTarget(target);
     const existingProject = this.ensureProjectRuntimeState(this.projects.get(key));
     if (existingProject?.runtime || existingProject?.liveSessionContexts?.size > 0) {
       this.syncProjectRuntime(existingProject);
@@ -624,21 +687,7 @@ export class PiBridgeManager {
     const pendingInit = this.projectInitPromises.get(key);
     if (pendingInit) return await pendingInit;
 
-    const project = existingProject ?? {
-      key,
-      directory,
-      workspaceId,
-      busySessionIds: new Set(),
-      abortedSessionIds: new Set(),
-      sessionCaches: new Map(),
-      liveStateBySessionId: new Map(),
-      liveSessionContexts: new Map(),
-      sessionContextInitPromises: new Map(),
-      runtime: null,
-      sessionUnsubscribe: null,
-      currentSessionId: null,
-      currentSessionFile: null,
-    };
+    const project = existingProject ?? createEmptyPiProjectShell(key, directory, workspaceId);
     const initPromise = (async () => {
       try {
         project.runtime = await this.createRuntime(SessionManager.continueRecent(directory));
@@ -660,12 +709,15 @@ export class PiBridgeManager {
     return await initPromise;
   }
 
-  async createSessionContext(project, sessionManager) {
+  async createSessionContext(project: PiBridgeProject, sessionManager: PiSessionManagerLike) {
     const runtime = await this.createRuntime(sessionManager);
     return this.registerLiveSessionContext(project, runtime);
   }
 
-  async ensureSessionContext(sessionId, target = {}) {
+  async ensureSessionContext(
+    sessionId: string,
+    target: { directory?: string; workspaceId?: string } = {},
+  ) {
     const project = await this.resolveProjectForSession(sessionId, target || {});
     const liveContext = this.getLiveSessionContext(project, sessionId);
     if (liveContext) {
@@ -702,7 +754,7 @@ export class PiBridgeManager {
     }
   }
 
-  async attachSession(project, session) {
+  async attachSession(project: PiBridgeProject, session: PiLiveSessionLike) {
     if (project.sessionUnsubscribe) {
       project.sessionUnsubscribe();
       project.sessionUnsubscribe = null;
@@ -733,21 +785,21 @@ export class PiBridgeManager {
     });
   }
 
-  getLiveState(project, sessionId) {
+  getLiveState(project: PiBridgeProject, sessionId: string): PiLiveState {
     if (!project.liveStateBySessionId.has(sessionId)) {
       project.liveStateBySessionId.set(sessionId, this.makeLiveState());
     }
     return project.liveStateBySessionId.get(sessionId);
   }
 
-  getSessionCache(project, sessionId) {
+  getSessionCache(project: PiBridgeProject, sessionId: string) {
     if (!project.sessionCaches.has(sessionId)) {
       project.sessionCaches.set(sessionId, { messages: [] });
     }
     return project.sessionCaches.get(sessionId);
   }
 
-  upsertBundle(project, sessionId, bundle) {
+  upsertBundle(project: PiBridgeProject, sessionId: string, bundle: PiMessageBundle) {
     const cache = this.getSessionCache(project, sessionId);
     const index = cache.messages.findIndex((item) => item.info.id === bundle.info.id);
     if (index >= 0) {
@@ -757,7 +809,7 @@ export class PiBridgeManager {
     }
   }
 
-  findBundle(project, sessionId, messageId) {
+  findBundle(project: PiBridgeProject, sessionId: string, messageId: string) {
     const cache = this.getSessionCache(project, sessionId);
     return cache.messages.find((item) => item.info.id === messageId) || null;
   }
@@ -851,9 +903,10 @@ export class PiBridgeManager {
     const newCanonicalAssistants = cache.messages.filter(
       (bundle) => bundle.info.role === "assistant" && !previousById.has(bundle.info.id),
     );
-    for (let i = 0; i < pendingStreaming.length && i < newCanonicalAssistants.length; i += 1) {
-      const pending = pendingStreaming[i];
-      const bundle = newCanonicalAssistants[i];
+    for (const { pending, bundle } of pairPendingAssistantsWithCanonical(
+      pendingStreaming,
+      newCanonicalAssistants,
+    )) {
       replacementIds.add(bundle.info.id);
       replacedSyntheticIds.add(pending.syntheticId);
       state.syntheticToReal.set(pending.syntheticId, bundle.info.id);
@@ -908,26 +961,14 @@ export class PiBridgeManager {
   }
 
   findCurrentAssistantBundle(project, sessionId, state) {
-    const candidateIds = [];
-    if (typeof state.currentAssistantMessageId === "string") {
-      candidateIds.push(state.currentAssistantMessageId);
-    }
-    for (let i = 0; i < candidateIds.length; i += 1) {
-      const id = candidateIds[i];
-      const mapped = state.syntheticToReal?.get(id);
-      if (mapped) candidateIds.push(mapped);
-    }
-    const seen = new Set();
-    for (const id of candidateIds) {
-      if (typeof id !== "string" || seen.has(id)) continue;
-      seen.add(id);
-      const bundle = this.findBundle(project, sessionId, id);
-      if (bundle) return { messageId: id, bundle };
-    }
-    return null;
+    return findCurrentAssistantBundleInCache(project, sessionId, state);
   }
 
-  async handleSessionEvent(project, session, event) {
+  async handleSessionEvent(
+    project: PiBridgeProject,
+    session: PiLiveSessionLike,
+    event: PiNativeSessionEvent,
+  ) {
     const sessionId = session.sessionId;
     const state = this.getLiveState(project, sessionId);
     if (event.type === "turn_end") {
@@ -980,37 +1021,7 @@ export class PiBridgeManager {
     }
 
     if (event.type === "message_start") {
-      if (event.message.role === "assistant") {
-        this.flushPendingAssistantResolution(project, session);
-        const messageId = makeStreamingMessageId(sessionId, state.nextSeq++);
-        const startedAt = Date.now();
-        const parentID = this.findLatestRealMessageId(session.sessionManager, "user") || "";
-        state.currentAssistantMessageId = messageId;
-        state.assistantStartedAt = startedAt;
-        state.reasoningTimesByContentIndex = new Map();
-        state.pendingAssistantResolutions = [
-          ...(state.pendingAssistantResolutions || []),
-          { syntheticId: messageId },
-        ];
-        const bundle = createBundle(
-          createAssistantInfo({
-            sessionId,
-            messageId,
-            timestamp: coerceTimestamp(event.message.timestamp),
-            message: event.message,
-            directory: project.directory,
-            parentID,
-            createdAt: startedAt,
-          }),
-          [],
-        );
-        syncAssistantParts(bundle, event.message, state.reasoningTimesByContentIndex);
-        this.upsertBundle(project, sessionId, bundle);
-        this.sendBackendEvent(project, { type: "message.updated", message: bundle.info });
-        for (const part of bundle.parts) {
-          this.sendBackendEvent(project, { type: "message.part.updated", part });
-        }
-      }
+      handlePiAssistantMessageStart(this, project, session, event, state, project.directory);
       return;
     }
 
@@ -1053,37 +1064,7 @@ export class PiBridgeManager {
     }
 
     if (event.type === "tool_execution_start") {
-      const assistantContext = this.findCurrentAssistantBundle(project, sessionId, state);
-      if (!assistantContext) return;
-      const { messageId, bundle } = assistantContext;
-      const normalizedInput = normalizeToolInput(event.args || {});
-      let part = bundle.parts.find(
-        (item) => item.type === "tool" && item.callID === event.toolCallId,
-      );
-      if (!part) {
-        part = {
-          id: makeToolPartId(messageId, event.toolCallId, bundle.parts.length),
-          sessionID: sessionId,
-          messageID: messageId,
-          type: "tool",
-          callID: event.toolCallId,
-          tool: event.toolName,
-          state: {
-            status: "pending",
-            input: normalizedInput,
-            raw: stringifyUnknown(normalizedInput),
-          },
-        };
-        bundle.parts.push(part);
-      }
-      part.state = {
-        status: "running",
-        input: normalizedInput,
-        title: event.toolName,
-        time: { start: Date.now() },
-      };
-      this.upsertBundle(project, sessionId, bundle);
-      this.sendBackendEvent(project, { type: "message.part.updated", part });
+      handlePiToolExecutionStart(this, project, sessionId, state, event);
       return;
     }
 
@@ -1207,38 +1188,23 @@ export class PiBridgeManager {
   }
 
   getListProject(target = {}) {
-    const directory = normalizeDir(target.directory);
-    if (!directory) throw new Error("Directory required for Pi backend");
-    const workspaceId = target.workspaceId;
-    const key = makeProjectKey(workspaceId, directory);
+    const { key, directory, workspaceId } = resolvePiProjectKeyFromTarget(target);
     const existing = this.ensureProjectRuntimeState(this.projects.get(key));
     if (existing) return existing;
-    return {
-      key,
-      directory,
-      workspaceId,
-      busySessionIds: new Set(),
-      abortedSessionIds: new Set(),
-      sessionCaches: new Map(),
-      liveStateBySessionId: new Map(),
-      liveSessionContexts: new Map(),
-      sessionContextInitPromises: new Map(),
-      runtime: null,
-      sessionUnsubscribe: null,
-      currentSessionId: null,
-      currentSessionFile: null,
-    };
+    return createEmptyPiProjectShell(key, directory, workspaceId);
   }
 
   async resolveProjectForSession(sessionId, target = {}) {
-    const directory = normalizeDir(target?.directory);
-    if (directory) {
-      return await this.ensureProject({ directory, workspaceId: target?.workspaceId });
-    }
-    const live = this.findLiveSessionContext(sessionId);
-    if (live) return live.project;
-    if (this.projects.size === 1) return this.projects.values().next().value;
-    throw new Error("Pi operation requires a Project directory");
+    return resolvePiProjectForSession(
+      {
+        projects: this.projects,
+        sessionIndex: this.sessionIndex,
+        findLiveProjectKey: (id) => this.findLiveSessionContext(id)?.project.key,
+        ensureProject: (t) => this.ensureProject(t),
+      },
+      sessionId,
+      target,
+    );
   }
 
   mergeLivePiSessionsForProject(project, diskSessions) {

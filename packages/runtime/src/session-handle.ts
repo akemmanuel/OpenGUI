@@ -13,14 +13,12 @@ import {
   streamEventMatchesSession,
 } from "./agent-stream.ts";
 import type { ManagedHarnessId } from "./harness-runtime.ts";
-import { harnessEventToAdapterObservations } from "./live-session-events/live-session-event-compat.ts";
-import type {
-  LiveSessionEvent,
-  LiveSessionEventHandler,
-} from "./live-session-events/live-session-event.ts";
+import type { LiveSessionEventHandler } from "./live-session-events/live-session-event.ts";
 import { LiveSessionEventBus } from "./live-session-events/live-session-event-bus.ts";
+import { harnessEventsToLiveSessionEvents } from "./live-session-events/harness-events-to-live.ts";
 import { OpenGuiSdkError } from "./opengui-sdk-error.ts";
 import type { SessionTranscripts } from "./session-transcripts.ts";
+import { waitUntilIdleViaHarness } from "./wait-until-idle.ts";
 
 /** Harness session summary (list/create); `id` is opaque for `open()`. */
 export interface SessionSummary {
@@ -113,10 +111,6 @@ function wrapBridgeError(error: unknown): never {
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000;
 const DEFAULT_SEND_WAIT_TIMEOUT_MS = 120_000;
 
-function isWaitResolvedStatus(status: string | undefined): boolean {
-  return status === "idle" || status === "error" || status === undefined || status === "unknown";
-}
-
 export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
   const { harnessId, directory, sessionId, service, transcripts } = deps;
   const resolveSessionIds = (id: string) => deps.resolveSessionIds(id);
@@ -138,17 +132,19 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
     }
   });
   let harnessUnsub: (() => void) | undefined;
+  const waitIdleListeners = new Set<(event: HarnessEvent) => void>();
 
-  const dispatchLive = (event: HarnessEvent): LiveSessionEvent[] => {
-    return liveBus
-      .publish(harnessEventToAdapterObservations({ directory, harnessId, event }))
-      .filter((item) => streamEventMatchesSession(sessionId, item.scope.sessionId, harnessId));
+  const dispatchLive = (event: HarnessEvent) => {
+    return harnessEventsToLiveSessionEvents({ directory, harnessId, event, bus: liveBus }).filter(
+      (item) => streamEventMatchesSession(sessionId, item.scope.sessionId, harnessId),
+    );
   };
 
   const ensureHarnessSubscription = () => {
     if (harnessUnsub) return;
     harnessUnsub = subscribeHarnessEvents((event) => {
       dispatchLive(event);
+      for (const listener of waitIdleListeners) listener(event);
     });
   };
 
@@ -170,54 +166,19 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
   const waitUntilIdle = async (options?: WaitUntilIdleOptions): Promise<void> => {
     const timeoutMs = options?.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
     const { rawId } = resolveSessionIds(sessionId);
-
-    const maybeResolveIdle = (): boolean => {
-      const status = getSessionStatus(directory, rawId);
-      return isWaitResolvedStatus(status);
-    };
-
-    if (maybeResolveIdle()) return;
-
-    await new Promise<void>((resolve, reject) => {
-      let harnessOff: (() => void) | undefined;
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      let poll: ReturnType<typeof setInterval> | undefined;
-
-      const cleanup = () => {
-        if (timeout) clearTimeout(timeout);
-        if (poll) clearInterval(poll);
-        harnessOff?.();
-      };
-
-      timeout = setTimeout(() => {
-        cleanup();
-        reject(
-          new OpenGuiSdkError("WAIT_TIMEOUT", `Session did not become idle within ${timeoutMs}ms`),
-        );
-      }, timeoutMs);
-
-      harnessOff = subscribeHarnessEvents((event) => {
-        const observations = harnessEventToAdapterObservations({ directory, harnessId, event });
-        const sawIdle = observations.some(
-          (item) =>
-            item.kind === "activity" &&
-            item.state !== "running" &&
-            streamEventMatchesSession(sessionId, item.scope.sessionId, harnessId),
-        );
-        if (sawIdle || maybeResolveIdle()) {
-          markSessionIdle?.(directory, rawId);
-          cleanup();
-          resolve();
-        }
-      });
-
-      poll = setInterval(() => {
-        if (maybeResolveIdle()) {
-          markSessionIdle?.(directory, rawId);
-          cleanup();
-          resolve();
-        }
-      }, 100);
+    ensureHarnessSubscription();
+    await waitUntilIdleViaHarness({
+      timeoutMs,
+      directory,
+      harnessId,
+      sessionId,
+      getStatus: () => getSessionStatus(directory, rawId),
+      onIdleObserved: () => markSessionIdle?.(directory, rawId),
+      subscribeHarnessEvents,
+      onHarnessIdle: (handler) => {
+        waitIdleListeners.add(handler);
+        return () => waitIdleListeners.delete(handler);
+      },
     });
   };
 
@@ -323,6 +284,7 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
     close() {
       streamHandlers.clear();
       eventHandlers.clear();
+      waitIdleListeners.clear();
       liveBusOff();
       if (harnessUnsub) {
         harnessUnsub();

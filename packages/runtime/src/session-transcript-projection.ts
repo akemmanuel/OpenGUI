@@ -1,5 +1,6 @@
 import type { HarnessEvent } from "../../../src/agents/backend.ts";
 import type { Message, Part } from "../../../src/protocol/harness-types.ts";
+import { applyTranscriptPartDelta, type DeltaFieldState } from "./transcript-part-delta.ts";
 
 export interface TranscriptMessageEntry {
   info: Message;
@@ -192,17 +193,6 @@ function messageKeyPrefix(messageID: string): string {
   return `${messageID}\u0000`;
 }
 
-interface DeltaFieldState {
-  cursor: number;
-  seenEventIds: Set<string>;
-}
-
-interface DeltaApplyResult {
-  part: Part;
-  changed: boolean;
-  duplicate: boolean;
-}
-
 export interface SessionTranscriptProjection {
   readonly scope: SessionTranscriptScope;
   hydrateFromHarnessPage(page: MessagePageResult, options?: HydrateMessagesOptions): void;
@@ -391,49 +381,6 @@ export function createSessionTranscriptProjection(
     return { entry: next, changed: idx < 0 || merged !== previous };
   };
 
-  const applyDeltaToPart = (
-    part: Part,
-    event: Extract<HarnessEvent, { type: "message.part.delta" }>,
-  ): DeltaApplyResult => {
-    const state = getDeltaState(event.messageID, event.partID, event.field);
-    if (event.id && state.seenEventIds.has(event.id)) {
-      return { part, changed: false, duplicate: true };
-    }
-    if (event.id) state.seenEventIds.add(event.id);
-
-    const record = part as Record<string, unknown>;
-    const current = typeof record[event.field] === "string" ? (record[event.field] as string) : "";
-    const delta = event.delta;
-    if (!delta) return { part, changed: false, duplicate: false };
-
-    const coveredAtCursor = current.slice(state.cursor, state.cursor + delta.length);
-    if (coveredAtCursor === delta) {
-      state.cursor += delta.length;
-      return { part, changed: false, duplicate: false };
-    }
-
-    if (state.cursor === 0 && current === delta) {
-      state.cursor = delta.length;
-      return { part, changed: false, duplicate: false };
-    }
-
-    if (current && delta.length > current.length && delta.startsWith(current)) {
-      state.cursor = delta.length;
-      return {
-        part: { ...part, [event.field]: delta } as Part,
-        changed: true,
-        duplicate: false,
-      };
-    }
-
-    state.cursor = current.length + delta.length;
-    return {
-      part: { ...part, [event.field]: current + delta } as Part,
-      changed: true,
-      duplicate: false,
-    };
-  };
-
   const ingest = (event: HarnessEvent): HarnessEvent[] => {
     const out: HarnessEvent[] = [];
     switch (event.type) {
@@ -496,7 +443,11 @@ export function createSessionTranscriptProjection(
                 sessionID: event.sessionID,
                 messageID: event.messageID,
               } as Part);
-        const nextPart = applyDeltaToPart(existing, event);
+        const nextPart = applyTranscriptPartDelta(
+          existing,
+          event,
+          getDeltaState(event.messageID, event.partID, event.field),
+        );
         if (nextPart.duplicate || !nextPart.changed) return out;
         const next = upsertPartInEntry(entry, nextPart.part);
         setEntry(next.entry);

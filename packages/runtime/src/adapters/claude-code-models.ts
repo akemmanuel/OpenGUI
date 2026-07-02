@@ -1,8 +1,16 @@
-// @ts-nocheck
 export const MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
 export const EFFORT_VARIANTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
-export const FALLBACK_SUPPORTED_MODELS = [
+export type ClaudeSupportedModel = {
+  value: string;
+  displayName?: string;
+  description?: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: string[];
+  supportsAdaptiveThinking?: boolean;
+};
+
+export const FALLBACK_SUPPORTED_MODELS: ClaudeSupportedModel[] = [
   {
     value: "default",
     displayName: "Sonnet",
@@ -22,7 +30,17 @@ export const FALLBACK_SUPPORTED_MODELS = [
   { value: "haiku", displayName: "Haiku", description: "Haiku" },
 ];
 
-function makeModel(id, name, { reasoning, image, family, variants }) {
+function makeModel(
+  id: string,
+  name: string,
+  opts: {
+    reasoning: boolean;
+    image: boolean;
+    family?: string;
+    variants?: Record<string, Record<string, never>>;
+  },
+) {
+  const { reasoning, image, family, variants } = opts;
   return {
     id,
     providerID: "anthropic",
@@ -40,7 +58,7 @@ function makeModel(id, name, { reasoning, image, family, variants }) {
     },
     cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
     limit: { context: 200_000, output: 8_192 },
-    status: "active",
+    status: "active" as const,
     options: {},
     headers: {},
     release_date: "",
@@ -48,12 +66,12 @@ function makeModel(id, name, { reasoning, image, family, variants }) {
   };
 }
 
-function firstDescriptionClause(description) {
+function firstDescriptionClause(description: unknown): string {
   if (typeof description !== "string") return "";
   return description.split("·", 1)[0]?.trim() ?? "";
 }
 
-export function deriveModelName(model) {
+export function deriveModelName(model: ClaudeSupportedModel | null | undefined): string {
   const headline = firstDescriptionClause(model?.description);
   if (headline) return headline;
   if (model?.value === "default") return "Sonnet";
@@ -62,7 +80,7 @@ export function deriveModelName(model) {
   return typeof model?.value === "string" && model.value.trim() ? model.value.trim() : "Claude";
 }
 
-export function deriveModelFamily(model) {
+export function deriveModelFamily(model: ClaudeSupportedModel | null | undefined): string {
   const source = `${deriveModelName(model)} ${model?.displayName ?? ""}`.toLowerCase();
   if (source.includes("opus")) return "opus";
   if (source.includes("haiku")) return "haiku";
@@ -72,29 +90,31 @@ export function deriveModelFamily(model) {
     : "claude";
 }
 
-function buildModelVariants(model) {
-  const variants = {};
+function buildModelVariants(
+  model: ClaudeSupportedModel,
+): Record<string, Record<string, never>> | undefined {
+  const variants: Record<string, Record<string, never>> = {};
   const supportsReasoning =
-    Boolean(model?.supportsAdaptiveThinking) ||
-    Boolean(model?.supportsEffort) ||
-    Array.isArray(model?.supportedEffortLevels);
+    Boolean(model.supportsAdaptiveThinking) ||
+    Boolean(model.supportsEffort) ||
+    Array.isArray(model.supportedEffortLevels);
   if (!supportsReasoning) return undefined;
   variants.none = {};
-  for (const level of model?.supportedEffortLevels ?? []) {
+  for (const level of model.supportedEffortLevels ?? []) {
     if (EFFORT_VARIANTS.has(level)) variants[level] = {};
   }
   return Object.keys(variants).length > 0 ? variants : undefined;
 }
 
-export function buildProvidersFromSupportedModels(models) {
+export function buildProvidersFromSupportedModels(models: ClaudeSupportedModel[] | null | undefined) {
   const normalizedModels =
     Array.isArray(models) && models.length > 0 ? models : FALLBACK_SUPPORTED_MODELS;
   const providerModels = Object.fromEntries(
     normalizedModels.map((model) => {
       const reasoning =
-        Boolean(model?.supportsAdaptiveThinking) ||
-        Boolean(model?.supportsEffort) ||
-        Array.isArray(model?.supportedEffortLevels);
+        Boolean(model.supportsAdaptiveThinking) ||
+        Boolean(model.supportsEffort) ||
+        Array.isArray(model.supportedEffortLevels);
       return [
         model.value,
         makeModel(model.value, deriveModelName(model), {
@@ -107,7 +127,7 @@ export function buildProvidersFromSupportedModels(models) {
     }),
   );
   const defaultModel =
-    normalizedModels.find((model) => model?.value === "default")?.value ??
+    normalizedModels.find((model) => model.value === "default")?.value ??
     normalizedModels[0]?.value ??
     "default";
   return {
@@ -125,7 +145,10 @@ export function buildProvidersFromSupportedModels(models) {
   };
 }
 
-export function buildVariantQueryOptions(variant, modelInfo) {
+export function buildVariantQueryOptions(
+  variant: unknown,
+  modelInfo: ClaudeSupportedModel | null | undefined,
+): Record<string, unknown> {
   const normalized = typeof variant === "string" ? variant.trim().toLowerCase() : "";
   if (!normalized) return {};
   if (normalized === "none") return { thinking: { type: "disabled" } };

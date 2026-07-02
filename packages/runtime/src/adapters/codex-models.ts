@@ -1,4 +1,3 @@
-// @ts-nocheck
 
 export const CODEX_VALID_VARIANTS = ["none", "minimal", "low", "medium", "high", "xhigh"];
 export const DEFAULT_MODEL_ID = "gpt-5.4";
@@ -79,10 +78,27 @@ export const STATIC_CODEX_PROVIDER = {
 };
 
 function makeModel(
-  id,
-  name,
-  { reasoning, image, releaseDate, status = "active", variants = null, context, output },
+  id: string,
+  name: string,
+  opts: {
+    reasoning: boolean;
+    image: boolean;
+    releaseDate?: string;
+    status?: string;
+    variants?: Record<string, { label: string }> | null;
+    context?: number;
+    output?: number;
+  },
 ) {
+  const {
+    reasoning,
+    image,
+    releaseDate,
+    status = "active",
+    variants = null,
+    context,
+    output,
+  } = opts;
   return {
     id,
     providerID: DEFAULT_PROVIDER_ID,
@@ -111,15 +127,15 @@ function makeModel(
   };
 }
 
-function titleCaseVariant(value) {
+function titleCaseVariant(value: string) {
   if (value === "xhigh") return "Extra High";
   if (value === "none") return "None";
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function normalizeReasoningEfforts(value) {
-  if (!Array.isArray(value)) return [];
-  const efforts = [];
+function normalizeReasoningEfforts(value: unknown) {
+  if (!Array.isArray(value)) return [] as string[];
+  const efforts: string[] = [];
   for (const entry of value) {
     const effort =
       typeof entry === "string"
@@ -133,13 +149,13 @@ function normalizeReasoningEfforts(value) {
   return efforts;
 }
 
-function humanizeModelId(id) {
+function humanizeModelId(id: string) {
   return id
     .replace(/^gpt/i, "GPT")
     .replace(/-([a-z])/g, (_match, char) => ` ${char.toUpperCase()}`);
 }
 
-function buildVariantsFromReasoningEfforts(efforts, defaultEffort) {
+function buildVariantsFromReasoningEfforts(efforts: string[], defaultEffort: unknown) {
   if (!efforts.length) return {};
   const ordered =
     typeof defaultEffort === "string" && efforts.includes(defaultEffort)
@@ -148,7 +164,7 @@ function buildVariantsFromReasoningEfforts(efforts, defaultEffort) {
   return Object.fromEntries(ordered.map((effort) => [effort, { label: titleCaseVariant(effort) }]));
 }
 
-export function mapCodexAppServerModel(model) {
+export function mapCodexAppServerModel(model: Record<string, unknown> | null | undefined) {
   if (!model || typeof model !== "object") return null;
   if (model.hidden === true) return null;
   const id =
@@ -183,13 +199,13 @@ export function mapCodexAppServerModel(model) {
   });
 }
 
-function selectDefaultModelId(models) {
+function selectDefaultModelId(models: Record<string, unknown>) {
   if (models["gpt-5.5"]) return "gpt-5.5";
   if (models[DEFAULT_MODEL_ID]) return DEFAULT_MODEL_ID;
   return Object.keys(models)[0] ?? DEFAULT_MODEL_ID;
 }
 
-export function buildCodexProviderFromModels(models) {
+export function buildCodexProviderFromModels(models: Record<string, ReturnType<typeof makeModel>>) {
   const defaultModelId = selectDefaultModelId(models);
   return {
     providers: [{ ...STATIC_CODEX_PROVIDER.providers[0], models }],

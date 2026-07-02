@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { GrokAcpClient } from "../../../../lib/grok-acp-client.ts";
@@ -37,7 +36,17 @@ function findMessage(messages, messageId) {
 }
 
 class GrokBuildBridgeManager {
-  constructor(getAllWindows) {
+  getAllWindows: () => Iterable<unknown>;
+  emitBridgeEvent: (event: Record<string, unknown>) => void;
+  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
+  sessionIndex: Map<string, { projectKey: string; directory: string; workspaceId?: string }>;
+  liveSessions: Map<string, unknown>;
+  acp: GrokAcpClient;
+  providerCache: ReturnType<typeof buildGrokProvidersFromModelState> | null;
+  availableCommands: unknown[];
+  acpReady: Promise<void> | null;
+
+  constructor(getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>) {
     this.getAllWindows = getAllWindows;
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("grok-build", getAllWindows);
     this.projects = new Map();

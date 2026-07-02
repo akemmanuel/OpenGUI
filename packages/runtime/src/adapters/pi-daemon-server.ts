@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createServer } from "node:http";
 import { PiBridgeManager } from "./pi-bridge.ts";
 
@@ -32,13 +31,13 @@ const ALLOWED_METHODS = new Set([
   "summarizeSession",
 ]);
 
-function parseArg(name, fallback) {
+function parseArg(name: string, fallback: string) {
   const index = process.argv.indexOf(name);
   if (index !== -1 && process.argv[index + 1]) return process.argv[index + 1];
   return fallback;
 }
 
-function json(res, status, payload) {
+function json(res: ServerResponse, status: number, payload: unknown) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -47,18 +46,18 @@ function json(res, status, payload) {
   res.end(body);
 }
 
-function ok(data) {
+function ok(data: unknown) {
   return { success: true, data };
 }
 
-function fail(error) {
+function fail(error: unknown) {
   return {
     success: false,
     error: error instanceof Error ? error.message : String(error),
   };
 }
 
-async function readJson(req) {
+async function readJson(req: import("node:http").IncomingMessage) {
   let body = "";
   for await (const chunk of req) {
     body += chunk;
@@ -68,12 +67,16 @@ async function readJson(req) {
   return JSON.parse(body);
 }
 
+import type { ServerResponse } from "node:http";
+
 class EventHub {
+  clients: Set<ServerResponse>;
+
   constructor() {
     this.clients = new Set();
   }
 
-  add(res) {
+  add(res: ServerResponse) {
     this.clients.add(res);
     res.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
@@ -86,7 +89,7 @@ class EventHub {
     };
   }
 
-  broadcast(event) {
+  broadcast(event: unknown) {
     const payload = `data: ${JSON.stringify(event)}\n\n`;
     for (const client of this.clients) {
       try {
@@ -98,7 +101,7 @@ class EventHub {
   }
 }
 
-function makeManager(eventHub) {
+function makeManager(eventHub: EventHub) {
   const fakeWindow = {
     isDestroyed: () => false,
     webContents: {
@@ -108,7 +111,10 @@ function makeManager(eventHub) {
   return new PiBridgeManager(() => [fakeWindow]);
 }
 
-export async function runPiDaemon({ port, token } = {}) {
+export async function runPiDaemon({
+  port,
+  token,
+}: { port?: number | string; token?: string } = {}) {
   const resolvedPort = Number(
     port ?? parseArg("--port", process.env.OPENGUI_PI_DAEMON_PORT ?? "0"),
   );

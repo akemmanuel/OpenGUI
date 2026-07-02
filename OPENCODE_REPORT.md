@@ -47,7 +47,7 @@ Observed normalized SDK stream event counts:
 - `text.delta`: 40
 - `run.end`: 3
 
-Observed underlying harness delta count was lower (`message.part.delta`: 20), so the SDK stream delivered duplicate deltas while `waitUntilIdle()` was active. This likely comes from `session-handle.ts`: `waitUntilIdle()` installs its own harness event subscription and calls `dispatchMapped(event)`, while `onStream()` already has an active subscription. The documented usage therefore double-dispatches stream events to stream handlers during the wait.
+Observed underlying harness delta count was lower (`message.part.delta`: 20), so the SDK stream delivered duplicate deltas while `waitUntilIdle()` was active. Root cause was `session-handle.ts`: `waitUntilIdle()` installed a second harness subscription while `onStream()` / `onEvent()` already held one. **Fixed:** `waitUntilIdle` now listens on the same subscription via `wait-until-idle.ts` + `waitIdleListeners` on the primary harness subscriber.
 
 ### Other behavior
 

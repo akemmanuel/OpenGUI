@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 
@@ -15,13 +14,18 @@ export type GrokAcpClientOptions = {
   requestTimeoutMs?: number;
 };
 
+type PendingRequest = {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+};
+
 export class GrokAcpClient {
   #executable: string;
   #onNotification: (notification: GrokAcpNotification) => void;
   #requestTimeoutMs: number;
   #child: ChildProcess | null = null;
   #rl: Interface | null = null;
-  #pending = new Map();
+  #pending = new Map<number, PendingRequest>();
   #nextId = 1;
   #initResult: Record<string, unknown> | null = null;
   #authenticated = false;
@@ -59,18 +63,27 @@ export class GrokAcpClient {
     }
   }
 
-  async request(method, params = {}, options = {}) {
+  async request(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: { timeoutMs?: number } = {},
+  ): Promise<unknown> {
     await this.ensureReady();
     return await this.#requestReadyProcess(method, params, options);
   }
 
-  async #requestReadyProcess(method, params = {}, options = {}) {
-    if (!this.#child?.stdin) throw new Error("Grok ACP process is not running");
+  async #requestReadyProcess(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: { timeoutMs?: number } = {},
+  ): Promise<unknown> {
+    const stdin = this.#child?.stdin;
+    if (!stdin) throw new Error("Grok ACP process is not running");
     const timeoutMs =
       typeof options.timeoutMs === "number" ? options.timeoutMs : this.#requestTimeoutMs;
     const id = this.#nextId++;
     return await new Promise((resolve, reject) => {
-      let timer;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
         timer = setTimeout(() => {
           this.#pending.delete(id);
@@ -87,7 +100,7 @@ export class GrokAcpClient {
           reject(error);
         },
       });
-      this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
   }
 
@@ -160,9 +173,11 @@ export class GrokAcpClient {
       if (!entry) return;
       this.#pending.delete(message.id);
       if (message.error) {
-        const error = new Error(message.error?.message || `Grok ACP error: ${message.id}`);
-        error.code = message.error?.code;
-        entry.reject(error);
+        const err = new Error(message.error?.message || `Grok ACP error: ${message.id}`) as Error & {
+          code?: unknown;
+        };
+        err.code = message.error?.code;
+        entry.reject(err);
         return;
       }
       entry.resolve(message.result ?? {});
@@ -180,13 +195,15 @@ export class GrokAcpClient {
       this.#startPromise = null;
     });
 
-    this.#initResult = await this.#requestReadyProcess("initialize", {
+    const init = await this.#requestReadyProcess("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
         terminal: true,
       },
     });
+    this.#initResult =
+      init && typeof init === "object" ? (init as Record<string, unknown>) : null;
   }
 }
 

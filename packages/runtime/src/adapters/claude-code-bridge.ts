@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ESM bridge module loaded by main.ts via dynamic import().
  * Hosts Claude Code Agent SDK project/session state and wires IPC handlers.
@@ -607,7 +606,17 @@ function sanitizePermissionUpdates(suggestions) {
 }
 
 class ClaudeCodeBridgeManager {
-  constructor(emit) {
+  emit: (event: Record<string, unknown>) => void;
+  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
+  activeQueries: Map<string, Record<string, unknown>>;
+  providerCatalogs: Map<string, unknown>;
+  providerCatalogPromises: Map<string, Promise<unknown>>;
+  pendingTempSessions: Map<string, unknown>;
+  placeholderSessions: Map<string, unknown>;
+  replacementAliases: Map<string, string>;
+  messageCache: Map<string, Map<string, unknown>>;
+
+  constructor(emit: (event: Record<string, unknown>) => void) {
     this.emit = emit;
     this.projects = new Map();
     this.activeQueries = new Map();

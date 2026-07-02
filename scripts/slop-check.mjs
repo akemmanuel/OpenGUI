@@ -162,6 +162,31 @@ const checks = [
     forbid: (out) => out.trim().length > 0,
   },
   {
+    name: "pi and opencode bridge behavior modules have tests",
+    cmd: `for f in pi-bridge-live-resolution pi-bridge-session-events pi-project-slot opencode-sse-lifecycle; do test -f "packages/runtime/src/adapters/__tests__/$f.test.ts" || echo "missing $f.test.ts"; done`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "runtime session-handle and transcript delta have tests",
+    cmd: `for f in wait-until-idle transcript-part-delta harness-events-to-live; do test -f "packages/runtime/src/__tests__/$f.test.ts" || echo "missing $f.test.ts"; done`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no @ts-nocheck in repo TypeScript",
+    cmd: `rg -l '@ts-nocheck' packages/runtime lib --glob '*.ts' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no explicit any in runtime adapters (use unknown + narrowing)",
+    cmd: `rg ': any\\b|<any>|as any\\b|any\\[\\]' packages/runtime/src/adapters --glob '*.ts' --glob '!**/*.test.ts' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "prefer harnessEventsToLiveSessionEvents at harness ingress",
+    cmd: `rg 'harnessEventToAdapterObservations\\(' server/live-session-event-publish.ts packages/runtime/src/session-handle.ts 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
     name: "no lib/harness-adapter-kit (colocated under runtime adapters)",
     cmd: `test -f lib/harness-adapter-kit.ts && echo found || true`,
     forbid: (out) => out.trim().length > 0,
