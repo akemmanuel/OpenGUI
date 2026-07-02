@@ -25,17 +25,21 @@ function extractPiListTextContent(message: { content?: unknown }) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
-    .filter(
-      (block): block is { type: string; text?: string } =>
-        Boolean(block && typeof block === "object" && (block as { type?: string }).type === "text"),
+    .filter((block): block is { type: string; text?: string } =>
+      Boolean(block && typeof block === "object" && (block as { type?: string }).type === "text"),
     )
     .map((block) => (typeof block.text === "string" ? block.text : ""))
     .join(" ");
 }
 
+type PiSessionFileStatRow = {
+  filePath: string;
+  stats: { size: number; birthtime: Date; mtime: Date; mtimeMs: number };
+};
+
 async function buildFastPiSessionInfo(
   filePath: string,
-  stats: { size: number; birthtime: Date; mtime: Date },
+  stats: PiSessionFileStatRow["stats"],
 ): Promise<PiFastSessionInfo | null> {
   try {
     const maxBytes = Math.min(stats.size, 64 * 1024);
@@ -54,8 +58,13 @@ async function buildFastPiSessionInfo(
       content = content.slice(0, lastNewline + 1);
     }
 
-    let header: { type?: string; id?: string; timestamp?: string; cwd?: string; parentSession?: string } | null =
-      null;
+    let header: {
+      type?: string;
+      id?: string;
+      timestamp?: string;
+      cwd?: string;
+      parentSession?: string;
+    } | null = null;
     let messageCount = 0;
     let firstMessage = "";
     let name: string | undefined;
@@ -161,19 +170,26 @@ export async function listFastPiSessionInfos(
   const files = entries
     .filter((entry) => entry.endsWith(".jsonl"))
     .map((entry) => join(sessionDir, entry));
-  const fileStats = await Promise.all(
-    files.map(async (filePath) => {
+  const fileStats: Array<PiSessionFileStatRow | null> = await Promise.all(
+    files.map(async (filePath): Promise<PiSessionFileStatRow | null> => {
       try {
-        return { filePath, stats: await stat(filePath) };
+        const st = await stat(filePath);
+        return {
+          filePath,
+          stats: {
+            size: Number(st.size),
+            birthtime: st.birthtime,
+            mtime: st.mtime,
+            mtimeMs: Number(st.mtimeMs),
+          },
+        };
       } catch {
         cache.delete(filePath);
         return null;
       }
     }),
   );
-  const liveStats = fileStats.filter(
-    (row): row is { filePath: string; stats: Awaited<ReturnType<typeof stat>> } => row !== null,
-  );
+  const liveStats = fileStats.filter((row): row is PiSessionFileStatRow => row !== null);
   const signature = liveStats
     .map(({ filePath, stats }) => `${filePath}:${stats.size}:${stats.mtimeMs}`)
     .join("\n");

@@ -1,4 +1,3 @@
-
 export const CODEX_VALID_VARIANTS = ["none", "minimal", "low", "medium", "high", "xhigh"];
 export const DEFAULT_MODEL_ID = "gpt-5.4";
 export const DEFAULT_PROVIDER_ID = "openai";

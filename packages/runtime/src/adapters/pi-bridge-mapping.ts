@@ -16,7 +16,7 @@ export function stringifyUnknown(value: unknown) {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return typeof value === "object" && value !== null ? "[object]" : String(value);
+    return "[object]";
   }
 }
 
@@ -295,7 +295,12 @@ export function createAssistantInfo({
 }
 
 export type PiMessageBundle = {
-  info: { id: string; sessionID: string; time: { created: number; completed?: number } };
+  info: {
+    id: string;
+    sessionID: string;
+    role?: string;
+    time: { created: number; completed?: number };
+  };
   parts: Array<Record<string, unknown>>;
 };
 

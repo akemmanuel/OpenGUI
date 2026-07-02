@@ -35,7 +35,13 @@ const CODEX_PROVIDER_CACHE_TTL_MS = 60_000;
 const CODEX_SESSION_PREFIX = "codex:";
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(CODEX_SESSION_PREFIX);
 
-let codexProviderCache = {
+type CodexProviderCache = {
+  expiresAt: number;
+  promise: Promise<unknown> | null;
+  value: unknown;
+};
+
+let codexProviderCache: CodexProviderCache = {
   expiresAt: 0,
   promise: null,
   value: null,
@@ -45,14 +51,18 @@ function getCodexExecutable() {
   return process.env.CODEX_EXECUTABLE?.trim() || "codex";
 }
 
-function createCodexClient(options = {}) {
+function createCodexClient(options: Record<string, unknown> = {}) {
   return new Codex({
     ...options,
     codexPathOverride: getCodexExecutable(),
   });
 }
 
-async function withCodexAppServer(requestWork) {
+async function withCodexAppServer<T>(
+  requestWork: (api: {
+    request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+  }) => Promise<T>,
+): Promise<T> {
   const env = pickCodexEnv(process.env);
   const executable = getCodexExecutable();
   return await new Promise((resolve, reject) => {
@@ -82,21 +92,21 @@ async function withCodexAppServer(requestWork) {
       }
     };
 
-    const settleResolve = (value) => {
+    const settleResolve = (value: T) => {
       if (settled) return;
       settled = true;
       cleanup();
       resolve(value);
     };
 
-    const settleReject = (error) => {
+    const settleReject = (error: unknown) => {
       if (settled) return;
       settled = true;
       cleanup();
       reject(error);
     };
 
-    const request = (method, params = {}) =>
+    const request = (method: string, params: Record<string, unknown> = {}) =>
       new Promise((resolveRequest, rejectRequest) => {
         const id = nextId++;
         const timer = setTimeout(() => {
@@ -166,7 +176,9 @@ async function withCodexAppServer(requestWork) {
   });
 }
 
-async function listCodexAppServerSessions(target = {}) {
+async function listCodexAppServerSessions(
+  target: { directory?: string; workspaceId?: string } = {},
+) {
   const workspaceId = target.workspaceId ?? "local";
   if (target.workspaceId !== undefined && target.workspaceId !== "local") return [];
   return await withCodexAppServer(async ({ request }) => {
@@ -195,7 +207,7 @@ async function listCodexAppServerSessions(target = {}) {
   });
 }
 
-async function readCodexAppServerMessages(sessionId) {
+async function readCodexAppServerMessages(sessionId: string) {
   return await withCodexAppServer(async ({ request }) => {
     const response = await request("thread/read", {
       threadId: sessionId,
@@ -254,7 +266,7 @@ async function getCodexProviderData() {
   return codexProviderCache.promise;
 }
 
-function getCodexModel(providerData, modelId) {
+function getCodexModel(providerData: { providers?: unknown[] } | null, modelId: string | null) {
   if (!providerData || !modelId) return null;
   for (const provider of Array.isArray(providerData.providers) ? providerData.providers : []) {
     const model = provider?.models?.[modelId];
@@ -263,7 +275,7 @@ function getCodexModel(providerData, modelId) {
   return null;
 }
 
-async function resolveSupportedCodexVariant(model, variant) {
+async function resolveSupportedCodexVariant(model: unknown, variant: unknown) {
   const normalized = resolveVariant(variant);
   if (!normalized) return undefined;
   const modelId = resolveSelectedModelId(model);
@@ -278,11 +290,11 @@ async function resolveSupportedCodexVariant(model, variant) {
 
 const MAX_CODEX_SESSION_INDEX_ENTRIES = 1000;
 
-function sessionStatus(type) {
+function sessionStatus(type: string) {
   return { type };
 }
 
-function firstLine(text) {
+function firstLine(text: unknown) {
   return (
     String(text ?? "")
       .trim()
@@ -290,26 +302,32 @@ function firstLine(text) {
   );
 }
 
-function makeSessionTitle(text, title) {
+function makeSessionTitle(text: unknown, title: unknown) {
   const explicit = typeof title === "string" ? title.trim() : "";
   if (explicit) return explicit;
   const line = firstLine(text);
   return line.slice(0, 80) || "Untitled";
 }
 
-function resolveSelectedModelId(selectedModel) {
+function resolveSelectedModelId(selectedModel: { modelID?: string } | null | undefined) {
   if (selectedModel?.modelID && typeof selectedModel.modelID === "string") {
     return selectedModel.modelID;
   }
   return DEFAULT_MODEL_ID;
 }
 
-function resolveVariant(variant) {
+function resolveVariant(variant: unknown) {
   if (typeof variant !== "string") return undefined;
   return CODEX_VALID_VARIANTS.includes(variant) ? variant : undefined;
 }
 
-function defaultUserInfo(sessionId, messageId, modelId, variant, createdAt = Date.now()) {
+function defaultUserInfo(
+  sessionId: string,
+  messageId: string,
+  modelId: string,
+  variant: string | undefined,
+  createdAt = Date.now(),
+) {
   return {
     id: messageId,
     sessionID: sessionId,
@@ -325,11 +343,11 @@ function defaultUserInfo(sessionId, messageId, modelId, variant, createdAt = Dat
 }
 
 function defaultAssistantInfo(
-  sessionId,
-  messageId,
-  directory,
-  modelId,
-  variant,
+  sessionId: string,
+  messageId: string,
+  directory: string,
+  modelId: string,
+  variant: string | undefined,
   createdAt = Date.now(),
 ) {
   return {
@@ -357,7 +375,13 @@ function defaultAssistantInfo(
   };
 }
 
-function makeTextPart(sessionId, messageId, partId, text, synthetic = false) {
+function makeTextPart(
+  sessionId: string,
+  messageId: string,
+  partId: string,
+  text: string,
+  synthetic = false,
+) {
   return {
     id: partId,
     sessionID: sessionId,
@@ -368,7 +392,13 @@ function makeTextPart(sessionId, messageId, partId, text, synthetic = false) {
   };
 }
 
-function makeReasoningPart(sessionId, messageId, partId, text, start = Date.now()) {
+function makeReasoningPart(
+  sessionId: string,
+  messageId: string,
+  partId: string,
+  text: string,
+  start = Date.now(),
+) {
   return {
     id: partId,
     sessionID: sessionId,
@@ -379,7 +409,7 @@ function makeReasoningPart(sessionId, messageId, partId, text, start = Date.now(
   };
 }
 
-function parseDataUrl(dataUrl) {
+function parseDataUrl(dataUrl: unknown) {
   if (typeof dataUrl !== "string") return null;
   const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/);
   if (!match) return null;
@@ -389,7 +419,7 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-function mimeToExtension(mimeType) {
+function mimeToExtension(mimeType: string) {
   switch (mimeType) {
     case "image/png":
       return ".png";
@@ -405,7 +435,7 @@ function mimeToExtension(mimeType) {
   }
 }
 
-function createUserImageParts(sessionId, messageId, images) {
+function createUserImageParts(sessionId: string, messageId: string, images: unknown) {
   return (Array.isArray(images) ? images : [])
     .map((image, index) => {
       const parsed = parseDataUrl(image);
@@ -423,7 +453,7 @@ function createUserImageParts(sessionId, messageId, images) {
     .filter(Boolean);
 }
 
-function stringifyUnknown(value) {
+function stringifyUnknown(value: unknown) {
   if (typeof value === "string") return value;
   if (value == null) return "";
   try {
@@ -433,7 +463,7 @@ function stringifyUnknown(value) {
   }
 }
 
-function appendOrReplaceCumulativeDelta(current, delta) {
+function appendOrReplaceCumulativeDelta(current: unknown, delta: string) {
   const currentText = typeof current === "string" ? current : "";
   if (currentText && delta.length > currentText.length && delta.startsWith(currentText)) {
     return delta;
@@ -441,7 +471,7 @@ function appendOrReplaceCumulativeDelta(current, delta) {
   return `${currentText}${delta}`;
 }
 
-function mcpContentToText(result) {
+function mcpContentToText(result: { content?: unknown[]; structured_content?: unknown } | null) {
   if (!result || !Array.isArray(result.content))
     return stringifyUnknown(result?.structured_content);
   const parts = [];
@@ -461,18 +491,18 @@ function mcpContentToText(result) {
   return joined || stringifyUnknown(result?.structured_content);
 }
 
-function cloneJSON(value) {
+function cloneJSON(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function makeStoragePaths(userData = join(homedir(), ".config", "OpenGUI")) {
+function makeStoragePaths(userData: string = join(homedir(), ".config", "OpenGUI")) {
   const root = join(userData, "codex");
   return {
     root,
   };
 }
 
-function buildCodexPath(source) {
+function buildCodexPath(source: Record<string, unknown>) {
   const pathValue = typeof source?.PATH === "string" ? source.PATH : "";
   const home = source?.HOME || homedir();
   const candidates = [
@@ -489,7 +519,7 @@ function buildCodexPath(source) {
   return parts.join(":");
 }
 
-function pickCodexEnv(source) {
+function pickCodexEnv(source: NodeJS.ProcessEnv) {
   const env = {};
   const allow = new Set([
     "PATH",
@@ -526,7 +556,7 @@ function pickCodexEnv(source) {
   return env;
 }
 
-function getMessageText(bundle) {
+function getMessageText(bundle: { parts?: Array<{ type?: string; text?: string }> } | null) {
   if (!bundle || !Array.isArray(bundle.parts)) return "";
   return bundle.parts
     .filter((part) => part?.type === "text" && typeof part.text === "string")
@@ -535,7 +565,7 @@ function getMessageText(bundle) {
     .trim();
 }
 
-function getSessionPreview(messages) {
+function getSessionPreview(messages: Array<{ parts?: unknown[] }>) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const text = getMessageText(messages[i]);
     if (text) return firstLine(text).slice(0, 160);
@@ -543,7 +573,10 @@ function getSessionPreview(messages) {
   return "";
 }
 
-function upsertMessage(messages, info) {
+function upsertMessage(
+  messages: Array<{ info: { id: string }; parts: unknown[] }>,
+  info: { id: string },
+) {
   let bundle = messages.find((entry) => entry.info.id === info.id);
   if (!bundle) {
     bundle = { info, parts: [] };
@@ -554,11 +587,14 @@ function upsertMessage(messages, info) {
   return bundle;
 }
 
-function findMessage(messages, messageId) {
+function findMessage(messages: Array<{ info: { id: string } }>, messageId: string) {
   return messages.find((entry) => entry.info.id === messageId) ?? null;
 }
 
-function upsertPart(messages, part) {
+function upsertPart(
+  messages: Array<{ info: { id: string }; parts: Array<{ id: string; messageID: string }> }>,
+  part: { id: string; messageID: string },
+) {
   const bundle = findMessage(messages, part.messageID);
   if (!bundle) return null;
   const index = bundle.parts.findIndex((entry) => entry.id === part.id);
@@ -570,20 +606,28 @@ function upsertPart(messages, part) {
   return part;
 }
 
-function findPart(messages, messageId, partId) {
+function findPart(
+  messages: Array<{ info: { id: string }; parts: Array<{ id: string }> }>,
+  messageId: string,
+  partId: string,
+) {
   const bundle = findMessage(messages, messageId);
   if (!bundle) return null;
   return bundle.parts.find((part) => part.id === partId) ?? null;
 }
 
-function renameSessionInMessages(messages, oldId, newId) {
+function renameSessionInMessages(
+  messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>,
+  oldId: string,
+  newId: string,
+) {
   for (const bundle of messages) {
     bundle.info = { ...bundle.info, sessionID: newId };
     bundle.parts = bundle.parts.map((part) => ({ ...part, sessionID: newId }));
   }
 }
 
-function summarizeFileChanges(changes) {
+function summarizeFileChanges(changes: Array<{ path: string; kind: string }> | null | undefined) {
   return (Array.isArray(changes) ? changes : []).map((change) => ({
     filePath: change.path,
     relativePath: change.path,
@@ -593,7 +637,13 @@ function summarizeFileChanges(changes) {
   }));
 }
 
-function buildToolPartFromItem(sessionId, messageId, item, existingPart, phase) {
+function buildToolPartFromItem(
+  sessionId: string,
+  messageId: string,
+  item: Record<string, unknown> & { id: string; type: string },
+  existingPart: Record<string, unknown> | null | undefined,
+  phase: string,
+) {
   const now = Date.now();
   const base = {
     id: existingPart?.id ?? `${messageId}:tool:${item.id}`,
@@ -811,10 +861,7 @@ class CodexBridgeManager {
   storageReady: Promise<void>;
   codex: ReturnType<typeof createCodexClient>;
 
-  constructor(
-    getAllWindows: () => Iterable<unknown>,
-    options: { userData?: string } = {},
-  ) {
+  constructor(getAllWindows: () => Iterable<unknown>, options: { userData?: string } = {}) {
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("codex", getAllWindows);
     this.projects = new Map();
     this.sessionIndex = new Map();

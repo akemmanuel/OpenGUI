@@ -1,5 +1,34 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { PiBridgeManager } from "./pi-bridge.ts";
+
+type PiDaemonRpcMethod = keyof PiBridgeManager &
+  (
+    | "addProject"
+    | "removeProject"
+    | "disconnect"
+    | "listSessions"
+    | "createSession"
+    | "deleteSession"
+    | "updateSession"
+    | "getSessionStatuses"
+    | "forkSession"
+    | "getProviders"
+    | "listAllProviders"
+    | "getProviderAuthMethods"
+    | "connectProvider"
+    | "disconnectProvider"
+    | "oauthAuthorize"
+    | "oauthCallback"
+    | "disposeProviderInstance"
+    | "getAgents"
+    | "getCommands"
+    | "getMessages"
+    | "startSession"
+    | "prompt"
+    | "abort"
+    | "sendCommand"
+    | "summarizeSession"
+  );
 
 const MAX_BODY_BYTES = 100 * 1024 * 1024;
 
@@ -105,7 +134,7 @@ function makeManager(eventHub: EventHub) {
   const fakeWindow = {
     isDestroyed: () => false,
     webContents: {
-      send: (_channel, event) => eventHub.broadcast(event),
+      send: (_channel: string, event: unknown) => eventHub.broadcast(event),
     },
   };
   return new PiBridgeManager(() => [fakeWindow]);
@@ -128,7 +157,8 @@ export async function runPiDaemon({
   const eventHub = new EventHub();
   const manager = makeManager(eventHub);
 
-  const isAuthorized = (req) => req.headers["x-opengui-pi-token"] === resolvedToken;
+  const isAuthorized = (req: IncomingMessage) =>
+    req.headers["x-opengui-pi-token"] === resolvedToken;
 
   const server = createServer(async (req, res) => {
     try {
@@ -158,13 +188,18 @@ export async function runPiDaemon({
 
       if (req.method === "POST" && req.url === "/rpc") {
         const body = await readJson(req);
-        const method = body?.method;
-        const args = Array.isArray(body?.args) ? body.args : [];
-        if (!ALLOWED_METHODS.has(method) || typeof manager[method] !== "function") {
+        const method = body?.method as string | undefined;
+        const args = Array.isArray(body?.args) ? (body.args as unknown[]) : [];
+        if (
+          !method ||
+          !ALLOWED_METHODS.has(method) ||
+          typeof manager[method as keyof PiBridgeManager] !== "function"
+        ) {
           json(res, 400, fail(`Unknown Pi daemon method: ${method}`));
           return;
         }
-        const data = await manager[method](...args);
+        const rpc = method as PiDaemonRpcMethod;
+        const data = await (manager[rpc] as (...rpcArgs: unknown[]) => Promise<unknown>)(...args);
         json(res, 200, ok(data));
         return;
       }

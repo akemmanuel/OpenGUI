@@ -11,10 +11,19 @@ import {
   normalizeHarnessDirectory as normalizeDir,
 } from "./harness-adapter-kit.ts";
 
+export type PiAgentRuntimeServices = {
+  modelRegistry?: {
+    refresh?: () => void;
+    getAvailable: () => unknown[];
+    authStorage?: { reload?: () => void };
+  };
+};
+
 export type PiLiveSessionContext = {
   runtime: {
     session: PiLiveSessionLike;
     dispose: () => Promise<void>;
+    services?: PiAgentRuntimeServices;
   };
   session: PiLiveSessionLike;
   unsubscribe: (() => void) | null;

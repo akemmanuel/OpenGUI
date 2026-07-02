@@ -13,7 +13,10 @@ import {
   stringifyUnknown,
   syncAssistantParts,
 } from "./pi-bridge-mapping.ts";
-import { findCurrentAssistantBundleInCache } from "./pi-bridge-live-resolution.ts";
+import {
+  findCurrentAssistantBundleInCache,
+  type PiProjectLike,
+} from "./pi-bridge-live-resolution.ts";
 
 export type PiSessionEventBridgeContext = {
   upsertBundle(project: unknown, sessionId: string, bundle: unknown): void;
@@ -35,7 +38,26 @@ export function handlePiAssistantMessageStart(
   ctx: PiSessionEventBridgeContext,
   project: unknown,
   session: { sessionId: string; sessionManager: unknown },
-  event: { message: { role: string; timestamp?: unknown } },
+  event: {
+    message: {
+      role: string;
+      timestamp?: unknown;
+      stopReason?: string;
+      errorMessage?: string;
+      model?: string;
+      provider?: string;
+      variant?: string;
+      usage?: {
+        cost?: { total?: number };
+        totalTokens?: number;
+        input?: number;
+        output?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+      };
+      content?: Parameters<typeof syncAssistantParts>[1]["content"];
+    };
+  },
   state: {
     nextSeq: number;
     currentAssistantMessageId?: string | null;
@@ -63,7 +85,14 @@ export function handlePiAssistantMessageStart(
       sessionId,
       messageId,
       timestamp: coerceTimestamp(event.message.timestamp),
-      message: event.message,
+      message: {
+        stopReason: event.message.stopReason,
+        errorMessage: event.message.errorMessage,
+        model: event.message.model,
+        provider: event.message.provider,
+        variant: event.message.variant,
+        usage: event.message.usage,
+      },
       directory,
       parentID,
       createdAt: startedAt,
@@ -124,7 +153,7 @@ export function handlePiToolExecutionStart(
 
 /** Resolve assistant bundle for tool routing (re-export for tests). */
 export function resolvePiToolAssistantBundle(
-  project: { sessionCaches: Map<string, { messages: unknown[] }> },
+  project: PiProjectLike,
   sessionId: string,
   state: Parameters<typeof findCurrentAssistantBundleInCache>[2],
 ) {

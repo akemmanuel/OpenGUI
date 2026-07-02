@@ -106,7 +106,9 @@ function buildModelVariants(
   return Object.keys(variants).length > 0 ? variants : undefined;
 }
 
-export function buildProvidersFromSupportedModels(models: ClaudeSupportedModel[] | null | undefined) {
+export function buildProvidersFromSupportedModels(
+  models: ClaudeSupportedModel[] | null | undefined,
+) {
   const normalizedModels =
     Array.isArray(models) && models.length > 0 ? models : FALLBACK_SUPPORTED_MODELS;
   const providerModels = Object.fromEntries(

@@ -6,6 +6,11 @@ import {
   resolveAssistantBundleCandidateIds,
   resolvePiProjectForSession,
 } from "../pi-bridge-live-resolution.ts";
+import { createEmptyPiProjectShell } from "../pi-project-slot.ts";
+
+function mockProject(directory: string, workspaceId?: string) {
+  return createEmptyPiProjectShell("k", directory, workspaceId);
+}
 
 describe("resolveAssistantBundleCandidateIds", () => {
   test("includes synthetic id and mapped real id", () => {
@@ -147,7 +152,7 @@ describe("resolvePiProjectForSession", () => {
         findLiveProjectKey: () => undefined,
         ensureProject: async (t) => {
           ensured.push(t.directory);
-          return { key: "k", directory: t.directory, workspaceId: t.workspaceId };
+          return mockProject(t.directory, t.workspaceId);
         },
       },
       "s1",
@@ -165,11 +170,7 @@ describe("resolvePiProjectForSession", () => {
           ["s1", { projectKey: "k", directory: "/indexed", workspaceId: "w" }],
         ]),
         findLiveProjectKey: () => undefined,
-        ensureProject: async (t) => ({
-          key: "k",
-          directory: t.directory,
-          workspaceId: t.workspaceId,
-        }),
+        ensureProject: async (t) => mockProject(t.directory, t.workspaceId),
       },
       "s1",
       {},
@@ -178,7 +179,7 @@ describe("resolvePiProjectForSession", () => {
   });
 
   test("single registered project when no hints", async () => {
-    const only = { key: "k", directory: "/only", workspaceId: undefined };
+    const only = mockProject("/only");
     const project = await resolvePiProjectForSession(
       {
         projects: {
@@ -197,8 +198,8 @@ describe("resolvePiProjectForSession", () => {
   });
 
   test("throws when multiple projects and no directory", async () => {
-    const a = { key: "a", directory: "/a" };
-    const b = { key: "b", directory: "/b" };
+    const a = mockProject("/a");
+    const b = mockProject("/b");
     await expect(
       resolvePiProjectForSession(
         {
@@ -209,7 +210,7 @@ describe("resolvePiProjectForSession", () => {
           },
           sessionIndex: new Map(),
           findLiveProjectKey: () => undefined,
-          ensureProject: async (t) => ({ key: "x", directory: t.directory }),
+          ensureProject: async (t) => mockProject(t.directory),
         },
         "s1",
         {},

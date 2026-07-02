@@ -1,4 +1,5 @@
 import type { PiMessageBundle } from "./pi-bridge-mapping.ts";
+import type { PiBridgeProject } from "./pi-project-slot.ts";
 
 export interface PiPendingAssistantResolution {
   syntheticId: string;
@@ -28,28 +29,15 @@ export interface PiSessionIndexEntry {
 
 export interface PiProjectRegistryLike {
   size: number;
-  values(): IterableIterator<{
-    key: string;
-    directory: string;
-    workspaceId?: string;
-  }>;
-  get(key: string):
-    | {
-        key: string;
-        directory: string;
-        workspaceId?: string;
-      }
-    | undefined;
+  values(): IterableIterator<PiBridgeProject>;
+  get(key: string): PiBridgeProject | undefined;
 }
 
 export interface ResolvePiProjectContext {
   projects: PiProjectRegistryLike;
   sessionIndex: Map<string, PiSessionIndexEntry>;
   findLiveProjectKey(sessionId: string): string | undefined;
-  ensureProject(target: {
-    directory: string;
-    workspaceId?: string;
-  }): Promise<{ key: string; directory: string; workspaceId?: string }>;
+  ensureProject(target: { directory: string; workspaceId?: string }): Promise<PiBridgeProject>;
 }
 
 export function resolveAssistantBundleCandidateIds(state: PiLiveAssistantState): string[] {
@@ -59,6 +47,7 @@ export function resolveAssistantBundleCandidateIds(state: PiLiveAssistantState):
   }
   for (let i = 0; i < candidateIds.length; i += 1) {
     const id = candidateIds[i];
+    if (typeof id !== "string") continue;
     const mapped = state.syntheticToReal?.get(id);
     if (mapped) candidateIds.push(mapped);
   }
@@ -122,7 +111,7 @@ export async function resolvePiProjectForSession(
   ctx: ResolvePiProjectContext,
   sessionId: string,
   target: { directory?: string; workspaceId?: string } = {},
-): Promise<{ key: string; directory: string; workspaceId?: string }> {
+): Promise<PiBridgeProject> {
   const directory =
     typeof target.directory === "string" && target.directory.trim()
       ? target.directory.trim().replace(/\/+$/, "")
@@ -143,11 +132,13 @@ export async function resolvePiProjectForSession(
     });
   }
   if (ctx.projects.size === 1) {
-    return ctx.projects.values().next().value as {
-      key: string;
-      directory: string;
-      workspaceId?: string;
-    };
+    const only = ctx.projects.values().next().value;
+    if (only) {
+      return ctx.ensureProject({
+        directory: only.directory,
+        workspaceId: only.workspaceId,
+      });
+    }
   }
   throw new Error("Pi operation requires a Project directory");
 }

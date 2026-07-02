@@ -47,6 +47,11 @@ export type PiBranchEntry = {
     errorMessage?: string;
     provider?: string;
     model?: string;
+    variant?: string;
+    toolCallId?: string;
+    isError?: boolean;
+    details?: unknown;
+    usage?: Record<string, unknown>;
   };
   assistantMessageEvent?: {
     type: string;
@@ -77,12 +82,31 @@ export type PiLiveSessionLike = {
   subscribe: (handler: (event: PiNativeSessionEvent) => void) => () => void;
   isStreaming?: boolean;
   isCompacting?: boolean;
+  prompt?: (text: string, options?: Record<string, unknown>) => Promise<unknown>;
+  abort?: () => Promise<unknown>;
+  compact?: () => Promise<unknown>;
+  setModel?: (model: unknown) => Promise<unknown>;
+  setThinkingLevel?: (level: string) => void;
+  setSessionName?: (name: string) => void;
+  model?: unknown;
+  modelRegistry?: {
+    refresh?: () => void;
+    getAvailable: () => unknown[];
+    authStorage?: { reload?: () => void };
+  };
+  extensionRunner?: { getRegisteredCommands: () => unknown[] };
+  promptTemplates?: unknown[];
+  resourceLoader?: { getSkills: () => { skills: unknown[] } };
 };
 
 export type PiNativeSessionEvent = {
   type: string;
+  toolResults?: unknown[];
   message?: PiBranchEntry["message"] & { role: string };
-  assistantMessageEvent?: PiBranchEntry["assistantMessageEvent"];
+  assistantMessageEvent?: {
+    type: string;
+    contentIndex?: number;
+  };
   toolCallId?: string;
   toolName?: string;
   args?: Record<string, unknown>;

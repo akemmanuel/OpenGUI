@@ -173,7 +173,9 @@ export class GrokAcpClient {
       if (!entry) return;
       this.#pending.delete(message.id);
       if (message.error) {
-        const err = new Error(message.error?.message || `Grok ACP error: ${message.id}`) as Error & {
+        const err = new Error(
+          message.error?.message || `Grok ACP error: ${message.id}`,
+        ) as Error & {
           code?: unknown;
         };
         err.code = message.error?.code;
@@ -202,8 +204,7 @@ export class GrokAcpClient {
         terminal: true,
       },
     });
-    this.#initResult =
-      init && typeof init === "object" ? (init as Record<string, unknown>) : null;
+    this.#initResult = init && typeof init === "object" ? (init as Record<string, unknown>) : null;
   }
 }
 

@@ -46,7 +46,9 @@ class GrokBuildBridgeManager {
   availableCommands: unknown[];
   acpReady: Promise<void> | null;
 
-  constructor(getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>) {
+  constructor(
+    getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>,
+  ) {
     this.getAllWindows = getAllWindows;
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("grok-build", getAllWindows);
     this.projects = new Map();

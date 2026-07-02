@@ -52,22 +52,34 @@ function makeModel(id: string, name: string, options: GrokModelOptions = {}): Gr
   };
 }
 
+function grokModelStringField(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
+}
+
 export function mapGrokModelEntry(entry: Record<string, unknown> | null | undefined) {
-  const id = String(entry?.modelId ?? entry?.id ?? "").trim();
+  const id = grokModelStringField(entry?.modelId ?? entry?.id).trim();
   if (!id) return null;
   const meta = entry?._meta as { totalContextTokens?: number; agentType?: string } | undefined;
   const context = meta?.totalContextTokens;
-  return makeModel(id, String(entry?.name ?? id), {
+  const name = grokModelStringField(entry?.name, id);
+  return makeModel(id, name, {
     description: typeof entry?.description === "string" ? entry.description : undefined,
     reasoning: meta?.agentType !== "cursor",
     context: typeof context === "number" ? context : undefined,
   });
 }
 
-export function buildGrokProvidersFromModelState(modelState: {
-  availableModels?: unknown[];
-  currentModelId?: string;
-} | null | undefined) {
+export function buildGrokProvidersFromModelState(
+  modelState:
+    | {
+        availableModels?: unknown[];
+        currentModelId?: string;
+      }
+    | null
+    | undefined,
+) {
   const models: Record<string, GrokModelRecord> = {};
   const available = Array.isArray(modelState?.availableModels) ? modelState.availableModels : [];
   for (const entry of available) {
@@ -106,7 +118,9 @@ export function buildGrokProvidersFromModelState(modelState: {
   };
 }
 
-export function resolveSelectedModelId(selectedModel: { id?: string; modelID?: string } | null | undefined) {
+export function resolveSelectedModelId(
+  selectedModel: { id?: string; modelID?: string } | null | undefined,
+) {
   const id = selectedModel?.id ?? selectedModel?.modelID;
   return typeof id === "string" && id.trim() ? id.trim() : DEFAULT_MODEL_ID;
 }
