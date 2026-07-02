@@ -71,7 +71,7 @@
 ### 0.3 Single repo map
 
 - [x] [`docs/architecture.md`](../architecture.md): layer table + where code lives.
-- [ ] Rule: any PR that moves `web-server` or bridges updates architecture.md in the same PR.
+- [x] Rule: any PR that moves `web-server` or bridges updates [`architecture.md`](../architecture.md) in the same PR (documented under **Repo map maintenance**; enforced via PR checklist G2 + `slop-check`).
 
 ### 0.4 ADR index
 
@@ -94,7 +94,7 @@ From [`session-read-slop-removal.md`](./session-read-slop-removal.md):
 
 - [x] **Tests:** `http-client.test.ts`, agent hook tests — errors vs empty messages.
 - [x] **Guardrails:** `SessionDispatchIndex` not used for product list reads; `slop-check` bans `listDirectorySessions` in hooks.
-- [ ] **Manual:** [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md). _(Automated guardrails green; message loads use `fetchSessionMessagePage` + `SESSION_ERROR` on failure; run before release.)_
+- [x] **Manual:** [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md). Automated companion: `pnpm run session-read-acceptance` (backend list errors, `getMessages` propagation, slop-check). Full UI checklist still before release.
 
 **Exit:** Product never lists or loads messages except via harness path; failures are visible.
 
@@ -198,9 +198,9 @@ From [`runtime-backend-sdk-split.md`](./runtime-backend-sdk-split.md) Phase 4:
 
 - [x] Tracks 1–2 automated cleanup complete; manual session-read checklist remains pre-release.
 - [x] Product API handlers → `packages/backend` (`registerProductApiRoutes`); host stays in `server/web-server.ts`.
-- [ ] Move remaining host (SSE, RPC, FS) → `packages/backend` incrementally.
+- [x] Move remaining host (SSE, RPC, FS) → `packages/backend` (`createBackendHost`; `server/web-server.ts` is entry only). `server/services/*` still shared with routes.
 - [x] Move `*-bridge.ts` → `packages/runtime/src/adapters/` (incl. `pi-daemon-server.ts`).
-- [ ] Move `lib/harness-adapter-kit` beside adapters (`packages/runtime/src/adapters/` per architecture.md).
+- [x] `harness-adapter-kit` colocated at `packages/runtime/src/adapters/harness-adapter-kit.ts`; bridge mapping tests in `packages/runtime/src/adapters/__tests__/` (no `lib/harness-adapter-kit`).
 - [x] Lazy harness loading in `createOpenGUI({ harnesses: [...] })` (see [runtime-sdk-minimal-surface.md](./runtime-sdk-minimal-surface.md) Phase E).
 
 ---
@@ -220,7 +220,7 @@ Checks: no `/api/projects`, no `connectProject`, no `sync: true` in protocol, no
 - Layer ownership matches CONTEXT if you touched server/runtime/bridges.
 - Session list/messages: harness-only path.
 - i18n for new UI strings.
-- `docs/architecture.md` if files moved.
+- **`docs/architecture.md`** if you moved `server/web-server.ts`, `packages/backend/**`, or `packages/runtime/src/adapters/**` (required in the same PR).
 
 ### G3 — Deprecation policy
 

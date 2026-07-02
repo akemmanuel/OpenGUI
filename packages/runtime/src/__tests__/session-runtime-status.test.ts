@@ -1,8 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  sessionStatusKey,
-  updateSessionStatusMap,
-} from "../packages/runtime/src/session-runtime-status.ts";
+import { sessionStatusKey, updateSessionStatusMap } from "../session-runtime-status.ts";
 
 describe("updateSessionStatusMap", () => {
   test("updates idle across registered directory without directory on event", () => {

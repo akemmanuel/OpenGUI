@@ -18,110 +18,22 @@ import {
   DEFAULT_PROVIDER_ID,
   resolveSelectedModelId,
 } from "./grok-build-models.ts";
+import {
+  defaultAssistantInfo,
+  defaultUserInfo,
+  getSessionPreview,
+  makeReasoningPart,
+  makeSessionTitle,
+  makeTextPart,
+  upsertMessage,
+} from "./grok-build-bridge-mapping.ts";
 
 const GROK_BUILD_SESSION_PREFIX = "grok-build:";
 const { toFrontendSessionId, toRawSessionId } =
   makeHarnessSessionIdCodec(GROK_BUILD_SESSION_PREFIX);
 
-function firstLine(text) {
-  return (
-    String(text ?? "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean) ?? ""
-  );
-}
-
-function makeSessionTitle(text, fallback = "Untitled") {
-  const line = firstLine(text);
-  return line.slice(0, 80) || fallback;
-}
-
-function defaultUserInfo(sessionId, messageId, modelId, createdAt = Date.now()) {
-  return {
-    id: messageId,
-    sessionID: sessionId,
-    role: "user",
-    time: { created: createdAt },
-    agent: "grok-build",
-    model: {
-      providerID: DEFAULT_PROVIDER_ID,
-      modelID: modelId,
-    },
-  };
-}
-
-function defaultAssistantInfo(sessionId, messageId, directory, modelId, createdAt = Date.now()) {
-  return {
-    id: messageId,
-    sessionID: sessionId,
-    role: "assistant",
-    time: { created: createdAt },
-    parentID: "",
-    modelID: modelId,
-    providerID: DEFAULT_PROVIDER_ID,
-    mode: "grok-build",
-    agent: "grok-build",
-    path: {
-      cwd: directory,
-      root: directory,
-    },
-    cost: 0,
-    tokens: {
-      input: 0,
-      output: 0,
-      reasoning: 0,
-      cache: { read: 0, write: 0 },
-    },
-  };
-}
-
-function makeTextPart(sessionId, messageId, partId, text, synthetic = false) {
-  return {
-    id: partId,
-    sessionID: sessionId,
-    messageID: messageId,
-    type: "text",
-    text,
-    ...(synthetic ? { synthetic: true } : {}),
-  };
-}
-
-function makeReasoningPart(sessionId, messageId, partId, text, start = Date.now()) {
-  return {
-    id: partId,
-    sessionID: sessionId,
-    messageID: messageId,
-    type: "reasoning",
-    text,
-    time: { start },
-  };
-}
-
-function upsertMessage(messages, info) {
-  const existing = messages.find((entry) => entry.info.id === info.id);
-  if (existing) {
-    existing.info = { ...existing.info, ...info };
-    return existing;
-  }
-  const bundle = { info, parts: [] };
-  messages.push(bundle);
-  return bundle;
-}
-
 function findMessage(messages, messageId) {
   return messages.find((entry) => entry.info.id === messageId) ?? null;
-}
-
-function getSessionPreview(messages) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const entry = messages[index];
-    if (entry.info.role !== "user") continue;
-    for (const part of entry.parts) {
-      if (part.type === "text" && part.text) return part.text;
-    }
-  }
-  return "";
 }
 
 class GrokBuildBridgeManager {

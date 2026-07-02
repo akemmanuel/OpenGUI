@@ -21,17 +21,19 @@ Four layers — same definitions as [`CONTEXT.md` → Architecture](../CONTEXT.m
 
 Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backend-sdk-split.md). Current mapping:
 
-| Layer               | Package / entry                  | Main paths                                                                                                                                                             |
-| ------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared wire types   | `@opengui/protocol`              | `packages/protocol/src/` (`HarnessId`, `OpenGuiCapabilities`, `QueueMode`, `SelectedModel`)                                                                            |
-| Runtime             | `@opengui/runtime`               | `packages/runtime/src/` (`host.ts`, `harness-service.ts`, `harness-runtime.ts`, `open-gui.ts`)                                                                         |
-| Harness Adapters    | `packages/runtime/src/adapters/` | `*-bridge.ts`, `harness-adapter-kit.ts`                                                                                                                                |
-| Runtime descriptors | Shared with Frontend protocol    | `src/agents/` (`backend.ts`, `cli-harness-factory.ts`, `protocol/`)                                                                                                    |
-| Backend             | Host entry + product HTTP routes | `server/web-server.ts` (SSE, RPC, FS, static); `registerProductApiRoutes` from `@opengui/backend`; `SessionDispatchIndex` for queue/control only (`server/services/*`) |
-| Frontend            | React app                        | `src/` (`App.tsx`, `components/`, `hooks/`, `features/`, `protocol/`)                                                                                                  |
-| Desktop Shell       | Electron                         | `main.ts`, `preload.ts`, `main/backend-sidecar.ts`                                                                                                                     |
+| Layer               | Package / entry                  | Main paths                                                                                                                                                                                                                                |
+| ------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared wire types   | `@opengui/protocol`              | `packages/protocol/src/` (`HarnessId`, `OpenGuiCapabilities`, `QueueMode`, `SelectedModel`)                                                                                                                                               |
+| Runtime             | `@opengui/runtime`               | `packages/runtime/src/` (`host.ts`, `harness-service.ts`, `harness-runtime.ts`, `open-gui.ts`)                                                                                                                                            |
+| Harness Adapters    | `packages/runtime/src/adapters/` | `*-bridge.ts`, `harness-adapter-kit.ts`                                                                                                                                                                                                   |
+| Runtime descriptors | Shared with Frontend protocol    | `src/agents/` (`backend.ts`, `cli-harness-factory.ts`, `protocol/`)                                                                                                                                                                       |
+| Backend             | `@opengui/backend` + thin entry  | `packages/backend/src/` (`createBackendHost`, `host/`, `routes/`, `transport/` — SSE, RPC, FS, static, product API); `server/web-server.ts` (~15 lines, `serve()` only); queue/control services in `server/services/*` until a later pass |
+| Frontend            | React app                        | `src/` (`App.tsx`, `components/`, `hooks/`, `features/`, `protocol/`)                                                                                                                                                                     |
+| Desktop Shell       | Electron                         | `main.ts`, `preload.ts`, `main/backend-sidecar.ts`                                                                                                                                                                                        |
 
 **Rule:** UI and hooks call **Backend** APIs only, not bridge IPC. Bridges register inside the Backend process via Runtime ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
+
+**Repo map maintenance:** Any PR that moves `server/web-server.ts`, `packages/backend/**`, or Harness bridge modules under `packages/runtime/src/adapters/` must update this section (layer table and paths) in the same PR. CI guard: `pnpm run slop-check` (thin `web-server`, no `lib/harness-adapter-kit`).
 
 **Storage:** [ADR 0004](./adr/0004-storage-source-of-truth-boundaries.md) — Harness owns sessions/transcripts; Backend SQLite owns queues/uploads; Frontend persistence owns Workspaces/Projects/UI.
 

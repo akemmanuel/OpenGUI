@@ -22,6 +22,11 @@ import {
   nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
 import {
+  buildMessagesFromCodexAppServerThread,
+  normalizeAppServerItem,
+  normalizeCodexAppServerThread,
+} from "./codex-bridge-mapping.ts";
+import {
   makeHarnessBridgeEventEmitter,
   registerObjectTargetHarnessRpcHandlers,
 } from "./harness-adapter-host.ts";
@@ -160,176 +165,6 @@ async function withCodexAppServer(requestWork) {
       }
     })();
   });
-}
-
-function codexTimestampToMs(value) {
-  if (!Number.isFinite(value)) return Date.now();
-  return value > 10_000_000_000 ? value : value * 1000;
-}
-
-function normalizeCodexAppServerThread(thread, workspaceId) {
-  const createdAt = codexTimestampToMs(thread?.createdAt);
-  const updatedAt = codexTimestampToMs(thread?.updatedAt ?? thread?.createdAt);
-  const directory = normalizeDir(thread?.cwd) || "";
-  const title = firstLine(thread?.name || thread?.preview || "").slice(0, 80) || "Untitled";
-  const rawId = toRawSessionId(thread.id);
-  const id = toFrontendSessionId(rawId);
-  return {
-    id,
-    slug: id,
-    _harnessId: "codex",
-    _rawId: rawId,
-    projectID: directory,
-    workspaceID: workspaceId,
-    directory,
-    title,
-    version: "codex",
-    time: {
-      created: createdAt,
-      updated: updatedAt,
-    },
-  };
-}
-
-function appServerUserText(item) {
-  const content = Array.isArray(item?.content) ? item.content : [];
-  return content
-    .map((entry) => {
-      if (typeof entry?.text === "string") return entry.text;
-      if (Array.isArray(entry?.text_elements)) {
-        return entry.text_elements.map((el) => el?.text || "").join("");
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-}
-
-function appServerItemText(item) {
-  if (typeof item?.text === "string") return item.text;
-  if (typeof item?.message === "string") return item.message;
-  if (Array.isArray(item?.content)) return appServerUserText(item);
-  return "";
-}
-
-function appServerReasoningText(item) {
-  const chunks = [];
-  const collect = (value) => {
-    if (typeof value === "string" && value.trim()) chunks.push(value);
-    else if (Array.isArray(value)) {
-      for (const entry of value) collect(entry?.text ?? entry?.summary ?? entry?.content ?? entry);
-    } else if (value && typeof value === "object") {
-      collect(value.text ?? value.summary ?? value.content);
-    }
-  };
-  collect(item?.summary);
-  collect(item?.content);
-  return chunks.join("\n\n").trim();
-}
-
-function appServerStatusToCodexStatus(status) {
-  if (status === "inProgress") return "in_progress";
-  if (status === "declined") return "failed";
-  return status || "completed";
-}
-
-function normalizeAppServerItem(item, existing = {}) {
-  if (!item || typeof item !== "object") return null;
-  const id = item.id || existing.id || randomUUID();
-  if (item.type === "agentMessage" || item.type === "assistantMessage") {
-    return { id, type: "agent_message", text: appServerItemText(item) || existing.text || "" };
-  }
-  if (item.type === "reasoning") {
-    return { id, type: "reasoning", text: appServerReasoningText(item) || existing.text || "" };
-  }
-  if (item.type === "commandExecution") {
-    return {
-      id,
-      type: "command_execution",
-      command: item.command || existing.command || "",
-      aggregated_output: item.aggregatedOutput ?? existing.aggregated_output ?? "",
-      exit_code: item.exitCode ?? existing.exit_code ?? null,
-      status: appServerStatusToCodexStatus(item.status ?? existing.status),
-    };
-  }
-  if (item.type === "fileChange") {
-    return {
-      id,
-      type: "file_change",
-      changes: item.changes ?? existing.changes ?? [],
-      status: appServerStatusToCodexStatus(item.status ?? existing.status),
-    };
-  }
-  if (item.type === "mcpToolCall") {
-    return {
-      id,
-      type: "mcp_tool_call",
-      server: item.server ?? existing.server ?? "mcp",
-      tool: item.tool ?? existing.tool ?? "tool",
-      arguments: item.arguments ?? existing.arguments ?? {},
-      result: item.result ?? existing.result,
-      error: item.error ?? existing.error,
-      status: appServerStatusToCodexStatus(item.status ?? existing.status),
-    };
-  }
-  if (item.type === "webSearch") {
-    return {
-      id,
-      type: "web_search",
-      query: item.query ?? existing.query ?? item.action?.query ?? "",
-      status: appServerStatusToCodexStatus(item.status ?? existing.status),
-    };
-  }
-  if (item.type === "plan") {
-    return { id, type: "reasoning", text: item.text || existing.text || "" };
-  }
-  return { id, type: item.type || "item", text: appServerItemText(item) || existing.text || "" };
-}
-
-function buildMessagesFromCodexAppServerThread(thread) {
-  const sessionId = toFrontendSessionId(thread.id);
-  const directory = normalizeDir(thread.cwd) || "";
-  const modelId = thread.model || thread.modelId || DEFAULT_MODEL_ID;
-  const messages = [];
-  let seq = 0;
-  for (const turn of Array.isArray(thread.turns) ? thread.turns : []) {
-    const createdAt = codexTimestampToMs(turn.startedAt ?? thread.createdAt);
-    for (const item of Array.isArray(turn.items) ? turn.items : []) {
-      const type = item?.type;
-      if (type === "userMessage") {
-        const text = appServerUserText(item);
-        if (!text) continue;
-        const messageId = item.id || `${turn.id}:user:${seq++}`;
-        messages.push({
-          info: defaultUserInfo(sessionId, messageId, modelId, undefined, createdAt),
-          parts: [makeTextPart(sessionId, messageId, `${messageId}:text`, text, true)],
-        });
-        continue;
-      }
-      if (type === "agentMessage" || type === "assistantMessage" || type === "reasoning") {
-        const text = appServerItemText(item);
-        if (!text) continue;
-        const messageId = item.id || `${turn.id}:assistant:${seq++}`;
-        const info = defaultAssistantInfo(
-          sessionId,
-          messageId,
-          directory,
-          modelId,
-          undefined,
-          createdAt,
-        );
-        messages.push({
-          info,
-          parts:
-            type === "reasoning"
-              ? [makeReasoningPart(sessionId, messageId, `${messageId}:reasoning`, text, createdAt)]
-              : [makeTextPart(sessionId, messageId, `${messageId}:text`, text, true)],
-        });
-      }
-    }
-  }
-  return messages;
 }
 
 async function listCodexAppServerSessions(target = {}) {

@@ -20,8 +20,17 @@ Run on **Desktop** (`pnpm run dev`) or **Web** (`pnpm run dev:web`) before a rel
 ## Automated companions
 
 ```bash
-pnpm run slop-check
-vp test
+pnpm run session-read-acceptance
 ```
+
+Runs `src/adr-0006-session-read-acceptance.test.ts` plus related server/protocol/hook tests and `slop-check`.
+
+| Manual step | Automated coverage                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| 1–2         | No ghost sessions; harness-only list merge                                                  |
+| 3–5         | `getMessages` errors propagate; transcript `page.failed` / `SESSION_ERROR`                  |
+| 4 (partial) | Query `errors[]` + hydration `failedBackends` — **still** stop Harness manually for full UX |
+
+Steps 4–5 in the table above still need a manual run on Desktop or Web before release.
 
 See also: [session-read-slop-removal.md](../plans/session-read-slop-removal.md), [ADR 0006](../adr/0006-harness-only-session-and-transcript-reads.md).

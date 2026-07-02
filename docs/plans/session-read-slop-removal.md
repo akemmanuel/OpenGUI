@@ -58,7 +58,7 @@ One honest read path: **Harness session summary** on list; **Harness message pag
 - [x] **`docs/architecture.md`**: link ADR 0006 under Harness / read paths.
 - [x] **Comment** on `SessionDispatchIndex`: not for product list reads (`listSessions` removed).
 - [x] **Optional**: `pnpm run slop-check` / `scripts/slop-check.mjs` guardrails (session index + protocol slop).
-- [ ] **Manual checklist** (Desktop or Web): [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md). _(Run before release; automated slop-check + tests are green.)_
+- [x] **Manual checklist** (Desktop or Web): [`docs/manual/session-read-acceptance.md`](../manual/session-read-acceptance.md). Run `pnpm run session-read-acceptance` each tranche; full UI table before release.
 
   | Step                        | Expected                                                 |
   | --------------------------- | -------------------------------------------------------- |
@@ -92,8 +92,9 @@ CONTEXT.md                    # done (glossary)
 
 ## Verification
 
-- [ ] `vp check` / `vp test`
-- [ ] Manual ADR 0006 acceptance table
+- [x] `pnpm run session-read-acceptance` (ADR 0006 automated table)
+- [ ] `vp check` / full `vp test` before release
+- [ ] Manual ADR 0006 acceptance table (Harness offline UX on Desktop/Web)
 - [ ] `scripts/runtime/probe-*.mjs` still readonly-no change required unless documenting parity
 
 ## References

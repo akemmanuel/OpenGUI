@@ -175,7 +175,7 @@ pnpm run dist:win
 Four layers ([`CONTEXT.md`](CONTEXT.md), [ADR 0005](docs/adr/0005-opengui-runtime-backend-split-and-sdk.md)):
 
 - **OpenGUI Runtime** — in-process Harness Adapters and execution (`@opengui/runtime`)
-- **OpenGUI Backend** — embeds Runtime; HTTP/SSE, queues, shared session control (`server/web-server.ts` today)
+- **OpenGUI Backend** — embeds Runtime; HTTP/SSE, queues, shared session control (`@opengui/backend`; `server/web-server.ts` is the listen entry)
 - **OpenGUI Frontend** — React UI; Workspaces, Projects, pending/queued prompt UI (`src/`)
 - **Shell** — Desktop, Web, or Mobile bootstrap (`main.ts`, browser, Capacitor)
 
@@ -183,7 +183,8 @@ Four layers ([`CONTEXT.md`](CONTEXT.md), [ADR 0005](docs/adr/0005-opengui-runtim
 main.ts              Desktop Shell (window, IPC, backend sidecar)
 preload.js           Desktop Shell preload API
 packages/runtime/src/adapters/*  Harness Adapters (hosted inside Backend via Runtime)
-server/web-server.ts OpenGUI Backend (transport + queue + delegates to Runtime)
+packages/backend/src/     OpenGUI Backend host (SSE, RPC, FS, product API)
+server/web-server.ts      Thin HTTP listen entry (calls createBackendHost)
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point + web Electron shim install

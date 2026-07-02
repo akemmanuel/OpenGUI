@@ -27,6 +27,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "scripts": {
+    "test": "vp test packages/runtime/src/__tests__ packages/runtime/src/adapters/__tests__"
+  },
   "engines": {
     "node": ">=20"
   }

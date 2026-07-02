@@ -34,6 +34,14 @@ import {
   FALLBACK_SUPPORTED_MODELS,
   MODEL_DISCOVERY_TTL_MS,
 } from "./claude-code-models.ts";
+import {
+  makeReasoningPart,
+  makeSessionFromInfo,
+  makeSessionTitle,
+  mapClaudeModelId,
+  normalizeToolInput,
+  tagMessageEntrySession,
+} from "./claude-code-bridge-mapping.ts";
 
 // t3code-style Claude integration: use the user-installed Claude Code CLI.
 // The Claude Agent SDK is only the JS transport layer; the native `claude`
@@ -46,17 +54,6 @@ const CLAUDE_CODE_SESSION_PREFIX = "claude-code:";
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(
   CLAUDE_CODE_SESSION_PREFIX,
 );
-
-function tagMessageEntrySession(entry) {
-  const sessionID = toFrontendSessionId(entry?.info?.sessionID);
-  return {
-    ...entry,
-    info: { ...entry.info, sessionID },
-    parts: (entry.parts ?? []).map((part) =>
-      part && "sessionID" in part ? { ...part, sessionID } : part,
-    ),
-  };
-}
 
 const BUILTIN_COMMANDS = [
   {
@@ -125,40 +122,8 @@ async function* holdOpenPrompt() {
   await new Promise(() => {});
 }
 
-function makeSessionTitle(text, title) {
-  const explicit = typeof title === "string" ? title.trim() : "";
-  if (explicit) return explicit;
-  const firstLine =
-    String(text ?? "")
-      .trim()
-      .split(/\r?\n/, 1)[0] ?? "";
-  return firstLine.slice(0, 80) || "Untitled";
-}
-
 function getSessionDirectory(info, target = {}) {
   return normalizeDir(info?.cwd || target.directory || process.cwd());
-}
-
-function makeSessionFromInfo(info, target = {}, fallbackTitle) {
-  const directory = getSessionDirectory(info, target);
-  const rawId = toRawSessionId(info?.sessionId);
-  const id = toFrontendSessionId(rawId);
-  return {
-    id,
-    slug: id,
-    _harnessId: "claude-code",
-    _rawId: rawId,
-    projectID: directory,
-    workspaceID: target.workspaceId,
-    directory,
-    title: info?.customTitle || info?.summary || info?.firstPrompt || fallbackTitle || "Untitled",
-    version: "claude-code",
-    ...(info?.model ? { model: info.model } : {}),
-    time: {
-      created: info?.createdAt ?? info?.lastModified ?? Date.now(),
-      updated: info?.lastModified ?? info?.createdAt ?? Date.now(),
-    },
-  };
 }
 
 function claudeSessionModelFromSelection(model, variant) {
@@ -221,15 +186,6 @@ function defaultUserInfo(sessionId, messageId, modelId = "default", createdAt = 
   };
 }
 
-function mapClaudeModelId(raw) {
-  if (typeof raw !== "string" || !raw.trim()) return "default";
-  const value = raw.toLowerCase();
-  if (value === "default" || value.includes("sonnet")) return "default";
-  if (value.includes("opus")) return "opus";
-  if (value.includes("haiku")) return "haiku";
-  return raw;
-}
-
 function parseTimestamp(raw) {
   if (typeof raw !== "string") return Date.now();
   const parsed = Date.parse(raw);
@@ -246,40 +202,6 @@ function makeTextPart(sessionId, messageId, index, text, synthetic = false) {
     synthetic,
     time: { start: Date.now() },
   };
-}
-
-function makeReasoningPart(sessionId, messageId, index, text) {
-  return {
-    id: `${messageId}:reasoning:${index}`,
-    sessionID: sessionId,
-    messageID: messageId,
-    type: "reasoning",
-    text,
-    time: { start: Date.now() },
-  };
-}
-
-function normalizeToolInput(_toolName, input = {}) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return input ?? {};
-  }
-  const normalized = { ...input };
-  if (typeof normalized.file_path === "string" && normalized.filePath === undefined) {
-    normalized.filePath = normalized.file_path;
-  }
-  if (typeof normalized.old_string === "string" && normalized.oldString === undefined) {
-    normalized.oldString = normalized.old_string;
-  }
-  if (typeof normalized.new_string === "string" && normalized.newString === undefined) {
-    normalized.newString = normalized.new_string;
-  }
-  if (typeof normalized.task_description === "string" && normalized.description === undefined) {
-    normalized.description = normalized.task_description;
-  }
-  if (typeof normalized.subagent_type === "string" && normalized.subagentType === undefined) {
-    normalized.subagentType = normalized.subagent_type;
-  }
-  return normalized;
 }
 
 function makeToolPart(sessionId, messageId, index, toolName, input = {}, metadata = {}) {

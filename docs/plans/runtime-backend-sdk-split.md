@@ -128,7 +128,7 @@ await og.close();
 Master slop + contributor plan: [`contributor-experience-and-slop-removal.md`](./contributor-experience-and-slop-removal.md).
 
 - [x] Session/transcript read slop (automated): [ADR 0006](../adr/0006-harness-only-session-and-transcript-reads.md), [`session-read-slop-removal.md`](./session-read-slop-removal.md); `pnpm run slop-check` green. Manual: [`session-read-acceptance.md`](../manual/session-read-acceptance.md).
-- [ ] Shrink `server/web-server.ts` into `packages/backend` modules.
+- [x] Shrink `server/web-server.ts` into `packages/backend` modules (`createBackendHost`, transport routes). Entry: `server/web-server.ts` (~15 lines).
 - [x] Reduce backend session record / routing cache per ADR 0004 (phase B): harness-first list/query; no `replaceScopeSessions` scope purge; ephemeral status cache only.
 - [x] Lazy harness adapter loading by `harnesses` option (`createOpenGUI({ harnesses })` → `createRuntimeHost`).
 - [ ] `@opengui/client` for remote Backend when needed.

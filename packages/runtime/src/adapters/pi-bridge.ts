@@ -38,6 +38,29 @@ import {
   invalidatePiSessionListCacheForDirectory,
   listFastPiSessionInfos as listPiSessionInfosFromDisk,
 } from "./pi-session-listing.ts";
+import {
+  buildUserParts,
+  cloneBundle,
+  coerceTimestamp,
+  createAssistantInfo,
+  createBundle,
+  createUserInfo,
+  extractPiThinkingVariant,
+  getSessionActivityType,
+  inferPiSessionModelFromManager,
+  makeSessionTitleFromText,
+  makeStreamingMessageId,
+  makeTextPartId,
+  makeToolPartId,
+  normalizePiSession,
+  normalizeToolInput,
+  parseDataUrl,
+  piImageBlockToFilePart,
+  sessionStatus,
+  stringifyUnknown,
+  syncAssistantParts,
+  toolResultContentToText,
+} from "./pi-bridge-mapping.ts";
 
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
@@ -48,234 +71,6 @@ const PI_DAEMON_VERSION = "2026-06-30-pi-tool-live-state-v1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("pi:");
-
-function coerceTimestamp(timestamp) {
-  if (typeof timestamp === "number" && Number.isFinite(timestamp)) return timestamp;
-  return Date.now();
-}
-
-function stringifyUnknown(value) {
-  if (typeof value === "string") return value;
-  if (value == null) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function makeStreamingMessageId(sessionId, seq) {
-  return `pi:stream:${sessionId}:assistant:${seq}`;
-}
-
-function makeTextPartId(messageId, index) {
-  return `${messageId}:text:${index}`;
-}
-
-function makeReasoningPartId(messageId, index) {
-  return `${messageId}:reasoning:${index}`;
-}
-
-function makeFilePartId(messageId, index) {
-  return `${messageId}:file:${index}`;
-}
-
-function makeToolPartId(messageId, toolCallId, index) {
-  return `${messageId}:tool:${toolCallId || index}`;
-}
-
-function parseDataUrl(dataUrl) {
-  if (typeof dataUrl !== "string") return null;
-  const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/);
-  if (!match) return null;
-  return {
-    mimeType: match[1] || "application/octet-stream",
-    data: match[2],
-  };
-}
-
-function piImageBlockToFilePart(block, messageId, index) {
-  if (!block || block.type !== "image") return null;
-  return {
-    id: makeFilePartId(messageId, index),
-    sessionID: "",
-    messageID: messageId,
-    type: "file",
-    mime: block.mimeType || "application/octet-stream",
-    filename: `image-${index + 1}.${(block.mimeType || "application/octet-stream").split("/")[1] || "bin"}`,
-    url: `data:${block.mimeType || "application/octet-stream"};base64,${block.data}`,
-  };
-}
-
-function toolResultContentToText(content) {
-  if (!Array.isArray(content)) return "";
-  const parts = [];
-  for (const block of content) {
-    if (!block) continue;
-    if (block.type === "text") {
-      parts.push(block.text || "");
-      continue;
-    }
-    if (block.type === "image") {
-      parts.push(`[image ${block.mimeType || "application/octet-stream"}]`);
-    }
-  }
-  return parts.join("\n").trim();
-}
-
-function makeSessionTitleFromText(text, title) {
-  const explicit = typeof title === "string" ? title.trim() : "";
-  if (explicit) return explicit;
-  const firstLine =
-    String(text ?? "")
-      .trim()
-      .split(/\r?\n/, 1)[0] ?? "";
-  return firstLine.slice(0, 80) || "Untitled";
-}
-
-function normalizePiSession(info, target = {}) {
-  const directory = normalizeDir(target.directory || info?.cwd || "");
-  const rawId = String(info.id || "");
-  const rawFirstMessage =
-    typeof info?.firstMessage === "string"
-      ? info.firstMessage
-      : stringifyUnknown(info?.firstMessage);
-  const title = info?.name || rawFirstMessage || "Untitled";
-  return {
-    id: toFrontendSessionId(rawId),
-    slug: rawId,
-    _harnessId: "pi",
-    _rawId: rawId,
-    projectID: directory,
-    workspaceID: target.workspaceId,
-    directory,
-    title,
-    version: "pi",
-    ...(info.model ? { model: info.model } : {}),
-    time: {
-      created: info.created?.getTime?.() ?? Date.now(),
-      updated: info.modified?.getTime?.() ?? info.created?.getTime?.() ?? Date.now(),
-    },
-  };
-}
-
-function extractPiThinkingVariant(entry) {
-  const raw = entry?.level ?? entry?.thinkingLevel ?? entry?.effort ?? entry?.value ?? entry?.label;
-  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
-}
-
-function inferPiSessionModelFromManager(manager) {
-  const context = manager.buildSessionContext?.();
-  if (context?.model?.provider && context.model.modelId) {
-    return {
-      providerID: context.model.provider,
-      id: context.model.modelId,
-      ...(typeof context.thinkingLevel === "string" ? { variant: context.thinkingLevel } : {}),
-    };
-  }
-
-  let currentModel = null;
-  let currentVariant;
-  for (const entry of manager.getBranch()) {
-    if (entry.type === "model_change") {
-      if (entry.provider && entry.modelId) {
-        currentModel = { providerID: entry.provider, id: entry.modelId };
-      }
-      continue;
-    }
-    if (entry.type === "thinking_level_change") {
-      currentVariant = extractPiThinkingVariant(entry) ?? currentVariant;
-      continue;
-    }
-    if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-    if (entry.message.provider && entry.message.model) {
-      currentModel = { providerID: entry.message.provider, id: entry.message.model };
-    }
-  }
-  if (!currentModel) return null;
-  return { ...currentModel, ...(currentVariant ? { variant: currentVariant } : {}) };
-}
-
-function sessionStatus(type) {
-  return { type };
-}
-
-function getSessionActivityType(session) {
-  if (session?.isCompacting) return "busy";
-  if (session?.isStreaming) return "busy";
-  return "idle";
-}
-
-function openGuiError(errorMessage) {
-  return {
-    name: "PiError",
-    data: { message: errorMessage },
-  };
-}
-
-function createUserInfo({ sessionId, messageId, timestamp, model, directory }) {
-  return {
-    id: messageId,
-    sessionID: sessionId,
-    role: "user",
-    time: { created: timestamp },
-    agent: "pi",
-    model: {
-      providerID: model?.provider ?? "pi",
-      modelID: model?.modelId ?? "default",
-      ...(model?.variant ? { variant: model.variant } : {}),
-    },
-    system: directory || undefined,
-  };
-}
-
-function createAssistantInfo({
-  sessionId,
-  messageId,
-  timestamp,
-  message,
-  directory,
-  parentID,
-  createdAt,
-  completedAt,
-}) {
-  const isCompleted = typeof completedAt === "number";
-  return {
-    id: messageId,
-    sessionID: sessionId,
-    role: "assistant",
-    time: {
-      created: typeof createdAt === "number" ? createdAt : timestamp,
-      completed: isCompleted ? completedAt : undefined,
-    },
-    error:
-      isCompleted && message?.stopReason === "error"
-        ? openGuiError(message?.errorMessage || "Pi error")
-        : undefined,
-    parentID: parentID || "",
-    modelID: message?.model || "",
-    providerID: message?.provider || "pi",
-    ...(message?.variant ? { variant: message.variant } : {}),
-    mode: "pi",
-    agent: "pi",
-    path: {
-      cwd: directory,
-      root: directory,
-    },
-    cost: message?.usage?.cost?.total ?? 0,
-    tokens: {
-      total: message?.usage?.totalTokens,
-      input: message?.usage?.input ?? 0,
-      output: message?.usage?.output ?? 0,
-      reasoning: 0,
-      cache: {
-        read: message?.usage?.cacheRead ?? 0,
-        write: message?.usage?.cacheWrite ?? 0,
-      },
-    },
-    finish: isCompleted ? message?.stopReason : undefined,
-  };
-}
 
 function visibleUiBranchEntries(sessionManager) {
   const branch = sessionManager.getBranch();
@@ -302,159 +97,6 @@ function visibleUiBranchEntries(sessionManager) {
     visible.push(branch[i]);
   }
   return { entries: visible, seedEntries: branch.slice(0, visibleStartIdx) };
-}
-
-function createBundle(info, parts = []) {
-  return {
-    info,
-    parts,
-  };
-}
-
-function cloneBundle(bundle) {
-  return {
-    info: { ...bundle.info },
-    parts: bundle.parts.map((part) => ({ ...part })),
-  };
-}
-
-function buildUserParts(content, messageId) {
-  if (typeof content === "string") {
-    return content
-      ? [
-          {
-            id: makeTextPartId(messageId, 0),
-            sessionID: "",
-            messageID: messageId,
-            type: "text",
-            text: content,
-          },
-        ]
-      : [];
-  }
-  const parts = [];
-  let textIndex = 0;
-  let fileIndex = 0;
-  for (const block of Array.isArray(content) ? content : []) {
-    if (!block) continue;
-    if (block.type === "text") {
-      parts.push({
-        id: makeTextPartId(messageId, textIndex),
-        sessionID: "",
-        messageID: messageId,
-        type: "text",
-        text: block.text || "",
-      });
-      textIndex += 1;
-      continue;
-    }
-    if (block.type === "image") {
-      const filePart = piImageBlockToFilePart(block, messageId, fileIndex);
-      if (filePart) parts.push(filePart);
-      fileIndex += 1;
-    }
-  }
-  return parts;
-}
-
-function normalizeToolInput(input = {}) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return input ?? {};
-  }
-  const normalized = { ...input };
-  if (typeof normalized.path === "string" && normalized.filePath === undefined) {
-    normalized.filePath = normalized.path;
-  }
-  if (typeof normalized.file_path === "string" && normalized.filePath === undefined) {
-    normalized.filePath = normalized.file_path;
-  }
-  if (typeof normalized.old_string === "string" && normalized.oldString === undefined) {
-    normalized.oldString = normalized.old_string;
-  }
-  if (typeof normalized.new_string === "string" && normalized.newString === undefined) {
-    normalized.newString = normalized.new_string;
-  }
-  if (typeof normalized.task_description === "string" && normalized.description === undefined) {
-    normalized.description = normalized.task_description;
-  }
-  if (typeof normalized.subagent_type === "string" && normalized.subagentType === undefined) {
-    normalized.subagentType = normalized.subagent_type;
-  }
-  return normalized;
-}
-
-function syncAssistantParts(bundle, message, reasoningTimesByContentIndex) {
-  const existingToolPartsByCallId = new Map();
-  for (const part of bundle.parts) {
-    if (part.type === "tool") {
-      existingToolPartsByCallId.set(part.callID, part);
-    }
-  }
-  const nextParts = [];
-  const content = Array.isArray(message?.content) ? message.content : [];
-  let textIndex = 0;
-  let reasoningIndex = 0;
-  let toolIndex = 0;
-  for (let contentIndex = 0; contentIndex < content.length; contentIndex += 1) {
-    const block = content[contentIndex];
-    if (!block) continue;
-    if (block.type === "text") {
-      nextParts.push({
-        id: makeTextPartId(bundle.info.id, textIndex),
-        sessionID: bundle.info.sessionID,
-        messageID: bundle.info.id,
-        type: "text",
-        text: block.text || "",
-      });
-      textIndex += 1;
-      continue;
-    }
-    if (block.type === "thinking") {
-      const reasoningTime = reasoningTimesByContentIndex?.get(contentIndex);
-      nextParts.push({
-        id: makeReasoningPartId(bundle.info.id, reasoningIndex),
-        sessionID: bundle.info.sessionID,
-        messageID: bundle.info.id,
-        type: "reasoning",
-        text: block.thinking || (block.redacted ? "[Reasoning redacted]" : ""),
-        time: {
-          start: reasoningTime?.start ?? bundle.info.time.created,
-          end:
-            typeof reasoningTime?.end === "number"
-              ? reasoningTime.end
-              : typeof bundle.info.time.completed === "number"
-                ? bundle.info.time.completed
-                : undefined,
-        },
-      });
-      reasoningIndex += 1;
-      continue;
-    }
-    if (block.type === "toolCall") {
-      const existing = existingToolPartsByCallId.get(block.id);
-      const normalizedInput = normalizeToolInput(block.arguments || {});
-      nextParts.push({
-        id: existing?.id ?? makeToolPartId(bundle.info.id, block.id, toolIndex),
-        sessionID: bundle.info.sessionID,
-        messageID: bundle.info.id,
-        type: "tool",
-        callID: block.id,
-        tool: block.name,
-        state: existing?.state ?? {
-          status: "pending",
-          input: normalizedInput,
-          raw: stringifyUnknown(normalizedInput),
-        },
-      });
-      toolIndex += 1;
-    }
-  }
-  for (const existing of bundle.parts) {
-    if (existing.type === "tool" && !nextParts.some((part) => part.id === existing.id)) {
-      nextParts.push(existing);
-    }
-  }
-  bundle.parts = nextParts;
 }
 
 function createSummaryUserBundle({ sessionId, messageId, timestamp, text, model, directory }) {

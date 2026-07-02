@@ -151,6 +151,26 @@ const checks = [
     cmd: `rg 'originMode|nativeProjectDir|assignedProjectDir|detachedFromProject|pendingDirectoryChangeNotice|hideSystemAppendBlocks|getEffectiveSessionDirectory|chat-infra' src/ --glob '!**/*.test.*' 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
+  {
+    name: "each harness bridge has mapping module",
+    cmd: `for h in pi codex opencode claude-code grok-build; do test -f "packages/runtime/src/adapters/$h-bridge-mapping.ts" || echo "missing $h"; done`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "each harness bridge mapping has tests beside adapters",
+    cmd: `for f in harness-adapter-kit pi-bridge-mapping codex-bridge-mapping opencode-bridge-mapping claude-code-bridge-mapping grok-build-bridge-mapping; do test -f "packages/runtime/src/adapters/__tests__/$f.test.ts" || echo "missing packages/runtime/src/adapters/__tests__/$f.test.ts"; done`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no lib/harness-adapter-kit (colocated under runtime adapters)",
+    cmd: `test -f lib/harness-adapter-kit.ts && echo found || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "web-server is thin entry (no product routes in server/)",
+    cmd: `rg 'registerProductApiRoutes|registerHostTransportRoutes' server/ --glob '*.ts' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
 ];
 
 let failed = 0;

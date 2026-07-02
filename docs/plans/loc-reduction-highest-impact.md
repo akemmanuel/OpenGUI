@@ -123,7 +123,7 @@ See [model-selector-catalog-cache.md](./model-selector-catalog-cache.md) T2–T5
 From contributor plan **Track 6**:
 
 - Move host SSE/RPC/FS from `server/web-server.ts` → `packages/backend`.
-- Colocate `lib/harness-adapter-kit` under `packages/runtime/src/adapters/`.
+- ~~Colocate `lib/harness-adapter-kit` under `packages/runtime/src/adapters/`.~~ Done (`harness-adapter-kit.ts` + `adapters/__tests__/`).
 
 **LoC:** mostly **moves**; net delete = duplicate bootstrap between `server/` and `packages/backend`.
 

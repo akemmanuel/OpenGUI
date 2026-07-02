@@ -3,7 +3,7 @@ import {
   filterStreamEventsForSession,
   liveSessionEventToAgentStreamEvents,
   streamEventMatchesSession,
-} from "@opengui/runtime";
+} from "../agent-stream.ts";
 
 describe("liveSessionEventToAgentStreamEvents", () => {
   test("maps canonical lifecycle events", () => {

@@ -19,6 +19,12 @@ import { pollUntilEffect, runEffect, sleepEffect } from "../../../../lib/effect-
 import { getOpenCodeProviderAuthKinds } from "./opencode-config.ts";
 import { OpencodeProjectRegistry } from "./opencode-project-registry.ts";
 import { makeHarnessSessionIdCodec } from "./harness-adapter-kit.ts";
+import {
+  extractOpenCodeEventRawSessionId,
+  extractOpenCodeEventSessionDirectory,
+  getConnectionEntryForSession as routingConnectionEntryForSession,
+  getConnectionForSession as resolveConnectionForSession,
+} from "./opencode-bridge-mapping.ts";
 import { makeHarnessBridgeEventSender } from "./harness-adapter-host.ts";
 import { resolveHarnessCli } from "../../../../server/harness-inventory.ts";
 import { normalizeProjectPath } from "../../../../src/lib/path.ts";
@@ -241,76 +247,8 @@ function tagOpenCodeMessageEntry(entry) {
   };
 }
 
-function isRecord(value) {
-  return typeof value === "object" && value !== null;
-}
-
 function normalizeDirectoryHint(value) {
   return typeof value === "string" && value.trim() ? normalizeProjectPath(value.trim()) : null;
-}
-
-function normalizeOpenCodeDaemonEvent(raw) {
-  if (raw?.type === "sync" && raw.syncEvent?.type && raw.syncEvent.data) {
-    return {
-      id: raw.syncEvent.id,
-      type: raw.syncEvent.type.replace(/\.\d+$/, ""),
-      properties: raw.syncEvent.data,
-    };
-  }
-  return raw;
-}
-
-function getOpenCodeEventProperties(raw) {
-  const event = normalizeOpenCodeDaemonEvent(raw);
-  if (!isRecord(event)) return {};
-  const properties = isRecord(event.properties) ? event.properties : event;
-  return isRecord(properties) ? properties : {};
-}
-
-function extractOpenCodeEventRawSessionId(raw) {
-  const properties = getOpenCodeEventProperties(raw);
-  const candidates = [
-    properties.sessionID,
-    properties.sessionId,
-    properties.session?.id,
-    properties.info?._rawId,
-    properties.info?.id,
-    properties.info?.slug,
-    properties.message?.sessionID,
-    properties.part?.sessionID,
-    properties.request?.sessionID,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) return toRawSessionId(candidate.trim());
-  }
-  return null;
-}
-
-function extractOpenCodeEventSessionDirectory(raw) {
-  const properties = getOpenCodeEventProperties(raw);
-  const info = isRecord(properties.info) ? properties.info : {};
-  const session = isRecord(properties.session) ? properties.session : {};
-  const message = isRecord(properties.message) ? properties.message : {};
-  const part = isRecord(properties.part) ? properties.part : {};
-  const request = isRecord(properties.request) ? properties.request : {};
-  const metadata = isRecord(info.metadata) ? info.metadata : {};
-  const path = isRecord(message.path) ? message.path : isRecord(info.path) ? info.path : {};
-  const candidates = [
-    info._projectDir,
-    info.directory,
-    metadata.directory,
-    session._projectDir,
-    session.directory,
-    message.directory,
-    part.directory,
-    request.directory,
-    path.cwd,
-  ];
-  for (const candidate of candidates) {
-    const normalized = normalizeDirectoryHint(candidate);
-    if (normalized) return normalized;
-  }
-  return null;
 }
 
 // Keep-alive agents to prevent idle TCP connections from being dropped.
@@ -1328,7 +1266,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (event?.type !== "opencode:event") return true;
 
     const rawSessionId = extractOpenCodeEventRawSessionId(event.payload);
-    const payloadDirectory = extractOpenCodeEventSessionDirectory(event.payload);
+    const payloadDirectory = extractOpenCodeEventSessionDirectory(
+      event.payload,
+      normalizeDirectoryHint,
+    );
     if (rawSessionId && payloadDirectory) {
       windowState.sessionDirectories.set(rawSessionId, payloadDirectory);
     }
@@ -1381,20 +1322,22 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       .map(([projectKey, connection]) => ({ projectKey, connection }));
   }
 
-  /** Resolve a session operation from its explicit Project directory. */
   function getConnectionEntryForSession(windowState, sessionId, directory, workspaceId) {
-    if (directory) {
-      const exact = getConnectionEntryForDirectory(windowState, directory, workspaceId);
-      if (exact) return exact;
-    }
-    const connected = getConnectedConnections(windowState);
-    return connected.length === 1 ? connected[0] : null;
+    return routingConnectionEntryForSession(
+      windowState,
+      () => getConnectedConnections(windowState),
+      directory,
+      workspaceId,
+    );
   }
 
   function getConnectionForSession(windowState, sessionId, directory, workspaceId) {
-    return (
-      getConnectionEntryForSession(windowState, sessionId, directory, workspaceId)?.connection ??
-      null
+    return resolveConnectionForSession(
+      windowState,
+      () => getConnectedConnections(windowState),
+      sessionId,
+      directory,
+      workspaceId,
     );
   }
 

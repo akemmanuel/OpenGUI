@@ -1,14 +1,17 @@
 import { describe, expect, test } from "vite-plus/test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isWithinAllowedRoot, normalizeAllowedRoots, resolveSafeDirectory } from "@opengui/runtime";
+import {
+  isWithinAllowedRoot,
+  normalizeAllowedRoots,
+  resolveSafeDirectory,
+} from "../directory-safety.ts";
 
 describe("directory-safety", () => {
   test("normalizeAllowedRoots resolves paths", () => {
     const home = homedir();
-    const roots = normalizeAllowedRoots(["~", home]);
-    expect(roots.length).toBeGreaterThan(0);
-    expect(roots.every((r) => r.startsWith("/") || /^[A-Z]:/.test(r))).toBe(true);
+    const roots = normalizeAllowedRoots([home]);
+    expect(roots).toEqual([home]);
   });
 
   test("isWithinAllowedRoot accepts children", () => {

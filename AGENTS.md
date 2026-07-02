@@ -2,16 +2,16 @@ Default to using Vite+ (`vp`) instead of raw runtime or package-manager commands
 
 - Use `pnpm run dev` for desktop development (Electron); use `pnpm run dev:web` for web (append `:web` to the dev task)
 - Use `pnpm run start` for desktop production; use `pnpm run start:web` for web (append `:web` to the start task)
-- Use `pnpm vp check` (or `pnpm run check`) for lint, format, and type checks
-- Use `pnpm vp lint` (or `pnpm run lint`) for lint only
-- Use `pnpm vp fmt` (or `pnpm run fmt`) for format only
-- Use `pnpm vp test` (or `pnpm run test`) for tests
-- Use `pnpm run build` for production build
-- Use `pnpm vp run <task>` or `pnpm run <script>` for project tasks
-- Use `pnpm vp exec <command>` for local binaries
+- Use `vp check` (or `pnpm run check`) for lint, format, and type checks
+- Use `vp lint` (or `pnpm run lint`) for lint only
+- Use `vp fmt` (or `pnpm run fmt`) for format only
+- Use `vp test` (or `pnpm run test`) for tests
+- Use `run build` for production build
+- Use `vp run <task>` or `pnpm run <script>` for project tasks
+- Use `vp exec <command>` for local binaries
 - Use `node --experimental-strip-types <file>` for project TypeScript scripts (or `pnpm vp node` when Vite+ env shims are installed)
-- Use `pnpm vp dlx <package> <command>` for one-off package binaries
-- Use `pnpm vp cache` for task cache
+- Use `vp dlx <package> <command>` for one-off package binaries
+- Use `vp cache` for task cache
 - Use `pnpm install` to install dependencies
 - Use `pnpm add`, `pnpm remove`, `pnpm update`, etc. for dependency changes
 - Use `pnpm run <script>` for package scripts
@@ -24,8 +24,8 @@ Run the app with `pnpm run dev` or `pnpm run start` on desktop; for the browser 
 ## Code quality
 
 - Run `pnpm run slop-check` when changing server session paths, `OpenGuiClient`, or harness registry
-- Prefer `pnpm vp check` before submit
-- Prefer `pnpm vp lint` / `pnpm vp fmt` when narrowing issues
+- Prefer `vp check` before submit
+- Prefer `vp lint` / `vp fmt` when narrowing issues
 - Use `pnpm run` only when task is defined in `package.json`
 
 ## Translations

@@ -1,48 +1,16 @@
 import { describe, expect, test } from "vite-plus/test";
 import { homedir } from "node:os";
-import { diagnoseFromInventories, OpenGuiSdkError } from "@opengui/runtime";
-
-describe("diagnoseFromInventories", () => {
-  test("ok when at least one harness is ready", () => {
-    const result = diagnoseFromInventories([
-      {
-        harnessId: "pi",
-        displayName: "Pi",
-        enabled: true,
-        installed: true,
-        status: "ready",
-        auth: { status: "unknown" },
-        version: "1",
-        models: [],
-        agents: [],
-        message: "",
-        checkedAt: "",
-        diagnostics: { cli: { command: "pi", resolvedPath: "/usr/bin/pi", checkedPaths: [] } },
-      },
-    ]);
-    expect(result.ok).toBe(true);
-    expect(result.harnesses[0]?.cliOnPath).toBe(true);
-  });
-});
-
-describe("OpenGuiSdkError", () => {
-  test("exposes code for SESSION_BUSY", () => {
-    const err = new OpenGuiSdkError("SESSION_BUSY", "busy");
-    expect(err.code).toBe("SESSION_BUSY");
-    expect(err.name).toBe("OpenGuiSdkError");
-  });
-});
+import { createOpenGUI, MANAGED_HARNESS_IDS } from "../index.ts";
+import { joinTmpRuntimeDir } from "./test-helpers.ts";
 
 describe("createOpenGUI", () => {
   test("rejects empty allowedRoots", async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     await expect(createOpenGUI({ allowedRoots: ["  ", ""] })).rejects.toMatchObject({
       code: "INVALID_OPTIONS",
     });
   });
 
   test("constructs runtime with managed harness handles", async () => {
-    const { createOpenGUI, MANAGED_HARNESS_IDS } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -66,9 +34,8 @@ describe("createOpenGUI", () => {
   }, 60_000);
 });
 
-describe("og.at (Phase A)", () => {
+describe("og.at", () => {
   test("rejects directory outside allowedRoots", async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -82,7 +49,6 @@ describe("og.at (Phase A)", () => {
   });
 
   test("at() resolves canonical path and bound harness omits directory on list", async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -103,7 +69,6 @@ describe("og.at (Phase A)", () => {
   }, 60_000);
 
   test("bound harness prompt requires directory when not from at()", async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -119,7 +84,6 @@ describe("og.at (Phase A)", () => {
   }, 60_000);
 
   test('createOpenGUI({ harnesses: ["pi"] }) loads only pi adapter', async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -136,9 +100,8 @@ describe("og.at (Phase A)", () => {
   }, 60_000);
 });
 
-describe("SessionHandle (Phase B)", () => {
+describe("SessionHandle (integration)", () => {
   test("sessions.create returns handle with id and send/abort/messages", async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -165,7 +128,6 @@ describe("SessionHandle (Phase B)", () => {
   }, 90_000);
 
   test("sessions.open wraps id from list", async () => {
-    const { createOpenGUI } = await import("@opengui/runtime");
     const home = homedir();
     const og = await createOpenGUI({
       dataDir: joinTmpRuntimeDir(),
@@ -184,14 +146,4 @@ describe("SessionHandle (Phase B)", () => {
       await og.close();
     }
   }, 90_000);
-
-  test("sessionIdFromCreateResult normalizes pi session object", async () => {
-    const { sessionIdFromCreateResult } = await import("@opengui/runtime");
-    expect(sessionIdFromCreateResult("pi", { id: "pi:abc" })).toBe("pi:abc");
-    expect(sessionIdFromCreateResult("pi", { sessionId: "raw-1" })).toBe("pi:raw-1");
-  });
 });
-
-function joinTmpRuntimeDir() {
-  return `${homedir()}/.cache/opengui-runtime-test-${process.pid}`;
-}

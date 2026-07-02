@@ -60,8 +60,9 @@ Write clear, concise commit messages. Focus on the "why" rather than the "what."
 2. Create a feature branch from `master`: `git checkout -b my-feature`
 3. Make your changes
 4. Run `pnpm vp check` and `pnpm vp test`
-5. Commit your changes with a clear message
-6. Push to your fork and open a pull request against `master`
+5. If you moved `server/web-server.ts`, `packages/backend/**`, or `packages/runtime/src/adapters/**`, update [`docs/architecture.md`](docs/architecture.md) in the same PR
+6. Commit your changes with a clear message
+7. Push to your fork and open a pull request against `master`
 
 Keep PRs focused on a single change. If you have multiple unrelated fixes, open separate PRs.
 
@@ -80,7 +81,8 @@ If you're new to the codebase, start with [CONTEXT.md](CONTEXT.md), [docs/archit
 main.ts              Desktop Shell main process (window management, IPC)
 preload.js           Desktop Shell preload API
 packages/runtime/src/adapters/   Harness adapters (OpenCode, Claude, Codex, Pi)
-server/web-server.ts OpenGUI Backend for browser mode (RPC, events, server FS browser)
+packages/backend/src/   OpenGUI Backend (createBackendHost: RPC, SSE, FS, product API)
+server/web-server.ts    Thin listen entry for browser/API-only mode
 src/
   index.html          HTML entry point
   frontend.tsx        React entry point

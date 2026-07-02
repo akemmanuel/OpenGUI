@@ -50,8 +50,8 @@ function shouldRestartWebBackend(file: string) {
   const normalized = file.replaceAll("\\", "/");
   return (
     normalized.includes("/server/") ||
+    normalized.includes("/packages/backend/") ||
     normalized.includes("/packages/runtime/") ||
-    normalized.includes("/lib/harness-adapter-kit") ||
     normalized.includes("/lib/grok-acp-client")
   );
 }
@@ -179,4 +179,13 @@ export default defineConfig({
   },
   fmt: {},
   lint: { options: { typeAware: true, typeCheck: true } },
+  test: {
+    include: [
+      "**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../packages/runtime/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../packages/protocol/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../packages/backend/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../server/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+    ],
+  },
 });

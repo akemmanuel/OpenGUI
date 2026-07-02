@@ -56,6 +56,22 @@ await session.abort().catch(() => undefined);
 await og.close();
 ```
 
+## Tests
+
+SDK unit tests: `src/__tests__/`. Bridge mapping: `src/adapters/__tests__/`.
+
+```bash
+pnpm run test:runtime
+```
+
+Harness adapters keep pure mapping in `src/adapters/*-bridge-mapping.ts`. Bridge-only:
+
+```bash
+pnpm run test:bridges
+```
+
+See [`docs/plans/bridge-test-matrix.md`](../../docs/plans/bridge-test-matrix.md).
+
 ### Session IDs
 
 - **List** returns harness session objects; `id` is often `pi:<rawId>` (see `parseFrontendSessionId` in the app).
@@ -143,4 +159,4 @@ See [`scripts/runtime/README.md`](../../scripts/runtime/README.md).
 
 ## Backend reuse
 
-`InProcessIpcMain` / `InProcessIpcSender` and `resolveSafeDirectory` are shared with `server/web-server.ts`.
+`InProcessIpcMain` / `InProcessIpcSender` and `resolveSafeDirectory` are wired in `@opengui/backend` (`createBackendHost`); `server/web-server.ts` only starts the HTTP server.
