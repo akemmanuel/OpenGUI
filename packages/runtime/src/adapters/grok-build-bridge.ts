@@ -10,6 +10,7 @@ import {
 import {
   makeHarnessBridgeEventEmitter,
   registerObjectTargetHarnessRpcHandlers,
+  type ObjectTargetHarnessManager,
 } from "./harness-adapter-host.ts";
 import {
   buildGrokProvidersFromModelState,
@@ -31,16 +32,55 @@ const GROK_BUILD_SESSION_PREFIX = "grok-build:";
 const { toFrontendSessionId, toRawSessionId } =
   makeHarnessSessionIdCodec(GROK_BUILD_SESSION_PREFIX);
 
-function findMessage(messages, messageId) {
+type GrokProjectSlot = { key?: string; directory: string; workspaceId?: string };
+
+type GrokSessionRecord = {
+  id: string;
+  directory: string;
+  workspaceId?: string;
+  title?: string;
+  preview?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  modelId?: string;
+  activity?: string;
+  origin?: string;
+  hidden?: boolean;
+};
+
+type GrokMessageBundle = {
+  info: Record<string, unknown> & { id: string; time?: { created?: number; completed?: number } };
+  parts: Array<Record<string, unknown> & { id?: string; text?: string; time?: { start?: number } }>;
+};
+
+type GrokLiveSession = {
+  grokSessionId: string;
+  project: GrokProjectSlot;
+  session: Record<string, unknown> & { id: string; title?: string; time?: { updated?: number } };
+  messages: GrokMessageBundle[];
+  running: boolean;
+  aborted: boolean;
+  abortRequested: boolean;
+  turnIdleEmitted: boolean;
+  pendingPrompt: Promise<unknown> | null;
+  currentAssistantMessageId: string | null;
+  currentUserMessageId: string | null;
+  currentModelId: string;
+  createdAt: number;
+};
+
+type GrokProjectTarget = { directory?: string; workspaceId?: string };
+
+function findMessage(messages: GrokMessageBundle[], messageId: string) {
   return messages.find((entry) => entry.info.id === messageId) ?? null;
 }
 
 class GrokBuildBridgeManager {
   getAllWindows: () => Iterable<unknown>;
   emitBridgeEvent: (event: Record<string, unknown>) => void;
-  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
-  sessionIndex: Map<string, { projectKey: string; directory: string; workspaceId?: string }>;
-  liveSessions: Map<string, unknown>;
+  projects: Map<string, GrokProjectSlot>;
+  sessionIndex: Map<string, GrokSessionRecord>;
+  liveSessions: Map<string, GrokLiveSession>;
   acp: GrokAcpClient;
   providerCache: ReturnType<typeof buildGrokProvidersFromModelState> | null;
   availableCommands: unknown[];
@@ -62,11 +102,11 @@ class GrokBuildBridgeManager {
     this.acpReady = null;
   }
 
-  emit(event) {
+  emit(event: Record<string, unknown>) {
     this.emitBridgeEvent(event);
   }
 
-  emitConnection(project, status) {
+  emitConnection(project: GrokProjectSlot, status: Record<string, unknown>) {
     this.emit({
       type: "connection:status",
       directory: project.directory,
@@ -75,7 +115,7 @@ class GrokBuildBridgeManager {
     });
   }
 
-  emitBackend(project, payload) {
+  emitBackend(project: GrokProjectSlot | null | undefined, payload: Record<string, unknown>) {
     this.emit({
       type: "grok-build:event",
       directory: project?.directory,
@@ -89,9 +129,14 @@ class GrokBuildBridgeManager {
       this.acpReady = (async () => {
         await this.acp.ensureReady();
         await this.acp.authenticate();
-        const modelState = this.acp.initResult?._meta?.modelState;
-        this.providerCache = buildGrokProvidersFromModelState(modelState);
-        const commands = this.acp.initResult?._meta?.availableCommands;
+        const meta = this.acp.initResult?._meta as
+          | { modelState?: unknown; availableCommands?: unknown[] }
+          | undefined;
+        const modelState = meta?.modelState;
+        this.providerCache = buildGrokProvidersFromModelState(
+          modelState as Parameters<typeof buildGrokProvidersFromModelState>[0],
+        );
+        const commands = meta?.availableCommands;
         this.availableCommands = Array.isArray(commands) ? commands : [];
       })();
     }
@@ -113,24 +158,24 @@ class GrokBuildBridgeManager {
     });
   }
 
-  ensureKnownProject(directory, workspaceId) {
+  ensureKnownProject(directory: string | undefined, workspaceId: string | undefined) {
     const normalized = normalizeDir(directory);
     if (!normalized) throw new Error("Project directory is required");
     const key = makeProjectKey(workspaceId, normalized);
     let project = this.projects.get(key);
     if (!project) {
-      project = { directory: normalized, workspaceId };
+      project = { key, directory: normalized, workspaceId };
       this.projects.set(key, project);
     }
     return project;
   }
 
-  getLiveSession(sessionId) {
+  getLiveSession(sessionId: string) {
     const rawId = toRawSessionId(sessionId);
     return this.liveSessions.get(rawId) ?? this.liveSessions.get(sessionId) ?? null;
   }
 
-  emitSessionStatus(live, statusType) {
+  emitSessionStatus(live: GrokLiveSession, statusType: string) {
     this.emitBackend(live.project, {
       type: "session.status",
       sessionID: live.session.id,
@@ -138,7 +183,7 @@ class GrokBuildBridgeManager {
     });
   }
 
-  finalizeAssistantMessage(live) {
+  finalizeAssistantMessage(live: GrokLiveSession) {
     if (!live.currentAssistantMessageId) return;
     const bundle = findMessage(live.messages, live.currentAssistantMessageId);
     if (!bundle) return;
@@ -153,7 +198,7 @@ class GrokBuildBridgeManager {
     this.emitBackend(live.project, { type: "message.updated", message: info });
   }
 
-  finishPromptTurn(live, { force = false } = {}) {
+  finishPromptTurn(live: GrokLiveSession | null, { force = false } = {}) {
     if (!live) return;
     if (!force && !live.running && live.turnIdleEmitted) return;
     live.running = false;
@@ -165,7 +210,11 @@ class GrokBuildBridgeManager {
     this.emitSessionStatus(live, "idle");
   }
 
-  async ensureLiveSessionForPrompt(sessionId, directory, workspaceId) {
+  async ensureLiveSessionForPrompt(
+    sessionId: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     const live = this.getLiveSession(sessionId);
     if (live) return live;
     const rawId = toRawSessionId(sessionId);
@@ -196,7 +245,23 @@ class GrokBuildBridgeManager {
     return resumed;
   }
 
-  buildSession({ id, directory, workspaceId, title, createdAt, updatedAt, modelId }) {
+  buildSession({
+    id,
+    directory,
+    workspaceId,
+    title,
+    createdAt,
+    updatedAt,
+    modelId,
+  }: {
+    id: string;
+    directory: string;
+    workspaceId?: string;
+    title?: string;
+    createdAt?: number;
+    updatedAt?: number;
+    modelId?: string;
+  }) {
     const rawId = toRawSessionId(id);
     const frontendId = toFrontendSessionId(rawId);
     return {
@@ -222,7 +287,7 @@ class GrokBuildBridgeManager {
     };
   }
 
-  buildSessionFromRecord(record) {
+  buildSessionFromRecord(record: GrokSessionRecord) {
     return this.buildSession({
       id: record.id,
       directory: record.directory,
@@ -234,16 +299,17 @@ class GrokBuildBridgeManager {
     });
   }
 
-  handleAcpNotification(notification) {
+  handleAcpNotification(notification: { method?: string; params?: Record<string, unknown> }) {
     const method = notification?.method;
     const params = notification?.params ?? {};
 
     if (method === "_x.ai/sessions/changed") {
       const upserted = Array.isArray(params.upserted) ? params.upserted : [];
       for (const entry of upserted) {
-        this.indexDiscoveredSession(entry);
-        const activity = entry?.activity;
-        const live = this.getLiveSession(entry?.sessionId);
+        const row = entry as Record<string, unknown>;
+        this.indexDiscoveredSession(row);
+        const activity = row.activity;
+        const live = this.getLiveSession(String(row.sessionId ?? ""));
         if (!live) continue;
         if (activity === "idle" && live.running) {
           this.finishPromptTurn(live);
@@ -253,13 +319,15 @@ class GrokBuildBridgeManager {
     }
 
     if (method === "_x.ai/models/update") {
-      this.providerCache = buildGrokProvidersFromModelState(params);
+      this.providerCache = buildGrokProvidersFromModelState(
+        params as Parameters<typeof buildGrokProvidersFromModelState>[0],
+      );
       return;
     }
 
     if (method === "session/update") {
-      const sessionId = params.sessionId;
-      const update = params.update ?? {};
+      const sessionId = String(params.sessionId ?? "");
+      const update = (params.update ?? {}) as Record<string, unknown>;
       const live = this.getLiveSession(sessionId);
       if (!live || live.aborted) return;
       this.handleSessionUpdate(live, update);
@@ -267,15 +335,17 @@ class GrokBuildBridgeManager {
     }
 
     if (method === "_x.ai/session/prompt_complete") {
-      const live = this.getLiveSession(params.sessionId);
+      const live = this.getLiveSession(String(params.sessionId ?? ""));
       if (!live) return;
       this.finishPromptTurn(live);
     }
   }
 
-  indexDiscoveredSession(entry) {
+  indexDiscoveredSession(entry: Record<string, unknown>) {
     const rawId = String(entry?.sessionId ?? "").trim();
-    const directory = normalizeDir(entry?.cwd);
+    const directory = normalizeDir(
+      typeof entry.cwd === "string" ? entry.cwd : undefined,
+    );
     if (!rawId || !directory) return;
     const existing = this.sessionIndex.get(rawId);
     const now = Date.now();
@@ -283,25 +353,26 @@ class GrokBuildBridgeManager {
       id: rawId,
       directory,
       workspaceId: existing?.workspaceId,
-      title: entry?.title || existing?.title || "Untitled",
+      title: String(entry.title ?? existing?.title ?? "Untitled"),
       preview: existing?.preview || "",
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      modelId: entry?.modelId || existing?.modelId || DEFAULT_MODEL_ID,
-      activity: entry?.activity || existing?.activity,
+      modelId: String(entry.modelId ?? existing?.modelId ?? DEFAULT_MODEL_ID),
+      activity: typeof entry.activity === "string" ? entry.activity : existing?.activity,
       origin: existing?.origin ?? "grok",
       hidden: existing?.hidden ?? false,
     });
   }
 
-  handleSessionUpdate(live, update) {
-    const sessionUpdate = update?.sessionUpdate;
+  handleSessionUpdate(live: GrokLiveSession, update: Record<string, unknown>) {
+    const sessionUpdate = update.sessionUpdate;
     if (sessionUpdate === "agent_message_chunk" || sessionUpdate === "agent_thought_chunk") {
-      const text = update?.content?.text ?? "";
+      const content = update.content as { text?: string } | undefined;
+      const text = content?.text ?? "";
       if (!text) return;
       const bundle = this.ensureAssistantMessage(live);
       const partId = `${bundle.info.id}:${sessionUpdate === "agent_thought_chunk" ? "reasoning" : "text"}`;
-      const existingPart = bundle.parts.find((part) => part.id === partId);
+      const existingPart = bundle.parts.find((p) => p.id === partId);
       const nextText = `${existingPart?.text ?? ""}${text}`;
       const part =
         sessionUpdate === "agent_thought_chunk"
@@ -338,7 +409,7 @@ class GrokBuildBridgeManager {
     }
   }
 
-  appendSyntheticUserMessage(live, text, modelId) {
+  appendSyntheticUserMessage(live: GrokLiveSession, text: string, modelId: string) {
     const messageId = randomUUID();
     live.currentModelId = modelId;
     const info = defaultUserInfo(live.session.id, messageId, modelId);
@@ -350,7 +421,7 @@ class GrokBuildBridgeManager {
     this.emitBackend(live.project, { type: "message.part.updated", part });
   }
 
-  ensureAssistantMessage(live) {
+  ensureAssistantMessage(live: GrokLiveSession) {
     if (live.currentAssistantMessageId) {
       const existing = findMessage(live.messages, live.currentAssistantMessageId);
       if (existing) return existing;
@@ -363,16 +434,18 @@ class GrokBuildBridgeManager {
       live.currentModelId,
     );
     info.parentID = live.currentUserMessageId ?? "";
-    const bundle = upsertMessage(live.messages, info);
+    const bundle = upsertMessage(live.messages, info) as GrokMessageBundle;
     live.currentAssistantMessageId = messageId;
     this.emitBackend(live.project, { type: "message.updated", message: info });
     return bundle;
   }
 
-  async syncSessionRecord(live, emitEvent = true) {
+  async syncSessionRecord(live: GrokLiveSession, emitEvent = true) {
     const now = Date.now();
     const rawId = toRawSessionId(live.session.id);
-    const preview = getSessionPreview(live.messages);
+    const preview = getSessionPreview(
+      live.messages as Parameters<typeof getSessionPreview>[0],
+    );
     const existing = this.sessionIndex.get(rawId);
     const title =
       live.session.title && live.session.title !== "Untitled"
@@ -402,7 +475,7 @@ class GrokBuildBridgeManager {
     }
   }
 
-  async addProject(config) {
+  async addProject(config: GrokProjectTarget) {
     const project = this.ensureKnownProject(config?.directory, config?.workspaceId);
     try {
       const info = await stat(project.directory);
@@ -422,7 +495,7 @@ class GrokBuildBridgeManager {
     this.emitConnection(project, nowConnection({ state: "connected" }));
   }
 
-  async removeProject(target) {
+  async removeProject(target: GrokProjectTarget) {
     const directory = normalizeDir(target?.directory);
     if (!directory) return;
     const key = makeProjectKey(target?.workspaceId, directory);
@@ -449,7 +522,7 @@ class GrokBuildBridgeManager {
     this.resetAcp();
   }
 
-  async listSessions(target = {}) {
+  async listSessions(target: GrokProjectTarget = {}) {
     const directory = normalizeDir(target.directory);
     const workspaceId = target.workspaceId;
     const byId = new Map();
@@ -467,20 +540,24 @@ class GrokBuildBridgeManager {
     return [...byId.values()].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
   }
 
-  async createSession(input = {}) {
-    const project = this.ensureKnownProject(input.directory, input.workspaceId);
+  async createSession(input: Record<string, unknown> = {}) {
+    const project = this.ensureKnownProject(
+      typeof input.directory === "string" ? input.directory : undefined,
+      typeof input.workspaceId === "string" ? input.workspaceId : undefined,
+    );
     await this.ensureAcp();
     const now = Date.now();
-    const { sessionId } = await this.acp.request("session/new", {
+    const created = (await this.acp.request("session/new", {
       cwd: project.directory,
       mcpServers: [],
-    });
+    })) as { sessionId?: string };
+    const sessionId = String(created.sessionId ?? "");
     const rawId = toRawSessionId(sessionId);
     const session = this.buildSession({
       id: rawId,
       directory: project.directory,
       workspaceId: project.workspaceId,
-      title: makeSessionTitle("", input.title),
+      title: makeSessionTitle("", typeof input.title === "string" ? input.title : undefined),
       createdAt: now,
       updatedAt: now,
       modelId: DEFAULT_MODEL_ID,
@@ -522,7 +599,7 @@ class GrokBuildBridgeManager {
     return session;
   }
 
-  async getMessages(sessionId, target = {}) {
+  async getMessages(sessionId: string, target: GrokProjectTarget = {}) {
     const live = this.getLiveSession(sessionId);
     if (live) return live.messages;
     const rawId = toRawSessionId(sessionId);
@@ -535,13 +612,21 @@ class GrokBuildBridgeManager {
   async getProviders() {
     await this.ensureAcp();
     return (
-      this.providerCache ?? buildGrokProvidersFromModelState(this.acp.initResult?._meta?.modelState)
+      this.providerCache ??
+      buildGrokProvidersFromModelState(
+        (this.acp.initResult?._meta as { modelState?: unknown } | undefined)?.modelState as
+          Parameters<typeof buildGrokProvidersFromModelState>[0],
+      )
     );
   }
 
   async getCommands() {
     await this.ensureAcp();
-    return (this.availableCommands ?? []).map((command) => ({
+    const cmds = (this.availableCommands ?? []).filter(
+      (c): c is { name: string; description?: string } =>
+        Boolean(c && typeof c === "object" && typeof (c as { name?: string }).name === "string"),
+    );
+    return cmds.map((command) => ({
       name: command.name,
       description: command.description ?? command.name,
       source: "command",
@@ -554,10 +639,10 @@ class GrokBuildBridgeManager {
     return [];
   }
 
-  async getSessionStatuses(target = {}) {
+  async getSessionStatuses(target: GrokProjectTarget = {}) {
     const directory = normalizeDir(target.directory);
     const workspaceId = target.workspaceId;
-    const statuses = {};
+    const statuses: Record<string, { type: string }> = {};
     for (const live of this.liveSessions.values()) {
       if (directory && live.project.directory !== directory) continue;
       if (workspaceId !== undefined && live.project.workspaceId !== workspaceId) continue;
@@ -576,7 +661,16 @@ class GrokBuildBridgeManager {
     return statuses;
   }
 
-  async prompt(sessionId, text, _images, model, _agent, _variant, directory, workspaceId) {
+  async prompt(
+    sessionId: string,
+    text: string,
+    _images: unknown,
+    model: unknown,
+    _agent: unknown,
+    _variant: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     const live = await this.ensureLiveSessionForPrompt(sessionId, directory, workspaceId);
     if (live.running) {
       throw new Error("Grok Build session already running");
@@ -587,7 +681,9 @@ class GrokBuildBridgeManager {
     );
     live.project = project;
     await this.ensureAcp();
-    const modelId = resolveSelectedModelId(model);
+    const modelId = resolveSelectedModelId(
+      model as Parameters<typeof resolveSelectedModelId>[0],
+    );
     live.currentModelId = modelId;
     live.running = true;
     live.turnIdleEmitted = false;
@@ -608,7 +704,7 @@ class GrokBuildBridgeManager {
     });
   }
 
-  async runPromptTurn(live, text, modelId) {
+  async runPromptTurn(live: GrokLiveSession, text: string, modelId: string) {
     try {
       await this.acp.request("session/set_model", {
         sessionId: live.grokSessionId,
@@ -636,9 +732,9 @@ class GrokBuildBridgeManager {
     }
   }
 
-  async startSession(input = {}) {
+  async startSession(input: Record<string, unknown> = {}) {
     const session = await this.createSession(input);
-    if (input.text) {
+    if (typeof input.text === "string" && input.text) {
       await this.prompt(
         session.id,
         input.text,
@@ -646,14 +742,14 @@ class GrokBuildBridgeManager {
         input.model,
         input.agent,
         input.variant,
-        input.directory,
-        input.workspaceId,
+        typeof input.directory === "string" ? input.directory : undefined,
+        typeof input.workspaceId === "string" ? input.workspaceId : undefined,
       );
     }
     return session;
   }
 
-  async deleteSession(sessionId, target = {}) {
+  async deleteSession(sessionId: string, target: GrokProjectTarget = {}) {
     const rawId = toRawSessionId(sessionId);
     const live = this.getLiveSession(rawId);
     const record = this.sessionIndex.get(rawId);
@@ -677,7 +773,7 @@ class GrokBuildBridgeManager {
     return true;
   }
 
-  async updateSession(sessionId, title, _target = {}) {
+  async updateSession(sessionId: string, title: string, _target: GrokProjectTarget = {}) {
     const live = this.getLiveSession(sessionId);
     const rawId = toRawSessionId(sessionId);
     const record = this.sessionIndex.get(rawId);
@@ -702,10 +798,11 @@ class GrokBuildBridgeManager {
       });
       return live.session;
     }
+    if (!record) throw new Error("Grok Build session not found");
     return this.buildSessionFromRecord(record);
   }
 
-  async abort(sessionId) {
+  async abort(sessionId: string) {
     const live = this.getLiveSession(sessionId);
     if (!live) return true;
     live.abortRequested = true;
@@ -714,12 +811,26 @@ class GrokBuildBridgeManager {
     return true;
   }
 
-  async sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId) {
+  async sendCommand(
+    sessionId: string,
+    command: string,
+    args: string,
+    model: unknown,
+    agent: unknown,
+    variant: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, agent, variant, directory, workspaceId);
   }
 
-  async summarizeSession(sessionId, model, directory, workspaceId) {
+  async summarizeSession(
+    sessionId: string,
+    model: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     await this.sendCommand(
       sessionId,
       "compact",
@@ -733,10 +844,15 @@ class GrokBuildBridgeManager {
   }
 }
 
-export function setupGrokBuildBridge(ipcMain, getAllWindows) {
+export function setupGrokBuildBridge(
+  ipcMain: Parameters<typeof registerObjectTargetHarnessRpcHandlers>[1],
+  getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>,
+) {
   let manager = new GrokBuildBridgeManager(getAllWindows);
 
-  registerObjectTargetHarnessRpcHandlers("grok-build", ipcMain, () => manager);
+  registerObjectTargetHarnessRpcHandlers("grok-build", ipcMain, () =>
+    manager as unknown as ObjectTargetHarnessManager,
+  );
 
   return {
     async restart() {

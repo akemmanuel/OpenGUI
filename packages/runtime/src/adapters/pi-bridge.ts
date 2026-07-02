@@ -228,6 +228,7 @@ function buildTranscriptFromSessionManager(
   let lastTimelineTimestamp = null;
 
   for (const entry of seedEntries) {
+    if (!entry) continue;
     if (entry.type === "model_change") {
       currentModel = {
         provider: entry.provider,
@@ -251,6 +252,7 @@ function buildTranscriptFromSessionManager(
   }
 
   for (const entry of entries) {
+    if (!entry) continue;
     if (entry.type === "model_change") {
       currentModel = {
         provider: entry.provider,

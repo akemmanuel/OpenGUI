@@ -7,7 +7,7 @@ type HarnessTarget = {
   workspaceId: unknown;
 };
 
-type ObjectTargetHarnessManager = {
+export type ObjectTargetHarnessManager = {
   addProject(config: unknown): unknown;
   removeProject(target: HarnessTarget): unknown;
   disconnect(): unknown;

@@ -185,12 +185,12 @@ async function listCodexAppServerSessions(
     const sessions = [];
     let cursor = undefined;
     do {
-      const response = await request("thread/list", {
+      const response = (await request("thread/list", {
         limit: 100,
         sortKey: "updated_at",
         sortDirection: "desc",
         ...(cursor ? { cursor } : {}),
-      });
+      })) as { data?: unknown[]; nextCursor?: string };
       for (const thread of Array.isArray(response?.data) ? response.data : []) {
         if (!thread?.id) continue;
         const session = normalizeCodexAppServerThread(thread, workspaceId);
@@ -209,10 +209,10 @@ async function listCodexAppServerSessions(
 
 async function readCodexAppServerMessages(sessionId: string) {
   return await withCodexAppServer(async ({ request }) => {
-    const response = await request("thread/read", {
+    const response = (await request("thread/read", {
       threadId: sessionId,
       includeTurns: true,
-    });
+    })) as { thread?: { id: string; turns?: unknown[] } };
     return buildMessagesFromCodexAppServerThread(response?.thread ?? { id: sessionId, turns: [] });
   });
 }
@@ -223,7 +223,10 @@ async function fetchCodexProviderFromAppServer() {
     const models = {};
     let cursor = undefined;
     do {
-      const response = await request("model/list", cursor ? { cursor } : {});
+      const response = (await request("model/list", cursor ? { cursor } : {})) as {
+        data?: unknown[];
+        nextCursor?: string;
+      };
       for (const rawModel of Array.isArray(response?.data) ? response.data : []) {
         const model = mapCodexAppServerModel(rawModel);
         if (!model) continue;
@@ -269,7 +272,8 @@ async function getCodexProviderData() {
 function getCodexModel(providerData: { providers?: unknown[] } | null, modelId: string | null) {
   if (!providerData || !modelId) return null;
   for (const provider of Array.isArray(providerData.providers) ? providerData.providers : []) {
-    const model = provider?.models?.[modelId];
+    const row = provider as { models?: Record<string, unknown> } | null | undefined;
+    const model = row?.models?.[modelId];
     if (model) return model;
   }
   return null;
@@ -502,9 +506,9 @@ function makeStoragePaths(userData: string = join(homedir(), ".config", "OpenGUI
   };
 }
 
-function buildCodexPath(source: Record<string, unknown>) {
-  const pathValue = typeof source?.PATH === "string" ? source.PATH : "";
-  const home = source?.HOME || homedir();
+function buildCodexPath(source: NodeJS.ProcessEnv) {
+  const pathValue = typeof source.PATH === "string" ? source.PATH : "";
+  const home = typeof source.HOME === "string" ? source.HOME : homedir();
   const candidates = [
     join(home, ".local", "share", "pnpm"),
     join(home, ".local", "bin"),
@@ -520,7 +524,7 @@ function buildCodexPath(source: Record<string, unknown>) {
 }
 
 function pickCodexEnv(source: NodeJS.ProcessEnv) {
-  const env = {};
+  const env: Record<string, string> = {};
   const allow = new Set([
     "PATH",
     "HOME",
@@ -597,7 +601,7 @@ function upsertPart(
 ) {
   const bundle = findMessage(messages, part.messageID);
   if (!bundle) return null;
-  const index = bundle.parts.findIndex((entry) => entry.id === part.id);
+  const index = bundle.parts.findIndex((entry: { id: string }) => entry.id === part.id);
   if (index === -1) {
     bundle.parts.push(part);
     return part;
@@ -623,7 +627,10 @@ function renameSessionInMessages(
 ) {
   for (const bundle of messages) {
     bundle.info = { ...bundle.info, sessionID: newId };
-    bundle.parts = bundle.parts.map((part) => ({ ...part, sessionID: newId }));
+    bundle.parts = bundle.parts.map((part: Record<string, unknown>) => ({
+      ...part,
+      sessionID: newId,
+    }));
   }
 }
 
@@ -850,12 +857,48 @@ function buildToolPartFromItem(
   };
 }
 
+type CodexProjectSlot = { key: string; directory: string; workspaceId?: string };
+
+type CodexSessionRecord = {
+  id: string;
+  directory: string;
+  workspaceId?: string;
+  title?: string;
+  preview?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  modelId?: string | null;
+  variant?: string | null;
+  origin?: string;
+  hidden?: boolean;
+};
+
+type CodexTranscriptCache = { messages: Array<{ info: Record<string, unknown>; parts: unknown[] }> };
+
+type CodexLiveSessionState = {
+  sessionId: string;
+  threadId: string | null;
+  project: CodexProjectSlot;
+  session: Record<string, unknown>;
+  messages: CodexTranscriptCache["messages"];
+  running: boolean;
+  abortController: AbortController | null;
+  currentAssistantMessageId: string | null;
+  currentUserMessageId: string | null;
+  currentModelId: string;
+  currentVariant: string | undefined;
+  createdAt: number;
+  hidden: boolean;
+};
+
+type CodexProjectTarget = { directory?: string; workspaceId?: string };
+
 class CodexBridgeManager {
   emitBridgeEvent: (event: Record<string, unknown>) => void;
-  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
-  sessionIndex: Map<string, unknown>;
-  transcriptCache: Map<string, unknown>;
-  liveSessions: Map<string, unknown>;
+  projects: Map<string, CodexProjectSlot>;
+  sessionIndex: Map<string, CodexSessionRecord>;
+  transcriptCache: Map<string, CodexTranscriptCache>;
+  liveSessions: Map<string, CodexLiveSessionState>;
   aliases: Map<string, string>;
   paths: ReturnType<typeof makeStoragePaths>;
   storageReady: Promise<void>;
@@ -875,11 +918,11 @@ class CodexBridgeManager {
     });
   }
 
-  emit(event) {
+  emit(event: Record<string, unknown>) {
     this.emitBridgeEvent(event);
   }
 
-  emitConnection(project, status) {
+  emitConnection(project: CodexProjectSlot, status: Record<string, unknown>) {
     this.emit({
       type: "connection:status",
       directory: project.directory,
@@ -888,7 +931,7 @@ class CodexBridgeManager {
     });
   }
 
-  emitBackend(project, payload) {
+  emitBackend(project: CodexProjectSlot | null | undefined, payload: Record<string, unknown>) {
     this.emit({
       type: "codex:event",
       directory: project?.directory,
@@ -918,7 +961,7 @@ class CodexBridgeManager {
     this.pruneSessionIndex();
   }
 
-  clearSessionMemory(sessionId) {
+  clearSessionMemory(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     this.liveSessions.delete(sessionId);
@@ -932,7 +975,7 @@ class CodexBridgeManager {
     }
   }
 
-  clearProjectMemory(directory, workspaceId) {
+  clearProjectMemory(directory: string, workspaceId: string | undefined) {
     for (const [sessionId, live] of this.liveSessions.entries()) {
       if (live.project.directory === directory && live.project.workspaceId === workspaceId) {
         this.clearSessionMemory(sessionId);
@@ -950,7 +993,7 @@ class CodexBridgeManager {
     }
   }
 
-  async loadTranscript(sessionId) {
+  async loadTranscript(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     if (this.transcriptCache.has(realId)) {
@@ -961,7 +1004,7 @@ class CodexBridgeManager {
     return empty;
   }
 
-  async persistTranscript(sessionId, messages) {
+  async persistTranscript(sessionId: string, messages: CodexTranscriptCache["messages"]) {
     await this.storageReady;
     sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
@@ -969,15 +1012,15 @@ class CodexBridgeManager {
     this.transcriptCache.set(realId, payload);
   }
 
-  resolveSessionId(sessionId) {
+  resolveSessionId(sessionId: string) {
     let current = toRawSessionId(sessionId);
     while (this.aliases.has(current)) {
-      current = this.aliases.get(current);
+      current = this.aliases.get(current) ?? current;
     }
     return current;
   }
 
-  getLiveSession(sessionId) {
+  getLiveSession(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const direct = this.liveSessions.get(sessionId);
     if (direct) return direct;
@@ -985,7 +1028,25 @@ class CodexBridgeManager {
     return this.liveSessions.get(resolved) ?? null;
   }
 
-  buildSession({ id, directory, workspaceId, title, createdAt, updatedAt, modelId, variant }) {
+  buildSession({
+    id,
+    directory,
+    workspaceId,
+    title,
+    createdAt,
+    updatedAt,
+    modelId,
+    variant,
+  }: {
+    id: string;
+    directory: string;
+    workspaceId?: string;
+    title?: string;
+    createdAt: number;
+    updatedAt: number;
+    modelId?: string | null;
+    variant?: string | null;
+  }) {
     const rawId = toRawSessionId(id);
     const frontendId = toFrontendSessionId(rawId);
     return {
@@ -1014,7 +1075,7 @@ class CodexBridgeManager {
     };
   }
 
-  buildSessionFromRecord(record) {
+  buildSessionFromRecord(record: CodexSessionRecord) {
     return this.buildSession({
       id: record.id,
       directory: record.directory,
@@ -1027,7 +1088,7 @@ class CodexBridgeManager {
     });
   }
 
-  deriveSessionModelFromMessages(messages) {
+  deriveSessionModelFromMessages(messages: Array<{ info?: Record<string, unknown> }>) {
     let modelId = null;
     let variant = null;
     for (const entry of messages) {
@@ -1048,7 +1109,7 @@ class CodexBridgeManager {
     return { modelId, variant };
   }
 
-  ensureKnownProject(directory, workspaceId) {
+  ensureKnownProject(directory: string | undefined, workspaceId: string | undefined) {
     const normalized = normalizeDir(directory);
     if (!normalized) {
       throw new Error("Codex requires a project directory");
@@ -1062,7 +1123,7 @@ class CodexBridgeManager {
     return project;
   }
 
-  async addProject(config) {
+  async addProject(config: CodexProjectTarget) {
     const project = this.ensureKnownProject(config?.directory, config?.workspaceId);
     try {
       const info = await stat(project.directory);
@@ -1082,7 +1143,7 @@ class CodexBridgeManager {
     this.emitConnection(project, nowConnection({ state: "connected" }));
   }
 
-  async removeProject(target) {
+  async removeProject(target: CodexProjectTarget) {
     const directory = normalizeDir(target?.directory);
     if (!directory) return;
     const key = makeProjectKey(target?.workspaceId, directory);
@@ -1103,7 +1164,7 @@ class CodexBridgeManager {
     this.aliases.clear();
   }
 
-  async listSessions(target = {}) {
+  async listSessions(target: CodexProjectTarget = {}) {
     await this.storageReady;
     const directory = normalizeDir(target.directory);
     const workspaceId = target.workspaceId;
@@ -1153,7 +1214,7 @@ class CodexBridgeManager {
     return [...byId.values()].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
   }
 
-  async createSession(input = {}) {
+  async createSession(input: Record<string, unknown> = {}) {
     const project = this.ensureKnownProject(input.directory, input.workspaceId);
     const now = Date.now();
     const tempId = `temp:${randomUUID()}`;
@@ -1190,7 +1251,7 @@ class CodexBridgeManager {
     return session;
   }
 
-  async startSession(input = {}) {
+  async startSession(input: Record<string, unknown> = {}) {
     const session = await this.createSession(input);
     try {
       await this.prompt(
@@ -1213,7 +1274,7 @@ class CodexBridgeManager {
     }
   }
 
-  async deleteSession(sessionId, _target = {}) {
+  async deleteSession(sessionId: string, _target: CodexProjectTarget = {}) {
     sessionId = toRawSessionId(sessionId);
     await this.storageReady;
     const live = this.getLiveSession(sessionId);
@@ -1251,7 +1312,7 @@ class CodexBridgeManager {
     return true;
   }
 
-  async updateSession(sessionId, title, _target = {}) {
+  async updateSession(sessionId: string, title: string, _target: CodexProjectTarget = {}) {
     sessionId = toRawSessionId(sessionId);
     const trimmed = String(title ?? "").trim();
     if (!trimmed) throw new Error("Session title cannot be empty");
@@ -1303,7 +1364,7 @@ class CodexBridgeManager {
     return session;
   }
 
-  async getSessionStatuses(target = {}) {
+  async getSessionStatuses(target: CodexProjectTarget = {}) {
     const statuses = {};
     for (const session of await this.listSessions(target)) {
       const live = this.getLiveSession(session.id);
@@ -1324,7 +1385,7 @@ class CodexBridgeManager {
     return [];
   }
 
-  async getMessages(sessionId) {
+  async getMessages(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const live = this.getLiveSession(sessionId);
     if (live) {
@@ -1355,7 +1416,11 @@ class CodexBridgeManager {
     };
   }
 
-  async ensureLiveSessionForPrompt(sessionId, directory, workspaceId) {
+  async ensureLiveSessionForPrompt(
+    sessionId: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const live = this.getLiveSession(sessionId);
     if (live) return live;
@@ -1388,7 +1453,13 @@ class CodexBridgeManager {
     return state;
   }
 
-  appendSyntheticUserMessage(state, text, images, model, variant) {
+  appendSyntheticUserMessage(
+    state: CodexLiveSessionState,
+    text: string,
+    images: unknown,
+    model: unknown,
+    variant: unknown,
+  ) {
     const messageId = randomUUID();
     const modelId = resolveSelectedModelId(model);
     state.currentModelId = modelId;
@@ -1415,7 +1486,7 @@ class CodexBridgeManager {
     }
   }
 
-  ensureAssistantMessage(state) {
+  ensureAssistantMessage(state: CodexLiveSessionState) {
     if (state.currentAssistantMessageId) {
       const existing = findMessage(state.messages, state.currentAssistantMessageId);
       if (existing) return existing;
@@ -1435,7 +1506,7 @@ class CodexBridgeManager {
     return bundle;
   }
 
-  emitSessionUpdated(state) {
+  emitSessionUpdated(state: CodexLiveSessionState) {
     this.emitBackend(state.project, {
       type: "session.updated",
       directory: state.project.directory,
@@ -1444,7 +1515,7 @@ class CodexBridgeManager {
     });
   }
 
-  async syncRealSessionRecord(state, emitEvent = true) {
+  async syncRealSessionRecord(state: CodexLiveSessionState, emitEvent = true) {
     if (!state.threadId) return;
     const now = Date.now();
     const preview = getSessionPreview(state.messages);
@@ -1476,7 +1547,7 @@ class CodexBridgeManager {
     }
   }
 
-  async handleThreadStarted(state, threadId) {
+  async handleThreadStarted(state: CodexLiveSessionState, threadId: string) {
     threadId = toRawSessionId(threadId);
     if (!threadId || state.threadId === threadId) return;
     const oldId = state.session.id;
@@ -1507,7 +1578,11 @@ class CodexBridgeManager {
     });
   }
 
-  handleAgentTextPart(state, item, phase) {
+  handleAgentTextPart(
+    state: CodexLiveSessionState,
+    item: Record<string, unknown> & { id: string; text?: string },
+    phase: string,
+  ) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
     const partId = `${messageId}:text:${item.id}`;
@@ -1537,7 +1612,11 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  handleReasoningPart(state, item, phase) {
+  handleReasoningPart(
+    state: CodexLiveSessionState,
+    item: Record<string, unknown> & { id: string; text?: string },
+    phase: string,
+  ) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
     const partId = `${messageId}:reasoning:${item.id}`;
@@ -1571,7 +1650,11 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  handleToolLikeItem(state, item, phase) {
+  handleToolLikeItem(
+    state: CodexLiveSessionState,
+    item: Record<string, unknown> & { id: string; type: string },
+    phase: string,
+  ) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
     const partId = `${messageId}:tool:${item.id}`;
@@ -1581,7 +1664,7 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  finalizeAssistantMessage(state, usage) {
+  finalizeAssistantMessage(state: CodexLiveSessionState, usage: unknown) {
     if (!state.currentAssistantMessageId) return;
     const bundle = findMessage(state.messages, state.currentAssistantMessageId);
     if (!bundle) return;
@@ -1601,7 +1684,7 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.updated", message: info });
   }
 
-  buildThreadOptions(project, model, variant) {
+  buildThreadOptions(project: CodexProjectSlot, model: unknown, variant: unknown) {
     return {
       model: resolveSelectedModelId(model),
       sandboxMode: "workspace-write",
@@ -1612,7 +1695,7 @@ class CodexBridgeManager {
     };
   }
 
-  async stageImages(images) {
+  async stageImages(images: unknown) {
     const list = Array.isArray(images) ? images : [];
     if (list.length === 0) return { inputImages: [], cleanup: async () => {} };
     const dir = await mkdtemp(join(tmpdir(), "opengui-codex-"));
@@ -1637,7 +1720,7 @@ class CodexBridgeManager {
     }
   }
 
-  appServerThreadConfig(project, model, variant) {
+  appServerThreadConfig(project: CodexProjectSlot, model: unknown, variant: unknown) {
     return {
       model: resolveSelectedModelId(model),
       cwd: project.directory,
@@ -1648,7 +1731,7 @@ class CodexBridgeManager {
     };
   }
 
-  appServerTurnConfig(project, model, variant) {
+  appServerTurnConfig(project: CodexProjectSlot, model: unknown, variant: unknown) {
     return {
       cwd: project.directory,
       approvalPolicy: "never",
@@ -1662,7 +1745,12 @@ class CodexBridgeManager {
     };
   }
 
-  upsertAppServerItem(state, cache, item, phase) {
+  upsertAppServerItem(
+    state: CodexLiveSessionState,
+    cache: Map<string, Record<string, unknown>>,
+    item: Record<string, unknown>,
+    phase: string,
+  ) {
     const existing = cache.get(item?.id) ?? {};
     const normalized = normalizeAppServerItem(item, existing);
     if (!normalized) return;
@@ -1686,7 +1774,14 @@ class CodexBridgeManager {
     }
   }
 
-  appendAppServerDelta(state, cache, itemId, field, delta, fallbackType) {
+  appendAppServerDelta(
+    state: CodexLiveSessionState,
+    cache: Map<string, Record<string, unknown>>,
+    itemId: string,
+    field: string,
+    delta: string,
+    fallbackType: string,
+  ) {
     if (!itemId || typeof delta !== "string") return;
     const existing = cache.get(itemId) ?? { id: itemId, type: fallbackType };
     if (fallbackType === "command_execution") {
@@ -1705,7 +1800,14 @@ class CodexBridgeManager {
     }
   }
 
-  async runAppServerTurn(state, text, inputImages, model, variant, controller) {
+  async runAppServerTurn(
+    state: CodexLiveSessionState,
+    text: string,
+    inputImages: unknown[],
+    model: unknown,
+    variant: unknown,
+    controller: AbortController,
+  ) {
     const env = pickCodexEnv(process.env);
     const executable = getCodexExecutable();
     const itemCache = new Map();
@@ -1907,7 +2009,13 @@ class CodexBridgeManager {
     });
   }
 
-  async runTurn(state, text, images, model, variant) {
+  async runTurn(
+    state: CodexLiveSessionState,
+    text: string,
+    images: unknown,
+    model: unknown,
+    variant: unknown,
+  ) {
     const controller = new AbortController();
     state.abortController = controller;
     state.running = true;
@@ -1954,7 +2062,16 @@ class CodexBridgeManager {
     }
   }
 
-  async prompt(sessionId, text, images, model, _agent, variant, directory, workspaceId) {
+  async prompt(
+    sessionId: string,
+    text: string,
+    images: unknown,
+    model: unknown,
+    _agent: unknown,
+    variant: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const state = await this.ensureLiveSessionForPrompt(sessionId, directory, workspaceId);
     if (state.running) {
@@ -1981,20 +2098,34 @@ class CodexBridgeManager {
     });
   }
 
-  async abort(sessionId) {
+  async abort(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const state = this.getLiveSession(sessionId);
     state?.abortController?.abort();
     return true;
   }
 
-  async sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId) {
+  async sendCommand(
+    sessionId: string,
+    command: string,
+    args: string,
+    model: unknown,
+    agent: unknown,
+    variant: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, agent, variant, directory, workspaceId);
   }
 
-  async summarizeSession(sessionId, model, directory, workspaceId) {
+  async summarizeSession(
+    sessionId: string,
+    model: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     await this.prompt(
       sessionId,

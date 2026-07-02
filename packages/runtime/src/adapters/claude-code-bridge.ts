@@ -605,9 +605,17 @@ function sanitizePermissionUpdates(suggestions) {
   });
 }
 
+type ClaudeProjectTarget = { directory?: string; workspaceId?: string };
+
+type ClaudeProjectSlot = {
+  key?: string;
+  directory: string;
+  workspaceId?: string;
+};
+
 class ClaudeCodeBridgeManager {
   emit: (event: Record<string, unknown>) => void;
-  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
+  projects: Map<string, ClaudeProjectSlot>;
   activeQueries: Map<string, Record<string, unknown>>;
   providerCatalogs: Map<string, unknown>;
   providerCatalogPromises: Map<string, Promise<unknown>>;
@@ -633,7 +641,7 @@ class ClaudeCodeBridgeManager {
     this.messageCache = new Map();
   }
 
-  cacheMessage(sessionId, entry) {
+  cacheMessage(sessionId: string, entry: { info?: { id?: string } }) {
     if (!sessionId || !entry?.info?.id) return;
     const rawId = toRawSessionId(sessionId);
     const cache = this.messageCache.get(rawId) ?? new Map();
@@ -641,7 +649,7 @@ class ClaudeCodeBridgeManager {
     this.messageCache.set(rawId, cache);
   }
 
-  cleanupPendingTempSession(tempSessionId) {
+  cleanupPendingTempSession(tempSessionId: string) {
     if (!tempSessionId) return;
     const rawId = toRawSessionId(tempSessionId);
     this.pendingTempSessions.delete(rawId);
@@ -652,7 +660,7 @@ class ClaudeCodeBridgeManager {
     this.placeholderSessions.delete(tempSessionId);
   }
 
-  cleanupTargetCaches(directory, workspaceId) {
+  cleanupTargetCaches(directory: string, workspaceId: string | undefined) {
     for (const [tempSessionId, state] of this.pendingTempSessions.entries()) {
       if (state?.target?.directory === directory && state?.target?.workspaceId === workspaceId) {
         this.pendingTempSessions.delete(tempSessionId);
@@ -663,7 +671,7 @@ class ClaudeCodeBridgeManager {
     this.providerCatalogPromises.delete(key);
   }
 
-  emitConnectionStatus(target, status) {
+  emitConnectionStatus(target: ClaudeProjectTarget, status: Record<string, unknown>) {
     this.emit({
       type: "connection:status",
       directory: target.directory,
@@ -672,7 +680,7 @@ class ClaudeCodeBridgeManager {
     });
   }
 
-  attachProject(config) {
+  attachProject(config: ClaudeProjectTarget & { directory: string }) {
     const directory = normalizeDir(config.directory);
     const target = { directory, workspaceId: config.workspaceId };
     const key = makeProjectKey(target.workspaceId, target.directory);
@@ -680,7 +688,7 @@ class ClaudeCodeBridgeManager {
     this.emitConnectionStatus(target, { state: "connected" });
   }
 
-  removeProject(directory, workspaceId) {
+  removeProject(directory: string, workspaceId: string | undefined) {
     const normalized = normalizeDir(directory);
     const key = makeProjectKey(workspaceId, normalized);
     this.projects.delete(key);
@@ -714,7 +722,11 @@ class ClaudeCodeBridgeManager {
     this.projects.clear();
   }
 
-  resolveTarget(directory, workspaceId, sessionId) {
+  resolveTarget(
+    directory: string | undefined,
+    workspaceId: string | undefined,
+    sessionId: string,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const normalized = normalizeDir(directory);
     if (normalized) return { directory: normalized, workspaceId };
@@ -740,7 +752,11 @@ class ClaudeCodeBridgeManager {
     };
   }
 
-  getCachedProviderCatalog(directory, workspaceId, sessionId) {
+  getCachedProviderCatalog(
+    directory: string,
+    workspaceId: string | undefined,
+    sessionId: string,
+  ) {
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     const key = makeProjectKey(target.workspaceId, target.directory);
     const cached = this.providerCatalogs.get(key);
@@ -749,7 +765,11 @@ class ClaudeCodeBridgeManager {
     return cached;
   }
 
-  async discoverProviders(directory, workspaceId, sessionId) {
+  async discoverProviders(
+    directory: string,
+    workspaceId: string | undefined,
+    sessionId: string,
+  ) {
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     const key = makeProjectKey(target.workspaceId, target.directory);
     const cached = this.getCachedProviderCatalog(directory, workspaceId, sessionId);
@@ -803,7 +823,12 @@ class ClaudeCodeBridgeManager {
     return await load;
   }
 
-  lookupModelInfo(modelId, directory, workspaceId, sessionId) {
+  lookupModelInfo(
+    modelId: string,
+    directory: string,
+    workspaceId: string | undefined,
+    sessionId: string,
+  ) {
     if (typeof modelId !== "string" || !modelId.trim()) return null;
     const catalog = this.getCachedProviderCatalog(directory, workspaceId, sessionId);
     if (!catalog) return null;
@@ -823,7 +848,7 @@ class ClaudeCodeBridgeManager {
     return null;
   }
 
-  async listSessions(directory, workspaceId) {
+  async listSessions(directory: string | undefined, workspaceId: string | undefined) {
     const target = this.resolveTarget(directory, workspaceId);
     const sessions = await listSessions({ dir: target.directory, limit: 10_000 });
     const scopedSessions = sessions.filter(
@@ -853,7 +878,12 @@ class ClaudeCodeBridgeManager {
     );
   }
 
-  async getMessages(sessionId, options, directory, workspaceId) {
+  async getMessages(
+    sessionId: string,
+    options: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     sessionId = this.replacementAliases.get(sessionId) ?? sessionId;
     const target = this.resolveTarget(directory, workspaceId, sessionId);
@@ -900,7 +930,7 @@ class ClaudeCodeBridgeManager {
     return { messages: page, nextCursor };
   }
 
-  listSessionStatuses(directory, workspaceId) {
+  listSessionStatuses(directory: string | undefined, workspaceId: string | undefined) {
     const target = this.resolveTarget(directory, workspaceId);
     const statuses = {};
     for (const [sessionId, entry] of this.activeQueries.entries()) {
@@ -913,7 +943,12 @@ class ClaudeCodeBridgeManager {
     return statuses;
   }
 
-  async renameSession(sessionId, title, directory, workspaceId) {
+  async renameSession(
+    sessionId: string,
+    title: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     await renameSession(sessionId, title, { dir: target.directory });
@@ -925,7 +960,11 @@ class ClaudeCodeBridgeManager {
     );
   }
 
-  async deleteSession(sessionId, directory, workspaceId) {
+  async deleteSession(
+    sessionId: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     await deleteSession(sessionId, { dir: target.directory });
@@ -946,7 +985,12 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  async forkSession(sessionId, messageID, directory, workspaceId) {
+  async forkSession(
+    sessionId: string,
+    messageID: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     const result = await forkSession(sessionId, {
@@ -1022,7 +1066,7 @@ class ClaudeCodeBridgeManager {
       });
   }
 
-  emitSessionStatus(sessionId, type) {
+  emitSessionStatus(sessionId: string, type: string) {
     sessionId = toRawSessionId(sessionId);
     this.emit({
       type: "claude-code:event",
@@ -1643,7 +1687,16 @@ class ClaudeCodeBridgeManager {
     return session;
   }
 
-  async prompt(sessionId, text, _images, model, _agent, variant, directory, workspaceId) {
+  async prompt(
+    sessionId: string,
+    text: string,
+    _images: unknown,
+    model: unknown,
+    _agent: unknown,
+    variant: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     void this.startQuery({
       sessionId,
@@ -1656,7 +1709,7 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  async abort(sessionId) {
+  async abort(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
     entry?.query?.close?.();
@@ -1714,7 +1767,7 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  async getProviders(directory, workspaceId) {
+  async getProviders(directory: string | undefined, workspaceId: string | undefined) {
     const catalog = await this.discoverProviders(directory, workspaceId);
     return catalog.providers;
   }
@@ -1723,7 +1776,7 @@ class ClaudeCodeBridgeManager {
     return [];
   }
 
-  async getCommands(directory, workspaceId) {
+  async getCommands(directory: string | undefined, workspaceId: string | undefined) {
     const target = this.resolveTarget(directory, workspaceId);
     return await listClaudeCommands(target.directory);
   }
