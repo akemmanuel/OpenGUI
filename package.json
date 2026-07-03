@@ -33,6 +33,8 @@
     "test:bridges": "vp test packages/runtime/src/adapters/__tests__ harness-bridge-registrations",
     "slop-check": "node scripts/slop-check.mjs",
     "session-read-acceptance": "node scripts/session-read-acceptance-check.mjs",
+    "ultracode:quality": "node scripts/ultracode-quality-gate.mjs",
+    "ultracode:quality:bridges": "node scripts/ultracode-quality-gate.mjs --bridges",
     "check:add-project-flow": "node scripts/check-add-project-flow.mjs",
     "start": "NODE_ENV=production vp exec electron . --no-sandbox",
     "build:claude-sdk": "pnpm exec tsc -p packages/claude-agent-sdk-lite/tsconfig.json",

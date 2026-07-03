@@ -1,0 +1,53 @@
+name: Ultracode quality gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      bridges:
+        description: "Also run runtime and bridge-focused test suites"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "server/**"
+      - "packages/**"
+      - "scripts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "vite.config.ts"
+      - "vite.electron.config.ts"
+      - ".github/workflows/ultracode-quality.yml"
+
+concurrency:
+  group: ultracode-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Vite+ tests, session guards, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Ultracode quality workflow
+        run: |
+          if [ "${{ github.event.inputs.bridges || 'true' }}" = "true" ]; then
+            pnpm run ultracode:quality:bridges
+          else
+            pnpm run ultracode:quality
+          fi

@@ -1,4 +1,4 @@
-name: crocodile
+name: OpenCode PR review
 
 on:
   pull_request:
@@ -40,4 +40,4 @@ jobs:
             - Suggest improvements
             Your response should contain:
             - A score "Confidence Score" from 1 to 5
-            - Any issues you deteced in the PR, properly formatted into codeblocks.
+            - Any issues you detected in the PR, properly formatted into codeblocks.
