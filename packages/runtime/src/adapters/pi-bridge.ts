@@ -730,9 +730,9 @@ export class PiBridgeManager {
     const runtime = await createAgentSessionRuntime(
       createRuntime as Parameters<typeof createAgentSessionRuntime>[0],
       {
-      cwd: sessionManager.getCwd(),
-      agentDir: this.agentDir,
-      sessionManager: sessionManager as unknown as SessionManager,
+        cwd: sessionManager.getCwd(),
+        agentDir: this.agentDir,
+        sessionManager: sessionManager as unknown as SessionManager,
       },
     );
     return runtime as unknown as PiLiveSessionContext["runtime"];
@@ -1259,13 +1259,14 @@ export class PiBridgeManager {
           ? (prevState.time as { start?: number })
           : {};
       const prevInput =
-        prevState.input != null && typeof prevState.input === "object" && !Array.isArray(prevState.input)
+        prevState.input != null &&
+        typeof prevState.input === "object" &&
+        !Array.isArray(prevState.input)
           ? (prevState.input as Record<string, unknown>)
           : {};
       const attachments = [];
       let imageIndex = 0;
-      const messageId =
-        typeof part.messageID === "string" ? part.messageID : String(part.messageID ?? "");
+      const messageId = asHarnessString(part.messageID) ?? "";
       for (const block of Array.isArray(event.result?.content) ? event.result.content : []) {
         if (block?.type === "image") {
           const filePart = piImageBlockToFilePart(block, messageId, imageIndex);
@@ -1608,7 +1609,7 @@ export class PiBridgeManager {
     void this.dispatchSessionPrompt(
       project,
       sessionRef,
-      typeof input.text === "string" ? input.text : String(input.text ?? ""),
+      asHarnessString(input.text) ?? "",
       input.images,
     ).catch(() => {});
     return session;
@@ -1690,7 +1691,11 @@ export class PiBridgeManager {
   }
 
   async applySelectedModel(session: PiLiveSessionLike, selectedModel: unknown) {
-    if (selectedModel == null || typeof selectedModel !== "object" || Array.isArray(selectedModel)) {
+    if (
+      selectedModel == null ||
+      typeof selectedModel !== "object" ||
+      Array.isArray(selectedModel)
+    ) {
       return;
     }
     const record = selectedModel as Record<string, unknown>;
@@ -1715,7 +1720,9 @@ export class PiBridgeManager {
     if (typeof session.setThinkingLevel !== "function") return;
     const model = session.model;
     if (model != null && typeof model === "object") {
-      const supported = getSupportedThinkingLevels(model as Parameters<typeof getSupportedThinkingLevels>[0]);
+      const supported = getSupportedThinkingLevels(
+        model as Parameters<typeof getSupportedThinkingLevels>[0],
+      );
       if (!supported.includes(variant as (typeof supported)[number])) return;
     }
     session.setThinkingLevel(variant);
@@ -2016,7 +2023,9 @@ export class PiBridgeManager {
         await this.reloadProviderState();
         return true;
       }
-      throw new Error(`Unsupported Pi provider auth type: ${String(record.type ?? "unknown")}`);
+      throw new Error(
+        `Unsupported Pi provider auth type: ${asHarnessString(record.type) ?? "unknown"}`,
+      );
     }
     throw new Error("Unsupported Pi provider auth type: unknown");
   }
@@ -2359,27 +2368,33 @@ async function writeDaemonInfo(path: string, info: PiDaemonInfo) {
   await writeFile(path, JSON.stringify(info, null, 2), "utf8");
 }
 
+type PiDaemonFetchOptions = { timeout?: number; headers?: Record<string, string> } & Omit<
+  RequestInit,
+  "headers"
+>;
+
 async function fetchDaemonJson(
   baseUrl: string,
   token: string,
   path: string,
-  options: RequestInit & { timeout?: number; headers?: Record<string, string> } = {},
+  options: PiDaemonFetchOptions = {},
 ): Promise<PiDaemonRpcResult> {
+  const { timeout, headers: requestHeaders = {}, ...fetchInit } = options;
   const response = await runEffect(
     timeoutEffect(
       tryPromiseEffect((signal) =>
         fetch(`${baseUrl}${path}`, {
-          ...options,
+          ...fetchInit,
           signal,
           headers: {
             "content-type": "application/json",
             "x-opengui-pi-token": token,
-            ...options.headers,
+            ...requestHeaders,
           },
         }),
       ),
       {
-        timeoutMs: options.timeout ?? PI_DAEMON_HEALTH_TIMEOUT,
+        timeoutMs: timeout ?? PI_DAEMON_HEALTH_TIMEOUT,
         timeoutMessage: `Timed out calling Pi daemon ${path}`,
       },
     ),
@@ -2800,7 +2815,10 @@ export function setupPiBridge(
     "session:create": (title, directory, workspaceId) =>
       manager.createSession(parsePiSessionCreateInput(title, directory, workspaceId)),
     "session:delete": (sessionId, directory, workspaceId) =>
-      manager.deleteSession(asHarnessString(sessionId) ?? "", parsePiProjectTarget(directory, workspaceId)),
+      manager.deleteSession(
+        asHarnessString(sessionId) ?? "",
+        parsePiProjectTarget(directory, workspaceId),
+      ),
     "session:update": (sessionId, title, directory, workspaceId) =>
       manager.updateSession(
         asHarnessString(sessionId) ?? "",
