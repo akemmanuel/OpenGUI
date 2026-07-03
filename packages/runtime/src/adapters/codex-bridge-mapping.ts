@@ -13,6 +13,11 @@ import type {
 
 export type { CodexMessageBundle, CodexMessageInfo, CodexPart, NormalizedAppServerItem };
 
+/** Narrow unknown harness/IPC values to string (optional fallback when absent or non-string). */
+export function asHarnessString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("codex:");
 
 export function codexTimestampToMs(value: number) {
@@ -330,7 +335,11 @@ export function findPart(messages: CodexMessageBundle[], messageId: string, part
   return bundle.parts.find((part) => part.id === partId) ?? null;
 }
 
-export function renameSessionInMessages(messages: CodexMessageBundle[], _oldId: string, newId: string) {
+export function renameSessionInMessages(
+  messages: CodexMessageBundle[],
+  _oldId: string,
+  newId: string,
+) {
   for (const bundle of messages) {
     bundle.info = { ...bundle.info, sessionID: newId };
     bundle.parts = bundle.parts.map((part) => ({

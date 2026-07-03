@@ -21,6 +21,7 @@ import {
   nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
 import {
+  asHarnessString,
   buildMessagesFromCodexAppServerThread,
   defaultAssistantInfo,
   defaultUserInfo,
@@ -404,10 +405,14 @@ function createUserImageParts(
 function stringifyUnknown(value: unknown) {
   if (typeof value === "string") return value;
   if (value == null) return "";
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (typeof value === "symbol") return value.description ?? value.toString();
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return String(value);
+    return "[unserializable]";
   }
 }
 
@@ -1021,8 +1026,7 @@ class CodexBridgeManager {
     if (!directory) return;
     const key = makeProjectKey(target?.workspaceId, directory);
     const workspaceId = target?.workspaceId;
-    const project: CodexProjectSlot =
-      this.projects.get(key) ?? { key, directory, workspaceId };
+    const project: CodexProjectSlot = this.projects.get(key) ?? { key, directory, workspaceId };
     this.clearProjectMemory(directory, workspaceId);
     this.projects.delete(key);
     this.emitConnection(project, nowConnection({ state: "idle" }));
@@ -1129,7 +1133,7 @@ class CodexBridgeManager {
     try {
       await this.prompt(
         session.id,
-        String(input.text ?? ""),
+        asHarnessString(input.text),
         input.images,
         input.model,
         input.agent,
@@ -1187,14 +1191,14 @@ class CodexBridgeManager {
 
   async updateSession(sessionId: string, title: string, _target: CodexProjectTarget = {}) {
     sessionId = toRawSessionId(sessionId);
-    const trimmed = String(title ?? "").trim();
+    const trimmed = asHarnessString(title).trim();
     if (!trimmed) throw new Error("Session title cannot be empty");
     const live = this.getLiveSession(sessionId);
     if (live) {
       live.session = {
         ...live.session,
         title: trimmed,
-        time: { ...(live.session.time ?? {}), updated: Date.now() },
+        time: { ...live.session.time, updated: Date.now() },
       };
       if (live.threadId) {
         const record = this.sessionIndex.get(live.threadId) ?? {
@@ -1353,7 +1357,7 @@ class CodexBridgeManager {
       state.currentVariant,
     );
     const parts = [
-      makeTextPart(state.session.id, messageId, randomUUID(), String(text ?? ""), true),
+      makeTextPart(state.session.id, messageId, randomUUID(), asHarnessString(text), true),
       ...createUserImageParts(state.session.id, messageId, images),
     ];
     const bundle = { info, parts };
@@ -1460,11 +1464,7 @@ class CodexBridgeManager {
     });
   }
 
-  handleAgentTextPart(
-    state: CodexLiveSessionState,
-    item: NormalizedAppServerItem,
-    phase: string,
-  ) {
+  handleAgentTextPart(state: CodexLiveSessionState, item: NormalizedAppServerItem, phase: string) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
     if (!messageId) return;
@@ -1495,11 +1495,7 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  handleReasoningPart(
-    state: CodexLiveSessionState,
-    item: NormalizedAppServerItem,
-    phase: string,
-  ) {
+  handleReasoningPart(state: CodexLiveSessionState, item: NormalizedAppServerItem, phase: string) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
     if (!messageId) return;
@@ -1536,11 +1532,7 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  handleToolLikeItem(
-    state: CodexLiveSessionState,
-    item: NormalizedAppServerItem,
-    phase: string,
-  ) {
+  handleToolLikeItem(state: CodexLiveSessionState, item: NormalizedAppServerItem, phase: string) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
     if (!messageId) return;
@@ -1564,7 +1556,7 @@ class CodexBridgeManager {
     const info: CodexMessageInfo = {
       ...bundle.info,
       time: {
-        ...(bundle.info.time ?? {}),
+        ...bundle.info.time,
         completed: Date.now(),
       },
       tokens: {
@@ -1915,7 +1907,7 @@ class CodexBridgeManager {
           }
           await request("turn/start", {
             threadId: state.threadId,
-            input: [{ type: "text", text: String(text ?? "") }, ...inputImages],
+            input: [{ type: "text", text: asHarnessString(text) }, ...inputImages],
             ...this.appServerTurnConfig(state.project, model, variant),
           });
         } catch (error) {
@@ -2063,8 +2055,10 @@ export function setupCodexBridge(
 ) {
   let manager = new CodexBridgeManager(getAllWindows, options);
 
-  registerObjectTargetHarnessRpcHandlers("codex", ipcMain, () =>
-    manager as unknown as ObjectTargetHarnessManager,
+  registerObjectTargetHarnessRpcHandlers(
+    "codex",
+    ipcMain,
+    () => manager as unknown as ObjectTargetHarnessManager,
   );
 
   return {

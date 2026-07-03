@@ -1,11 +1,19 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
   appServerReasoningText,
+  asHarnessString,
   buildMessagesFromCodexAppServerThread,
   normalizeAppServerItem,
 } from "../codex-bridge-mapping.ts";
 
 describe("codex-bridge-mapping", () => {
+  test("asHarnessString coerces unknown values", () => {
+    expect(asHarnessString("ok")).toBe("ok");
+    expect(asHarnessString(1)).toBe("");
+    expect(asHarnessString(null, "fb")).toBe("fb");
+    expect(asHarnessString({ x: 1 })).toBe("");
+  });
+
   test("normalizeAppServerItem maps reasoning and plan types", () => {
     expect(normalizeAppServerItem({ type: "reasoning", id: "r1", summary: "think" })).toEqual({
       id: "r1",

@@ -6,6 +6,15 @@ import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER_ID } from "./grok-build-models.ts";
 
 const { toFrontendSessionId } = makeHarnessSessionIdCodec("grok-build:");
 
+/** Narrow unknown ACP / IPC values to optional strings (no Object stringification). */
+export function asHarnessString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export function asHarnessStringOr(value: unknown, fallback: string): string {
+  return asHarnessString(value) ?? fallback;
+}
+
 export function firstLine(text: unknown) {
   const s = typeof text === "string" ? text : "";
   return (

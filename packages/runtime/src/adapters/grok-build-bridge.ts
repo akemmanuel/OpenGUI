@@ -19,6 +19,8 @@ import {
   resolveSelectedModelId,
 } from "./grok-build-models.ts";
 import {
+  asHarnessString,
+  asHarnessStringOr,
   defaultAssistantInfo,
   defaultUserInfo,
   getSessionPreview,
@@ -309,7 +311,7 @@ class GrokBuildBridgeManager {
         const row = entry as Record<string, unknown>;
         this.indexDiscoveredSession(row);
         const activity = row.activity;
-        const live = this.getLiveSession(String(row.sessionId ?? ""));
+        const live = this.getLiveSession(asHarnessStringOr(row.sessionId, ""));
         if (!live) continue;
         if (activity === "idle" && live.running) {
           this.finishPromptTurn(live);
@@ -326,7 +328,7 @@ class GrokBuildBridgeManager {
     }
 
     if (method === "session/update") {
-      const sessionId = String(params.sessionId ?? "");
+      const sessionId = asHarnessStringOr(params.sessionId, "");
       const update = (params.update ?? {}) as Record<string, unknown>;
       const live = this.getLiveSession(sessionId);
       if (!live || live.aborted) return;
@@ -335,17 +337,15 @@ class GrokBuildBridgeManager {
     }
 
     if (method === "_x.ai/session/prompt_complete") {
-      const live = this.getLiveSession(String(params.sessionId ?? ""));
+      const live = this.getLiveSession(asHarnessStringOr(params.sessionId, ""));
       if (!live) return;
       this.finishPromptTurn(live);
     }
   }
 
   indexDiscoveredSession(entry: Record<string, unknown>) {
-    const rawId = String(entry?.sessionId ?? "").trim();
-    const directory = normalizeDir(
-      typeof entry.cwd === "string" ? entry.cwd : undefined,
-    );
+    const rawId = (asHarnessString(entry?.sessionId) ?? "").trim();
+    const directory = normalizeDir(typeof entry.cwd === "string" ? entry.cwd : undefined);
     if (!rawId || !directory) return;
     const existing = this.sessionIndex.get(rawId);
     const now = Date.now();
@@ -353,11 +353,14 @@ class GrokBuildBridgeManager {
       id: rawId,
       directory,
       workspaceId: existing?.workspaceId,
-      title: String(entry.title ?? existing?.title ?? "Untitled"),
+      title: asHarnessStringOr(entry.title, asHarnessStringOr(existing?.title, "Untitled")),
       preview: existing?.preview || "",
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      modelId: String(entry.modelId ?? existing?.modelId ?? DEFAULT_MODEL_ID),
+      modelId: asHarnessStringOr(
+        entry.modelId,
+        asHarnessStringOr(existing?.modelId, DEFAULT_MODEL_ID),
+      ),
       activity: typeof entry.activity === "string" ? entry.activity : existing?.activity,
       origin: existing?.origin ?? "grok",
       hidden: existing?.hidden ?? false,
@@ -443,9 +446,7 @@ class GrokBuildBridgeManager {
   async syncSessionRecord(live: GrokLiveSession, emitEvent = true) {
     const now = Date.now();
     const rawId = toRawSessionId(live.session.id);
-    const preview = getSessionPreview(
-      live.messages as Parameters<typeof getSessionPreview>[0],
-    );
+    const preview = getSessionPreview(live.messages as Parameters<typeof getSessionPreview>[0]);
     const existing = this.sessionIndex.get(rawId);
     const title =
       live.session.title && live.session.title !== "Untitled"
@@ -551,7 +552,7 @@ class GrokBuildBridgeManager {
       cwd: project.directory,
       mcpServers: [],
     })) as { sessionId?: string };
-    const sessionId = String(created.sessionId ?? "");
+    const sessionId = asHarnessStringOr(created.sessionId, "");
     const rawId = toRawSessionId(sessionId);
     const session = this.buildSession({
       id: rawId,
@@ -614,8 +615,8 @@ class GrokBuildBridgeManager {
     return (
       this.providerCache ??
       buildGrokProvidersFromModelState(
-        (this.acp.initResult?._meta as { modelState?: unknown } | undefined)?.modelState as
-          Parameters<typeof buildGrokProvidersFromModelState>[0],
+        (this.acp.initResult?._meta as { modelState?: unknown } | undefined)
+          ?.modelState as Parameters<typeof buildGrokProvidersFromModelState>[0],
       )
     );
   }
@@ -681,9 +682,7 @@ class GrokBuildBridgeManager {
     );
     live.project = project;
     await this.ensureAcp();
-    const modelId = resolveSelectedModelId(
-      model as Parameters<typeof resolveSelectedModelId>[0],
-    );
+    const modelId = resolveSelectedModelId(model as Parameters<typeof resolveSelectedModelId>[0]);
     live.currentModelId = modelId;
     live.running = true;
     live.turnIdleEmitted = false;
@@ -850,8 +849,10 @@ export function setupGrokBuildBridge(
 ) {
   let manager = new GrokBuildBridgeManager(getAllWindows);
 
-  registerObjectTargetHarnessRpcHandlers("grok-build", ipcMain, () =>
-    manager as unknown as ObjectTargetHarnessManager,
+  registerObjectTargetHarnessRpcHandlers(
+    "grok-build",
+    ipcMain,
+    () => manager as unknown as ObjectTargetHarnessManager,
   );
 
   return {

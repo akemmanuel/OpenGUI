@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
+  asHarnessString,
+  asHarnessStringOr,
   getSessionPreview,
   makeReasoningPart,
   makeSessionTitle,
@@ -7,6 +9,14 @@ import {
 } from "../grok-build-bridge-mapping.ts";
 
 describe("grok-build-bridge-mapping", () => {
+  test("asHarnessString narrows unknown without object coercion", () => {
+    expect(asHarnessString("id")).toBe("id");
+    expect(asHarnessString(42)).toBeUndefined();
+    expect(asHarnessString({ sessionId: "x" })).toBeUndefined();
+    expect(asHarnessStringOr("a", "b")).toBe("a");
+    expect(asHarnessStringOr(undefined, "b")).toBe("b");
+  });
+
   test("makeSessionTitle truncates first line", () => {
     expect(makeSessionTitle("hello\nworld")).toBe("hello");
     expect(makeSessionTitle("   ")).toBe("Untitled");
