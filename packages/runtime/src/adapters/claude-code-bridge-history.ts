@@ -64,7 +64,12 @@ function defaultAssistantInfo(
   };
 }
 
-function defaultUserInfo(sessionId: string, messageId: string, modelId = "default", createdAt = Date.now()) {
+function defaultUserInfo(
+  sessionId: string,
+  messageId: string,
+  modelId = "default",
+  createdAt = Date.now(),
+) {
   return {
     id: messageId,
     sessionID: sessionId,
@@ -116,9 +121,10 @@ function getMessageBlocks(message: ClaudeHistoryEntry) {
 function getToolResultBlocks(message: ClaudeHistoryEntry) {
   const blocks = getMessageBlocks(message);
   if (blocks.length === 0) return [];
-  const toolResults = blocks.filter(
-    (block): block is Record<string, unknown> =>
-      Boolean(block && typeof block === "object" && (block as { type?: string }).type === "tool_result"),
+  const toolResults = blocks.filter((block): block is Record<string, unknown> =>
+    Boolean(
+      block && typeof block === "object" && (block as { type?: string }).type === "tool_result",
+    ),
   );
   return toolResults.length === blocks.length ? toolResults : [];
 }
@@ -126,7 +132,11 @@ function getToolResultBlocks(message: ClaudeHistoryEntry) {
 function toolResultContentToText(content: unknown) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) {
-    if (content && typeof content === "object" && typeof (content as { text?: string }).text === "string") {
+    if (
+      content &&
+      typeof content === "object" &&
+      typeof (content as { text?: string }).text === "string"
+    ) {
       return (content as { text: string }).text;
     }
     return "";
@@ -195,7 +205,11 @@ function contentToTextSegments(content: unknown) {
     }
     if (Array.isArray(row.content)) {
       for (const nested of row.content) {
-        if (nested && typeof nested === "object" && typeof (nested as { text?: string }).text === "string") {
+        if (
+          nested &&
+          typeof nested === "object" &&
+          typeof (nested as { text?: string }).text === "string"
+        ) {
           result.push((nested as { text: string }).text);
         }
       }
@@ -204,7 +218,10 @@ function contentToTextSegments(content: unknown) {
   return result;
 }
 
-function mapUserHistoryMessage(message: ClaudeHistoryEntry, sessionId: string): ClaudeMessageBundle {
+function mapUserHistoryMessage(
+  message: ClaudeHistoryEntry,
+  sessionId: string,
+): ClaudeMessageBundle {
   const createdAt = parseTimestamp(message?.timestamp);
   const info = defaultUserInfo(sessionId, message.uuid ?? "", "sonnet", createdAt);
   const parts = contentToTextSegments(getMessageBlocks(message)).map((text, index) =>
@@ -213,7 +230,11 @@ function mapUserHistoryMessage(message: ClaudeHistoryEntry, sessionId: string): 
   return { info, parts };
 }
 
-function mapAssistantContent(sessionId: string, messageId: string, content: unknown): ClaudeMessagePart[] {
+function mapAssistantContent(
+  sessionId: string,
+  messageId: string,
+  content: unknown,
+): ClaudeMessagePart[] {
   if (!Array.isArray(content)) return [];
   const parts: ClaudeMessagePart[] = [];
   for (let index = 0; index < content.length; index += 1) {
@@ -236,14 +257,9 @@ function mapAssistantContent(sessionId: string, messageId: string, content: unkn
       continue;
     }
     if (row.type === "tool_use") {
-      const part = makeToolPart(
-        sessionId,
-        messageId,
-        index,
-        row.name || "tool",
-        row.input || {},
-        { id: row.id },
-      );
+      const part = makeToolPart(sessionId, messageId, index, row.name || "tool", row.input || {}, {
+        id: row.id,
+      });
       part.callID = row.id || part.callID;
       parts.push(part);
     }
@@ -333,10 +349,7 @@ export function mapHistoryEntries(
   target: ClaudeProjectTarget,
 ): ClaudeMessageBundle[] {
   const mapped: ClaudeMessageBundle[] = [];
-  const toolRefs = new Map<
-    string,
-    { entry: ClaudeMessageBundle; index: number }
-  >();
+  const toolRefs = new Map<string, { entry: ClaudeMessageBundle; index: number }>();
   for (const entry of history ?? []) {
     const sessionId = entry?.session_id ?? entry?.sessionId;
     if (!entry || typeof entry !== "object" || !entry.uuid || !sessionId) {
@@ -366,8 +379,7 @@ export function mapHistoryEntries(
       const toolResults = getToolResultBlocks(entry);
       if (toolResults.length > 0) {
         for (const block of toolResults) {
-          const toolUseId =
-            typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
+          const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
           if (!toolUseId) continue;
           const ref = toolRefs.get(toolUseId);
           if (!ref) continue;

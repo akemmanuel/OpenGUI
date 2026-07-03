@@ -1,0 +1,28 @@
+{
+  "description": "message.part.removed maps to part.state.changed removed",
+  "harnessEvents": [
+    {
+      "type": "message.part.updated",
+      "part": {
+        "id": "p1",
+        "sessionID": "s1",
+        "messageID": "m1",
+        "type": "text",
+        "text": "gone",
+        "tokens": {}
+      }
+    },
+    {
+      "type": "message.part.removed",
+      "sessionID": "s1",
+      "messageID": "m1",
+      "partID": "p1"
+    }
+  ],
+  "expectEventTypes": [
+    "message.started",
+    "part.started",
+    "part.text.appended",
+    "part.state.changed"
+  ]
+}

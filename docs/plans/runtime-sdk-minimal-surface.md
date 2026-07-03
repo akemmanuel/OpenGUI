@@ -79,7 +79,7 @@ Ship a **small, publishable** `@opengui/runtime` that feels like Pi's session lo
 - [x] `og.diagnose()` → `{ ok, harnesses: [{ harnessId, cliOnPath, ready, hint? }] }` from `getHarnessInventories()` + registry labels.
 - [x] `runAgent(og, { directory, harness, message, onStream? })` → `RunAgentResult` (`sessionId`, `assistantText?`, `reason`).
 - [x] `scripts/runtime/run-agent.mjs` + existing probe ladder (list, inventories, messages, …).
-- [x] Update `packages/runtime/README.md` with diagnose + runAgent; quickstart already create + send + onStream.
+- [x] Update `packages/runtime/README.md` with diagnose + runAgent; quickstart uses create + send + `onEvent` (canonical live stream).
 
 **Files:** `packages/runtime/src/run-agent.ts` (new), README, `scripts/runtime/`.
 

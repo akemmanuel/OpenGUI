@@ -2,6 +2,7 @@
  * Pure Pi harness event → OpenGUI transcript mapping (testable, no IPC/SDK).
  */
 import { makeHarnessSessionIdCodec, normalizeHarnessDirectory } from "./harness-adapter-kit.ts";
+import type { PiContentBlock } from "./pi-bridge-types.ts";
 
 const { toFrontendSessionId } = makeHarnessSessionIdCodec("pi:");
 
@@ -38,6 +39,12 @@ export function makeFilePartId(messageId: string, index: number) {
 
 export function makeToolPartId(messageId: string, toolCallId: string, index: number) {
   return `${messageId}:tool:${toolCallId || index}`;
+}
+
+export function isPiImageContentBlock(
+  block: unknown,
+): block is Extract<PiContentBlock, { type: "image" }> {
+  return block != null && typeof block === "object" && (block as PiContentBlock).type === "image";
 }
 
 export function parseDataUrl(dataUrl: unknown) {
@@ -179,12 +186,12 @@ export type PiMessageBranchEntry = {
   };
 };
 
-export function requireMessageEntry(
-  entry: PiMessageBranchEntry,
-): entry is PiMessageBranchEntry & {
+export function requireMessageEntry(entry: PiMessageBranchEntry): entry is PiMessageBranchEntry & {
   message: NonNullable<PiMessageBranchEntry["message"]> & { role: string };
 } {
-  return entry.type === "message" && entry.message != null && typeof entry.message.role === "string";
+  return (
+    entry.type === "message" && entry.message != null && typeof entry.message.role === "string"
+  );
 }
 
 type BranchEntry =

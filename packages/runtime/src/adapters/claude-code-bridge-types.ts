@@ -130,15 +130,42 @@ export type ClaudeGetMessagesOptions = {
   before?: string | null;
 };
 
+export type HarnessModelRef = {
+  modelID?: string;
+};
+
 export type StartQueryParams = {
   sessionId?: string;
   text?: string;
   title?: string;
   directory?: string;
   workspaceId?: string;
-  model?: { modelID?: string };
+  model?: HarnessModelRef;
   variant?: string;
 };
+
+export type PromptParams = {
+  sessionId: string;
+  text: string;
+  images?: unknown;
+  model?: HarnessModelRef;
+  agent?: unknown;
+  variant?: string;
+  directory?: string;
+  workspaceId?: string;
+};
+
+/** User permission reply from the renderer (IPC). */
+export type ClaudePermissionResponse = "always" | "once" | "reject";
+
+export type ClaudeBridgeEvent =
+  | {
+      type: "connection:status";
+      directory?: string;
+      workspaceId?: string;
+      payload: Record<string, unknown>;
+    }
+  | { type: "claude-code:event"; payload: Record<string, unknown> };
 
 export type ClaudeSessionModelSelection = {
   providerID: string;

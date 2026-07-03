@@ -70,6 +70,52 @@ describe("LiveSessionEventNormalizer", () => {
 
     expect(snapshotProjection.getMessages()).toEqual(deltaProjection.getMessages());
   });
+
+  test("dedupes identical part snapshot observations via LRU fingerprints", () => {
+    const normalizer = new LiveSessionEventNormalizer();
+    const first = normalizer.ingest(partSnapshot("OPENGUI"));
+    const second = normalizer.ingest(partSnapshot("OPENGUI"));
+    expect(first.map((event) => event.type)).toEqual([
+      "message.started",
+      "part.started",
+      "part.text.appended",
+    ]);
+    expect(second).toEqual([]);
+  });
+
+  test("emits best-effort message.finished when run finishes", () => {
+    const normalizer = new LiveSessionEventNormalizer();
+    const events = [
+      normalizer.ingest({ kind: "activity", scope, state: "running" }),
+      normalizer.ingest(partSnapshot("hi")),
+      normalizer.ingest({ kind: "activity", scope, state: "idle" }),
+    ].flat();
+    expect(events.map((event) => event.type)).toEqual([
+      "run.started",
+      "message.started",
+      "part.started",
+      "part.text.appended",
+      "run.finished",
+      "message.finished",
+    ]);
+  });
+
+  test("part.removed clears part state and emits part.state.changed", () => {
+    const normalizer = new LiveSessionEventNormalizer();
+    normalizer.ingest(partSnapshot("x"));
+    const removed = normalizer.ingest({
+      kind: "part.removed",
+      scope,
+      messageId: "m1",
+      partId: "p1",
+    });
+    expect(removed).toMatchObject([
+      { type: "part.state.changed", state: "removed", messageId: "m1", partId: "p1" },
+    ]);
+    expect(
+      normalizer.ingest({ kind: "part.removed", scope, messageId: "m1", partId: "p1" }),
+    ).toEqual([]);
+  });
 });
 
 function partSnapshot(text: string): AdapterObservation {

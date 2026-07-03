@@ -27,6 +27,13 @@ export type ActiveTranscriptInput =
       phase: ActiveTranscriptPagePhase;
     }
   | { type: "live"; event: LiveSessionEvent }
+  | {
+      type: "snapshot.loaded";
+      scope: ActiveTranscriptScope;
+      messages: MessageEntry[];
+      hasMore: boolean;
+      nextCursor: string | null;
+    }
   | { type: "message.removed"; scope: ActiveTranscriptScope; messageId: string }
   | { type: "reset" };
 

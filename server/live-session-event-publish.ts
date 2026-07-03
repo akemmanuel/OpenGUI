@@ -1,10 +1,18 @@
 import type { HarnessEvent } from "../src/agents/backend.ts";
 import type { HarnessId } from "../src/agents/index.ts";
-import type { LiveSessionEvent } from "../packages/runtime/src/live-session-events/live-session-event.ts";
+import type {
+  LiveSessionEvent,
+  LiveSessionScope,
+} from "../packages/runtime/src/live-session-events/live-session-event.ts";
 import { harnessEventsToLiveSessionEvents, LiveSessionEventBus } from "@opengui/runtime";
 import type { BackendServiceContext } from "./services/index.ts";
 
 const sharedLiveSessionBus = new LiveSessionEventBus();
+
+/** Drop normalizer state when a live session scope is torn down (shared backend bus). */
+export function evictSharedLiveSessionScope(scope: LiveSessionScope): void {
+  sharedLiveSessionBus.evict(scope);
+}
 
 export function publishLiveSessionHarnessEvent(
   services: Pick<BackendServiceContext, "events">,

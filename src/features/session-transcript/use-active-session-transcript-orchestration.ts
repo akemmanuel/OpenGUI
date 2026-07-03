@@ -95,20 +95,6 @@ export function useActiveSessionTranscriptOrchestration(input: {
   };
 
   useEffect(() => {
-    store.setEffects({
-      scheduleFinalReconcile: (scope) => {
-        void fetchPageRef.current(
-          scope,
-          {
-            limit: Math.max(30, store.getSnapshot().messages.length + 8),
-          },
-          "final",
-        );
-      },
-    });
-  }, [store]);
-
-  useEffect(() => {
     const unsubscribe = store.subscribe((snapshot) => {
       const activeId = stateRef.current.activeSessionId;
       if (!activeId || !snapshot.scope || snapshot.scope.sessionId !== activeId) return;
@@ -210,15 +196,13 @@ export function useActiveSessionTranscriptOrchestration(input: {
 
       switch (event.type) {
         case "transcript.snapshot": {
-          const running = store.getSnapshot().running;
-          if (running) return true;
+          if (store.getSnapshot().running) return true;
           store.dispatch({
-            type: "page.loaded",
+            type: "snapshot.loaded",
             scope: activeScope,
             messages: event.page.messages,
             hasMore: event.page.nextCursor !== null,
             nextCursor: event.page.nextCursor,
-            phase: "final",
           });
           return true;
         }

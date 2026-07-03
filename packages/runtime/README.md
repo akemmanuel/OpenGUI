@@ -39,15 +39,9 @@ const offLive = session.onEvent((event) => {
   liveTypes.push(event.type);
 });
 
-const streamTypes: string[] = [];
-const offStream = session.onStream((event) => {
-  streamTypes.push(event.type);
-});
-
 await session.send("List the top-level files in this repo in one sentence.");
 await session.waitUntilIdle({ timeoutMs: 90_000 });
 
-offStream();
 offLive();
 
 // SDK does not queue: if the session is busy, send throws SESSION_BUSY unless whileBusy: "wait"

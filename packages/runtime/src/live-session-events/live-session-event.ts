@@ -23,6 +23,7 @@ export type LiveSessionEventType =
   | "tool.output.replaced"
   | "tool.finished"
   | "transcript.rebased"
+  | "message.removed"
   | "session.error";
 
 interface LiveSessionEventBase {
@@ -72,6 +73,7 @@ export type LiveSessionEvent =
         newMessageId: string;
       };
     })
+  | (LiveSessionEventBase & { type: "message.removed" })
   | (LiveSessionEventBase & { type: "session.error"; message: string });
 
 export type LiveSessionEventHandler = (event: LiveSessionEvent) => void;

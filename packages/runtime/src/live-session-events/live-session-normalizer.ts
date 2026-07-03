@@ -21,6 +21,8 @@ interface PartState {
   inputFingerprint?: string;
   output: string;
 }
+const OBSERVATION_FINGERPRINT_LRU_MAX = 256;
+
 interface State {
   seq: number;
   activity: "idle" | "running" | "error";
@@ -28,6 +30,7 @@ interface State {
   runCounter: number;
   messages: Map<string, MessageState>;
   parts: Map<string, PartState>;
+  recentObservationFingerprints: LruSet<string>;
 }
 
 export class LiveSessionEventNormalizer {
@@ -35,6 +38,7 @@ export class LiveSessionEventNormalizer {
 
   ingest(observation: AdapterObservation): LiveSessionEvent[] {
     const state = this.state(observation.scope);
+    if (isDuplicateObservation(state, observation)) return [];
     const emit = (event: LiveSessionEventInput) => this.event(observation.scope, state, event);
     switch (observation.kind) {
       case "activity": {
@@ -54,6 +58,7 @@ export class LiveSessionEventNormalizer {
               reason: observation.state === "error" ? "error" : "idle",
             }),
           ];
+          out.push(...bestEffortMessageFinished(state, runId, emit));
           if (observation.state === "error")
             out.push(emit({ type: "session.error", message: "Session entered error state" }));
           return out;
@@ -117,6 +122,32 @@ export class LiveSessionEventNormalizer {
                   },
                 }
               : {}),
+          }),
+        ];
+      case "part.removed": {
+        const pk = partKey(observation.messageId, observation.partId);
+        const hadPart = state.parts.delete(pk);
+        if (!hadPart) return [];
+        return [
+          emit({
+            type: "part.state.changed",
+            runId: state.currentRunId,
+            messageId: observation.messageId,
+            partId: observation.partId,
+            state: "removed",
+          }),
+        ];
+      }
+      case "message.removed":
+        state.messages.delete(observation.messageId);
+        for (const pk of state.parts.keys()) {
+          if (pk.startsWith(`${observation.messageId}\u0000`)) state.parts.delete(pk);
+        }
+        return [
+          emit({
+            type: "message.removed",
+            runId: state.currentRunId,
+            messageId: observation.messageId,
           }),
         ];
       case "error":
@@ -306,7 +337,14 @@ export class LiveSessionEventNormalizer {
     const k = key(scope);
     let state = this.states.get(k);
     if (!state) {
-      state = { seq: 0, activity: "idle", runCounter: 0, messages: new Map(), parts: new Map() };
+      state = {
+        seq: 0,
+        activity: "idle",
+        runCounter: 0,
+        messages: new Map(),
+        parts: new Map(),
+        recentObservationFingerprints: new LruSet(OBSERVATION_FINGERPRINT_LRU_MAX),
+      };
       this.states.set(k, state);
     }
     return state;
@@ -327,6 +365,81 @@ export class LiveSessionEventNormalizer {
       ...event,
     } as LiveSessionEvent;
   }
+}
+
+class LruSet<T> {
+  private order: T[] = [];
+  constructor(private max: number) {}
+  has(value: T): boolean {
+    return this.order.includes(value);
+  }
+  add(value: T): void {
+    const idx = this.order.indexOf(value);
+    if (idx >= 0) this.order.splice(idx, 1);
+    this.order.push(value);
+    while (this.order.length > this.max) this.order.shift();
+  }
+}
+
+function isDuplicateObservation(state: State, observation: AdapterObservation): boolean {
+  const fingerprint = observationFingerprint(observation);
+  if (!fingerprint) return false;
+  if (state.recentObservationFingerprints.has(fingerprint)) return true;
+  state.recentObservationFingerprints.add(fingerprint);
+  return false;
+}
+
+function observationFingerprint(observation: AdapterObservation): string | null {
+  const sk = key(observation.scope);
+  switch (observation.kind) {
+    case "message.snapshot":
+      return `${sk}\u0001message.snapshot\u0001${observation.message.id}`;
+    case "part.snapshot":
+      return `${sk}\u0001part.snapshot\u0001${observation.messageId}\u0001${observation.part.id}\u0001${stableFingerprint(partSnapshotBody(observation.part))}`;
+    case "tool.snapshot":
+      return `${sk}\u0001tool.snapshot\u0001${observation.messageId}\u0001${observation.part.id}\u0001${stableFingerprint(toolSnapshotBody(observation.part))}`;
+    case "part.delta":
+      return null;
+    case "part.removed":
+      return `${sk}\u0001part.removed\u0001${observation.messageId}\u0001${observation.partId}`;
+    default:
+      return null;
+  }
+}
+
+function partSnapshotBody(part: NormalizedPartSnapshot): Record<string, unknown> {
+  return {
+    type: part.type,
+    text: part.text,
+    tool: part.tool,
+    state: part.state,
+  };
+}
+
+function toolSnapshotBody(part: NormalizedPartSnapshot): Record<string, unknown> {
+  return partSnapshotBody(part);
+}
+
+type EmitFn = (event: LiveSessionEventInput) => LiveSessionEvent;
+
+function bestEffortMessageFinished(
+  state: State,
+  runId: string | undefined,
+  emit: EmitFn,
+): LiveSessionEvent[] {
+  const out: LiveSessionEvent[] = [];
+  for (const [messageId, message] of state.messages) {
+    if (!message.started || message.finished) continue;
+    message.finished = true;
+    out.push(
+      emit({
+        type: "message.finished",
+        runId,
+        messageId,
+      }),
+    );
+  }
+  return out;
 }
 
 function key(scope: LiveSessionScope): string {

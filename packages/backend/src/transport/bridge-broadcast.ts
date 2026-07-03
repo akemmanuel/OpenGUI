@@ -260,7 +260,7 @@ export function createBridgeBroadcast(input: {
 
       for (const projected of services.transcripts.ingest({
         scope: transcriptContext.scope,
-        event: normalizedEvent,
+        events: livePublished,
       })) {
         publishProjectedTranscriptEvent(services, projected);
       }

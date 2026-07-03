@@ -1,8 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
+  coerceHarnessModelRef,
+  coerceVariant,
   makeReasoningPart,
   makeSessionFromInfo,
   mapClaudeModelId,
+  parsePermissionResponse,
+  parseStartSessionInput,
   tagMessageEntrySession,
 } from "../claude-code-bridge-mapping.ts";
 
@@ -30,5 +34,32 @@ describe("claude-code-bridge-mapping", () => {
     });
     expect(tagged.info.sessionID).toBe("claude-code:raw");
     expect(tagged.parts[0]?.sessionID).toBe("claude-code:raw");
+  });
+
+  test("coerceHarnessModelRef and coerceVariant via kit re-exports", () => {
+    expect(coerceHarnessModelRef({ providerID: "p", modelID: "m" })).toMatchObject({
+      providerID: "p",
+      modelID: "m",
+    });
+    expect(coerceVariant("  v  ")).toBe("v");
+    expect(parsePermissionResponse("once")).toBe("once");
+  });
+
+  test("parseStartSessionInput coerces model and variant", () => {
+    expect(
+      parseStartSessionInput({
+        text: "hi",
+        directory: "/r",
+        model: { modelID: "claude-sonnet-4" },
+        variant: "  ",
+      }),
+    ).toEqual({
+      text: "hi",
+      title: undefined,
+      directory: "/r",
+      workspaceId: undefined,
+      model: { modelID: "claude-sonnet-4" },
+      variant: undefined,
+    });
   });
 });

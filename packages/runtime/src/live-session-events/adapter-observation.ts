@@ -45,6 +45,13 @@ export type AdapterObservation =
       source?: AdapterObservationSource;
     }
   | {
+      kind: "part.removed";
+      scope: LiveSessionScope;
+      messageId: string;
+      partId: string;
+      source?: AdapterObservationSource;
+    }
+  | {
       kind: "tool.snapshot";
       scope: LiveSessionScope;
       messageId: string;
@@ -57,6 +64,12 @@ export type AdapterObservation =
       reason: "harness-replaced-message" | "reconnect" | "final-read";
       oldMessageId?: string;
       newMessageId?: string;
+      source?: AdapterObservationSource;
+    }
+  | {
+      kind: "message.removed";
+      scope: LiveSessionScope;
+      messageId: string;
       source?: AdapterObservationSource;
     }
   | { kind: "error"; scope: LiveSessionScope; message: string; source?: AdapterObservationSource };

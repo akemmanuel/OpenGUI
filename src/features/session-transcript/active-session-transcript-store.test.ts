@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 import type { LiveSessionEvent } from "@opengui/runtime/client";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import {
@@ -69,7 +69,7 @@ function liveEvent(
   } as LiveSessionEvent;
 }
 
-function createTestStore(input?: { onFinalReconcile?: (scope: ActiveTranscriptScope) => void }) {
+function createTestStore() {
   const scheduled: Array<() => void> = [];
   const frameScheduler: FrameScheduler = {
     schedule: (cb) => {
@@ -81,10 +81,7 @@ function createTestStore(input?: { onFinalReconcile?: (scope: ActiveTranscriptSc
       if (index >= 0) scheduled.splice(index, 1);
     },
   };
-  const store = new ActiveSessionTranscriptStore({
-    frameScheduler,
-    effects: { scheduleFinalReconcile: input?.onFinalReconcile },
-  });
+  const store = new ActiveSessionTranscriptStore({ frameScheduler });
   return { store, flushFrames: () => scheduled.splice(0).forEach((cb) => cb()) };
 }
 
@@ -293,18 +290,67 @@ describe("ActiveSessionTranscriptStore", () => {
     });
   });
 
-  test("run.finished schedules final reconcile once per burst", () => {
-    vi.useFakeTimers();
-    const reconcile = vi.fn();
-    const { store } = createTestStore({ onFinalReconcile: reconcile });
+  test("run.finished clears running without scheduling client reconcile", () => {
+    const { store } = createTestStore();
     store.select(scope);
+    store.ingestLive(liveEvent({ type: "run.started", id: "r1", seq: 1 }));
+    expect(store.getSnapshot().running).toBe(true);
 
-    store.ingestLive(liveEvent({ type: "run.finished", id: "f1", seq: 1, reason: "idle" }));
-    vi.advanceTimersByTime(450);
-    expect(reconcile).toHaveBeenCalledTimes(1);
-    expect(reconcile).toHaveBeenCalledWith(scope);
+    store.ingestLive(liveEvent({ type: "run.finished", id: "f1", seq: 2, reason: "idle" }));
+    expect(store.getSnapshot().running).toBe(false);
+  });
 
-    vi.useRealTimers();
+  test("idle server snapshot replaces transcript when not running", () => {
+    const { store } = createTestStore();
+    store.select(scope);
+    store.dispatch({
+      type: "page.loaded",
+      scope,
+      messages: [userEntry("u1", "hi"), assistantEntry("a1", "streamed")],
+      hasMore: false,
+      nextCursor: null,
+      phase: "initial",
+    });
+    store.ingestLive(liveEvent({ type: "run.finished", id: "done", seq: 20, reason: "idle" }));
+
+    store.dispatch({
+      type: "snapshot.loaded",
+      scope,
+      messages: [userEntry("u1", "hi"), assistantEntry("a1", "canonical idle")],
+      hasMore: true,
+      nextCursor: "cursor-1",
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.running).toBe(false);
+    expect(snap.messages[1]?.parts[0]).toMatchObject({ text: "canonical idle" });
+    expect(snap.hasOlder).toBe(true);
+    expect(snap.olderCursor).toBe("cursor-1");
+  });
+
+  test("idle server snapshot is ignored while session is still running", () => {
+    const { store } = createTestStore();
+    store.select(scope);
+    store.ingestLive(liveEvent({ type: "run.started", id: "r1", seq: 1 }));
+    store.dispatch({
+      type: "page.loaded",
+      scope,
+      messages: [assistantEntry("m1", "live")],
+      hasMore: false,
+      nextCursor: null,
+      phase: "initial",
+    });
+
+    store.dispatch({
+      type: "snapshot.loaded",
+      scope,
+      messages: [assistantEntry("m1", "would clobber")],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    expect(store.getSnapshot().messages[0]?.parts[0]).toMatchObject({ text: "live" });
+    expect(store.getSnapshot().running).toBe(true);
   });
 
   test("pending live frame commit is dropped after session switch", () => {
@@ -402,7 +448,7 @@ describe("ActiveSessionTranscriptStore", () => {
     expect(store.getSnapshot().messages[0]?.parts[0]).toMatchObject({ text: "final" });
   });
 
-  test("final page lag does not erase streamed assistant while session settles", () => {
+  test("lagging idle snapshot without assistant is authoritative when not running", () => {
     const { store } = createTestStore();
     store.select(scope);
     store.dispatch({
@@ -416,15 +462,14 @@ describe("ActiveSessionTranscriptStore", () => {
 
     store.ingestLive(liveEvent({ type: "run.finished", id: "done", seq: 20, reason: "idle" }));
     store.dispatch({
-      type: "page.loaded",
+      type: "snapshot.loaded",
       scope,
       messages: [userEntry("u1", "hi")],
       hasMore: false,
       nextCursor: null,
-      phase: "final",
     });
 
-    expect(store.getSnapshot().messages.map((message) => message.info.id)).toEqual(["u1", "a1"]);
+    expect(store.getSnapshot().messages.map((message) => message.info.id)).toEqual(["u1"]);
   });
 
   test("transcript replacement renames streaming assistant to canonical id", () => {

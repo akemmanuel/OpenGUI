@@ -34,20 +34,37 @@ import {
 } from "./opencode-bridge-mapping.ts";
 import type {
   HarnessWebContentsSender,
+  OpenCodeBridgeEmitEvent,
+  OpenCodeCommandArguments,
+  OpenCodeConfigPatch,
   OpenCodeConnectConfig,
-  OpenCodeHealthSnapshot,
+  OpenCodeDaemonEventPayload,
+  OpenCodeIpcFailure,
+  OpenCodeIpcResult,
   OpenCodeLocalServerOpResult,
+  OpenCodeMcpServerConfig,
   OpenCodeMessageEntry,
   OpenCodeMessagesOptions,
   OpenCodeModelRef,
   OpenCodePromptPart,
   OpenCodeProjectAddConfig,
+  OpenCodeProviderAuthPayload,
   OpenCodeRunCommandError,
   OpenCodeServerProcessInfo,
-  OpenCodeSessionStartInput,
   OpenCodeSdkClient,
   OpenCodeWindowBridgeState,
 } from "./opencode-bridge-types.ts";
+import {
+  ipcModelRef,
+  parseDaemonEvent,
+  parseOpenCodeCommandArguments,
+  parseOpenCodeConfigPatch,
+  parseOpenCodeHealthJson,
+  parseOpenCodeMcpConfig,
+  parseOpenCodeProviderAuth,
+  parseOpenCodeSessionStartInput,
+  parsePermissionResponse,
+} from "./opencode-ipc-parse.ts";
 import {
   makeHarnessBridgeEventSender,
   registerHarnessRpcHandlers,
@@ -93,15 +110,7 @@ async function fetchLocalHealth(timeoutMs = LOCAL_HEALTH_TIMEOUT) {
     });
     if (!res.ok) return { healthy: false, version: null };
     const data: unknown = await res.json();
-    const record =
-      data && typeof data === "object" && !Array.isArray(data)
-        ? (data as Record<string, unknown>)
-        : null;
-    const version = record && typeof record.version === "string" ? record.version : null;
-    return {
-      healthy: record?.healthy === true,
-      version,
-    } satisfies OpenCodeHealthSnapshot;
+    return parseOpenCodeHealthJson(data);
   } catch {
     return { healthy: false, version: null };
   }
@@ -262,7 +271,7 @@ const httpAgent = new Agent({ keepAlive: true, keepAliveMsecs: 15_000 });
 const httpsAgent = new HttpsAgent({ keepAlive: true, keepAliveMsecs: 15_000 });
 
 export class OpenCodeConnection {
-  _emit: (event: Record<string, unknown>) => void;
+  _emit: (event: OpenCodeBridgeEmitEvent) => void;
   _lifecycle: number;
   _streamGeneration: number;
   _client: OpenCodeSdkClient | null;
@@ -279,7 +288,7 @@ export class OpenCodeConnection {
     lastEventAt: number | null;
   };
 
-  constructor(emit: (event: Record<string, unknown>) => void) {
+  constructor(emit: (event: OpenCodeBridgeEmitEvent) => void) {
     this._emit = emit;
     this._lifecycle = 0;
     this._streamGeneration = 0;
@@ -444,7 +453,7 @@ export class OpenCodeConnection {
     return res.data ?? {};
   }
 
-  async setProviderAuth(providerID: string, auth: unknown) {
+  async setProviderAuth(providerID: string, auth: OpenCodeProviderAuthPayload) {
     this._requireClient();
     const res = await this._sdk.auth.set({
       providerID,
@@ -614,7 +623,7 @@ export class OpenCodeConnection {
   async sendCommand(
     sessionId: string,
     command: string,
-    args: unknown,
+    args: OpenCodeCommandArguments,
     model?: OpenCodeModelRef,
     agent?: string,
     variant?: string,
@@ -623,7 +632,7 @@ export class OpenCodeConnection {
     const params: {
       sessionID: string;
       command: string;
-      arguments: unknown;
+      arguments: OpenCodeCommandArguments;
       model?: string;
       agent?: string;
       variant?: string;
@@ -680,7 +689,7 @@ export class OpenCodeConnection {
     return res.data ?? {};
   }
 
-  async addMcp(name: string, config: unknown) {
+  async addMcp(name: string, config: OpenCodeMcpServerConfig) {
     this._requireClient();
     const res = await this._sdk.mcp.add({
       name,
@@ -707,7 +716,7 @@ export class OpenCodeConnection {
     return res.data ?? {};
   }
 
-  async updateConfig(config: unknown) {
+  async updateConfig(config: OpenCodeConfigPatch) {
     this._requireClient();
     const res = await this._sdk.config.update({ config } as Parameters<
       OpenCodeSdkClient["config"]["update"]
@@ -798,12 +807,9 @@ export class OpenCodeConnection {
       const rawRes = await fetch(url, { headers });
       if (!rawRes.ok) throw new Error(`Health check failed: ${rawRes.status} ${rawRes.statusText}`);
       const data: unknown = await rawRes.json();
-      const record =
-        data && typeof data === "object" && !Array.isArray(data)
-          ? (data as Record<string, unknown>)
-          : null;
-      if (typeof record?.version === "string") this._setStatus({ serverVersion: record.version });
-      if (record?.healthy !== true) throw new Error("Server reports unhealthy");
+      const health = parseOpenCodeHealthJson(data);
+      if (health.version) this._setStatus({ serverVersion: health.version });
+      if (!health.healthy) throw new Error("Server reports unhealthy");
     }
   }
 
@@ -856,12 +862,11 @@ export class OpenCodeConnection {
             .map((line) => line.replace(/^data:\s*/, ""))
             .join("\n");
           if (!raw) continue;
-          const event = JSON.parse(raw);
-          const payload = event.payload ?? event;
-          if (payload) {
-            this._emit({ type: "opencode:event", payload });
-            this._status.lastEventAt = Date.now();
-          }
+          const event = parseDaemonEvent(raw);
+          if (!event) continue;
+          const payload = (event.payload ?? event) as OpenCodeDaemonEventPayload;
+          this._emit({ type: "opencode:event", payload });
+          this._status.lastEventAt = Date.now();
           this._reconnectAttempt = 0;
         }
       }
@@ -1320,7 +1325,7 @@ export function setupOpenCodeBridge(
 
   function shouldForwardOpenCodeDaemonEvent(
     windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
-    event: Record<string, unknown>,
+    event: OpenCodeBridgeEmitEvent,
     connectionDirectory: unknown,
   ) {
     if (event?.type !== "opencode:event") return true;
@@ -1570,9 +1575,9 @@ export function setupOpenCodeBridge(
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, ...args: unknown[]) => Promise<unknown>} fn
    */
-  function handleDirectoryOp(
+  function handleDirectoryOp<TData = unknown>(
     channel: string,
-    fn: (conn: OpenCodeConnection, ...args: unknown[]) => unknown,
+    fn: (conn: OpenCodeConnection, ...args: unknown[]) => Promise<TData> | TData,
   ) {
     ipcMain.handle(channel, async (event: unknown, directory, workspaceId, ...args) => {
       const ipcEvent = event as OpencodeIpcEvent;
@@ -1584,11 +1589,17 @@ export function setupOpenCodeBridge(
           directory as string,
           workspaceId as string | undefined,
         );
-        if (!conn) return { success: false, error: "No connection available" };
+        if (!conn)
+          return { success: false, error: "No connection available" } satisfies OpenCodeIpcFailure;
         const data = await fn(conn, ...args);
-        return data === undefined ? { success: true } : { success: true, data };
+        return (
+          data === undefined ? { success: true } : { success: true, data }
+        ) satisfies OpenCodeIpcResult<TData>;
       } catch (err: unknown) {
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        } satisfies OpenCodeIpcFailure;
       }
     });
   }
@@ -1599,9 +1610,9 @@ export function setupOpenCodeBridge(
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, sessionId: string, ...args: unknown[]) => Promise<unknown>} fn
    */
-  function handleSessionOp(
+  function handleSessionOp<TData = unknown>(
     channel: string,
-    fn: (conn: OpenCodeConnection, sessionId: string, ...args: unknown[]) => unknown,
+    fn: (conn: OpenCodeConnection, sessionId: string, ...args: unknown[]) => Promise<TData> | TData,
   ) {
     ipcMain.handle(channel, async (event: unknown, sessionId, ...args) => {
       const ipcEvent = event as OpencodeIpcEvent;
@@ -1617,12 +1628,22 @@ export function setupOpenCodeBridge(
           directory,
           workspaceId,
         );
-        if (!conn) return { success: false, error: "Session connection not found" };
+        if (!conn) {
+          return {
+            success: false,
+            error: "Session connection not found",
+          } satisfies OpenCodeIpcFailure;
+        }
         const rawSessionId = toRawSessionId(sessionId as string);
         const data = await fn(conn, rawSessionId, ...args);
-        return data === undefined ? { success: true } : { success: true, data };
+        return (
+          data === undefined ? { success: true } : { success: true, data }
+        ) satisfies OpenCodeIpcResult<TData>;
       } catch (err: unknown) {
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        } satisfies OpenCodeIpcFailure;
       }
     });
   }
@@ -2093,9 +2114,11 @@ export function setupOpenCodeBridge(
 
   handleDirectoryOp("opencode:provider:list", (conn) => conn.listAllProviders());
   handleDirectoryOp("opencode:provider:auth-methods", (conn) => conn.getProviderAuthMethods());
-  handleDirectoryOp("opencode:provider:connect", (conn, providerID, auth) =>
-    conn.setProviderAuth(ipcStr(providerID), auth),
-  );
+  handleDirectoryOp("opencode:provider:connect", (conn, providerID, auth) => {
+    const parsed = parseOpenCodeProviderAuth(auth);
+    if (!parsed) throw new Error("Invalid provider auth payload");
+    return conn.setProviderAuth(ipcStr(providerID), parsed);
+  });
   handleDirectoryOp("opencode:provider:disconnect", (conn, providerID) =>
     conn.removeProviderAuth(ipcStr(providerID)),
   );
@@ -2129,7 +2152,7 @@ export function setupOpenCodeBridge(
       sessionId,
       asHarnessStringOr(text, ""),
       Array.isArray(images) ? (images as string[]) : undefined,
-      model as OpenCodeModelRef | undefined,
+      ipcModelRef(model),
       ipcOptStr(agent),
       ipcOptStr(variant),
     ),
@@ -2140,13 +2163,16 @@ export function setupOpenCodeBridge(
 
   handleSessionOp(
     "opencode:permission",
-    (conn, sessionId, permissionId, response, _directory, workspaceId) =>
-      conn.respondPermission(
+    (conn, sessionId, permissionId, response, _directory, workspaceId) => {
+      const parsed = parsePermissionResponse(response);
+      if (!parsed) throw new Error("Invalid permission response");
+      return conn.respondPermission(
         sessionId,
         asHarnessStringOr(permissionId, ""),
-        response as "always" | "once" | "reject",
+        parsed,
         ipcOptStr(workspaceId),
-      ),
+      );
+    },
   );
 
   // --- Question response (target/question routed) ---
@@ -2167,19 +2193,19 @@ export function setupOpenCodeBridge(
       conn.sendCommand(
         sessionId,
         asHarnessStringOr(command, ""),
-        args,
-        model as OpenCodeModelRef | undefined,
+        parseOpenCodeCommandArguments(args),
+        ipcModelRef(model),
         ipcOptStr(agent),
         ipcOptStr(variant),
       ),
   );
   handleSessionOp("opencode:session:summarize", (conn, sessionId, model) =>
-    conn.summarizeSession(sessionId, model as OpenCodeModelRef | null | undefined),
+    conn.summarizeSession(sessionId, ipcModelRef(model) ?? null),
   );
 
   handleResultOp("opencode:session:start", async (event, input = {}) => {
     const windowState = getWindowState(event.sender);
-    const startInput = (input ?? {}) as OpenCodeSessionStartInput;
+    const startInput = parseOpenCodeSessionStartInput(input);
     const directory = ipcOptStr(startInput.directory);
     const workspaceId = ipcOptStr(startInput.workspaceId);
     const conn = directory
@@ -2214,7 +2240,11 @@ export function setupOpenCodeBridge(
   // --- MCP operations (directory-aware) ---
 
   handleDirectoryOp("opencode:mcp:status", (conn) => conn.getMcpStatus());
-  handleDirectoryOp("opencode:mcp:add", (conn, name, config) => conn.addMcp(ipcStr(name), config));
+  handleDirectoryOp("opencode:mcp:add", (conn, name, config) => {
+    const parsed = parseOpenCodeMcpConfig(config);
+    if (!parsed) throw new Error("Invalid MCP server config");
+    return conn.addMcp(ipcStr(name), parsed);
+  });
   handleDirectoryOp("opencode:mcp:connect", (conn, name) => conn.connectMcp(ipcStr(name)));
   handleDirectoryOp("opencode:mcp:disconnect", (conn, name) => conn.disconnectMcp(ipcStr(name)));
 
@@ -2223,10 +2253,11 @@ export function setupOpenCodeBridge(
   handleDirectoryOp("opencode:config:get", (conn) => conn.getConfig());
 
   handleResultOp("opencode:config:update", async (event, directory, workspaceId, config) => {
-    if (!config || typeof config !== "object") return failureResult("Invalid config");
+    const parsed = parseOpenCodeConfigPatch(config);
+    if (!parsed) return failureResult("Invalid config");
     const windowState = getWindowState(event.sender);
     const conn = getConnectionForDirectory(windowState, ipcStr(directory), ipcOptStr(workspaceId));
-    return conn ? await conn.updateConfig(config) : failureResult("No connection available");
+    return conn ? await conn.updateConfig(parsed) : failureResult("No connection available");
   });
 
   // --- Local server management ---

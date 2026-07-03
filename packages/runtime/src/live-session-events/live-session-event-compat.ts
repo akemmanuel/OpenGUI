@@ -102,6 +102,31 @@ export function harnessEventToAdapterObservations(input: {
           : { kind: "part.snapshot", scope, messageId: part.messageID, part, source },
       ];
     }
+    case "message.part.removed": {
+      const scope = scopeFor(event.sessionID);
+      if (!scope) return [];
+      return [
+        {
+          kind: "part.removed",
+          scope,
+          messageId: event.messageID,
+          partId: event.partID,
+          source,
+        },
+      ];
+    }
+    case "message.removed": {
+      const scope = scopeFor(event.sessionID);
+      if (!scope) return [];
+      return [
+        {
+          kind: "message.removed",
+          scope,
+          messageId: event.messageID,
+          source,
+        },
+      ];
+    }
     default:
       return [];
   }

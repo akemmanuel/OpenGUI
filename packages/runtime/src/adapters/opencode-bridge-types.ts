@@ -100,15 +100,77 @@ export type OpenCodeRunCommandError = Error & {
   stderr?: string;
 };
 
-export type OpenCodeTaggedSession = Record<string, unknown> & {
+export type OpenCodeConnectionState =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error";
+
+export type OpenCodeSdkSession = {
   id: string;
   slug?: string;
   directory?: string;
+  title?: string;
+  projectID?: string;
+  workspaceID?: string;
+  time?: { created?: number; updated?: number };
+  [key: string]: unknown;
+};
+
+export type OpenCodeTaggedSession = OpenCodeSdkSession & {
   _harnessId?: string;
   _rawId?: string;
   _projectDir?: string;
   _workspaceId?: string;
 };
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+export type OpenCodeProviderAuthPayload = {
+  type?: string;
+  key?: string;
+  token?: string;
+  [key: string]: JsonValue | undefined;
+};
+
+export type OpenCodeMcpServerConfig = {
+  type?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  [key: string]: JsonValue | undefined;
+};
+
+export type OpenCodeConfigPatch = Record<string, JsonValue>;
+
+export type OpenCodeCommandArguments = JsonValue | Record<string, JsonValue>;
+
+export type OpenCodeDaemonEventPayload = {
+  type?: string;
+  syncEvent?: { type?: string; id?: string; data?: unknown };
+  properties?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type OpenCodeBridgeEmitEvent =
+  | {
+      type: "connection:status";
+      payload: Record<string, unknown>;
+    }
+  | {
+      type: "opencode:event";
+      payload: OpenCodeDaemonEventPayload;
+    }
+  | { type: string; payload?: unknown; [key: string]: unknown };
 
 export type OpenCodeMessageEntry = {
   info?: Record<string, unknown> & { sessionID?: string; summary?: Record<string, unknown> };

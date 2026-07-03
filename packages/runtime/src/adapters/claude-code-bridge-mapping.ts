@@ -1,9 +1,43 @@
 /**
  * Pure Claude Code harness mapping helpers (testable).
  */
-import { makeHarnessSessionIdCodec, normalizeHarnessDirectory } from "./harness-adapter-kit.ts";
-import { asHarnessString } from "./pi-bridge-rpc.ts";
-import type { ClaudeMessageBundle } from "./claude-code-bridge-types.ts";
+import {
+  coerceHarnessModelRef,
+  coerceVariant,
+  makeHarnessSessionIdCodec,
+  normalizeHarnessDirectory,
+  parsePermissionResponse,
+} from "./harness-adapter-kit.ts";
+import { asHarnessString, isRecord } from "./pi-bridge-rpc.ts";
+
+export { coerceHarnessModelRef, coerceVariant, parsePermissionResponse };
+import type {
+  ClaudeMessageBundle,
+  HarnessModelRef,
+  StartQueryParams,
+} from "./claude-code-bridge-types.ts";
+
+function optionalHarnessString(value: unknown): string | undefined {
+  const s = asHarnessString(value);
+  return s === undefined ? undefined : s;
+}
+
+/** Narrow IPC `session:start` payload into {@link StartQueryParams}. */
+export function parseStartSessionInput(input: unknown): StartQueryParams {
+  const row = isRecord(input) ? input : {};
+  const model = coerceHarnessModelRef(row.model);
+  const harnessModel: HarnessModelRef | undefined = model?.modelID
+    ? { modelID: model.modelID }
+    : undefined;
+  return {
+    text: optionalHarnessString(row.text),
+    title: optionalHarnessString(row.title),
+    directory: optionalHarnessString(row.directory),
+    workspaceId: optionalHarnessString(row.workspaceId),
+    model: harnessModel,
+    variant: coerceVariant(row.variant),
+  };
+}
 
 /** Safe string coercion for unknown SDK/event fields (avoids [object Object]). */
 export function coerceHarnessString(value: unknown, fallback = ""): string {

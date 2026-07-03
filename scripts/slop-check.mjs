@@ -127,8 +127,23 @@ const checks = [
     forbid: (out) => out.trim().length > 0,
   },
   {
-    name: "no harness-native part deltas in frontend hooks/features",
-    cmd: `rg 'message\\.part\\.(delta|updated)|message\\.replaced' src/hooks src/features --glob '!**/*.test.*' 2>/dev/null || true`,
+    name: "no harness-native part deltas in frontend hooks/features/components",
+    cmd: `rg 'message\\.part\\.(delta|updated)|message\\.replaced' src/hooks src/features src/components --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "harness.on(event) only in diagnostics script",
+    cmd: `rg -l 'harness\\.on\\("event"' scripts 2>/dev/null | rg -v '^scripts/runtime/debug-bridges\\.mjs$' || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "no ingestHarnessEvent on backend or frontend product paths",
+    cmd: `rg 'ingestHarnessEvent' server/ src/hooks src/features --glob '!**/*.test.*' 2>/dev/null || true`,
+    forbid: (out) => out.trim().length > 0,
+  },
+  {
+    name: "LiveSessionEventNormalizer instantiated only in live-session bus",
+    cmd: `rg 'new LiveSessionEventNormalizer' packages/runtime src server --glob '!**/*.test.*' --glob '!packages/runtime/src/live-session-events/live-session-event-bus.ts' --glob '!packages/runtime/src/live-session-events/live-session-normalizer.ts' 2>/dev/null || true`,
     forbid: (out) => out.trim().length > 0,
   },
   {

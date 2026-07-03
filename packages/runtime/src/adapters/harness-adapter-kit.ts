@@ -60,3 +60,7 @@ export function nowHarnessConnection(status: Record<string, unknown> = {}) {
     lastEventAt: Date.now(),
   };
 }
+
+export { coerceHarnessModelRef, coerceVariant } from "./pi-bridge-rpc.ts";
+
+export { parsePermissionResponse } from "./opencode-ipc-parse.ts";

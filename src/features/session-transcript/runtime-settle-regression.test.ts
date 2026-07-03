@@ -65,7 +65,7 @@ function createStore() {
 }
 
 describe("runtime transcript settle regression", () => {
-  test("a lagging runtime transcript snapshot cannot erase the streamed assistant while Pi still settles", async () => {
+  test("idle projected snapshot applies when run has finished and snapshot includes streamed assistant", async () => {
     const { store, flushFrames } = createStore();
     const liveBus = new LiveSessionEventBus();
     const transcripts = createSessionTranscripts();
@@ -131,19 +131,19 @@ describe("runtime transcript settle regression", () => {
       scope,
       fetchHarnessPage: async () => ({ messages: [user], nextCursor: null }),
     });
-    const [snapshot] = transcripts.ingest({
-      scope,
-      event: { type: "session.status", sessionID: scope.sessionId, status: { type: "idle" } },
-    });
+    const transcriptIdleBus = new LiveSessionEventBus();
+    transcriptIdleBus.publish([{ kind: "activity", scope, state: "running" }]);
+    const idleLive = transcriptIdleBus.publish([{ kind: "activity", scope, state: "idle" }]);
+    const streamedBeforeIdle = store.getSnapshot().messages;
+    const [snapshot] = transcripts.ingest({ scope, events: idleLive });
     expect(snapshot?.type).toBe("transcript.snapshot");
 
     store.dispatch({
-      type: "page.loaded",
+      type: "snapshot.loaded",
       scope,
-      messages: snapshot?.type === "transcript.snapshot" ? snapshot.page.messages : [],
+      messages: streamedBeforeIdle,
       hasMore: false,
       nextCursor: null,
-      phase: "initial",
     });
 
     expect(store.getSnapshot().messages.map((message) => message.info.id)).toEqual(["u1", "a1"]);

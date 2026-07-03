@@ -10,12 +10,6 @@ import { scopeFromLiveEvent, scopesEqual } from "@/features/session-transcript/t
 
 export type ActiveTranscriptListener = (snapshot: ActiveTranscriptSnapshot) => void;
 
-export type ActiveTranscriptEffects = {
-  scheduleFinalReconcile?: (scope: ActiveTranscriptScope) => void;
-};
-
-const FINAL_RECONCILE_DELAY_MS = 450;
-
 function emptySnapshot(): ActiveTranscriptSnapshot {
   return {
     scope: null,
@@ -156,20 +150,13 @@ export class ActiveSessionTranscriptStore {
   private compactionTailMessages: readonly MessageEntry[] = [];
   private listeners = new Set<ActiveTranscriptListener>();
   private liveProjection = new ActiveSessionLiveProjection();
-  private effects: ActiveTranscriptEffects;
   private frameScheduler: FrameScheduler;
   private pendingLive = false;
   private frameCallback: (() => void) | null = null;
   private frameHandle: FrameSchedulerHandle | null = null;
-  private finalReconcileTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(options?: { effects?: ActiveTranscriptEffects; frameScheduler?: FrameScheduler }) {
-    this.effects = options?.effects ?? {};
+  constructor(options?: { frameScheduler?: FrameScheduler }) {
     this.frameScheduler = options?.frameScheduler ?? createDefaultFrameScheduler();
-  }
-
-  setEffects(effects: ActiveTranscriptEffects): void {
-    this.effects = effects;
   }
 
   getSnapshot(): ActiveTranscriptSnapshot {
@@ -233,13 +220,11 @@ export class ActiveSessionTranscriptStore {
   dispatch(input: ActiveTranscriptInput): void {
     switch (input.type) {
       case "reset":
-        this.clearFinalReconcileTimers();
         this.clearPendingLiveCommit();
         this.liveProjection.resetScope(null);
         this.commit(emptySnapshot());
         return;
       case "select":
-        this.clearFinalReconcileTimers();
         this.clearPendingLiveCommit();
         this.liveProjection.resetScope(input.scope);
         if (!input.scope) {
@@ -277,6 +262,9 @@ export class ActiveSessionTranscriptStore {
         return;
       case "page.loaded":
         this.applyPageLoaded(input);
+        return;
+      case "snapshot.loaded":
+        this.applyIdleSnapshot(input);
         return;
       case "live":
         this.applyLive(input.event);
@@ -342,7 +330,6 @@ export class ActiveSessionTranscriptStore {
 
     if (event.type === "run.finished") {
       this.commit({ ...this.snapshot, running: false });
-      this.scheduleFinalReconcile(scope);
       return;
     }
 
@@ -402,13 +389,22 @@ export class ActiveSessionTranscriptStore {
     this.pendingLive = false;
   }
 
-  private scheduleFinalReconcile(scope: ActiveTranscriptScope): void {
-    if (this.finalReconcileTimer) clearTimeout(this.finalReconcileTimer);
-    this.finalReconcileTimer = setTimeout(() => {
-      this.finalReconcileTimer = null;
-      if (!scopesEqual(this.snapshot.scope, scope)) return;
-      this.effects.scheduleFinalReconcile?.(scope);
-    }, FINAL_RECONCILE_DELAY_MS);
+  private applyIdleSnapshot(
+    input: Extract<ActiveTranscriptInput, { type: "snapshot.loaded" }>,
+  ): void {
+    if (!scopesEqual(this.snapshot.scope, input.scope)) return;
+    if (this.snapshot.running) return;
+    this.commit({
+      ...this.snapshot,
+      phase: "ready",
+      messages: input.messages,
+      hasOlder: input.hasMore,
+      olderCursor: input.nextCursor,
+      error: null,
+      olderError: null,
+      running: false,
+      revision: this.snapshot.revision + 1,
+    });
   }
 
   beginLoadOlder(): boolean {
@@ -422,13 +418,6 @@ export class ActiveSessionTranscriptStore {
     }
     this.commit({ ...this.snapshot, loadingOlder: true, olderError: null });
     return true;
-  }
-
-  private clearFinalReconcileTimers(): void {
-    if (this.finalReconcileTimer) {
-      clearTimeout(this.finalReconcileTimer);
-      this.finalReconcileTimer = null;
-    }
   }
 
   private commit(next: ActiveTranscriptSnapshot): void {

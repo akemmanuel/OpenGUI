@@ -50,6 +50,7 @@ import {
   extractPiThinkingVariant,
   getSessionActivityType,
   inferPiSessionModelFromManager,
+  isPiImageContentBlock,
   makeSessionTitleFromText,
   makeTextPartId,
   normalizePiSession,
@@ -66,10 +67,16 @@ import {
 } from "./pi-bridge-mapping.ts";
 import {
   asHarnessString,
+  isPiHarnessNativeEvent,
   parsePiDaemonHealthData,
+  parsePiDaemonInfo,
   parsePiProjectTarget,
-  parsePiSessionCreateInput,
+  coerceHarnessModelRef,
+  parsePiPromptArgs,
+  parsePiSessionCreatePayload,
   parsePiSessionInput,
+  parsePiStartSessionInput,
+  type PiDaemonInfo,
   type PiProjectTarget,
 } from "./pi-bridge-rpc.ts";
 import {
@@ -84,6 +91,8 @@ import {
 } from "./pi-bridge-session-events.ts";
 import type {
   HarnessBridgeNativeEvent,
+  PiAssistantUsage,
+  PiBackendEvent,
   PiBranchEntry,
   PiConnectionStatusPayload,
   PiLiveSessionLike,
@@ -91,8 +100,13 @@ import type {
   PiModelRef,
   PiNativeSessionEvent,
   PiOAuthPendingFlow,
+  PiPromptArgs,
+  PiPromptImage,
+  PiSelectedModelRef,
   PiSessionCache,
+  PiSessionCreatePayload,
   PiSessionManagerLike,
+  PiStartSessionInput,
 } from "./pi-bridge-types.ts";
 import type { PiBridgeProject, PiLiveSessionContext } from "./pi-project-slot.ts";
 
@@ -239,15 +253,26 @@ function createCompactionAssistantBundle({
 function buildTranscriptFromSessionManager(
   sessionManager: PiSessionManagerLike,
   directory: string,
-) {
+): PiSessionCache {
   const sessionId = toFrontendSessionId(sessionManager.getSessionId());
   const { entries, seedEntries } = visibleUiBranchEntries(sessionManager);
-  const bundles = [];
-  const toolPartByCallId = new Map();
+  const bundles: PiMessageBundle[] = [];
+  type PiToolTranscriptPart = PiMessageBundle["parts"][number] & {
+    type: "tool";
+    callID: string;
+    messageID: string;
+    tool?: string;
+    state: {
+      input?: Record<string, unknown>;
+      time?: { start?: number; end?: number };
+      [key: string]: unknown;
+    };
+  };
+  const toolPartByCallId = new Map<string, PiToolTranscriptPart>();
   let lastUserMessageId = "";
   let currentModel: PiModelRef | null = null;
-  let currentThinkingLevel;
-  let lastTimelineTimestamp = null;
+  let currentThinkingLevel: string | undefined;
+  let lastTimelineTimestamp: number | null = null;
 
   for (const entry of seedEntries) {
     if (!entry) continue;
@@ -392,14 +417,7 @@ function buildTranscriptFromSessionManager(
             model: message.model,
             provider: message.provider,
             variant: currentThinkingLevel,
-            usage: message.usage as {
-              cost?: { total?: number };
-              totalTokens?: number;
-              input?: number;
-              output?: number;
-              cacheRead?: number;
-              cacheWrite?: number;
-            },
+            usage: message.usage as PiAssistantUsage | undefined,
           },
           directory,
           parentID: lastUserMessageId,
@@ -411,8 +429,8 @@ function buildTranscriptFromSessionManager(
       syncAssistantParts(bundle, toAssistantSyncMessage(message));
       for (const part of bundle.parts) {
         part.sessionID = sessionId;
-        if (part.type === "tool") {
-          toolPartByCallId.set(part.callID, part);
+        if (part.type === "tool" && typeof part.callID === "string") {
+          toolPartByCallId.set(part.callID, part as PiToolTranscriptPart);
         }
       }
       bundles.push(bundle);
@@ -431,7 +449,7 @@ function buildTranscriptFromSessionManager(
       const attachments = [];
       let imageIndex = 0;
       for (const block of Array.isArray(message.content) ? message.content : []) {
-        if (block?.type === "image") {
+        if (isPiImageContentBlock(block)) {
           const filePart = piImageBlockToFilePart(block, toolPart.messageID, imageIndex);
           if (filePart) {
             filePart.sessionID = sessionId;
@@ -513,7 +531,7 @@ export class PiBridgeManager {
     });
   }
 
-  sendBackendEvent(project: PiBridgeProject, payload: Record<string, unknown>) {
+  sendBackendEvent(project: PiBridgeProject, payload: PiBackendEvent) {
     this.sendNativeEvent({
       type: "pi:event",
       directory: project.directory,
@@ -1132,14 +1150,8 @@ export class PiBridgeManager {
             model: event.message.model,
             provider: event.message.provider,
             variant: event.message.variant,
-            usage: event.message.usage as Parameters<
-              typeof handlePiAssistantMessageStart
-            >[3]["message"]["usage"],
-            content: Array.isArray(event.message.content)
-              ? (event.message.content as Parameters<
-                  typeof handlePiAssistantMessageStart
-                >[3]["message"]["content"])
-              : undefined,
+            usage: event.message.usage as PiAssistantUsage | undefined,
+            content: Array.isArray(event.message.content) ? event.message.content : undefined,
           },
         },
         state,
@@ -1268,7 +1280,7 @@ export class PiBridgeManager {
       let imageIndex = 0;
       const messageId = asHarnessString(part.messageID) ?? "";
       for (const block of Array.isArray(event.result?.content) ? event.result.content : []) {
-        if (block?.type === "image") {
+        if (isPiImageContentBlock(block)) {
           const filePart = piImageBlockToFilePart(block, messageId, imageIndex);
           if (filePart) {
             filePart.sessionID = sessionId;
@@ -1537,13 +1549,13 @@ export class PiBridgeManager {
     }
   }
 
-  async createSession(input: Record<string, unknown> = {}) {
+  async createSession(input: PiSessionCreatePayload = {}) {
     const project = await this.ensureProject(input);
     const context = await this.createSessionContext(
       project,
       asPiSessionManager(SessionManager.create(project.directory)),
     );
-    const title = typeof input.title === "string" ? input.title : "";
+    const title = input.title ?? "";
     if (title) {
       context.runtime.session.setSessionName?.(title);
     }
@@ -1573,13 +1585,13 @@ export class PiBridgeManager {
     return session;
   }
 
-  async startSession(input: Record<string, unknown>) {
+  async startSession(input: PiStartSessionInput) {
     const project = await this.ensureProject(input);
     const context = await this.createSessionContext(
       project,
       asPiSessionManager(SessionManager.create(project.directory)),
     );
-    const title = typeof input.title === "string" ? input.title : "";
+    const title = input.title ?? "";
     if (title) {
       context.runtime.session.setSessionName?.(title);
     }
@@ -1606,21 +1618,21 @@ export class PiBridgeManager {
       session,
     });
     this.setSessionActivity(project, sessionRef.sessionId, "busy");
-    void this.dispatchSessionPrompt(
-      project,
-      sessionRef,
-      asHarnessString(input.text) ?? "",
-      input.images,
-    ).catch(() => {});
+    void this.dispatchSessionPrompt(project, sessionRef, input.text ?? "", input.images).catch(
+      () => {},
+    );
     return session;
   }
 
-  normalizeImages(images: unknown) {
+  normalizeImages(images: unknown): PiPromptImage[] {
     return (Array.isArray(images) ? images : [])
       .map((image) => parseDataUrl(image))
-      .filter((image): image is NonNullable<ReturnType<typeof parseDataUrl>> => image != null)
+      .filter(
+        (image): image is { mimeType: string; data: string } =>
+          image != null && typeof image.data === "string",
+      )
       .map((image) => ({
-        type: "image",
+        type: "image" as const,
         data: image.data,
         mimeType: image.mimeType,
       }));
@@ -1690,17 +1702,13 @@ export class PiBridgeManager {
     return acceptedPromise;
   }
 
-  async applySelectedModel(session: PiLiveSessionLike, selectedModel: unknown) {
-    if (
-      selectedModel == null ||
-      typeof selectedModel !== "object" ||
-      Array.isArray(selectedModel)
-    ) {
-      return;
-    }
-    const record = selectedModel as Record<string, unknown>;
-    const providerID = record.providerID;
-    const modelID = record.modelID;
+  async applySelectedModel(
+    session: PiLiveSessionLike,
+    selectedModel: PiSelectedModelRef | undefined,
+  ) {
+    if (selectedModel == null) return;
+    const providerID = selectedModel.providerID ?? selectedModel.provider;
+    const modelID = selectedModel.modelID ?? selectedModel.modelId;
     if (typeof providerID !== "string" || typeof modelID !== "string") return;
     session.modelRegistry?.refresh?.();
     const availableModels = session.modelRegistry?.getAvailable() ?? [];
@@ -2220,26 +2228,50 @@ export class PiBridgeManager {
     };
   }
 
+  async prompt(args: PiPromptArgs): Promise<true>;
   async prompt(
     sessionId: string,
     text: string,
     images: unknown,
-    model: unknown,
-    _agent: unknown,
-    variant: unknown,
+    model: PiSelectedModelRef | undefined,
+    _agent: string | undefined,
+    variant: string | undefined,
     directory: string,
     workspaceId: string | undefined,
+  ): Promise<true>;
+  async prompt(
+    sessionIdOrArgs: string | PiPromptArgs,
+    text?: string,
+    images?: unknown,
+    model?: PiSelectedModelRef,
+    _agent?: string,
+    variant?: string,
+    directory?: string,
+    workspaceId?: string,
   ) {
-    const rawSessionId = toRawSessionId(sessionId);
+    const args =
+      typeof sessionIdOrArgs === "string"
+        ? parsePiPromptArgs(
+            sessionIdOrArgs,
+            text,
+            images,
+            model,
+            _agent,
+            variant,
+            directory,
+            workspaceId,
+          )
+        : sessionIdOrArgs;
+    const rawSessionId = toRawSessionId(args.sessionId ?? "");
     const { project, session } = await this.ensureSessionContext(rawSessionId, {
-      directory,
-      workspaceId,
+      directory: args.directory,
+      workspaceId: args.workspaceId,
     });
-    if (model) {
-      await this.applySelectedModel(session, model);
+    if (args.model) {
+      await this.applySelectedModel(session, args.model);
     }
-    this.applySelectedVariant(session, variant);
-    await this.dispatchSessionPrompt(project, session, text, images);
+    this.applySelectedVariant(session, args.variant);
+    await this.dispatchSessionPrompt(project, session, args.text ?? "", args.images);
     return true;
   }
 
@@ -2296,8 +2328,9 @@ export class PiBridgeManager {
   ) {
     const rawSessionId = toRawSessionId(sessionId);
     const { session } = await this.ensureSessionContext(rawSessionId, { directory, workspaceId });
-    if (model) {
-      await this.applySelectedModel(session, model);
+    const selected = coerceHarnessModelRef(model);
+    if (selected) {
+      await this.applySelectedModel(session, selected);
     }
     await session.compact?.();
   }
@@ -2317,7 +2350,7 @@ export class PiBridgeManager {
       sessionId,
       text,
       [],
-      model,
+      coerceHarnessModelRef(model),
       undefined,
       undefined,
       directory,
@@ -2325,14 +2358,6 @@ export class PiBridgeManager {
     );
   }
 }
-
-type PiDaemonInfo = {
-  pid?: number;
-  port: number;
-  token: string;
-  baseUrl: string;
-  startedAt?: number;
-};
 
 type PiDaemonRpcResult = { success: boolean; error?: string; data?: unknown };
 
@@ -2357,7 +2382,7 @@ async function findFreePort() {
 
 async function readDaemonInfo(path: string): Promise<PiDaemonInfo | null> {
   try {
-    return JSON.parse(await readFile(path, "utf8"));
+    return parsePiDaemonInfo(JSON.parse(await readFile(path, "utf8")));
   } catch {
     return null;
   }
@@ -2463,8 +2488,8 @@ class PiDaemonClient {
     return await this.call("listSessions", [target]);
   }
 
-  async createSession(input: Record<string, unknown>) {
-    return await this.call("createSession", [input]);
+  async createSession(input: PiSessionCreatePayload) {
+    return await this.call("createSession", [parsePiSessionCreatePayload(input)]);
   }
 
   async deleteSession(sessionId: string, target: PiProjectTarget) {
@@ -2527,30 +2552,12 @@ class PiDaemonClient {
     return await this.call("getMessages", [sessionId, options, target]);
   }
 
-  async startSession(input: Record<string, unknown>) {
-    return await this.call("startSession", [input]);
+  async startSession(input: PiStartSessionInput) {
+    return await this.call("startSession", [parsePiStartSessionInput(input)]);
   }
 
-  async prompt(
-    sessionId: string,
-    text: string,
-    images: unknown,
-    model: unknown,
-    agent: unknown,
-    variant: unknown,
-    directory: string,
-    workspaceId: string | undefined,
-  ) {
-    return await this.call("prompt", [
-      sessionId,
-      text,
-      images,
-      model,
-      agent,
-      variant,
-      directory,
-      workspaceId,
-    ]);
+  async prompt(args: PiPromptArgs) {
+    return await this.call("prompt", [parsePiPromptArgs(args)]);
   }
 
   async abort(sessionId: string, directory: string, workspaceId: string | undefined) {
@@ -2770,7 +2777,14 @@ class PiDaemonClient {
           if (!line || line.startsWith(":")) continue;
           const payload = line.startsWith("data:") ? line.slice(5).trim() : line;
           if (!payload) continue;
-          this.forwardEvent(JSON.parse(payload));
+          try {
+            const parsed: unknown = JSON.parse(payload);
+            if (isPiHarnessNativeEvent(parsed)) {
+              this.forwardEvent(parsed);
+            }
+          } catch {
+            // ignore malformed SSE payloads
+          }
         }
       }
     } catch {
@@ -2813,7 +2827,7 @@ export function setupPiBridge(
     "session:list": (directory, workspaceId) =>
       manager.listSessions(parsePiProjectTarget(directory, workspaceId)),
     "session:create": (title, directory, workspaceId) =>
-      manager.createSession(parsePiSessionCreateInput(title, directory, workspaceId)),
+      manager.createSession(parsePiSessionCreatePayload(title, directory, workspaceId)),
     "session:delete": (sessionId, directory, workspaceId) =>
       manager.deleteSession(
         asHarnessString(sessionId) ?? "",
@@ -2874,17 +2888,10 @@ export function setupPiBridge(
         options,
         parsePiProjectTarget(directory, workspaceId),
       ),
-    "session:start": (input) => manager.startSession(parsePiSessionInput(input)),
+    "session:start": (input) => manager.startSession(parsePiStartSessionInput(input)),
     prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
       await manager.prompt(
-        asHarnessString(sessionId) ?? "",
-        asHarnessString(text) ?? "",
-        images,
-        model,
-        agent,
-        variant,
-        asHarnessString(directory) ?? "",
-        asHarnessString(workspaceId),
+        parsePiPromptArgs(sessionId, text, images, model, agent, variant, directory, workspaceId),
       );
       return true;
     },

@@ -6,13 +6,13 @@
 
 ## Hard rules
 
-| Rule | Why |
-|------|-----|
-| No `any` | Slop-check + user policy; use `unknown` + narrowing |
-| No `@ts-nocheck` | Enforced in `packages/runtime` and `lib` |
-| No bulk `: unknown` on every param | Reverted on monoliths (~3.3k errors) |
-| Prefer mapping / types / session-events modules | `grok-build-bridge.ts` is the reference (0 errors) |
-| Measure with `pnpm vp lint` | Not `tsc` |
+| Rule                                            | Why                                                 |
+| ----------------------------------------------- | --------------------------------------------------- |
+| No `any`                                        | Slop-check + user policy; use `unknown` + narrowing |
+| No `@ts-nocheck`                                | Enforced in `packages/runtime` and `lib`            |
+| No bulk `: unknown` on every param              | Reverted on monoliths (~3.3k errors)                |
+| Prefer mapping / types / session-events modules | `grok-build-bridge.ts` is the reference (0 errors)  |
+| Measure with `pnpm vp lint`                     | Not `tsc`                                           |
 
 ## Current baseline (re-check before each run)
 
@@ -23,13 +23,13 @@ for f in grok-build-bridge pi-bridge codex-bridge claude-code-bridge opencode-br
 done
 ```
 
-| Bridge | ~Errors | Dominant codes |
-|--------|---------|----------------|
-| grok-build | 0 | hygiene only (`no-base-to-string` on ACP coercion) |
-| codex | 120 | TS2339, TS2345 |
-| claude-code | 168 | TS7006, TS2339, TS2345 |
-| pi | 263 | TS18048, TS2345, TS2322 |
-| opencode | 414 | TS7006, TS2571, TS2339 |
+| Bridge      | ~Errors | Dominant codes                                     |
+| ----------- | ------- | -------------------------------------------------- |
+| grok-build  | 0       | hygiene only (`no-base-to-string` on ACP coercion) |
+| codex       | 120     | TS2339, TS2345                                     |
+| claude-code | 168     | TS7006, TS2339, TS2345                             |
+| pi          | 263     | TS18048, TS2345, TS2322                            |
+| opencode    | 414     | TS7006, TS2571, TS2339                             |
 
 ## Execution order
 
@@ -45,13 +45,13 @@ Run **one bridge per workflow invocation**; batches inside a workflow are **sequ
 
 Runnable scripts live in [`.pi/workflows/bridge-lint/`](../.pi/workflows/bridge-lint/README.md). Invoke via Pi `workflow` tool (paste script) or saved name once registered.
 
-| `meta.name` | File | Target |
-|-------------|------|--------|
-| `grok_build_lint_hygiene` | `grok_build_lint_hygiene.js` | 0 errors + clear coercion warnings |
-| `codex_bridge_mapping_first` | `codex_bridge_mapping_first.js` | codex → 0 |
-| `claude_code_types_history` | `claude_code_types_history.js` | claude → 0 |
-| `pi_bridge_boundary_layers` | `pi_bridge_boundary_layers.js` | pi → 0 |
-| `opencode_client_facade` | `opencode_client_facade.js` | opencode → 0 |
+| `meta.name`                  | File                            | Target                             |
+| ---------------------------- | ------------------------------- | ---------------------------------- |
+| `grok_build_lint_hygiene`    | `grok_build_lint_hygiene.js`    | 0 errors + clear coercion warnings |
+| `codex_bridge_mapping_first` | `codex_bridge_mapping_first.js` | codex → 0                          |
+| `claude_code_types_history`  | `claude_code_types_history.js`  | claude → 0                         |
+| `pi_bridge_boundary_layers`  | `pi_bridge_boundary_layers.js`  | pi → 0                             |
+| `opencode_client_facade`     | `opencode_client_facade.js`     | opencode → 0                       |
 
 ## Done criteria
 

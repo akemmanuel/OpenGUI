@@ -35,6 +35,7 @@ describe("publishLiveSessionHarnessEvent", () => {
     publishLiveSessionHarnessEvent(services, { directory, harnessId, event: idle }, bus);
 
     expect(envelopes.map((e) => e.type)).toEqual(["run.started", "run.finished"]);
+    expect(envelopes.some((e) => e.type === "message.finished")).toBe(false);
     expect(envelopes).toHaveLength(2);
     expect(envelopes[0]!.payload).toMatchObject({
       type: "run.started",

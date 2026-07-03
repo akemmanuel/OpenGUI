@@ -33,7 +33,6 @@ export {
   createOpenGUI,
   OpenGuiSdkError,
   type CreateOpenGUIOptions,
-  type HarnessEventHandler,
   type HarnessHandle,
   type HarnessSessionsApi,
   type OpenGUI,
@@ -109,6 +108,11 @@ export {
   createSessionTranscriptProjection,
   type SessionTranscriptProjection,
 } from "./session-transcript-projection.ts";
+
+export {
+  createLiveSessionTranscriptProjection,
+  type LiveSessionTranscriptProjection,
+} from "./live-session-transcript-projection.ts";
 
 export {
   createSessionTranscripts,

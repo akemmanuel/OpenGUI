@@ -34,15 +34,26 @@ import {
   MODEL_DISCOVERY_TTL_MS,
 } from "./claude-code-models.ts";
 import {
+  coerceHarnessModelRef,
   coerceHarnessString,
+  coerceVariant,
   makeReasoningPart,
   makeSessionFromInfo,
   makeSessionTitle,
   makeTextPart,
   mapClaudeModelId,
   normalizeToolInput,
+  parsePermissionResponse,
+  parseStartSessionInput,
   tagMessageEntrySession,
 } from "./claude-code-bridge-mapping.ts";
+import {
+  isToolResultBlock,
+  isToolUseBlock,
+  parseClaudeSdkMessage,
+  type ClaudeToolResultContentBlock,
+  type ClaudeToolUseContentBlock,
+} from "./claude-code-sdk-messages.ts";
 import {
   contentToTextSegmentsFromBlocks as contentToTextSegments,
   getMessageBlocksFromEntry as getMessageBlocks,
@@ -57,19 +68,23 @@ import {
 import type {
   ClaudeActiveQueryEntry,
   ClaudeAgentOptions,
+  ClaudeBridgeEvent,
   ClaudeGetMessagesOptions,
   ClaudeMessageBundle,
   ClaudeMessagePart,
   ClaudePendingTempState,
   ClaudePlaceholderSession,
+  ClaudePermissionResponse,
   ClaudeProjectSlot,
   ClaudeProjectTarget,
   ClaudeProviderCatalog,
   ClaudeSessionModelSelection,
+  HarnessModelRef,
   MakeClaudeQueryOptionsInput,
   PermissionMode,
   PermissionResult,
   PermissionUpdate,
+  PromptParams,
   StartQueryParams,
   ToolPermissionContext,
 } from "./claude-code-bridge-types.ts";
@@ -178,10 +193,7 @@ function claudeSessionModelFromSelection(
 }
 
 function deriveClaudeSessionModel(
-  history:
-    | Array<{ type?: string; message?: { model?: string; modelId?: string } }>
-    | null
-    | undefined,
+  history: ClaudeHistoryEntry[] | null | undefined,
 ): ClaudeSessionModelSelection | null {
   let modelId: string | null = null;
   for (const entry of history ?? []) {
@@ -367,7 +379,7 @@ function sanitizePermissionUpdates(suggestions: unknown): PermissionUpdate[] {
 }
 
 class ClaudeCodeBridgeManager {
-  emit: (event: Record<string, unknown>) => void;
+  emit: (event: ClaudeBridgeEvent) => void;
   projects: Map<string, ClaudeProjectSlot>;
   activeQueries: Map<string, ClaudeActiveQueryEntry>;
   providerCatalogs: Map<string, ClaudeProviderCatalog>;
@@ -377,7 +389,7 @@ class ClaudeCodeBridgeManager {
   replacementAliases: Map<string, string>;
   messageCache: Map<string, Map<string, ClaudeMessageBundle>>;
 
-  constructor(emit: (event: Record<string, unknown>) => void) {
+  constructor(emit: (event: ClaudeBridgeEvent) => void) {
     this.emit = emit;
     this.projects = new Map();
     this.activeQueries = new Map();
@@ -953,11 +965,11 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  enrichAssistantToolSnapshot(state: ClaudePendingTempState, block: Record<string, unknown>) {
-    if (!block || typeof block !== "object" || block.type !== "tool_use" || !block.id) {
+  enrichAssistantToolSnapshot(state: ClaudePendingTempState, block: ClaudeToolUseContentBlock) {
+    if (!block.id) {
       return;
     }
-    const blockId = coerceHarnessString(block.id);
+    const blockId = block.id;
     this.updateTrackedToolPart(state, blockId, (current) => ({
       ...current,
       callID: blockId || current.callID,
@@ -981,7 +993,7 @@ class ClaudeCodeBridgeManager {
     }));
   }
 
-  applyToolResult(state: ClaudePendingTempState, block: Record<string, unknown>) {
+  applyToolResult(state: ClaudePendingTempState, block: ClaudeToolResultContentBlock) {
     const toolUseId =
       typeof block.tool_use_id === "string"
         ? block.tool_use_id
@@ -990,11 +1002,14 @@ class ClaudeCodeBridgeManager {
           : undefined;
     if (!toolUseId) return false;
     return this.updateTrackedToolPart(state, toolUseId, (current) =>
-      mergeToolResultIntoPart(current, block),
+      mergeToolResultIntoPart(current, block as Record<string, unknown>),
     );
   }
 
-  handleQueryMessage(message: Record<string, unknown>, state: ClaudePendingTempState) {
+  handleQueryMessage(rawMessage: unknown, state: ClaudePendingTempState) {
+    const message = parseClaudeSdkMessage(rawMessage);
+    if (!message) return;
+
     const rawSession = message.session_id;
     const sessionId =
       typeof rawSession === "string"
@@ -1079,19 +1094,22 @@ class ClaudeCodeBridgeManager {
     }
 
     if (message.type === "user") {
-      const toolResults = getToolResultBlocks(message);
+      const historyEntry = message as ClaudeHistoryEntry;
+      const toolResults = getToolResultBlocks(historyEntry);
       if (toolResults.length > 0) {
         for (const block of toolResults) {
-          this.applyToolResult(state, block);
+          if (isToolResultBlock(block)) {
+            this.applyToolResult(state, block);
+          }
         }
         return;
       }
-      const userText = contentToTextSegments(getMessageBlocks(message)).join("\n\n").trim();
+      const userText = contentToTextSegments(getMessageBlocks(historyEntry)).join("\n\n").trim();
       if (state.syntheticUserEmitted && userText === String(state.promptText ?? "").trim()) {
         return;
       }
       state.syntheticUserEmitted = true;
-      const mapped = mapUserHistoryMessage(message as ClaudeHistoryEntry, sessionId);
+      const mapped = mapUserHistoryMessage(historyEntry, sessionId);
       this.emit({
         type: "claude-code:event",
         payload: { type: "message.updated", message: mapped.info },
@@ -1146,20 +1164,15 @@ class ClaudeCodeBridgeManager {
             blockIndex,
             coerceHarnessString(block.thinking ?? block.text),
           );
-        } else if (blockType === "tool_use") {
+        } else if (isToolUseBlock(block)) {
           const toolName = typeof block.name === "string" ? block.name : "tool";
-          const toolInput =
-            block.input && typeof block.input === "object" && !Array.isArray(block.input)
-              ? (block.input as Record<string, unknown>)
-              : {};
+          const toolInput = block.input ?? {};
           part = {
             id: `${messageId}:tool:${blockIndex}`,
             sessionID: sessionId,
             messageID: messageId,
             type: "tool",
-            callID:
-              (typeof block.id === "string" ? block.id : undefined) ||
-              `${messageId}:call:${blockIndex}`,
+            callID: block.id || `${messageId}:call:${blockIndex}`,
             tool: toolName,
             state: {
               status: "running",
@@ -1282,12 +1295,8 @@ class ClaudeCodeBridgeManager {
       });
       const contentBlocks = Array.isArray(assistantBody?.content) ? assistantBody.content : [];
       for (const block of contentBlocks) {
-        if (
-          block &&
-          typeof block === "object" &&
-          (block as { type?: string }).type === "tool_use"
-        ) {
-          this.enrichAssistantToolSnapshot(state, block as Record<string, unknown>);
+        if (isToolUseBlock(block)) {
+          this.enrichAssistantToolSnapshot(state, block);
         }
       }
       const hasStreamedParts =
@@ -1486,32 +1495,8 @@ class ClaudeCodeBridgeManager {
     return sessionPromise;
   }
 
-  async startSession({
-    text,
-    title,
-    directory,
-    workspaceId,
-    model,
-    variant,
-  }: {
-    text?: string;
-    title?: string;
-    directory?: string;
-    workspaceId?: string;
-    model?: unknown;
-    variant?: unknown;
-  }) {
-    return await this.startQuery({
-      text,
-      title,
-      directory,
-      workspaceId,
-      model:
-        model && typeof model === "object" && !Array.isArray(model)
-          ? (model as { modelID?: string })
-          : undefined,
-      variant: typeof variant === "string" ? variant : undefined,
-    });
+  async startSession(params: StartQueryParams = {}) {
+    return await this.startQuery(params);
   }
 
   async createSession({
@@ -1544,27 +1529,19 @@ class ClaudeCodeBridgeManager {
     return session;
   }
 
-  async prompt(
-    sessionId: string,
-    text: string,
-    _images: unknown,
-    model: unknown,
-    _agent: unknown,
-    variant: unknown,
-    directory: string | undefined,
-    workspaceId: string | undefined,
-  ) {
-    sessionId = toRawSessionId(sessionId);
+  async prompt(params: PromptParams) {
+    const sessionId = toRawSessionId(params.sessionId);
+    const modelRef = coerceHarnessModelRef(params.model);
+    const harnessModel: HarnessModelRef | undefined = modelRef?.modelID
+      ? { modelID: modelRef.modelID }
+      : undefined;
     void this.startQuery({
       sessionId,
-      text,
-      directory,
-      workspaceId,
-      model:
-        model && typeof model === "object" && !Array.isArray(model)
-          ? (model as { modelID?: string })
-          : undefined,
-      variant: typeof variant === "string" ? variant : undefined,
+      text: params.text,
+      directory: params.directory,
+      workspaceId: params.workspaceId,
+      model: harnessModel,
+      variant: coerceVariant(params.variant),
     });
     return true;
   }
@@ -1579,7 +1556,11 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  async respondPermission(sessionId: string, permissionId: string, response: unknown) {
+  async respondPermission(
+    sessionId: string,
+    permissionId: string,
+    response: ClaudePermissionResponse,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
     const pending = entry?.pendingPermissions.get(permissionId);
@@ -1616,7 +1597,19 @@ class ClaudeCodeBridgeManager {
   ) {
     sessionId = toRawSessionId(sessionId);
     const text = `/${command}${args ? ` ${args}` : ""}`;
-    await this.prompt(sessionId, text, [], model, undefined, variant, directory, workspaceId);
+    const modelRef = coerceHarnessModelRef(model);
+    const harnessModel: HarnessModelRef | undefined = modelRef?.modelID
+      ? { modelID: modelRef.modelID }
+      : undefined;
+    await this.prompt({
+      sessionId,
+      text,
+      images: [],
+      model: harnessModel,
+      variant: coerceVariant(variant),
+      directory,
+      workspaceId,
+    });
     return true;
   }
 
@@ -1668,11 +1661,15 @@ function asString(value: unknown, label: string): string {
 }
 
 export function setupClaudeCodeBridge(ipcMain: ClaudeIpcMain, getWindows: ClaudeGetWindows) {
-  const emit = makeHarnessBridgeEventEmitter("claude-code", getWindows);
+  const rawEmit = makeHarnessBridgeEventEmitter("claude-code", getWindows);
+  const emit = (event: ClaudeBridgeEvent) => {
+    rawEmit(event);
+  };
   let manager = new ClaudeCodeBridgeManager(emit);
 
   registerHarnessRpcHandlers("claude-code", ipcMain, {
-    "project:add": (config) => {
+    "project:add": (...args: unknown[]) => {
+      const config = args[0];
       const row = config && typeof config === "object" && !Array.isArray(config) ? config : {};
       const directory = asString((row as { directory?: unknown }).directory, "directory");
       manager.attachProject({
@@ -1681,113 +1678,134 @@ export function setupClaudeCodeBridge(ipcMain: ClaudeIpcMain, getWindows: Claude
       });
       return true;
     },
-    "project:remove": (directory, workspaceId) => {
+    "project:remove": (...args: unknown[]) => {
+      const [directory, workspaceId] = args;
       manager.removeProject(asString(directory, "directory"), asOptionalString(workspaceId));
       return true;
     },
-    disconnect: () => {
+    disconnect: (..._args: unknown[]) => {
       manager.disconnect();
       return true;
     },
-    "session:list": (directory, workspaceId) =>
-      manager.listSessions(asOptionalString(directory), asOptionalString(workspaceId)),
-    "session:create": (title, directory, workspaceId) =>
-      manager.createSession({
+    "session:list": (...args: unknown[]) => {
+      const [directory, workspaceId] = args;
+      return manager.listSessions(asOptionalString(directory), asOptionalString(workspaceId));
+    },
+    "session:create": (...args: unknown[]) => {
+      const [title, directory, workspaceId] = args;
+      return manager.createSession({
         title: asOptionalString(title),
         directory: asOptionalString(directory),
         workspaceId: asOptionalString(workspaceId),
-      }),
-    "session:delete": (sessionId, directory, workspaceId) =>
-      manager.deleteSession(
+      });
+    },
+    "session:delete": (...args: unknown[]) => {
+      const [sessionId, directory, workspaceId] = args;
+      return manager.deleteSession(
         asString(sessionId, "sessionId"),
         asOptionalString(directory),
         asOptionalString(workspaceId),
-      ),
-    "session:update": (sessionId, title, directory, workspaceId) =>
-      manager.renameSession(
+      );
+    },
+    "session:update": (...args: unknown[]) => {
+      const [sessionId, title, directory, workspaceId] = args;
+      return manager.renameSession(
         asString(sessionId, "sessionId"),
         asString(title, "title"),
         asOptionalString(directory),
         asOptionalString(workspaceId),
-      ),
-    "session:statuses": (directory, workspaceId) =>
-      manager.listSessionStatuses(asOptionalString(directory), asOptionalString(workspaceId)),
-    "session:fork": (sessionId, messageID, directory, workspaceId) =>
-      manager.forkSession(
+      );
+    },
+    "session:statuses": (...args: unknown[]) => {
+      const [directory, workspaceId] = args;
+      return manager.listSessionStatuses(
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      );
+    },
+    "session:fork": (...args: unknown[]) => {
+      const [sessionId, messageID, directory, workspaceId] = args;
+      return manager.forkSession(
         asString(sessionId, "sessionId"),
         asString(messageID, "messageID"),
         asOptionalString(directory),
         asOptionalString(workspaceId),
-      ),
-    providers: (directory, workspaceId) =>
-      manager.getProviders(asOptionalString(directory), asOptionalString(workspaceId)),
-    agents: () => manager.getAgents(),
-    commands: (directory, workspaceId) =>
-      manager.getCommands(asOptionalString(directory), asOptionalString(workspaceId)),
-    messages: (sessionId, options, directory, workspaceId) =>
-      manager.getMessages(
+      );
+    },
+    providers: (...args: unknown[]) => {
+      const [directory, workspaceId] = args;
+      return manager.getProviders(asOptionalString(directory), asOptionalString(workspaceId));
+    },
+    agents: (..._args: unknown[]) => manager.getAgents(),
+    commands: (...args: unknown[]) => {
+      const [directory, workspaceId] = args;
+      return manager.getCommands(asOptionalString(directory), asOptionalString(workspaceId));
+    },
+    messages: (...args: unknown[]) => {
+      const [sessionId, options, directory, workspaceId] = args;
+      return manager.getMessages(
         asString(sessionId, "sessionId"),
         options && typeof options === "object" && !Array.isArray(options)
           ? (options as ClaudeGetMessagesOptions)
           : undefined,
         asOptionalString(directory),
         asOptionalString(workspaceId),
-      ),
-    "session:start": (input) => {
-      const row =
-        input && typeof input === "object" && !Array.isArray(input)
-          ? (input as Record<string, unknown>)
-          : {};
-      return manager.startSession({
-        text: asOptionalString(row.text),
-        title: asOptionalString(row.title),
-        directory: asOptionalString(row.directory),
-        workspaceId: asOptionalString(row.workspaceId),
-        model:
-          row.model && typeof row.model === "object" && !Array.isArray(row.model)
-            ? (row.model as { modelID?: string })
-            : undefined,
-        variant: asOptionalString(row.variant),
-      });
+      );
     },
-    prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      await manager.prompt(
-        asString(sessionId, "sessionId"),
-        asString(text, "text"),
+    "session:start": (...args: unknown[]) => manager.startSession(parseStartSessionInput(args[0])),
+    prompt: async (...args: unknown[]) => {
+      const [sessionId, text, images, model, agent, variant, directory, workspaceId] = args;
+      const modelRef = coerceHarnessModelRef(model);
+      const harnessModel: HarnessModelRef | undefined = modelRef?.modelID
+        ? { modelID: modelRef.modelID }
+        : undefined;
+      await manager.prompt({
+        sessionId: asString(sessionId, "sessionId"),
+        text: asString(text, "text"),
         images,
+        model: harnessModel,
+        agent,
+        variant: coerceVariant(variant),
+        directory: asOptionalString(directory),
+        workspaceId: asOptionalString(workspaceId),
+      });
+      return true;
+    },
+    abort: (...args: unknown[]) => manager.abort(asString(args[0], "sessionId")),
+    permission: (...args: unknown[]) => {
+      const [sessionId, permissionId, response] = args;
+      const parsed = parsePermissionResponse(response);
+      if (!parsed) {
+        throw new TypeError("permission response must be always, once, or reject");
+      }
+      return manager.respondPermission(
+        asString(sessionId, "sessionId"),
+        asString(permissionId, "permissionId"),
+        parsed,
+      );
+    },
+    "command:send": (...args: unknown[]) => {
+      const [sessionId, command, commandArgs, model, agent, variant, directory, workspaceId] = args;
+      return manager.sendCommand(
+        asString(sessionId, "sessionId"),
+        asString(command, "command"),
+        asString(commandArgs, "args"),
         model,
         agent,
         variant,
         asOptionalString(directory),
         asOptionalString(workspaceId),
       );
-      return true;
     },
-    abort: (sessionId) => manager.abort(asString(sessionId, "sessionId")),
-    permission: (sessionId, permissionId, response) =>
-      manager.respondPermission(
-        asString(sessionId, "sessionId"),
-        asString(permissionId, "permissionId"),
-        response,
-      ),
-    "command:send": (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
-      manager.sendCommand(
-        asString(sessionId, "sessionId"),
-        asString(command, "command"),
-        asString(args, "args"),
-        model,
-        agent,
-        variant,
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      ),
-    "session:summarize": (sessionId, model, directory, workspaceId) =>
-      manager.summarizeSession(
+    "session:summarize": (...args: unknown[]) => {
+      const [sessionId, model, directory, workspaceId] = args;
+      return manager.summarizeSession(
         asString(sessionId, "sessionId"),
         model,
         asOptionalString(directory),
         asOptionalString(workspaceId),
-      ),
+      );
+    },
   });
 
   return {

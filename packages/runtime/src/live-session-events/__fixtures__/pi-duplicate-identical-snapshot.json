@@ -1,0 +1,29 @@
+{
+  "description": "Repeated identical part snapshots produce no duplicate live events",
+  "harnessEvents": [
+    {
+      "type": "message.part.updated",
+      "part": {
+        "id": "p1",
+        "sessionID": "s1",
+        "messageID": "m1",
+        "type": "text",
+        "text": "same",
+        "tokens": {}
+      }
+    },
+    {
+      "type": "message.part.updated",
+      "part": {
+        "id": "p1",
+        "sessionID": "s1",
+        "messageID": "m1",
+        "type": "text",
+        "text": "same",
+        "tokens": {}
+      }
+    }
+  ],
+  "expectEventTypes": ["message.started", "part.started", "part.text.appended"],
+  "expectFinalText": "same"
+}

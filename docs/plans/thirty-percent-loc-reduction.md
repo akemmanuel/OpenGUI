@@ -107,6 +107,18 @@ Follow [live-session-event-unification.md](./live-session-event-unification.md):
 
 **D4 (done):** stop mid-run `transcript.snapshot` on message-order changes; keep idle snapshot + `transcript.message.removed`. Session meta tests aligned to `sidebarSection` / `displayProjectDir` (send uses execution directory).
 
+**D5 (done):** `LiveSessionEvent` types + `LiveSessionEventNormalizer`; harness ingress via `harnessEventsToLiveSessionEvents` (`packages/runtime/src/live-session-events/`).
+
+**D6 (done):** `SessionHandle.onEvent()`; `onStream()` derived from canonical live events; `waitUntilIdle` without duplicate lifecycle dispatch.
+
+**D7 (done):** Backend live publish path normalizes bridge events to `LiveSessionEvent` before SSE (`publishLiveSessionHarnessEvent`).
+
+**D8 (done):** Frontend hot paths consume `LiveSessionEvent` / projected transcript via `useBackendEventSubscription`; raw `message.part.*` guarded by `slop-check` (hooks, features, components).
+
+**D9 (done):** SDK public surface — README quickstart and examples use `session.onEvent` only; `harness.on("event")` documented as diagnostics only; `HarnessEventHandler` demoted from primary `@opengui/runtime` exports; `debug-bridges.mjs` prints canonical events by default (`--debug-adapter-observations` for raw bridge).
+
+**D10 (done):** `slop-check` live-event guards — `harness.on("event")` only in `scripts/runtime/debug-bridges.mjs`; no `ingestHarnessEvent` on server/hooks/features hot paths; `LiveSessionEventNormalizer` only in `live-session-event-bus.ts`; `HarnessEvent` type export marked `@deprecated` on SDK surface (see [live-session-event-unification.md](./live-session-event-unification.md) Phase 8).
+
 Align with [frontend-session-transcript-simplification.md](./frontend-session-transcript-simplification.md) Phases 4–7.
 
 ---

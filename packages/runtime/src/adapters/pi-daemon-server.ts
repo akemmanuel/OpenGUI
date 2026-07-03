@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage } from "node:http";
+import { parsePiDaemonRpcArgs } from "./pi-bridge-rpc.ts";
 import { PiBridgeManager } from "./pi-bridge.ts";
 
 type PiDaemonRpcMethod = keyof PiBridgeManager &
@@ -199,7 +200,10 @@ export async function runPiDaemon({
           return;
         }
         const rpc = method as PiDaemonRpcMethod;
-        const data = await (manager[rpc] as (...rpcArgs: unknown[]) => Promise<unknown>)(...args);
+        const rpcArgs = parsePiDaemonRpcArgs(method, args);
+        const data = await (manager[rpc] as (...rpcArgs: unknown[]) => Promise<unknown>)(
+          ...rpcArgs,
+        );
         json(res, 200, ok(data));
         return;
       }

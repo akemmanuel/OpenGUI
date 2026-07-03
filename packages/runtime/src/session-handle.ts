@@ -286,6 +286,7 @@ export function createSessionHandle(deps: SessionHandleDeps): SessionHandle {
       eventHandlers.clear();
       waitIdleListeners.clear();
       liveBusOff();
+      liveBus.evict({ directory, harnessId, sessionId });
       if (harnessUnsub) {
         harnessUnsub();
         harnessUnsub = undefined;
