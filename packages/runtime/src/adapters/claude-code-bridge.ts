@@ -37,10 +37,43 @@ import {
   makeReasoningPart,
   makeSessionFromInfo,
   makeSessionTitle,
+  makeTextPart,
   mapClaudeModelId,
   normalizeToolInput,
   tagMessageEntrySession,
 } from "./claude-code-bridge-mapping.ts";
+import {
+  contentToTextSegmentsFromBlocks as contentToTextSegments,
+  getMessageBlocksFromEntry as getMessageBlocks,
+  getToolResultBlocksFromMessage as getToolResultBlocks,
+  mapAssistantContentForLive as mapAssistantContent,
+  mapHistoryEntries,
+  mapUserHistoryMessageFromEntry as mapUserHistoryMessage,
+  type ClaudeHistoryEntry,
+  mergeToolResultIntoPart,
+  makeSyntheticUserMessage,
+} from "./claude-code-bridge-history.ts";
+import type {
+  ClaudeActiveQueryEntry,
+  ClaudeAgentOptions,
+  ClaudeGetMessagesOptions,
+  ClaudeMessageBundle,
+  ClaudeMessagePart,
+  ClaudePendingTempState,
+  ClaudePlaceholderSession,
+  ClaudeProjectSlot,
+  ClaudeProjectTarget,
+  ClaudeProviderCatalog,
+  ClaudeSessionModelSelection,
+  MakeClaudeQueryOptionsInput,
+  PermissionMode,
+  PermissionResult,
+  PermissionUpdate,
+  StartQueryParams,
+  ToolPermissionContext,
+} from "./claude-code-bridge-types.ts";
+import type { ClaudeSupportedModel } from "./claude-code-models.ts";
+import type { SDKQuery } from "../../../../BetterSDK/dist/index.js";
 
 // t3code-style Claude integration: use the user-installed Claude Code CLI.
 // The Claude Agent SDK is only the JS transport layer; the native `claude`
@@ -54,7 +87,7 @@ const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(
   CLAUDE_CODE_SESSION_PREFIX,
 );
 
-const BUILTIN_COMMANDS = [
+const BUILTIN_COMMANDS: ClaudeCommandRow[] = [
   {
     name: "compact",
     description: "Compact older session context",
@@ -85,25 +118,28 @@ function makeClaudeEnv() {
   };
 }
 
-function makeClaudeQueryOptions({
-  cwd,
-  model,
-  permissionMode = "default",
-  includePartialMessages = true,
-  canUseTool,
-  variant,
-  modelInfo,
-  resume,
-  probe = false,
-} = {}) {
+function makeClaudeQueryOptions(input: MakeClaudeQueryOptionsInput = {}): ClaudeAgentOptions {
+  const {
+    cwd,
+    model,
+    permissionMode = "default",
+    includePartialMessages = true,
+    canUseTool,
+    variant,
+    modelInfo,
+    resume,
+    probe = false,
+    title,
+  } = input;
   return {
     cwd,
     resume,
     model,
+    title,
     pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE_PATH,
     includePartialMessages,
     settingSources: ["user", "project", "local"],
-    permissionMode,
+    permissionMode: permissionMode as PermissionMode,
     env: makeClaudeEnv(),
     ...(probe
       ? {}
@@ -121,11 +157,17 @@ async function* holdOpenPrompt() {
   await new Promise(() => {});
 }
 
-function getSessionDirectory(info, target = {}) {
+function getSessionDirectory(
+  info: { cwd?: string } | null | undefined,
+  target: ClaudeProjectTarget = {},
+) {
   return normalizeDir(info?.cwd || target.directory || process.cwd());
 }
 
-function claudeSessionModelFromSelection(model, variant) {
+function claudeSessionModelFromSelection(
+  model: { modelID?: string } | null | undefined,
+  variant: string | undefined,
+): ClaudeSessionModelSelection {
   const modelId = mapClaudeModelId(model?.modelID);
   return {
     providerID: "anthropic",
@@ -134,8 +176,10 @@ function claudeSessionModelFromSelection(model, variant) {
   };
 }
 
-function deriveClaudeSessionModel(history) {
-  let modelId = null;
+function deriveClaudeSessionModel(
+  history: Array<{ type?: string; message?: { model?: string; modelId?: string } }> | null | undefined,
+): ClaudeSessionModelSelection | null {
+  let modelId: string | null = null;
   for (const entry of history ?? []) {
     if (entry?.type !== "assistant") continue;
     const rawModel = entry?.message?.model ?? entry?.message?.modelId;
@@ -146,7 +190,12 @@ function deriveClaudeSessionModel(history) {
   return { providerID: "anthropic", id: modelId };
 }
 
-function defaultAssistantInfo(sessionId, messageId, directory, modelId = "default") {
+function defaultAssistantInfo(
+  sessionId: string,
+  messageId: string,
+  directory: string,
+  modelId = "default",
+) {
   return {
     id: messageId,
     sessionID: sessionId,
@@ -171,319 +220,7 @@ function defaultAssistantInfo(sessionId, messageId, directory, modelId = "defaul
   };
 }
 
-function defaultUserInfo(sessionId, messageId, modelId = "default", createdAt = Date.now()) {
-  return {
-    id: messageId,
-    sessionID: sessionId,
-    role: "user",
-    time: { created: createdAt },
-    agent: "claude",
-    model: {
-      providerID: "anthropic",
-      modelID: modelId,
-    },
-  };
-}
-
-function parseTimestamp(raw) {
-  if (typeof raw !== "string") return Date.now();
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : Date.now();
-}
-
-function makeTextPart(sessionId, messageId, index, text, synthetic = false) {
-  return {
-    id: `${messageId}:text:${index}`,
-    sessionID: sessionId,
-    messageID: messageId,
-    type: "text",
-    text,
-    synthetic,
-    time: { start: Date.now() },
-  };
-}
-
-function makeToolPart(sessionId, messageId, index, toolName, input = {}, metadata = {}) {
-  return {
-    id: `${messageId}:tool:${index}`,
-    sessionID: sessionId,
-    messageID: messageId,
-    type: "tool",
-    callID: `${messageId}:call:${index}`,
-    tool: toolName,
-    state: {
-      status: "completed",
-      input: normalizeToolInput(toolName, input),
-      output: "",
-      title: toolName,
-      metadata,
-      time: {
-        start: Date.now(),
-        end: Date.now(),
-      },
-    },
-  };
-}
-
-function getMessageBlocks(message) {
-  const content = message?.message?.content;
-  if (Array.isArray(content)) return content;
-  return [content ?? message?.message].filter(Boolean);
-}
-
-function getToolResultBlocks(message) {
-  const blocks = getMessageBlocks(message);
-  if (blocks.length === 0) return [];
-  const toolResults = blocks.filter(
-    (block) => block && typeof block === "object" && block.type === "tool_result",
-  );
-  return toolResults.length === blocks.length ? toolResults : [];
-}
-
-function toolResultContentToText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) {
-    if (content && typeof content === "object" && typeof content.text === "string") {
-      return content.text;
-    }
-    return "";
-  }
-  const segments = [];
-  for (const item of content) {
-    if (typeof item === "string") {
-      segments.push(item);
-      continue;
-    }
-    if (!item || typeof item !== "object") continue;
-    if (typeof item.text === "string") {
-      segments.push(item.text);
-      continue;
-    }
-    if (typeof item.content === "string") {
-      segments.push(item.content);
-    }
-  }
-  return segments.join("\n\n");
-}
-
-function mergeToolResultIntoPart(part, block) {
-  const output = toolResultContentToText(block?.content);
-  const metadata =
-    part.state?.metadata && typeof part.state.metadata === "object" ? part.state.metadata : {};
-  return {
-    ...part,
-    callID: block?.tool_use_id || part.callID,
-    state: {
-      ...part.state,
-      status: block?.is_error ? "error" : "completed",
-      output: output || part.state.output || "",
-      error: block?.is_error ? output || "Tool failed" : undefined,
-      metadata: {
-        ...metadata,
-        toolUseId: block?.tool_use_id || metadata.toolUseId,
-      },
-      time: {
-        ...part.state?.time,
-        end: Date.now(),
-      },
-    },
-  };
-}
-
-function contentToTextSegments(content) {
-  if (typeof content === "string") return [content];
-  if (!Array.isArray(content)) return [];
-  const result = [];
-  for (const block of content) {
-    if (typeof block === "string") {
-      result.push(block);
-      continue;
-    }
-    if (!block || typeof block !== "object") continue;
-    if (typeof block.text === "string") {
-      result.push(block.text);
-      continue;
-    }
-    if (typeof block.content === "string") {
-      result.push(block.content);
-      continue;
-    }
-    if (Array.isArray(block.content)) {
-      for (const nested of block.content) {
-        if (nested && typeof nested === "object" && typeof nested.text === "string") {
-          result.push(nested.text);
-        }
-      }
-    }
-  }
-  return result;
-}
-
-function mapUserHistoryMessage(message, sessionId) {
-  const createdAt = parseTimestamp(message?.timestamp);
-  const info = defaultUserInfo(sessionId, message.uuid, "sonnet", createdAt);
-  const parts = contentToTextSegments(getMessageBlocks(message)).map((text, index) =>
-    makeTextPart(sessionId, info.id, index, text),
-  );
-  return { info, parts };
-}
-
-function makeSyntheticUserMessage(sessionId, messageId, text, modelId = "sonnet") {
-  const info = defaultUserInfo(sessionId, messageId, modelId, Date.now());
-  const parts = String(text ?? "")
-    .split(/\r?\n/)
-    .flatMap((line, index, lines) => {
-      if (line.length > 0) return [makeTextPart(sessionId, messageId, index, line)];
-      return lines.length > 1 ? [makeTextPart(sessionId, messageId, index, " ", true)] : [];
-    });
-  return { info, parts };
-}
-
-function mapAssistantContent(sessionId, messageId, content) {
-  if (!Array.isArray(content)) return [];
-  const parts = [];
-  for (let index = 0; index < content.length; index += 1) {
-    const block = content[index];
-    if (!block || typeof block !== "object") continue;
-    if (typeof block.text === "string") {
-      parts.push(makeTextPart(sessionId, messageId, index, block.text));
-      continue;
-    }
-    if (typeof block.thinking === "string") {
-      parts.push(makeReasoningPart(sessionId, messageId, index, block.thinking));
-      continue;
-    }
-    if (block.type === "tool_use") {
-      const part = makeToolPart(
-        sessionId,
-        messageId,
-        index,
-        block.name || "tool",
-        block.input || {},
-        { id: block.id },
-      );
-      part.callID = block.id || part.callID;
-      parts.push(part);
-    }
-  }
-  return parts;
-}
-
-function mapAssistantHistoryMessage(message, sessionId, directory) {
-  const createdAt = parseTimestamp(message?.timestamp);
-  const modelID = mapClaudeModelId(message?.message?.model ?? message?.message?.modelId);
-  const messageId = message?.message?.id || message.uuid;
-  const info = {
-    ...defaultAssistantInfo(sessionId, messageId, directory, modelID),
-    time: {
-      created: createdAt,
-      completed: createdAt,
-    },
-  };
-  const parts = mapAssistantContent(sessionId, info.id, message?.message?.content);
-  return { info, parts };
-}
-
-function mergeHistoryMessages(messages) {
-  const merged = new Map();
-  for (const entry of messages) {
-    if (!entry) continue;
-    const existing = merged.get(entry.info.id);
-    if (!existing) {
-      merged.set(entry.info.id, {
-        info: entry.info,
-        parts: [...entry.parts],
-      });
-      continue;
-    }
-    const partsById = new Map(existing.parts.map((part) => [part.id, part]));
-    for (const part of entry.parts) {
-      partsById.set(part.id, part);
-    }
-    merged.set(entry.info.id, {
-      info: {
-        ...existing.info,
-        ...entry.info,
-        time: {
-          ...existing.info.time,
-          ...entry.info.time,
-          created: Math.min(
-            existing.info.time?.created ?? entry.info.time?.created ?? Date.now(),
-            entry.info.time?.created ?? existing.info.time?.created ?? Date.now(),
-          ),
-          completed: entry.info.time?.completed ?? existing.info.time?.completed,
-        },
-      },
-      parts: [...partsById.values()],
-    });
-  }
-  return [...merged.values()];
-}
-
-function mapHistoryMessage(entry, target) {
-  const sessionId = entry?.session_id ?? entry?.sessionId;
-  if (!entry || typeof entry !== "object" || !entry.uuid || !sessionId) {
-    return null;
-  }
-  if (entry.type === "user") {
-    if (getToolResultBlocks(entry).length > 0) return null;
-    return mapUserHistoryMessage(entry, sessionId);
-  }
-  if (entry.type === "assistant") {
-    return mapAssistantHistoryMessage(
-      entry,
-      sessionId,
-      normalizeDir(target.directory || process.cwd()),
-    );
-  }
-  return null;
-}
-
-function mapHistoryEntries(history, target) {
-  const mapped = [];
-  const toolRefs = new Map();
-  for (const entry of history) {
-    const sessionId = entry?.session_id ?? entry?.sessionId;
-    if (!entry || typeof entry !== "object" || !entry.uuid || !sessionId) {
-      continue;
-    }
-    if (entry.type === "assistant") {
-      const mappedEntry = mapHistoryMessage(entry, target);
-      if (!mappedEntry) continue;
-      mapped.push(mappedEntry);
-      mappedEntry.parts.forEach((part, index) => {
-        if (part?.type !== "tool") return;
-        toolRefs.set(part.callID, { entry: mappedEntry, index });
-        const metaId =
-          part.state?.metadata && typeof part.state.metadata === "object"
-            ? part.state.metadata.id
-            : undefined;
-        if (typeof metaId === "string") {
-          toolRefs.set(metaId, { entry: mappedEntry, index });
-        }
-      });
-      continue;
-    }
-    if (entry.type === "user") {
-      const toolResults = getToolResultBlocks(entry);
-      if (toolResults.length > 0) {
-        for (const block of toolResults) {
-          const ref = toolRefs.get(block.tool_use_id);
-          if (!ref) continue;
-          const current = ref.entry.parts[ref.index];
-          if (!current || current.type !== "tool") continue;
-          ref.entry.parts[ref.index] = mergeToolResultIntoPart(current, block);
-        }
-        continue;
-      }
-      const mappedEntry = mapHistoryMessage(entry, target);
-      if (mappedEntry) mapped.push(mappedEntry);
-    }
-  }
-  return mergeHistoryMessages(mapped);
-}
-
-async function pathExists(path) {
+async function pathExists(path: string) {
   try {
     await access(path);
     return true;
@@ -492,7 +229,7 @@ async function pathExists(path) {
   }
 }
 
-async function readCommandDescription(path) {
+async function readCommandDescription(path: string) {
   try {
     const raw = await readFile(path, "utf8");
     const lines = raw.split(/\r?\n/);
@@ -513,8 +250,16 @@ async function readCommandDescription(path) {
   return undefined;
 }
 
-async function scanCommandDirectory(baseDir) {
-  const results = [];
+type ClaudeCommandRow = {
+  name: string;
+  description?: string;
+  source: string;
+  template: string;
+  hints: string[];
+};
+
+async function scanCommandDirectory(baseDir: string): Promise<ClaudeCommandRow[]> {
+  const results: ClaudeCommandRow[] = [];
   if (!baseDir || !(await pathExists(baseDir))) return results;
   const entries = await readdir(baseDir, { withFileTypes: true, recursive: true });
   for (const entry of entries) {
@@ -534,7 +279,7 @@ async function scanCommandDirectory(baseDir) {
   return results;
 }
 
-async function listClaudeCommands(directory) {
+async function listClaudeCommands(directory: string) {
   const commands = [...BUILTIN_COMMANDS];
   const localCommands = await scanCommandDirectory(
     join(normalizeDir(directory), ".claude", "commands"),
@@ -549,7 +294,7 @@ async function listClaudeCommands(directory) {
   return commands.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function sanitizePermissionUpdates(suggestions) {
+function sanitizePermissionUpdates(suggestions: unknown): PermissionUpdate[] {
   if (!Array.isArray(suggestions)) return [];
   const validDestinations = new Set([
     "userSettings",
@@ -567,25 +312,32 @@ function sanitizePermissionUpdates(suggestions) {
     "dontAsk",
     "auto",
   ]);
-  return suggestions.flatMap((item) => {
+  return suggestions.flatMap((item): PermissionUpdate[] => {
     if (!item || typeof item !== "object") return [];
-    if (!validDestinations.has(item.destination)) return [];
-    if (item.type === "setMode") {
-      if (!validModes.has(item.mode)) return [];
-      return [{ type: "setMode", mode: item.mode, destination: item.destination }];
+    const row = item as Record<string, unknown>;
+    const destination = row.destination;
+    if (typeof destination !== "string" || !validDestinations.has(destination)) return [];
+    if (row.type === "setMode") {
+      const mode = row.mode;
+      if (typeof mode !== "string" || !validModes.has(mode)) return [];
+      return [{ type: "setMode", mode, destination }];
     }
-    if (item.type === "addDirectories" || item.type === "removeDirectories") {
-      const directories = Array.isArray(item.directories)
-        ? item.directories.filter((value) => typeof value === "string" && value.trim())
+    if (row.type === "addDirectories" || row.type === "removeDirectories") {
+      const directories = Array.isArray(row.directories)
+        ? row.directories.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
         : [];
       if (directories.length === 0) return [];
-      return [{ type: item.type, directories, destination: item.destination }];
+      return [{ type: row.type, directories, destination }];
     }
-    if (item.type === "addRules" || item.type === "replaceRules" || item.type === "removeRules") {
-      if (!validBehaviors.has(item.behavior)) return [];
-      const rules = Array.isArray(item.rules)
-        ? item.rules
-            .filter((rule) => rule && typeof rule === "object" && typeof rule.toolName === "string")
+    if (row.type === "addRules" || row.type === "replaceRules" || row.type === "removeRules") {
+      const behavior = row.behavior;
+      if (typeof behavior !== "string" || !validBehaviors.has(behavior)) return [];
+      const rules = Array.isArray(row.rules)
+        ? row.rules
+            .filter(
+              (rule): rule is { toolName: string; ruleContent?: string } =>
+                Boolean(rule && typeof rule === "object" && typeof (rule as { toolName?: string }).toolName === "string"),
+            )
             .map((rule) => ({
               toolName: rule.toolName,
               ...(typeof rule.ruleContent === "string" ? { ruleContent: rule.ruleContent } : {}),
@@ -594,10 +346,10 @@ function sanitizePermissionUpdates(suggestions) {
       if (rules.length === 0) return [];
       return [
         {
-          type: item.type,
+          type: row.type,
           rules,
-          behavior: item.behavior,
-          destination: item.destination,
+          behavior,
+          destination,
         },
       ];
     }
@@ -605,24 +357,16 @@ function sanitizePermissionUpdates(suggestions) {
   });
 }
 
-type ClaudeProjectTarget = { directory?: string; workspaceId?: string };
-
-type ClaudeProjectSlot = {
-  key?: string;
-  directory: string;
-  workspaceId?: string;
-};
-
 class ClaudeCodeBridgeManager {
   emit: (event: Record<string, unknown>) => void;
   projects: Map<string, ClaudeProjectSlot>;
-  activeQueries: Map<string, Record<string, unknown>>;
-  providerCatalogs: Map<string, unknown>;
-  providerCatalogPromises: Map<string, Promise<unknown>>;
-  pendingTempSessions: Map<string, unknown>;
-  placeholderSessions: Map<string, unknown>;
+  activeQueries: Map<string, ClaudeActiveQueryEntry>;
+  providerCatalogs: Map<string, ClaudeProviderCatalog>;
+  providerCatalogPromises: Map<string, Promise<ClaudeProviderCatalog>>;
+  pendingTempSessions: Map<string, ClaudePendingTempState>;
+  placeholderSessions: Map<string, ClaudePlaceholderSession>;
   replacementAliases: Map<string, string>;
-  messageCache: Map<string, Map<string, unknown>>;
+  messageCache: Map<string, Map<string, ClaudeMessageBundle>>;
 
   constructor(emit: (event: Record<string, unknown>) => void) {
     this.emit = emit;
@@ -641,10 +385,10 @@ class ClaudeCodeBridgeManager {
     this.messageCache = new Map();
   }
 
-  cacheMessage(sessionId: string, entry: { info?: { id?: string } }) {
+  cacheMessage(sessionId: string, entry: ClaudeMessageBundle) {
     if (!sessionId || !entry?.info?.id) return;
     const rawId = toRawSessionId(sessionId);
-    const cache = this.messageCache.get(rawId) ?? new Map();
+    const cache = this.messageCache.get(rawId) ?? new Map<string, ClaudeMessageBundle>();
     cache.set(entry.info.id, tagMessageEntrySession(entry));
     this.messageCache.set(rawId, cache);
   }
@@ -753,7 +497,7 @@ class ClaudeCodeBridgeManager {
   }
 
   getCachedProviderCatalog(
-    directory: string,
+    directory: string | undefined,
     workspaceId: string | undefined,
     sessionId: string,
   ) {
@@ -766,7 +510,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async discoverProviders(
-    directory: string,
+    directory: string | undefined,
     workspaceId: string | undefined,
     sessionId: string,
   ) {
@@ -790,9 +534,9 @@ class ClaudeCodeBridgeManager {
         });
         try {
           const supportedModels = await probe.supportedModels();
-          const effectiveModels =
+          const effectiveModels: ClaudeSupportedModel[] =
             Array.isArray(supportedModels) && supportedModels.length > 0
-              ? supportedModels
+              ? (supportedModels as ClaudeSupportedModel[])
               : FALLBACK_SUPPORTED_MODELS;
           const catalog = {
             loadedAt: Date.now(),
@@ -824,8 +568,8 @@ class ClaudeCodeBridgeManager {
   }
 
   lookupModelInfo(
-    modelId: string,
-    directory: string,
+    modelId: string | undefined,
+    directory: string | undefined,
     workspaceId: string | undefined,
     sessionId: string,
   ) {
@@ -849,7 +593,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async listSessions(directory: string | undefined, workspaceId: string | undefined) {
-    const target = this.resolveTarget(directory, workspaceId);
+    const target = this.resolveTarget(directory, workspaceId, "");
     const sessions = await listSessions({ dir: target.directory, limit: 10_000 });
     const scopedSessions = sessions.filter(
       (info) => getSessionDirectory(info, target) === target.directory,
@@ -860,17 +604,21 @@ class ClaudeCodeBridgeManager {
           directory: getSessionDirectory(info, target),
           workspaceId: target.workspaceId,
         };
-        let model = info?.model;
+        let model: ClaudeSessionModelSelection | string | undefined = info?.model as
+          | ClaudeSessionModelSelection
+          | string
+          | undefined;
         if (!model && info?.sessionId) {
           try {
-            model = deriveClaudeSessionModel(
+            const derived = deriveClaudeSessionModel(
               await getSessionMessages(info.sessionId, {
                 dir: sessionTarget.directory,
                 includeSystemMessages: false,
               }),
             );
+            model = derived ?? undefined;
           } catch {
-            model = null;
+            model = undefined;
           }
         }
         return makeSessionFromInfo({ ...info, model }, sessionTarget);
@@ -880,7 +628,7 @@ class ClaudeCodeBridgeManager {
 
   async getMessages(
     sessionId: string,
-    options: unknown,
+    options: ClaudeGetMessagesOptions | null | undefined,
     directory: string | undefined,
     workspaceId: string | undefined,
   ) {
@@ -931,8 +679,8 @@ class ClaudeCodeBridgeManager {
   }
 
   listSessionStatuses(directory: string | undefined, workspaceId: string | undefined) {
-    const target = this.resolveTarget(directory, workspaceId);
-    const statuses = {};
+    const target = this.resolveTarget(directory, workspaceId, "");
+    const statuses: Record<string, { type: string }> = {};
     for (const [sessionId, entry] of this.activeQueries.entries()) {
       if (entry.directory !== target.directory) continue;
       if ((entry.workspaceId ?? undefined) !== (target.workspaceId ?? undefined)) {
@@ -1015,11 +763,23 @@ class ClaudeCodeBridgeManager {
     return session;
   }
 
-  makePermissionHandler(targetRef) {
-    return (toolName, input, context) =>
+  makePermissionHandler(targetRef: () => { sessionId?: string } & ClaudeProjectTarget) {
+    return (
+      toolName: string,
+      input: Record<string, unknown>,
+      context: ToolPermissionContext,
+    ): Promise<PermissionResult> =>
       new Promise((resolve) => {
         const target = targetRef();
         const sessionId = target.sessionId;
+        if (!sessionId) {
+          resolve({
+            behavior: "allow",
+            updatedInput: input,
+            toolUseID: context.toolUseID,
+          });
+          return;
+        }
         const requestId = crypto.randomUUID();
         const normalizedInput =
           input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -1029,7 +789,8 @@ class ClaudeCodeBridgeManager {
           suggestions: sanitizePermissionUpdates(context.suggestions),
           toolUseID: context.toolUseID,
         };
-        if (!this.activeQueries.has(sessionId)) {
+        const entry = this.activeQueries.get(sessionId);
+        if (!entry) {
           resolve({
             behavior: "allow",
             updatedInput: normalizedInput,
@@ -1037,7 +798,7 @@ class ClaudeCodeBridgeManager {
           });
           return;
         }
-        this.activeQueries.get(sessionId).pendingPermissions.set(requestId, pending);
+        entry.pendingPermissions.set(requestId, pending);
         this.emit({
           type: "claude-code:event",
           payload: {
@@ -1054,10 +815,10 @@ class ClaudeCodeBridgeManager {
                 decisionReason: context.decisionReason,
               },
               always: pending.suggestions.flatMap((item) =>
-                Array.isArray(item.rules)
+                "rules" in item && Array.isArray(item.rules)
                   ? item.rules
-                      .map((rule) => rule?.ruleContent)
-                      .filter((value) => typeof value === "string")
+                      .map((rule) => rule.ruleContent)
+                      .filter((value): value is string => typeof value === "string")
                   : [],
               ),
             },
@@ -1078,7 +839,11 @@ class ClaudeCodeBridgeManager {
     });
   }
 
-  ensureActiveQuery(sessionId, queryHandle, target) {
+  ensureActiveQuery(
+    sessionId: string,
+    queryHandle: SDKQuery,
+    target: ClaudeProjectTarget & { directory: string },
+  ) {
     sessionId = toRawSessionId(sessionId);
     let entry = this.activeQueries.get(sessionId);
     if (!entry) {
@@ -1095,7 +860,11 @@ class ClaudeCodeBridgeManager {
     return entry;
   }
 
-  async refreshSessionInfo(sessionId, target, fallbackTitle) {
+  async refreshSessionInfo(
+    sessionId: string,
+    target: ClaudeProjectTarget & { directory: string },
+    fallbackTitle: string,
+  ) {
     sessionId = toRawSessionId(sessionId);
     try {
       const info = await getSessionInfo(sessionId, { dir: target.directory });
@@ -1128,7 +897,7 @@ class ClaudeCodeBridgeManager {
     }
   }
 
-  emitSyntheticUserMessage(state) {
+  emitSyntheticUserMessage(state: ClaudePendingTempState) {
     if (!state.sessionId || state.syntheticUserEmitted) return;
     const mapped = makeSyntheticUserMessage(
       state.sessionId,
@@ -1150,9 +919,9 @@ class ClaudeCodeBridgeManager {
     state.syntheticUserEmitted = true;
   }
 
-  rememberToolPart(state, part) {
+  rememberToolPart(state: ClaudePendingTempState, part: ClaudeMessagePart) {
     if (!part || part.type !== "tool") return;
-    state.toolParts.set(part.callID, part);
+    if (typeof part.callID === "string") state.toolParts.set(part.callID, part);
     const metaId =
       part.state?.metadata && typeof part.state.metadata === "object"
         ? part.state.metadata.id
@@ -1162,7 +931,11 @@ class ClaudeCodeBridgeManager {
     }
   }
 
-  updateTrackedToolPart(state, toolUseId, updater) {
+  updateTrackedToolPart(
+    state: ClaudePendingTempState,
+    toolUseId: string,
+    updater: (current: ClaudeMessagePart) => ClaudeMessagePart,
+  ) {
     const current = state.toolParts.get(toolUseId);
     if (!current || current.type !== "tool") return false;
     const nextPart = updater(current);
@@ -1175,21 +948,24 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  enrichAssistantToolSnapshot(state, block) {
+  enrichAssistantToolSnapshot(state: ClaudePendingTempState, block: Record<string, unknown>) {
     if (!block || typeof block !== "object" || block.type !== "tool_use" || !block.id) {
       return;
     }
-    this.updateTrackedToolPart(state, block.id, (current) => ({
+    const blockId = typeof block.id === "string" ? block.id : String(block.id);
+    this.updateTrackedToolPart(state, blockId, (current) => ({
       ...current,
-      callID: block.id || current.callID,
-      tool: block.name || current.tool,
+      callID: blockId || current.callID,
+      tool: typeof block.name === "string" ? block.name : current.tool,
       state: {
         ...current.state,
         input: normalizeToolInput(
-          block.name || current.tool,
-          block.input || current.state.input || {},
+          typeof block.name === "string" ? block.name : current.tool || "tool",
+          (block.input && typeof block.input === "object" && !Array.isArray(block.input)
+            ? (block.input as Record<string, unknown>)
+            : current.state?.input) || {},
         ),
-        title: block.name || current.state.title,
+        title: typeof block.name === "string" ? block.name : current.state?.title,
         metadata: {
           ...(current.state?.metadata && typeof current.state.metadata === "object"
             ? current.state.metadata
@@ -1200,15 +976,27 @@ class ClaudeCodeBridgeManager {
     }));
   }
 
-  applyToolResult(state, block) {
-    if (!block?.tool_use_id) return false;
-    return this.updateTrackedToolPart(state, block.tool_use_id, (current) =>
+  applyToolResult(state: ClaudePendingTempState, block: Record<string, unknown>) {
+    const toolUseId =
+      typeof block.tool_use_id === "string"
+        ? block.tool_use_id
+        : typeof block.tool_use_id === "number"
+          ? String(block.tool_use_id)
+          : undefined;
+    if (!toolUseId) return false;
+    return this.updateTrackedToolPart(state, toolUseId, (current) =>
       mergeToolResultIntoPart(current, block),
     );
   }
 
-  handleQueryMessage(message, state) {
-    const sessionId = message?.session_id ?? state.sessionId;
+  handleQueryMessage(message: Record<string, unknown>, state: ClaudePendingTempState) {
+    const rawSession = message.session_id;
+    const sessionId =
+      typeof rawSession === "string"
+        ? rawSession
+        : typeof rawSession === "number"
+          ? String(rawSession)
+          : state.sessionId;
     if (!sessionId) return;
 
     const prevTempId = state.tempSessionId;
@@ -1233,6 +1021,7 @@ class ClaudeCodeBridgeManager {
     }
 
     state.sessionId = sessionId;
+    if (!state.query) return;
     const activeEntry = this.ensureActiveQuery(sessionId, state.query, state.target);
     activeEntry.model = state.model;
     activeEntry.variant = state.variant;
@@ -1297,7 +1086,7 @@ class ClaudeCodeBridgeManager {
         return;
       }
       state.syntheticUserEmitted = true;
-      const mapped = mapUserHistoryMessage(message, sessionId);
+      const mapped = mapUserHistoryMessage(message as ClaudeHistoryEntry, sessionId);
       this.emit({
         type: "claude-code:event",
         payload: { type: "message.updated", message: mapped.info },
@@ -1316,10 +1105,12 @@ class ClaudeCodeBridgeManager {
     }
 
     if (message.type === "stream_event") {
-      const event = message.event;
+      const event = message.event as Record<string, unknown> | null | undefined;
       if (!event || typeof event !== "object") return;
-      if (event.type === "message_start") {
-        const messageId = event.message?.id;
+      const eventType = typeof event.type === "string" ? event.type : "";
+      if (eventType === "message_start") {
+        const startMsg = event.message as { id?: string; model?: string } | undefined;
+        const messageId = startMsg?.id;
         if (!messageId) return;
         state.currentAssistantMessageId = messageId;
         state.currentMessageParts.clear();
@@ -1327,7 +1118,7 @@ class ClaudeCodeBridgeManager {
           sessionId,
           messageId,
           state.target.directory,
-          mapClaudeModelId(event.message?.model),
+          mapClaudeModelId(startMsg?.model),
         );
         this.emit({
           type: "claude-code:event",
@@ -1337,37 +1128,46 @@ class ClaudeCodeBridgeManager {
       }
       const messageId = state.currentAssistantMessageId;
       if (!messageId) return;
-      if (event.type === "content_block_start") {
-        const block = event.content_block;
+      if (eventType === "content_block_start") {
+        const block = event.content_block as Record<string, unknown> | undefined;
         if (!block || typeof block !== "object") return;
-        let part = null;
-        if (block.type === "thinking" || block.type === "redacted_thinking") {
+        const blockIndex = typeof event.index === "number" ? event.index : 0;
+        const blockType = typeof block.type === "string" ? block.type : "";
+        let part: ClaudeMessagePart;
+        if (blockType === "thinking" || blockType === "redacted_thinking") {
           part = makeReasoningPart(
             sessionId,
             messageId,
-            event.index,
-            block.thinking ?? block.text ?? "",
+            blockIndex,
+            String(block.thinking ?? block.text ?? ""),
           );
-        } else if (block.type === "tool_use") {
+        } else if (blockType === "tool_use") {
+          const toolName = typeof block.name === "string" ? block.name : "tool";
+          const toolInput =
+            block.input && typeof block.input === "object" && !Array.isArray(block.input)
+              ? (block.input as Record<string, unknown>)
+              : {};
           part = {
-            id: `${messageId}:tool:${event.index}`,
+            id: `${messageId}:tool:${blockIndex}`,
             sessionID: sessionId,
             messageID: messageId,
             type: "tool",
-            callID: block.id || `${messageId}:call:${event.index}`,
-            tool: block.name || "tool",
+            callID:
+              (typeof block.id === "string" ? block.id : undefined) ||
+              `${messageId}:call:${blockIndex}`,
+            tool: toolName,
             state: {
               status: "running",
-              input: normalizeToolInput(block.name || "tool", block.input || {}),
+              input: normalizeToolInput(toolName, toolInput),
               output: "",
-              title: block.name || "tool",
+              title: toolName,
               metadata: { id: block.id },
               time: { start: Date.now() },
             },
           };
           this.rememberToolPart(state, part);
         } else {
-          part = makeTextPart(sessionId, messageId, event.index, block.text ?? "");
+          part = makeTextPart(sessionId, messageId, blockIndex, String(block.text ?? ""));
         }
         state.currentMessageParts.set(part.id, part);
         this.emit({
@@ -1376,16 +1176,19 @@ class ClaudeCodeBridgeManager {
         });
         return;
       }
-      if (event.type === "content_block_delta") {
+      if (eventType === "content_block_delta") {
+        const delta = event.delta as Record<string, unknown> | undefined;
+        const deltaType = typeof delta?.type === "string" ? delta.type : "";
+        const blockIndex = typeof event.index === "number" ? event.index : 0;
         const partId =
-          event.delta?.type === "text_delta"
-            ? `${messageId}:text:${event.index}`
-            : event.delta?.type === "thinking_delta"
-              ? `${messageId}:reasoning:${event.index}`
-              : `${messageId}:tool:${event.index}`;
+          deltaType === "text_delta"
+            ? `${messageId}:text:${blockIndex}`
+            : deltaType === "thinking_delta"
+              ? `${messageId}:reasoning:${blockIndex}`
+              : `${messageId}:tool:${blockIndex}`;
         const part = state.currentMessageParts.get(partId);
         if (!part) return;
-        if (event.delta?.type === "text_delta") {
+        if (deltaType === "text_delta") {
           this.emit({
             type: "claude-code:event",
             payload: {
@@ -1394,12 +1197,12 @@ class ClaudeCodeBridgeManager {
               messageID: messageId,
               partID: part.id,
               field: "text",
-              delta: event.delta.text,
+              delta: delta?.text,
             },
           });
           return;
         }
-        if (event.delta?.type === "thinking_delta") {
+        if (deltaType === "thinking_delta") {
           this.emit({
             type: "claude-code:event",
             payload: {
@@ -1408,19 +1211,23 @@ class ClaudeCodeBridgeManager {
               messageID: messageId,
               partID: part.id,
               field: "text",
-              delta: event.delta.thinking,
+              delta: delta?.thinking,
             },
           });
           return;
         }
-        if (event.delta?.type === "input_json_delta" && part.type === "tool") {
-          const nextPart = {
+        if (deltaType === "input_json_delta" && part.type === "tool") {
+          const prevMeta =
+            part.state?.metadata && typeof part.state.metadata === "object"
+              ? part.state.metadata
+              : {};
+          const nextPart: ClaudeMessagePart = {
             ...part,
             state: {
               ...part.state,
               metadata: {
-                ...part.state.metadata,
-                rawInput: `${part.state.metadata?.rawInput ?? ""}${event.delta.partial_json ?? ""}`,
+                ...prevMeta,
+                rawInput: `${(prevMeta as { rawInput?: string }).rawInput ?? ""}${String(delta?.partial_json ?? "")}`,
               },
             },
           };
@@ -1433,7 +1240,7 @@ class ClaudeCodeBridgeManager {
         }
         return;
       }
-      if (event.type === "message_stop") {
+      if (eventType === "message_stop") {
         state.currentAssistantMessageId = null;
         state.currentMessageParts.clear();
       }
@@ -1441,13 +1248,15 @@ class ClaudeCodeBridgeManager {
     }
 
     if (message.type === "assistant") {
-      const messageId = message.message?.id || state.currentAssistantMessageId || message.uuid;
+      const assistantBody = message.message as { id?: string; model?: string; content?: unknown } | undefined;
+      const messageId =
+        assistantBody?.id || state.currentAssistantMessageId || String(message.uuid ?? "");
       const info = {
         ...defaultAssistantInfo(
           sessionId,
           messageId,
           state.target.directory,
-          mapClaudeModelId(message.message?.model),
+          mapClaudeModelId(assistantBody?.model),
         ),
         time: {
           created: Date.now(),
@@ -1464,14 +1273,15 @@ class ClaudeCodeBridgeManager {
         type: "claude-code:event",
         payload: { type: "message.updated", message: info },
       });
-      for (const block of Array.isArray(message.message?.content) ? message.message.content : []) {
-        if (block?.type === "tool_use") {
-          this.enrichAssistantToolSnapshot(state, block);
+      const contentBlocks = Array.isArray(assistantBody?.content) ? assistantBody.content : [];
+      for (const block of contentBlocks) {
+        if (block && typeof block === "object" && (block as { type?: string }).type === "tool_use") {
+          this.enrichAssistantToolSnapshot(state, block as Record<string, unknown>);
         }
       }
       const hasStreamedParts =
         state.currentAssistantMessageId === messageId && state.currentMessageParts.size > 0;
-      const parts = mapAssistantContent(sessionId, messageId, message.message?.content);
+      const parts = mapAssistantContent(sessionId, messageId, assistantBody?.content);
       this.cacheMessage(sessionId, { info, parts });
       if (!hasStreamedParts) {
         for (const part of parts) {
@@ -1517,8 +1327,19 @@ class ClaudeCodeBridgeManager {
     }
   }
 
-  startQuery({ sessionId, text, title, directory, workspaceId, model, variant }) {
-    sessionId = toRawSessionId(sessionId);
+  startQuery({
+    sessionId: rawSessionId,
+    text = "",
+    title,
+    directory,
+    workspaceId,
+    model,
+    variant,
+  }: StartQueryParams) {
+    let sessionId: string | undefined =
+      typeof rawSessionId === "string" && rawSessionId.trim()
+        ? toRawSessionId(rawSessionId)
+        : undefined;
     const placeholder = sessionId ? this.placeholderSessions.get(sessionId) : null;
     if (placeholder) {
       directory ??= placeholder.target.directory;
@@ -1528,23 +1349,25 @@ class ClaudeCodeBridgeManager {
       // only a renderer/backend id until the subprocess emits the real session.
       sessionId = undefined;
     }
-    const target = this.resolveTarget(directory, workspaceId, sessionId);
+    const target = this.resolveTarget(directory, workspaceId, sessionId ?? "");
     const modelInfo = this.lookupModelInfo(
       model?.modelID,
       target.directory,
       target.workspaceId,
-      sessionId,
+      sessionId ?? "",
     );
-    let state;
-    const targetRef = () => ({ sessionId: state?.sessionId, ...target });
+    let state: ClaudePendingTempState;
+    const targetRef = () => ({ sessionId: state.sessionId, ...target });
 
     // For new sessions (no sessionId yet) pre-generate a temporary UUID so we
     // can emit session.created + the synthetic user message immediately, letting
     // the IPC call return right away instead of blocking for ~8 s until the
     // Claude Code subprocess sends its first system/init message.
-    const tempSessionId =
-      !sessionId || placeholder ? (placeholder?.id ?? sessionId ?? crypto.randomUUID()) : null;
-    const effectiveSessionId = sessionId ?? tempSessionId;
+    const tempSessionId: string | null =
+      !sessionId || placeholder
+        ? (placeholder?.id ?? sessionId ?? crypto.randomUUID())
+        : null;
+    const effectiveSessionId = sessionId ?? tempSessionId ?? crypto.randomUUID();
 
     state = {
       sessionId: effectiveSessionId,
@@ -1558,7 +1381,7 @@ class ClaudeCodeBridgeManager {
       fallbackTitle: makeSessionTitle(text, title),
       promptText: text,
       model,
-      variant,
+      variant: typeof variant === "string" ? variant : undefined,
       syntheticUserId: `synthetic-user:${crypto.randomUUID()}`,
       syntheticUserEmitted: false,
       currentAssistantMessageId: null,
@@ -1648,7 +1471,7 @@ class ClaudeCodeBridgeManager {
         this.emitSessionStatus(state.sessionId, "idle");
         this.activeQueries.delete(state.sessionId);
       } finally {
-        this.cleanupPendingTempSession(state.tempSessionId);
+        if (state.tempSessionId) this.cleanupPendingTempSession(state.tempSessionId);
       }
     })();
     return sessionPromise;
@@ -1674,8 +1497,11 @@ class ClaudeCodeBridgeManager {
       title,
       directory,
       workspaceId,
-      model,
-      variant,
+      model:
+        model && typeof model === "object" && !Array.isArray(model)
+          ? (model as { modelID?: string })
+          : undefined,
+      variant: typeof variant === "string" ? variant : undefined,
     });
   }
 
@@ -1688,7 +1514,7 @@ class ClaudeCodeBridgeManager {
     directory?: string;
     workspaceId?: string;
   }) {
-    const target = this.resolveTarget(directory, workspaceId);
+    const target = this.resolveTarget(directory, workspaceId, "");
     const tempSessionId = crypto.randomUUID();
     const session = makeSessionFromInfo(
       {
@@ -1725,8 +1551,11 @@ class ClaudeCodeBridgeManager {
       text,
       directory,
       workspaceId,
-      model,
-      variant,
+      model:
+        model && typeof model === "object" && !Array.isArray(model)
+          ? (model as { modelID?: string })
+          : undefined,
+      variant: typeof variant === "string" ? variant : undefined,
     });
     return true;
   }
@@ -1745,14 +1574,13 @@ class ClaudeCodeBridgeManager {
     sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
     const pending = entry?.pendingPermissions.get(permissionId);
-    if (!pending) return true;
+    if (!pending || !entry) return true;
     entry.pendingPermissions.delete(permissionId);
     if (response === "reject") {
       pending.resolve({
         behavior: "deny",
         message: "Rejected by user",
         interrupt: true,
-        toolUseID: pending.toolUseID,
       });
       return true;
     }
@@ -1804,7 +1632,7 @@ class ClaudeCodeBridgeManager {
   }
 
   async getProviders(directory: string | undefined, workspaceId: string | undefined) {
-    const catalog = await this.discoverProviders(directory, workspaceId);
+    const catalog = await this.discoverProviders(directory, workspaceId, "");
     return catalog.providers;
   }
 
@@ -1813,56 +1641,144 @@ class ClaudeCodeBridgeManager {
   }
 
   async getCommands(directory: string | undefined, workspaceId: string | undefined) {
-    const target = this.resolveTarget(directory, workspaceId);
+    const target = this.resolveTarget(directory, workspaceId, "");
     return await listClaudeCommands(target.directory);
   }
 }
 
-export function setupClaudeCodeBridge(ipcMain, getWindows) {
+type ClaudeIpcMain = Parameters<typeof registerHarnessRpcHandlers>[1];
+type ClaudeGetWindows = Parameters<typeof makeHarnessBridgeEventEmitter>[1];
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asString(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new TypeError(`${label} must be a string`);
+  return value;
+}
+
+export function setupClaudeCodeBridge(ipcMain: ClaudeIpcMain, getWindows: ClaudeGetWindows) {
   const emit = makeHarnessBridgeEventEmitter("claude-code", getWindows);
   let manager = new ClaudeCodeBridgeManager(emit);
 
   registerHarnessRpcHandlers("claude-code", ipcMain, {
     "project:add": (config) => {
-      manager.attachProject(config ?? {});
+      const row = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+      const directory = asString((row as { directory?: unknown }).directory, "directory");
+      manager.attachProject({
+        directory,
+        workspaceId: asOptionalString((row as { workspaceId?: unknown }).workspaceId),
+      });
       return true;
     },
     "project:remove": (directory, workspaceId) => {
-      manager.removeProject(directory, workspaceId);
+      manager.removeProject(asString(directory, "directory"), asOptionalString(workspaceId));
       return true;
     },
     disconnect: () => {
       manager.disconnect();
       return true;
     },
-    "session:list": (directory, workspaceId) => manager.listSessions(directory, workspaceId),
+    "session:list": (directory, workspaceId) =>
+      manager.listSessions(asOptionalString(directory), asOptionalString(workspaceId)),
     "session:create": (title, directory, workspaceId) =>
-      manager.createSession({ title, directory, workspaceId }),
+      manager.createSession({
+        title: asOptionalString(title),
+        directory: asOptionalString(directory),
+        workspaceId: asOptionalString(workspaceId),
+      }),
     "session:delete": (sessionId, directory, workspaceId) =>
-      manager.deleteSession(sessionId, directory, workspaceId),
+      manager.deleteSession(
+        asString(sessionId, "sessionId"),
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      ),
     "session:update": (sessionId, title, directory, workspaceId) =>
-      manager.renameSession(sessionId, title, directory, workspaceId),
+      manager.renameSession(
+        asString(sessionId, "sessionId"),
+        asString(title, "title"),
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      ),
     "session:statuses": (directory, workspaceId) =>
-      manager.listSessionStatuses(directory, workspaceId),
+      manager.listSessionStatuses(asOptionalString(directory), asOptionalString(workspaceId)),
     "session:fork": (sessionId, messageID, directory, workspaceId) =>
-      manager.forkSession(sessionId, messageID, directory, workspaceId),
-    providers: (directory, workspaceId) => manager.getProviders(directory, workspaceId),
+      manager.forkSession(
+        asString(sessionId, "sessionId"),
+        asString(messageID, "messageID"),
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      ),
+    providers: (directory, workspaceId) =>
+      manager.getProviders(asOptionalString(directory), asOptionalString(workspaceId)),
     agents: () => manager.getAgents(),
-    commands: (directory, workspaceId) => manager.getCommands(directory, workspaceId),
+    commands: (directory, workspaceId) =>
+      manager.getCommands(asOptionalString(directory), asOptionalString(workspaceId)),
     messages: (sessionId, options, directory, workspaceId) =>
-      manager.getMessages(sessionId, options, directory, workspaceId),
-    "session:start": (input) => manager.startSession(input ?? {}),
+      manager.getMessages(
+        asString(sessionId, "sessionId"),
+        options && typeof options === "object" && !Array.isArray(options)
+          ? (options as ClaudeGetMessagesOptions)
+          : undefined,
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      ),
+    "session:start": (input) => {
+      const row =
+        input && typeof input === "object" && !Array.isArray(input)
+          ? (input as Record<string, unknown>)
+          : {};
+      return manager.startSession({
+        text: asOptionalString(row.text),
+        title: asOptionalString(row.title),
+        directory: asOptionalString(row.directory),
+        workspaceId: asOptionalString(row.workspaceId),
+        model:
+          row.model && typeof row.model === "object" && !Array.isArray(row.model)
+            ? (row.model as { modelID?: string })
+            : undefined,
+        variant: asOptionalString(row.variant),
+      });
+    },
     prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      await manager.prompt(sessionId, text, images, model, agent, variant, directory, workspaceId);
+      await manager.prompt(
+        asString(sessionId, "sessionId"),
+        asString(text, "text"),
+        images,
+        model,
+        agent,
+        variant,
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      );
       return true;
     },
-    abort: (sessionId) => manager.abort(sessionId),
+    abort: (sessionId) => manager.abort(asString(sessionId, "sessionId")),
     permission: (sessionId, permissionId, response) =>
-      manager.respondPermission(sessionId, permissionId, response),
+      manager.respondPermission(
+        asString(sessionId, "sessionId"),
+        asString(permissionId, "permissionId"),
+        response,
+      ),
     "command:send": (sessionId, command, args, model, agent, variant, directory, workspaceId) =>
-      manager.sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId),
+      manager.sendCommand(
+        asString(sessionId, "sessionId"),
+        asString(command, "command"),
+        asString(args, "args"),
+        model,
+        agent,
+        variant,
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      ),
     "session:summarize": (sessionId, model, directory, workspaceId) =>
-      manager.summarizeSession(sessionId, model, directory, workspaceId),
+      manager.summarizeSession(
+        asString(sessionId, "sessionId"),
+        model,
+        asOptionalString(directory),
+        asOptionalString(workspaceId),
+      ),
   });
 
   return {

@@ -2,6 +2,7 @@
  * Pure Claude Code harness mapping helpers (testable).
  */
 import { makeHarnessSessionIdCodec, normalizeHarnessDirectory } from "./harness-adapter-kit.ts";
+import type { ClaudeMessageBundle } from "./claude-code-bridge-types.ts";
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("claude-code:");
 
@@ -115,15 +116,12 @@ export function normalizeToolInput(_toolName: string, input: Record<string, unkn
   return normalized;
 }
 
-export function tagMessageEntrySession(entry: {
-  info?: { sessionID?: string };
-  parts?: Array<{ sessionID?: string } & Record<string, unknown>>;
-}) {
-  const sessionID = toFrontendSessionId(entry?.info?.sessionID);
+export function tagMessageEntrySession(entry: ClaudeMessageBundle): ClaudeMessageBundle {
+  const sessionID = toFrontendSessionId(entry.info.sessionID ?? entry.info.id);
   return {
     ...entry,
     info: { ...entry.info, sessionID },
-    parts: (entry.parts ?? []).map((part) =>
+    parts: entry.parts.map((part) =>
       part && "sessionID" in part ? { ...part, sessionID } : part,
     ),
   };

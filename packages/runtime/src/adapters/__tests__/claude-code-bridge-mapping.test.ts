@@ -25,8 +25,8 @@ describe("claude-code-bridge-mapping", () => {
 
   test("tagMessageEntrySession rewrites session ids on parts", () => {
     const tagged = tagMessageEntrySession({
-      info: { sessionID: "raw" },
-      parts: [{ sessionID: "raw", type: "text" }],
+      info: { id: "m1", sessionID: "raw" },
+      parts: [{ id: "p1", sessionID: "raw", type: "text" }],
     });
     expect(tagged.info.sessionID).toBe("claude-code:raw");
     expect(tagged.parts[0]?.sessionID).toBe("claude-code:raw");
