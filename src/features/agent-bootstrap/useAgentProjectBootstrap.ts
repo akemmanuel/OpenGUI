@@ -6,8 +6,10 @@ import {
 } from "@/hooks/agent-project-connection";
 import {
   settleProjectHydration,
+  startProjectHydration,
   type ProjectHydrationState,
 } from "@/hooks/agent-project-hydration";
+import type { OpenGuiClient } from "@/protocol/client";
 import type { Action } from "@/hooks/agent-reducer";
 import type { InternalAgentState } from "@/hooks/agent-state-types";
 import { getWorktreeParents, isLocalServer } from "@/hooks/agent-state-persistence";
@@ -20,6 +22,7 @@ type HarnessBackend = ReturnType<
 >[number];
 
 export function useAgentProjectBootstrap(input: {
+  openGuiClient: OpenGuiClient;
   workspaceStateReady: boolean;
   allHarnesses: HarnessBackend[];
   detachedProject?: string;
@@ -51,6 +54,7 @@ export function useAgentProjectBootstrap(input: {
   ) => Promise<void>;
 }) {
   const {
+    openGuiClient,
     workspaceStateReady,
     allHarnesses,
     detachedProject,
@@ -164,16 +168,62 @@ export function useAgentProjectBootstrap(input: {
             type: "ASSIGN_PROJECT_WORKSPACE",
             payload: { projectKey, workspaceId: item.workspaceId },
           });
-          dispatch({
-            type: "SET_PROJECT_CONNECTION",
-            payload: {
-              projectKey,
-              status: createProjectConnectionStatus("connected", item.baseUrl, "project"),
-            },
-          });
           updateProjectHydration(projectKey, (current) =>
-            settleProjectHydration(current, { completedHarnessIds: discoveryHarnessIds }),
+            startProjectHydration(current, discoveryHarnessIds),
           );
+          try {
+            const connectResult = await openGuiClient.harnesses.registerDirectory({
+              config: {
+                directory: item.directory,
+                workspaceId: item.workspaceId,
+                baseUrl: item.baseUrl,
+                authToken: item.authToken,
+              },
+              harnessIds: discoveryHarnessIds,
+            });
+            const failedBackends = Object.fromEntries(
+              connectResult.errors.map((entry) => [entry.harnessId, entry.error]),
+            ) as Partial<Record<HarnessId, string>>;
+            const connectedHarnessIds = connectResult.connectedHarnessIds;
+            const connectionError =
+              connectedHarnessIds.length === 0
+                ? connectResult.errors[0]?.error || "Connection failed"
+                : null;
+            dispatch({
+              type: "SET_PROJECT_CONNECTION",
+              payload: {
+                projectKey,
+                status: createProjectConnectionStatus(
+                  connectionError ? "error" : "connected",
+                  item.baseUrl,
+                  "project",
+                  connectionError ?? undefined,
+                ),
+              },
+            });
+            updateProjectHydration(projectKey, (current) =>
+              settleProjectHydration(current, {
+                completedHarnessIds: connectedHarnessIds,
+                failedBackends,
+              }),
+            );
+          } catch (error) {
+            const message = getErrorMessage(error);
+            dispatch({
+              type: "SET_PROJECT_CONNECTION",
+              payload: {
+                projectKey,
+                status: createProjectConnectionStatus("error", item.baseUrl, "project", message),
+              },
+            });
+            updateProjectHydration(projectKey, (current) =>
+              settleProjectHydration(current, {
+                failedBackends: Object.fromEntries(
+                  discoveryHarnessIds.map((harnessId) => [harnessId, message]),
+                ) as Partial<Record<HarnessId, string>>,
+              }),
+            );
+          }
         }
 
         const activeWorkspaceId = getState().activeWorkspaceId;
@@ -188,8 +238,8 @@ export function useAgentProjectBootstrap(input: {
           );
         }
 
-        void loadSessionIndex(allProjectConfigs, discoveryHarnessIds).catch(() => {
-          /* startup session index is best effort */
+        void loadSessionIndex(allProjectConfigs, discoveryHarnessIds).catch((error) => {
+          console.error("startup session index failed", error);
         });
       } catch {
         if (!cancelled) dispatch({ type: "SET_BOOT_STATE", payload: { state: "ready" } });
@@ -202,6 +252,7 @@ export function useAgentProjectBootstrap(input: {
       cancelled = true;
     };
   }, [
+    openGuiClient,
     allHarnesses,
     detachedProject,
     discoveryHarnessIds,

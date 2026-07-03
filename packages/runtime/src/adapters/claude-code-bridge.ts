@@ -21,10 +21,8 @@ import {
   normalizeHarnessDirectory as normalizeDir,
   nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
-import {
-  makeHarnessBridgeEventEmitter,
-  registerHarnessRpcHandlers,
-} from "./harness-adapter-host.ts";
+import { makeHarnessBridgeEventEmitter } from "./harness-adapter-host.ts";
+import { registerClaudeCodeHarnessRpcHandlers } from "./claude-code-bridge-ipc.ts";
 import {
   buildProvidersFromSupportedModels,
   buildVariantQueryOptions,
@@ -43,8 +41,6 @@ import {
   makeTextPart,
   mapClaudeModelId,
   normalizeToolInput,
-  parsePermissionResponse,
-  parseStartSessionInput,
   tagMessageEntrySession,
 } from "./claude-code-bridge-mapping.ts";
 import {
@@ -1648,17 +1644,8 @@ class ClaudeCodeBridgeManager {
   }
 }
 
-type ClaudeIpcMain = Parameters<typeof registerHarnessRpcHandlers>[1];
+type ClaudeIpcMain = Parameters<typeof registerClaudeCodeHarnessRpcHandlers>[0];
 type ClaudeGetWindows = Parameters<typeof makeHarnessBridgeEventEmitter>[1];
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asString(value: unknown, label: string): string {
-  if (typeof value !== "string") throw new TypeError(`${label} must be a string`);
-  return value;
-}
 
 export function setupClaudeCodeBridge(ipcMain: ClaudeIpcMain, getWindows: ClaudeGetWindows) {
   const rawEmit = makeHarnessBridgeEventEmitter("claude-code", getWindows);
@@ -1666,147 +1653,7 @@ export function setupClaudeCodeBridge(ipcMain: ClaudeIpcMain, getWindows: Claude
     rawEmit(event);
   };
   let manager = new ClaudeCodeBridgeManager(emit);
-
-  registerHarnessRpcHandlers("claude-code", ipcMain, {
-    "project:add": (...args: unknown[]) => {
-      const config = args[0];
-      const row = config && typeof config === "object" && !Array.isArray(config) ? config : {};
-      const directory = asString((row as { directory?: unknown }).directory, "directory");
-      manager.attachProject({
-        directory,
-        workspaceId: asOptionalString((row as { workspaceId?: unknown }).workspaceId),
-      });
-      return true;
-    },
-    "project:remove": (...args: unknown[]) => {
-      const [directory, workspaceId] = args;
-      manager.removeProject(asString(directory, "directory"), asOptionalString(workspaceId));
-      return true;
-    },
-    disconnect: (..._args: unknown[]) => {
-      manager.disconnect();
-      return true;
-    },
-    "session:list": (...args: unknown[]) => {
-      const [directory, workspaceId] = args;
-      return manager.listSessions(asOptionalString(directory), asOptionalString(workspaceId));
-    },
-    "session:create": (...args: unknown[]) => {
-      const [title, directory, workspaceId] = args;
-      return manager.createSession({
-        title: asOptionalString(title),
-        directory: asOptionalString(directory),
-        workspaceId: asOptionalString(workspaceId),
-      });
-    },
-    "session:delete": (...args: unknown[]) => {
-      const [sessionId, directory, workspaceId] = args;
-      return manager.deleteSession(
-        asString(sessionId, "sessionId"),
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-    "session:update": (...args: unknown[]) => {
-      const [sessionId, title, directory, workspaceId] = args;
-      return manager.renameSession(
-        asString(sessionId, "sessionId"),
-        asString(title, "title"),
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-    "session:statuses": (...args: unknown[]) => {
-      const [directory, workspaceId] = args;
-      return manager.listSessionStatuses(
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-    "session:fork": (...args: unknown[]) => {
-      const [sessionId, messageID, directory, workspaceId] = args;
-      return manager.forkSession(
-        asString(sessionId, "sessionId"),
-        asString(messageID, "messageID"),
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-    providers: (...args: unknown[]) => {
-      const [directory, workspaceId] = args;
-      return manager.getProviders(asOptionalString(directory), asOptionalString(workspaceId));
-    },
-    agents: (..._args: unknown[]) => manager.getAgents(),
-    commands: (...args: unknown[]) => {
-      const [directory, workspaceId] = args;
-      return manager.getCommands(asOptionalString(directory), asOptionalString(workspaceId));
-    },
-    messages: (...args: unknown[]) => {
-      const [sessionId, options, directory, workspaceId] = args;
-      return manager.getMessages(
-        asString(sessionId, "sessionId"),
-        options && typeof options === "object" && !Array.isArray(options)
-          ? (options as ClaudeGetMessagesOptions)
-          : undefined,
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-    "session:start": (...args: unknown[]) => manager.startSession(parseStartSessionInput(args[0])),
-    prompt: async (...args: unknown[]) => {
-      const [sessionId, text, images, model, agent, variant, directory, workspaceId] = args;
-      const modelRef = coerceHarnessModelRef(model);
-      const harnessModel: HarnessModelRef | undefined = modelRef?.modelID
-        ? { modelID: modelRef.modelID }
-        : undefined;
-      await manager.prompt({
-        sessionId: asString(sessionId, "sessionId"),
-        text: asString(text, "text"),
-        images,
-        model: harnessModel,
-        agent,
-        variant: coerceVariant(variant),
-        directory: asOptionalString(directory),
-        workspaceId: asOptionalString(workspaceId),
-      });
-      return true;
-    },
-    abort: (...args: unknown[]) => manager.abort(asString(args[0], "sessionId")),
-    permission: (...args: unknown[]) => {
-      const [sessionId, permissionId, response] = args;
-      const parsed = parsePermissionResponse(response);
-      if (!parsed) {
-        throw new TypeError("permission response must be always, once, or reject");
-      }
-      return manager.respondPermission(
-        asString(sessionId, "sessionId"),
-        asString(permissionId, "permissionId"),
-        parsed,
-      );
-    },
-    "command:send": (...args: unknown[]) => {
-      const [sessionId, command, commandArgs, model, agent, variant, directory, workspaceId] = args;
-      return manager.sendCommand(
-        asString(sessionId, "sessionId"),
-        asString(command, "command"),
-        asString(commandArgs, "args"),
-        model,
-        agent,
-        variant,
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-    "session:summarize": (...args: unknown[]) => {
-      const [sessionId, model, directory, workspaceId] = args;
-      return manager.summarizeSession(
-        asString(sessionId, "sessionId"),
-        model,
-        asOptionalString(directory),
-        asOptionalString(workspaceId),
-      );
-    },
-  });
+  registerClaudeCodeHarnessRpcHandlers(ipcMain, manager);
 
   return {
     async restart() {

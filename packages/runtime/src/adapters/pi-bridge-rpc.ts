@@ -21,6 +21,15 @@ export function parsePiProjectTarget(directory: unknown, workspaceId?: unknown):
   };
 }
 
+/** Daemon client sends `[target]` as a single object; unwrap like `addProject`. */
+export function parsePiProjectTargetArg(args: unknown[]): PiProjectTarget {
+  const first = args[0];
+  if (isRecord(first)) {
+    return parsePiProjectTarget(first.directory, first.workspaceId);
+  }
+  return parsePiProjectTarget(args[0], args[1]);
+}
+
 export function parsePiSessionCreateInput(
   title: unknown,
   directory: unknown,
@@ -223,7 +232,7 @@ export function parsePiDaemonRpcArgs(method: string, args: unknown[]): unknown[]
     case "getProviderAuthMethods":
     case "disposeProviderInstance":
     case "getCommands":
-      return [parsePiProjectTarget(args[0], args[1])];
+      return [parsePiProjectTargetArg(args)];
     case "createSession":
       return [parsePiSessionCreatePayload(...args)];
     case "startSession":

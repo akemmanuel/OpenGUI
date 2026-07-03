@@ -24,8 +24,13 @@ export async function registerDirectoryWithHarnesses(input: {
   const harnessIds = input.harnessIds?.length
     ? input.harnessIds
     : [...input.services.harnesses.getManagedHarnessIds()];
+  const workspaceId =
+    input.config && typeof input.config === "object" && "workspaceId" in input.config
+      ? String((input.config as { workspaceId?: string }).workspaceId ?? "").trim() || undefined
+      : undefined;
   return await input.services.harnesses.registerDirectory({
     directory,
+    workspaceId,
     harnessIds,
     config: input.config,
   });

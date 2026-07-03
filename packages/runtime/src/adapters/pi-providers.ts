@@ -1,4 +1,5 @@
-import { findEnvKeys, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { findEnvKeys } from "@earendil-works/pi-ai/compat";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 const PROVIDER_ENVS: Record<string, string[]> = {
@@ -46,12 +47,21 @@ type ModelRegistry = {
   refresh?: () => void;
   getAll: () => PiProviderModel[];
   authStorage: {
+    reload?: () => void;
     get?: (providerId: string) => { type?: string } | undefined;
     hasAuth?: (providerId: string) => boolean;
   };
   getProviderDisplayName?: (providerId: string) => string | undefined;
   getProviderAuthStatus?: (providerId: string) => { configured?: boolean; source?: string };
 };
+
+/** Full built-in + models.json catalog for OpenGUI loadResources (not auth-filtered). */
+export function piHarnessProvidersCatalog(modelRegistry: ModelRegistry) {
+  modelRegistry.authStorage?.reload?.();
+  modelRegistry.refresh?.();
+  const bundle = buildAllProvidersData(modelRegistry);
+  return { providers: bundle.all, default: bundle.default };
+}
 
 function normalizePiModel(model: PiProviderModel) {
   const input = Array.isArray(model?.input) ? model.input : [];

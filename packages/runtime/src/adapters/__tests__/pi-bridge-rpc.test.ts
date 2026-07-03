@@ -2,6 +2,8 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   coerceHarnessModelRef,
   coerceVariant,
+  parsePiDaemonRpcArgs,
+  parsePiProjectTargetArg,
   parsePiPromptArgs,
   parsePiStartSessionInput,
 } from "../pi-bridge-rpc.ts";
@@ -138,6 +140,31 @@ describe("pi-bridge-rpc", () => {
         provider: "a",
         modelId: "b",
       });
+    });
+  });
+
+  describe("parsePiProjectTargetArg", () => {
+    test("unwraps object target from PiDaemonClient", () => {
+      expect(parsePiProjectTargetArg([{ directory: "/repo", workspaceId: "local" }])).toEqual({
+        directory: "/repo",
+        workspaceId: "local",
+      });
+    });
+
+    test("accepts positional directory and workspaceId", () => {
+      expect(parsePiProjectTargetArg(["/repo", "ws-1"])).toEqual({
+        directory: "/repo",
+        workspaceId: "ws-1",
+      });
+    });
+  });
+
+  describe("parsePiDaemonRpcArgs getProviders", () => {
+    test("normalizes single-object args for daemon RPC", () => {
+      const normalized = parsePiDaemonRpcArgs("getProviders", [
+        { directory: "/home/user/proj", workspaceId: "local" },
+      ]);
+      expect(normalized).toEqual([{ directory: "/home/user/proj", workspaceId: "local" }]);
     });
   });
 

@@ -100,6 +100,7 @@ export class HarnessService {
 
   async registerDirectory(input: {
     directory: string;
+    workspaceId?: string;
     harnessIds?: HarnessId[];
     config?: DirectoryConnectionConfig;
   }): Promise<DirectoryRegisterResult> {
@@ -107,6 +108,7 @@ export class HarnessService {
     return this.registerDirectoryWithScope({
       scopeRef: directoryRef(directory),
       scope: { directory },
+      workspaceId: input.workspaceId,
       harnessIds: input.harnessIds,
       config: input.config,
     });
@@ -115,6 +117,7 @@ export class HarnessService {
   private async registerDirectoryWithScope(input: {
     scopeRef: DirectoryScopeRef;
     scope: Pick<HarnessScope, "directory">;
+    workspaceId?: string;
     harnessIds?: HarnessId[];
     config?: DirectoryConnectionConfig;
   }): Promise<DirectoryRegisterResult> {
@@ -128,6 +131,7 @@ export class HarnessService {
           await this.backendRpc(harnessId, "project:add", [
             {
               directory: input.scope.directory,
+              workspaceId: input.workspaceId,
               baseUrl,
               username: input.config?.username,
               password: input.config?.password,
@@ -207,12 +211,15 @@ export class HarnessService {
     return Object.fromEntries(entries);
   }
 
-  async listDirectorySessions(input: {
-    directory: string;
-    harnessIds: HarnessId[];
-  }): Promise<Array<{ harnessId: HarnessId; sessions: RuntimeListedSession[] }>> {
+  async listDirectorySessions(input: { directory: string; harnessIds: HarnessId[] }): Promise<
+    Array<{
+      harnessId: HarnessId;
+      sessions: RuntimeListedSession[];
+      error?: string;
+    }>
+  > {
     const directory = input.directory;
-    const results = await Promise.all(
+    return Promise.all(
       input.harnessIds.map(async (harnessId) => {
         try {
           const sessions = await this.backendRpc<RuntimeListedSession[]>(
@@ -220,14 +227,12 @@ export class HarnessService {
             "session:list",
             [directory],
           );
-          return { harnessId: harnessId, sessions };
-        } catch {
-          return null;
+          return { harnessId, sessions };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return { harnessId, sessions: [] as RuntimeListedSession[], error: message };
         }
       }),
-    );
-    return results.filter((result): result is NonNullable<(typeof results)[number]> =>
-      Boolean(result),
     );
   }
 

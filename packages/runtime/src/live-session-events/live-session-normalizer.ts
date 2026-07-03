@@ -369,7 +369,10 @@ export class LiveSessionEventNormalizer {
 
 class LruSet<T> {
   private order: T[] = [];
-  constructor(private max: number) {}
+  private max: number;
+  constructor(max: number) {
+    this.max = max;
+  }
   has(value: T): boolean {
     return this.order.includes(value);
   }

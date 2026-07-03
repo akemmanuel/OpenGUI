@@ -21,10 +21,8 @@ import {
   normalizeHarnessDirectory as normalizeDir,
   nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
-import {
-  makeHarnessBridgeEventEmitter,
-  registerHarnessRpcHandlers,
-} from "./harness-adapter-host.ts";
+import { makeHarnessBridgeEventEmitter } from "./harness-adapter-host.ts";
+import { registerPiHarnessRpcHandlers } from "./pi-bridge-ipc.ts";
 import {
   pollUntilEffect,
   runEffect,
@@ -32,7 +30,7 @@ import {
   timeoutEffect,
   tryPromiseEffect,
 } from "../../../../lib/effect-runtime.ts";
-import { buildAllProvidersData, buildProvidersData, type PiProviderModel } from "./pi-providers.ts";
+import { buildAllProvidersData, piHarnessProvidersCatalog } from "./pi-providers.ts";
 import {
   invalidatePiSessionListCacheForDirectory,
   listFastPiSessionInfos as listPiSessionInfosFromDisk,
@@ -70,11 +68,9 @@ import {
   isPiHarnessNativeEvent,
   parsePiDaemonHealthData,
   parsePiDaemonInfo,
-  parsePiProjectTarget,
   coerceHarnessModelRef,
   parsePiPromptArgs,
   parsePiSessionCreatePayload,
-  parsePiSessionInput,
   parsePiStartSessionInput,
   type PiDaemonInfo,
   type PiProjectTarget,
@@ -115,7 +111,7 @@ const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
 const PI_DAEMON_HEALTH_TIMEOUT = 2_000;
 // Bump when daemon import/runtime behavior changes. Existing healthy daemon gets reused
 // across app restarts; failed lazy ESM imports inside pi-ai stay poisoned in-process.
-const PI_DAEMON_VERSION = "2026-06-30-pi-tool-live-state-v1";
+const PI_DAEMON_VERSION = "2026-07-03-pi-daemon-rpc-target-v2";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("pi:");
@@ -1711,8 +1707,8 @@ export class PiBridgeManager {
     const modelID = selectedModel.modelID ?? selectedModel.modelId;
     if (typeof providerID !== "string" || typeof modelID !== "string") return;
     session.modelRegistry?.refresh?.();
-    const availableModels = session.modelRegistry?.getAvailable() ?? [];
-    const model = availableModels.find((item) => {
+    const allModels = session.modelRegistry?.getAll?.() ?? [];
+    const model = allModels.find((item) => {
       if (item == null || typeof item !== "object") return false;
       const m = item as Record<string, unknown>;
       return m.provider === providerID && m.id === modelID;
@@ -1972,29 +1968,29 @@ export class PiBridgeManager {
   }
 
   async getProviders(target: PiProjectTarget) {
+    const catalogFromRuntime = (runtime: PiLiveSessionContext["runtime"] | null | undefined) => {
+      const registry = runtime?.services?.modelRegistry;
+      if (!registry?.getAll) {
+        throw new Error("Pi project runtime not ready");
+      }
+      return piHarnessProvidersCatalog(
+        registry as unknown as Parameters<typeof piHarnessProvidersCatalog>[0],
+      );
+    };
+
     if (target?.directory) {
       const project = await this.ensureProject(target);
       const runtime =
         project.runtime || project.liveSessionContexts.values().next().value?.runtime || null;
-      if (!runtime) {
-        throw new Error("Pi project runtime not ready");
-      }
-      const registry = runtime.services?.modelRegistry;
-      registry?.refresh?.();
-      const availableModels = (registry?.getAvailable() ?? []) as PiProviderModel[];
-      return buildProvidersData(availableModels);
+      return catalogFromRuntime(runtime);
     }
-    const models = [];
     for (const project of this.projects.values()) {
       const runtime =
         project.runtime || project.liveSessionContexts.values().next().value?.runtime || null;
-      if (!runtime) continue;
-      const registry = runtime.services?.modelRegistry;
-      registry?.refresh?.();
-      const availableModels = (registry?.getAvailable() ?? []) as PiProviderModel[];
-      models.push(...availableModels);
+      if (!runtime?.services?.modelRegistry) continue;
+      return catalogFromRuntime(runtime);
     }
-    return buildProvidersData(models);
+    return { providers: [], default: {} };
   }
 
   async listAllProviders(target: PiProjectTarget) {
@@ -2004,9 +2000,11 @@ export class PiBridgeManager {
     if (!runtime?.services?.modelRegistry) {
       throw new Error("Pi project runtime not ready");
     }
-    return buildAllProvidersData(
-      runtime.services.modelRegistry as unknown as Parameters<typeof buildAllProvidersData>[0],
-    );
+    const registry = runtime.services.modelRegistry as unknown as Parameters<
+      typeof piHarnessProvidersCatalog
+    >[0];
+    registry.authStorage?.reload?.();
+    return buildAllProvidersData(registry);
   }
 
   async getProviderAuthMethods(_target: PiProjectTarget) {
@@ -2801,141 +2799,12 @@ class PiDaemonClient {
 }
 
 export function setupPiBridge(
-  ipcMain: Parameters<typeof registerHarnessRpcHandlers>[1],
+  ipcMain: Parameters<typeof registerPiHarnessRpcHandlers>[0],
   getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>,
   options: PiDaemonClientOptions = {},
 ) {
   const manager = new PiDaemonClient(getAllWindows, options);
-
-  registerHarnessRpcHandlers("pi", ipcMain, {
-    "project:add": async (config) => {
-      const cfg = parsePiSessionInput(config);
-      await manager.addProject({
-        directory: asHarnessString(cfg.directory),
-        workspaceId: asHarnessString(cfg.workspaceId),
-      });
-      return true;
-    },
-    "project:remove": async (directory, workspaceId) => {
-      await manager.removeProject(parsePiProjectTarget(directory, workspaceId));
-      return true;
-    },
-    disconnect: async () => {
-      await manager.disconnect();
-      return true;
-    },
-    "session:list": (directory, workspaceId) =>
-      manager.listSessions(parsePiProjectTarget(directory, workspaceId)),
-    "session:create": (title, directory, workspaceId) =>
-      manager.createSession(parsePiSessionCreatePayload(title, directory, workspaceId)),
-    "session:delete": (sessionId, directory, workspaceId) =>
-      manager.deleteSession(
-        asHarnessString(sessionId) ?? "",
-        parsePiProjectTarget(directory, workspaceId),
-      ),
-    "session:update": (sessionId, title, directory, workspaceId) =>
-      manager.updateSession(
-        asHarnessString(sessionId) ?? "",
-        asHarnessString(title) ?? "",
-        parsePiProjectTarget(directory, workspaceId),
-      ),
-    "session:statuses": (directory, workspaceId) =>
-      manager.getSessionStatuses(parsePiProjectTarget(directory, workspaceId)),
-    "session:fork": (sessionId, messageID, directory, workspaceId) =>
-      manager.forkSession(
-        asHarnessString(sessionId) ?? "",
-        asHarnessString(messageID) ?? "",
-        parsePiProjectTarget(directory, workspaceId),
-      ),
-    providers: (directory, workspaceId) =>
-      manager.getProviders(parsePiProjectTarget(directory, workspaceId)),
-    "provider:list": (directory, workspaceId) =>
-      manager.listAllProviders(parsePiProjectTarget(directory, workspaceId)),
-    "provider:auth-methods": (directory, workspaceId) =>
-      manager.getProviderAuthMethods(parsePiProjectTarget(directory, workspaceId)),
-    "provider:connect": (directory, workspaceId, providerID, auth) =>
-      manager.connectProvider(
-        parsePiProjectTarget(directory, workspaceId),
-        asHarnessString(providerID) ?? "",
-        auth,
-      ),
-    "provider:disconnect": (directory, workspaceId, providerID) =>
-      manager.disconnectProvider(
-        parsePiProjectTarget(directory, workspaceId),
-        asHarnessString(providerID) ?? "",
-      ),
-    "provider:oauth:authorize": (directory, workspaceId, providerID, method) =>
-      manager.oauthAuthorize(
-        parsePiProjectTarget(directory, workspaceId),
-        asHarnessString(providerID) ?? "",
-        asHarnessString(method) ?? "",
-      ),
-    "provider:oauth:callback": (directory, workspaceId, providerID, method, code) =>
-      manager.oauthCallback(
-        parsePiProjectTarget(directory, workspaceId),
-        asHarnessString(providerID) ?? "",
-        asHarnessString(method) ?? "",
-        asHarnessString(code) ?? "",
-      ),
-    "instance:dispose": (directory, workspaceId) =>
-      manager.disposeProviderInstance(parsePiProjectTarget(directory, workspaceId)),
-    agents: () => manager.getAgents(),
-    commands: (directory, workspaceId) =>
-      manager.getCommands(parsePiProjectTarget(directory, workspaceId)),
-    messages: (sessionId, options, directory, workspaceId) =>
-      manager.getMessages(
-        asHarnessString(sessionId) ?? "",
-        options,
-        parsePiProjectTarget(directory, workspaceId),
-      ),
-    "session:start": (input) => manager.startSession(parsePiStartSessionInput(input)),
-    prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      await manager.prompt(
-        parsePiPromptArgs(sessionId, text, images, model, agent, variant, directory, workspaceId),
-      );
-      return true;
-    },
-    abort: async (sessionId, directory, workspaceId) => {
-      await manager.abort(
-        asHarnessString(sessionId) ?? "",
-        asHarnessString(directory) ?? "",
-        asHarnessString(workspaceId),
-      );
-      return true;
-    },
-    "command:send": async (
-      sessionId,
-      command,
-      args,
-      model,
-      agent,
-      variant,
-      directory,
-      workspaceId,
-    ) => {
-      await manager.sendCommand(
-        asHarnessString(sessionId) ?? "",
-        asHarnessString(command) ?? "",
-        asHarnessString(args) ?? "",
-        model,
-        agent,
-        variant,
-        asHarnessString(directory) ?? "",
-        asHarnessString(workspaceId),
-      );
-      return true;
-    },
-    "session:summarize": async (sessionId, model, directory, workspaceId) => {
-      await manager.summarizeSession(
-        asHarnessString(sessionId) ?? "",
-        model,
-        asHarnessString(directory) ?? "",
-        asHarnessString(workspaceId),
-      );
-      return true;
-    },
-  });
-
+  registerPiHarnessRpcHandlers(ipcMain, manager);
   return {
     restart: () => manager.restart(),
   };

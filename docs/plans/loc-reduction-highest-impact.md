@@ -106,15 +106,13 @@ Per [frontend-session-transcript-simplification.md](./frontend-session-transcrip
 
 ---
 
-## Tranche 4 — ModelSelector diet (1 PR, ~150–300 LoC)
+## Tranche 4 — ModelSelector diet (1 PR, ~150–300 LoC) — **done (2026-07)**
 
-Catalog cache exists; **remaining slop** in `ModelSelector.tsx` (~842):
+Catalog cache exists; **remaining slop** was in `ModelSelector.tsx` (~829):
 
-- Duplicate `ensureCatalogForHarness` state (`resolvedCatalogKey`, `catalogRequestRef`) vs cache module in-flight map.
-- **Target:** `ensureCatalogForHarness` → thin wrapper: `ensureResourceCatalog` + read `getCachedProviders`; drop parallel loading state when cache hit.
-- Use `getCachedResourceBundle(activeCatalogKey)` in effects instead of local draft state where possible.
-
-See [model-selector-catalog-cache.md](./model-selector-catalog-cache.md) T2–T5 (T1 largely done).
+- [x] Split into `ModelSelector.tsx` (~306), `ModelSelectorContent`, hooks (`useModelSelectorCatalog`, etc.), `model-selector-groups.ts`.
+- [x] `ModelSelector.catalog.test.tsx` — single `loadResources` per catalog key.
+- See [model-selector-catalog-cache.md](./model-selector-catalog-cache.md) T1–T6.
 
 ---
 

@@ -31,5 +31,11 @@ Checklist from harness/SDK hot-path review. **Automated:** `pnpm run slop-check`
 
 ## Still large (Track 6)
 
-- `pi-bridge.ts` / `opencode-bridge.ts` line count — incremental extraction only; do not regress IPC wiring in one PR.
-- Bridge monoliths (`pi-bridge`, `opencode-bridge`, etc.) still need method-level typing (`unknown` + narrowing, `PiBridgeProject`, shared manager fields); no `any`.
+- `opencode-bridge.ts` — window-scoped setup; IPC factories already DRY inside setup; full `opencode-bridge-ipc.ts` extract pending.
+- Bridge monoliths still need method-level typing (`unknown` + narrowing); no `any`.
+
+## Phase E IPC (2026-07)
+
+- Pi + Claude RPC tables → `pi-bridge-ipc.ts`, `claude-code-bridge-ipc.ts`.
+- Codex/Grok project slots → `harness-bridge-project-slot.ts`.
+- See [bridge-ipc-dedup-phase-e.md](./bridge-ipc-dedup-phase-e.md).

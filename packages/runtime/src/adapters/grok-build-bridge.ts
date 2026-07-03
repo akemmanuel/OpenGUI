@@ -13,6 +13,11 @@ import {
   type ObjectTargetHarnessManager,
 } from "./harness-adapter-host.ts";
 import {
+  createHarnessProjectSlot,
+  ensureHarnessProjectSlot,
+  type HarnessProjectSlot,
+} from "./harness-bridge-project-slot.ts";
+import {
   buildGrokProvidersFromModelState,
   DEFAULT_MODEL_ID,
   DEFAULT_PROVIDER_ID,
@@ -34,7 +39,7 @@ const GROK_BUILD_SESSION_PREFIX = "grok-build:";
 const { toFrontendSessionId, toRawSessionId } =
   makeHarnessSessionIdCodec(GROK_BUILD_SESSION_PREFIX);
 
-type GrokProjectSlot = { key?: string; directory: string; workspaceId?: string };
+type GrokProjectSlot = HarnessProjectSlot;
 
 type GrokSessionRecord = {
   id: string;
@@ -161,15 +166,11 @@ class GrokBuildBridgeManager {
   }
 
   ensureKnownProject(directory: string | undefined, workspaceId: string | undefined) {
-    const normalized = normalizeDir(directory);
-    if (!normalized) throw new Error("Project directory is required");
-    const key = makeProjectKey(workspaceId, normalized);
-    let project = this.projects.get(key);
-    if (!project) {
-      project = { key, directory: normalized, workspaceId };
-      this.projects.set(key, project);
-    }
-    return project;
+    return ensureHarnessProjectSlot(
+      this.projects,
+      { directory, workspaceId },
+      createHarnessProjectSlot,
+    );
   }
 
   getLiveSession(sessionId: string) {
@@ -500,7 +501,8 @@ class GrokBuildBridgeManager {
     const directory = normalizeDir(target?.directory);
     if (!directory) return;
     const key = makeProjectKey(target?.workspaceId, directory);
-    const project = this.projects.get(key) ?? { directory, workspaceId: target?.workspaceId };
+    const project =
+      this.projects.get(key) ?? createHarnessProjectSlot(key, directory, target?.workspaceId);
     for (const [sessionId, live] of this.liveSessions.entries()) {
       if (
         live.project.directory === directory &&
@@ -759,15 +761,12 @@ class GrokBuildBridgeManager {
     this.liveSessions.delete(rawId);
     this.sessionIndex.delete(rawId);
     if (directory) {
-      this.emitBackend(
-        { directory, workspaceId },
-        {
-          type: "session.deleted",
-          directory,
-          workspaceId,
-          sessionId: toFrontendSessionId(rawId),
-        },
-      );
+      this.emitBackend(this.ensureKnownProject(directory, workspaceId), {
+        type: "session.deleted",
+        directory,
+        workspaceId,
+        sessionId: toFrontendSessionId(rawId),
+      });
     }
     return true;
   }

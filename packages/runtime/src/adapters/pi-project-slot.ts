@@ -22,6 +22,7 @@ export type PiEnsureSessionContextResult = {
 export type PiAgentRuntimeServices = {
   modelRegistry?: {
     refresh?: () => void;
+    getAll?: () => unknown[];
     getAvailable: () => unknown[];
     authStorage?: { reload?: () => void };
   };
@@ -91,6 +92,22 @@ export function resolvePiProjectKeyFromTarget(target: {
   if (!directory) throw new Error("Directory required for Pi backend");
   const workspaceId = target.workspaceId;
   return { key: makeProjectKey(workspaceId, directory), directory, workspaceId };
+}
+
+/** Minimal registry surface for unit tests (PiBridgeManager.projects). */
+export type PiBridgeProjectRegistry = {
+  projects: Map<string, PiBridgeProject>;
+};
+
+/** Register a disconnected project shell without spinning up Pi runtime. */
+export function registerPiBridgeProjectForTests(
+  registry: PiBridgeProjectRegistry,
+  target: { directory?: string; workspaceId?: string } = { directory: "/repo" },
+): PiBridgeProject {
+  const { key, directory, workspaceId } = resolvePiProjectKeyFromTarget(target);
+  const project = createEmptyPiProjectShell(key, directory, workspaceId);
+  registry.projects.set(key, project);
+  return project;
 }
 
 export type { PiMessageBundle, PiNativeSessionEvent, PiModelRef };

@@ -15,7 +15,11 @@ export async function listDirectorySessionsFromHarness(
     directory: scopeDirectory,
     harnessIds: [harnessId],
   });
-  const runtimeSessions = runtimeResults[0]?.sessions?.filter((session) =>
+  const row = runtimeResults[0];
+  if (row?.error) {
+    throw new Error(row.error);
+  }
+  const runtimeSessions = row?.sessions?.filter((session) =>
     runtimeSessionBelongsToDirectory(session, scopeDirectory),
   );
   if (!runtimeSessions?.length) return [];

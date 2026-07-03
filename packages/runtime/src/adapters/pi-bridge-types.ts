@@ -227,6 +227,7 @@ export type PiLiveSessionLike = {
   model?: unknown;
   modelRegistry?: {
     refresh?: () => void;
+    getAll?: () => unknown[];
     getAvailable: () => unknown[];
     authStorage?: { reload?: () => void };
   };

@@ -7,6 +7,7 @@ import {
   isCatalogKeyPending,
   makeCatalogKey,
   resetResourceCatalogCacheForTests,
+  subscribeResourceCatalogCache,
 } from "../resource-catalog-cache";
 
 const bundle = (): HarnessResourceBundle => ({
@@ -105,6 +106,29 @@ describe("ensureResourceCatalog", () => {
     expect(getCachedResourceBundle(key)).not.toBeNull();
 
     invalidateResourceCatalogCache({ harnessId: "pi" });
+    expect(getCachedResourceBundle(key)).toBeNull();
+  });
+
+  test("subscribe fires when catalog is stored", async () => {
+    resetResourceCatalogCacheForTests();
+    const listener = vi.fn();
+    const unsub = subscribeResourceCatalogCache(listener);
+    const loadResources = vi.fn().mockResolvedValue(bundle());
+    const target = { workspaceId: "local", directory: "/repo" };
+
+    await ensureResourceCatalog({ harnessId: "pi", target, loadResources });
+    expect(listener).toHaveBeenCalled();
+    unsub();
+  });
+
+  test("pi with null directory and empty providers is not cached", async () => {
+    resetResourceCatalogCacheForTests();
+    const loadResources = vi.fn().mockResolvedValue(bundle());
+    const target = { workspaceId: "local", directory: null };
+    const key = makeCatalogKey({ harnessId: "pi", workspaceId: "local", directory: null });
+
+    await ensureResourceCatalog({ harnessId: "pi", target, loadResources });
+    expect(loadResources).toHaveBeenCalledTimes(1);
     expect(getCachedResourceBundle(key)).toBeNull();
   });
 });

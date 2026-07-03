@@ -40,4 +40,26 @@ describe("listDirectorySessionsFromHarness", () => {
     });
     expect(ensureSession).not.toHaveBeenCalled();
   });
+
+  test("throws when harness reports list error", async () => {
+    const services = {
+      harnesses: {
+        listDirectorySessions: async () => [
+          {
+            harnessId: "pi" as const,
+            sessions: [],
+            error: "Pi daemon unavailable",
+          },
+        ],
+      },
+    } as unknown as BackendServiceContext;
+
+    await expect(
+      listDirectorySessionsFromHarness(
+        services,
+        { directory: "/repo", canonicalPath: "/repo" },
+        "pi",
+      ),
+    ).rejects.toThrow("Pi daemon unavailable");
+  });
 });

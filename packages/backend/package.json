@@ -13,7 +13,7 @@
   "dependencies": {
     "@opengui/protocol": "workspace:*",
     "@opengui/runtime": "workspace:*",
-    "hono": "^4.12.26"
+    "hono": "^4.12.27"
   },
   "engines": {
     "node": ">=20"

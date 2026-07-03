@@ -8,6 +8,7 @@ Contributors adding a **Harness Adapter** (`packages/runtime/src/adapters/*-brid
 2. Add `HARNESS_BACKEND_META` in [`cli-harness-factory.ts`](../src/agents/cli-harness-factory.ts).
 3. Add bridge under [`packages/runtime/src/adapters/`](../packages/runtime/src/adapters/) and add `BRIDGE_SETUP_BY_HARNESS_ID` in [`harness-bridge-registrations.ts`](../packages/runtime/src/harness-bridge-registrations.ts) (`registerHarnessAdapters` loops managed ids).
 4. CLI probe uses `CLI_COMMAND_BY_HARNESS` via [`server/harness-inventory.ts`](../server/harness-inventory.ts).
+5. Register IPC via `setup*Bridge` in `*-bridge.ts`, delegating channel tables to `*-bridge-ipc.ts` when present (Pi, Claude Code). Codex/Grok use `registerObjectTargetHarnessRpcHandlers` in [`harness-adapter-host.ts`](../packages/runtime/src/adapters/harness-adapter-host.ts).
 
 Optional: `node scripts/scaffold-harness.mjs <id>` prints the checklist.
 

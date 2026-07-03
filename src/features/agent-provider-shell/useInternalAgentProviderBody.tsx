@@ -132,6 +132,7 @@ export function InternalAgentProviderBody({
   });
 
   useAgentProjectBootstrap({
+    openGuiClient,
     workspaceStateReady,
     allHarnesses,
     detachedProject,

@@ -38,6 +38,25 @@ type LoadResourcesFn = (input: {
 
 const catalogCache = new Map<string, HarnessResourceBundle>();
 const inFlight = new Map<string, Promise<HarnessResourceBundle>>();
+const catalogListeners = new Set<() => void>();
+
+function notifyResourceCatalogCache(): void {
+  for (const listener of catalogListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error("resource-catalog-cache listener failed", error);
+    }
+  }
+}
+
+/** Subscribe to cache writes and invalidation (for React useSyncExternalStore). */
+export function subscribeResourceCatalogCache(listener: () => void): () => void {
+  catalogListeners.add(listener);
+  return () => {
+    catalogListeners.delete(listener);
+  };
+}
 
 export function getCachedResourceBundle(catalogKey: string): HarnessResourceBundle | null {
   return catalogCache.get(catalogKey) ?? null;
@@ -54,6 +73,7 @@ export function getCachedProviders(catalogKey: string) {
 
 export function setCachedResourceBundle(catalogKey: string, bundle: HarnessResourceBundle): void {
   catalogCache.set(catalogKey, bundle);
+  notifyResourceCatalogCache();
 }
 
 export function invalidateResourceCatalogCache(input?: {
@@ -62,14 +82,18 @@ export function invalidateResourceCatalogCache(input?: {
 }): void {
   if (!input?.harnessId && !input?.workspaceId) {
     catalogCache.clear();
+    notifyResourceCatalogCache();
     return;
   }
+  let changed = false;
   for (const key of catalogCache.keys()) {
     const [harnessId, workspaceId] = key.split("\u0000");
     if (input.harnessId && harnessId !== input.harnessId) continue;
     if (input.workspaceId && workspaceId !== input.workspaceId) continue;
     catalogCache.delete(key);
+    changed = true;
   }
+  if (changed) notifyResourceCatalogCache();
 }
 
 export async function ensureResourceCatalog(input: {
@@ -109,7 +133,14 @@ export async function ensureResourceCatalog(input: {
       },
     })
     .then((bundle) => {
-      catalogCache.set(catalogKey, bundle);
+      const directoryKnown = Boolean(input.target.directory?.trim());
+      const providerCount = bundle.providersData?.providers?.length ?? 0;
+      const skipEmptyPiCache =
+        input.harnessId === "pi" && !directoryKnown && providerCount === 0 && !input.force;
+      if (!skipEmptyPiCache) {
+        catalogCache.set(catalogKey, bundle);
+        notifyResourceCatalogCache();
+      }
       return bundle;
     })
     .finally(() => {
@@ -126,4 +157,5 @@ export async function ensureResourceCatalog(input: {
 export function resetResourceCatalogCacheForTests(): void {
   catalogCache.clear();
   inFlight.clear();
+  notifyResourceCatalogCache();
 }

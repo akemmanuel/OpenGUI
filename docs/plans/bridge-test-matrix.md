@@ -2,19 +2,19 @@
 
 Regression targets for harness adapters under `packages/runtime/src/adapters/`.
 
-| Issue                             | Harness     | Automated test                                                               |
-| --------------------------------- | ----------- | ---------------------------------------------------------------------------- |
-| #130 duplicate reasoning          | Pi          | `src/pi-bridge-mapping.test.ts` — `syncAssistantParts` single reasoning part |
-| #130 duplicate reasoning          | Codex       | `src/codex-bridge-mapping.test.ts` — one reasoning part per thread item      |
-| #130 duplicate reasoning          | Claude Code | `src/claude-code-bridge-mapping.test.ts` — `makeReasoningPart` index ids     |
-| #128 Session connection not found | OpenCode    | `src/opencode-bridge-mapping.test.ts` — `getConnectionForSession` routing    |
-| #131 Pi Action fail               | Pi          | `src/pi-bridge-abort.test.ts` + extend with action RPC when fixture exists   |
+| Issue                             | Harness     | Automated test                                                                                                 |
+| --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------- |
+| #130 duplicate reasoning          | Pi          | `src/pi-bridge-mapping.test.ts` — `syncAssistantParts` single reasoning part                                   |
+| #130 duplicate reasoning          | Codex       | `src/codex-bridge-mapping.test.ts` — one reasoning part per thread item                                        |
+| #130 duplicate reasoning          | Claude Code | `src/claude-code-bridge-mapping.test.ts` — `makeReasoningPart` index ids                                       |
+| #128 Session connection not found | OpenCode    | `src/opencode-bridge-mapping.test.ts` — `getConnectionForSession` routing                                      |
+| #131 Pi Action fail               | Pi          | `packages/runtime/src/adapters/__tests__/pi-bridge-abort.test.ts` + extend with action RPC when fixture exists |
 
 ## Layout
 
 - **Pure mapping:** `packages/runtime/src/adapters/*-bridge-mapping.ts` + `src/*-bridge-mapping.test.ts`
 - **Shared kit:** `packages/runtime/src/adapters/harness-adapter-kit.ts` + `packages/runtime/src/adapters/__tests__/harness-adapter-kit.test.ts`
-- **Manager behavior:** `src/pi-bridge-abort.test.ts` (Pi `PiBridgeManager`)
+- **Manager behavior:** `packages/runtime/src/adapters/__tests__/pi-bridge-abort.test.ts` (Pi `PiBridgeManager`); streaming replacement in `pi-bridge-session-events.test.ts`
 
 ## CI
 

@@ -59,6 +59,10 @@ import {
   registerObjectTargetHarnessRpcHandlers,
   type ObjectTargetHarnessManager,
 } from "./harness-adapter-host.ts";
+import {
+  createHarnessProjectSlot,
+  ensureHarnessProjectSlot,
+} from "./harness-bridge-project-slot.ts";
 
 const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 const CODEX_PROVIDER_CACHE_TTL_MS = 60_000;
@@ -988,17 +992,12 @@ class CodexBridgeManager {
   }
 
   ensureKnownProject(directory: string | undefined, workspaceId: string | undefined) {
-    const normalized = normalizeDir(directory);
-    if (!normalized) {
-      throw new Error("Codex requires a project directory");
-    }
-    const key = makeProjectKey(workspaceId, normalized);
-    let project = this.projects.get(key);
-    if (!project) {
-      project = { key, directory: normalized, workspaceId };
-      this.projects.set(key, project);
-    }
-    return project;
+    return ensureHarnessProjectSlot(
+      this.projects,
+      { directory, workspaceId },
+      createHarnessProjectSlot,
+      { directoryRequiredMessage: "Codex requires a project directory" },
+    );
   }
 
   async addProject(config: CodexProjectTarget) {
