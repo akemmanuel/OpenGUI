@@ -10,6 +10,7 @@ import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import {
   AuthStorage,
   SessionManager,
+  type CreateAgentSessionRuntimeFactory,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
@@ -33,9 +34,11 @@ import {
   tryPromiseEffect,
 } from "../../../../lib/effect-runtime.ts";
 import { buildAllProvidersData, buildProvidersData } from "./pi-providers.ts";
+import { type PiDaemonInfo, parsePiDaemonInfo } from "./pi-bridge-rpc.ts";
 import {
   invalidatePiSessionListCacheForDirectory,
   listFastPiSessionInfos as listPiSessionInfosFromDisk,
+  type PiFastSessionInfo,
 } from "./pi-session-listing.ts";
 import {
   buildUserParts,
@@ -76,10 +79,20 @@ import type {
   PiLiveSessionLike,
   PiLiveState,
   PiModelRef,
+  PiModelSelection,
   PiNativeSessionEvent,
+  PiProjectTarget,
+  PiProviderAuthPayload,
+  PiSessionCache,
+  PiSessionCreatePayload,
   PiSessionManagerLike,
+  PiStartSessionInput,
 } from "./pi-bridge-types.ts";
-import type { PiBridgeProject, PiLiveSessionContext } from "./pi-project-slot.ts";
+import type {
+  PiBridgeProject,
+  PiLiveSessionContext,
+  PiSessionContextResolution,
+} from "./pi-project-slot.ts";
 
 const PI_DAEMON_STARTUP_TIMEOUT = 15_000;
 const PI_DAEMON_SSE_RECONNECT_DELAY = 1_000;
@@ -91,6 +104,33 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("pi:");
 
+type PiOAuthFlow = {
+  done: boolean;
+  error: Error | null;
+  authorization: { url: string; method: string; instructions: string } | null;
+  resolveManualCode: ((code: string) => void) | null;
+  rejectManualCode: ((error: unknown) => void) | null;
+  promise: Promise<boolean> | null;
+};
+
+type PiToolPartState = {
+  status: string;
+  input: unknown;
+  output?: string;
+  error?: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+  attachments?: unknown[];
+  time?: { start?: number; end?: number };
+};
+
+type PiToolPart = Record<string, unknown> & {
+  type?: string;
+  callID?: string;
+  messageID?: string;
+  state: PiToolPartState;
+};
+
 function visibleUiBranchEntries(sessionManager: PiSessionManagerLike) {
   const branch = sessionManager.getBranch();
   let latestCompaction: PiBranchEntry | null = null;
@@ -100,7 +140,7 @@ function visibleUiBranchEntries(sessionManager: PiSessionManagerLike) {
   if (!latestCompaction) return { entries: branch, seedEntries: [] as PiBranchEntry[] };
   const compactionIdx = branch.findIndex((entry) => entry.id === latestCompaction!.id);
   if (compactionIdx < 0) return { entries: branch, seedEntries: [] };
-  const visible = [];
+  const visible: PiBranchEntry[] = [];
   let foundFirstKept = false;
   let visibleStartIdx = compactionIdx;
   for (let i = 0; i < compactionIdx; i++) {
@@ -114,7 +154,8 @@ function visibleUiBranchEntries(sessionManager: PiSessionManagerLike) {
   }
   visible.push(latestCompaction);
   for (let i = compactionIdx + 1; i < branch.length; i++) {
-    visible.push(branch[i]);
+    const entry = branch[i];
+    if (entry) visible.push(entry);
   }
   return { entries: visible, seedEntries: branch.slice(0, visibleStartIdx) };
 }
@@ -292,7 +333,7 @@ function buildTranscriptFromSessionManager(
           messageId: entry.id,
           timestamp: entryTimestamp,
           text: `[Branch summary]\n${entry.summary}`,
-          model: currentModel,
+          model: currentModel ?? undefined,
           directory,
         }),
       );
@@ -306,7 +347,7 @@ function buildTranscriptFromSessionManager(
           sessionId,
           messageId: entry.id,
           timestamp: entryTimestamp,
-          model: currentModel,
+          model: currentModel ?? undefined,
           directory,
         }),
         buildUserParts(entry.content, entry.id),
@@ -321,6 +362,7 @@ function buildTranscriptFromSessionManager(
     if (entry.type !== "message") continue;
 
     const message = entry.message;
+    if (!message) continue;
     if (message.role === "user") {
       const entryTimestamp =
         new Date(entry.timestamp).getTime() || coerceTimestamp(message.timestamp);
@@ -329,7 +371,7 @@ function buildTranscriptFromSessionManager(
           sessionId,
           messageId: entry.id,
           timestamp: entryTimestamp,
-          model: currentModel,
+          model: currentModel ?? undefined,
           directory,
         }),
         buildUserParts(message.content, entry.id),
@@ -368,7 +410,7 @@ function buildTranscriptFromSessionManager(
         }),
         [],
       );
-      syncAssistantParts(bundle, message);
+      syncAssistantParts(bundle, message as Parameters<typeof syncAssistantParts>[1]);
       for (const part of bundle.parts) {
         part.sessionID = sessionId;
         if (part.type === "tool") {
@@ -442,9 +484,9 @@ export class PiBridgeManager {
     string,
     { projectKey: string; path?: string; directory: string; workspaceId?: string }
   >;
-  sessionInfoCache: Map<string, { size: number; mtimeMs: number; info: unknown }>;
-  directorySessionInfoCache: Map<string, { signature: string; infos: unknown[] }>;
-  pendingOAuth: Map<string, unknown>;
+  sessionInfoCache: Map<string, { size: number; mtimeMs: number; info: PiFastSessionInfo }>;
+  directorySessionInfoCache: Map<string, { signature: string; infos: PiFastSessionInfo[] }>;
+  pendingOAuth: Map<string, PiOAuthFlow>;
 
   constructor(
     getAllWindows: () => Iterable<{ webContents: { send: (ch: string, ...a: unknown[]) => void } }>,
@@ -626,7 +668,7 @@ export class PiBridgeManager {
     if (existing) {
       return existing;
     }
-    const context = {
+    const context: PiLiveSessionContext = {
       runtime,
       session,
       unsubscribe: null,
@@ -648,21 +690,28 @@ export class PiBridgeManager {
       });
     }
     context.unsubscribe = session.subscribe((event) => {
-      this.handleSessionEvent(project, session, event).catch((error) => {
-        this.sendBackendEvent(project, {
-          type: "session.error",
-          error: error instanceof Error ? error.message : String(error),
-          sessionID: session.sessionId,
-        });
-      });
+      this.handleSessionEvent(project, session, event as unknown as PiNativeSessionEvent).catch(
+        (error) => {
+          this.sendBackendEvent(project, {
+            type: "session.error",
+            error: error instanceof Error ? error.message : String(error),
+            sessionID: session.sessionId,
+          });
+        },
+      );
     });
     this.syncLiveSessionStatus(project, session);
     this.syncProjectRuntime(project);
     return context;
   }
 
-  async createRuntime(sessionManager: PiSessionManagerLike & { getCwd(): string }) {
-    const createRuntime = async ({ cwd, sessionManager, sessionStartEvent, agentDir }) => {
+  async createRuntime(sessionManager: SessionManager) {
+    const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+      cwd,
+      sessionManager,
+      sessionStartEvent,
+      agentDir,
+    }) => {
       const services = await createAgentSessionServices({ cwd, agentDir });
       return {
         ...(await createAgentSessionFromServices({
@@ -681,10 +730,15 @@ export class PiBridgeManager {
     });
   }
 
-  async ensureProject(target: { directory?: string; workspaceId?: string } = {}) {
+  async ensureProject(
+    target: { directory?: string; workspaceId?: string } = {},
+  ): Promise<PiBridgeProject> {
     const { key, directory, workspaceId } = resolvePiProjectKeyFromTarget(target);
     const existingProject = this.ensureProjectRuntimeState(this.projects.get(key));
-    if (existingProject?.runtime || existingProject?.liveSessionContexts?.size > 0) {
+    if (
+      existingProject &&
+      (existingProject.runtime || existingProject.liveSessionContexts.size > 0)
+    ) {
       this.syncProjectRuntime(existingProject);
       this.sendConnectionStatus(existingProject, nowConnection({ state: "connected" }));
       return existingProject;
@@ -697,7 +751,7 @@ export class PiBridgeManager {
     const initPromise = (async () => {
       try {
         project.runtime = await this.createRuntime(SessionManager.continueRecent(directory));
-        this.registerLiveSessionContext(project, project.runtime);
+        this.registerLiveSessionContext(project, project.runtime!);
         this.projects.set(key, project);
         this.sendConnectionStatus(project, nowConnection({ state: "connected" }));
         return project;
@@ -715,7 +769,7 @@ export class PiBridgeManager {
     return await initPromise;
   }
 
-  async createSessionContext(project: PiBridgeProject, sessionManager: PiSessionManagerLike) {
+  async createSessionContext(project: PiBridgeProject, sessionManager: SessionManager) {
     const runtime = await this.createRuntime(sessionManager);
     return this.registerLiveSessionContext(project, runtime);
   }
@@ -723,7 +777,7 @@ export class PiBridgeManager {
   async ensureSessionContext(
     sessionId: string,
     target: { directory?: string; workspaceId?: string } = {},
-  ) {
+  ): Promise<PiSessionContextResolution> {
     const project = await this.resolveProjectForSession(sessionId, target || {});
     const liveContext = this.getLiveSessionContext(project, sessionId);
     if (liveContext) {
@@ -766,7 +820,7 @@ export class PiBridgeManager {
       project.sessionUnsubscribe = null;
     }
     project.currentSessionId = session.sessionId;
-    project.currentSessionFile = session.sessionFile;
+    project.currentSessionFile = session.sessionFile ?? null;
     const cache = buildTranscriptFromSessionManager(session.sessionManager, project.directory);
     project.sessionCaches.set(session.sessionId, cache);
     if (!project.liveStateBySessionId.has(session.sessionId)) {
@@ -781,13 +835,15 @@ export class PiBridgeManager {
       });
     }
     project.sessionUnsubscribe = session.subscribe((event) => {
-      this.handleSessionEvent(project, session, event).catch((error) => {
-        this.sendBackendEvent(project, {
-          type: "session.error",
-          error: error instanceof Error ? error.message : String(error),
-          sessionID: session.sessionId,
-        });
-      });
+      this.handleSessionEvent(project, session, event as unknown as PiNativeSessionEvent).catch(
+        (error) => {
+          this.sendBackendEvent(project, {
+            type: "session.error",
+            error: error instanceof Error ? error.message : String(error),
+            sessionID: session.sessionId,
+          });
+        },
+      );
     });
   }
 
@@ -795,14 +851,14 @@ export class PiBridgeManager {
     if (!project.liveStateBySessionId.has(sessionId)) {
       project.liveStateBySessionId.set(sessionId, this.makeLiveState());
     }
-    return project.liveStateBySessionId.get(sessionId);
+    return project.liveStateBySessionId.get(sessionId)!;
   }
 
-  getSessionCache(project: PiBridgeProject, sessionId: string) {
+  getSessionCache(project: PiBridgeProject, sessionId: string): PiSessionCache {
     if (!project.sessionCaches.has(sessionId)) {
       project.sessionCaches.set(sessionId, { messages: [] });
     }
-    return project.sessionCaches.get(sessionId);
+    return project.sessionCaches.get(sessionId)!;
   }
 
   upsertBundle(project: PiBridgeProject, sessionId: string, bundle: PiMessageBundle) {
@@ -820,7 +876,11 @@ export class PiBridgeManager {
     return cache.messages.find((item) => item.info.id === messageId) || null;
   }
 
-  closeOpenReasoning(state, endedAt = Date.now(), exceptContentIndex = null) {
+  closeOpenReasoning(
+    state: PiLiveState,
+    endedAt = Date.now(),
+    exceptContentIndex: number | null = null,
+  ) {
     for (const [contentIndex, time] of state.reasoningTimesByContentIndex) {
       if (contentIndex === exceptContentIndex) continue;
       if (!time || typeof time.start !== "number" || typeof time.end === "number") {
@@ -830,7 +890,7 @@ export class PiBridgeManager {
     }
   }
 
-  markReasoningStart(state, contentIndex, startedAt = Date.now()) {
+  markReasoningStart(state: PiLiveState, contentIndex: number, startedAt = Date.now()) {
     this.closeOpenReasoning(state, startedAt, contentIndex);
     const existing = state.reasoningTimesByContentIndex.get(contentIndex);
     state.reasoningTimesByContentIndex.set(contentIndex, {
@@ -844,7 +904,7 @@ export class PiBridgeManager {
     });
   }
 
-  markReasoningEnd(state, contentIndex, endedAt = Date.now()) {
+  markReasoningEnd(state: PiLiveState, contentIndex: number, endedAt = Date.now()) {
     const existing = state.reasoningTimesByContentIndex.get(contentIndex);
     state.reasoningTimesByContentIndex.set(contentIndex, {
       start:
@@ -858,35 +918,42 @@ export class PiBridgeManager {
     this.closeOpenReasoning(state, endedAt, contentIndex);
   }
 
-  findLatestRealMessageId(sessionManager, role) {
+  findLatestRealMessageId(sessionManager: PiSessionManagerLike, role: string): string | null {
     const branch = sessionManager.getBranch();
     for (let i = branch.length - 1; i >= 0; i--) {
       const entry = branch[i];
-      if (entry.type === "message" && entry.message.role === role) return entry.id;
+      if (!entry) continue;
+      if (entry.type === "message" && entry.message?.role === role) return entry.id;
     }
     return null;
   }
 
-  findRealEntryId(sessionManager, role, timestamp, contentText) {
+  findRealEntryId(
+    sessionManager: PiSessionManagerLike,
+    role: string,
+    timestamp: number,
+    contentText: string,
+  ): string | null {
     const branch = sessionManager.getBranch();
     for (let i = branch.length - 1; i >= 0; i--) {
       const entry = branch[i];
+      if (!entry) continue;
       if (entry.type !== "message") continue;
-      if (entry.message.role !== role) continue;
-      const entryTime = coerceTimestamp(
-        entry.message.timestamp ?? new Date(entry.timestamp).getTime(),
-      );
+      const msg = entry.message;
+      if (!msg || msg.role !== role) continue;
+      const entryTime = coerceTimestamp(msg.timestamp ?? new Date(entry.timestamp).getTime());
       if (Math.abs(entryTime - timestamp) > 4000) continue;
       if (role === "user") {
+        const blocks = Array.isArray(msg.content)
+          ? (msg.content as Array<{ type?: string; text?: string }>)
+          : [];
         const text =
-          typeof entry.message.content === "string"
-            ? entry.message.content
-            : Array.isArray(entry.message.content)
-              ? entry.message.content
-                  .filter((part) => part.type === "text")
-                  .map((part) => part.text || "")
-                  .join("\n")
-              : "";
+          typeof msg.content === "string"
+            ? msg.content
+            : blocks
+                .filter((part) => part.type === "text")
+                .map((part) => part.text || "")
+                .join("\n");
         if (contentText && text !== contentText) continue;
       }
       return entry.id;
@@ -894,7 +961,7 @@ export class PiBridgeManager {
     return null;
   }
 
-  emitCanonicalTranscript(project, session) {
+  emitCanonicalTranscript(project: PiBridgeProject, session: PiLiveSessionLike) {
     const state = this.getLiveState(project, session.sessionId);
     const previous = project.sessionCaches.get(session.sessionId)?.messages ?? [];
     const previousById = new Map(previous.map((bundle) => [bundle.info.id, bundle]));
@@ -904,8 +971,8 @@ export class PiBridgeManager {
     const pendingStreaming = (state.pendingAssistantResolutions || []).filter((pending) =>
       previousById.has(pending.syntheticId),
     );
-    const replacementIds = new Set();
-    const replacedSyntheticIds = new Set();
+    const replacementIds = new Set<string>();
+    const replacedSyntheticIds = new Set<string>();
     const newCanonicalAssistants = cache.messages.filter(
       (bundle) => bundle.info.role === "assistant" && !previousById.has(bundle.info.id),
     );
@@ -943,7 +1010,13 @@ export class PiBridgeManager {
     }
   }
 
-  emitRealMessage(project, session, role, timestamp, contentText) {
+  emitRealMessage(
+    project: PiBridgeProject,
+    session: PiLiveSessionLike,
+    role: string,
+    timestamp: number,
+    contentText: string,
+  ) {
     setTimeout(() => {
       try {
         const realId = this.findRealEntryId(session.sessionManager, role, timestamp, contentText);
@@ -962,11 +1035,11 @@ export class PiBridgeManager {
     }, 0);
   }
 
-  flushPendingAssistantResolution(project, session) {
+  flushPendingAssistantResolution(project: PiBridgeProject, session: PiLiveSessionLike) {
     this.emitCanonicalTranscript(project, session);
   }
 
-  findCurrentAssistantBundle(project, sessionId, state) {
+  findCurrentAssistantBundle(project: PiBridgeProject, sessionId: string, state: PiLiveState) {
     return findCurrentAssistantBundleInCache(project, sessionId, state);
   }
 
@@ -1030,26 +1103,33 @@ export class PiBridgeManager {
     }
 
     if (event.type === "message_start") {
-      handlePiAssistantMessageStart(this, project, session, event, state, project.directory);
+      handlePiAssistantMessageStart(
+        this,
+        project,
+        session,
+        event as Parameters<typeof handlePiAssistantMessageStart>[3],
+        state,
+        project.directory,
+      );
       return;
     }
 
-    if (event.type === "message_update" && event.message.role === "assistant") {
+    if (event.type === "message_update") {
+      const message = event.message;
+      const ame = event.assistantMessageEvent;
+      if (!message || message.role !== "assistant" || !ame) return;
       const messageId = state.currentAssistantMessageId;
       if (!messageId) return;
       const eventAt = Date.now();
-      if (event.assistantMessageEvent.type === "thinking_start") {
-        this.markReasoningStart(state, event.assistantMessageEvent.contentIndex, eventAt);
-      } else if (event.assistantMessageEvent.type === "thinking_delta") {
-        if (!state.reasoningTimesByContentIndex.has(event.assistantMessageEvent.contentIndex)) {
-          this.markReasoningStart(state, event.assistantMessageEvent.contentIndex, eventAt);
+      if (ame.type === "thinking_start") {
+        this.markReasoningStart(state, ame.contentIndex, eventAt);
+      } else if (ame.type === "thinking_delta") {
+        if (!state.reasoningTimesByContentIndex.has(ame.contentIndex)) {
+          this.markReasoningStart(state, ame.contentIndex, eventAt);
         }
-      } else if (event.assistantMessageEvent.type === "thinking_end") {
-        this.markReasoningEnd(state, event.assistantMessageEvent.contentIndex, eventAt);
-      } else if (
-        event.assistantMessageEvent.type === "text_start" ||
-        event.assistantMessageEvent.type === "toolcall_start"
-      ) {
+      } else if (ame.type === "thinking_end") {
+        this.markReasoningEnd(state, ame.contentIndex, eventAt);
+      } else if (ame.type === "text_start" || ame.type === "toolcall_start") {
         this.closeOpenReasoning(state, eventAt);
       }
       const bundle = this.findBundle(project, sessionId, messageId);
@@ -1057,13 +1137,17 @@ export class PiBridgeManager {
       bundle.info = createAssistantInfo({
         sessionId,
         messageId,
-        timestamp: coerceTimestamp(event.message.timestamp),
-        message: event.message,
+        timestamp: coerceTimestamp(message.timestamp),
+        message,
         directory: project.directory,
         parentID: bundle.info.parentID,
         createdAt: bundle.info.time.created,
       });
-      syncAssistantParts(bundle, event.message, state.reasoningTimesByContentIndex);
+      syncAssistantParts(
+        bundle,
+        message as Parameters<typeof syncAssistantParts>[1],
+        state.reasoningTimesByContentIndex,
+      );
       this.upsertBundle(project, sessionId, bundle);
       this.sendBackendEvent(project, { type: "message.updated", message: bundle.info });
       for (const part of bundle.parts) {
@@ -1073,7 +1157,13 @@ export class PiBridgeManager {
     }
 
     if (event.type === "tool_execution_start") {
-      handlePiToolExecutionStart(this, project, sessionId, state, event);
+      handlePiToolExecutionStart(
+        this,
+        project,
+        sessionId,
+        state,
+        event as Parameters<typeof handlePiToolExecutionStart>[4],
+      );
       return;
     }
 
@@ -1083,12 +1173,13 @@ export class PiBridgeManager {
       const { bundle } = assistantContext;
       const part = bundle.parts.find(
         (item) => item.type === "tool" && item.callID === event.toolCallId,
-      );
+      ) as PiToolPart | undefined;
       if (!part) return;
+      const previousState = part.state;
       const partialOutput = event.partialResult?.content
         ? toolResultContentToText(event.partialResult.content)
-        : "output" in part.state && typeof part.state.output === "string"
-          ? part.state.output
+        : typeof previousState.output === "string"
+          ? previousState.output
           : undefined;
       part.state = {
         status: "running",
@@ -1097,10 +1188,10 @@ export class PiBridgeManager {
         ...(typeof partialOutput === "string" ? { output: partialOutput } : {}),
         metadata:
           event.partialResult?.details && typeof event.partialResult.details === "object"
-            ? event.partialResult.details
+            ? (event.partialResult.details as Record<string, unknown>)
             : {},
         time: {
-          start: part.state.time?.start ?? Date.now(),
+          start: previousState.time?.start ?? Date.now(),
         },
       };
       this.upsertBundle(project, sessionId, bundle);
@@ -1114,13 +1205,14 @@ export class PiBridgeManager {
       const { bundle } = assistantContext;
       const part = bundle.parts.find(
         (item) => item.type === "tool" && item.callID === event.toolCallId,
-      );
+      ) as PiToolPart | undefined;
       if (!part) return;
+      const previousState = part.state;
       const attachments = [];
       let imageIndex = 0;
       for (const block of Array.isArray(event.result?.content) ? event.result.content : []) {
         if (block?.type === "image") {
-          const filePart = piImageBlockToFilePart(block, part.messageID, imageIndex);
+          const filePart = piImageBlockToFilePart(block, part.messageID!, imageIndex);
           if (filePart) {
             filePart.sessionID = sessionId;
             attachments.push(filePart);
@@ -1131,30 +1223,30 @@ export class PiBridgeManager {
       part.state = event.isError
         ? {
             status: "error",
-            input: part.state.input || {},
+            input: previousState.input || {},
             error: event.result?.content
               ? toolResultContentToText(event.result.content)
               : stringifyUnknown(event.result?.details) || "Tool failed",
             attachments: attachments.length > 0 ? attachments : undefined,
             time: {
-              start: part.state.time?.start ?? Date.now(),
+              start: previousState.time?.start ?? Date.now(),
               end: Date.now(),
             },
           }
         : {
             status: "completed",
-            input: part.state.input || {},
+            input: previousState.input || {},
             output: event.result?.content
               ? toolResultContentToText(event.result.content)
               : stringifyUnknown(event.result?.details),
             title: event.toolName,
             metadata:
               event.result?.details && typeof event.result.details === "object"
-                ? event.result.details
+                ? (event.result.details as Record<string, unknown>)
                 : {},
             attachments: attachments.length > 0 ? attachments : undefined,
             time: {
-              start: part.state.time?.start ?? Date.now(),
+              start: previousState.time?.start ?? Date.now(),
               end: Date.now(),
             },
           };
@@ -1164,28 +1256,31 @@ export class PiBridgeManager {
     }
 
     if (event.type === "message_end") {
-      if (event.message.role === "user") {
+      const message = event.message;
+      if (!message) return;
+      if (message.role === "user") {
+        const blocks = Array.isArray(message.content)
+          ? (message.content as Array<{ type?: string; text?: string }>)
+          : [];
         this.emitRealMessage(
           project,
           session,
           "user",
-          coerceTimestamp(event.message.timestamp),
-          typeof event.message.content === "string"
-            ? event.message.content
-            : Array.isArray(event.message.content)
-              ? event.message.content
-                  .filter((part) => part.type === "text")
-                  .map((part) => part.text || "")
-                  .join("\n")
-              : "",
+          coerceTimestamp(message.timestamp),
+          typeof message.content === "string"
+            ? message.content
+            : blocks
+                .filter((p) => p.type === "text")
+                .map((p) => p.text || "")
+                .join("\n"),
         );
         return;
       }
-      if (event.message.role === "assistant") {
-        if (event.message.stopReason === "error" && event.message.errorMessage) {
+      if (message.role === "assistant") {
+        if (message.stopReason === "error" && message.errorMessage) {
           this.sendBackendEvent(project, {
             type: "session.error",
-            error: event.message.errorMessage,
+            error: message.errorMessage,
             sessionID: sessionId,
           });
         }
@@ -1196,14 +1291,14 @@ export class PiBridgeManager {
     }
   }
 
-  getListProject(target = {}) {
+  getListProject(target: PiProjectTarget = {}) {
     const { key, directory, workspaceId } = resolvePiProjectKeyFromTarget(target);
     const existing = this.ensureProjectRuntimeState(this.projects.get(key));
     if (existing) return existing;
     return createEmptyPiProjectShell(key, directory, workspaceId);
   }
 
-  async resolveProjectForSession(sessionId, target = {}) {
+  async resolveProjectForSession(sessionId: string, target: PiProjectTarget = {}) {
     return resolvePiProjectForSession(
       {
         projects: this.projects,
@@ -1216,9 +1311,12 @@ export class PiBridgeManager {
     );
   }
 
-  mergeLivePiSessionsForProject(project, diskSessions) {
+  mergeLivePiSessionsForProject(
+    project: PiBridgeProject,
+    diskSessions: ReturnType<typeof normalizePiSession>[],
+  ) {
     const diskIds = new Set(diskSessions.map((session) => toRawSessionId(session.id)));
-    const liveExtras = [];
+    const liveExtras: ReturnType<typeof normalizePiSession>[] = [];
     for (const [sessionId, context] of project.liveSessionContexts) {
       if (diskIds.has(sessionId)) continue;
       const session = context.runtime.session;
@@ -1241,7 +1339,7 @@ export class PiBridgeManager {
     );
   }
 
-  async listSessions(target) {
+  async listSessions(target?: PiProjectTarget) {
     if (target?.directory) {
       const project = this.getListProject(target);
       const infos = await listPiSessionInfosFromDisk(
@@ -1282,7 +1380,7 @@ export class PiBridgeManager {
     return sessions.sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
   }
 
-  async getSessionById(sessionId, target) {
+  async getSessionById(sessionId: string, target?: PiProjectTarget) {
     const rawSessionId = toRawSessionId(sessionId);
     const project = await this.resolveProjectForSession(rawSessionId, target || {});
     await this.listSessions({ directory: project.directory, workspaceId: project.workspaceId });
@@ -1292,25 +1390,32 @@ export class PiBridgeManager {
       const firstUserEntry = manager
         .getBranch()
         .find((entry) => entry.type === "message" && entry.message.role === "user");
+      const firstUserMessage =
+        firstUserEntry?.type === "message"
+          ? (firstUserEntry.message as { content?: unknown })
+          : undefined;
+      const firstContent = firstUserMessage?.content;
+      const firstBlocks = Array.isArray(firstContent)
+        ? (firstContent as Array<{ type?: string; text?: string }>)
+        : [];
+      const header = manager.getHeader();
       return normalizePiSession(
         {
           id: rawSessionId,
           cwd: project.directory,
           name: manager.getSessionName(),
-          created: new Date(manager.getHeader().timestamp),
+          created: header ? new Date(header.timestamp) : new Date(),
           modified: new Date(),
           firstMessage:
-            firstUserEntry?.type === "message"
-              ? typeof firstUserEntry.message.content === "string"
-                ? firstUserEntry.message.content
-                : Array.isArray(firstUserEntry.message.content)
-                  ? firstUserEntry.message.content
-                      .filter((part) => part.type === "text")
-                      .map((part) => part.text || "")
-                      .join("\n")
-                  : ""
-              : "",
-          model: inferPiSessionModelFromManager(manager),
+            typeof firstContent === "string"
+              ? firstContent
+              : firstBlocks
+                  .filter((part) => part.type === "text")
+                  .map((part) => part.text || "")
+                  .join("\n"),
+          model: inferPiSessionModelFromManager(
+            manager as unknown as Parameters<typeof inferPiSessionModelFromManager>[0],
+          ),
         },
         {
           directory: project.directory,
@@ -1325,16 +1430,16 @@ export class PiBridgeManager {
     return sessions.find((session) => toRawSessionId(session.id) === rawSessionId) || null;
   }
 
-  resolveRealMessageId(project, sessionId, messageId) {
+  resolveRealMessageId(project: PiBridgeProject, sessionId: string, messageId: string) {
     const state = this.getLiveState(project, sessionId);
     return state.syntheticToReal?.get(messageId) || messageId;
   }
 
-  async addProject(config) {
+  async addProject(config: PiProjectTarget) {
     await this.ensureProject(config);
   }
 
-  async removeProject(target) {
+  async removeProject(target: PiProjectTarget) {
     const directory = normalizeDir(target?.directory);
     const key = directory ? makeProjectKey(target?.workspaceId, directory) : null;
     const pendingInit = key ? this.projectInitPromises.get(key) : null;
@@ -1378,7 +1483,7 @@ export class PiBridgeManager {
     }
   }
 
-  async createSession(input = {}) {
+  async createSession(input: PiSessionCreatePayload = {}) {
     const project = await this.ensureProject(input);
     const context = await this.createSessionContext(
       project,
@@ -1413,7 +1518,7 @@ export class PiBridgeManager {
     return session;
   }
 
-  async startSession(input) {
+  async startSession(input: PiStartSessionInput) {
     const project = await this.ensureProject(input);
     const context = await this.createSessionContext(
       project,
@@ -1445,22 +1550,24 @@ export class PiBridgeManager {
       session,
     });
     this.setSessionActivity(project, sessionRef.sessionId, "busy");
-    void this.dispatchSessionPrompt(project, sessionRef, input.text, input.images).catch(() => {});
+    void this.dispatchSessionPrompt(project, sessionRef, input.text ?? "", input.images).catch(
+      () => {},
+    );
     return session;
   }
 
-  normalizeImages(images) {
+  normalizeImages(images: unknown) {
     return (Array.isArray(images) ? images : [])
-      .map((image) => parseDataUrl(image))
+      .map((image) => parseDataUrl(image as string))
       .filter(Boolean)
       .map((image) => ({
-        type: "image",
-        data: image.data,
-        mimeType: image.mimeType,
+        type: "image" as const,
+        data: image!.data,
+        mimeType: image!.mimeType,
       }));
   }
 
-  handlePromptFailure(project, sessionId, error) {
+  handlePromptFailure(project: PiBridgeProject, sessionId: string, error: unknown) {
     this.sendBackendEvent(project, {
       type: "session.error",
       error: error instanceof Error ? error.message : String(error),
@@ -1481,13 +1588,18 @@ export class PiBridgeManager {
     }
   }
 
-  dispatchSessionPrompt(project, session, text, images) {
+  dispatchSessionPrompt(
+    project: PiBridgeProject,
+    session: PiLiveSessionLike,
+    text: string,
+    images: unknown,
+  ) {
     const normalizedImages = this.normalizeImages(images);
     let accepted = false;
     let settled = false;
-    let resolveAccepted;
-    let rejectAccepted;
-    const acceptedPromise = new Promise((resolve, reject) => {
+    let resolveAccepted: () => void;
+    let rejectAccepted: (error: unknown) => void;
+    const acceptedPromise = new Promise<void>((resolve, reject) => {
       resolveAccepted = resolve;
       rejectAccepted = reject;
     });
@@ -1496,21 +1608,21 @@ export class PiBridgeManager {
       settled = true;
       resolveAccepted();
     };
-    const settleReject = (error) => {
+    const settleReject = (error: unknown) => {
       if (settled) return;
       settled = true;
       rejectAccepted(error);
     };
     const promptPromise = session.prompt(text, {
       images: normalizedImages,
-      preflightResult: (success) => {
+      preflightResult: (success: boolean) => {
         if (success) {
           accepted = true;
           settleResolve();
         }
       },
     });
-    void promptPromise.catch((error) => {
+    void promptPromise.catch((error: unknown) => {
       this.handlePromptFailure(project, session.sessionId, error);
       if (!accepted) {
         settleReject(error);
@@ -1519,7 +1631,10 @@ export class PiBridgeManager {
     return acceptedPromise;
   }
 
-  async applySelectedModel(session, selectedModel) {
+  async applySelectedModel(
+    session: PiLiveSessionLike,
+    selectedModel: PiModelSelection | undefined,
+  ) {
     if (!selectedModel?.providerID || !selectedModel?.modelID) return;
     session.modelRegistry.refresh?.();
     const availableModels = session.modelRegistry.getAvailable();
@@ -1532,18 +1647,18 @@ export class PiBridgeManager {
     await session.setModel(model);
   }
 
-  applySelectedVariant(session, variant) {
+  applySelectedVariant(session: PiLiveSessionLike, variant: string | undefined) {
     if (typeof variant !== "string" || !variant.trim()) return;
     if (typeof session.setThinkingLevel !== "function") return;
     const model = session.model;
     if (model) {
       const supported = getSupportedThinkingLevels(model);
-      if (!supported.includes(variant)) return;
+      if (!supported.includes(variant as never)) return;
     }
-    session.setThinkingLevel(variant);
+    session.setThinkingLevel(variant as never);
   }
 
-  async deleteSession(sessionId, target) {
+  async deleteSession(sessionId: string, target?: PiProjectTarget) {
     const rawSessionId = toRawSessionId(sessionId);
     const project = await this.resolveProjectForSession(rawSessionId, target || {});
     let info = this.sessionIndex.get(rawSessionId);
@@ -1574,7 +1689,7 @@ export class PiBridgeManager {
     return true;
   }
 
-  async updateSession(sessionId, title, target) {
+  async updateSession(sessionId: string, title: string, target?: PiProjectTarget) {
     const rawSessionId = toRawSessionId(sessionId);
     const live = this.findLiveSessionContext(rawSessionId);
     if (live) {
@@ -1625,12 +1740,13 @@ export class PiBridgeManager {
     }
     const manager = SessionManager.open(info.path, undefined, project.directory);
     manager.appendSessionInfo(title);
+    const header = manager.getHeader();
     const session = normalizePiSession(
       {
         id: rawSessionId,
         cwd: project.directory,
         name: title,
-        created: new Date(manager.getHeader().timestamp),
+        created: header ? new Date(header.timestamp) : new Date(),
         modified: new Date(),
         firstMessage: title,
       },
@@ -1645,11 +1761,11 @@ export class PiBridgeManager {
     return session;
   }
 
-  async getSessionStatuses(target) {
+  async getSessionStatuses(target?: PiProjectTarget) {
     if (target?.directory) {
       const project = await this.ensureProject(target);
       const sessions = await this.listSessions(target);
-      const statuses = {};
+      const statuses: Record<string, { type: string }> = {};
       for (const session of sessions) {
         const rawSessionId = toRawSessionId(session.id);
         const liveContext = this.getLiveSessionContext(project, rawSessionId);
@@ -1669,7 +1785,7 @@ export class PiBridgeManager {
       }
       return statuses;
     }
-    const statuses = {};
+    const statuses: Record<string, { type: string }> = {};
     for (const project of this.projects.values()) {
       const sessions = await this.listSessions({
         directory: project.directory,
@@ -1696,7 +1812,7 @@ export class PiBridgeManager {
     return statuses;
   }
 
-  async forkSession(sessionId, messageID, target) {
+  async forkSession(sessionId: string, messageID: string | undefined, target?: PiProjectTarget) {
     const rawSessionId = toRawSessionId(sessionId);
     const project = await this.resolveProjectForSession(rawSessionId, target || {});
     let info = this.sessionIndex.get(rawSessionId);
@@ -1722,7 +1838,7 @@ export class PiBridgeManager {
       }
       targetLeafId = selectedEntry.parentId;
     }
-    const forkedPath = sourceManager.createBranchedSession(targetLeafId);
+    const forkedPath = sourceManager.createBranchedSession(targetLeafId!);
     if (!forkedPath) {
       throw new Error("Failed to create forked session");
     }
@@ -1765,11 +1881,11 @@ export class PiBridgeManager {
     return true;
   }
 
-  getOAuthFlowKey(target, providerID) {
+  getOAuthFlowKey(target: PiProjectTarget | undefined, providerID: string) {
     return `${makeProjectKey(target?.workspaceId, target?.directory)}:${providerID}`;
   }
 
-  async getProviders(target) {
+  async getProviders(target?: PiProjectTarget) {
     if (target?.directory) {
       const project = await this.ensureProject(target);
       const runtime =
@@ -1793,7 +1909,7 @@ export class PiBridgeManager {
     return buildProvidersData(models);
   }
 
-  async listAllProviders(target) {
+  async listAllProviders(target?: PiProjectTarget) {
     const project = await this.ensureProject(target);
     const runtime =
       project.runtime || project.liveSessionContexts.values().next().value?.runtime || null;
@@ -1803,8 +1919,8 @@ export class PiBridgeManager {
     return buildAllProvidersData(runtime.services.modelRegistry);
   }
 
-  async getProviderAuthMethods(_target) {
-    const methods = {};
+  async getProviderAuthMethods(_target?: PiProjectTarget) {
+    const methods: Record<string, Array<{ type: string; label: string }>> = {};
     for (const provider of this.getAuthStorage().getOAuthProviders()) {
       methods[provider.id] = [
         {
@@ -1816,24 +1932,24 @@ export class PiBridgeManager {
     return methods;
   }
 
-  async connectProvider(target, providerID, auth) {
+  async connectProvider(_target: PiProjectTarget, providerID: string, auth: PiProviderAuthPayload) {
     const authStorage = this.getAuthStorage();
     if (auth?.type === "api") {
-      authStorage.set(providerID, { type: "api_key", key: auth.key });
+      authStorage.set(providerID, { type: "api_key", key: auth.key as string });
       await this.reloadProviderState();
       return true;
     }
     throw new Error(`Unsupported Pi provider auth type: ${auth?.type || "unknown"}`);
   }
 
-  async disconnectProvider(_target, providerID) {
+  async disconnectProvider(_target: PiProjectTarget, providerID: string) {
     const authStorage = this.getAuthStorage();
     authStorage.remove(providerID);
     await this.reloadProviderState();
     return true;
   }
 
-  async oauthAuthorize(target, providerID) {
+  async oauthAuthorize(target: PiProjectTarget, providerID: string) {
     const provider = getOAuthProvider(providerID);
     if (!provider) {
       throw new Error(`Pi OAuth provider not found: ${providerID}`);
@@ -1844,14 +1960,14 @@ export class PiBridgeManager {
       return existing.authorization;
     }
 
-    let resolveManualCode;
-    let rejectManualCode;
-    const manualCodePromise = new Promise((resolve, reject) => {
+    let resolveManualCode!: (code: string) => void;
+    let rejectManualCode!: (error: unknown) => void;
+    const manualCodePromise = new Promise<string>((resolve, reject) => {
       resolveManualCode = resolve;
       rejectManualCode = reject;
     });
 
-    const flow = {
+    const flow: PiOAuthFlow = {
       done: false,
       error: null,
       authorization: null,
@@ -1865,14 +1981,17 @@ export class PiBridgeManager {
       .login(providerID, {
         onAuth: (info) => {
           flow.authorization = {
-            url: typeof info === "string" ? info : info.url,
+            url: info.url,
             method: provider.usesCallbackServer ? "code" : "auto",
             instructions:
-              (typeof info === "string" ? "" : info.instructions) ||
+              info.instructions ||
               (provider.usesCallbackServer
                 ? "Complete login in your browser, then paste the final redirect URL or authorization code here."
                 : "Complete login in your browser to continue."),
           };
+        },
+        onDeviceCode: () => {
+          // Device-code flow is not exposed through this bridge path.
         },
         onPrompt: async () => {
           if (!flow.authorization) return "";
@@ -1881,13 +2000,14 @@ export class PiBridgeManager {
         onManualCodeInput: provider.usesCallbackServer
           ? async () => String(await manualCodePromise)
           : undefined,
+        onSelect: async () => undefined,
       })
       .then(async () => {
         flow.done = true;
         await this.reloadProviderState();
         return true;
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         flow.error = error instanceof Error ? error : new Error(String(error));
         throw flow.error;
       });
@@ -1903,7 +2023,12 @@ export class PiBridgeManager {
     return flow.authorization;
   }
 
-  async oauthCallback(target, providerID, _method, code) {
+  async oauthCallback(
+    target: PiProjectTarget,
+    providerID: string,
+    _method: string,
+    code: string | undefined,
+  ) {
     const flowKey = this.getOAuthFlowKey(target, providerID);
     const flow = this.pendingOAuth.get(flowKey);
     if (!flow) {
@@ -1939,7 +2064,7 @@ export class PiBridgeManager {
     return [];
   }
 
-  async getCommands(target) {
+  async getCommands(target?: PiProjectTarget) {
     const project = target?.directory
       ? await this.ensureProject(target)
       : this.projects.values().next().value;
@@ -1972,7 +2097,7 @@ export class PiBridgeManager {
     return [...extensionCommands, ...promptCommands, ...skillCommands];
   }
 
-  async getMessages(sessionId, _options, target) {
+  async getMessages(sessionId: string, _options: unknown, target?: PiProjectTarget) {
     const rawSessionId = toRawSessionId(sessionId);
     const project = await this.resolveProjectForSession(rawSessionId, target || {});
     const liveContext = this.getLiveSessionContext(project, rawSessionId);
@@ -2000,7 +2125,16 @@ export class PiBridgeManager {
     };
   }
 
-  async prompt(sessionId, text, images, model, _agent, variant, directory, workspaceId) {
+  async prompt(
+    sessionId: string,
+    text: string,
+    images: unknown,
+    model: PiModelSelection | undefined,
+    _agent: string | undefined,
+    variant: string | undefined,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     const rawSessionId = toRawSessionId(sessionId);
     const { project, session } = await this.ensureSessionContext(rawSessionId, {
       directory,
@@ -2014,7 +2148,7 @@ export class PiBridgeManager {
     return true;
   }
 
-  async abort(sessionId, directory, workspaceId) {
+  async abort(sessionId: string, directory: string | undefined, workspaceId: string | undefined) {
     const rawSessionId = toRawSessionId(sessionId);
     const project = await this.resolveProjectForSession(rawSessionId, { directory, workspaceId });
     const liveContext = this.getLiveSessionContext(project, rawSessionId);
@@ -2059,7 +2193,12 @@ export class PiBridgeManager {
     return true;
   }
 
-  async summarizeSession(sessionId, model, directory, workspaceId) {
+  async summarizeSession(
+    sessionId: string,
+    model: PiModelSelection | undefined,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     const rawSessionId = toRawSessionId(sessionId);
     const { session } = await this.ensureSessionContext(rawSessionId, { directory, workspaceId });
     if (model) {
@@ -2068,7 +2207,16 @@ export class PiBridgeManager {
     await session.compact();
   }
 
-  async sendCommand(sessionId, command, args, model, _agent, _variant, directory, workspaceId) {
+  async sendCommand(
+    sessionId: string,
+    command: string,
+    args: string,
+    model: PiModelSelection | undefined,
+    _agent: string | undefined,
+    _variant: string | undefined,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     const text = `/${command}${args ? ` ${args}` : ""}`;
     return await this.prompt(
       sessionId,
@@ -2083,12 +2231,12 @@ export class PiBridgeManager {
   }
 }
 
-function daemonInfoPath(userData) {
+function daemonInfoPath(userData: string | undefined): string {
   return join(userData || process.cwd(), "pi-daemon.json");
 }
 
-async function findFreePort() {
-  return await new Promise((resolve, reject) => {
+async function findFreePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
     const server = createNetServer();
     server.unref();
     server.on("error", reject);
@@ -2100,25 +2248,38 @@ async function findFreePort() {
   });
 }
 
-async function readDaemonInfo(path) {
+async function readDaemonInfo(path: string): Promise<PiDaemonInfo | null> {
   try {
-    return JSON.parse(await readFile(path, "utf8"));
+    return parsePiDaemonInfo(JSON.parse(await readFile(path, "utf8")));
   } catch {
     return null;
   }
 }
 
-async function writeDaemonInfo(path, info) {
+async function writeDaemonInfo(path: string, info: PiDaemonInfo): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, JSON.stringify(info, null, 2), "utf8");
 }
 
-async function fetchDaemonJson(baseUrl, token, path, options = {}) {
+type PiDaemonFetchOptions = {
+  method?: string;
+  body?: string;
+  timeout?: number;
+  headers?: Record<string, string>;
+};
+
+async function fetchDaemonJson(
+  baseUrl: string,
+  token: string,
+  path: string,
+  options: PiDaemonFetchOptions = {},
+): Promise<Record<string, unknown>> {
   const response = await runEffect(
     timeoutEffect(
       tryPromiseEffect((signal) =>
         fetch(`${baseUrl}${path}`, {
-          ...options,
+          method: (options.method as RequestInit["method"]) ?? undefined,
+          body: options.body,
           signal,
           headers: {
             "content-type": "application/json",
@@ -2139,11 +2300,24 @@ async function fetchDaemonJson(baseUrl, token, path, options = {}) {
     const detail = body.trim().slice(0, 800);
     throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
   }
-  return await response.json();
+  return (await response.json()) as Record<string, unknown>;
 }
 
+type PiDaemonAllWindows = () => Iterable<{
+  webContents: { send: (channel: string, ...args: unknown[]) => void };
+}>;
+
 class PiDaemonClient {
-  constructor(getAllWindows, options = {}) {
+  emitBridgeEvent: (event: unknown) => void;
+  userData: string;
+  infoPath: string;
+  info: PiDaemonInfo | null;
+  startPromise: Promise<PiDaemonInfo> | null;
+  eventAbort: AbortController | null;
+  eventReconnectTimer: ReturnType<typeof setTimeout> | null;
+  eventStarted: boolean;
+
+  constructor(getAllWindows: PiDaemonAllWindows, options: { userData?: string } = {}) {
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("pi", getAllWindows);
     this.userData = options.userData || process.cwd();
     this.infoPath = daemonInfoPath(this.userData);
@@ -2154,11 +2328,11 @@ class PiDaemonClient {
     this.eventStarted = false;
   }
 
-  async addProject(config) {
+  async addProject(config: PiProjectTarget) {
     return await this.call("addProject", [config]);
   }
 
-  async removeProject(target) {
+  async removeProject(target: PiProjectTarget) {
     return await this.call("removeProject", [target]);
   }
 
@@ -2181,59 +2355,59 @@ class PiDaemonClient {
     return true;
   }
 
-  async listSessions(target) {
+  async listSessions(target: PiProjectTarget) {
     return await this.call("listSessions", [target]);
   }
 
-  async createSession(input) {
+  async createSession(input: PiSessionCreatePayload) {
     return await this.call("createSession", [input]);
   }
 
-  async deleteSession(sessionId, target) {
+  async deleteSession(sessionId: string, target: PiProjectTarget) {
     return await this.call("deleteSession", [sessionId, target]);
   }
 
-  async updateSession(sessionId, title, target) {
+  async updateSession(sessionId: string, title: string, target: PiProjectTarget) {
     return await this.call("updateSession", [sessionId, title, target]);
   }
 
-  async getSessionStatuses(target) {
+  async getSessionStatuses(target: PiProjectTarget) {
     return await this.call("getSessionStatuses", [target]);
   }
 
-  async forkSession(sessionId, messageID, target) {
+  async forkSession(sessionId: string, messageID: string, target: PiProjectTarget) {
     return await this.call("forkSession", [sessionId, messageID, target]);
   }
 
-  async getProviders(target) {
+  async getProviders(target: PiProjectTarget) {
     return await this.call("getProviders", [target]);
   }
 
-  async listAllProviders(target) {
+  async listAllProviders(target: PiProjectTarget) {
     return await this.call("listAllProviders", [target]);
   }
 
-  async getProviderAuthMethods(target) {
+  async getProviderAuthMethods(target: PiProjectTarget) {
     return await this.call("getProviderAuthMethods", [target]);
   }
 
-  async connectProvider(target, providerID, auth) {
+  async connectProvider(target: PiProjectTarget, providerID: string, auth: PiProviderAuthPayload) {
     return await this.call("connectProvider", [target, providerID, auth]);
   }
 
-  async disconnectProvider(target, providerID) {
+  async disconnectProvider(target: PiProjectTarget, providerID: string) {
     return await this.call("disconnectProvider", [target, providerID]);
   }
 
-  async oauthAuthorize(target, providerID, method) {
+  async oauthAuthorize(target: PiProjectTarget, providerID: string, method: string) {
     return await this.call("oauthAuthorize", [target, providerID, method]);
   }
 
-  async oauthCallback(target, providerID, method, code) {
+  async oauthCallback(target: PiProjectTarget, providerID: string, method: string, code: string) {
     return await this.call("oauthCallback", [target, providerID, method, code]);
   }
 
-  async disposeProviderInstance(target) {
+  async disposeProviderInstance(target: PiProjectTarget) {
     return await this.call("disposeProviderInstance", [target]);
   }
 
@@ -2241,19 +2415,28 @@ class PiDaemonClient {
     return await this.call("getAgents", []);
   }
 
-  async getCommands(target) {
+  async getCommands(target: PiProjectTarget) {
     return await this.call("getCommands", [target]);
   }
 
-  async getMessages(sessionId, options, target) {
+  async getMessages(sessionId: string, options: unknown, target: PiProjectTarget) {
     return await this.call("getMessages", [sessionId, options, target]);
   }
 
-  async startSession(input) {
+  async startSession(input: PiStartSessionInput) {
     return await this.call("startSession", [input]);
   }
 
-  async prompt(sessionId, text, images, model, agent, variant, directory, workspaceId) {
+  async prompt(
+    sessionId: string,
+    text: string,
+    images: unknown,
+    model: PiModelSelection | undefined,
+    agent: string | undefined,
+    variant: string | undefined,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     return await this.call("prompt", [
       sessionId,
       text,
@@ -2266,11 +2449,20 @@ class PiDaemonClient {
     ]);
   }
 
-  async abort(sessionId, directory, workspaceId) {
+  async abort(sessionId: string, directory: string | undefined, workspaceId: string | undefined) {
     return await this.call("abort", [sessionId, directory, workspaceId]);
   }
 
-  async sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId) {
+  async sendCommand(
+    sessionId: string,
+    command: string,
+    args: string,
+    model: PiModelSelection | undefined,
+    agent: string | undefined,
+    variant: string | undefined,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     return await this.call("sendCommand", [
       sessionId,
       command,
@@ -2283,22 +2475,32 @@ class PiDaemonClient {
     ]);
   }
 
-  async summarizeSession(sessionId, model, directory, workspaceId) {
+  async summarizeSession(
+    sessionId: string,
+    model: PiModelSelection | undefined,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     return await this.call("summarizeSession", [sessionId, model, directory, workspaceId]);
   }
 
-  async call(method, args) {
+  async call(method: string, args: unknown[]): Promise<unknown> {
     const info = await this.ensureDaemon();
     const result = await fetchDaemonJson(info.baseUrl, info.token, "/rpc", {
       method: "POST",
       body: JSON.stringify({ method, args }),
       timeout: 30_000,
     });
-    if (!result.success) throw new Error(result.error || `Pi daemon call failed: ${method}`);
+    if (!result.success)
+      throw new Error(
+        typeof result.error === "string" && result.error
+          ? result.error
+          : `Pi daemon call failed: ${method}`,
+      );
     return result.data;
   }
 
-  async ensureDaemon() {
+  async ensureDaemon(): Promise<PiDaemonInfo> {
     if (this.info && (await this.isHealthy(this.info))) return this.info;
     if (this.startPromise) return await this.startPromise;
     this.startPromise = this.startDaemon();
@@ -2311,7 +2513,7 @@ class PiDaemonClient {
     }
   }
 
-  async getHealth(info) {
+  async getHealth(info: PiDaemonInfo | null): Promise<Record<string, unknown> | null> {
     if (!info?.baseUrl || !info?.token) return null;
     try {
       return await fetchDaemonJson(info.baseUrl, info.token, "/health");
@@ -2320,12 +2522,13 @@ class PiDaemonClient {
     }
   }
 
-  async isHealthy(info) {
+  async isHealthy(info: PiDaemonInfo | null): Promise<boolean> {
     const health = await this.getHealth(info);
-    return Boolean(health?.success && health?.data?.daemonVersion === PI_DAEMON_VERSION);
+    const data = health?.data as Record<string, unknown> | undefined;
+    return Boolean(health?.success && data?.daemonVersion === PI_DAEMON_VERSION);
   }
 
-  async stopDaemon(info) {
+  async stopDaemon(info: PiDaemonInfo | null): Promise<void> {
     if (!info?.baseUrl || !info?.token) return;
     try {
       await fetchDaemonJson(info.baseUrl, info.token, "/shutdown", {
@@ -2337,7 +2540,7 @@ class PiDaemonClient {
     }
   }
 
-  async waitForDaemonStopped(info) {
+  async waitForDaemonStopped(info: PiDaemonInfo | null): Promise<void> {
     if (!info?.baseUrl || !info?.token) return;
     await runEffect(
       pollUntilEffect({
@@ -2349,12 +2552,13 @@ class PiDaemonClient {
     ).catch(() => undefined);
   }
 
-  async startDaemon(preferredInfo = null) {
+  async startDaemon(preferredInfo: PiDaemonInfo | null = null): Promise<PiDaemonInfo> {
     if (!preferredInfo) {
       const existing = await readDaemonInfo(this.infoPath);
       const existingHealth = await this.getHealth(existing);
-      if (existingHealth?.success && existingHealth?.data?.daemonVersion === PI_DAEMON_VERSION)
-        return existing;
+      const existingData = existingHealth?.data as Record<string, unknown> | undefined;
+      if (existingHealth?.success && existingData?.daemonVersion === PI_DAEMON_VERSION)
+        return existing!;
       if (existingHealth?.success) await this.stopDaemon(existing);
     }
 
@@ -2374,8 +2578,9 @@ class PiDaemonClient {
     }
 
     let logs = "";
-    const appendLog = (chunk) => {
-      if (logs.length < 8192) logs += chunk.toString().slice(0, 8192 - logs.length);
+    const appendLog = (chunk: unknown) => {
+      const text = typeof chunk === "string" ? chunk : String(chunk);
+      if (logs.length < 8192) logs += text.slice(0, 8192 - logs.length);
     };
     const daemonArgs = daemonPath.endsWith(".ts")
       ? ["--experimental-strip-types", daemonPath, "--port", String(port), "--token", token]
@@ -2397,7 +2602,7 @@ class PiDaemonClient {
     child.unref();
 
     const startedAt = Date.now();
-    const info = { pid: child.pid, port, token, baseUrl, startedAt };
+    const info: PiDaemonInfo = { pid: child.pid, port, token, baseUrl, startedAt };
     await runEffect(
       pollUntilEffect({
         attempt: async () => await this.isHealthy(info),
@@ -2437,7 +2642,7 @@ class PiDaemonClient {
 
   async connectEvents() {
     if (!this.eventStarted) return;
-    let info;
+    let info: PiDaemonInfo;
     try {
       info = await this.ensureDaemon();
     } catch {
@@ -2478,64 +2683,131 @@ class PiDaemonClient {
     }
   }
 
-  forwardEvent(event) {
+  forwardEvent(event: unknown) {
     this.emitBridgeEvent(event);
   }
 }
 
-export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
+export function setupPiBridge(
+  ipcMain: Parameters<typeof registerHarnessRpcHandlers>[1],
+  getAllWindows: PiDaemonAllWindows,
+  options: { userData?: string } = {},
+) {
   const manager = new PiDaemonClient(getAllWindows, options);
 
   registerHarnessRpcHandlers("pi", ipcMain, {
     "project:add": async (config) => {
-      await manager.addProject(config);
+      await manager.addProject(config as PiProjectTarget);
       return true;
     },
     "project:remove": async (directory, workspaceId) => {
-      await manager.removeProject({ directory, workspaceId });
+      await manager.removeProject({
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      });
       return true;
     },
     disconnect: async () => {
       await manager.disconnect();
       return true;
     },
-    "session:list": (directory, workspaceId) => manager.listSessions({ directory, workspaceId }),
+    "session:list": (directory, workspaceId) =>
+      manager.listSessions({ directory: directory as string, workspaceId: workspaceId as string }),
     "session:create": (title, directory, workspaceId) =>
-      manager.createSession({ title, directory, workspaceId }),
+      manager.createSession({
+        title: title as string,
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     "session:delete": (sessionId, directory, workspaceId) =>
-      manager.deleteSession(sessionId, { directory, workspaceId }),
+      manager.deleteSession(sessionId as string, {
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     "session:update": (sessionId, title, directory, workspaceId) =>
-      manager.updateSession(sessionId, title, { directory, workspaceId }),
+      manager.updateSession(sessionId as string, title as string, {
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     "session:statuses": (directory, workspaceId) =>
-      manager.getSessionStatuses({ directory, workspaceId }),
+      manager.getSessionStatuses({
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     "session:fork": (sessionId, messageID, directory, workspaceId) =>
-      manager.forkSession(sessionId, messageID, { directory, workspaceId }),
-    providers: (directory, workspaceId) => manager.getProviders({ directory, workspaceId }),
+      manager.forkSession(sessionId as string, messageID as string, {
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
+    providers: (directory, workspaceId) =>
+      manager.getProviders({ directory: directory as string, workspaceId: workspaceId as string }),
     "provider:list": (directory, workspaceId) =>
-      manager.listAllProviders({ directory, workspaceId }),
+      manager.listAllProviders({
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     "provider:auth-methods": (directory, workspaceId) =>
-      manager.getProviderAuthMethods({ directory, workspaceId }),
+      manager.getProviderAuthMethods({
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     "provider:connect": (directory, workspaceId, providerID, auth) =>
-      manager.connectProvider({ directory, workspaceId }, providerID, auth),
+      manager.connectProvider(
+        { directory: directory as string, workspaceId: workspaceId as string },
+        providerID as string,
+        auth as PiProviderAuthPayload,
+      ),
     "provider:disconnect": (directory, workspaceId, providerID) =>
-      manager.disconnectProvider({ directory, workspaceId }, providerID),
+      manager.disconnectProvider(
+        { directory: directory as string, workspaceId: workspaceId as string },
+        providerID as string,
+      ),
     "provider:oauth:authorize": (directory, workspaceId, providerID, method) =>
-      manager.oauthAuthorize({ directory, workspaceId }, providerID, method),
+      manager.oauthAuthorize(
+        { directory: directory as string, workspaceId: workspaceId as string },
+        providerID as string,
+        method as string,
+      ),
     "provider:oauth:callback": (directory, workspaceId, providerID, method, code) =>
-      manager.oauthCallback({ directory, workspaceId }, providerID, method, code),
+      manager.oauthCallback(
+        { directory: directory as string, workspaceId: workspaceId as string },
+        providerID as string,
+        method as string,
+        code as string,
+      ),
     "instance:dispose": (directory, workspaceId) =>
-      manager.disposeProviderInstance({ directory, workspaceId }),
+      manager.disposeProviderInstance({
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
     agents: () => manager.getAgents(),
-    commands: (directory, workspaceId) => manager.getCommands({ directory, workspaceId }),
+    commands: (directory, workspaceId) =>
+      manager.getCommands({ directory: directory as string, workspaceId: workspaceId as string }),
     messages: (sessionId, options, directory, workspaceId) =>
-      manager.getMessages(sessionId, options, { directory, workspaceId }),
-    "session:start": (input) => manager.startSession(input),
+      manager.getMessages(sessionId as string, options, {
+        directory: directory as string,
+        workspaceId: workspaceId as string,
+      }),
+    "session:start": (input) => manager.startSession(input as PiStartSessionInput),
     prompt: async (sessionId, text, images, model, agent, variant, directory, workspaceId) => {
-      await manager.prompt(sessionId, text, images, model, agent, variant, directory, workspaceId);
+      await manager.prompt(
+        sessionId as string,
+        text as string,
+        images,
+        model as PiModelSelection | undefined,
+        agent as string | undefined,
+        variant as string | undefined,
+        directory as string | undefined,
+        workspaceId as string | undefined,
+      );
       return true;
     },
     abort: async (sessionId, directory, workspaceId) => {
-      await manager.abort(sessionId, directory, workspaceId);
+      await manager.abort(
+        sessionId as string,
+        directory as string | undefined,
+        workspaceId as string | undefined,
+      );
       return true;
     },
     "command:send": async (
@@ -2549,19 +2821,24 @@ export function setupPiBridge(ipcMain, getAllWindows, options = {}) {
       workspaceId,
     ) => {
       await manager.sendCommand(
-        sessionId,
-        command,
-        args,
-        model,
-        agent,
-        variant,
-        directory,
-        workspaceId,
+        sessionId as string,
+        command as string,
+        args as string,
+        model as PiModelSelection | undefined,
+        agent as string | undefined,
+        variant as string | undefined,
+        directory as string | undefined,
+        workspaceId as string | undefined,
       );
       return true;
     },
     "session:summarize": async (sessionId, model, directory, workspaceId) => {
-      await manager.summarizeSession(sessionId, model, directory, workspaceId);
+      await manager.summarizeSession(
+        sessionId as string,
+        model as PiModelSelection | undefined,
+        directory as string | undefined,
+        workspaceId as string | undefined,
+      );
       return true;
     },
   });

@@ -53,7 +53,7 @@ export function parseDataUrl(dataUrl: unknown) {
   if (!match) return null;
   return {
     mimeType: match[1] || "application/octet-stream",
-    data: match[2],
+    data: match[2] ?? "",
   };
 }
 
@@ -194,10 +194,14 @@ export function requireMessageEntry(entry: PiMessageBranchEntry): entry is PiMes
   );
 }
 
-type BranchEntry =
-  | { type: "model_change"; provider?: string; modelId?: string }
-  | { type: "thinking_level_change"; level?: string }
-  | { type: "message"; message?: { role?: string; provider?: string; model?: string } };
+type BranchEntry = {
+  type: string;
+  provider?: string;
+  modelId?: string;
+  level?: string;
+  thinkingLevel?: string;
+  message?: { role?: string; provider?: string; model?: string };
+};
 
 export function inferPiSessionModelFromManager(manager: {
   buildSessionContext?: () => {

@@ -1,10 +1,6 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 import { PiBridgeManager } from "../pi-bridge.ts";
-import type {
-  PiLiveSessionLike,
-  PiNativeSessionEvent,
-  PiSessionManagerLike,
-} from "../pi-bridge-types.ts";
+import type { PiLiveSessionLike, PiNativeSessionEvent } from "../pi-bridge-types.ts";
 import {
   handlePiToolExecutionStart,
   resolvePiToolAssistantBundle,
@@ -69,11 +65,11 @@ describe("pi-bridge-session-events", () => {
       getSessionName: () => "s1",
       getHeader: () => ({ timestamp: new Date().toISOString() }),
     };
-    const session: PiLiveSessionLike = {
+    const session = {
       sessionId: "s1",
-      sessionManager: sessionManager as PiSessionManagerLike,
+      sessionManager,
       subscribe: noopSubscribe,
-    };
+    } as unknown as PiLiveSessionLike;
     project.sessionCaches.set("s1", { messages: [] });
     const eventAt = 1_700_000_000_000;
 

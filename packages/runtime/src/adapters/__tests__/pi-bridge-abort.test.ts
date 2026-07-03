@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 import { PiBridgeManager } from "../pi-bridge.ts";
-import type { PiLiveSessionLike, PiSessionManagerLike } from "../pi-bridge-types.ts";
+import type { PiLiveSessionLike } from "../pi-bridge-types.ts";
 import { registerPiBridgeProjectForTests } from "../pi-project-slot.ts";
 
 function noopSubscribe() {
@@ -23,15 +23,18 @@ describe("PiBridgeManager abort", () => {
       getSessionName: () => "s1",
       getHeader: () => ({ timestamp: new Date().toISOString() }),
     };
-    const session: PiLiveSessionLike & { abort: () => Promise<void> } = {
+    const session = {
       sessionId: "s1",
       isStreaming: true,
       sessionManager,
       subscribe: noopSubscribe,
       abort,
-    };
+    } as unknown as PiLiveSessionLike & { abort: () => Promise<void> };
     const runtime = { session, dispose: vi.fn(async () => undefined) };
-    manager.registerLiveSessionContext(project, runtime);
+    manager.registerLiveSessionContext(
+      project,
+      runtime as unknown as Parameters<typeof manager.registerLiveSessionContext>[1],
+    );
     await manager.addProject({ directory: "/repo" });
 
     const result = await Promise.race([
@@ -76,11 +79,11 @@ describe("PiBridgeManager abort", () => {
     manager.registerLiveSessionContext(project, {
       session: {
         sessionId: "s2",
-        sessionManager: decoySessionManager as PiSessionManagerLike,
+        sessionManager: decoySessionManager,
         subscribe: noopSubscribe,
-      },
+      } as unknown as PiLiveSessionLike,
       dispose: vi.fn(async () => undefined),
-    });
+    } as unknown as Parameters<typeof manager.registerLiveSessionContext>[1]);
     await manager.addProject({ directory: "/repo" });
 
     await manager.abort("pi:s1", "/repo", undefined);
