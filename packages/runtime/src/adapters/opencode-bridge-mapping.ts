@@ -1,9 +1,13 @@
 /**
  * Pure OpenCode daemon event parsing and session connection routing (#128).
  */
+import { normalizeProjectPath } from "../../../../src/lib/path.ts";
 import { makeHarnessSessionIdCodec } from "./harness-adapter-kit.ts";
+import type { OpenCodeMessageEntry, OpenCodeSdkResultEnvelope, OpenCodeTaggedSession } from "./opencode-bridge-types.ts";
+import { OpenCodeHttpError } from "./opencode-bridge-types.ts";
 
-const { toRawSessionId } = makeHarnessSessionIdCodec("opencode:");
+const OPENCODE_SESSION_PREFIX = "opencode:";
+const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(OPENCODE_SESSION_PREFIX);
 
 export type NormalizeDirectoryHint = (value: unknown) => string | null;
 
@@ -134,3 +138,96 @@ export function getConnectionForSession<Conn>(
 }
 
 export const SESSION_CONNECTION_NOT_FOUND = "Session connection not found";
+
+export function normalizeOpenCodeDirectoryHint(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? normalizeProjectPath(value.trim()) : null;
+}
+
+export function tagOpenCodeSession(
+  session: Record<string, unknown> | null | undefined,
+  dir: string | undefined,
+  workspaceId: string | undefined,
+): OpenCodeTaggedSession | null | undefined {
+  if (!session) return session;
+  const rawId = toRawSessionId(String(session.id ?? ""));
+  const id = toFrontendSessionId(rawId);
+  const sessionDirectory =
+    typeof session.directory === "string" && session.directory.trim()
+      ? session.directory.trim()
+      : null;
+  const projectDir =
+    sessionDirectory ??
+    (typeof session._projectDir === "string" ? session._projectDir : undefined) ??
+    dir;
+  return {
+    ...session,
+    id,
+    slug:
+      typeof session.slug === "string" && session.slug.trim()
+        ? toFrontendSessionId(session.slug)
+        : id,
+    _harnessId: "opencode",
+    _rawId: rawId,
+    _projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
+    _workspaceId: workspaceId ?? (session._workspaceId as string | undefined),
+  };
+}
+
+export function tagOpenCodeMessageEntry(entry: OpenCodeMessageEntry | null | undefined) {
+  const sessionID = toFrontendSessionId(String(entry?.info?.sessionID ?? ""));
+  return {
+    ...entry,
+    info: { ...entry?.info, sessionID },
+    parts: (entry?.parts ?? []).map((part) =>
+      part && typeof part === "object" && "sessionID" in part ? { ...part, sessionID } : part,
+    ),
+  };
+}
+
+export function stripMessagePayloadBloat(messages: OpenCodeMessageEntry[]) {
+  for (const message of messages) {
+    const summary = message?.info?.summary;
+    if (summary && typeof summary === "object" && "diffs" in summary) {
+      delete summary.diffs;
+    }
+
+    if (!Array.isArray(message?.parts)) continue;
+    for (const part of message.parts) {
+      if (part?.type !== "tool") continue;
+      const state = part.state as { metadata?: { files?: Array<Record<string, unknown>> } } | undefined;
+      const files = state?.metadata?.files;
+      if (!Array.isArray(files)) continue;
+      for (const file of files) {
+        if (file && typeof file === "object" && typeof file.diff === "string" && file.diff.trim()) {
+          delete file.before;
+          delete file.after;
+        }
+      }
+    }
+  }
+  return messages;
+}
+
+export function assertOpenCodeResponseOk<T>(
+  result: OpenCodeSdkResultEnvelope<T> | null | undefined,
+  fallbackMessage: string,
+): OpenCodeSdkResultEnvelope<T> | null | undefined {
+  if (!result || typeof result !== "object") return result;
+  if (result.error) {
+    const message =
+      typeof result.error.message === "string" && result.error.message.trim()
+        ? result.error.message
+        : fallbackMessage;
+    throw new OpenCodeHttpError(message, {
+      status: result.response?.status,
+      data: result.error,
+    });
+  }
+  if (result.response && result.response.ok === false) {
+    throw new OpenCodeHttpError(
+      `${fallbackMessage}: ${result.response.status} ${result.response.statusText ?? ""}`,
+      { status: result.response.status },
+    );
+  }
+  return result;
+}

@@ -19,14 +19,41 @@ import { getOpenCodeProviderAuthKinds } from "./opencode-config.ts";
 import { OpencodeProjectRegistry } from "./opencode-project-registry.ts";
 import { makeHarnessSessionIdCodec } from "./harness-adapter-kit.ts";
 import {
+  assertOpenCodeResponseOk,
   extractOpenCodeEventRawSessionId,
   extractOpenCodeEventSessionDirectory,
   getConnectionEntryForSession as routingConnectionEntryForSession,
   getConnectionForSession as resolveConnectionForSession,
+  type OpenCodeWindowState,
+  normalizeOpenCodeDirectoryHint,
+  stripMessagePayloadBloat,
+  tagOpenCodeMessageEntry,
+  tagOpenCodeSession,
 } from "./opencode-bridge-mapping.ts";
-import { makeHarnessBridgeEventSender } from "./harness-adapter-host.ts";
+import type {
+  HarnessWebContentsSender,
+  OpenCodeConnectConfig,
+  OpenCodeHealthSnapshot,
+  OpenCodeLocalServerOpResult,
+  OpenCodeMessageEntry,
+  OpenCodeMessagesOptions,
+  OpenCodeModelRef,
+  OpenCodePromptPart,
+  OpenCodeProjectAddConfig,
+  OpenCodeRunCommandError,
+  OpenCodeServerProcessInfo,
+  OpenCodeSessionStartInput,
+  OpenCodeSdkClient,
+  OpenCodeWindowBridgeState,
+} from "./opencode-bridge-types.ts";
+import {
+  makeHarnessBridgeEventSender,
+  registerHarnessRpcHandlers,
+} from "./harness-adapter-host.ts";
+
+type OpencodeIpcMain = Parameters<typeof registerHarnessRpcHandlers>[1];
+type OpencodeIpcEvent = { sender: HarnessWebContentsSender };
 import { resolveHarnessCli } from "../../../../server/harness-inventory.ts";
-import { normalizeProjectPath } from "../../../../src/lib/path.ts";
 import {
   abortOpenCodeSseBeforeRestart,
   shouldStopOpenCodeSseRead,
@@ -44,15 +71,15 @@ const STARTUP_TIMEOUT = process.platform === "win32" ? 60_000 : 15_000; // ms
 const DETACHED_LAUNCH_GRACE_TIMEOUT = 10_000; // ms
 const UNHEALTHY_LISTENER_GRACE_TIMEOUT = 5_000; // ms
 
-let localServerStartPromise = null;
-let localServerStopPromise = null;
+let localServerStartPromise: Promise<OpenCodeLocalServerOpResult> | null = null;
+let localServerStopPromise: Promise<OpenCodeLocalServerOpResult> | null = null;
 
 /** Resolve the opencode binary path (cross-platform). */
 function resolveOpencodeBinary() {
   return resolveHarnessCli("opencode").resolvedPath;
 }
 
-function isLocalOpenCodeServerUrl(baseUrl) {
+function isLocalOpenCodeServerUrl(baseUrl: string | null | undefined) {
   return baseUrl?.replace(/\/+$/, "") === LOCAL_SERVER_URL;
 }
 
@@ -63,15 +90,24 @@ async function fetchLocalHealth(timeoutMs = LOCAL_HEALTH_TIMEOUT) {
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return { healthy: false, version: null };
-    const data = await res.json();
-    return { healthy: data.healthy === true, version: data.version ?? null };
+    const data: unknown = await res.json();
+    const record =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? (data as Record<string, unknown>)
+        : null;
+    const version =
+      record && typeof record.version === "string" ? record.version : null;
+    return {
+      healthy: record?.healthy === true,
+      version,
+    } satisfies OpenCodeHealthSnapshot;
   } catch {
     return { healthy: false, version: null };
   }
 }
 
 /** Return the version string from a local binary, or null. */
-function getBinaryVersion(binaryPath) {
+function getBinaryVersion(binaryPath: string) {
   try {
     return execSync(`"${binaryPath}" --version`, {
       encoding: "utf-8",
@@ -82,7 +118,7 @@ function getBinaryVersion(binaryPath) {
   }
 }
 
-function getServerProcessCommand(pid) {
+function getServerProcessCommand(pid: number) {
   if (!pid || Number.isNaN(pid)) return null;
   try {
     if (process.platform === "win32") {
@@ -155,18 +191,18 @@ function findServerProcess() {
   return { pid, command: getServerProcessCommand(pid) };
 }
 
-function isLikelyOpenCodeProcess(processInfo) {
+function isLikelyOpenCodeProcess(processInfo: OpenCodeServerProcessInfo | null) {
   return /(^|[\\/\s])opencode(\.exe)?([\s]|$)/i.test(processInfo?.command ?? "");
 }
 
-function formatServerProcess(processInfo) {
+function formatServerProcess(processInfo: OpenCodeServerProcessInfo | null) {
   if (!processInfo) return `port ${LOCAL_SERVER_PORT}`;
   const command = processInfo.command ? ` (${processInfo.command})` : "";
   return `PID ${processInfo.pid}${command}`;
 }
 
 /** Kill the opencode server process listening on LOCAL_SERVER_PORT. Returns true if killed. */
-async function killServerProcess(pid = null) {
+async function killServerProcess(pid: number | null = null) {
   const isWindows = process.platform === "win32";
   const processInfo = pid ? { pid, command: getServerProcessCommand(pid) } : findServerProcess();
   if (!processInfo?.pid || Number.isNaN(processInfo.pid)) return false;
@@ -219,97 +255,17 @@ const SSE_STALE_THRESHOLD = 45_000; // ms – restart SSE if no event for this l
 const OPENCODE_SESSION_PREFIX = "opencode:";
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(OPENCODE_SESSION_PREFIX);
 
-function tagOpenCodeSession(session, dir, workspaceId) {
-  if (!session) return session;
-  const rawId = toRawSessionId(session.id);
-  const id = toFrontendSessionId(rawId);
-  const sessionDirectory =
-    typeof session.directory === "string" && session.directory.trim()
-      ? session.directory.trim()
-      : null;
-  const projectDir = sessionDirectory ?? session._projectDir ?? dir;
-  return {
-    ...session,
-    id,
-    slug: session.slug ? toFrontendSessionId(session.slug) : id,
-    _harnessId: "opencode",
-    _rawId: rawId,
-    _projectDir: projectDir ? normalizeProjectPath(projectDir) : undefined,
-    _workspaceId: workspaceId ?? session._workspaceId,
-  };
-}
-
-function tagOpenCodeMessageEntry(entry) {
-  const sessionID = toFrontendSessionId(entry?.info?.sessionID);
-  return {
-    ...entry,
-    info: { ...entry.info, sessionID },
-    parts: (entry.parts ?? []).map((part) =>
-      part && "sessionID" in part ? { ...part, sessionID } : part,
-    ),
-  };
-}
-
-function normalizeDirectoryHint(value) {
-  return typeof value === "string" && value.trim() ? normalizeProjectPath(value.trim()) : null;
-}
-
 // Keep-alive agents to prevent idle TCP connections from being dropped.
 // Setting keepAlive + very long timeouts prevents OS/proxy idle-timeout kills.
 const httpAgent = new Agent({ keepAlive: true, keepAliveMsecs: 15_000 });
 const httpsAgent = new HttpsAgent({ keepAlive: true, keepAliveMsecs: 15_000 });
 
-function assertOpenCodeResponseOk(result, fallbackMessage) {
-  if (!result || typeof result !== "object") return result;
-  if (result.error) {
-    const message =
-      typeof result.error.message === "string" && result.error.message.trim()
-        ? result.error.message
-        : fallbackMessage;
-    const error = new Error(message);
-    error.status = result.response?.status;
-    error.data = result.error;
-    throw error;
-  }
-  if (result.response && result.response.ok === false) {
-    const error = new Error(
-      `${fallbackMessage}: ${result.response.status} ${result.response.statusText}`,
-    );
-    error.status = result.response.status;
-    throw error;
-  }
-  return result;
-}
-
-function stripMessagePayloadBloat(messages) {
-  for (const message of messages) {
-    const summary = message?.info?.summary;
-    if (summary && typeof summary === "object" && "diffs" in summary) {
-      delete summary.diffs;
-    }
-
-    if (!Array.isArray(message?.parts)) continue;
-    for (const part of message.parts) {
-      if (part?.type !== "tool") continue;
-      const files = part?.state?.metadata?.files;
-      if (!Array.isArray(files)) continue;
-      for (const file of files) {
-        if (file && typeof file === "object" && typeof file.diff === "string" && file.diff.trim()) {
-          delete file.before;
-          delete file.after;
-        }
-      }
-    }
-  }
-  return messages;
-}
-
 export class OpenCodeConnection {
   _emit: (event: Record<string, unknown>) => void;
   _lifecycle: number;
   _streamGeneration: number;
-  _client: unknown;
-  _config: { baseUrl: string; username?: string; password?: string; directory?: string } | null;
+  _client: OpenCodeSdkClient | null;
+  _config: OpenCodeConnectConfig | null;
   _abortController: AbortController | null;
   _reconnectTimer: ReturnType<typeof setTimeout> | null;
   _healthTimer: ReturnType<typeof setInterval> | null;
@@ -343,7 +299,7 @@ export class OpenCodeConnection {
 
   // - public ---------------------------------------------------------------
 
-  async connect(config) {
+  async connect(config: OpenCodeConnectConfig) {
     this.teardown();
     const lifecycle = ++this._lifecycle;
     this._config = config;
@@ -398,7 +354,7 @@ export class OpenCodeConnection {
     // sessions sharing the same git repo (project_id), which causes
     // cross-directory duplicates in the sidebar.
     const dir = this.getDirectory();
-    const res = await this._client.session.list({
+    const res = await this._sdk.session.list({
       roots: true,
       limit: 10000,
       ...(dir ? { directory: dir } : {}),
@@ -406,53 +362,56 @@ export class OpenCodeConnection {
     return res.data ?? [];
   }
 
-  async createSession(title) {
+  async createSession(title?: string) {
     this._requireClient();
     const normalizedTitle = typeof title === "string" ? title.trim() : "";
     const params = normalizedTitle ? { title: normalizedTitle } : undefined;
-    const res = await this._client.session.create(params);
+    const res = await this._sdk.session.create(params);
     return res.data;
   }
 
-  async deleteSession(id) {
+  async deleteSession(id: string) {
     this._requireClient();
-    const res = await this._client.session.delete({ sessionID: id });
+    const res = await this._sdk.session.delete({ sessionID: id });
     return res.data;
   }
 
-  async updateSession(id, title) {
+  async updateSession(id: string, title: string) {
     this._requireClient();
-    const res = await this._client.session.update({ sessionID: id, title });
+    const res = await this._sdk.session.update({ sessionID: id, title });
     return res.data;
   }
 
   async getSessionStatuses() {
     this._requireClient();
-    const res = await this._client.session.status();
+    const res = await this._sdk.session.status();
     return res.data ?? {};
   }
 
   // - revert / fork ---------------------------------------------------------
 
-  async revertSession(sessionID, messageID, partID) {
+  async revertSession(sessionID: string, messageID: string, partID?: string) {
     this._requireClient();
-    const params = { sessionID, messageID };
+    const params: { sessionID: string; messageID: string; partID?: string } = {
+      sessionID,
+      messageID,
+    };
     if (partID) params.partID = partID;
-    const res = await this._client.session.revert(params);
+    const res = await this._sdk.session.revert(params);
     return res.data;
   }
 
-  async unrevertSession(sessionID) {
+  async unrevertSession(sessionID: string) {
     this._requireClient();
-    const res = await this._client.session.unrevert({ sessionID });
+    const res = await this._sdk.session.unrevert({ sessionID });
     return res.data;
   }
 
-  async forkSession(sessionID, messageID) {
+  async forkSession(sessionID: string, messageID?: string) {
     this._requireClient();
-    const params = { sessionID };
+    const params: { sessionID: string; messageID?: string } = { sessionID };
     if (messageID) params.messageID = messageID;
-    const res = await this._client.session.fork(params);
+    const res = await this._sdk.session.fork(params);
     return res.data;
   }
 
@@ -460,13 +419,13 @@ export class OpenCodeConnection {
 
   async getProviders() {
     this._requireClient();
-    const res = await this._client.config.providers();
+    const res = await this._sdk.config.providers();
     return res.data ?? { providers: [], default: {} };
   }
 
   async listAllProviders() {
     this._requireClient();
-    const res = await this._client.provider.list();
+    const res = await this._sdk.provider.list();
     const data = res.data ?? { all: [], default: {}, connected: [] };
     return {
       ...data,
@@ -480,42 +439,49 @@ export class OpenCodeConnection {
 
   async getProviderAuthMethods() {
     this._requireClient();
-    const res = await this._client.provider.auth();
+    const res = await this._sdk.provider.auth();
     return res.data ?? {};
   }
 
-  async setProviderAuth(providerID, auth) {
+  async setProviderAuth(providerID: string, auth: unknown) {
     this._requireClient();
-    const res = await this._client.auth.set({ providerID, auth });
+    const res = await this._sdk.auth.set({
+      providerID,
+      auth: auth as Parameters<OpenCodeSdkClient["auth"]["set"]>[0]["auth"],
+    });
     return res.data;
   }
 
-  async removeProviderAuth(providerID) {
+  async removeProviderAuth(providerID: string) {
     this._requireClient();
-    const res = await this._client.auth.remove({ providerID });
+    const res = await this._sdk.auth.remove({ providerID });
     return res.data;
   }
 
-  async oauthAuthorize(providerID, method) {
+  async oauthAuthorize(providerID: string, method?: string) {
     this._requireClient();
-    const params = { providerID };
+    const params: { providerID: string; method?: string } = { providerID };
     if (method !== undefined) params.method = method;
-    const res = await this._client.provider.oauth.authorize(params);
+    const res = await this._sdk.provider.oauth.authorize(
+      params as Parameters<OpenCodeSdkClient["provider"]["oauth"]["authorize"]>[0],
+    );
     return res.data;
   }
 
-  async oauthCallback(providerID, method, code) {
+  async oauthCallback(providerID: string, method?: string, code?: string) {
     this._requireClient();
-    const params = { providerID };
+    const params: { providerID: string; method?: string; code?: string } = { providerID };
     if (method !== undefined) params.method = method;
     if (code !== undefined) params.code = code;
-    const res = await this._client.provider.oauth.callback(params);
+    const res = await this._sdk.provider.oauth.callback(
+      params as Parameters<OpenCodeSdkClient["provider"]["oauth"]["callback"]>[0],
+    );
     return res.data;
   }
 
   async disposeInstance() {
     this._requireClient();
-    const res = await this._client.instance.dispose();
+    const res = await this._sdk.instance.dispose();
     return res.data;
   }
 
@@ -523,37 +489,44 @@ export class OpenCodeConnection {
 
   async getAgents() {
     this._requireClient();
-    const res = await this._client.app.agents();
+    const res = await this._sdk.app.agents();
     return res.data ?? [];
   }
 
   // - messages -------------------------------------------------------------
 
-  async getMessages(sessionId, options = {}) {
+  async getMessages(sessionId: string, options: OpenCodeMessagesOptions = {}) {
     this._requireClient();
-    const params = { sessionID: sessionId };
+    const params: { sessionID: string; limit?: number; before?: string } = { sessionID: sessionId };
     if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
       params.limit = options.limit;
     }
     if (typeof options.before === "string" && options.before.trim()) {
       params.before = options.before;
     }
-    const res = await this._client.session.messages(params);
-    const messages = stripMessagePayloadBloat(res.data ?? []);
+    const res = await this._sdk.session.messages(params);
+    const messages = stripMessagePayloadBloat((res.data ?? []) as OpenCodeMessageEntry[]);
     // Extract the opaque pagination cursor from the response header.
     const nextCursor = res.response?.headers?.get("X-Next-Cursor") ?? null;
     return { messages, nextCursor };
   }
 
-  async promptAsync(sessionId, text, images, model, agent, variant) {
+  async promptAsync(
+    sessionId: string,
+    text: string,
+    images?: string[],
+    model?: OpenCodeModelRef,
+    agent?: string,
+    variant?: string,
+  ) {
     this._requireClient();
-    const parts = [{ type: "text", text }];
+    const parts: OpenCodePromptPart[] = [{ type: "text", text }];
     if (images) {
       for (const url of images) {
         // Attempt to detect MIME from data-URI header or file extension
         let mime = "image/png";
         const dataMatch = url.match(/^data:(image\/[^;,]+)/);
-        if (dataMatch) {
+        if (dataMatch?.[1]) {
           mime = dataMatch[1];
         } else {
           const ext = url.split(".").pop()?.toLowerCase();
@@ -565,27 +538,34 @@ export class OpenCodeConnection {
         parts.push({ type: "file", mime, url });
       }
     }
-    const params = { sessionID: sessionId, parts };
-    if (model) {
-      params.model = model;
-    }
-    if (agent) {
-      params.agent = agent;
-    }
-    if (variant) {
-      params.variant = variant;
-    }
-    await this._client.session.promptAsync(params);
+    const params: {
+      sessionID: string;
+      parts: OpenCodePromptPart[];
+      model?: OpenCodeModelRef;
+      agent?: string;
+      variant?: string;
+    } = { sessionID: sessionId, parts };
+    if (model) params.model = model;
+    if (agent) params.agent = agent;
+    if (variant) params.variant = variant;
+    await this._sdk.session.promptAsync(
+      params as Parameters<OpenCodeSdkClient["session"]["promptAsync"]>[0],
+    );
   }
 
-  async abortSession(sessionId) {
+  async abortSession(sessionId: string) {
     this._requireClient();
-    await this._client.session.abort({ sessionID: sessionId });
+    await this._sdk.session.abort({ sessionID: sessionId });
   }
 
   // - permissions ----------------------------------------------------------
 
-  async respondPermission(sessionId, permissionId, response, workspaceId) {
+  async respondPermission(
+    sessionId: string,
+    permissionId: string,
+    response: "always" | "once" | "reject",
+    workspaceId?: string,
+  ) {
     this._requireClient();
     const directory = this.getDirectory();
     const workspace =
@@ -594,12 +574,12 @@ export class OpenCodeConnection {
         : undefined;
     try {
       assertOpenCodeResponseOk(
-        await this._client.permission.reply({
+        (await this._sdk.permission.reply({
           requestID: permissionId,
           reply: response,
           ...(directory ? { directory } : {}),
           ...(workspace ? { workspace } : {}),
-        }),
+        })) as Parameters<typeof assertOpenCodeResponseOk>[0],
         `Permission reply failed for ${permissionId}`,
       );
     } catch (replyError) {
@@ -607,13 +587,13 @@ export class OpenCodeConnection {
       // session-scoped permission responses.
       try {
         assertOpenCodeResponseOk(
-          await this._client.permission.respond({
+          (await this._sdk.permission.respond({
             sessionID: sessionId,
             permissionID: permissionId,
             response,
             ...(directory ? { directory } : {}),
             ...(workspace ? { workspace } : {}),
-          }),
+          })) as Parameters<typeof assertOpenCodeResponseOk>[0],
           `Permission response failed for ${permissionId}`,
         );
       } catch {
@@ -626,25 +606,41 @@ export class OpenCodeConnection {
 
   async listCommands() {
     this._requireClient();
-    const res = await this._client.command.list();
+    const res = await this._sdk.command.list();
     return res.data ?? [];
   }
 
-  async sendCommand(sessionId, command, args, model, agent, variant) {
+  async sendCommand(
+    sessionId: string,
+    command: string,
+    args: unknown,
+    model?: OpenCodeModelRef,
+    agent?: string,
+    variant?: string,
+  ) {
     this._requireClient();
-    const params = { sessionID: sessionId, command, arguments: args };
+    const params: {
+      sessionID: string;
+      command: string;
+      arguments: unknown;
+      model?: string;
+      agent?: string;
+      variant?: string;
+    } = { sessionID: sessionId, command, arguments: args };
     if (model) params.model = `${model.providerID}/${model.modelID}`;
     if (agent) params.agent = agent;
     if (variant) params.variant = variant;
-    await this._client.session.command(params);
+    await this._sdk.session.command(
+      params as Parameters<OpenCodeSdkClient["session"]["command"]>[0],
+    );
   }
 
-  async summarizeSession(sessionId, model) {
+  async summarizeSession(sessionId: string, model: OpenCodeModelRef | null | undefined) {
     this._requireClient();
     if (!model?.providerID || !model?.modelID) {
       throw new Error("Compaction requires a model to be selected");
     }
-    await this._client.session.summarize({
+    await this._sdk.session.summarize({
       sessionID: sessionId,
       providerID: model.providerID,
       modelID: model.modelID,
@@ -653,20 +649,23 @@ export class OpenCodeConnection {
 
   // - questions ------------------------------------------------------------
 
-  async replyQuestion(requestID, answers) {
+  async replyQuestion(
+    requestID: string,
+    answers: Parameters<OpenCodeSdkClient["question"]["reply"]>[0]["answers"],
+  ) {
     this._requireClient();
     const directory = this.getDirectory();
-    await this._client.question.reply({
+    await this._sdk.question.reply({
       requestID,
       answers,
       ...(directory ? { directory } : {}),
     });
   }
 
-  async rejectQuestion(requestID) {
+  async rejectQuestion(requestID: string) {
     this._requireClient();
     const directory = this.getDirectory();
-    await this._client.question.reject({
+    await this._sdk.question.reject({
       requestID,
       ...(directory ? { directory } : {}),
     });
@@ -676,48 +675,58 @@ export class OpenCodeConnection {
 
   async getMcpStatus() {
     this._requireClient();
-    const res = await this._client.mcp.status();
+    const res = await this._sdk.mcp.status();
     return res.data ?? {};
   }
 
-  async addMcp(name, config) {
+  async addMcp(name: string, config: unknown) {
     this._requireClient();
-    const res = await this._client.mcp.add({ name, config });
+    const res = await this._sdk.mcp.add({
+      name,
+      config,
+    } as Parameters<OpenCodeSdkClient["mcp"]["add"]>[0]);
     return res.data ?? {};
   }
 
-  async connectMcp(name) {
+  async connectMcp(name: string) {
     this._requireClient();
-    await this._client.mcp.connect({ name });
+    await this._sdk.mcp.connect({ name });
   }
 
-  async disconnectMcp(name) {
+  async disconnectMcp(name: string) {
     this._requireClient();
-    await this._client.mcp.disconnect({ name });
+    await this._sdk.mcp.disconnect({ name });
   }
 
   // - Config ---------------------------------------------------------------
 
   async getConfig() {
     this._requireClient();
-    const res = await this._client.config.get();
+    const res = await this._sdk.config.get();
     return res.data ?? {};
   }
 
-  async updateConfig(config) {
+  async updateConfig(config: unknown) {
     this._requireClient();
-    const res = await this._client.config.update({ config });
+    const res = await this._sdk.config.update({ config } as Parameters<
+      OpenCodeSdkClient["config"]["update"]
+    >[0]);
     return res.data ?? {};
   }
 
   // - internal -------------------------------------------------------------
 
-  _requireClient() {
+  _requireClient(): OpenCodeSdkClient {
     if (!this._client) throw new Error("Not connected to any opencode server");
+    return this._client;
   }
 
-  _makeAuthHeaders(config) {
-    const headers = {};
+  get _sdk(): OpenCodeSdkClient {
+    return this._requireClient();
+  }
+
+  _makeAuthHeaders(config: OpenCodeConnectConfig) {
+    const headers: Record<string, string> = {};
     if (config.password) {
       const user = config.username ?? "opencode";
       headers.Authorization = `Basic ${Buffer.from(`${user}:${config.password}`).toString("base64")}`;
@@ -725,15 +734,20 @@ export class OpenCodeConnection {
     return headers;
   }
 
-  _makeClient(config) {
+  _makeClient(config: OpenCodeConnectConfig): OpenCodeSdkClient {
     const headers = this._makeAuthHeaders(config);
     const directory = typeof config.directory === "string" ? config.directory.trim() : "";
 
     // Custom fetch that uses keep-alive agents to prevent idle connection drops.
-    const customFetch = (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const customFetch: typeof fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       const agent = url?.startsWith("https") ? httpsAgent : httpAgent;
-      return globalThis.fetch(input, { ...init, agent });
+      return globalThis.fetch(input, { ...init, agent } as RequestInit);
     };
 
     return createOpencodeClient({
@@ -749,7 +763,7 @@ export class OpenCodeConnection {
     });
   }
 
-  _makeGlobalEventClient(config) {
+  _makeGlobalEventClient(config: OpenCodeConnectConfig): OpenCodeSdkClient {
     const headers = this._makeAuthHeaders(config);
 
     // The OpenCode SDK rewrites GET requests from directory-scoped clients by
@@ -757,10 +771,15 @@ export class OpenCodeConnection {
     // /global/event: OpenCode only emits session.status/session.idle on the
     // truly global stream. If /global/event is directory-scoped, the frontend
     // never sees idle and keeps the stop button/timer running forever.
-    const customFetch = (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const customFetch: typeof fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       const agent = url?.startsWith("https") ? httpsAgent : httpAgent;
-      return globalThis.fetch(input, { ...init, agent });
+      return globalThis.fetch(input, { ...init, agent } as RequestInit);
     };
 
     return createOpencodeClient({
@@ -773,30 +792,38 @@ export class OpenCodeConnection {
   async _healthCheck() {
     this._requireClient();
     try {
-      const res = await this._client.global.health();
+      const res = await this._sdk.global.health();
       const data = res.data;
       if (data?.version) this._setStatus({ serverVersion: data.version });
       if (!data?.healthy) throw new Error("Server reports unhealthy");
-    } catch (err) {
+    } catch (err: unknown) {
       // If the v2 global.health() fails with a method-not-found-style error,
       // fall back to raw fetch (older servers may not support this endpoint via SDK)
-      if (err?.message?.includes("unhealthy")) throw err;
-      const url = `${this._config.baseUrl.replace(/\/+$/, "")}/global/health`;
-      const headers = this._makeAuthHeaders(this._config);
+      if (err instanceof Error && err.message.includes("unhealthy")) throw err;
+      const config = this._config;
+      if (!config) throw err instanceof Error ? err : new Error(String(err));
+      const url = `${config.baseUrl.replace(/\/+$/, "")}/global/health`;
+      const headers = this._makeAuthHeaders(config);
       const rawRes = await fetch(url, { headers });
       if (!rawRes.ok) throw new Error(`Health check failed: ${rawRes.status} ${rawRes.statusText}`);
-      const data = await rawRes.json();
-      if (data.version) this._setStatus({ serverVersion: data.version });
-      if (!data.healthy) throw new Error("Server reports unhealthy");
+      const data: unknown = await rawRes.json();
+      const record =
+        data && typeof data === "object" && !Array.isArray(data)
+          ? (data as Record<string, unknown>)
+          : null;
+      if (typeof record?.version === "string") this._setStatus({ serverVersion: record.version });
+      if (record?.healthy !== true) throw new Error("Server reports unhealthy");
     }
   }
 
-  _isCurrent(lifecycle) {
+  _isCurrent(lifecycle: number) {
     return lifecycle === this._lifecycle;
   }
 
-  async _startSSE(lifecycle) {
+  async _startSSE(lifecycle: number) {
     if (!this._isCurrent(lifecycle)) return;
+    const config = this._config;
+    if (!config) return;
     this._requireClient();
     await abortOpenCodeSseBeforeRestart(this._abortController);
     if (!this._isCurrent(lifecycle)) return;
@@ -805,8 +832,8 @@ export class OpenCodeConnection {
     this._abortController = abortController;
 
     try {
-      const response = await fetch(`${this._config.baseUrl.replace(/\/+$/, "")}/global/event`, {
-        headers: { ...this._makeAuthHeaders(this._config), accept: "text/event-stream" },
+      const response = await fetch(`${config.baseUrl.replace(/\/+$/, "")}/global/event`, {
+        headers: { ...this._makeAuthHeaders(config), accept: "text/event-stream" },
         signal: abortController.signal,
       });
       if (!response.ok) throw new Error(`OpenCode SSE failed: ${response.status}`);
@@ -871,13 +898,14 @@ export class OpenCodeConnection {
     }
   }
 
-  _scheduleReconnect(lifecycle) {
+  _scheduleReconnect(lifecycle: number, _reason?: Error) {
     if (!this._config || !this._isCurrent(lifecycle)) return;
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
     }
-    const delay = BACKOFF_STEPS[Math.min(this._reconnectAttempt, BACKOFF_STEPS.length - 1)];
+    const stepIndex = Math.min(this._reconnectAttempt, BACKOFF_STEPS.length - 1);
+    const delay = BACKOFF_STEPS[stepIndex] ?? 500;
     this._reconnectAttempt++;
     this._setStatus({
       state: "reconnecting",
@@ -897,7 +925,7 @@ export class OpenCodeConnection {
     }, delay);
   }
 
-  _startHealthTimer(lifecycle) {
+  _startHealthTimer(lifecycle: number) {
     if (!this._isCurrent(lifecycle)) return;
     this._stopHealthTimer();
     this._healthTimer = setInterval(async () => {
@@ -944,7 +972,7 @@ export class OpenCodeConnection {
     }
   }
 
-  _setStatus(patch) {
+  _setStatus(patch: Partial<OpenCodeConnection["_status"]>) {
     this._status = { ...this._status, ...patch };
     this._emit({ type: "connection:status", payload: { ...this._status } });
   }
@@ -964,7 +992,7 @@ export class OpenCodeConnection {
   }
 }
 
-async function doStartLocalOpenCodeServer() {
+async function doStartLocalOpenCodeServer(): Promise<OpenCodeLocalServerOpResult> {
   try {
     const binary = resolveOpencodeBinary();
 
@@ -1046,7 +1074,7 @@ async function doStartLocalOpenCodeServer() {
     let logBuffer = "";
     let earlyExitCode = null;
 
-    const appendLog = (chunk) => {
+    const appendLog = (chunk: Buffer | string) => {
       if (logBuffer.length < MAX_LOG_BYTES) {
         logBuffer += chunk.toString().slice(0, MAX_LOG_BYTES - logBuffer.length);
       }
@@ -1072,8 +1100,8 @@ async function doStartLocalOpenCodeServer() {
     child.unref();
 
     // If spawn itself errors (e.g. ENOENT).
-    let spawnError = null;
-    child.on("error", (err) => {
+    let spawnError: Error | null = null;
+    child.on("error", (err: Error) => {
       spawnError = err;
       console.error("[opencode-bridge] Failed to spawn opencode server:", err);
     });
@@ -1084,7 +1112,7 @@ async function doStartLocalOpenCodeServer() {
     );
     try {
       await waitForHealthy();
-    } catch (healthErr) {
+    } catch (healthErr: unknown) {
       // Some opencode builds daemonize successfully but still let the
       // launcher exit non-zero after printing a misleading startup error.
       if (
@@ -1122,9 +1150,9 @@ async function doStartLocalOpenCodeServer() {
         child.stderr.destroy();
       }
 
-      let errorMsg = healthErr.message ?? String(healthErr);
+      let errorMsg = healthErr instanceof Error ? healthErr.message : String(healthErr);
       if (spawnError) {
-        errorMsg = `Spawn error: ${spawnError.message}`;
+        errorMsg = `Spawn error: ${(spawnError as Error).message}`;
       } else if (earlyExitCode !== null && earlyExitCode !== 0) {
         errorMsg = `Server process exited with code ${Number(earlyExitCode)}`;
       }
@@ -1148,12 +1176,12 @@ async function doStartLocalOpenCodeServer() {
 
     console.info("[opencode-bridge] Server is healthy.");
     return { success: true, data: { alreadyRunning: false } };
-  } catch (err) {
-    return { success: false, error: err.message ?? String(err) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-async function startLocalOpenCodeServer() {
+async function startLocalOpenCodeServer(): Promise<OpenCodeLocalServerOpResult> {
   if (localServerStopPromise) {
     console.info("[opencode-bridge] Waiting for in-flight OpenCode stop before starting...");
     await localServerStopPromise.catch(() => {});
@@ -1170,7 +1198,7 @@ async function startLocalOpenCodeServer() {
   return await localServerStartPromise;
 }
 
-async function doStopLocalOpenCodeServer() {
+async function doStopLocalOpenCodeServer(): Promise<OpenCodeLocalServerOpResult> {
   try {
     const health = await fetchLocalHealth();
     if (!health.healthy) {
@@ -1201,12 +1229,12 @@ async function doStopLocalOpenCodeServer() {
       };
     }
     return { success: true, data: {} };
-  } catch (err) {
-    return { success: false, error: err.message ?? String(err) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-async function stopLocalOpenCodeServer() {
+async function stopLocalOpenCodeServer(): Promise<OpenCodeLocalServerOpResult> {
   if (localServerStartPromise) {
     console.info("[opencode-bridge] Waiting for in-flight OpenCode start before stopping...");
     await localServerStartPromise.catch(() => {});
@@ -1224,16 +1252,10 @@ async function stopLocalOpenCodeServer() {
 // Setup: called from main.ts with (ipcMain, mainWindow)
 // ---------------------------------------------------------------------------
 
-export function setupOpenCodeBridge(ipcMain, _getWindows) {
-  /** @type {Map<number, {
-   *   projectRegistry: OpencodeProjectRegistry<OpenCodeConnection>,
-   *   pendingConnections: Map<string, Promise<OpenCodeConnection>>,
-   *   sessionDirectories: Map<string, string>,
-   *   serverConfig: { baseUrl: string, username?: string, password?: string } | null,
-   * }>} */
-  const windowStates = new Map();
+export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () => Iterable<unknown>) {
+  const windowStates = new Map<number, OpenCodeWindowBridgeState<OpenCodeConnection>>();
 
-  function getWindowState(sender) {
+  function getWindowState(sender: HarnessWebContentsSender) {
     const key = sender.id;
     let state = windowStates.get(key);
     if (state) return state;
@@ -1257,7 +1279,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     return state;
   }
 
-  function normalizeServerConfig(config) {
+  function normalizeServerConfig(config: OpenCodeConnectConfig): OpenCodeConnectConfig {
     let baseUrl = config.baseUrl.replace(/\/+$/, "");
     const webLocalPort = process.env.OPENGUI_OPENCODE_PORT?.trim();
     if (
@@ -1279,25 +1301,41 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   const sendEvent = makeHarnessBridgeEventSender("opencode");
 
-  function makeProjectKey(windowState, workspaceId, directory) {
+  const ipcStr = (value: unknown): string => (typeof value === "string" ? value : "");
+  const ipcOptStr = (value: unknown): string | undefined =>
+    typeof value === "string" ? value : undefined;
+
+  function makeProjectKey(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    workspaceId: string | undefined,
+    directory: string,
+  ) {
     return windowState.projectRegistry.createProjectKey(workspaceId, directory);
   }
 
-  function rememberOpenCodeSessionDirectory(windowState, sessionId, directory) {
+  function rememberOpenCodeSessionDirectory(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    sessionId: string,
+    directory: unknown,
+  ) {
     const rawSessionId = typeof sessionId === "string" ? toRawSessionId(sessionId) : "";
-    const normalizedDirectory = normalizeDirectoryHint(directory);
+    const normalizedDirectory = normalizeOpenCodeDirectoryHint(directory);
     if (rawSessionId && normalizedDirectory) {
       windowState.sessionDirectories.set(rawSessionId, normalizedDirectory);
     }
   }
 
-  function shouldForwardOpenCodeDaemonEvent(windowState, event, connectionDirectory) {
+  function shouldForwardOpenCodeDaemonEvent(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    event: Record<string, unknown>,
+    connectionDirectory: unknown,
+  ) {
     if (event?.type !== "opencode:event") return true;
 
     const rawSessionId = extractOpenCodeEventRawSessionId(event.payload);
     const payloadDirectory = extractOpenCodeEventSessionDirectory(
       event.payload,
-      normalizeDirectoryHint,
+      normalizeOpenCodeDirectoryHint,
     );
     if (rawSessionId && payloadDirectory) {
       windowState.sessionDirectories.set(rawSessionId, payloadDirectory);
@@ -1307,28 +1345,39 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       payloadDirectory ?? (rawSessionId ? windowState.sessionDirectories.get(rawSessionId) : null);
     if (!sessionDirectory) return true;
 
-    const normalizedConnectionDirectory = normalizeDirectoryHint(connectionDirectory);
+    const normalizedConnectionDirectory = normalizeOpenCodeDirectoryHint(connectionDirectory);
     if (!normalizedConnectionDirectory) return true;
     return normalizedConnectionDirectory === sessionDirectory;
   }
 
-  function createConnection(windowState, sender, directory, workspaceId) {
+  function createConnection(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    sender: HarnessWebContentsSender,
+    directory: string,
+    workspaceId: string | undefined,
+  ) {
     const projectKey = makeProjectKey(windowState, workspaceId, directory);
     const conn = new OpenCodeConnection((event) => {
       if (windowState.projectRegistry.getConnection(projectKey) !== conn) return;
       if (!shouldForwardOpenCodeDaemonEvent(windowState, event, directory)) return;
       if (event?.type === "opencode:event") {
-        const props = event.payload?.properties ?? {};
-        const questionId = props?.id ?? props?.requestID;
-        if (event.payload?.type === "question.asked" && questionId) {
-          windowState.projectRegistry.rememberQuestion(projectKey, questionId);
+        const payload =
+          event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+            ? (event.payload as Record<string, unknown>)
+            : {};
+        const props =
+          payload.properties && typeof payload.properties === "object"
+            ? (payload.properties as Record<string, unknown>)
+            : {};
+        const questionId = props.id ?? props.requestID;
+        if (payload.type === "question.asked" && questionId) {
+          windowState.projectRegistry.rememberQuestion(projectKey, String(questionId));
         }
         if (
-          (event.payload?.type === "question.replied" ||
-            event.payload?.type === "question.rejected") &&
+          (payload.type === "question.replied" || payload.type === "question.rejected") &&
           questionId
         ) {
-          windowState.projectRegistry.deleteQuestion(questionId);
+          windowState.projectRegistry.deleteQuestion(String(questionId));
         }
       }
       sendEvent(sender, { ...event, directory, workspaceId });
@@ -1337,7 +1386,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     return conn;
   }
 
-  function getConnectedConnections(windowState, workspaceId) {
+  function getConnectedConnections(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    workspaceId?: string,
+  ) {
     const requestedWorkspaceId = workspaceId?.trim() || "";
     return [...windowState.projectRegistry.entries()]
       .filter(([projectKey, conn]) => {
@@ -1351,18 +1403,28 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       .map(([projectKey, connection]) => ({ projectKey, connection }));
   }
 
-  function getConnectionEntryForSession(windowState, sessionId, directory, workspaceId) {
+  function getConnectionEntryForSession(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    _sessionId: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     return routingConnectionEntryForSession(
-      windowState,
+      windowState as unknown as OpenCodeWindowState<OpenCodeConnection>,
       () => getConnectedConnections(windowState),
       directory,
       workspaceId,
     );
   }
 
-  function getConnectionForSession(windowState, sessionId, directory, workspaceId) {
+  function getConnectionForSession(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    sessionId: string,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     return resolveConnectionForSession(
-      windowState,
+      windowState as unknown as OpenCodeWindowState<OpenCodeConnection>,
       () => getConnectedConnections(windowState),
       sessionId,
       directory,
@@ -1371,27 +1433,45 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   }
 
   /** Get any connected connection, optionally scoped to one workspace. */
-  function getAnyConnectionEntry(windowState, workspaceId) {
+  function getAnyConnectionEntry(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    workspaceId?: string,
+  ) {
     return getConnectedConnections(windowState, workspaceId)[0] ?? null;
   }
 
-  function getAnyConnection(windowState, workspaceId) {
+  function getAnyConnection(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    workspaceId?: string,
+  ) {
     return getAnyConnectionEntry(windowState, workspaceId)?.connection ?? null;
   }
 
   /** Resolve a connection for a specific project directory + workspace. */
-  function getConnectionEntryForDirectory(windowState, directory, workspaceId) {
+  function getConnectionEntryForDirectory(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     if (typeof directory !== "string" || !directory.trim()) {
       return getAnyConnectionEntry(windowState, workspaceId);
     }
     return windowState.projectRegistry.getDirectoryConnectionEntry({ directory, workspaceId });
   }
 
-  function getConnectionForDirectory(windowState, directory, workspaceId) {
+  function getConnectionForDirectory(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     return getConnectionEntryForDirectory(windowState, directory, workspaceId)?.connection ?? null;
   }
 
-  function teardownConnectionIfCurrent(windowState, projectKey, conn) {
+  function teardownConnectionIfCurrent(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    projectKey: string,
+    conn: OpenCodeConnection | null,
+  ) {
     if (!conn) return;
     if (windowState.projectRegistry.getConnection(projectKey) === conn) {
       windowState.projectRegistry.deleteConnection(projectKey);
@@ -1400,12 +1480,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   }
 
   async function connectConnectionForDirectory(
-    windowState,
-    sender,
-    directory,
-    workspaceId,
-    config,
-    { replaceExisting = false } = {},
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    sender: HarnessWebContentsSender,
+    directory: string,
+    workspaceId: string | undefined,
+    config: OpenCodeConnectConfig,
+    { replaceExisting = false }: { replaceExisting?: boolean } = {},
   ) {
     if (typeof directory !== "string" || !directory.trim()) return null;
 
@@ -1427,8 +1507,8 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       if (pending) await pending.catch(() => {});
     }
 
-    const connectionPromise = (async () => {
-      let conn = null;
+    const connectionPromise = (async (): Promise<OpenCodeConnection | null> => {
+      let conn: OpenCodeConnection | null = null;
       try {
         if (replaceExisting) {
           const existing = windowState.projectRegistry.deleteConnection(projectKey);
@@ -1473,7 +1553,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     }
   }
 
-  async function ensureConnectionForDirectory(windowState, sender, directory, workspaceId) {
+  async function ensureConnectionForDirectory(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    sender: HarnessWebContentsSender,
+    directory: string,
+    workspaceId: string | undefined,
+  ) {
     if (typeof directory !== "string" || !directory.trim()) return null;
     const baseConfig = windowState.serverConfig ?? { baseUrl: LOCAL_SERVER_URL };
     return await connectConnectionForDirectory(
@@ -1492,21 +1577,25 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, ...args: unknown[]) => Promise<unknown>} fn
    */
-  function handleDirectoryOp(channel, fn) {
-    ipcMain.handle(channel, async (event, directory, workspaceId, ...args) => {
+  function handleDirectoryOp(
+    channel: string,
+    fn: (conn: OpenCodeConnection, ...args: unknown[]) => Promise<unknown> | unknown,
+  ) {
+    ipcMain.handle(channel, async (event: unknown, directory, workspaceId, ...args) => {
+      const ipcEvent = event as OpencodeIpcEvent;
       try {
-        const windowState = getWindowState(event.sender);
+        const windowState = getWindowState(ipcEvent.sender);
         const conn = await ensureConnectionForDirectory(
           windowState,
-          event.sender,
-          directory,
-          workspaceId,
+          ipcEvent.sender,
+          directory as string,
+          workspaceId as string | undefined,
         );
         if (!conn) return { success: false, error: "No connection available" };
         const data = await fn(conn, ...args);
         return data === undefined ? { success: true } : { success: true, data };
-      } catch (err) {
-        return { success: false, error: err.message };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
     });
   }
@@ -1517,21 +1606,34 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, sessionId: string, ...args: unknown[]) => Promise<unknown>} fn
    */
-  function handleSessionOp(channel, fn) {
-    ipcMain.handle(channel, async (event, sessionId, ...args) => {
+  function handleSessionOp(
+    channel: string,
+    fn: (
+      conn: OpenCodeConnection,
+      sessionId: string,
+      ...args: unknown[]
+    ) => Promise<unknown> | unknown,
+  ) {
+    ipcMain.handle(channel, async (event: unknown, sessionId, ...args) => {
+      const ipcEvent = event as OpencodeIpcEvent;
       try {
-        const windowState = getWindowState(event.sender);
+        const windowState = getWindowState(ipcEvent.sender);
         const maybeWorkspaceId = args.at(-1);
         const maybeDirectory = args.at(-2);
         const workspaceId = typeof maybeWorkspaceId === "string" ? maybeWorkspaceId : undefined;
         const directory = typeof maybeDirectory === "string" ? maybeDirectory : undefined;
-        const conn = getConnectionForSession(windowState, sessionId, directory, workspaceId);
+        const conn = getConnectionForSession(
+          windowState,
+          sessionId as string,
+          directory,
+          workspaceId,
+        );
         if (!conn) return { success: false, error: "Session connection not found" };
-        const rawSessionId = toRawSessionId(sessionId);
+        const rawSessionId = toRawSessionId(sessionId as string);
         const data = await fn(conn, rawSessionId, ...args);
         return data === undefined ? { success: true } : { success: true, data };
-      } catch (err) {
-        return { success: false, error: err.message };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
     });
   }
@@ -1543,10 +1645,18 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * @param {string} channel - IPC channel name
    * @param {(conn: OpenCodeConnection, requestID: string, ...args: unknown[]) => Promise<unknown>} fn
    */
-  function handleQuestionOp(channel, fn) {
-    ipcMain.handle(channel, async (event, requestID, ...args) => {
+  function handleQuestionOp(
+    channel: string,
+    fn: (
+      conn: OpenCodeConnection,
+      requestID: string,
+      ...args: unknown[]
+    ) => Promise<unknown> | unknown,
+  ) {
+    ipcMain.handle(channel, async (event: unknown, requestID, ...args) => {
+      const ipcEvent = event as OpencodeIpcEvent;
       try {
-        const windowState = getWindowState(event.sender);
+        const windowState = getWindowState(ipcEvent.sender);
         if (typeof requestID !== "string" || !requestID.trim()) {
           return { success: false, error: "Question requestID is required" };
         }
@@ -1583,28 +1693,35 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
           success: false,
           error: "Question connection not found",
         };
-      } catch (err) {
-        return { success: false, error: err.message };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
     });
   }
 
-  function successResult(data) {
+  function successResult(data: unknown) {
     return data === undefined ? { success: true } : { success: true, data };
   }
 
-  function failureResult(error) {
-    return { success: false, error: error?.message ?? String(error) };
+  function failureResult(error: unknown) {
+    return {
+      success: false as const,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
-  function isResultEnvelope(value) {
-    return value && typeof value === "object" && typeof value.success === "boolean";
+  function isResultEnvelope(value: unknown): value is { success: boolean } {
+    return value !== null && typeof value === "object" && "success" in value;
   }
 
-  function handleResultOp(channel, fn) {
-    ipcMain.handle(channel, async (event, ...args) => {
+  function handleResultOp(
+    channel: string,
+    fn: (event: OpencodeIpcEvent, ...args: unknown[]) => Promise<unknown> | unknown,
+  ) {
+    ipcMain.handle(channel, async (event: unknown, ...args) => {
+      const ipcEvent = event as OpencodeIpcEvent;
       try {
-        const result = await fn(event, ...args);
+        const result = await fn(ipcEvent, ...args);
         return isResultEnvelope(result) ? result : successResult(result);
       } catch (error) {
         return failureResult(error);
@@ -1671,8 +1788,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * @param {{ cwd: string, timeout?: number, shell?: boolean }} options
    * @returns {Promise<string>} Raw stdout
    */
-  function runCommand(executable, args, options) {
-    return new Promise((resolve, reject) => {
+  function runCommand(
+    executable: string,
+    args: string[],
+    options: { cwd: string; timeout?: number; shell?: boolean },
+  ) {
+    return new Promise<string>((resolve, reject) => {
       const child = spawn(executable, args, {
         cwd: options.cwd,
         stdio: ["ignore", "pipe", "pipe"],
@@ -1685,7 +1806,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       let stderr = "";
       let timedOut = false;
       let settled = false;
-      let timeoutId = null;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
       const cleanup = () => {
         if (timeoutId !== null) {
@@ -1694,12 +1815,12 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         }
       };
 
-      const fail = (message) => {
+      const fail = (message: string) => {
         if (settled) return;
         settled = true;
         cleanup();
         const detail = (stderr || stdout || message).trim();
-        const error = new Error(detail || message);
+        const error = new Error(detail || message) as OpenCodeRunCommandError;
         error.stdout = stdout;
         error.stderr = stderr;
         reject(error);
@@ -1729,7 +1850,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         cleanup();
         if (timedOut) {
           settled = true;
-          const error = new Error(`Command timed out after ${options.timeout ?? 0}ms`);
+          const error = new Error(
+            `Command timed out after ${options.timeout ?? 0}ms`,
+          ) as OpenCodeRunCommandError;
           error.stdout = stdout;
           error.stderr = stderr;
           reject(error);
@@ -1762,7 +1885,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
    * @param {string[]} args - git arguments
    * @returns {Promise<string>} Raw stdout
    */
-  function runGit(directory, args) {
+  function runGit(directory: string, args: string[]) {
     return runCommand("git", args, { cwd: directory });
   }
 
@@ -1773,26 +1896,27 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (!config || typeof config !== "object") {
       return failureResult("Invalid config");
     }
-    const directory = (config.directory ?? "").trim();
+    const cfg = config as OpenCodeProjectAddConfig & Record<string, unknown>;
+    const directory = String(cfg.directory ?? "").trim();
     if (!directory) {
       return failureResult("Directory is required");
     }
     const normalizedConfig = normalizeServerConfig({
-      ...config,
-      directory,
       baseUrl:
-        typeof config.baseUrl === "string" && config.baseUrl.trim()
-          ? config.baseUrl
-          : LOCAL_SERVER_URL,
+        typeof cfg.baseUrl === "string" && cfg.baseUrl.trim() ? cfg.baseUrl : LOCAL_SERVER_URL,
+      username: cfg.username,
+      password: cfg.password,
+      directory,
     });
     const conn = await connectConnectionForDirectory(
       windowState,
       event.sender,
       directory,
-      config.workspaceId,
+      cfg.workspaceId,
       normalizedConfig,
       { replaceExisting: true },
     );
+    if (!conn) return failureResult("No connection available");
     return { success: true, status: conn.getStatus() };
   });
 
@@ -1801,7 +1925,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     if (typeof directory !== "string" || !directory.trim()) {
       return failureResult("Directory is required");
     }
-    const projectKey = makeProjectKey(windowState, workspaceId, directory);
+    const projectKey = makeProjectKey(windowState, ipcOptStr(workspaceId), directory);
     const pending = windowState.pendingConnections.get(projectKey);
     if (pending) await pending.catch(() => {});
     const { connection } = windowState.projectRegistry.removeProject(projectKey);
@@ -1830,9 +1954,15 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   // --- Session operations ---
 
   /** Tag Sessions with their execution Project directory. */
-  async function listAndCacheSessions(windowState, conn, dir, workspaceId) {
+  async function listAndCacheSessions(
+    windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
+    conn: OpenCodeConnection,
+    dir: string,
+    workspaceId: string | undefined,
+  ) {
     return (await conn.listSessions()).map((s) => {
-      const tagged = tagOpenCodeSession(s, dir, workspaceId);
+      const tagged = tagOpenCodeSession(s as Record<string, unknown>, dir, workspaceId);
+      if (!tagged) return tagged;
       rememberOpenCodeSessionDirectory(
         windowState,
         tagged._rawId ?? tagged.id,
@@ -1844,15 +1974,17 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   handleResultOp("opencode:session:list", async (event, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
-    if (directory) {
+    const dirArg = ipcStr(directory);
+    const wsArg = ipcOptStr(workspaceId);
+    if (dirArg) {
       const conn = await ensureConnectionForDirectory(
         windowState,
         event.sender,
-        directory,
-        workspaceId,
+        dirArg,
+        wsArg,
       );
       return conn
-        ? await listAndCacheSessions(windowState, conn, directory, workspaceId)
+        ? await listAndCacheSessions(windowState, conn, dirArg, wsArg)
         : failureResult("No connection available");
     }
     const allSessions = [];
@@ -1873,13 +2005,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   handleResultOp("opencode:session:create", async (event, title, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
-    const conn = directory
-      ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
-      : getAnyConnection(windowState, workspaceId);
+    const dirArg = ipcOptStr(directory);
+    const wsArg = ipcOptStr(workspaceId);
+    const conn = dirArg
+      ? await ensureConnectionForDirectory(windowState, event.sender, dirArg, wsArg)
+      : getAnyConnection(windowState, wsArg);
     if (!conn) return failureResult("No connection available");
-    const session = await conn.createSession(title);
-    const dir = directory || conn.getDirectory();
-    const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
+    const session = await conn.createSession(typeof title === "string" ? title : undefined);
+    const dir = dirArg || conn.getDirectory() || "";
+    const taggedSession = tagOpenCodeSession(session as Record<string, unknown>, dir, wsArg);
+    if (!taggedSession) return failureResult("Failed to tag session");
     rememberOpenCodeSessionDirectory(
       windowState,
       taggedSession._rawId ?? taggedSession.id,
@@ -1890,31 +2025,40 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   handleResultOp("opencode:session:delete", async (event, id, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
-    const rawId = toRawSessionId(id);
-    const entry = directory
+    const rawId = toRawSessionId(ipcStr(id));
+    const dirArg = ipcOptStr(directory);
+    const wsArg = ipcOptStr(workspaceId);
+    const entry = dirArg
       ? await (async () => {
           const conn = await ensureConnectionForDirectory(
             windowState,
             event.sender,
-            directory,
-            workspaceId,
+            dirArg,
+            wsArg,
           );
           return conn ? { connection: conn } : null;
         })()
-      : getConnectionEntryForSession(windowState, rawId, directory, workspaceId);
+      : getConnectionEntryForSession(windowState, rawId, dirArg, wsArg);
     const conn = entry?.connection ?? null;
     return conn ? await conn.deleteSession(rawId) : failureResult("Session connection not found");
   });
 
-  handleSessionOp("opencode:session:update", async (conn, id, title) =>
-    tagOpenCodeSession(await conn.updateSession(id, title), conn.getDirectory()),
-  );
+  handleSessionOp("opencode:session:update", async (conn, id, title, _directory, _workspaceId) => {
+    const dir = conn.getDirectory() ?? "";
+    return tagOpenCodeSession(
+      (await conn.updateSession(id, String(title))) as Record<string, unknown>,
+      dir,
+      undefined,
+    );
+  });
 
   handleResultOp("opencode:session:statuses", async (event, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
-    const conn = directory
-      ? getConnectionForDirectory(windowState, directory, workspaceId)
-      : getAnyConnection(windowState, workspaceId);
+    const dirArg = ipcOptStr(directory);
+    const wsArg = ipcOptStr(workspaceId);
+    const conn = dirArg
+      ? getConnectionForDirectory(windowState, dirArg, wsArg)
+      : getAnyConnection(windowState, wsArg);
     if (!conn) return failureResult("No connection available");
     const statuses = await conn.getSessionStatuses();
     return Object.fromEntries(
@@ -1922,20 +2066,43 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     );
   });
 
-  handleSessionOp("opencode:session:revert", async (conn, id, messageID, partID) =>
-    tagOpenCodeSession(await conn.revertSession(id, messageID, partID), conn.getDirectory()),
-  );
-  handleSessionOp("opencode:session:unrevert", async (conn, id) =>
-    tagOpenCodeSession(await conn.unrevertSession(id), conn.getDirectory()),
-  );
+  handleSessionOp("opencode:session:revert", async (conn, id, messageID, partID, _directory, _ws) => {
+    const dir = conn.getDirectory() ?? "";
+    return tagOpenCodeSession(
+      (await conn.revertSession(id, String(messageID), ipcOptStr(partID))) as Record<
+        string,
+        unknown
+      >,
+      dir,
+      undefined,
+    );
+  });
+  handleSessionOp("opencode:session:unrevert", async (conn, id, _directory, _ws) => {
+    const dir = conn.getDirectory() ?? "";
+    return tagOpenCodeSession(
+      (await conn.unrevertSession(id)) as Record<string, unknown>,
+      dir,
+      undefined,
+    );
+  });
 
   handleResultOp("opencode:session:fork", async (event, id, messageID, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
-    const entry = getConnectionEntryForSession(windowState, id, directory, workspaceId);
+    const entry = getConnectionEntryForSession(
+      windowState,
+      ipcStr(id),
+      ipcOptStr(directory),
+      ipcOptStr(workspaceId),
+    );
     if (!entry) return failureResult("Session connection not found");
+    const dir = entry.connection.getDirectory() ?? "";
     return tagOpenCodeSession(
-      await entry.connection.forkSession(toRawSessionId(id), messageID),
-      entry.connection.getDirectory(),
+      (await entry.connection.forkSession(
+        toRawSessionId(ipcStr(id)),
+        ipcOptStr(messageID),
+      )) as Record<string, unknown>,
+      dir,
+      undefined,
     );
   });
 
@@ -1948,16 +2115,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   handleDirectoryOp("opencode:provider:list", (conn) => conn.listAllProviders());
   handleDirectoryOp("opencode:provider:auth-methods", (conn) => conn.getProviderAuthMethods());
   handleDirectoryOp("opencode:provider:connect", (conn, providerID, auth) =>
-    conn.setProviderAuth(providerID, auth),
+    conn.setProviderAuth(ipcStr(providerID), auth),
   );
   handleDirectoryOp("opencode:provider:disconnect", (conn, providerID) =>
-    conn.removeProviderAuth(providerID),
+    conn.removeProviderAuth(ipcStr(providerID)),
   );
   handleDirectoryOp("opencode:provider:oauth:authorize", (conn, providerID, method) =>
-    conn.oauthAuthorize(providerID, method),
+    conn.oauthAuthorize(ipcStr(providerID), ipcOptStr(method)),
   );
   handleDirectoryOp("opencode:provider:oauth:callback", (conn, providerID, method, code) =>
-    conn.oauthCallback(providerID, method, code),
+    conn.oauthCallback(ipcStr(providerID), ipcOptStr(method), ipcOptStr(code)),
   );
   handleDirectoryOp("opencode:instance:dispose", (conn) => conn.disposeInstance());
 
@@ -1969,15 +2136,27 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   handleResultOp("opencode:messages", async (event, sessionId, options, directory, workspaceId) => {
     const windowState = getWindowState(event.sender);
-    const rawSessionId = toRawSessionId(sessionId);
-    let conn = getConnectionForSession(windowState, rawSessionId, directory, workspaceId);
-    if (!conn && directory) conn = getConnectionForDirectory(windowState, directory, workspaceId);
+    const rawSessionId = toRawSessionId(ipcStr(sessionId));
+    const dirArg = ipcOptStr(directory);
+    const wsArg = ipcOptStr(workspaceId);
+    let conn = getConnectionForSession(windowState, rawSessionId, dirArg, wsArg);
+    if (!conn && dirArg) conn = getConnectionForDirectory(windowState, dirArg, wsArg);
     if (!conn) return failureResult("Session connection not found");
-    const data = await conn.getMessages(rawSessionId, options);
+    const data = await conn.getMessages(
+      rawSessionId,
+      (options ?? {}) as OpenCodeMessagesOptions,
+    );
     return { ...data, messages: (data.messages ?? []).map(tagOpenCodeMessageEntry) };
   });
   handleSessionOp("opencode:prompt", (conn, sessionId, text, images, model, agent, variant) =>
-    conn.promptAsync(sessionId, text, images, model, agent, variant),
+    conn.promptAsync(
+      sessionId,
+      String(text),
+      Array.isArray(images) ? (images as string[]) : undefined,
+      model as OpenCodeModelRef | undefined,
+      ipcOptStr(agent),
+      ipcOptStr(variant),
+    ),
   );
   handleSessionOp("opencode:abort", (conn, sessionId) => conn.abortSession(sessionId));
 
@@ -1985,14 +2164,22 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   handleSessionOp(
     "opencode:permission",
-    (conn, sessionId, permissionId, response, directory, workspaceId) =>
-      conn.respondPermission(sessionId, permissionId, response, workspaceId),
+    (conn, sessionId, permissionId, response, _directory, workspaceId) =>
+      conn.respondPermission(
+        sessionId,
+        String(permissionId),
+        response as "always" | "once" | "reject",
+        ipcOptStr(workspaceId),
+      ),
   );
 
   // --- Question response (target/question routed) ---
 
   handleQuestionOp("opencode:question:reply", (conn, requestID, answers) =>
-    conn.replyQuestion(requestID, answers),
+    conn.replyQuestion(
+      requestID,
+      answers as Parameters<OpenCodeSdkClient["question"]["reply"]>[0]["answers"],
+    ),
   );
 
   // --- Commands (global) ---
@@ -2001,35 +2188,52 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   handleSessionOp(
     "opencode:command:send",
     (conn, sessionId, command, args, model, agent, variant) =>
-      conn.sendCommand(sessionId, command, args, model, agent, variant),
+      conn.sendCommand(
+        sessionId,
+        String(command),
+        args,
+        model as OpenCodeModelRef | undefined,
+        ipcOptStr(agent),
+        ipcOptStr(variant),
+      ),
   );
   handleSessionOp("opencode:session:summarize", (conn, sessionId, model) =>
-    conn.summarizeSession(sessionId, model),
+    conn.summarizeSession(sessionId, model as OpenCodeModelRef | null | undefined),
   );
 
   handleResultOp("opencode:session:start", async (event, input = {}) => {
     const windowState = getWindowState(event.sender);
-    const directory = input.directory;
-    const workspaceId = input.workspaceId;
+    const startInput = (input ?? {}) as OpenCodeSessionStartInput;
+    const directory = ipcOptStr(startInput.directory);
+    const workspaceId = ipcOptStr(startInput.workspaceId);
     const conn = directory
       ? await ensureConnectionForDirectory(windowState, event.sender, directory, workspaceId)
       : getAnyConnection(windowState, workspaceId);
     if (!conn) return failureResult("No connection available");
-    const session = await conn.createSession(input.title);
-    const dir = directory || conn.getDirectory();
-    const taggedSession = tagOpenCodeSession(session, dir, workspaceId);
+    const session = await conn.createSession(startInput.title);
+    const dir = directory || conn.getDirectory() || "";
+    const taggedSession = tagOpenCodeSession(
+      session as Record<string, unknown>,
+      dir,
+      workspaceId,
+    );
+    if (!taggedSession) return failureResult("Failed to tag session");
     rememberOpenCodeSessionDirectory(
       windowState,
       taggedSession._rawId ?? taggedSession.id,
       taggedSession._projectDir ?? dir,
     );
+    const sessionId =
+      typeof session === "object" && session && "id" in session
+        ? String((session as { id: string }).id)
+        : taggedSession.id;
     await conn.promptAsync(
-      session.id,
-      input.text ?? "",
-      input.images,
-      input.model,
-      input.agent,
-      input.variant,
+      sessionId,
+      startInput.text ?? "",
+      startInput.images,
+      startInput.model,
+      startInput.agent,
+      startInput.variant,
     );
     return taggedSession;
   });
@@ -2038,9 +2242,9 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   // --- MCP operations (directory-aware) ---
 
   handleDirectoryOp("opencode:mcp:status", (conn) => conn.getMcpStatus());
-  handleDirectoryOp("opencode:mcp:add", (conn, name, config) => conn.addMcp(name, config));
-  handleDirectoryOp("opencode:mcp:connect", (conn, name) => conn.connectMcp(name));
-  handleDirectoryOp("opencode:mcp:disconnect", (conn, name) => conn.disconnectMcp(name));
+  handleDirectoryOp("opencode:mcp:add", (conn, name, config) => conn.addMcp(ipcStr(name), config));
+  handleDirectoryOp("opencode:mcp:connect", (conn, name) => conn.connectMcp(ipcStr(name)));
+  handleDirectoryOp("opencode:mcp:disconnect", (conn, name) => conn.disconnectMcp(ipcStr(name)));
 
   // --- Config operations (directory-aware) ---
 
@@ -2049,7 +2253,11 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   handleResultOp("opencode:config:update", async (event, directory, workspaceId, config) => {
     if (!config || typeof config !== "object") return failureResult("Invalid config");
     const windowState = getWindowState(event.sender);
-    const conn = getConnectionForDirectory(windowState, directory, workspaceId);
+    const conn = getConnectionForDirectory(
+      windowState,
+      ipcStr(directory),
+      ipcOptStr(workspaceId),
+    );
     return conn ? await conn.updateConfig(config) : failureResult("No connection available");
   });
 
@@ -2067,7 +2275,7 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
 
   ipcMain.handle("git:is-repo", async (_event, directory) => {
     try {
-      await runGit(directory, ["rev-parse", "--git-dir"]);
+      await runGit(ipcStr(directory), ["rev-parse", "--git-dir"]);
       return { success: true, data: true };
     } catch {
       return { success: true, data: false };
@@ -2075,20 +2283,20 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   });
 
   handleResultOp("git:branch:list", async (_event, directory) =>
-    (await runGit(directory, ["branch", "--format=%(refname:short)"]))
+    (await runGit(ipcStr(directory), ["branch", "--format=%(refname:short)"]))
       .split(/\r?\n/)
       .map((branch) => branch.trim())
       .filter(Boolean),
   );
 
   handleResultOp("git:current-branch", async (_event, directory) =>
-    (await runGit(directory, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(),
+    (await runGit(ipcStr(directory), ["rev-parse", "--abbrev-ref", "HEAD"])).trim(),
   );
 
   handleResultOp("git:worktree:list", async (_event, directory) => {
-    const raw = await runGit(directory, ["worktree", "list", "--porcelain"]);
-    const worktrees = [];
-    let current = {};
+    const raw = await runGit(ipcStr(directory), ["worktree", "list", "--porcelain"]);
+    const worktrees: Array<Record<string, unknown>> = [];
+    let current: Record<string, unknown> = {};
     for (const line of raw.split(/\r?\n/)) {
       if (line.startsWith("worktree ")) {
         if (current.path) worktrees.push(current);
@@ -2114,14 +2322,16 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
     "git:worktree:add",
     async (_event, directory, worktreePath, branch, isNewBranch) => {
       const args = ["worktree", "add"];
-      args.push(...(isNewBranch ? ["-b", branch, worktreePath] : [worktreePath, branch]));
-      await runGit(directory, args);
-      return { path: worktreePath };
+      const wt = ipcStr(worktreePath);
+      const br = ipcStr(branch);
+      args.push(...(isNewBranch ? ["-b", br, wt] : [wt, br]));
+      await runGit(ipcStr(directory), args);
+      return { path: wt };
     },
   );
 
   handleResultOp("git:worktree:remove", async (_event, directory, worktreePath) => {
-    await runGit(directory, ["worktree", "remove", worktreePath]);
+    await runGit(ipcStr(directory), ["worktree", "remove", ipcStr(worktreePath)]);
   });
 
   // -----------------------------------------------------------------------
@@ -2129,9 +2339,10 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
   // -----------------------------------------------------------------------
 
   ipcMain.handle("worktree:detect-setup", async (_event, worktreePath) => {
+    const wtPath = ipcStr(worktreePath);
     try {
       for (const check of WORKTREE_SETUP_CHECKS) {
-        if (existsSync(join(worktreePath, check.file))) {
+        if (existsSync(join(wtPath, check.file))) {
           return {
             detected: true,
             command: check.command,
@@ -2140,15 +2351,20 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         }
       }
       return { detected: false };
-    } catch (err) {
-      return { detected: false, error: err.message ?? String(err) };
+    } catch (err: unknown) {
+      return {
+        detected: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   });
 
   ipcMain.handle("worktree:run-setup", async (_event, worktreePath, command) => {
+    const wtPath = ipcStr(worktreePath);
+    const cmd = ipcStr(command);
     try {
-      const candidates = WORKTREE_SETUP_CHECKS.filter((check) => check.command === command);
-      const matched = candidates.find((check) => existsSync(join(worktreePath, check.file)));
+      const candidates = WORKTREE_SETUP_CHECKS.filter((check) => check.command === cmd);
+      const matched = candidates.find((check) => existsSync(join(wtPath, check.file)));
       if (!matched) {
         return {
           success: false,
@@ -2156,26 +2372,29 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
         };
       }
       await runCommand(matched.executable, matched.args, {
-        cwd: worktreePath,
+        cwd: wtPath,
         timeout: 120_000,
         shell: process.platform === "win32" && WINDOWS_SHELL_COMMANDS.has(matched.executable),
       });
       return { success: true };
-    } catch (err) {
+    } catch (err: unknown) {
+      const runErr = err as OpenCodeRunCommandError;
       return {
         success: false,
-        error: err.stderr || err.message || String(err),
+        error: runErr.stderr || (err instanceof Error ? err.message : String(err)),
       };
     }
   });
 
   ipcMain.handle("git:merge", async (_event, directory, branch) => {
+    const dir = ipcStr(directory);
+    const br = ipcStr(branch);
     try {
-      await runGit(directory, ["merge", branch, "--no-edit"]);
+      await runGit(dir, ["merge", br, "--no-edit"]);
       return { success: true };
-    } catch (err) {
+    } catch (err: unknown) {
       try {
-        const conflicted = (await runGit(directory, ["diff", "--name-only", "--diff-filter=U"]))
+        const conflicted = (await runGit(dir, ["diff", "--name-only", "--diff-filter=U"]))
           .split(/\r?\n/)
           .map((f) => f.trim())
           .filter(Boolean);
@@ -2185,16 +2404,19 @@ export function setupOpenCodeBridge(ipcMain, _getWindows) {
       } catch {
         // Could not determine conflicts
       }
-      return { success: false, error: err.message ?? String(err) };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   });
 
   handleResultOp("git:merge:abort", async (_event, directory) => {
-    await runGit(directory, ["merge", "--abort"]);
+    await runGit(ipcStr(directory), ["merge", "--abort"]);
   });
 
   handleResultOp("git:remote:url", async (_event, directory) =>
-    (await runGit(directory, ["remote", "get-url", "origin"])).trim(),
+    (await runGit(ipcStr(directory), ["remote", "get-url", "origin"])).trim(),
   );
 
   return {
