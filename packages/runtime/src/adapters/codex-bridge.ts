@@ -21,61 +21,21 @@ import {
   nowHarnessConnection as nowConnection,
 } from "./harness-adapter-kit.ts";
 import {
-  asHarnessString,
   buildMessagesFromCodexAppServerThread,
-  defaultAssistantInfo,
-  defaultUserInfo,
-  findMessage,
-  findPart,
-  getSessionPreview,
-  makeReasoningPart,
-  makeSessionTitle,
-  makeTextPart,
   normalizeAppServerItem,
   normalizeCodexAppServerThread,
-  renameSessionInMessages,
-  upsertMessage,
-  upsertPart,
 } from "./codex-bridge-mapping.ts";
-import type {
-  CodexAppServerNotificationParams,
-  CodexAppServerThreadRow,
-  CodexJsonRpcPending,
-  CodexMessageBundle,
-  CodexMessageInfo,
-  CodexPart,
-  CodexMcpContentBlock,
-  CodexModelRow,
-  CodexPromptInput,
-  CodexProviderData,
-  CodexSelectedModel,
-  CodexSessionView,
-  CodexToolPart,
-  CodexTurnUsage,
-  NormalizedAppServerItem,
-} from "./codex-bridge-types.ts";
 import {
   makeHarnessBridgeEventEmitter,
   registerObjectTargetHarnessRpcHandlers,
-  type ObjectTargetHarnessManager,
 } from "./harness-adapter-host.ts";
-import {
-  createHarnessProjectSlot,
-  ensureHarnessProjectSlot,
-} from "./harness-bridge-project-slot.ts";
 
 const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 const CODEX_PROVIDER_CACHE_TTL_MS = 60_000;
 const CODEX_SESSION_PREFIX = "codex:";
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(CODEX_SESSION_PREFIX);
 
-type CodexProviderCache = {
-  expiresAt: number;
-  promise: Promise<CodexProviderData> | null;
-  value: CodexProviderData | null;
-};
-
-let codexProviderCache: CodexProviderCache = {
+let codexProviderCache = {
   expiresAt: 0,
   promise: null,
   value: null,
@@ -85,18 +45,14 @@ function getCodexExecutable() {
   return process.env.CODEX_EXECUTABLE?.trim() || "codex";
 }
 
-function createCodexClient(options: Record<string, unknown> = {}) {
+function createCodexClient(options = {}) {
   return new Codex({
     ...options,
     codexPathOverride: getCodexExecutable(),
   });
 }
 
-async function withCodexAppServer<T>(
-  requestWork: (api: {
-    request: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
-  }) => Promise<T>,
-): Promise<T> {
+async function withCodexAppServer(requestWork) {
   const env = pickCodexEnv(process.env);
   const executable = getCodexExecutable();
   return await new Promise((resolve, reject) => {
@@ -111,7 +67,7 @@ async function withCodexAppServer<T>(
     let settled = false;
     let nextId = 1;
     let stderr = "";
-    const pending = new Map<number, CodexJsonRpcPending>();
+    const pending = new Map();
 
     const cleanup = () => {
       for (const entry of pending.values()) {
@@ -126,21 +82,21 @@ async function withCodexAppServer<T>(
       }
     };
 
-    const settleResolve = (value: T) => {
+    const settleResolve = (value) => {
       if (settled) return;
       settled = true;
       cleanup();
       resolve(value);
     };
 
-    const settleReject = (error: unknown) => {
+    const settleReject = (error) => {
       if (settled) return;
       settled = true;
       cleanup();
       reject(error);
     };
 
-    const request = (method: string, params: Record<string, unknown> = {}) =>
+    const request = (method, params = {}) =>
       new Promise((resolveRequest, rejectRequest) => {
         const id = nextId++;
         const timer = setTimeout(() => {
@@ -210,23 +166,20 @@ async function withCodexAppServer<T>(
   });
 }
 
-async function listCodexAppServerSessions(
-  target: { directory?: string; workspaceId?: string } = {},
-) {
+async function listCodexAppServerSessions(target = {}) {
   const workspaceId = target.workspaceId ?? "local";
   if (target.workspaceId !== undefined && target.workspaceId !== "local") return [];
   return await withCodexAppServer(async ({ request }) => {
     const sessions = [];
     let cursor = undefined;
     do {
-      const response = (await request("thread/list", {
+      const response = await request("thread/list", {
         limit: 100,
         sortKey: "updated_at",
         sortDirection: "desc",
         ...(cursor ? { cursor } : {}),
-      })) as { data?: unknown[]; nextCursor?: string };
-      for (const raw of Array.isArray(response?.data) ? response.data : []) {
-        const thread = raw as CodexAppServerThreadRow;
+      });
+      for (const thread of Array.isArray(response?.data) ? response.data : []) {
         if (!thread?.id) continue;
         const session = normalizeCodexAppServerThread(thread, workspaceId);
         if (target.directory && normalizeDir(session.directory) !== normalizeDir(target.directory))
@@ -242,35 +195,25 @@ async function listCodexAppServerSessions(
   });
 }
 
-async function readCodexAppServerMessages(sessionId: string) {
+async function readCodexAppServerMessages(sessionId) {
   return await withCodexAppServer(async ({ request }) => {
-    const response = (await request("thread/read", {
+    const response = await request("thread/read", {
       threadId: sessionId,
       includeTurns: true,
-    })) as { thread?: { id: string; turns?: unknown[] } };
-    const thread = response?.thread;
-    return buildMessagesFromCodexAppServerThread(
-      thread && typeof thread === "object"
-        ? (thread as Parameters<typeof buildMessagesFromCodexAppServerThread>[0])
-        : { id: sessionId, turns: [] },
-    );
+    });
+    return buildMessagesFromCodexAppServerThread(response?.thread ?? { id: sessionId, turns: [] });
   });
 }
 
 async function fetchCodexProviderFromAppServer() {
   return await withCodexAppServer(async ({ request }) => {
     await request("account/read", {}).catch(() => null);
-    const models: Record<string, NonNullable<ReturnType<typeof mapCodexAppServerModel>>> = {};
+    const models = {};
     let cursor = undefined;
     do {
-      const response = (await request("model/list", cursor ? { cursor } : {})) as {
-        data?: unknown[];
-        nextCursor?: string;
-      };
+      const response = await request("model/list", cursor ? { cursor } : {});
       for (const rawModel of Array.isArray(response?.data) ? response.data : []) {
-        const model = mapCodexAppServerModel(
-          rawModel as Parameters<typeof mapCodexAppServerModel>[0],
-        );
+        const model = mapCodexAppServerModel(rawModel);
         if (!model) continue;
         models[model.id] = model;
       }
@@ -301,9 +244,9 @@ async function getCodexProviderData() {
       return provider;
     } catch (error) {
       console.warn("Failed to discover Codex models via app-server:", error);
-      codexProviderCache.value = STATIC_CODEX_PROVIDER as CodexProviderData;
+      codexProviderCache.value = STATIC_CODEX_PROVIDER;
       codexProviderCache.expiresAt = Date.now() + CODEX_PROVIDER_CACHE_TTL_MS;
-      return STATIC_CODEX_PROVIDER as CodexProviderData;
+      return STATIC_CODEX_PROVIDER;
     } finally {
       codexProviderCache.promise = null;
     }
@@ -311,47 +254,132 @@ async function getCodexProviderData() {
   return codexProviderCache.promise;
 }
 
-function getCodexModel(providerData: { providers?: unknown[] } | null, modelId: string | null) {
+function getCodexModel(providerData, modelId) {
   if (!providerData || !modelId) return null;
   for (const provider of Array.isArray(providerData.providers) ? providerData.providers : []) {
-    const row = provider as { models?: Record<string, unknown> } | null | undefined;
-    const model = row?.models?.[modelId];
+    const model = provider?.models?.[modelId];
     if (model) return model;
   }
   return null;
 }
 
-async function resolveSupportedCodexVariant(model: CodexSelectedModel, variant: unknown) {
+async function resolveSupportedCodexVariant(model, variant) {
   const normalized = resolveVariant(variant);
   if (!normalized) return undefined;
   const modelId = resolveSelectedModelId(model);
   const providerData = await getCodexProviderData();
-  const codexModel = getCodexModel(providerData, modelId) as CodexModelRow | null;
-  const variantMap = codexModel?.variants ?? {};
-  const variants = Object.keys(variantMap).filter((key) => !variantMap[key]?.disabled);
+  const codexModel = getCodexModel(providerData, modelId);
+  const variants = Object.keys(codexModel?.variants ?? {}).filter(
+    (key) => !codexModel?.variants?.[key]?.disabled,
+  );
   if (variants.length === 0) return undefined;
   return variants.includes(normalized) ? normalized : undefined;
 }
 
 const MAX_CODEX_SESSION_INDEX_ENTRIES = 1000;
 
-function sessionStatus(type: string) {
+function sessionStatus(type) {
   return { type };
 }
 
-function resolveSelectedModelId(selectedModel: CodexSelectedModel) {
+function firstLine(text) {
+  return (
+    String(text ?? "")
+      .trim()
+      .split(/\r?\n/, 1)[0] ?? ""
+  );
+}
+
+function makeSessionTitle(text, title) {
+  const explicit = typeof title === "string" ? title.trim() : "";
+  if (explicit) return explicit;
+  const line = firstLine(text);
+  return line.slice(0, 80) || "Untitled";
+}
+
+function resolveSelectedModelId(selectedModel) {
   if (selectedModel?.modelID && typeof selectedModel.modelID === "string") {
     return selectedModel.modelID;
   }
   return DEFAULT_MODEL_ID;
 }
 
-function resolveVariant(variant: unknown) {
+function resolveVariant(variant) {
   if (typeof variant !== "string") return undefined;
   return CODEX_VALID_VARIANTS.includes(variant) ? variant : undefined;
 }
 
-function parseDataUrl(dataUrl: unknown) {
+function defaultUserInfo(sessionId, messageId, modelId, variant, createdAt = Date.now()) {
+  return {
+    id: messageId,
+    sessionID: sessionId,
+    role: "user",
+    time: { created: createdAt },
+    agent: "codex",
+    model: {
+      providerID: DEFAULT_PROVIDER_ID,
+      modelID: modelId,
+      ...(variant ? { variant } : {}),
+    },
+  };
+}
+
+function defaultAssistantInfo(
+  sessionId,
+  messageId,
+  directory,
+  modelId,
+  variant,
+  createdAt = Date.now(),
+) {
+  return {
+    id: messageId,
+    sessionID: sessionId,
+    role: "assistant",
+    time: { created: createdAt },
+    parentID: "",
+    modelID: modelId,
+    providerID: DEFAULT_PROVIDER_ID,
+    mode: "codex",
+    agent: "codex",
+    path: {
+      cwd: directory,
+      root: directory,
+    },
+    cost: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: { read: 0, write: 0 },
+    },
+    ...(variant ? { variant } : {}),
+  };
+}
+
+function makeTextPart(sessionId, messageId, partId, text, synthetic = false) {
+  return {
+    id: partId,
+    sessionID: sessionId,
+    messageID: messageId,
+    type: "text",
+    text,
+    ...(synthetic ? { synthetic: true } : {}),
+  };
+}
+
+function makeReasoningPart(sessionId, messageId, partId, text, start = Date.now()) {
+  return {
+    id: partId,
+    sessionID: sessionId,
+    messageID: messageId,
+    type: "reasoning",
+    text,
+    time: { start },
+  };
+}
+
+function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") return null;
   const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/);
   if (!match) return null;
@@ -361,7 +389,7 @@ function parseDataUrl(dataUrl: unknown) {
   };
 }
 
-function mimeToExtension(mimeType: string) {
+function mimeToExtension(mimeType) {
   switch (mimeType) {
     case "image/png":
       return ".png";
@@ -377,50 +405,35 @@ function mimeToExtension(mimeType: string) {
   }
 }
 
-type CodexFilePart = CodexPart & {
-  type: "file";
-  mime: string;
-  filename: string;
-  url: string;
-};
-
-function createUserImageParts(
-  sessionId: string,
-  messageId: string,
-  images: unknown,
-): CodexFilePart[] {
-  const out: CodexFilePart[] = [];
-  for (const [index, image] of (Array.isArray(images) ? images : []).entries()) {
-    const parsed = parseDataUrl(image);
-    if (!parsed || typeof image !== "string") continue;
-    out.push({
-      id: randomUUID(),
-      sessionID: sessionId,
-      messageID: messageId,
-      type: "file",
-      mime: parsed.mimeType,
-      filename: `image-${index + 1}${mimeToExtension(parsed.mimeType)}`,
-      url: image,
-    });
-  }
-  return out;
+function createUserImageParts(sessionId, messageId, images) {
+  return (Array.isArray(images) ? images : [])
+    .map((image, index) => {
+      const parsed = parseDataUrl(image);
+      if (!parsed) return null;
+      return {
+        id: randomUUID(),
+        sessionID: sessionId,
+        messageID: messageId,
+        type: "file",
+        mime: parsed.mimeType,
+        filename: `image-${index + 1}${mimeToExtension(parsed.mimeType)}`,
+        url: image,
+      };
+    })
+    .filter(Boolean);
 }
 
-function stringifyUnknown(value: unknown) {
+function stringifyUnknown(value) {
   if (typeof value === "string") return value;
   if (value == null) return "";
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
-  }
-  if (typeof value === "symbol") return value.description ?? value.toString();
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return "[unserializable]";
+    return String(value);
   }
 }
 
-function appendOrReplaceCumulativeDelta(current: unknown, delta: string) {
+function appendOrReplaceCumulativeDelta(current, delta) {
   const currentText = typeof current === "string" ? current : "";
   if (currentText && delta.length > currentText.length && delta.startsWith(currentText)) {
     return delta;
@@ -428,13 +441,12 @@ function appendOrReplaceCumulativeDelta(current: unknown, delta: string) {
   return `${currentText}${delta}`;
 }
 
-function mcpContentToText(result: { content?: unknown[]; structured_content?: unknown } | null) {
+function mcpContentToText(result) {
   if (!result || !Array.isArray(result.content))
     return stringifyUnknown(result?.structured_content);
-  const parts: string[] = [];
-  for (const raw of result.content) {
-    if (!raw || typeof raw !== "object") continue;
-    const block = raw as CodexMcpContentBlock;
+  const parts = [];
+  for (const block of result.content) {
+    if (!block || typeof block !== "object") continue;
     if (block.type === "text" && typeof block.text === "string") {
       parts.push(block.text);
       continue;
@@ -449,20 +461,20 @@ function mcpContentToText(result: { content?: unknown[]; structured_content?: un
   return joined || stringifyUnknown(result?.structured_content);
 }
 
-function cloneJSON(value: unknown) {
+function cloneJSON(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function makeStoragePaths(userData: string = join(homedir(), ".config", "OpenGUI")) {
+function makeStoragePaths(userData = join(homedir(), ".config", "OpenGUI")) {
   const root = join(userData, "codex");
   return {
     root,
   };
 }
 
-function buildCodexPath(source: NodeJS.ProcessEnv) {
-  const pathValue = typeof source.PATH === "string" ? source.PATH : "";
-  const home = typeof source.HOME === "string" ? source.HOME : homedir();
+function buildCodexPath(source) {
+  const pathValue = typeof source?.PATH === "string" ? source.PATH : "";
+  const home = source?.HOME || homedir();
   const candidates = [
     join(home, ".local", "share", "pnpm"),
     join(home, ".local", "bin"),
@@ -477,8 +489,8 @@ function buildCodexPath(source: NodeJS.ProcessEnv) {
   return parts.join(":");
 }
 
-function pickCodexEnv(source: NodeJS.ProcessEnv) {
-  const env: Record<string, string> = {};
+function pickCodexEnv(source) {
+  const env = {};
   const allow = new Set([
     "PATH",
     "HOME",
@@ -514,7 +526,64 @@ function pickCodexEnv(source: NodeJS.ProcessEnv) {
   return env;
 }
 
-function summarizeFileChanges(changes: Array<{ path: string; kind: string }> | null | undefined) {
+function getMessageText(bundle) {
+  if (!bundle || !Array.isArray(bundle.parts)) return "";
+  return bundle.parts
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n\n")
+    .trim();
+}
+
+function getSessionPreview(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const text = getMessageText(messages[i]);
+    if (text) return firstLine(text).slice(0, 160);
+  }
+  return "";
+}
+
+function upsertMessage(messages, info) {
+  let bundle = messages.find((entry) => entry.info.id === info.id);
+  if (!bundle) {
+    bundle = { info, parts: [] };
+    messages.push(bundle);
+    return bundle;
+  }
+  bundle.info = info;
+  return bundle;
+}
+
+function findMessage(messages, messageId) {
+  return messages.find((entry) => entry.info.id === messageId) ?? null;
+}
+
+function upsertPart(messages, part) {
+  const bundle = findMessage(messages, part.messageID);
+  if (!bundle) return null;
+  const index = bundle.parts.findIndex((entry) => entry.id === part.id);
+  if (index === -1) {
+    bundle.parts.push(part);
+    return part;
+  }
+  bundle.parts[index] = part;
+  return part;
+}
+
+function findPart(messages, messageId, partId) {
+  const bundle = findMessage(messages, messageId);
+  if (!bundle) return null;
+  return bundle.parts.find((part) => part.id === partId) ?? null;
+}
+
+function renameSessionInMessages(messages, oldId, newId) {
+  for (const bundle of messages) {
+    bundle.info = { ...bundle.info, sessionID: newId };
+    bundle.parts = bundle.parts.map((part) => ({ ...part, sessionID: newId }));
+  }
+}
+
+function summarizeFileChanges(changes) {
   return (Array.isArray(changes) ? changes : []).map((change) => ({
     filePath: change.path,
     relativePath: change.path,
@@ -524,16 +593,10 @@ function summarizeFileChanges(changes: Array<{ path: string; kind: string }> | n
   }));
 }
 
-function buildToolPartFromItem(
-  sessionId: string,
-  messageId: string,
-  item: NormalizedAppServerItem,
-  existingPart: CodexToolPart | null | undefined,
-  phase: string,
-): CodexToolPart {
+function buildToolPartFromItem(sessionId, messageId, item, existingPart, phase) {
   const now = Date.now();
-  const base: Pick<CodexToolPart, "id" | "sessionID" | "messageID" | "type" | "callID"> = {
-    id: (existingPart?.id as string | undefined) ?? `${messageId}:tool:${item.id}`,
+  const base = {
+    id: existingPart?.id ?? `${messageId}:tool:${item.id}`,
     sessionID: sessionId,
     messageID: messageId,
     type: "tool",
@@ -573,7 +636,7 @@ function buildToolPartFromItem(
               start: existingPart?.state?.time?.start ?? now,
             },
           },
-    } as CodexToolPart;
+    };
   }
 
   if (item.type === "file_change") {
@@ -603,7 +666,7 @@ function buildToolPartFromItem(
               end: now,
             },
           },
-    } as CodexToolPart;
+    };
   }
 
   if (item.type === "mcp_tool_call") {
@@ -630,7 +693,7 @@ function buildToolPartFromItem(
           : {
               status: "completed",
               input: item.arguments ?? {},
-              output: mcpContentToText(item.result ?? null),
+              output: mcpContentToText(item.result),
               title: toolName,
               metadata: {
                 server: item.server,
@@ -654,7 +717,7 @@ function buildToolPartFromItem(
               start: existingPart?.state?.time?.start ?? now,
             },
           },
-    } as CodexToolPart;
+    };
   }
 
   if (item.type === "web_search") {
@@ -683,7 +746,7 @@ function buildToolPartFromItem(
                 start: existingPart?.state?.time?.start ?? now,
               },
             },
-    } as CodexToolPart;
+    };
   }
 
   if (item.type === "todo_list") {
@@ -717,7 +780,7 @@ function buildToolPartFromItem(
                 start: existingPart?.state?.time?.start ?? now,
               },
             },
-    } as CodexToolPart;
+    };
   }
 
   return {
@@ -734,60 +797,21 @@ function buildToolPartFromItem(
         end: now,
       },
     },
-  } as CodexToolPart;
+  };
 }
-
-type CodexProjectSlot = { key: string; directory: string; workspaceId?: string };
-
-type CodexSessionRecord = {
-  id: string;
-  directory: string;
-  workspaceId?: string;
-  title?: string;
-  preview?: string;
-  createdAt?: number;
-  updatedAt?: number;
-  modelId?: string | null;
-  variant?: string | null;
-  origin?: string;
-  hidden?: boolean;
-};
-
-type CodexTranscriptCache = { messages: CodexMessageBundle[] };
-
-type CodexLiveSessionState = {
-  sessionId: string;
-  threadId: string | null;
-  project: CodexProjectSlot;
-  session: CodexSessionView;
-  messages: CodexMessageBundle[];
-  running: boolean;
-  abortController: AbortController | null;
-  currentAssistantMessageId: string | null;
-  currentUserMessageId: string | null;
-  currentModelId: string;
-  currentVariant: string | undefined;
-  createdAt: number;
-  hidden: boolean;
-};
-
-type CodexProjectTarget = { directory?: string; workspaceId?: string };
 
 class CodexBridgeManager {
   emitBridgeEvent: (event: Record<string, unknown>) => void;
-  projects: Map<string, CodexProjectSlot>;
-  sessionIndex: Map<string, CodexSessionRecord>;
-  transcriptCache: Map<string, CodexTranscriptCache>;
-  liveSessions: Map<string, CodexLiveSessionState>;
+  projects: Map<string, { key: string; directory: string; workspaceId?: string }>;
+  sessionIndex: Map<string, unknown>;
+  transcriptCache: Map<string, unknown>;
+  liveSessions: Map<string, unknown>;
   aliases: Map<string, string>;
   paths: ReturnType<typeof makeStoragePaths>;
   storageReady: Promise<void>;
   codex: ReturnType<typeof createCodexClient>;
 
-  constructor(
-    getAllWindows: Parameters<typeof makeHarnessBridgeEventEmitter>[1],
-    options: { userData?: string } = {},
-  ) {
+  constructor(getAllWindows: () => Iterable<unknown>, options: { userData?: string } = {}) {
     this.emitBridgeEvent = makeHarnessBridgeEventEmitter("codex", getAllWindows);
     this.projects = new Map();
     this.sessionIndex = new Map();
@@ -801,11 +825,11 @@ class CodexBridgeManager {
     });
   }
 
-  emit(event: Record<string, unknown>) {
+  emit(event) {
     this.emitBridgeEvent(event);
   }
 
-  emitConnection(project: CodexProjectSlot, status: Record<string, unknown>) {
+  emitConnection(project, status) {
     this.emit({
       type: "connection:status",
       directory: project.directory,
@@ -814,7 +838,7 @@ class CodexBridgeManager {
     });
   }
 
-  emitBackend(project: CodexProjectSlot | null | undefined, payload: Record<string, unknown>) {
+  emitBackend(project, payload) {
     this.emit({
       type: "codex:event",
       directory: project?.directory,
@@ -844,7 +868,7 @@ class CodexBridgeManager {
     this.pruneSessionIndex();
   }
 
-  clearSessionMemory(sessionId: string) {
+  clearSessionMemory(sessionId) {
     sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     this.liveSessions.delete(sessionId);
@@ -858,7 +882,7 @@ class CodexBridgeManager {
     }
   }
 
-  clearProjectMemory(directory: string, workspaceId: string | undefined) {
+  clearProjectMemory(directory, workspaceId) {
     for (const [sessionId, live] of this.liveSessions.entries()) {
       if (live.project.directory === directory && live.project.workspaceId === workspaceId) {
         this.clearSessionMemory(sessionId);
@@ -876,7 +900,7 @@ class CodexBridgeManager {
     }
   }
 
-  async loadTranscript(sessionId: string) {
+  async loadTranscript(sessionId) {
     sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
     if (this.transcriptCache.has(realId)) {
@@ -887,7 +911,7 @@ class CodexBridgeManager {
     return empty;
   }
 
-  async persistTranscript(sessionId: string, messages: CodexTranscriptCache["messages"]) {
+  async persistTranscript(sessionId, messages) {
     await this.storageReady;
     sessionId = toRawSessionId(sessionId);
     const realId = this.resolveSessionId(sessionId);
@@ -895,15 +919,15 @@ class CodexBridgeManager {
     this.transcriptCache.set(realId, payload);
   }
 
-  resolveSessionId(sessionId: string) {
+  resolveSessionId(sessionId) {
     let current = toRawSessionId(sessionId);
     while (this.aliases.has(current)) {
-      current = this.aliases.get(current) ?? current;
+      current = this.aliases.get(current);
     }
     return current;
   }
 
-  getLiveSession(sessionId: string) {
+  getLiveSession(sessionId) {
     sessionId = toRawSessionId(sessionId);
     const direct = this.liveSessions.get(sessionId);
     if (direct) return direct;
@@ -911,25 +935,7 @@ class CodexBridgeManager {
     return this.liveSessions.get(resolved) ?? null;
   }
 
-  buildSession({
-    id,
-    directory,
-    workspaceId,
-    title,
-    createdAt,
-    updatedAt,
-    modelId,
-    variant,
-  }: {
-    id: string;
-    directory: string;
-    workspaceId?: string;
-    title?: string;
-    createdAt: number;
-    updatedAt: number;
-    modelId?: string | null;
-    variant?: string | null;
-  }) {
+  buildSession({ id, directory, workspaceId, title, createdAt, updatedAt, modelId, variant }) {
     const rawId = toRawSessionId(id);
     const frontendId = toFrontendSessionId(rawId);
     return {
@@ -958,24 +964,25 @@ class CodexBridgeManager {
     };
   }
 
-  buildSessionFromRecord(record: CodexSessionRecord) {
+  buildSessionFromRecord(record) {
     return this.buildSession({
       id: record.id,
       directory: record.directory,
       workspaceId: record.workspaceId,
       title: record.title,
-      createdAt: record.createdAt ?? Date.now(),
-      updatedAt: record.updatedAt ?? Date.now(),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
       modelId: record.modelId,
       variant: record.variant,
     });
   }
 
-  deriveSessionModelFromMessages(messages: CodexMessageBundle[]) {
-    let modelId: string | null = null;
-    let variant: string | null = null;
+  deriveSessionModelFromMessages(messages) {
+    let modelId = null;
+    let variant = null;
     for (const entry of messages) {
-      const info = entry.info;
+      const info = entry?.info;
+      if (!info || typeof info !== "object") continue;
       if (info.role === "assistant") {
         if (typeof info.modelID === "string" && info.modelID) modelId = info.modelID;
         if (typeof info.variant === "string" && info.variant) variant = info.variant;
@@ -991,16 +998,21 @@ class CodexBridgeManager {
     return { modelId, variant };
   }
 
-  ensureKnownProject(directory: string | undefined, workspaceId: string | undefined) {
-    return ensureHarnessProjectSlot(
-      this.projects,
-      { directory, workspaceId },
-      createHarnessProjectSlot,
-      { directoryRequiredMessage: "Codex requires a project directory" },
-    );
+  ensureKnownProject(directory, workspaceId) {
+    const normalized = normalizeDir(directory);
+    if (!normalized) {
+      throw new Error("Codex requires a project directory");
+    }
+    const key = makeProjectKey(workspaceId, normalized);
+    let project = this.projects.get(key);
+    if (!project) {
+      project = { key, directory: normalized, workspaceId };
+      this.projects.set(key, project);
+    }
+    return project;
   }
 
-  async addProject(config: CodexProjectTarget) {
+  async addProject(config) {
     const project = this.ensureKnownProject(config?.directory, config?.workspaceId);
     try {
       const info = await stat(project.directory);
@@ -1020,12 +1032,12 @@ class CodexBridgeManager {
     this.emitConnection(project, nowConnection({ state: "connected" }));
   }
 
-  async removeProject(target: CodexProjectTarget) {
+  async removeProject(target) {
     const directory = normalizeDir(target?.directory);
     if (!directory) return;
     const key = makeProjectKey(target?.workspaceId, directory);
     const workspaceId = target?.workspaceId;
-    const project: CodexProjectSlot = this.projects.get(key) ?? { key, directory, workspaceId };
+    const project = this.projects.get(key) ?? { directory, workspaceId };
     this.clearProjectMemory(directory, workspaceId);
     this.projects.delete(key);
     this.emitConnection(project, nowConnection({ state: "idle" }));
@@ -1041,11 +1053,11 @@ class CodexBridgeManager {
     this.aliases.clear();
   }
 
-  async listSessions(target: CodexProjectTarget = {}) {
+  async listSessions(target = {}) {
     await this.storageReady;
     const directory = normalizeDir(target.directory);
     const workspaceId = target.workspaceId;
-    const byId = new Map<string, CodexSessionView>();
+    const byId = new Map();
     try {
       for (const session of await listCodexAppServerSessions({ directory, workspaceId })) {
         const rawId = session._rawId ?? toRawSessionId(session.id);
@@ -1078,8 +1090,9 @@ class CodexBridgeManager {
       if (directory && record.directory !== directory) continue;
       if (workspaceId !== undefined && record.workspaceId !== workspaceId) continue;
       if (!record.modelId) {
-        const transcript = (await this.loadTranscript(record.id)) ?? { messages: [] };
-        const inferred = this.deriveSessionModelFromMessages(transcript.messages);
+        const inferred = this.deriveSessionModelFromMessages(
+          (await this.loadTranscript(record.id)).messages,
+        );
         if (inferred.modelId) {
           record.modelId = inferred.modelId;
           record.variant = inferred.variant ?? record.variant;
@@ -1090,7 +1103,7 @@ class CodexBridgeManager {
     return [...byId.values()].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
   }
 
-  async createSession(input: CodexPromptInput = {}) {
+  async createSession(input = {}) {
     const project = this.ensureKnownProject(input.directory, input.workspaceId);
     const now = Date.now();
     const tempId = `temp:${randomUUID()}`;
@@ -1127,12 +1140,12 @@ class CodexBridgeManager {
     return session;
   }
 
-  async startSession(input: CodexPromptInput = {}) {
+  async startSession(input = {}) {
     const session = await this.createSession(input);
     try {
       await this.prompt(
         session.id,
-        asHarnessString(input.text),
+        input.text ?? "",
         input.images,
         input.model,
         input.agent,
@@ -1150,7 +1163,7 @@ class CodexBridgeManager {
     }
   }
 
-  async deleteSession(sessionId: string, _target: CodexProjectTarget = {}) {
+  async deleteSession(sessionId, _target = {}) {
     sessionId = toRawSessionId(sessionId);
     await this.storageReady;
     const live = this.getLiveSession(sessionId);
@@ -1188,9 +1201,9 @@ class CodexBridgeManager {
     return true;
   }
 
-  async updateSession(sessionId: string, title: string, _target: CodexProjectTarget = {}) {
+  async updateSession(sessionId, title, _target = {}) {
     sessionId = toRawSessionId(sessionId);
-    const trimmed = asHarnessString(title).trim();
+    const trimmed = String(title ?? "").trim();
     if (!trimmed) throw new Error("Session title cannot be empty");
     const live = this.getLiveSession(sessionId);
     if (live) {
@@ -1240,8 +1253,8 @@ class CodexBridgeManager {
     return session;
   }
 
-  async getSessionStatuses(target: CodexProjectTarget = {}) {
-    const statuses: Record<string, ReturnType<typeof sessionStatus>> = {};
+  async getSessionStatuses(target = {}) {
+    const statuses = {};
     for (const session of await this.listSessions(target)) {
       const live = this.getLiveSession(session.id);
       statuses[session.id] = sessionStatus(live?.running ? "busy" : "idle");
@@ -1261,7 +1274,7 @@ class CodexBridgeManager {
     return [];
   }
 
-  async getMessages(sessionId: string) {
+  async getMessages(sessionId) {
     sessionId = toRawSessionId(sessionId);
     const live = this.getLiveSession(sessionId);
     if (live) {
@@ -1270,7 +1283,7 @@ class CodexBridgeManager {
         nextCursor: null,
       };
     }
-    const transcript = (await this.loadTranscript(sessionId)) ?? { messages: [] };
+    const transcript = await this.loadTranscript(sessionId);
     if (transcript.messages.length > 0) {
       return {
         messages: cloneJSON(transcript.messages),
@@ -1292,11 +1305,7 @@ class CodexBridgeManager {
     };
   }
 
-  async ensureLiveSessionForPrompt(
-    sessionId: string,
-    directory: string | undefined,
-    workspaceId: string | undefined,
-  ) {
+  async ensureLiveSessionForPrompt(sessionId, directory, workspaceId) {
     sessionId = toRawSessionId(sessionId);
     const live = this.getLiveSession(sessionId);
     if (live) return live;
@@ -1308,14 +1317,14 @@ class CodexBridgeManager {
       workspaceId ?? record.workspaceId,
     );
     const session = this.buildSessionFromRecord(record);
-    const cached = (await this.loadTranscript(realId)) ?? { messages: [] };
+    const cached = await this.loadTranscript(realId);
     const createdAt = record.createdAt ?? Date.now();
-    const state: CodexLiveSessionState = {
+    const state = {
       sessionId: realId,
       threadId: realId,
       project,
       session,
-      messages: cloneJSON(cached.messages) as CodexMessageBundle[],
+      messages: cloneJSON(cached.messages),
       running: false,
       abortController: null,
       currentAssistantMessageId: null,
@@ -1329,13 +1338,7 @@ class CodexBridgeManager {
     return state;
   }
 
-  appendSyntheticUserMessage(
-    state: CodexLiveSessionState,
-    text: string,
-    images: unknown,
-    model: CodexSelectedModel,
-    variant: unknown,
-  ) {
+  appendSyntheticUserMessage(state, text, images, model, variant) {
     const messageId = randomUUID();
     const modelId = resolveSelectedModelId(model);
     state.currentModelId = modelId;
@@ -1348,15 +1351,9 @@ class CodexBridgeManager {
         ...(state.currentVariant ? { variant: state.currentVariant } : {}),
       },
     };
-    const info = defaultUserInfo(
-      state.session.id,
-      messageId,
-      modelId,
-      Date.now(),
-      state.currentVariant,
-    );
+    const info = defaultUserInfo(state.session.id, messageId, modelId, state.currentVariant);
     const parts = [
-      makeTextPart(state.session.id, messageId, randomUUID(), asHarnessString(text), true),
+      makeTextPart(state.session.id, messageId, randomUUID(), String(text ?? ""), true),
       ...createUserImageParts(state.session.id, messageId, images),
     ];
     const bundle = { info, parts };
@@ -1368,7 +1365,7 @@ class CodexBridgeManager {
     }
   }
 
-  ensureAssistantMessage(state: CodexLiveSessionState) {
+  ensureAssistantMessage(state) {
     if (state.currentAssistantMessageId) {
       const existing = findMessage(state.messages, state.currentAssistantMessageId);
       if (existing) return existing;
@@ -1379,7 +1376,6 @@ class CodexBridgeManager {
       messageId,
       state.project.directory,
       state.currentModelId,
-      Date.now(),
       state.currentVariant,
     );
     info.parentID = state.currentUserMessageId ?? "";
@@ -1389,7 +1385,7 @@ class CodexBridgeManager {
     return bundle;
   }
 
-  emitSessionUpdated(state: CodexLiveSessionState) {
+  emitSessionUpdated(state) {
     this.emitBackend(state.project, {
       type: "session.updated",
       directory: state.project.directory,
@@ -1398,18 +1394,16 @@ class CodexBridgeManager {
     });
   }
 
-  async syncRealSessionRecord(state: CodexLiveSessionState, emitEvent = true) {
+  async syncRealSessionRecord(state, emitEvent = true) {
     if (!state.threadId) return;
     const now = Date.now();
     const preview = getSessionPreview(state.messages);
     const existing = this.sessionIndex.get(state.threadId);
-    const title: string =
-      typeof state.session.title === "string" &&
-      state.session.title &&
-      state.session.title !== "Untitled"
+    const title =
+      state.session.title && state.session.title !== "Untitled"
         ? state.session.title
         : makeSessionTitle(preview, existing?.title);
-    const record: CodexSessionRecord = {
+    const record = {
       id: state.threadId,
       directory: state.project.directory,
       workspaceId: state.project.workspaceId,
@@ -1432,7 +1426,7 @@ class CodexBridgeManager {
     }
   }
 
-  async handleThreadStarted(state: CodexLiveSessionState, threadId: string) {
+  async handleThreadStarted(state, threadId) {
     threadId = toRawSessionId(threadId);
     if (!threadId || state.threadId === threadId) return;
     const oldId = state.session.id;
@@ -1463,10 +1457,9 @@ class CodexBridgeManager {
     });
   }
 
-  handleAgentTextPart(state: CodexLiveSessionState, item: NormalizedAppServerItem, phase: string) {
+  handleAgentTextPart(state, item, phase) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
-    if (!messageId) return;
     const partId = `${messageId}:text:${item.id}`;
     const existing = findPart(state.messages, messageId, partId);
     const next = makeTextPart(state.session.id, messageId, partId, item.text || "");
@@ -1494,19 +1487,16 @@ class CodexBridgeManager {
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  handleReasoningPart(state: CodexLiveSessionState, item: NormalizedAppServerItem, phase: string) {
+  handleReasoningPart(state, item, phase) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
-    if (!messageId) return;
     const partId = `${messageId}:reasoning:${item.id}`;
     const existing = findPart(state.messages, messageId, partId);
-    const nextText = item.text || "";
-    const next: CodexPart = {
-      ...(existing ?? makeReasoningPart(state.session.id, messageId, partId, nextText)),
-      id: partId,
+    const next = {
+      ...(existing ?? makeReasoningPart(state.session.id, messageId, partId, item.text || "")),
       sessionID: state.session.id,
       messageID: messageId,
-      text: nextText,
+      text: item.text || "",
       time: {
         start: existing?.time?.start ?? Date.now(),
         ...(phase === "completed" ? { end: Date.now() } : {}),
@@ -1516,8 +1506,8 @@ class CodexBridgeManager {
     if (
       existing &&
       typeof existing.text === "string" &&
-      nextText.startsWith(existing.text) &&
-      nextText !== existing.text
+      next.text.startsWith(existing.text) &&
+      next.text !== existing.text
     ) {
       this.emitBackend(state.project, {
         type: "message.part.delta",
@@ -1525,50 +1515,43 @@ class CodexBridgeManager {
         messageID: messageId,
         partID: partId,
         field: "text",
-        delta: nextText.slice(existing.text.length),
+        delta: next.text.slice(existing.text.length),
       });
     }
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  handleToolLikeItem(state: CodexLiveSessionState, item: NormalizedAppServerItem, phase: string) {
+  handleToolLikeItem(state, item, phase) {
     this.ensureAssistantMessage(state);
     const messageId = state.currentAssistantMessageId;
-    if (!messageId) return;
     const partId = `${messageId}:tool:${item.id}`;
-    const existing = findPart(state.messages, messageId, partId) as CodexToolPart | null;
+    const existing = findPart(state.messages, messageId, partId);
     const next = buildToolPartFromItem(state.session.id, messageId, item, existing, phase);
     upsertPart(state.messages, next);
     this.emitBackend(state.project, { type: "message.part.updated", part: next });
   }
 
-  finalizeAssistantMessage(state: CodexLiveSessionState, usage: CodexTurnUsage | null | undefined) {
+  finalizeAssistantMessage(state, usage) {
     if (!state.currentAssistantMessageId) return;
     const bundle = findMessage(state.messages, state.currentAssistantMessageId);
     if (!bundle) return;
-    const baseTokens = bundle.info.tokens ?? {
-      input: 0,
-      output: 0,
-      reasoning: 0,
-      cache: { read: 0, write: 0 },
-    };
-    const info: CodexMessageInfo = {
+    const info = {
       ...bundle.info,
       time: {
         ...bundle.info.time,
         completed: Date.now(),
       },
       tokens: {
-        ...baseTokens,
-        input: usage?.input_tokens ?? baseTokens.input,
-        output: usage?.output_tokens ?? baseTokens.output,
+        ...bundle.info.tokens,
+        input: usage?.input_tokens ?? bundle.info.tokens.input,
+        output: usage?.output_tokens ?? bundle.info.tokens.output,
       },
     };
     bundle.info = info;
     this.emitBackend(state.project, { type: "message.updated", message: info });
   }
 
-  buildThreadOptions(project: CodexProjectSlot, model: CodexSelectedModel, variant: unknown) {
+  buildThreadOptions(project, model, variant) {
     return {
       model: resolveSelectedModelId(model),
       sandboxMode: "workspace-write",
@@ -1579,7 +1562,7 @@ class CodexBridgeManager {
     };
   }
 
-  async stageImages(images: unknown) {
+  async stageImages(images) {
     const list = Array.isArray(images) ? images : [];
     if (list.length === 0) return { inputImages: [], cleanup: async () => {} };
     const dir = await mkdtemp(join(tmpdir(), "opengui-codex-"));
@@ -1587,9 +1570,9 @@ class CodexBridgeManager {
     try {
       for (let i = 0; i < list.length; i += 1) {
         const parsed = parseDataUrl(list[i]);
-        if (!parsed?.data) continue;
+        if (!parsed) continue;
         const filePath = join(dir, `image-${i + 1}${mimeToExtension(parsed.mimeType)}`);
-        await writeFile(filePath, parsed.data, { encoding: "base64" });
+        await writeFile(filePath, Buffer.from(parsed.data, "base64"));
         paths.push(filePath);
       }
       return {
@@ -1604,7 +1587,7 @@ class CodexBridgeManager {
     }
   }
 
-  appServerThreadConfig(project: CodexProjectSlot, model: CodexSelectedModel, variant: unknown) {
+  appServerThreadConfig(project, model, variant) {
     return {
       model: resolveSelectedModelId(model),
       cwd: project.directory,
@@ -1615,7 +1598,7 @@ class CodexBridgeManager {
     };
   }
 
-  appServerTurnConfig(project: CodexProjectSlot, model: CodexSelectedModel, variant: unknown) {
+  appServerTurnConfig(project, model, variant) {
     return {
       cwd: project.directory,
       approvalPolicy: "never",
@@ -1629,15 +1612,9 @@ class CodexBridgeManager {
     };
   }
 
-  upsertAppServerItem(
-    state: CodexLiveSessionState,
-    cache: Map<string, NormalizedAppServerItem>,
-    item: Record<string, unknown>,
-    phase: string,
-  ) {
-    const itemId = typeof item.id === "string" ? item.id : "";
-    const existing = cache.get(itemId) ?? ({} as NormalizedAppServerItem);
-    const normalized = normalizeAppServerItem(item, existing) as NormalizedAppServerItem | null;
+  upsertAppServerItem(state, cache, item, phase) {
+    const existing = cache.get(item?.id) ?? {};
+    const normalized = normalizeAppServerItem(item, existing);
     if (!normalized) return;
     cache.set(normalized.id, normalized);
     if (normalized.type === "agent_message") {
@@ -1659,29 +1636,14 @@ class CodexBridgeManager {
     }
   }
 
-  appendAppServerDelta(
-    state: CodexLiveSessionState,
-    cache: Map<string, NormalizedAppServerItem>,
-    itemId: string,
-    field: string,
-    delta: string,
-    fallbackType: string,
-  ) {
+  appendAppServerDelta(state, cache, itemId, field, delta, fallbackType) {
     if (!itemId || typeof delta !== "string") return;
-    const existing: NormalizedAppServerItem = cache.get(itemId) ?? {
-      id: itemId,
-      type: fallbackType,
-    };
+    const existing = cache.get(itemId) ?? { id: itemId, type: fallbackType };
     if (fallbackType === "command_execution") {
       existing.aggregated_output = `${existing.aggregated_output ?? ""}${delta}`;
       existing.status = existing.status ?? "in_progress";
-    } else if (field === "text") {
-      existing.text = appendOrReplaceCumulativeDelta(existing.text, delta);
     } else {
-      (existing as Record<string, unknown>)[field] = appendOrReplaceCumulativeDelta(
-        (existing as Record<string, unknown>)[field],
-        delta,
-      );
+      existing[field] = appendOrReplaceCumulativeDelta(existing[field], delta);
     }
     cache.set(itemId, existing);
     if (fallbackType === "agent_message") {
@@ -1693,17 +1655,10 @@ class CodexBridgeManager {
     }
   }
 
-  async runAppServerTurn(
-    state: CodexLiveSessionState,
-    text: string,
-    inputImages: unknown[],
-    model: CodexSelectedModel,
-    variant: unknown,
-    controller: AbortController,
-  ) {
+  async runAppServerTurn(state, text, inputImages, model, variant, controller) {
     const env = pickCodexEnv(process.env);
     const executable = getCodexExecutable();
-    const itemCache = new Map<string, NormalizedAppServerItem>();
+    const itemCache = new Map();
     return await new Promise((resolve, reject) => {
       const child = spawn(executable, ["app-server"], {
         env,
@@ -1713,7 +1668,7 @@ class CodexBridgeManager {
       let nextId = 1;
       let stderr = "";
       let finished = false;
-      const pending = new Map<number, CodexJsonRpcPending>();
+      const pending = new Map();
       const cleanup = () => {
         for (const entry of pending.values()) clearTimeout(entry.timer);
         pending.clear();
@@ -1725,18 +1680,14 @@ class CodexBridgeManager {
           } catch {}
         }
       };
-      const settle = (fn: (value: unknown) => void, value: unknown) => {
+      const settle = (fn, value) => {
         if (finished) return;
         finished = true;
         cleanup();
         fn(value);
       };
-      const request = (
-        method: string,
-        params: Record<string, unknown> = {},
-        timeout = CODEX_APP_SERVER_TIMEOUT_MS,
-      ) =>
-        new Promise<unknown>((resolveRequest, rejectRequest) => {
+      const request = (method, params = {}, timeout = CODEX_APP_SERVER_TIMEOUT_MS) =>
+        new Promise((resolveRequest, rejectRequest) => {
           const id = nextId++;
           const timer = setTimeout(() => {
             pending.delete(id);
@@ -1748,13 +1699,9 @@ class CodexBridgeManager {
       const onAbort = () => settle(reject, new Error("Codex turn aborted"));
       controller.signal.addEventListener("abort", onAbort);
 
-      const handleNotification = async (
-        method: string,
-        params: CodexAppServerNotificationParams = {},
-      ) => {
+      const handleNotification = async (method, params = {}) => {
         if (method === "thread/started") {
-          const threadId = params.thread?.id;
-          if (threadId) await this.handleThreadStarted(state, threadId);
+          await this.handleThreadStarted(state, params.thread?.id);
           return;
         }
         if (method === "turn/started") {
@@ -1765,15 +1712,15 @@ class CodexBridgeManager {
           });
           return;
         }
-        if (method === "item/started" && params.item) {
+        if (method === "item/started") {
           this.upsertAppServerItem(state, itemCache, params.item, "running");
           return;
         }
-        if (method === "item/completed" && params.item) {
+        if (method === "item/completed") {
           this.upsertAppServerItem(state, itemCache, params.item, "completed");
           return;
         }
-        if (method === "item/agentMessage/delta" && params.itemId && params.delta) {
+        if (method === "item/agentMessage/delta") {
           this.appendAppServerDelta(
             state,
             itemCache,
@@ -1784,7 +1731,18 @@ class CodexBridgeManager {
           );
           return;
         }
-        if (method === "item/plan/delta" && params.itemId && params.delta) {
+        if (method === "item/plan/delta") {
+          this.appendAppServerDelta(
+            state,
+            itemCache,
+            params.itemId,
+            "text",
+            params.delta,
+            "reasoning",
+          );
+          return;
+        }
+        if (method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta") {
           this.appendAppServerDelta(
             state,
             itemCache,
@@ -1796,25 +1754,8 @@ class CodexBridgeManager {
           return;
         }
         if (
-          (method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta") &&
-          params.itemId &&
-          params.delta
-        ) {
-          this.appendAppServerDelta(
-            state,
-            itemCache,
-            params.itemId,
-            "text",
-            params.delta,
-            "reasoning",
-          );
-          return;
-        }
-        if (
-          (method === "item/commandExecution/outputDelta" ||
-            method === "item/fileChange/outputDelta") &&
-          params.itemId &&
-          params.delta
+          method === "item/commandExecution/outputDelta" ||
+          method === "item/fileChange/outputDelta"
         ) {
           this.appendAppServerDelta(
             state,
@@ -1869,8 +1810,9 @@ class CodexBridgeManager {
           return;
         }
         if (typeof message?.method === "string") {
-          const params = (message.params ?? {}) as CodexAppServerNotificationParams;
-          void handleNotification(message.method, params).catch((error) => settle(reject, error));
+          void handleNotification(message.method, message.params ?? {}).catch((error) =>
+            settle(reject, error),
+          );
         }
       });
       child.stderr.on("data", (chunk) => {
@@ -1897,16 +1839,15 @@ class CodexBridgeManager {
           if (state.threadId) {
             await request("thread/resume", { threadId: state.threadId });
           } else {
-            const response = (await request(
+            const response = await request(
               "thread/start",
               this.appServerThreadConfig(state.project, model, variant),
-            )) as { thread?: { id?: string } };
-            const startedId = response?.thread?.id;
-            if (startedId) await this.handleThreadStarted(state, startedId);
+            );
+            await this.handleThreadStarted(state, response?.thread?.id);
           }
           await request("turn/start", {
             threadId: state.threadId,
-            input: [{ type: "text", text: asHarnessString(text) }, ...inputImages],
+            input: [{ type: "text", text: String(text ?? "") }, ...inputImages],
             ...this.appServerTurnConfig(state.project, model, variant),
           });
         } catch (error) {
@@ -1916,13 +1857,7 @@ class CodexBridgeManager {
     });
   }
 
-  async runTurn(
-    state: CodexLiveSessionState,
-    text: string,
-    images: unknown,
-    model: CodexSelectedModel,
-    variant: unknown,
-  ) {
+  async runTurn(state, text, images, model, variant) {
     const controller = new AbortController();
     state.abortController = controller;
     state.running = true;
@@ -1969,16 +1904,7 @@ class CodexBridgeManager {
     }
   }
 
-  async prompt(
-    sessionId: string,
-    text: string,
-    images: unknown,
-    model: CodexSelectedModel,
-    _agent: unknown,
-    variant: unknown,
-    directory: string | undefined,
-    workspaceId: string | undefined,
-  ) {
+  async prompt(sessionId, text, images, model, _agent, variant, directory, workspaceId) {
     sessionId = toRawSessionId(sessionId);
     const state = await this.ensureLiveSessionForPrompt(sessionId, directory, workspaceId);
     if (state.running) {
@@ -2005,34 +1931,20 @@ class CodexBridgeManager {
     });
   }
 
-  async abort(sessionId: string) {
+  async abort(sessionId) {
     sessionId = toRawSessionId(sessionId);
     const state = this.getLiveSession(sessionId);
     state?.abortController?.abort();
     return true;
   }
 
-  async sendCommand(
-    sessionId: string,
-    command: string,
-    args: string,
-    model: CodexSelectedModel,
-    agent: unknown,
-    variant: unknown,
-    directory: string | undefined,
-    workspaceId: string | undefined,
-  ) {
+  async sendCommand(sessionId, command, args, model, agent, variant, directory, workspaceId) {
     sessionId = toRawSessionId(sessionId);
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, agent, variant, directory, workspaceId);
   }
 
-  async summarizeSession(
-    sessionId: string,
-    model: CodexSelectedModel,
-    directory: string | undefined,
-    workspaceId: string | undefined,
-  ) {
+  async summarizeSession(sessionId, model, directory, workspaceId) {
     sessionId = toRawSessionId(sessionId);
     await this.prompt(
       sessionId,
@@ -2047,18 +1959,10 @@ class CodexBridgeManager {
   }
 }
 
-export function setupCodexBridge(
-  ipcMain: Parameters<typeof registerObjectTargetHarnessRpcHandlers>[1],
-  getAllWindows: Parameters<typeof makeHarnessBridgeEventEmitter>[1],
-  options: { userData?: string } = {},
-) {
+export function setupCodexBridge(ipcMain, getAllWindows, options = {}) {
   let manager = new CodexBridgeManager(getAllWindows, options);
 
-  registerObjectTargetHarnessRpcHandlers(
-    "codex",
-    ipcMain,
-    () => manager as unknown as ObjectTargetHarnessManager,
-  );
+  registerObjectTargetHarnessRpcHandlers("codex", ipcMain, () => manager);
 
   return {
     async restart() {

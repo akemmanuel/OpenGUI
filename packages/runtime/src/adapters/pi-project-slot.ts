@@ -6,33 +6,15 @@ import type {
   PiNativeSessionEvent,
   PiSessionCache,
 } from "./pi-bridge-types.ts";
-
 import {
   makeHarnessProjectKey as makeProjectKey,
   normalizeHarnessDirectory as normalizeDir,
 } from "./harness-adapter-kit.ts";
 
-export type PiEnsureSessionContextResult = {
-  project: PiBridgeProject;
-  runtime: PiLiveSessionContext["runtime"];
-  session: PiLiveSessionLike;
-  context: PiLiveSessionContext;
-};
-
-export type PiAgentRuntimeServices = {
-  modelRegistry?: {
-    refresh?: () => void;
-    getAll?: () => unknown[];
-    getAvailable: () => unknown[];
-    authStorage?: { reload?: () => void };
-  };
-};
-
 export type PiLiveSessionContext = {
   runtime: {
     session: PiLiveSessionLike;
     dispose: () => Promise<void>;
-    services?: PiAgentRuntimeServices;
   };
   session: PiLiveSessionLike;
   unsubscribe: (() => void) | null;
@@ -47,15 +29,7 @@ export type PiBridgeProject = {
   sessionCaches: Map<string, PiSessionCache>;
   liveStateBySessionId: Map<string, PiLiveState>;
   liveSessionContexts: Map<string, PiLiveSessionContext>;
-  sessionContextInitPromises: Map<
-    string,
-    Promise<{
-      project: PiBridgeProject;
-      runtime: PiLiveSessionContext["runtime"];
-      session: PiLiveSessionLike;
-      context: PiLiveSessionContext;
-    }>
-  >;
+  sessionContextInitPromises: Map<string, Promise<PiLiveSessionContext>>;
   runtime: PiLiveSessionContext["runtime"] | null;
   sessionUnsubscribe: (() => void) | null;
   currentSessionId: string | null;
@@ -76,7 +50,7 @@ export function createEmptyPiProjectShell(
     sessionCaches: new Map<string, PiSessionCache>(),
     liveStateBySessionId: new Map<string, PiLiveState>(),
     liveSessionContexts: new Map<string, PiLiveSessionContext>(),
-    sessionContextInitPromises: new Map(),
+    sessionContextInitPromises: new Map<string, Promise<PiLiveSessionContext>>(),
     runtime: null,
     sessionUnsubscribe: null,
     currentSessionId: null,
@@ -92,22 +66,6 @@ export function resolvePiProjectKeyFromTarget(target: {
   if (!directory) throw new Error("Directory required for Pi backend");
   const workspaceId = target.workspaceId;
   return { key: makeProjectKey(workspaceId, directory), directory, workspaceId };
-}
-
-/** Minimal registry surface for unit tests (PiBridgeManager.projects). */
-export type PiBridgeProjectRegistry = {
-  projects: Map<string, PiBridgeProject>;
-};
-
-/** Register a disconnected project shell without spinning up Pi runtime. */
-export function registerPiBridgeProjectForTests(
-  registry: PiBridgeProjectRegistry,
-  target: { directory?: string; workspaceId?: string } = { directory: "/repo" },
-): PiBridgeProject {
-  const { key, directory, workspaceId } = resolvePiProjectKeyFromTarget(target);
-  const project = createEmptyPiProjectShell(key, directory, workspaceId);
-  registry.projects.set(key, project);
-  return project;
 }
 
 export type { PiMessageBundle, PiNativeSessionEvent, PiModelRef };
