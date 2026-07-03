@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import type { MessageListViewportState } from "@/components/message-list/message-list-viewport";
-import logoDark from "@/../opengui-dark.svg";
-import logoLight from "@/../opengui-light.svg";
+import logoDark from "@/../assets/opengui-dark.svg";
+import logoLight from "@/../assets/opengui-light.svg";
 
 const CENTERED_SHELL = "flex-1 flex items-center justify-center";
 

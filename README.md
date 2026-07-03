@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="opengui-dark.svg" alt="OpenGUI" width="280" />
+  <img src="assets/opengui-dark.svg" alt="OpenGUI" width="280" />
 </p>
 
 <p align="center">

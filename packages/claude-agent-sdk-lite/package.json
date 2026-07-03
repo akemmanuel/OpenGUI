@@ -1,7 +1,7 @@
 {
-  "name": "@opengui/better-sdk",
+  "name": "@opengui/claude-agent-sdk-lite",
   "version": "0.0.1",
-  "description": "Open TypeScript Claude Agent SDK-compatible implementation using local claude CLI only.",
+  "description": "Ultraminimal open TypeScript port of the public Claude Agent SDK transport shape using a local claude CLI only.",
   "license": "MIT",
   "files": [
     "dist",

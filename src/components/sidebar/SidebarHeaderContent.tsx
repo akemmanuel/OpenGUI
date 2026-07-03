@@ -2,10 +2,10 @@ import { Search, SquarePen, X } from "lucide-react";
 import type { RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { SidebarHeader } from "@/components/ui/sidebar";
-import logoDark from "../../../opencode-logo-dark.svg";
-import logoLight from "../../../opencode-logo-light.svg";
-import openguiLogoDark from "../../../opengui-dark.svg";
-import openguiLogoLight from "../../../opengui-light.svg";
+import logoDark from "../../../assets/opencode-logo-dark.svg";
+import logoLight from "../../../assets/opencode-logo-light.svg";
+import openguiLogoDark from "../../../assets/opengui-dark.svg";
+import openguiLogoLight from "../../../assets/opengui-light.svg";
 
 export function SidebarHeaderContent({
   searchInputRef,

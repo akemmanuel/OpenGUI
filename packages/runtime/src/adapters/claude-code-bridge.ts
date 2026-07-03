@@ -14,7 +14,7 @@ import {
   listSessions,
   query,
   renameSession,
-} from "../../../../BetterSDK/dist/index.js";
+} from "../../../claude-agent-sdk-lite/dist/index.js";
 import {
   makeHarnessProjectKey as makeProjectKey,
   makeHarnessSessionIdCodec,
@@ -85,7 +85,7 @@ import type {
   ToolPermissionContext,
 } from "./claude-code-bridge-types.ts";
 import type { ClaudeSupportedModel } from "./claude-code-models.ts";
-import type { SDKQuery } from "../../../../BetterSDK/dist/index.js";
+import type { SDKQuery } from "../../../claude-agent-sdk-lite/dist/index.js";
 
 // t3code-style Claude integration: use the user-installed Claude Code CLI.
 // The Claude Agent SDK is only the JS transport layer; the native `claude`

@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, chmod, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query } from "../BetterSDK/dist/index.js";
+import { query } from "../packages/claude-agent-sdk-lite/dist/index.js";
 
 const temp = await mkdtemp(join(tmpdir(), "opengui-claude-sdk-smoke-"));
 const mockClaude = join(temp, "mock-claude.mjs");

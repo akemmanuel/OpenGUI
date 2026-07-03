@@ -18,7 +18,11 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { getSessionMessages, listSessions, query } from "../BetterSDK/dist/index.js";
+import {
+  getSessionMessages,
+  listSessions,
+  query,
+} from "../packages/claude-agent-sdk-lite/dist/index.js";
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`OpenGUI Claude SDK replacement terminal prototype

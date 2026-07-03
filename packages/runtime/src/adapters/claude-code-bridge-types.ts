@@ -3,8 +3,8 @@ import type {
   PermissionMode,
   PermissionResult,
   ToolPermissionContext,
-} from "../../../../BetterSDK/dist/index.js";
-import type { SDKQuery } from "../../../../BetterSDK/dist/index.js";
+} from "../../../claude-agent-sdk-lite/dist/index.js";
+import type { SDKQuery } from "../../../claude-agent-sdk-lite/dist/index.js";
 import type { ClaudeSupportedModel } from "./claude-code-models.ts";
 
 export type { ClaudeAgentOptions, PermissionMode, PermissionResult, ToolPermissionContext };

@@ -44,7 +44,7 @@ function makeModel(
   return {
     id,
     providerID: "anthropic",
-    api: { id, url: "https://api.anthropic.com", npm: "./BetterSDK/dist/index.js" },
+    api: { id, url: "https://api.anthropic.com", npm: "./claude-agent-sdk-lite/dist/index.js" },
     name,
     family: family ?? id,
     capabilities: {
