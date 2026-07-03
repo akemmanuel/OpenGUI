@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import { handleDirectoryRequest } from "./directory.ts";
 import { createMockApiRouteDeps } from "../test/mock-api-route-deps.ts";
 import type { BackendServiceContext } from "../../../../server/services/index.ts";
+import { asBackendServiceContext } from "../test/harness-test-mapping.ts";
 
 const canonical = "/tmp/opengui-test-repo";
 const encodedDir = encodeURIComponent(canonical);
@@ -9,13 +10,15 @@ const encodedDir = encodeURIComponent(canonical);
 type ApiJson = { ok: boolean; value?: unknown };
 
 function directoryServices(overrides: Partial<BackendServiceContext["harnesses"]> = {}) {
-  return {
+  const registerDirectory = vi.fn(async () => ({
+    connectedHarnessIds: ["pi"] as const,
+    errors: [],
+  }));
+  const releaseDirectory = vi.fn(async () => undefined);
+  const services = asBackendServiceContext({
     harnesses: {
-      registerDirectory: vi.fn(async () => ({
-        connectedHarnessIds: ["pi"] as const,
-        errors: [],
-      })),
-      releaseDirectory: vi.fn(async () => undefined),
+      registerDirectory,
+      releaseDirectory,
       getDirectoryStatus: vi.fn(async () => ({ connected: true, harnessId: "pi" })),
       loadResources: vi.fn(async () => ({
         providersData: { providers: [{ id: "p1", models: { m1: { name: "M1" } } }] },
@@ -25,7 +28,8 @@ function directoryServices(overrides: Partial<BackendServiceContext["harnesses"]
       getManagedHarnessIds: () => ["pi"],
       ...overrides,
     },
-  } as unknown as BackendServiceContext;
+  });
+  return { services, registerDirectory, releaseDirectory };
 }
 
 describe("handleDirectoryRequest", () => {
@@ -37,7 +41,7 @@ describe("handleDirectoryRequest", () => {
   });
 
   test("POST register calls registerDirectoryWithHarnesses", async () => {
-    const services = directoryServices();
+    const { services, registerDirectory } = directoryServices();
     const deps = createMockApiRouteDeps({ services, canonicalDirectory: canonical });
     const response = await handleDirectoryRequest(
       new Request(`http://127.0.0.1/api/directories/${encodedDir}/register`, {
@@ -50,11 +54,11 @@ describe("handleDirectoryRequest", () => {
     expect(response?.status).toBe(200);
     const body = (await response!.json()) as ApiJson;
     expect(body.ok).toBe(true);
-    expect(vi.mocked(services.harnesses.registerDirectory)).toHaveBeenCalled();
+    expect(registerDirectory).toHaveBeenCalled();
   });
 
   test("POST release calls releaseDirectory", async () => {
-    const services = directoryServices();
+    const { services, releaseDirectory } = directoryServices();
     const deps = createMockApiRouteDeps({ services, canonicalDirectory: canonical });
     const response = await handleDirectoryRequest(
       new Request(`http://127.0.0.1/api/directories/${encodedDir}/release`, {
@@ -65,11 +69,11 @@ describe("handleDirectoryRequest", () => {
       deps,
     );
     expect(await response!.json()).toEqual({ ok: true, value: true });
-    expect(vi.mocked(services.harnesses.releaseDirectory)).toHaveBeenCalled();
+    expect(releaseDirectory).toHaveBeenCalled();
   });
 
   test("GET status returns harness status", async () => {
-    const services = directoryServices();
+    const { services } = directoryServices();
     const deps = createMockApiRouteDeps({ services, canonicalDirectory: canonical });
     const response = await handleDirectoryRequest(
       new Request(`http://127.0.0.1/api/directories/${encodedDir}/status?harnessId=pi`),
@@ -81,7 +85,7 @@ describe("handleDirectoryRequest", () => {
 
   test("GET providers requires harnessId", async () => {
     const deps = createMockApiRouteDeps({
-      services: directoryServices(),
+      services: directoryServices().services,
       canonicalDirectory: canonical,
     });
     const response = await handleDirectoryRequest(
@@ -93,7 +97,7 @@ describe("handleDirectoryRequest", () => {
   });
 
   test("GET models flattens provider models", async () => {
-    const services = directoryServices();
+    const { services } = directoryServices();
     const deps = createMockApiRouteDeps({ services, canonicalDirectory: canonical });
     const response = await handleDirectoryRequest(
       new Request(`http://127.0.0.1/api/directories/${encodedDir}/models?harnessId=pi`),
