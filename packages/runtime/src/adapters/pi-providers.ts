@@ -19,7 +19,7 @@ const PROVIDER_ENVS: Record<string, string[]> = {
   azure: ["AZURE_OPENAI_API_KEY"],
 };
 
-type PiModel = {
+export type PiProviderModel = {
   id: string;
   provider: string;
   input?: string[];
@@ -44,7 +44,7 @@ type ProviderData = {
 
 type ModelRegistry = {
   refresh?: () => void;
-  getAll: () => PiModel[];
+  getAll: () => PiProviderModel[];
   authStorage: {
     get?: (providerId: string) => { type?: string } | undefined;
     hasAuth?: (providerId: string) => boolean;
@@ -53,7 +53,7 @@ type ModelRegistry = {
   getProviderAuthStatus?: (providerId: string) => { configured?: boolean; source?: string };
 };
 
-function normalizePiModel(model: PiModel) {
+function normalizePiModel(model: PiProviderModel) {
   const input = Array.isArray(model?.input) ? model.input : [];
   const supportedVariants = model?.reasoning ? getSupportedThinkingLevels(model as Model<Api>) : [];
   const variants = supportedVariants.length
@@ -92,7 +92,7 @@ function normalizePiModel(model: PiModel) {
   };
 }
 
-export function buildProvidersData(models: PiModel[]) {
+export function buildProvidersData(models: PiProviderModel[]) {
   const providers = new Map<string, ProviderData>();
   const defaults: Record<string, string> = {};
   for (const model of models) {

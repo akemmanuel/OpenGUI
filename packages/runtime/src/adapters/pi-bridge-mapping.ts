@@ -139,6 +139,54 @@ export function extractPiThinkingVariant(entry: {
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 }
 
+export function toOptionalModelRef(
+  model: { provider?: string; modelId?: string; variant?: string } | null,
+): { provider?: string; modelId?: string; variant?: string } | undefined {
+  return model ?? undefined;
+}
+
+export function branchEntryMessageId(
+  entry: { id?: string },
+  sessionId: string,
+  fallbackSuffix: string,
+): string {
+  if (typeof entry.id === "string" && entry.id.length > 0) return entry.id;
+  return `${sessionId}:${fallbackSuffix}`;
+}
+
+export type PiMessageBranchEntry = {
+  type: string;
+  id?: string;
+  timestamp?: string | number;
+  summary?: string;
+  content?: unknown;
+  firstKeptEntryId?: string;
+  provider?: string;
+  modelId?: string;
+  message?: {
+    role?: string;
+    content?: unknown;
+    timestamp?: unknown;
+    stopReason?: string;
+    errorMessage?: string;
+    provider?: string;
+    model?: string;
+    variant?: string;
+    toolCallId?: string;
+    isError?: boolean;
+    details?: unknown;
+    usage?: Record<string, unknown>;
+  };
+};
+
+export function requireMessageEntry(
+  entry: PiMessageBranchEntry,
+): entry is PiMessageBranchEntry & {
+  message: NonNullable<PiMessageBranchEntry["message"]> & { role: string };
+} {
+  return entry.type === "message" && entry.message != null && typeof entry.message.role === "string";
+}
+
 type BranchEntry =
   | { type: "model_change"; provider?: string; modelId?: string }
   | { type: "thinking_level_change"; level?: string }
@@ -299,10 +347,36 @@ export type PiMessageBundle = {
     id: string;
     sessionID: string;
     role?: string;
+    parentID?: string;
     time: { created: number; completed?: number };
   };
   parts: Array<Record<string, unknown>>;
 };
+
+export type PiAssistantContentBlock = {
+  type?: string;
+  text?: string;
+  thinking?: string;
+  redacted?: boolean;
+  id?: string;
+  name?: string;
+  arguments?: unknown;
+};
+
+export function toAssistantSyncMessage(message: {
+  content?: unknown;
+  stopReason?: string;
+  errorMessage?: string;
+  model?: string;
+  provider?: string;
+  variant?: string;
+  usage?: Record<string, unknown>;
+}): { content?: PiAssistantContentBlock[] } {
+  const content = Array.isArray(message.content)
+    ? (message.content as PiAssistantContentBlock[])
+    : undefined;
+  return { content };
+}
 
 export function createBundle(
   info: PiMessageBundle["info"] | Record<string, unknown>,
@@ -314,10 +388,7 @@ export function createBundle(
   };
 }
 
-export function cloneBundle(bundle: {
-  info: Record<string, unknown>;
-  parts: Array<Record<string, unknown>>;
-}) {
+export function cloneBundle(bundle: PiMessageBundle): PiMessageBundle {
   return {
     info: { ...bundle.info },
     parts: bundle.parts.map((part) => ({ ...part })),

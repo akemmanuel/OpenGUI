@@ -122,3 +122,18 @@ export type PiSessionCache = {
 export type HarnessBridgeNativeEvent = Record<string, unknown>;
 
 export type PiConnectionStatusPayload = Record<string, unknown>;
+
+export type PiOAuthAuthorization = {
+  url: string;
+  method: string;
+  instructions: string;
+};
+
+export type PiOAuthPendingFlow = {
+  done: boolean;
+  error: Error | null;
+  authorization: PiOAuthAuthorization | null;
+  resolveManualCode: ((code: string) => void) | null;
+  rejectManualCode: ((reason: Error) => void) | null;
+  promise: Promise<boolean> | null;
+};

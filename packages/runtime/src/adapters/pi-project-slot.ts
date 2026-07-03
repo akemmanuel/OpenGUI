@@ -6,10 +6,18 @@ import type {
   PiNativeSessionEvent,
   PiSessionCache,
 } from "./pi-bridge-types.ts";
+
 import {
   makeHarnessProjectKey as makeProjectKey,
   normalizeHarnessDirectory as normalizeDir,
 } from "./harness-adapter-kit.ts";
+
+export type PiEnsureSessionContextResult = {
+  project: PiBridgeProject;
+  runtime: PiLiveSessionContext["runtime"];
+  session: PiLiveSessionLike;
+  context: PiLiveSessionContext;
+};
 
 export type PiAgentRuntimeServices = {
   modelRegistry?: {
@@ -38,7 +46,15 @@ export type PiBridgeProject = {
   sessionCaches: Map<string, PiSessionCache>;
   liveStateBySessionId: Map<string, PiLiveState>;
   liveSessionContexts: Map<string, PiLiveSessionContext>;
-  sessionContextInitPromises: Map<string, Promise<PiLiveSessionContext>>;
+  sessionContextInitPromises: Map<
+    string,
+    Promise<{
+      project: PiBridgeProject;
+      runtime: PiLiveSessionContext["runtime"];
+      session: PiLiveSessionLike;
+      context: PiLiveSessionContext;
+    }>
+  >;
   runtime: PiLiveSessionContext["runtime"] | null;
   sessionUnsubscribe: (() => void) | null;
   currentSessionId: string | null;
@@ -59,7 +75,7 @@ export function createEmptyPiProjectShell(
     sessionCaches: new Map<string, PiSessionCache>(),
     liveStateBySessionId: new Map<string, PiLiveState>(),
     liveSessionContexts: new Map<string, PiLiveSessionContext>(),
-    sessionContextInitPromises: new Map<string, Promise<PiLiveSessionContext>>(),
+    sessionContextInitPromises: new Map(),
     runtime: null,
     sessionUnsubscribe: null,
     currentSessionId: null,
