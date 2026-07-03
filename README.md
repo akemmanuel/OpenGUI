@@ -3,7 +3,10 @@
 </p>
 
 <p align="center">
-  Desktop + web command center for coding-agent Harnesses. Run <a href="https://opencode.ai">OpenCode</a>, Claude Code, Codex, and Pi across multiple projects with streaming chat, prompt queue, model switching, voice input, and MCP tools.
+  Desktop + web command center for coding-agent harnesses.
+  Run <a href="https://opencode.ai">OpenCode</a>, Claude Code, Codex, and Pi
+  across multiple projects with streaming chat, prompt queue, model switching,
+  voice input, and MCP tools.
 </p>
 
 <p align="center">
@@ -12,6 +15,7 @@
   <a href="https://github.com/akemmanuel/OpenGUI/stargazers"><img src="https://img.shields.io/github/stars/akemmanuel/OpenGUI?style=social" alt="Stars" /></a>
   <a href="https://github.com/akemmanuel/OpenGUI/releases"><img src="https://img.shields.io/github/downloads/akemmanuel/OpenGUI/total?color=green" alt="Downloads" /></a>
   <a href="https://github.com/akemmanuel/OpenGUI/actions"><img src="https://img.shields.io/github/actions/workflow/status/akemmanuel/OpenGUI/build.yml?branch=master" alt="Build Status" /></a>
+  <a href="https://github.com/akemmanuel/OpenGUI/issues"><img src="https://img.shields.io/github/issues/akemmanuel/OpenGUI" alt="Issues" /></a>
 </p>
 
 <p align="center">
@@ -19,88 +23,130 @@
   ·
   <a href="#why-opengui">Why OpenGUI</a>
   ·
-  <a href="#supported-harnesses">Supported Harnesses</a>
+  <a href="#highlights">Highlights</a>
   ·
   <a href="#build-from-source">Build from source</a>
+  ·
+  <a href="#configuration">Configuration</a>
 </p>
 
-<!-- TODO: Replace screenshot with short demo GIF: open project, switch backend, send prompt, stream response, queue prompt. -->
+OpenGUI gives coding-agent users a proper desktop and browser workflow for
+long sessions. Manage multiple projects visually, run different harnesses from
+one UI, watch responses stream live, queue prompts while your agent works, and
+switch models or agents without terminal juggling.
+
+> **Early but usable.** Bug reports and PRs welcome.
+
+---
+
+## Quick Start
+
+**1. Download** the [latest release](https://github.com/akemmanuel/OpenGUI/releases/latest)
+(Linux `.deb`, macOS `.dmg`, or Windows `.exe`).
+
+**2. Install** one supported harness (e.g. [OpenCode](https://opencode.ai)) on your `PATH`.
+
+**3. Launch** OpenGUI, connect a workspace, and start prompting.
+
+That's it. No terminal needed after setup.
+
+---
+
+## Screenshots
+
 <p align="center">
-  <img src="demo.gif" alt="OpenGUI Demo" width="800" />
+  <img src="screenshot.png" alt="OpenGUI Screenshot" width="800" />
 </p>
 
-OpenGUI gives coding-agent users desktop and browser workflow for long sessions. Manage multiple projects visually, run different Harnesses from one UI, watch responses stream live, queue prompts while agent works, and switch models or agents without terminal juggling.
+> <!-- TODO: Replace screenshot with short demo GIF showing: open project, switch backend, send prompt, stream response, queue prompt. -->
+>
+> Tracked in [issue #…](https://github.com/akemmanuel/OpenGUI/issues)
 
-> Early but usable. Bug reports and PRs welcome.
+---
 
 ## Why OpenGUI
 
-OpenGUI is for people who like coding agents but want stronger workflow than terminal tabs alone:
+OpenGUI is for people who love coding agents but want a stronger workflow than
+terminal tabs alone:
 
-- **Run multiple Harnesses in one app** instead of juggling separate tools
-- **Manage multiple projects at once** with separate sessions per workspace
-- **See streaming responses live** with token and context usage
-- **Queue prompts while agent is busy** instead of waiting to type next step
-- **Switch providers, models, agents, and variants** from UI
-- **Configure MCP tools and skills** without leaving app
-- **Use voice input** with Whisper-compatible transcription endpoint
+- **🎯 Multi-harness workspace** — run OpenCode, Claude Code, Codex, Pi, and Grok Build in one app instead of juggling separate terminals.
+- **📂 Multi-project sessions** — keep separate sessions per workspace and switch instantly.
+- **⚡ Stream responses live** — see tokens stream in with real-time usage tracking.
+- **📥 Prompt queue** — queue prompts while your agent is busy; they auto-dispatch when idle.
+- **🎛️ Switch providers/models** — change backend, model, agent, or variant from the UI.
+- **🔧 MCP tools & skills** — configure tools and skills without leaving the app.
+- **🎤 Voice input** — use a Whisper-compatible transcription endpoint for speech-to-text.
+
+---
 
 ## Highlights
 
-- **Multi-agent workspace** for OpenCode, Claude Code, Codex, and Pi
-- **Multi-project workspaces** for parallel coding sessions
-- **Real-time streaming** over SSE with live usage tracking
-- **Prompt queue** that auto-dispatches when assistant becomes idle
-- **Model, backend, and agent selection** directly from chat workflow
-- **Slash commands** from prompt box
-- **Syntax highlighting** with Shiki
-- **Dark/light theme** with system-aware toggle
-- **Desktop, web, and Docker deployment options**
-- **Cross-platform builds** for Linux, macOS, and Windows
+|        | Feature                           | Description                                  |
+| ------ | --------------------------------- | -------------------------------------------- |
+| 🏗️     | **Multi-agent workspace**         | OpenCode, Claude Code, Codex, Pi, Grok Build |
+| 📂     | **Multi-project workspaces**      | Parallel coding sessions per project         |
+| ⚡     | **Real-time streaming**           | SSE with live token & context tracking       |
+| 📥     | **Prompt queue**                  | Auto-dispatch when assistant becomes idle    |
+| 🎛️     | **Model/backend/agent selection** | Switch directly from chat UI                 |
+| ⌨️     | **Slash commands**                | Built-in commands from the prompt box        |
+| 🎨     | **Syntax highlighting**           | Powered by Shiki                             |
+| 🌗     | **Dark/light theme**              | System-aware toggle                          |
+| 🖥️🌐📱 | **Desktop, web & Docker**         | Electron, browser, or container deployment   |
+| 🐧🍎🪟 | **Cross-platform builds**         | Linux, macOS, Windows                        |
+
+---
 
 ## Supported Harnesses
 
-OpenGUI currently supports these coding-agent Harnesses:
-
-- **OpenCode**
-- **Claude Code**
-- **Codex**
-- **Pi**
-- **Grok Build**
+| Harness                                                                | OpenGUI Support |
+| ---------------------------------------------------------------------- | --------------- |
+| [OpenCode](https://opencode.ai)                                        | ✅ Full         |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) | ✅ Full         |
+| [Codex](https://codex.ai)                                              | ✅ Full         |
+| [Pi](https://pi.ai)                                                    | ✅ Full         |
+| [Grok Build](https://x.ai/cli)                                         | ✅ Full         |
 
 Use one backend or switch between them per workflow.
 
+---
+
 ## Download
 
-Grab prebuilt app from [latest release](https://github.com/akemmanuel/OpenGUI/releases/latest):
+Grab a prebuilt app from the [latest release](https://github.com/akemmanuel/OpenGUI/releases/latest):
 
-- **Linux:** `.deb`
-- **macOS:** `.dmg`
-- **Windows:** `.exe` installer
+| Platform   | Format           | Notes                     |
+| ---------- | ---------------- | ------------------------- |
+| 🐧 Linux   | `.deb`           | Debian/Ubuntu-based       |
+| 🍎 macOS   | `.dmg`           | Intel & Apple Silicon     |
+| 🪟 Windows | `.exe` installer | Unsigned — see note below |
+
+> **Windows note:** Windows builds are unsigned. SmartScreen will warn on first launch.
+> Click **More info → Run anyway**.
 
 ### Requirements
 
 Backend requirements depend on what you use:
 
-- **OpenCode Harness:** [OpenCode CLI](https://opencode.ai) installed and available in your `PATH`
-- **Grok Build Harness:** [Grok Build CLI](https://x.ai/cli) installed (`grok` on `PATH`) and authenticated (`grok login` or `XAI_API_KEY`)
-- **Other Harnesses:** local CLI/auth/config for that Harness available on your machine
+- **OpenCode harness** — [OpenCode CLI](https://opencode.ai) installed and on `PATH`
+- **Grok Build harness** — [Grok Build CLI](https://x.ai/cli) installed (`grok` on `PATH`) and authenticated (`grok login` or `XAI_API_KEY`)
+- **Other harnesses** — local CLI and auth for that harness on your machine
 
-> **Windows prerequisite for OpenCode:** OpenCode must be available on your `PATH` or at `%USERPROFILE%\.opencode\bin\opencode.exe`.
+> **Windows prerequisite for OpenCode:** OpenCode must be on `PATH` or at
+> `%USERPROFILE%\.opencode\bin\opencode.exe`.
 
-> **Note:** Windows builds are unsigned. Windows SmartScreen will warn on first launch. Click **More info** -> **Run anyway**.
+---
 
 ## Build from source
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 24+
-- [pnpm](https://pnpm.io/) 11+ package manager
-- At least one supported Harness configured locally (for example OpenCode CLI in your `PATH` for OpenCode)
+- [Node.js](https://nodejs.org/) **24+**
+- [pnpm](https://pnpm.io/) **11+**
+- At least one supported harness configured locally (e.g. OpenCode CLI on `PATH`)
 
-OpenGUI uses Node.js as the runtime for the Electron/web backend and pnpm for dependency management. **Vite+** ([vite-plus](https://github.com/mariozechner/vite-plus)) is a dev dependency: after `pnpm install`, run it as **`pnpm vp <command>`** (for example `pnpm vp build`). You do not install Electron or Vite+ globally—Electron and other app dependencies come from `pnpm install`.
-
-Install dependencies:
+OpenGUI uses **Vite+** ([vite-plus](https://github.com/mariozechner/vite-plus)) as
+a dev dependency. After `pnpm install`, run it as `pnpm vp <command>`.
+No global installs needed — Electron and other deps come from `pnpm install`.
 
 ```bash
 pnpm install
@@ -108,120 +154,145 @@ pnpm install
 
 ### Tooling (Vite+)
 
-Lint, format, typecheck, test, build, and named tasks use Vite+ (`vp`). Prefer **`pnpm vp …`** or **`pnpm run <script>`** when a script exists in `package.json`. A global `vp` on your `PATH` is optional, not required.
+Lint, format, typecheck, test, build, and named tasks use Vite+ (`vp`).
+Prefer `pnpm vp …` or `pnpm run <script>` when a script exists in `package.json`.
+A global `vp` on your `PATH` is optional, not required.
 
-No manual config file needed. Connection settings live in UI. Pick a Harness, connect a workspace, start prompting.
+No manual config file needed. Connection settings live in the UI.
 
 ### Development
-
-Desktop: **`pnpm run dev`**. Web (browser + API): **`pnpm run dev:web`** — same task with **`:web`** appended.
 
 | Goal                               | Command            |
 | ---------------------------------- | ------------------ |
 | Desktop app (Electron, hot reload) | `pnpm run dev`     |
-| Web UI only (browser + API)        | `pnpm run dev:web` |
+| Web UI (browser + API)             | `pnpm run dev:web` |
 
-For web dev, open the URL Vite prints in the terminal (default port is often 5173). Browser folder picker uses server paths. Set `OPENGUI_ALLOWED_ROOTS=/path/to/projects` to restrict browsable folders.
+For web dev, open the URL Vite prints in the terminal (default port is often 5173).
+Browser folder picker uses server paths. To restrict browsable folders:
 
-### Docker
-
-Official image: `ghcr.io/akemmanuel/opengui:latest`.
-
-Docker install supports contained mode and host-control mode. Host-control mode uses host CLIs through `nsenter` while Docker manages web server.
-
-See [docs/docker.md](docs/docker.md) for GHCR install, Docker modes, and [docs/apache.md](docs/apache.md) for Apache reverse proxy + Basic Auth.
+```bash
+export OPENGUI_ALLOWED_ROOTS=/path/to/projects
+```
 
 ### Production
 
-Build frontend bundle:
+Build the frontend bundle first, then start:
 
 ```bash
-pnpm run build
+pnpm run build        # or: pnpm vp build
+pnpm run start        # Electron
+pnpm run start:web    # browser + backend API
 ```
 
-(`pnpm vp build` is equivalent.)
+For internet-facing deploys, keep OpenGUI bound to `localhost` and put
+Apache or another HTTPS reverse proxy in front.
 
-Desktop production: **`pnpm run start`**. Web production: **`pnpm run start:web`** (append **`:web`** to the start task). Build the bundle first with `pnpm run build`.
+### Docker
 
-```bash
-pnpm run start      # Electron
-pnpm run start:web  # browser + backend API
-```
+Official image: `ghcr.io/akemmanuel/opengui:latest`
 
-For internet-facing deploys, keep OpenGUI bound to localhost and put Apache or another HTTPS reverse proxy in front.
+Docker supports **contained mode** and **host-control mode** (uses host CLIs
+through `nsenter` while Docker manages the web server).
 
-### Distribution
+See [docs/docker.md](docs/docker.md) for details and
+[docs/apache.md](docs/apache.md) for Apache reverse proxy + Basic Auth.
 
-Build Linux `.deb`:
+### Distribution builds
 
-```bash
-pnpm run dist:linux
-```
+| Platform          | Command               |
+| ----------------- | --------------------- |
+| 🐧 Linux `.deb`   | `pnpm run dist:linux` |
+| 🍎 macOS `.dmg`   | `pnpm run dist:mac`   |
+| 🪟 Windows `.exe` | `pnpm run dist:win`   |
 
-Build macOS `.dmg`:
-
-```bash
-pnpm run dist:mac
-```
-
-Build Windows `.exe` installer:
-
-```bash
-pnpm run dist:win
-```
+---
 
 ## Architecture
 
-Four layers ([`CONTEXT.md`](CONTEXT.md), [ADR 0005](docs/adr/0005-opengui-runtime-backend-split-and-sdk.md)):
-
-- **OpenGUI Runtime** — in-process Harness Adapters and execution (`@opengui/runtime`)
-- **OpenGUI Backend** — embeds Runtime; HTTP/SSE, queues, shared session control (`@opengui/backend`; `server/web-server.ts` is the listen entry)
-- **OpenGUI Frontend** — React UI; Workspaces, Projects, pending/queued prompt UI (`src/`)
-- **Shell** — Desktop, Web, or Mobile bootstrap (`main.ts`, browser, Capacitor)
+Four layers. See [`CONTEXT.md`](CONTEXT.md) and
+[ADR 0005](docs/adr/0005-opengui-runtime-backend-split-and-sdk.md) for details.
 
 ```
-main.ts              Desktop Shell (window, IPC, backend sidecar)
-preload.js           Desktop Shell preload API
-packages/runtime/src/adapters/*  Harness Adapters (hosted inside Backend via Runtime)
-packages/backend/src/     OpenGUI Backend host (SSE, RPC, FS, product API)
-server/web-server.ts      Thin HTTP listen entry (calls createBackendHost)
-src/
-  index.html          HTML entry point
-  frontend.tsx        React entry point + web Electron shim install
-  App.tsx             Main app layout/orchestrator
-  agents/             Harness descriptors, event normalizers, and protocol mappers
-  features/           Cross-component frontend orchestration hooks
-  hooks/              Agent state, model state, and UI hooks
-  components/         UI components (sidebar, messages, prompt box, dialogs, etc.)
-  components/ui/      Reusable UI primitives such as DialogShell
-  lib/                Utility modules and browser Electron shim
-  types/              TypeScript type definitions
+┌─────────────────────────────────────────────────┐
+│                   Shell                          │
+│  Desktop (Electron) · Web · Mobile (Capacitor)  │
+├─────────────────────────────────────────────────┤
+│               OpenGUI Frontend                   │
+│  React UI · Workspaces · Projects · Chat · Queue │
+├─────────────────────────────────────────────────┤
+│               OpenGUI Backend                    │
+│  HTTP/SSE · Queue dispatch · Auth · Persistence  │
+├─────────────────────────────────────────────────┤
+│               OpenGUI Runtime                    │
+│  Harness Adapters · Event normalization · SDK    │
+├─────────────────────────────────────────────────┤
+│    OpenCode · Claude Code · Codex · Pi · Grok    │
+└─────────────────────────────────────────────────┘
 ```
 
-See [docs/architecture.md](docs/architecture.md) for contributor architecture notes and the Harness addition guide.
+Key source layout:
+
+| Path                              | Role                                                 |
+| --------------------------------- | ---------------------------------------------------- |
+| `main.ts`                         | Desktop Shell (window, IPC, backend sidecar)         |
+| `preload.js`                      | Desktop Shell preload API                            |
+| `packages/runtime/src/adapters/*` | Harness Adapters (hosted inside Backend via Runtime) |
+| `packages/backend/src/`           | Backend host (SSE, RPC, FS, product API)             |
+| `server/web-server.ts`            | Thin HTTP listen entry (calls `createBackendHost`)   |
+| `src/`                            | Frontend React app                                   |
+
+See [docs/architecture.md](docs/architecture.md) for contributor architecture
+notes and the harness addition guide.
+
+---
 
 ## Configuration
 
 OpenGUI stores connection and UI preferences via the app settings interface.
 
-Voice input (speech-to-text) requires a Whisper-compatible transcription server. Set the endpoint URL in **Settings > General > Voice transcription endpoint**. The microphone button only appears when an endpoint is configured. The server should accept a multipart `POST` with an `audio` file field and return `{ text, language, duration_seconds }`.
+**Voice input** (speech-to-text) requires a Whisper-compatible transcription
+server. Set the endpoint URL in **Settings → General → Voice transcription endpoint**.
+The microphone button only appears when an endpoint is configured.
+The server should accept a multipart `POST` with an `audio` file field and return
+`{ text, language, duration_seconds }`.
+
+---
 
 ## SDK (`@opengui/runtime`)
 
-Embed the same in-process harness runtime the app uses—list sessions, stream events, and send prompts on a filesystem **directory** without HTTP or React. Pi quickstart and API contracts: [`packages/runtime/README.md`](packages/runtime/README.md).
+Embed the same in-process harness runtime the app uses — list sessions, stream
+events, and send prompts on a filesystem **directory** without HTTP or React.
+
+Quickstart and API contracts: [`packages/runtime/README.md`](packages/runtime/README.md)
+
+```bash
+pnpm run test:runtime   # SDK unit tests
+pnpm run test:bridges   # Bridge mapping tests
+```
+
+---
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+- 🐛 Found a bug? [Open an issue](https://github.com/akemmanuel/OpenGUI/issues)
+- 💡 Have an idea? Start a [discussion](https://github.com/akemmanuel/OpenGUI/discussions)
+- 🔀 Want to contribute? Open a PR
+
+---
 
 ## Star History
 
-If you find OpenGUI useful, consider giving it a star -- it helps others discover the project.
+If you find OpenGUI useful, please give it a star on GitHub — it helps others
+discover the project.
 
 <a href="https://github.com/akemmanuel/OpenGUI/stargazers">
-  <img src="https://img.shields.io/github/stars/akemmanuel/OpenGUI?style=social" alt="Star OpenGUI on GitHub" />
+  <img src="https://api.star-history.com/svg?repos=akemmanuel/OpenGUI&type=Date" alt="Star History Chart" width="600" />
 </a>
+
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
