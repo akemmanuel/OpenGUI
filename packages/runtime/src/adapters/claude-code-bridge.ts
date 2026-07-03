@@ -1654,7 +1654,21 @@ class ClaudeCodeBridgeManager {
     return sessionPromise;
   }
 
-  async startSession({ text, title, directory, workspaceId, model, variant }) {
+  async startSession({
+    text,
+    title,
+    directory,
+    workspaceId,
+    model,
+    variant,
+  }: {
+    text?: string;
+    title?: string;
+    directory?: string;
+    workspaceId?: string;
+    model?: unknown;
+    variant?: unknown;
+  }) {
     return await this.startQuery({
       text,
       title,
@@ -1665,7 +1679,15 @@ class ClaudeCodeBridgeManager {
     });
   }
 
-  async createSession({ title, directory, workspaceId }) {
+  async createSession({
+    title,
+    directory,
+    workspaceId,
+  }: {
+    title?: string;
+    directory?: string;
+    workspaceId?: string;
+  }) {
     const target = this.resolveTarget(directory, workspaceId);
     const tempSessionId = crypto.randomUUID();
     const session = makeSessionFromInfo(
@@ -1719,7 +1741,7 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  async respondPermission(sessionId, permissionId, response) {
+  async respondPermission(sessionId: string, permissionId: string, response: unknown) {
     sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
     const pending = entry?.pendingPermissions.get(permissionId);
@@ -1745,14 +1767,28 @@ class ClaudeCodeBridgeManager {
     return true;
   }
 
-  async sendCommand(sessionId, command, args, model, _agent, variant, directory, workspaceId) {
+  async sendCommand(
+    sessionId: string,
+    command: string,
+    args: string,
+    model: unknown,
+    _agent: unknown,
+    variant: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     const text = `/${command}${args ? ` ${args}` : ""}`;
     await this.prompt(sessionId, text, [], model, undefined, variant, directory, workspaceId);
     return true;
   }
 
-  async summarizeSession(sessionId, model, directory, workspaceId) {
+  async summarizeSession(
+    sessionId: string,
+    model: unknown,
+    directory: string | undefined,
+    workspaceId: string | undefined,
+  ) {
     sessionId = toRawSessionId(sessionId);
     await this.sendCommand(
       sessionId,

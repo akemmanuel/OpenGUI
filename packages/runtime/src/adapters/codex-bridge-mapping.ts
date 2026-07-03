@@ -4,6 +4,14 @@
 import { randomUUID } from "node:crypto";
 import { makeHarnessSessionIdCodec, normalizeHarnessDirectory } from "./harness-adapter-kit.ts";
 import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER_ID } from "./codex-models.ts";
+import type {
+  CodexMessageBundle,
+  CodexMessageInfo,
+  CodexPart,
+  NormalizedAppServerItem,
+} from "./codex-bridge-types.ts";
+
+export type { CodexMessageBundle, CodexMessageInfo, CodexPart, NormalizedAppServerItem };
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("codex:");
 
@@ -184,11 +192,12 @@ export function normalizeAppServerItem(
   };
 }
 
-function defaultUserInfo(
+export function defaultUserInfo(
   sessionId: string,
   messageId: string,
   modelId: string,
   createdAt = Date.now(),
+  variant?: string,
 ) {
   return {
     id: messageId,
@@ -196,16 +205,21 @@ function defaultUserInfo(
     role: "user" as const,
     time: { created: createdAt },
     agent: "codex",
-    model: { providerID: DEFAULT_PROVIDER_ID, modelID: modelId },
+    model: {
+      providerID: DEFAULT_PROVIDER_ID,
+      modelID: modelId,
+      ...(variant ? { variant } : {}),
+    },
   };
 }
 
-function defaultAssistantInfo(
+export function defaultAssistantInfo(
   sessionId: string,
   messageId: string,
   directory: string,
   modelId: string,
   createdAt = Date.now(),
+  variant?: string,
 ) {
   return {
     id: messageId,
@@ -220,14 +234,35 @@ function defaultAssistantInfo(
     path: { cwd: directory, root: directory },
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...(variant ? { variant } : {}),
   };
 }
 
-function makeTextPart(sessionId: string, messageId: string, partId: string, text: string) {
-  return { id: partId, sessionID: sessionId, messageID: messageId, type: "text", text };
+export function makeTextPart(
+  sessionId: string,
+  messageId: string,
+  partId: string,
+  text: string,
+  synthetic = false,
+) {
+  return {
+    id: partId,
+    sessionID: sessionId,
+    messageID: messageId,
+    type: "text",
+    text,
+    ...(synthetic ? { synthetic: true } : {}),
+  };
 }
 
-function makeReasoningPart(
+export function makeSessionTitle(text: unknown, title: unknown) {
+  const explicit = typeof title === "string" ? title.trim() : "";
+  if (explicit) return explicit;
+  const line = firstLine(text);
+  return line.slice(0, 80) || "Untitled";
+}
+
+export function makeReasoningPart(
   sessionId: string,
   messageId: string,
   partId: string,
@@ -242,6 +277,67 @@ function makeReasoningPart(
     text,
     time: { start },
   };
+}
+
+export function getMessageText(bundle: { parts?: CodexPart[] } | null) {
+  if (!bundle || !Array.isArray(bundle.parts)) return "";
+  return bundle.parts
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text as string)
+    .join("\n\n")
+    .trim();
+}
+
+export function getSessionPreview(messages: CodexMessageBundle[]) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const text = getMessageText(messages[i] ?? null);
+    if (text) return firstLine(text).slice(0, 160);
+  }
+  return "";
+}
+
+export function upsertMessage(messages: CodexMessageBundle[], info: CodexMessageInfo) {
+  let bundle = messages.find((entry) => entry.info.id === info.id);
+  if (!bundle) {
+    bundle = { info, parts: [] };
+    messages.push(bundle);
+    return bundle;
+  }
+  bundle.info = info;
+  return bundle;
+}
+
+export function findMessage(messages: CodexMessageBundle[], messageId: string) {
+  return messages.find((entry) => entry.info.id === messageId) ?? null;
+}
+
+export function upsertPart(messages: CodexMessageBundle[], part: CodexPart) {
+  if (typeof part.id !== "string" || typeof part.messageID !== "string") return null;
+  const bundle = findMessage(messages, part.messageID);
+  if (!bundle) return null;
+  const index = bundle.parts.findIndex((entry) => entry.id === part.id);
+  if (index === -1) {
+    bundle.parts.push(part);
+    return part;
+  }
+  bundle.parts[index] = part;
+  return part;
+}
+
+export function findPart(messages: CodexMessageBundle[], messageId: string, partId: string) {
+  const bundle = findMessage(messages, messageId);
+  if (!bundle) return null;
+  return bundle.parts.find((part) => part.id === partId) ?? null;
+}
+
+export function renameSessionInMessages(messages: CodexMessageBundle[], _oldId: string, newId: string) {
+  for (const bundle of messages) {
+    bundle.info = { ...bundle.info, sessionID: newId };
+    bundle.parts = bundle.parts.map((part) => ({
+      ...part,
+      sessionID: newId,
+    }));
+  }
 }
 
 /** Build message bundles from a Codex thread snapshot (#130: one reasoning part per item). */
@@ -266,8 +362,7 @@ export function buildMessagesFromCodexAppServerThread(thread: {
   const sessionId = toFrontendSessionId(thread.id);
   const directory = normalizeHarnessDirectory(thread.cwd) || "";
   const modelId = thread.model || thread.modelId || DEFAULT_MODEL_ID;
-  const messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> =
-    [];
+  const messages: CodexMessageBundle[] = [];
   let seq = 0;
   for (const turn of Array.isArray(thread.turns) ? thread.turns : []) {
     const createdAt = codexTimestampToMs(turn.startedAt ?? thread.createdAt ?? NaN);
