@@ -225,26 +225,43 @@ export async function createLifecycleSession({
     preferredHarnessId,
   }).harnessId;
 
+  const resolvedDirectory =
+    directory?.trim() ||
+    state.activeTargetDirectory?.trim() ||
+    normalizeProjectPath(
+      getSessionProjectTarget(
+        state.activeSessionId
+          ? state.sessions.find((s) => s.id === state.activeSessionId)
+          : undefined,
+      ).directory ?? "",
+    ) ||
+    undefined;
+
   try {
-    if (directory) {
-      const chatDirectory = isChatDirectory(directory);
-      await ensureDirectoryConnection(directory, {
-        harnessIds: [harnessId],
-        hidden: chatDirectory,
-        transient: chatDirectory,
+    if (!resolvedDirectory) {
+      dispatch({
+        type: "SET_ERROR",
+        payload: "Select a project before creating a session.",
       });
+      return null;
     }
+    const chatDirectory = isChatDirectory(resolvedDirectory);
+    await ensureDirectoryConnection(resolvedDirectory, {
+      harnessIds: [harnessId],
+      hidden: chatDirectory,
+      transient: chatDirectory,
+    });
     const session = await sessionsClient.create({
       harnessId,
       title,
       target: {
-        directory,
+        directory: resolvedDirectory,
         workspaceId: state.activeWorkspaceId,
         baseUrl: state.activeWorkspaceServerUrl,
       },
     });
     dispatch({ type: "SESSION_CREATED", payload: session });
-    if (isChatDirectory(directory)) {
+    if (isChatDirectory(resolvedDirectory)) {
       dispatch({
         type: "SET_SESSION_META",
         payload: {

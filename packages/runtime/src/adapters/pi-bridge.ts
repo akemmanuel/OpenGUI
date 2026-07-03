@@ -1014,7 +1014,10 @@ export class PiBridgeManager {
       // session.isStreaming here leaves the frontend stuck busy forever.
       this.setSessionActivity(project, sessionId, "idle");
       await this.disposeLiveSessionContext(project, sessionId, { keepCache: true });
-      const normalized = await this.getSessionById(sessionId);
+      const normalized = await this.getSessionById(sessionId, {
+        directory: project.directory,
+        workspaceId: project.workspaceId,
+      });
       if (normalized) {
         this.sendBackendEvent(project, {
           type: "session.updated",
