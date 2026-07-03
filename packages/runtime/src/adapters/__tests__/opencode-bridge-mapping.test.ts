@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
+  asHarnessString,
+  asHarnessStringOr,
   extractOpenCodeEventRawSessionId,
   extractOpenCodeEventSessionDirectory,
   getConnectionForSession,
@@ -11,6 +13,14 @@ const normalizeDirectoryHint = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim().replace(/\/+$/, "") : null;
 
 describe("opencode-bridge-mapping", () => {
+  test("asHarnessString narrows unknown without object coercion", () => {
+    expect(asHarnessString("id")).toBe("id");
+    expect(asHarnessString(42)).toBeUndefined();
+    expect(asHarnessString({ id: "x" })).toBeUndefined();
+    expect(asHarnessStringOr("a", "b")).toBe("a");
+    expect(asHarnessStringOr(undefined, "b")).toBe("b");
+  });
+
   test("normalizeOpenCodeDaemonEvent unwraps sync envelope", () => {
     expect(
       normalizeOpenCodeDaemonEvent({

@@ -25,6 +25,8 @@ import {
   getConnectionEntryForSession as routingConnectionEntryForSession,
   getConnectionForSession as resolveConnectionForSession,
   type OpenCodeWindowState,
+  asHarnessString,
+  asHarnessStringOr,
   normalizeOpenCodeDirectoryHint,
   stripMessagePayloadBloat,
   tagOpenCodeMessageEntry,
@@ -95,8 +97,7 @@ async function fetchLocalHealth(timeoutMs = LOCAL_HEALTH_TIMEOUT) {
       data && typeof data === "object" && !Array.isArray(data)
         ? (data as Record<string, unknown>)
         : null;
-    const version =
-      record && typeof record.version === "string" ? record.version : null;
+    const version = record && typeof record.version === "string" ? record.version : null;
     return {
       healthy: record?.healthy === true,
       version,
@@ -740,12 +741,7 @@ export class OpenCodeConnection {
 
     // Custom fetch that uses keep-alive agents to prevent idle connection drops.
     const customFetch: typeof fetch = (input, init) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const agent = url?.startsWith("https") ? httpsAgent : httpAgent;
       return globalThis.fetch(input, { ...init, agent } as RequestInit);
     };
@@ -772,12 +768,7 @@ export class OpenCodeConnection {
     // truly global stream. If /global/event is directory-scoped, the frontend
     // never sees idle and keeps the stop button/timer running forever.
     const customFetch: typeof fetch = (input, init) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const agent = url?.startsWith("https") ? httpsAgent : httpAgent;
       return globalThis.fetch(input, { ...init, agent } as RequestInit);
     };
@@ -1252,7 +1243,10 @@ async function stopLocalOpenCodeServer(): Promise<OpenCodeLocalServerOpResult> {
 // Setup: called from main.ts with (ipcMain, mainWindow)
 // ---------------------------------------------------------------------------
 
-export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () => Iterable<unknown>) {
+export function setupOpenCodeBridge(
+  ipcMain: OpencodeIpcMain,
+  _getWindows: () => Iterable<unknown>,
+) {
   const windowStates = new Map<number, OpenCodeWindowBridgeState<OpenCodeConnection>>();
 
   function getWindowState(sender: HarnessWebContentsSender) {
@@ -1301,9 +1295,8 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
 
   const sendEvent = makeHarnessBridgeEventSender("opencode");
 
-  const ipcStr = (value: unknown): string => (typeof value === "string" ? value : "");
-  const ipcOptStr = (value: unknown): string | undefined =>
-    typeof value === "string" ? value : undefined;
+  const ipcStr = (value: unknown): string => asHarnessStringOr(value, "");
+  const ipcOptStr = (value: unknown): string | undefined => asHarnessString(value);
 
   function makeProjectKey(
     windowState: OpenCodeWindowBridgeState<OpenCodeConnection>,
@@ -1369,15 +1362,15 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
           payload.properties && typeof payload.properties === "object"
             ? (payload.properties as Record<string, unknown>)
             : {};
-        const questionId = props.id ?? props.requestID;
+        const questionId = asHarnessString(props.id) ?? asHarnessString(props.requestID);
         if (payload.type === "question.asked" && questionId) {
-          windowState.projectRegistry.rememberQuestion(projectKey, String(questionId));
+          windowState.projectRegistry.rememberQuestion(projectKey, questionId);
         }
         if (
           (payload.type === "question.replied" || payload.type === "question.rejected") &&
           questionId
         ) {
-          windowState.projectRegistry.deleteQuestion(String(questionId));
+          windowState.projectRegistry.deleteQuestion(questionId);
         }
       }
       sendEvent(sender, { ...event, directory, workspaceId });
@@ -1579,7 +1572,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
    */
   function handleDirectoryOp(
     channel: string,
-    fn: (conn: OpenCodeConnection, ...args: unknown[]) => Promise<unknown> | unknown,
+    fn: (conn: OpenCodeConnection, ...args: unknown[]) => unknown,
   ) {
     ipcMain.handle(channel, async (event: unknown, directory, workspaceId, ...args) => {
       const ipcEvent = event as OpencodeIpcEvent;
@@ -1608,11 +1601,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
    */
   function handleSessionOp(
     channel: string,
-    fn: (
-      conn: OpenCodeConnection,
-      sessionId: string,
-      ...args: unknown[]
-    ) => Promise<unknown> | unknown,
+    fn: (conn: OpenCodeConnection, sessionId: string, ...args: unknown[]) => unknown,
   ) {
     ipcMain.handle(channel, async (event: unknown, sessionId, ...args) => {
       const ipcEvent = event as OpencodeIpcEvent;
@@ -1647,11 +1636,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
    */
   function handleQuestionOp(
     channel: string,
-    fn: (
-      conn: OpenCodeConnection,
-      requestID: string,
-      ...args: unknown[]
-    ) => Promise<unknown> | unknown,
+    fn: (conn: OpenCodeConnection, requestID: string, ...args: unknown[]) => unknown,
   ) {
     ipcMain.handle(channel, async (event: unknown, requestID, ...args) => {
       const ipcEvent = event as OpencodeIpcEvent;
@@ -1716,7 +1701,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
 
   function handleResultOp(
     channel: string,
-    fn: (event: OpencodeIpcEvent, ...args: unknown[]) => Promise<unknown> | unknown,
+    fn: (event: OpencodeIpcEvent, ...args: unknown[]) => unknown,
   ) {
     ipcMain.handle(channel, async (event: unknown, ...args) => {
       const ipcEvent = event as OpencodeIpcEvent;
@@ -1897,7 +1882,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
       return failureResult("Invalid config");
     }
     const cfg = config as OpenCodeProjectAddConfig & Record<string, unknown>;
-    const directory = String(cfg.directory ?? "").trim();
+    const directory = (asHarnessString(cfg.directory) ?? "").trim();
     if (!directory) {
       return failureResult("Directory is required");
     }
@@ -1977,12 +1962,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     const dirArg = ipcStr(directory);
     const wsArg = ipcOptStr(workspaceId);
     if (dirArg) {
-      const conn = await ensureConnectionForDirectory(
-        windowState,
-        event.sender,
-        dirArg,
-        wsArg,
-      );
+      const conn = await ensureConnectionForDirectory(windowState, event.sender, dirArg, wsArg);
       return conn
         ? await listAndCacheSessions(windowState, conn, dirArg, wsArg)
         : failureResult("No connection available");
@@ -2030,12 +2010,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     const wsArg = ipcOptStr(workspaceId);
     const entry = dirArg
       ? await (async () => {
-          const conn = await ensureConnectionForDirectory(
-            windowState,
-            event.sender,
-            dirArg,
-            wsArg,
-          );
+          const conn = await ensureConnectionForDirectory(windowState, event.sender, dirArg, wsArg);
           return conn ? { connection: conn } : null;
         })()
       : getConnectionEntryForSession(windowState, rawId, dirArg, wsArg);
@@ -2046,7 +2021,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
   handleSessionOp("opencode:session:update", async (conn, id, title, _directory, _workspaceId) => {
     const dir = conn.getDirectory() ?? "";
     return tagOpenCodeSession(
-      (await conn.updateSession(id, String(title))) as Record<string, unknown>,
+      (await conn.updateSession(id, asHarnessStringOr(title, ""))) as Record<string, unknown>,
       dir,
       undefined,
     );
@@ -2066,17 +2041,21 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     );
   });
 
-  handleSessionOp("opencode:session:revert", async (conn, id, messageID, partID, _directory, _ws) => {
-    const dir = conn.getDirectory() ?? "";
-    return tagOpenCodeSession(
-      (await conn.revertSession(id, String(messageID), ipcOptStr(partID))) as Record<
-        string,
-        unknown
-      >,
-      dir,
-      undefined,
-    );
-  });
+  handleSessionOp(
+    "opencode:session:revert",
+    async (conn, id, messageID, partID, _directory, _ws) => {
+      const dir = conn.getDirectory() ?? "";
+      return tagOpenCodeSession(
+        (await conn.revertSession(
+          id,
+          asHarnessStringOr(messageID, ""),
+          ipcOptStr(partID),
+        )) as Record<string, unknown>,
+        dir,
+        undefined,
+      );
+    },
+  );
   handleSessionOp("opencode:session:unrevert", async (conn, id, _directory, _ws) => {
     const dir = conn.getDirectory() ?? "";
     return tagOpenCodeSession(
@@ -2142,16 +2121,13 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     let conn = getConnectionForSession(windowState, rawSessionId, dirArg, wsArg);
     if (!conn && dirArg) conn = getConnectionForDirectory(windowState, dirArg, wsArg);
     if (!conn) return failureResult("Session connection not found");
-    const data = await conn.getMessages(
-      rawSessionId,
-      (options ?? {}) as OpenCodeMessagesOptions,
-    );
+    const data = await conn.getMessages(rawSessionId, (options ?? {}) as OpenCodeMessagesOptions);
     return { ...data, messages: (data.messages ?? []).map(tagOpenCodeMessageEntry) };
   });
   handleSessionOp("opencode:prompt", (conn, sessionId, text, images, model, agent, variant) =>
     conn.promptAsync(
       sessionId,
-      String(text),
+      asHarnessStringOr(text, ""),
       Array.isArray(images) ? (images as string[]) : undefined,
       model as OpenCodeModelRef | undefined,
       ipcOptStr(agent),
@@ -2167,7 +2143,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     (conn, sessionId, permissionId, response, _directory, workspaceId) =>
       conn.respondPermission(
         sessionId,
-        String(permissionId),
+        asHarnessStringOr(permissionId, ""),
         response as "always" | "once" | "reject",
         ipcOptStr(workspaceId),
       ),
@@ -2190,7 +2166,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     (conn, sessionId, command, args, model, agent, variant) =>
       conn.sendCommand(
         sessionId,
-        String(command),
+        asHarnessStringOr(command, ""),
         args,
         model as OpenCodeModelRef | undefined,
         ipcOptStr(agent),
@@ -2212,11 +2188,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     if (!conn) return failureResult("No connection available");
     const session = await conn.createSession(startInput.title);
     const dir = directory || conn.getDirectory() || "";
-    const taggedSession = tagOpenCodeSession(
-      session as Record<string, unknown>,
-      dir,
-      workspaceId,
-    );
+    const taggedSession = tagOpenCodeSession(session as Record<string, unknown>, dir, workspaceId);
     if (!taggedSession) return failureResult("Failed to tag session");
     rememberOpenCodeSessionDirectory(
       windowState,
@@ -2225,7 +2197,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
     );
     const sessionId =
       typeof session === "object" && session && "id" in session
-        ? String((session as { id: string }).id)
+        ? asHarnessStringOr((session as { id: unknown }).id, taggedSession.id)
         : taggedSession.id;
     await conn.promptAsync(
       sessionId,
@@ -2253,11 +2225,7 @@ export function setupOpenCodeBridge(ipcMain: OpencodeIpcMain, _getWindows: () =>
   handleResultOp("opencode:config:update", async (event, directory, workspaceId, config) => {
     if (!config || typeof config !== "object") return failureResult("Invalid config");
     const windowState = getWindowState(event.sender);
-    const conn = getConnectionForDirectory(
-      windowState,
-      ipcStr(directory),
-      ipcOptStr(workspaceId),
-    );
+    const conn = getConnectionForDirectory(windowState, ipcStr(directory), ipcOptStr(workspaceId));
     return conn ? await conn.updateConfig(config) : failureResult("No connection available");
   });
 

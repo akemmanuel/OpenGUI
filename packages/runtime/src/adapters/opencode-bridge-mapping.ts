@@ -3,11 +3,24 @@
  */
 import { normalizeProjectPath } from "../../../../src/lib/path.ts";
 import { makeHarnessSessionIdCodec } from "./harness-adapter-kit.ts";
-import type { OpenCodeMessageEntry, OpenCodeSdkResultEnvelope, OpenCodeTaggedSession } from "./opencode-bridge-types.ts";
+import type {
+  OpenCodeMessageEntry,
+  OpenCodeSdkResultEnvelope,
+  OpenCodeTaggedSession,
+} from "./opencode-bridge-types.ts";
 import { OpenCodeHttpError } from "./opencode-bridge-types.ts";
 
 const OPENCODE_SESSION_PREFIX = "opencode:";
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec(OPENCODE_SESSION_PREFIX);
+
+/** Narrow unknown IPC / SDK values to optional strings (no Object stringification). */
+export function asHarnessString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export function asHarnessStringOr(value: unknown, fallback: string): string {
+  return asHarnessString(value) ?? fallback;
+}
 
 export type NormalizeDirectoryHint = (value: unknown) => string | null;
 
@@ -149,7 +162,7 @@ export function tagOpenCodeSession(
   workspaceId: string | undefined,
 ): OpenCodeTaggedSession | null | undefined {
   if (!session) return session;
-  const rawId = toRawSessionId(String(session.id ?? ""));
+  const rawId = toRawSessionId(asHarnessStringOr(session.id, ""));
   const id = toFrontendSessionId(rawId);
   const sessionDirectory =
     typeof session.directory === "string" && session.directory.trim()
@@ -174,7 +187,7 @@ export function tagOpenCodeSession(
 }
 
 export function tagOpenCodeMessageEntry(entry: OpenCodeMessageEntry | null | undefined) {
-  const sessionID = toFrontendSessionId(String(entry?.info?.sessionID ?? ""));
+  const sessionID = toFrontendSessionId(asHarnessStringOr(entry?.info?.sessionID, ""));
   return {
     ...entry,
     info: { ...entry?.info, sessionID },
@@ -194,7 +207,9 @@ export function stripMessagePayloadBloat(messages: OpenCodeMessageEntry[]) {
     if (!Array.isArray(message?.parts)) continue;
     for (const part of message.parts) {
       if (part?.type !== "tool") continue;
-      const state = part.state as { metadata?: { files?: Array<Record<string, unknown>> } } | undefined;
+      const state = part.state as
+        | { metadata?: { files?: Array<Record<string, unknown>> } }
+        | undefined;
       const files = state?.metadata?.files;
       if (!Array.isArray(files)) continue;
       for (const file of files) {
