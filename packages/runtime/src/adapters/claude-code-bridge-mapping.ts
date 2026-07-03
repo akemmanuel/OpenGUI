@@ -2,7 +2,19 @@
  * Pure Claude Code harness mapping helpers (testable).
  */
 import { makeHarnessSessionIdCodec, normalizeHarnessDirectory } from "./harness-adapter-kit.ts";
+import { asHarnessString } from "./pi-bridge-rpc.ts";
 import type { ClaudeMessageBundle } from "./claude-code-bridge-types.ts";
+
+/** Safe string coercion for unknown SDK/event fields (avoids [object Object]). */
+export function coerceHarnessString(value: unknown, fallback = ""): string {
+  const direct = asHarnessString(value);
+  if (direct !== undefined) return direct;
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return fallback;
+}
 
 const { toFrontendSessionId, toRawSessionId } = makeHarnessSessionIdCodec("claude-code:");
 
@@ -121,8 +133,6 @@ export function tagMessageEntrySession(entry: ClaudeMessageBundle): ClaudeMessag
   return {
     ...entry,
     info: { ...entry.info, sessionID },
-    parts: entry.parts.map((part) =>
-      part && "sessionID" in part ? { ...part, sessionID } : part,
-    ),
+    parts: entry.parts.map((part) => (part && "sessionID" in part ? { ...part, sessionID } : part)),
   };
 }

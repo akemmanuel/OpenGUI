@@ -34,6 +34,7 @@ import {
   MODEL_DISCOVERY_TTL_MS,
 } from "./claude-code-models.ts";
 import {
+  coerceHarnessString,
   makeReasoningPart,
   makeSessionFromInfo,
   makeSessionTitle,
@@ -177,7 +178,10 @@ function claudeSessionModelFromSelection(
 }
 
 function deriveClaudeSessionModel(
-  history: Array<{ type?: string; message?: { model?: string; modelId?: string } }> | null | undefined,
+  history:
+    | Array<{ type?: string; message?: { model?: string; modelId?: string } }>
+    | null
+    | undefined,
 ): ClaudeSessionModelSelection | null {
   let modelId: string | null = null;
   for (const entry of history ?? []) {
@@ -324,7 +328,9 @@ function sanitizePermissionUpdates(suggestions: unknown): PermissionUpdate[] {
     }
     if (row.type === "addDirectories" || row.type === "removeDirectories") {
       const directories = Array.isArray(row.directories)
-        ? row.directories.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        ? row.directories.filter(
+            (value): value is string => typeof value === "string" && value.trim().length > 0,
+          )
         : [];
       if (directories.length === 0) return [];
       return [{ type: row.type, directories, destination }];
@@ -334,9 +340,12 @@ function sanitizePermissionUpdates(suggestions: unknown): PermissionUpdate[] {
       if (typeof behavior !== "string" || !validBehaviors.has(behavior)) return [];
       const rules = Array.isArray(row.rules)
         ? row.rules
-            .filter(
-              (rule): rule is { toolName: string; ruleContent?: string } =>
-                Boolean(rule && typeof rule === "object" && typeof (rule as { toolName?: string }).toolName === "string"),
+            .filter((rule): rule is { toolName: string; ruleContent?: string } =>
+              Boolean(
+                rule &&
+                typeof rule === "object" &&
+                typeof (rule as { toolName?: string }).toolName === "string",
+              ),
             )
             .map((rule) => ({
               toolName: rule.toolName,
@@ -438,7 +447,7 @@ class ClaudeCodeBridgeManager {
     this.projects.delete(key);
     for (const [sessionId, entry] of this.activeQueries.entries()) {
       if (entry.directory !== normalized || entry.workspaceId !== workspaceId) continue;
-      entry.query?.close?.();
+      void entry.query?.close?.();
       this.activeQueries.delete(sessionId);
     }
     this.cleanupTargetCaches(normalized, workspaceId);
@@ -450,7 +459,7 @@ class ClaudeCodeBridgeManager {
 
   disconnect() {
     for (const entry of this.activeQueries.values()) {
-      entry.query?.close?.();
+      void entry.query?.close?.();
     }
     this.activeQueries.clear();
     this.pendingTempSessions.clear();
@@ -466,11 +475,7 @@ class ClaudeCodeBridgeManager {
     this.projects.clear();
   }
 
-  resolveTarget(
-    directory: string | undefined,
-    workspaceId: string | undefined,
-    sessionId: string,
-  ) {
+  resolveTarget(directory: string | undefined, workspaceId: string | undefined, sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const normalized = normalizeDir(directory);
     if (normalized) return { directory: normalized, workspaceId };
@@ -717,7 +722,7 @@ class ClaudeCodeBridgeManager {
     const target = this.resolveTarget(directory, workspaceId, sessionId);
     await deleteSession(sessionId, { dir: target.directory });
     if (this.activeQueries.has(sessionId)) {
-      this.activeQueries.get(sessionId)?.query?.close?.();
+      void this.activeQueries.get(sessionId)?.query?.close?.();
       this.activeQueries.delete(sessionId);
     }
     this.cleanupPendingTempSession(sessionId);
@@ -952,7 +957,7 @@ class ClaudeCodeBridgeManager {
     if (!block || typeof block !== "object" || block.type !== "tool_use" || !block.id) {
       return;
     }
-    const blockId = typeof block.id === "string" ? block.id : String(block.id);
+    const blockId = coerceHarnessString(block.id);
     this.updateTrackedToolPart(state, blockId, (current) => ({
       ...current,
       callID: blockId || current.callID,
@@ -1139,7 +1144,7 @@ class ClaudeCodeBridgeManager {
             sessionId,
             messageId,
             blockIndex,
-            String(block.thinking ?? block.text ?? ""),
+            coerceHarnessString(block.thinking ?? block.text),
           );
         } else if (blockType === "tool_use") {
           const toolName = typeof block.name === "string" ? block.name : "tool";
@@ -1167,7 +1172,7 @@ class ClaudeCodeBridgeManager {
           };
           this.rememberToolPart(state, part);
         } else {
-          part = makeTextPart(sessionId, messageId, blockIndex, String(block.text ?? ""));
+          part = makeTextPart(sessionId, messageId, blockIndex, coerceHarnessString(block.text));
         }
         state.currentMessageParts.set(part.id, part);
         this.emit({
@@ -1227,7 +1232,7 @@ class ClaudeCodeBridgeManager {
               ...part.state,
               metadata: {
                 ...prevMeta,
-                rawInput: `${(prevMeta as { rawInput?: string }).rawInput ?? ""}${String(delta?.partial_json ?? "")}`,
+                rawInput: `${(prevMeta as { rawInput?: string }).rawInput ?? ""}${coerceHarnessString(delta?.partial_json)}`,
               },
             },
           };
@@ -1248,9 +1253,11 @@ class ClaudeCodeBridgeManager {
     }
 
     if (message.type === "assistant") {
-      const assistantBody = message.message as { id?: string; model?: string; content?: unknown } | undefined;
+      const assistantBody = message.message as
+        | { id?: string; model?: string; content?: unknown }
+        | undefined;
       const messageId =
-        assistantBody?.id || state.currentAssistantMessageId || String(message.uuid ?? "");
+        assistantBody?.id || state.currentAssistantMessageId || coerceHarnessString(message.uuid);
       const info = {
         ...defaultAssistantInfo(
           sessionId,
@@ -1275,7 +1282,11 @@ class ClaudeCodeBridgeManager {
       });
       const contentBlocks = Array.isArray(assistantBody?.content) ? assistantBody.content : [];
       for (const block of contentBlocks) {
-        if (block && typeof block === "object" && (block as { type?: string }).type === "tool_use") {
+        if (
+          block &&
+          typeof block === "object" &&
+          (block as { type?: string }).type === "tool_use"
+        ) {
           this.enrichAssistantToolSnapshot(state, block as Record<string, unknown>);
         }
       }
@@ -1364,9 +1375,7 @@ class ClaudeCodeBridgeManager {
     // the IPC call return right away instead of blocking for ~8 s until the
     // Claude Code subprocess sends its first system/init message.
     const tempSessionId: string | null =
-      !sessionId || placeholder
-        ? (placeholder?.id ?? sessionId ?? crypto.randomUUID())
-        : null;
+      !sessionId || placeholder ? (placeholder?.id ?? sessionId ?? crypto.randomUUID()) : null;
     const effectiveSessionId = sessionId ?? tempSessionId ?? crypto.randomUUID();
 
     state = {
@@ -1563,7 +1572,7 @@ class ClaudeCodeBridgeManager {
   async abort(sessionId: string) {
     sessionId = toRawSessionId(sessionId);
     const entry = this.activeQueries.get(sessionId);
-    entry?.query?.close?.();
+    void entry?.query?.close?.();
     this.activeQueries.delete(sessionId);
     this.cleanupPendingTempSession(sessionId);
     this.emitSessionStatus(sessionId, "idle");
