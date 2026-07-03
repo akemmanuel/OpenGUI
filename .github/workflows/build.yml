@@ -8,11 +8,11 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -33,7 +33,7 @@ jobs:
         run: pnpm exec vp test
 
       - name: Upload frontend build
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-build
           path: |
@@ -62,18 +62,18 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
       - name: Cache node_modules
         id: cache-nm
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: node_modules
           key: ${{ runner.os }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -82,7 +82,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache Electron binaries
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/electron
@@ -90,7 +90,7 @@ jobs:
           key: electron-cache-${{ runner.os }}-x64-${{ hashFiles('package.json') }}
 
       - name: Restore frontend build
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: frontend-build
 
@@ -98,7 +98,7 @@ jobs:
         run: pnpm exec electron-builder --linux deb AppImage --publish never
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: linux-release
           path: |
@@ -122,18 +122,18 @@ jobs:
       fail-fast: false
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
       - name: Cache node_modules
         id: cache-nm
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ matrix.arch }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
@@ -142,7 +142,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache Electron binaries
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/electron
@@ -150,7 +150,7 @@ jobs:
           key: electron-cache-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package.json') }}
 
       - name: Restore frontend build
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: frontend-build
 
@@ -167,7 +167,7 @@ jobs:
           ls -la release/latest-mac*.yml
 
       - name: Upload mac ${{ matrix.arch }} artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: mac-release-${{ matrix.arch }}
           path: release/*
@@ -179,11 +179,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -192,7 +192,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache Electron binaries
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/electron
@@ -200,7 +200,7 @@ jobs:
           key: electron-cache-${{ runner.os }}-x64-${{ hashFiles('package.json') }}
 
       - name: Restore frontend build
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: frontend-build
 
@@ -238,7 +238,7 @@ jobs:
           }
 
       - name: Upload Windows updater artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
           path: |
@@ -262,16 +262,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
@@ -280,7 +280,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Restore frontend build
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: frontend-build
 
@@ -296,7 +296,7 @@ jobs:
           cp android/app/build/outputs/apk/release/*.apk "release-android/OpenGUI-${GITHUB_REF_NAME}-android-release.apk"
 
       - name: Upload Android APK artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: opengui-android-release-apk
           path: release-android/*.apk
@@ -316,7 +316,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -365,11 +365,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -378,13 +378,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download mac x64 artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: mac-release-x64
           path: artifacts/mac-release
 
       - name: Download mac arm64 artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: mac-release-arm64
           path: artifacts/mac-release-arm64
