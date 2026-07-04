@@ -52,6 +52,7 @@ export function useAgentSessionLifecycleActions(input: {
           activeTargetHarnessId: state.activeTargetHarnessId,
           sessions: state.sessions,
           activeSessionId: state.activeSessionId,
+          activeTargetDirectory: state.activeTargetDirectory,
           activeWorkspaceId: state.activeWorkspaceId,
           activeWorkspaceServerUrl: state.workspaces.find(
             (workspace) => workspace.id === state.activeWorkspaceId,

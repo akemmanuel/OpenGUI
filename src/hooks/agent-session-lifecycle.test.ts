@@ -116,6 +116,7 @@ describe("createLifecycleSession", () => {
         activeTargetHarnessId: null,
         sessions: [],
         activeSessionId: null,
+        activeTargetDirectory: null,
         activeWorkspaceId: "workspace-1",
       },
       preferredHarnessId: "claude-code",

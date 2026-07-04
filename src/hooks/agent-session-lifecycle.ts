@@ -204,6 +204,7 @@ export async function createLifecycleSession({
     activeTargetHarnessId: HarnessId | null;
     sessions: Session[];
     activeSessionId: string | null;
+    activeTargetDirectory: string | null;
     activeWorkspaceId: string;
     activeWorkspaceServerUrl?: string;
   };
@@ -233,7 +234,7 @@ export async function createLifecycleSession({
         state.activeSessionId
           ? state.sessions.find((s) => s.id === state.activeSessionId)
           : undefined,
-      ).directory ?? "",
+      )?.directory ?? "",
     ) ||
     undefined;
 

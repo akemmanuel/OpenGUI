@@ -369,11 +369,8 @@ function sessionStatus(type: string) {
 }
 
 function firstLine(text: unknown) {
-  return (
-    String(text ?? "")
-      .trim()
-      .split(/\r?\n/, 1)[0] ?? ""
-  );
+  const value = stringifyUnknown(text);
+  return value.trim().split(/\r?\n/, 1)[0] ?? "";
 }
 
 function makeSessionTitle(text: string, title: string | undefined) {
@@ -533,7 +530,7 @@ function stringifyUnknown(value: unknown) {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return String(value);
+    return Object.prototype.toString.call(value);
   }
 }
 
