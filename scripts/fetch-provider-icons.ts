@@ -1,18 +1,17 @@
 /**
- * Fetches provider icons from models.dev and generates:
- * 1. Individual SVG files in src/components/provider-icons/svgs/
- * 2. A combined sprite.svg with all icons as <symbol> elements
- * 3. A types.ts file with all valid icon names
+ * Fetches provider icons from models.dev into src/components/provider-icons/svgs/.
+ *
+ * ProviderIcon resolves icons through the Vite glob manifest in types.ts, so this
+ * script intentionally does not generate a sprite sheet or rewrite types.ts.
  *
  * Usage: vp node scripts/fetch-provider-icons.ts
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const MODELS_URL = process.env.OPENCODE_MODELS_URL || "https://models.dev";
 const ICONS_DIR = path.join("src", "components", "provider-icons", "svgs");
-const OUTPUT_DIR = path.join("src", "components", "provider-icons");
 
 async function main() {
   console.info(`Fetching provider list from ${MODELS_URL}/api.json ...`);
@@ -69,52 +68,6 @@ async function main() {
 
   // Sort for deterministic output
   succeeded.sort();
-
-  // Generate sprite.svg
-  console.info("Generating sprite.svg ...");
-  const symbols: string[] = [];
-
-  for (const id of succeeded) {
-    const svgContent = await readFile(path.join(ICONS_DIR, `${id}.svg`), "utf8");
-
-    // Extract the viewBox from the SVG, default to "0 0 40 40"
-    const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/);
-    const viewBox = viewBoxMatch?.[1] ?? "0 0 40 40";
-
-    // Extract inner content (everything between <svg> and </svg>)
-    const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/);
-    const inner = innerMatch?.[1]?.trim() ?? "";
-
-    if (inner) {
-      symbols.push(`  <symbol viewBox="${viewBox}" id="${id}">${inner}</symbol>`);
-    }
-  }
-
-  const sprite = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<defs>
-${symbols.join("\n")}
-</defs>
-</svg>`;
-
-  await writeFile(path.join(OUTPUT_DIR, "sprite.svg"), sprite);
-  console.info(`Wrote sprite.svg with ${symbols.length} symbols`);
-
-  // Generate types.ts
-  console.info("Generating types.ts ...");
-  const typesContent = `/**
- * Auto-generated provider icon names.
- * Do not edit manually - run \`vp node scripts/fetch-provider-icons.ts\` to regenerate.
- */
-
-export const providerIconNames = [
-${succeeded.map((id) => `  "${id}",`).join("\n")}
-] as const;
-
-export type ProviderIconName = (typeof providerIconNames)[number];
-`;
-
-  await writeFile(path.join(OUTPUT_DIR, "types.ts"), typesContent);
-  console.info(`Wrote types.ts with ${succeeded.length} icon names`);
 
   console.info("Done!");
 }

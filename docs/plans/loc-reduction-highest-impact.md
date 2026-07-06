@@ -45,13 +45,13 @@ Update [frontend-session-transcript-simplification.md](./frontend-session-transc
 
 ---
 
-## Tranche 2 — Split `use-agent-impl-core.tsx` (2–4 PRs, ~1.5–2k LoC moved/deleted)
+## Tranche 2 — Split `use-agent-impl-core.tsx` (2–4 PRs, ~1.5–2k LoC moved/deleted) — **done (2026-07)**
 
-**Goal:** `HarnessProvider` becomes composition of feature hooks; file target **&lt; 600 lines**.
+**Goal:** `HarnessProvider` becomes composition of feature hooks; file target **&lt; 600 lines**. Current `use-agent-impl-core.tsx` is a thin provider entry (~34 lines); orchestration lives under `src/features/*`.
 
-Extract in this order (dependencies top → bottom):
+Extracted in this order (dependencies top → bottom):
 
-### 2.1 `features/agent-bootstrap/` (~400 lines out) — **done (partial)**
+### 2.1 `features/agent-bootstrap/` (~400 lines out) — **done**
 
 **Owns:** Workspace hydration from persistence; post-ready project bootstrap (local server check/start), `buildBootstrapProjectConfigs`, initial `loadServerResources` + `loadSessionIndex`.
 
@@ -59,35 +59,37 @@ Extract in this order (dependencies top → bottom):
 
 **Cut from impl-core:** workspace init effect + startup bootstrap effect; `stateRef`/`getState` moved to top of provider body for bootstrap hooks.
 
-### 2.2 `features/agent-resources/` (~350 lines out) — **done (catalog load)**
+### 2.2 `features/agent-resources/` (~350 lines out) — **done**
 
 **Owns:** `loadServerResources`, resource load dedupe refs, `clearResourceLoadDedupe` (used by `refreshProviders`).
 
 **Exports:** `useAgentResourceCatalog` → `{ loadServerResources, loadedResource*Ref, clearResourceLoadDedupe }`
 
-**Still in impl-core:** harness routing effect that calls `loadServerResources` (~lines 1200+); move with 2.3 or a small `useAgentResourceRouting` hook next.
+**Done:** harness routing effect moved to `useAgentResourceRouting`; catalog loading stays in `useAgentResourceCatalog`.
 
-### 2.3 `features/agent-projects/` (~500 lines out)
+### 2.3 `features/agent-projects/` (~500 lines out) — **done**
 
 **Owns:** Project connect/remove, hydration (`updateProjectHydration`, `loadSessionIndex`), `expectedDirectoriesRef`, session index refresh, default chat directory.
 
-**Already partial:** `agent-project-connection.ts`, `agent-project-hydration.ts`, `agent-session-index-refresh.ts` — **move call sites** from impl-core into one `useAgentProjectOrchestration` facade.
+**Done:** call sites moved behind `useAgentProjectOrchestration` facade.
 
-### 2.4 `features/agent-workspaces/` (~400 lines out)
+### 2.4 `features/agent-workspaces/` (~400 lines out) — **done**
 
-**Owns:** Workspace CRUD/switch plans (already in `agent-workspace-lifecycle.ts`), persistence effects, presentation (`resolveWorkspacePresentation`).
+**Owns:** Workspace CRUD/switch plans, persistence effects, presentation (`resolveWorkspacePresentation`).
 
-### 2.5 `features/agent-provider-shell/` (~250 lines out)
+**Done:** workspace orchestration lives in `useAgentWorkspaceOrchestration`; provider-level persistence effects live under `agent-provider-shell`.
 
-**Owns:** Context value `useMemo` blocks (`sessionCtx`, `connectionCtx`, `modelCtx`, `actionsCtx`), provider nesting, exported hooks (`useSessionState`, etc.).
+### 2.5 `features/agent-provider-shell/` (~250 lines out) — **done**
 
-**Keep in impl-core:** Only `useReducer`, wiring order, and `<ActiveSessionTranscriptProvider>`.
+**Owns:** Context value assembly (`sessionCtx`, `connectionCtx`, `modelCtx`, `actionsCtx`), provider nesting, exported hooks (`useSessionState`, etc.).
+
+**Kept in impl-core:** Only the thin provider wrapper and `<ActiveSessionTranscriptProvider>`.
 
 ### Acceptance (Tranche 2)
 
-- `rg "use-agent-impl-core" src/` — only `HarnessProvider` entry and test imports where needed.
-- No new circular imports (`features/*` may import `hooks/agent-reducer`, not vice versa).
-- Manual: Desktop Local Workspace — boot, add project, list sessions, send, queue.
+- [x] `rg "use-agent-impl-core" src/` — only `HarnessProvider` entry and test imports where needed.
+- [x] No new circular imports (`features/*` may import `hooks/agent-reducer`, not vice versa).
+- [ ] Manual: Desktop Local Workspace — boot, add project, list sessions, send, queue.
 
 ---
 
