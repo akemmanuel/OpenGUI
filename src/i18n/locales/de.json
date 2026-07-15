@@ -282,6 +282,9 @@
     "compacting": "Komprimiere",
     "contextWindow": "Kontextfenster",
     "tokens": "Token",
+    "usage": "{{used}} / {{limit}} Token",
+    "remaining": "{{count}} Token übrig",
+    "estimated": "Während der Ausgabe geschätzt",
     "cost": "Kosten",
     "compact": "Komprimieren"
   },

@@ -3,7 +3,8 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import type { ToolCallTranscriptPart } from "@/protocol/session-transcript";
+import type { TranscriptPart, ToolCallTranscriptPart } from "@/protocol/session-transcript";
+import { PartView } from "../PartView";
 import { ToolCallPartView } from "./ToolCallPartView";
 
 function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction) {
@@ -17,7 +18,7 @@ function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction) {
     else counts.other += 1;
   }
 
-  return [
+  const summary = [
     counts.command && t("toolGroup.commands", { count: counts.command }),
     counts.read && t("toolGroup.read", { count: counts.read }),
     counts.write && t("toolGroup.wrote", { count: counts.write }),
@@ -26,6 +27,7 @@ function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction) {
   ]
     .filter(Boolean)
     .join(", ");
+  return summary ? `${summary[0]!.toLocaleUpperCase()}${summary.slice(1)}` : summary;
 }
 
 export function ToolCallGroupView({
@@ -33,16 +35,17 @@ export function ToolCallGroupView({
   expandedToolCalls,
   onSetToolCallExpanded,
 }: {
-  parts: ToolCallTranscriptPart[];
+  parts: TranscriptPart[];
   expandedToolCalls?: ReadonlySet<string>;
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
 }) {
   const { t } = useTranslation();
   const groupId = `tool-group:${parts[0]?.id ?? "empty"}`;
   const expanded = expandedToolCalls?.has(groupId) ?? false;
-  const running = parts.some((part) => part.state.status === "running");
-  const failed = parts.some((part) => part.state.status === "error");
-  const summary = toolGroupSummary(parts, t);
+  const tools = parts.filter((part): part is ToolCallTranscriptPart => part.type === "tool");
+  const running = tools.some((part) => part.state.status === "running");
+  const failed = tools.some((part) => part.state.status === "error");
+  const summary = toolGroupSummary(tools, t);
 
   return (
     <details
@@ -77,14 +80,23 @@ export function ToolCallGroupView({
       </summary>
       {expanded && (
         <div className="mt-1 flex flex-col gap-1 pl-[18px]">
-          {parts.map((part) => (
-            <ToolCallPartView
-              key={part.id}
-              part={part}
-              expandedToolCalls={expandedToolCalls}
-              onSetToolCallExpanded={onSetToolCallExpanded}
-            />
-          ))}
+          {parts.map((part) =>
+            part.type === "tool" ? (
+              <ToolCallPartView
+                key={part.id}
+                part={part}
+                expandedToolCalls={expandedToolCalls}
+                onSetToolCallExpanded={onSetToolCallExpanded}
+              />
+            ) : (
+              <PartView
+                key={part.id}
+                part={part}
+                expandedToolCalls={expandedToolCalls}
+                onSetToolCallExpanded={onSetToolCallExpanded}
+              />
+            ),
+          )}
         </div>
       )}
     </details>

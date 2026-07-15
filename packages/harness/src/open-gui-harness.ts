@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { buildModelContext } from "./context/build-context.ts";
+import { buildSystemPrompt } from "./context/system-prompt.ts";
 import type {
   Clock,
   CreateSessionInput,
@@ -12,6 +13,7 @@ import type {
   SessionEvent,
   SessionSnapshot,
 } from "./harness.ts";
+import { discoverSkills } from "./skills/discover.ts";
 import { SqliteSessionStore } from "./storage/sqlite-store.ts";
 import { executeTool } from "./tools/execute-tool.ts";
 import { resolveNativeShell, type ResolvedShell } from "./tools/shell-resolution.ts";
@@ -92,6 +94,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #clock: Clock;
   readonly #ids: IdGenerator;
   readonly #dataDirectory: string;
+  readonly #homeDirectory: string | undefined;
   readonly #shell: ResolvedShell;
   readonly #runningSessions = new Set<string>();
   readonly #abortControllers = new Map<string, AbortController>();
@@ -103,6 +106,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#ids = options.ids ?? new RandomIdGenerator();
     this.#model = options.model;
     this.#dataDirectory = options.dataDirectory;
+    this.#homeDirectory = options.homeDirectory;
     this.#shell = resolveNativeShell({ configuredExecutable: options.shell?.executable });
     this.#store = new SqliteSessionStore(options.dataDirectory, this.#ids);
     this.#ready = this.#store.recoverInterruptedRuns(this.#clock.now().toISOString());
@@ -228,10 +232,20 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           let assistantText = "";
           let reasoningText = "";
           const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
+          const { skills } = discoverSkills({
+            projectDirectory: current.projectDirectory,
+            homeDirectory: this.#homeDirectory,
+          });
           for await (const event of this.#model.stream(
             {
               projectDirectory: current.projectDirectory,
               context: buildModelContext(current.entries),
+              systemPrompt: buildSystemPrompt({
+                projectDirectory: current.projectDirectory,
+                shell: this.#shell,
+                skills,
+                now: this.#clock.now(),
+              }),
             },
             abortController.signal,
           )) {
@@ -303,6 +317,9 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
                 this.#clock.now().toISOString(),
               ),
             };
+          }
+
+          for (const toolCall of toolCalls) {
             const output = await executeTool(
               {
                 projectDirectory: current.projectDirectory,

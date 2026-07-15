@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ResolvedShell } from "./shell-resolution.ts";
 
-const MAX_RETURNED_BYTES = 64 * 1024;
+const MAX_RETURNED_BYTES = 5 * 1024;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 30 * 60_000;
 const FORCE_KILL_DELAY_MS = 500;
@@ -129,13 +129,27 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
     fullOutput.end(resolve);
   });
 
+  const truncated = fullOutput.bytesWritten > returnedOutput.byteLength;
+  const truncationNotice = `\nThe full output has been saved to ${fullOutputPath}.`;
+  const output = truncated
+    ? Buffer.concat([
+        returnedOutput.subarray(
+          Math.max(
+            0,
+            returnedOutput.byteLength - (MAX_RETURNED_BYTES - Buffer.byteLength(truncationNotice)),
+          ),
+        ),
+        Buffer.from(truncationNotice),
+      ]).toString("utf8")
+    : returnedOutput.toString("utf8");
+
   return {
     command: input.command,
     shell: context.shell.executable,
     exitCode: result.exitCode,
     signal: result.signal,
-    output: returnedOutput.toString("utf8"),
-    truncated: fullOutput.bytesWritten > returnedOutput.byteLength,
+    output,
+    truncated,
     fullOutputPath,
     timedOut,
     aborted,

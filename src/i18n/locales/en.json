@@ -282,6 +282,9 @@
     "compacting": "Compacting",
     "contextWindow": "Context window",
     "tokens": "tokens",
+    "usage": "{{used}} / {{limit}} tokens",
+    "remaining": "{{count}} tokens left",
+    "estimated": "Estimated while streaming",
     "cost": "Cost",
     "compact": "Compact"
   },

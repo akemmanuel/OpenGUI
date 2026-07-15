@@ -20,6 +20,67 @@ function semanticTranscript(entries: SessionEntry[]) {
 }
 
 describe("OpenGuiHarness", () => {
+  test("advertises project skills in the system prompt and loads them with read", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const homeDirectory = join(dataDirectory, "home");
+    const projectDirectory = join(dataDirectory, "project");
+    const skillDir = join(projectDirectory, ".agents", "skills", "code-review");
+    await mkdir(skillDir, { recursive: true });
+    await mkdir(homeDirectory, { recursive: true });
+    await mkdir(projectDirectory, { recursive: true });
+    const skillPath = join(skillDir, "SKILL.md");
+    await writeFile(
+      skillPath,
+      `---
+name: code-review
+description: Review code changes and pull requests. Use when reviewing diffs or PRs.
+---
+
+# Code review
+
+1. Read the diff.
+2. Report findings.
+`,
+    );
+
+    const model = new FakeModel([
+      {
+        text: "Loading skill.",
+        toolCalls: [{ id: "call-skill", name: "read", input: { path: skillPath } }],
+      },
+      { text: "Skill loaded." },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      homeDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({ text: "Review my PR" })) {
+      // drain
+    }
+
+    expect(model.requests[0]?.systemPrompt).toContain("<name>code-review</name>");
+    expect(model.requests[0]?.systemPrompt).toContain(`<location>${skillPath}</location>`);
+    expect(model.requests[0]?.systemPrompt).toContain("use the read tool");
+    expect(model.requests[1]?.context.at(-1)).toMatchObject({
+      type: "tool_result",
+      toolCallId: "call-skill",
+      name: "read",
+      output: expect.objectContaining({
+        content: expect.stringContaining("# Code review"),
+      }),
+    });
+    await harness.close();
+  });
+
   test("streams and persists model reasoning summaries", async () => {
     const dataDirectory = await temporaryDirectory();
     const projectDirectory = join(dataDirectory, "project");
@@ -440,6 +501,11 @@ describe("OpenGuiHarness", () => {
     const toolResults = (await session.read()).entries.filter(
       (entry) => entry.kind === "tool_result",
     );
+    expect(
+      (await session.read()).entries
+        .filter((entry) => entry.kind === "tool_call" || entry.kind === "tool_result")
+        .map((entry) => entry.kind),
+    ).toEqual(["tool_call", "tool_call", "tool_result", "tool_result"]);
     expect(toolResults).toHaveLength(2);
     expect(toolResults[1]).toMatchObject({
       payload: {
@@ -499,7 +565,12 @@ describe("OpenGuiHarness", () => {
       exitCode: number;
     };
     expect(largeOutput).toMatchObject({ truncated: true, exitCode: 0 });
-    expect(Buffer.byteLength(largeOutput.output)).toBeLessThanOrEqual(65_536);
+    expect(Buffer.byteLength(largeOutput.output)).toBeLessThanOrEqual(5 * 1024);
+    expect(
+      largeOutput.output.endsWith(
+        `The full output has been saved to ${largeOutput.fullOutputPath}.`,
+      ),
+    ).toBe(true);
     expect(await readFile(largeOutput.fullOutputPath, "utf8")).toHaveLength(70_000);
     expect(results[1]).toMatchObject({
       payload: { output: { timedOut: true, exitCode: null } },

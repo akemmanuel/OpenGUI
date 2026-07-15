@@ -33,7 +33,7 @@
     "ultracode:quality": "node scripts/ultracode-quality-gate.mjs",
     "check:add-project-flow": "node scripts/check-add-project-flow.mjs",
     "start": "NODE_ENV=production vp exec electron . --no-sandbox",
-    "start:web": "pnpm run build && HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
+    "start:web": "HOST=0.0.0.0 NODE_ENV=production node --experimental-strip-types server/web-server.ts",
     "dist:linux": "vp build && electron-builder --linux deb AppImage",
     "dist:linux:appimage": "vp build && electron-builder --linux AppImage",
     "dist:mac": "vp build && electron-builder --mac dmg",

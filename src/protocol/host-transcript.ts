@@ -312,6 +312,31 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
           },
         };
       });
+      continue;
+    }
+
+    if (entry.kind === "run_failed") {
+      const runId = text(entry.payload.runId, entry.id);
+      const messageId = `run:${runId}`;
+      if (!pendingAssistant || pendingAssistant.info.id !== messageId) {
+        flushAssistant();
+        pendingAssistant = {
+          info: {
+            id: messageId,
+            sessionID: snapshot.id,
+            role: "assistant",
+            providerID: snapshot.model?.connectionId ?? "",
+            modelID: snapshot.model?.modelId ?? "",
+            time: { created: createdMs(entry.createdAt) },
+          },
+          parts: [],
+        };
+      }
+      pendingAssistant.info.error = {
+        name: "Model request failed",
+        data: { message: text(entry.payload.error, "Model request failed") },
+      };
+      pendingAssistant.info.time.completed = createdMs(entry.createdAt);
     }
   }
 

@@ -1,16 +1,33 @@
 import type { ImageMention } from "@/components/ImageMentionPreview";
 import type { TranscriptPart } from "@/protocol/session-transcript";
-import type { ToolCallTranscriptPart } from "@/protocol/session-transcript";
 import { PartView } from "./PartView";
 import { ToolCallGroupView } from "./tools/ToolCallGroupView";
 
-function groupConsecutiveTools(parts: TranscriptPart[]) {
-  const groups: (TranscriptPart | ToolCallTranscriptPart[])[] = [];
+/**
+ * Group tool activity until the model emits user-facing text. Reasoning is
+ * transparent here: it remains renderable, but it must not fragment one tool
+ * summary into several "Read/Ran/Edited" rows.
+ */
+export function groupToolsUntilAssistantText(parts: TranscriptPart[]) {
+  const groups: (TranscriptPart | TranscriptPart[])[] = [];
+  let activity: TranscriptPart[] = [];
+
+  const flushActivity = () => {
+    if (activity.length === 0) return;
+    if (activity.some((part) => part.type === "tool")) groups.push(activity);
+    else groups.push(...activity);
+    activity = [];
+  };
+
   for (const part of parts) {
-    const last = groups.at(-1);
-    if (part.type === "tool" && Array.isArray(last)) last.push(part);
-    else groups.push(part.type === "tool" ? [part] : part);
+    if (part.type === "text") {
+      flushActivity();
+      groups.push(part);
+    } else {
+      activity.push(part);
+    }
   }
+  flushActivity();
   return groups;
 }
 
@@ -37,9 +54,9 @@ export function MessagePartsStack({
 
   return (
     <div className="flex flex-col gap-1">
-      {groupConsecutiveTools(parts).map((partOrGroup) =>
+      {groupToolsUntilAssistantText(parts).map((partOrGroup) =>
         Array.isArray(partOrGroup) ? (
-          partOrGroup.length === 1 ? (
+          partOrGroup.length === 1 && partOrGroup[0]?.type === "tool" ? (
             <PartView
               key={partOrGroup[0]!.id}
               part={partOrGroup[0]!}

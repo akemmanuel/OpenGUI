@@ -122,8 +122,7 @@ export class CodexResponsesTransport implements ModelTransport {
           model: selected.model.modelId,
           stream: true,
           store: false,
-          instructions:
-            "You are OpenGUI's general-purpose agent. Use the available Project tools when needed.",
+          instructions: request.systemPrompt,
           input: codexInput(request.context),
           tools,
           reasoning:

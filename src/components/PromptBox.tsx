@@ -6,6 +6,7 @@ import { PromptImageMentions, usePromptImages } from "@/components/PromptImageMe
 import { ModelSelector } from "@/components/ModelSelector";
 import { ReasoningEffortSelector } from "@/components/ReasoningEffortSelector";
 import { PromptAddMenu } from "@/components/PromptAddMenu";
+import { PromptContextStatus } from "@/components/PromptContextStatus";
 import { Button } from "@/components/ui/button";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigation";
@@ -37,11 +38,28 @@ interface PromptBoxProps extends Omit<
   queueMode: QueueMode;
   /** Callback to update queue mode */
   onQueueModeChange: (mode: QueueMode) => void;
+  contextInfo?: {
+    percent: number | null;
+    tokens: number | null;
+    cost: number | null;
+    contextLimit: number | null;
+    isEstimated: boolean;
+  };
 }
 
 export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
   (
-    { className, onSubmit, onStop, isLoading, autoFocus, queueMode, onQueueModeChange, ...props },
+    {
+      className,
+      onSubmit,
+      onStop,
+      isLoading,
+      autoFocus,
+      queueMode,
+      onQueueModeChange,
+      contextInfo,
+      ...props
+    },
     ref,
   ) => {
     const { t } = useTranslation();
@@ -300,6 +318,15 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           )}
 
           <div className="ml-auto flex items-center gap-1.5">
+            {contextInfo?.percent != null && (
+              <PromptContextStatus
+                contextPercent={contextInfo.percent}
+                contextTokens={contextInfo.tokens}
+                contextCost={contextInfo.cost}
+                contextLimit={contextInfo.contextLimit}
+                isEstimated={contextInfo.isEstimated}
+              />
+            )}
             {shouldShowStopButton({ isSessionRunning }) && (
               <Button
                 type="button"

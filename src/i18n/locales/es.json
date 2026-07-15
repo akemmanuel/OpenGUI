@@ -282,6 +282,9 @@
     "compacting": "Compactando",
     "contextWindow": "Ventana de contexto",
     "tokens": "tokens",
+    "usage": "{{used}} / {{limit}} tokens",
+    "remaining": "Quedan {{count}} tokens",
+    "estimated": "Estimado durante la transmisión",
     "cost": "Coste",
     "compact": "Compactar"
   },

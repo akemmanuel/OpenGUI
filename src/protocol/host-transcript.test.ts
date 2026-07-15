@@ -329,4 +329,28 @@ describe("Host transcript streaming", () => {
       },
     });
   });
+
+  test("projects a failed Run as a visible assistant error", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "failed-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "run_failed",
+        payload: { runId: "run-1", error: "Upstream request failed" },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+    ];
+
+    expect(projectHostTranscriptStream(createHostTranscriptStream(input))[0]).toMatchObject({
+      info: {
+        role: "assistant",
+        error: {
+          name: "Model request failed",
+          data: { message: "Upstream request failed" },
+        },
+      },
+    });
+  });
 });

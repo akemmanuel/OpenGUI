@@ -13,19 +13,43 @@ export interface OpenAiCompatibleConnection {
   modelIds: string[];
 }
 
-function toChatMessages(context: ModelContextItem[]) {
+export function toChatMessages(context: ModelContextItem[]) {
   const messages: Array<Record<string, unknown>> = [];
+  let pendingToolCalls: Array<Record<string, unknown>> = [];
+  let pendingToolResults: Array<Record<string, unknown>> = [];
+
+  const flushToolExchange = () => {
+    if (pendingToolCalls.length === 0) return;
+    const last = messages.at(-1);
+    if (last?.role === "assistant") {
+      const existing = Array.isArray(last.tool_calls) ? last.tool_calls : [];
+      last.tool_calls = [...existing, ...pendingToolCalls];
+      if (typeof last.content !== "string") last.content = null;
+    } else {
+      messages.push({ role: "assistant", content: null, tool_calls: pendingToolCalls });
+    }
+    messages.push(...pendingToolResults);
+    pendingToolCalls = [];
+    pendingToolResults = [];
+  };
+
   for (const item of context) {
     if (item.type === "user_message") {
+      flushToolExchange();
       messages.push({ role: "user", content: item.text });
       continue;
     }
     if (item.type === "assistant_message") {
+      flushToolExchange();
       messages.push({ role: "assistant", content: item.text });
       continue;
     }
     if (item.type === "tool_call") {
-      const last = messages.at(-1);
+      // Session store writes parallel tools as tool_call* then tool_result*, and
+      // sequential turns as tool_call/tool_result pairs. Starting a new tool call
+      // after results means a new model turn — flush so we do not rewrite sequential
+      // history into one parallel tool_calls block (OpenCode/DeepSeek rejects that).
+      if (pendingToolResults.length > 0) flushToolExchange();
       const toolCall = {
         id: item.toolCallId,
         type: "function",
@@ -34,17 +58,11 @@ function toChatMessages(context: ModelContextItem[]) {
           arguments: JSON.stringify(item.input ?? {}),
         },
       };
-      if (last && last.role === "assistant") {
-        const existing = Array.isArray(last.tool_calls) ? last.tool_calls : [];
-        last.tool_calls = [...existing, toolCall];
-        if (typeof last.content !== "string") last.content = null;
-      } else {
-        messages.push({ role: "assistant", content: null, tool_calls: [toolCall] });
-      }
+      pendingToolCalls.push(toolCall);
       continue;
     }
     if (item.type === "tool_result") {
-      messages.push({
+      pendingToolResults.push({
         role: "tool",
         tool_call_id: item.toolCallId,
         content:
@@ -52,6 +70,7 @@ function toChatMessages(context: ModelContextItem[]) {
       });
     }
   }
+  flushToolExchange();
   return messages;
 }
 
@@ -109,7 +128,8 @@ const TOOLS = [
     type: "function",
     function: {
       name: "shell",
-      description: "Run one non-interactive shell command in the Project directory.",
+      description:
+        "Run one non-interactive shell command in the Project directory. Output is limited to 5 KiB; when truncated, the result identifies the file containing the full output.",
       parameters: {
         type: "object",
         properties: {
@@ -129,6 +149,30 @@ function parseArguments(raw: string) {
   } catch {
     return { raw };
   }
+}
+
+export function shouldRetryChatCompletion(status: number, body: string) {
+  return (
+    status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status >= 500 ||
+    /upstream request failed|temporarily unavailable|overloaded/i.test(body)
+  );
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, delayMs);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason ?? new Error("Aborted"));
+      },
+      { once: true },
+    );
+  });
 }
 
 export function chatDeltaEvents(delta: Record<string, any>): ModelStreamEvent[] {
@@ -180,34 +224,42 @@ export class OpenAiChatTransport implements ModelTransport {
     if (!modelId) throw new Error(`No model configured for connection ${connectionId}`);
 
     const baseUrl = connection.baseUrl.replace(/\/+$/, "");
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(connection.apiKey ? { authorization: `Bearer ${connection.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: modelId,
-        stream: true,
-        ...(selected?.reasoning && selected.reasoning !== "none"
-          ? { reasoning_effort: selected.reasoning }
-          : {}),
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are OpenGUI's local general-purpose agent. Use read, write, edit, and shell when needed. Prefer concise answers.",
-          },
-          ...toChatMessages(request.context),
-        ],
-        tools: TOOLS,
-      }),
-      signal,
+    const body = JSON.stringify({
+      model: modelId,
+      stream: true,
+      ...(selected?.reasoning && selected.reasoning !== "none"
+        ? { reasoning_effort: selected.reasoning }
+        : {}),
+      messages: [
+        {
+          role: "system",
+          content: request.systemPrompt,
+        },
+        ...toChatMessages(request.context),
+      ],
+      tools: TOOLS,
     });
-    if (!response.ok || !response.body) {
+
+    let response: Response | undefined;
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(connection.apiKey ? { authorization: `Bearer ${connection.apiKey}` } : {}),
+        },
+        body,
+        signal,
+      });
+      if (response.ok && response.body) break;
       const text = await response.text().catch(() => "");
-      throw new Error(text || `Model request failed (${response.status})`);
+      if (attempt === maxAttempts - 1 || !shouldRetryChatCompletion(response.status, text)) {
+        throw new Error(text || `Model request failed (${response.status})`);
+      }
+      await waitForRetry(500 * 2 ** attempt, signal);
     }
+    if (!response?.body) throw new Error("Model response did not include a body");
 
     const decoder = new TextDecoder();
     let buffer = "";

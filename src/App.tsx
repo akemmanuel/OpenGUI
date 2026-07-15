@@ -41,7 +41,6 @@ import { SettingsView } from "./components/ConnectionPanel";
 import { findLastUserMessageBeforeRevert } from "@/components/message-list/message-revert";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
-import { PromptSessionStatus } from "./components/PromptSessionStatus";
 import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
@@ -256,18 +255,12 @@ function AppContent({
                           />
                         </div>
                       )}
-                      <PromptSessionStatus
-                        contextPercent={contextInfo.percent}
-                        contextTokens={contextInfo.tokens}
-                        contextCost={contextInfo.cost}
-                        contextLimit={contextInfo.contextLimit}
-                        isLoading={isBusy}
-                      />
                       <PromptBox
                         autoFocus
                         isLoading={isBusy}
                         queueMode={queueMode}
                         onQueueModeChange={setQueueMode}
+                        contextInfo={contextInfo}
                         onSubmit={(message, mode) => {
                           return sendPrompt(message, mode);
                         }}

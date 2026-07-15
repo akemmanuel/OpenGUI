@@ -12,6 +12,8 @@ export type ModelContextItem =
 export interface ModelRequest {
   projectDirectory: string;
   context: ModelContextItem[];
+  /** Full system prompt for this turn (skills catalog, env, tool summary). */
+  systemPrompt: string;
 }
 
 export type ModelStreamEvent =

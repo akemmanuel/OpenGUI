@@ -107,6 +107,8 @@ export interface OpenGuiHarnessOptions {
   dataDirectory: string;
   model: ModelTransport;
   shell?: { executable?: string };
+  /** Home directory used for `~/.agents/skills` discovery. Defaults to os.homedir(). */
+  homeDirectory?: string;
   clock?: Clock;
   ids?: IdGenerator;
 }

@@ -7,6 +7,7 @@ interface ModelsDevModel {
   release_date?: string;
   reasoning?: boolean;
   reasoning_options?: Array<{ type?: string; values?: unknown[] }>;
+  limit?: { context?: number };
 }
 
 type ModelsDevCatalog = Record<string, ModelsDevModel>;
@@ -26,7 +27,7 @@ let catalogRequest: Promise<ModelsDevCatalog | null> | null = null;
 export function reasoningMetadataForModel(
   catalog: ModelsDevCatalog | null,
   modelId: string,
-): Pick<Model, "name" | "release_date" | "capabilities" | "reasoningEfforts"> {
+): Pick<Model, "name" | "release_date" | "capabilities" | "reasoningEfforts" | "limit"> {
   // models.json is keyed as provider/model. A connection can use any label or URL,
   // so match its API model id rather than guessing its provider.
   const matches = catalog
@@ -73,6 +74,9 @@ export function reasoningMetadataForModel(
     release_date: metadata?.release_date || "",
     capabilities: { reasoning: reasoningMatches.length > 0 },
     reasoningEfforts,
+    ...(typeof metadata?.limit?.context === "number" && metadata.limit.context > 0
+      ? { limit: { context: metadata.limit.context } }
+      : {}),
   };
 }
 
