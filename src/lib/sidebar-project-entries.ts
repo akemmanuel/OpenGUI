@@ -10,7 +10,7 @@ export function listSidebarAvailableProjectDirectories(
 
 /**
  * Root project directories to render in the Projects section.
- * Must include every workspace project even when Harness connection is still pending.
+ * Must include every workspace project even while its Host connection is pending.
  */
 export function buildSidebarOrderedRootProjectDirectories(input: {
   availableProjectDirectories: string[];

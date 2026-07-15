@@ -1,5 +1,4 @@
-import type { Provider } from "@/protocol/harness-types";
-import type { HarnessId } from "@/agents";
+import type { Provider } from "@/protocol/agent-types";
 
 // ---------------------------------------------------------------------------
 // Provider management types
@@ -77,41 +76,6 @@ export interface Workspace {
   lastActiveSessionId?: string | null;
 }
 
-/** Native preload events, tagged with source directory. Adapter normalizes these for app use. */
-export type BridgeEvent =
-  | {
-      type: "connection:status";
-      payload: ConnectionStatus;
-      directory: string;
-      workspaceId?: string;
-    }
-  | {
-      type: "opencode:event";
-      payload: unknown;
-      directory: string;
-      workspaceId?: string;
-    }
-  | {
-      type: "claude-code:event";
-      payload: unknown;
-      directory?: string;
-      workspaceId?: string;
-    }
-  | {
-      type: "pi:event";
-      payload: unknown;
-      directory?: string;
-      workspaceId?: string;
-    }
-  | {
-      type: "codex:event";
-      payload: unknown;
-      directory?: string;
-      workspaceId?: string;
-    };
-
-export type NativeBackendEvent = BridgeEvent;
-
 /** Standard IPC result envelope */
 export interface IPCResult<T = unknown> {
   success: boolean;
@@ -131,176 +95,6 @@ export interface SelectedModel {
 export interface ProvidersData {
   providers: Provider[];
   default: { [key: string]: string };
-}
-
-export type HarnessInventoryStatus = "ready" | "warning" | "error" | "disabled";
-export type HarnessInventoryAuthStatus = "authenticated" | "unauthenticated" | "unknown";
-
-export interface HarnessInventoryCliDiagnostics {
-  command: string;
-  resolvedPath: string | null;
-  checkedPaths: string[];
-}
-
-export interface HarnessInventoryModel {
-  providerID?: string;
-  modelID: string;
-  name?: string;
-}
-
-export interface HarnessInventoryAgent {
-  id: string;
-  name: string;
-}
-
-export interface HarnessInventory {
-  harnessId: HarnessId;
-  displayName: string;
-  enabled: boolean;
-  installed: boolean;
-  status: HarnessInventoryStatus;
-  auth: {
-    status: HarnessInventoryAuthStatus;
-    label?: string;
-    email?: string;
-  };
-  version: string | null;
-  models: HarnessInventoryModel[];
-  agents: HarnessInventoryAgent[];
-  message?: string;
-  checkedAt: string;
-  diagnostics: {
-    cli: HarnessInventoryCliDiagnostics;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Plugin Catalog Types
-// ---------------------------------------------------------------------------
-
-export interface PluginCatalogEntry {
-  id: string;
-  slug: string;
-  name: string;
-  source: string;
-  description?: string;
-  url?: string;
-  installs: number;
-  createdAt?: string;
-  updatedAt?: string;
-  change?: number;
-}
-
-export interface PluginCatalogListResponse {
-  data: PluginCatalogEntry[];
-  pagination: {
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-  };
-}
-
-export interface PluginCatalogSearchResponse {
-  data: PluginCatalogEntry[];
-  query: string;
-  searchType: "fuzzy" | "semantic";
-  count: number;
-  durationMs: number;
-}
-
-export interface PluginCatalogDetailResponse {
-  id: string;
-  source: string;
-  slug: string;
-  readme: string | null;
-  manifest: unknown;
-  files: Array<{ path: string; contents: string }> | null;
-}
-
-export interface PluginCatalogAuditResponse {
-  id: string;
-  source: string;
-  slug: string;
-  audits: Array<{
-    id: string;
-    status: string;
-    message?: string;
-    details?: unknown;
-  }>;
-}
-
-export interface PluginCatalogCuratedResponse {
-  data: Array<{
-    owner: string;
-    totalInstalls: number;
-    featuredRepo: string;
-    featuredPlugin: string;
-    skills: PluginCatalogEntry[];
-  }>;
-  totalOwners: number;
-  totalPlugins: number;
-  generatedAt: string;
-}
-
-export interface InstalledPluginInfo {
-  name: string;
-  slug?: string;
-  description: string;
-  location: string;
-  source?: string;
-  sourceUrl?: string;
-  sourceType?: string;
-  remoteKey?: string;
-  pluginName?: string;
-  scope: "project" | "global";
-}
-
-// ---------------------------------------------------------------------------
-// Git helpers
-// ---------------------------------------------------------------------------
-
-export interface GitWorktree {
-  path: string;
-  head?: string;
-  branch?: string;
-  bare?: boolean;
-  detached?: boolean;
-}
-
-export interface GitMergeResult {
-  success: boolean;
-  conflicts?: string[];
-  error?: string;
-}
-
-export interface GitBridge {
-  isRepo(directory: string): Promise<IPCResult<boolean>>;
-  listBranches(directory: string): Promise<IPCResult<string[]>>;
-  currentBranch(directory: string): Promise<IPCResult<string>>;
-  listWorktrees(directory: string): Promise<IPCResult<GitWorktree[]>>;
-  addWorktree(
-    directory: string,
-    worktreePath: string,
-    branch: string,
-    isNewBranch: boolean,
-  ): Promise<IPCResult<{ path: string }>>;
-  removeWorktree(directory: string, worktreePath: string): Promise<IPCResult>;
-  merge(directory: string, branch: string): Promise<GitMergeResult>;
-  mergeAbort(directory: string): Promise<IPCResult>;
-  getRemoteUrl(directory: string): Promise<IPCResult<string>>;
-}
-
-export interface WorktreeSetupDetection {
-  detected: boolean;
-  command?: string;
-  file?: string;
-  error?: string;
-}
-
-export interface WorktreeBridge {
-  detectSetup(worktreePath: string): Promise<WorktreeSetupDetection>;
-  runSetup(worktreePath: string, command: string): Promise<IPCResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,7 +192,6 @@ export interface ElectronAPI {
   getSystemLocale: () => Promise<string>;
   isPackaged: () => Promise<boolean>;
   getHomeDir?: () => Promise<string>;
-  getHarnessInventories?: () => Promise<HarnessInventory[]>;
   restartBackend?: () => Promise<{
     url: string;
     token: string | null;

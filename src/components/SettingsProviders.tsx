@@ -1,433 +1,338 @@
-/**
- * Provider management section for the Settings dialog.
- *
- * Shows three areas:
- * 1. Connected providers (with disconnect)
- * 2. Popular providers (quick connect)
- * 3. Custom provider + "View all" link
- */
-
-import type { HarnessId } from "@/agents";
-import { HARNESS_LABELS } from "@/agents";
-import { Plus, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
-import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
+import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { notifyUnknownError } from "@/lib/notify";
-import { DialogConnectProvider } from "@/components/DialogConnectProvider";
-import { DialogCustomProvider } from "@/components/DialogCustomProvider";
-import { DialogSelectProvider } from "@/components/DialogSelectProvider";
-import { getProviderBadgeSource, ProviderRow } from "@/components/ProviderManagementRows";
-import { ProviderIcon } from "@/components/provider-icons/ProviderIcon";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useHarness, useCurrentHarnessId } from "@/hooks/use-agent-backend";
-import { useActions, useConnectionState } from "@/hooks/use-agent-state";
-import { useOpenGuiClient } from "@/protocol/provider";
-import { POPULAR_PROVIDER_IDS } from "@/lib/constants";
-import { cn } from "@/lib/utils";
-import type { AllProvidersData, ProviderAuthMethod } from "@/types/electron";
+import { createHostClient } from "@/protocol/host-client";
+import type {
+  CodexAuthStatus,
+  HostModelConnection,
+  SubscriptionProvider,
+} from "@/protocol/host-types";
+import { useActions } from "@/hooks/use-agent-state";
+import { notifyUnknownError } from "@/lib/notify";
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
+const OPENCODE_ZEN = {
+  id: "opencode-zen",
+  label: "OpenCode Zen",
+  baseUrl: "https://opencode.ai/zen/v1",
+  modelIds: [
+    "big-pickle",
+    "mimo-v2.5-free",
+    "north-mini-code-free",
+    "nemotron-3-ultra-free",
+    "deepseek-v4-flash-free",
+  ],
+} as const;
+
+function client() {
+  const electron = window.electronAPI;
+  return createHostClient({
+    resolveBaseUrl: () => electron?.backendUrl || window.location.origin,
+    resolveToken: () => electron?.backendToken || "",
+  });
+}
 
 export function SettingsProviders() {
   const { t } = useTranslation();
   const { refreshProviders } = useActions();
-  const { activeDirectory, activeWorkspaceId } = useConnectionState();
-  const initialHarnessId = useCurrentHarnessId();
-
-  // Filter Harnesses that support provider management. If the current chat
-  // Harness is Claude/Codex, fall through to the first provider-capable Harness
-  // instead of making the Providers tab look unavailable.
-  const openGuiClient = useOpenGuiClient();
-  const providerHarnessIds = useMemo(
-    () =>
-      openGuiClient.harnesses
-        .list()
-        .filter((harness) => harness.capabilities?.providerAuth)
-        .map((harness) => harness.id as HarnessId),
-    [openGuiClient],
-  );
-  const [selectedHarnessId, setSelectedHarnessId] = useState<HarnessId>(initialHarnessId);
-  const harnessId = providerHarnessIds.includes(selectedHarnessId)
-    ? selectedHarnessId
-    : (providerHarnessIds[0] ?? selectedHarnessId);
-  const backend = useHarness(harnessId);
-  const providersApi = backend?.platform?.providers;
-  const scopedDirectory = activeDirectory ?? undefined;
-
-  // Data
-  const [allProviders, setAllProviders] = useState<AllProvidersData | null>(null);
-  const [authMethods, setAuthMethods] = useState<Record<string, ProviderAuthMethod[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [disconnecting, setDisconnecting] = useState<string | null>(null);
-  const [confirmingDisconnect, setConfirmingDisconnect] = useState<string | null>(null);
-
-  // Sub-dialog state
-  const [connectProviderID, setConnectProviderID] = useState<string | null>(null);
-  const [showCustom, setShowCustom] = useState(false);
-  const [showSelectAll, setShowSelectAll] = useState(false);
-
-  const providerDialogOpen = connectProviderID !== null || showCustom || showSelectAll;
-  const handleMobileBackProviderDialog = useCallback(() => {
-    if (connectProviderID) {
-      setConnectProviderID(null);
-      return true;
-    }
-    if (showCustom) {
-      setShowCustom(false);
-      return true;
-    }
-    if (showSelectAll) {
-      setShowSelectAll(false);
-      return true;
-    }
-    return false;
-  }, [connectProviderID, showCustom, showSelectAll]);
-  useRegisterMobileBackHandler(
-    MOBILE_BACK_PRIORITY.PROVIDER_DIALOG,
-    providerDialogOpen,
-    handleMobileBackProviderDialog,
-  );
-
-  // Search
-  const [search, setSearch] = useState("");
-  const lowerSearch = search.toLowerCase().trim();
-  const isSearching = lowerSearch.length > 0;
-
-  // Missing auth-method entries are valid; backends may return a sparse map and
-  // rely on the client to fall back to manual API-key auth.
-  const isAuthLoading = loading;
-
-  const refresh = useCallback(
-    async (showSpinner = false) => {
-      if (!providersApi) return;
-      if (showSpinner) setLoading(true);
-      try {
-        const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
-        const [allProvidersData, providerAuthMethods] = await Promise.all([
-          providersApi.listAll(target),
-          providersApi.getAuthMethods(target),
-        ]);
-        setAllProviders(allProvidersData);
-        setAuthMethods(providerAuthMethods);
-      } finally {
-        if (showSpinner) setLoading(false);
-      }
+  const host = useMemo(client, []);
+  const [connections, setConnections] = useState<HostModelConnection[]>([]);
+  const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
+  const [apiKey, setApiKey] = useState("");
+  const [zenApiKey, setZenApiKey] = useState("");
+  const [modelId, setModelId] = useState("gpt-4.1");
+  const [codex, setCodex] = useState<CodexAuthStatus>({ connected: false, pending: null });
+  const [subscriptions, setSubscriptions] = useState<Record<SubscriptionProvider, CodexAuthStatus>>(
+    {
+      xai: { connected: false, pending: null },
+      opencode: { connected: false, pending: null },
     },
-    [providersApi, scopedDirectory, activeWorkspaceId],
   );
 
+  const reload = async () => setConnections(await host.listModelConnections());
   useEffect(() => {
-    void refresh(true);
-  }, [refresh]);
-
-  const handleDisconnect = async (providerID: string) => {
-    if (!providersApi) return;
-    setConfirmingDisconnect(null);
-    setDisconnecting(providerID);
-    try {
-      const target = { directory: scopedDirectory, workspaceId: activeWorkspaceId };
-      await providersApi.disconnect(target, providerID);
-      await providersApi.dispose(target);
-      await refresh();
-      await refreshProviders();
-    } catch (err) {
-      notifyUnknownError(err, "Failed to disconnect");
-    } finally {
-      setDisconnecting(null);
+    void reload().catch(notifyUnknownError);
+    void host.codexAuthStatus().then(setCodex).catch(notifyUnknownError);
+    for (const provider of ["xai", "opencode"] as const) {
+      void host
+        .subscriptionAuthStatus(provider)
+        .then((status) => setSubscriptions((current) => ({ ...current, [provider]: status })))
+        .catch(notifyUnknownError);
     }
-  };
+  }, []);
 
-  const handleConnected = async () => {
-    // Called after a provider is connected (from any sub-dialog)
-    setConnectProviderID(null);
-    setShowCustom(false);
-    setShowSelectAll(false);
-    await refresh();
-    await refreshProviders();
-  };
-
-  const providerHarnessSwitcher =
-    providerHarnessIds.length > 1 ? (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 p-2">
-        <span className="px-1 text-xs font-medium text-muted-foreground">
-          {t("providers.managerSwitcher")}
-        </span>
-        <div
-          role="group"
-          aria-label={t("providers.managerSwitcher")}
-          className="inline-flex rounded-full bg-background p-0.5"
-        >
-          {providerHarnessIds.map((id) => {
-            const selected = harnessId === id;
-            return (
-              <Button
-                key={id}
-                type="button"
-                variant={selected ? "default" : "ghost"}
-                size="sm"
-                aria-pressed={selected}
-                className={cn(
-                  "h-7 rounded-full px-3 text-xs",
-                  !selected && "text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => setSelectedHarnessId(id)}
-              >
-                {HARNESS_LABELS[id]}
-              </Button>
-            );
-          })}
-        </div>
-      </div>
-    ) : null;
-
-  if (!providersApi) {
-    return (
-      <div className="space-y-4">
-        {providerHarnessSwitcher}
-        <div className="text-center py-6 text-sm text-muted-foreground">
-          {t("providers.noManagement")}
-        </div>
-      </div>
-    );
+  async function addConnection() {
+    try {
+      await host.upsertModelConnection({
+        id: `connection_${Date.now()}`,
+        label: modelId.trim(),
+        baseUrl: baseUrl.trim(),
+        apiKey: apiKey.trim() || undefined,
+        modelIds: [modelId.trim()],
+      });
+      setApiKey("");
+      await reload();
+      await refreshProviders();
+    } catch (error) {
+      notifyUnknownError(error);
+    }
   }
 
-  if (loading && !allProviders) {
-    return (
-      <div className="space-y-4">
-        {providerHarnessSwitcher}
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="size-5" />
-        </div>
-      </div>
-    );
+  async function enableZen() {
+    try {
+      await host.upsertModelConnection({
+        ...OPENCODE_ZEN,
+        modelIds: [...OPENCODE_ZEN.modelIds],
+        apiKey: zenApiKey.trim() || undefined,
+      });
+      setZenApiKey("");
+      await reload();
+      await refreshProviders();
+    } catch (error) {
+      notifyUnknownError(error);
+    }
   }
 
-  if (!allProviders) {
-    return (
-      <div className="space-y-4">
-        {providerHarnessSwitcher}
-        <div className="text-center py-6 text-sm text-muted-foreground">
-          {t("providers.loadFailed")}
-        </div>
-      </div>
-    );
-  }
-
-  const providerList = Array.isArray(allProviders.all) ? allProviders.all : [];
-  const connectedIds = Array.isArray(allProviders.connected) ? allProviders.connected : [];
-  const connectedSet = new Set(connectedIds);
-  const connectedProviders = providerList
-    .filter((p) => connectedSet.has(p.id))
-    .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
-  const popularNotConnected = POPULAR_PROVIDER_IDS.filter((id) => !connectedSet.has(id));
-  const allById = new Map(providerList.map((p) => [p.id, p]));
-
-  const connectProvider = connectProviderID ? allById.get(connectProviderID) : null;
-  const filteredProviders = providerList
-    .filter(
-      (p) =>
-        p.id.toLowerCase().includes(lowerSearch) ||
-        (p.name || "").toLowerCase().includes(lowerSearch),
-    )
-    .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  const zenEnabled = connections.some((connection) => connection.id === OPENCODE_ZEN.id);
 
   return (
-    <>
-      <div className="space-y-4">
-        {providerHarnessSwitcher}
-        <div className="space-y-5 max-h-[50vh] overflow-y-auto pr-1">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <Input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("providers.searchPlaceholder")}
-              className="pl-8 text-sm"
-            />
+    <div className="space-y-5">
+      <div className="space-y-1">
+        <h2 className="font-medium">{t("settings.tabs.providers")}</h2>
+        <p className="text-sm text-muted-foreground">{t("providers.description")}</p>
+      </div>
+      <div className="space-y-2">
+        <div className="space-y-3 rounded-lg border p-3">
+          <div>
+            <div className="text-sm font-medium">{t("providers.zen.title")}</div>
+            <div className="text-xs text-muted-foreground">{t("providers.zen.description")}</div>
           </div>
-          {isSearching ? (
-            <div className="space-y-1.5">
-              {filteredProviders.map((provider) => {
-                const isConnected = connectedSet.has(provider.id);
-                const isDisconnecting = disconnecting === provider.id;
-                const isConfirming = confirmingDisconnect === provider.id;
-                return (
-                  <ProviderRow
-                    key={provider.id}
-                    provider={provider}
-                    connected={isConnected}
-                    disconnecting={isDisconnecting}
-                    confirming={isConfirming}
-                    onConnect={() => setConnectProviderID(provider.id)}
-                    onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
-                    onCancelDisconnect={() => setConfirmingDisconnect(null)}
-                    onDisconnect={() => handleDisconnect(provider.id)}
-                  />
-                );
-              })}
-              {filteredProviders.length === 0 && lowerSearch.length > 0 && (
-                <div className="text-center py-6 text-sm text-muted-foreground">
-                  {t("providers.noProvidersFound", { query: search.trim() })}
-                </div>
-              )}
+          <input
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            value={zenApiKey}
+            onChange={(event) => setZenApiKey(event.target.value)}
+            type="password"
+            placeholder={t("providers.zen.apiKeyPlaceholder")}
+          />
+          <div className="flex gap-2">
+            <Button type="button" onClick={() => void enableZen()}>
+              {zenEnabled ? t("providers.zen.saveKey") : t("providers.zen.enable")}
+            </Button>
+            {zenEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  void host
+                    .removeModelConnection(OPENCODE_ZEN.id)
+                    .then(reload)
+                    .then(refreshProviders)
+                    .catch(notifyUnknownError)
+                }
+              >
+                {t("providers.disconnect")}
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="space-y-3 rounded-lg border p-3">
+          <div>
+            <div className="text-sm font-medium">{t("providers.codex.title")}</div>
+            <div className="text-xs text-muted-foreground">{t("providers.codex.description")}</div>
+          </div>
+          {codex.pending && (
+            <div className="space-y-2">
+              <p className="text-sm">
+                {t("providers.codex.code", { code: codex.pending.userCode })}
+              </p>
+              <a
+                className="text-sm underline"
+                href={codex.pending.verificationUri}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("providers.codex.open")}
+              </a>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void host
+                    .pollCodexAuth()
+                    .then(setCodex)
+                    .then(reload)
+                    .then(refreshProviders)
+                    .catch(notifyUnknownError)
+                }
+              >
+                {t("providers.codex.check")}
+              </Button>
             </div>
-          ) : (
-            <>
-              {connectedProviders.length > 0 && (
-                <section className="space-y-2">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {t("providers.connected")}
-                  </h4>
-                  {connectedProviders.map((provider) => {
-                    const isDisconnecting = disconnecting === provider.id;
-                    const isConfirming = confirmingDisconnect === provider.id;
-                    return (
-                      <ProviderRow
-                        key={provider.id}
-                        provider={provider}
-                        connected
-                        showSource
-                        badgeSource={getProviderBadgeSource(allProviders, provider)}
-                        disconnecting={isDisconnecting}
-                        confirming={isConfirming}
-                        onAskDisconnect={() => setConfirmingDisconnect(provider.id)}
-                        onCancelDisconnect={() => setConfirmingDisconnect(null)}
-                        onDisconnect={() => handleDisconnect(provider.id)}
-                      />
-                    );
-                  })}
-                </section>
-              )}
-
-              {/* Popular providers (not yet connected) */}
-              {popularNotConnected.length > 0 && (
-                <section className="space-y-2">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {t("providers.popular")}
-                  </h4>
-                  {popularNotConnected.map((id) => {
-                    const provider = allById.get(id);
-                    return (
-                      <ProviderRow
-                        key={id}
-                        provider={{ id, name: provider?.name }}
-                        onConnect={() => setConnectProviderID(id)}
-                      />
-                    );
-                  })}
-                </section>
-              )}
-
-              {/* Custom + View all */}
-              <section className="space-y-2">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t("providers.other")}
-                </h4>
-                <div
-                  className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
-                  onClick={() => setShowCustom(true)}
-                >
-                  <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-                  <span className="text-sm font-medium truncate flex-1">
-                    {t("providers.customProvider")}
-                  </span>
-                  <Button variant="outline" size="sm">
-                    <Plus className="size-3.5 mr-1" />
-                    {t("providers.connect")}
-                  </Button>
-                </div>
-                <div
-                  className="flex items-center gap-3 rounded-lg border p-3 bg-card cursor-pointer hover:bg-accent transition-colors"
-                  onClick={() => setShowSelectAll(true)}
-                >
-                  <ProviderIcon provider="synthetic" className="size-5 shrink-0" />
-                  <span className="text-sm font-medium truncate flex-1">
-                    {t("providers.allProviders")}
-                  </span>
-                </div>
-              </section>
-            </>
+          )}
+          {!codex.connected && !codex.pending && (
+            <Button
+              onClick={() => void host.beginCodexAuth().then(setCodex).catch(notifyUnknownError)}
+            >
+              {t("providers.codex.signIn")}
+            </Button>
+          )}
+          {codex.connected && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                void host
+                  .disconnectCodex()
+                  .then(() => setCodex({ connected: false, pending: null }))
+                  .then(reload)
+                  .then(refreshProviders)
+                  .catch(notifyUnknownError)
+              }
+            >
+              {t("providers.codex.signOut")}
+            </Button>
           )}
         </div>
+        {(["xai", "opencode"] as const).map((provider) => {
+          const status = subscriptions[provider];
+          return (
+            <div key={provider} className="space-y-3 rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">{t(`providers.${provider}.title`)}</div>
+                <div className="text-xs text-muted-foreground">
+                  {t(`providers.${provider}.description`)}
+                </div>
+              </div>
+              {status.pending && (
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    {t("providers.codex.code", { code: status.pending.userCode })}
+                  </p>
+                  <a
+                    className="text-sm underline"
+                    href={status.pending.verificationUri}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t("providers.codex.open")}
+                  </a>
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      void host
+                        .pollSubscriptionAuth(provider)
+                        .then((next) =>
+                          setSubscriptions((current) => ({ ...current, [provider]: next })),
+                        )
+                        .then(reload)
+                        .then(refreshProviders)
+                        .catch(notifyUnknownError)
+                    }
+                  >
+                    {t("providers.codex.check")}
+                  </Button>
+                </div>
+              )}
+              {!status.connected && !status.pending && (
+                <Button
+                  onClick={() =>
+                    void host
+                      .beginSubscriptionAuth(provider)
+                      .then((next) =>
+                        setSubscriptions((current) => ({ ...current, [provider]: next })),
+                      )
+                      .catch(notifyUnknownError)
+                  }
+                >
+                  {t(`providers.${provider}.signIn`)}
+                </Button>
+              )}
+              {status.connected && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void host
+                      .disconnectSubscription(provider)
+                      .then(() =>
+                        setSubscriptions((current) => ({
+                          ...current,
+                          [provider]: { connected: false, pending: null },
+                        })),
+                      )
+                      .then(reload)
+                      .then(refreshProviders)
+                      .catch(notifyUnknownError)
+                  }
+                >
+                  {t("providers.codex.signOut")}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+        {connections
+          .filter(
+            (connection) =>
+              connection.id !== "chatgpt-codex" &&
+              connection.id !== "supergrok" &&
+              connection.id !== "opencode-go" &&
+              connection.id !== OPENCODE_ZEN.id,
+          )
+          .map((connection) => (
+            <div
+              key={connection.id}
+              className="flex items-center gap-3 rounded-lg border px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{connection.label}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {connection.baseUrl} · {connection.modelIds.join(", ")}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => {
+                  void host
+                    .removeModelConnection(connection.id)
+                    .then(reload)
+                    .then(refreshProviders)
+                    .catch(notifyUnknownError);
+                }}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          ))}
       </div>
-
-      {/* Connect dialog */}
-      <Dialog
-        open={!!connectProviderID}
-        onOpenChange={(open) => {
-          if (!open) setConnectProviderID(null);
-        }}
-      >
-        <DialogContent>
-          <DialogTitle className="sr-only">
-            Connect {connectProvider?.name ?? connectProviderID ?? ""}
-          </DialogTitle>
-          {connectProviderID && (
-            <DialogConnectProvider
-              directory={scopedDirectory}
-              harnessId={harnessId}
-              providerID={connectProviderID}
-              providerName={connectProvider?.name ?? connectProviderID}
-              authMethods={authMethods[connectProviderID] ?? [{ type: "api", label: "API key" }]}
-              loading={isAuthLoading}
-              onConnected={handleConnected}
-              onBack={() => setConnectProviderID(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Custom provider dialog */}
-      <Dialog
-        open={showCustom}
-        onOpenChange={(open) => {
-          if (!open) setShowCustom(false);
-        }}
-      >
-        <DialogContent>
-          <DialogTitle className="sr-only">{t("providers.customProvider")}</DialogTitle>
-          <DialogCustomProvider
-            directory={scopedDirectory}
-            harnessId={harnessId}
-            onSaved={handleConnected}
-            onBack={() => setShowCustom(false)}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* Select all providers dialog */}
-      <Dialog
-        open={showSelectAll}
-        onOpenChange={(open) => {
-          if (!open) setShowSelectAll(false);
-        }}
-      >
-        <DialogContent>
-          <DialogTitle className="sr-only">{t("providers.allProviders")}</DialogTitle>
-          <DialogSelectProvider
-            providers={providerList}
-            connectedIds={connectedSet}
-            onSelect={(id: string) => {
-              setShowSelectAll(false);
-              setConnectProviderID(id);
-            }}
-            onCustom={() => {
-              setShowSelectAll(false);
-              setShowCustom(true);
-            }}
-            onBack={() => setShowSelectAll(false)}
-          />
-        </DialogContent>
-      </Dialog>
-    </>
+      <div className="space-y-3 rounded-lg border p-3">
+        <input
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={baseUrl}
+          onChange={(event) => setBaseUrl(event.target.value)}
+          placeholder="https://api.openai.com/v1"
+        />
+        <input
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          type="password"
+          placeholder={t("providers.apiKey")}
+        />
+        <input
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={modelId}
+          onChange={(event) => setModelId(event.target.value)}
+          placeholder="gpt-4.1"
+        />
+        <Button
+          type="button"
+          disabled={!baseUrl.trim() || !modelId.trim()}
+          onClick={() => void addConnection()}
+        >
+          <Plus className="size-4" />
+          {t("providers.addProvider")}
+        </Button>
+      </div>
+    </div>
   );
 }

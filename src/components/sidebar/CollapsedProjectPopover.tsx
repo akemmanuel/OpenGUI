@@ -42,7 +42,7 @@ export function CollapsedProjectPopover({
     noSessionsYet: string;
   };
   hasUnsentDraft: (sessionId: string) => boolean;
-  setActiveTarget: (directory: string, harnessId?: null, options?: { newChat?: boolean }) => void;
+  setActiveTarget: (directory: string, options?: { newChat?: boolean }) => void;
   selectSession: (sessionId: string) => void | Promise<void>;
   closePopover: () => void;
   closeMobileSidebar: () => void;
@@ -62,7 +62,7 @@ export function CollapsedProjectPopover({
           <button
             type="button"
             onClick={() => {
-              setActiveTarget(directory, undefined, { newChat: true });
+              setActiveTarget(directory, { newChat: true });
               closePopover();
               closeMobileSidebar();
             }}

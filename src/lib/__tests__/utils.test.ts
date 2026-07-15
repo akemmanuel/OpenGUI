@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Provider } from "@/protocol/harness-types";
+import type { Provider } from "@/protocol/agent-types";
 import { abbreviatePath, findModel } from "../utils";
 
 describe("abbreviatePath", () => {

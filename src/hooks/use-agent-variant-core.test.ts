@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Model } from "@/protocol/harness-types";
+import type { Model } from "@/protocol/agent-types";
 import {
   cycleVariantSelection,
   normalizeVariantSelection,

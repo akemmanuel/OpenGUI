@@ -8,24 +8,15 @@ import {
 } from "lucide-react";
 import * as ContextMenu from "@/components/ui/context-menu";
 import type { ReactNode } from "react";
-import type { OpenGuiClient } from "@/protocol/client";
 import type { Session } from "@/hooks/agent-state-types";
-import type { ProjectMetaMap, WorktreeParentMap } from "@/hooks/agent-state-persistence";
+import type { ProjectMetaMap } from "@/hooks/agent-state-persistence";
 import { SESSION_PAGE_SIZE } from "@/lib/constants";
 import { isSidebarProjectCollapsed, type SidebarCollapsedProjects } from "@/lib/sidebar-collapsed";
-import {
-  abbreviatePath,
-  buildPRUrl,
-  getProjectName,
-  normalizeProjectPath,
-  openExternalLink,
-} from "@/lib/utils";
-import type { ConnectionStatus, GitWorktree } from "@/types/electron";
+import { abbreviatePath, getProjectName, normalizeProjectPath } from "@/lib/utils";
+import type { ConnectionStatus } from "@/types/electron";
 import { ProjectItemMenu, ProjectMenuContent } from "@/components/SidebarItemMenus";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
-import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
-import { listProjectHarnessSessionQueryErrors } from "@/hooks/session-query-errors";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 import { isSidebarProjectPinned } from "@/lib/sidebar-project-meta";
 
@@ -42,19 +33,11 @@ export function ProjectEntry({
   homeDir,
   detachedProject,
   isLocalWorkspace,
-  isGitRepo,
-  knownWorktrees,
   availableProjectDirectories,
-  worktreeParents,
-  remoteUrls,
-  worktreeDirs,
   projectMeta,
   workspaceId,
-  projectHydration,
-  client,
   t,
   renderSessionRow,
-  refreshGitInfo,
   setProjectPopover,
   toggleCollapsed,
   setActiveTarget,
@@ -62,9 +45,6 @@ export function ProjectEntry({
   setProjectPinned,
   removeProject,
   closeOtherProjects,
-  setWorktreeDialogDir,
-  setMergeInfo,
-  unregisterWorktree,
   setVisibleByProject,
 }: {
   directory: string;
@@ -79,37 +59,24 @@ export function ProjectEntry({
   homeDir?: string | null;
   detachedProject?: string;
   isLocalWorkspace: boolean;
-  isGitRepo: Record<string, boolean>;
-  knownWorktrees: Record<string, GitWorktree[]>;
   availableProjectDirectories: string[];
-  worktreeParents: WorktreeParentMap;
-  remoteUrls: Record<string, string>;
-  worktreeDirs: Set<string>;
   projectMeta: ProjectMetaMap;
   workspaceId?: string | null;
-  projectHydration: Record<string, ProjectHydrationState | undefined>;
-  client: OpenGuiClient;
   t: (key: string, options?: Record<string, unknown>) => string;
   renderSessionRow: (
     session: Session,
     directory: string,
     options?: { currentProjectDir?: string | null },
   ) => ReactNode;
-  refreshGitInfo: (directory: string) => void | Promise<void>;
   setProjectPopover: React.Dispatch<
     React.SetStateAction<{ directory: string; top: number } | null>
   >;
   toggleCollapsed: (directory: string) => void;
-  setActiveTarget: (directory: string, harnessId?: null, options?: { newChat?: boolean }) => void;
+  setActiveTarget: (directory: string, options?: { newChat?: boolean }) => void;
   closeMobileSidebar: () => void;
   setProjectPinned: (directory: string, pinned: boolean) => void;
   removeProject: (directory: string) => void | Promise<void>;
   closeOtherProjects: (directory: string) => void | Promise<void>;
-  setWorktreeDialogDir: (directory: string) => void;
-  setMergeInfo: React.Dispatch<
-    React.SetStateAction<{ mainDir: string; branch: string; worktreePath: string } | null>
-  >;
-  unregisterWorktree: (directory: string) => void;
   setVisibleByProject: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 }) {
   const isCollapsed = hasActiveSearch ? false : isSidebarProjectCollapsed(collapsed, directory);
@@ -124,29 +91,9 @@ export function ProjectEntry({
   const canShowLess = visibleCount > SESSION_PAGE_SIZE;
   const normalizedDirectory = normalizeProjectPath(directory);
   const isPinned = isSidebarProjectPinned(projectMeta, workspaceId, directory);
-  const harnessErrorCount = workspaceId
-    ? listProjectHarnessSessionQueryErrors(projectHydration[projectKey]).length
-    : 0;
   const canCloseOtherProjects = availableProjectDirectories.some(
     (projectDirectory) => normalizeProjectPath(projectDirectory) !== normalizedDirectory,
   );
-
-  const openWorktreePr = (wt: { path: string; branch?: string | null }) => {
-    if (!wt.branch) return;
-    const remote = remoteUrls[directory];
-    if (!remote) return;
-    const url = buildPRUrl(remote, wt.branch);
-    if (url) openExternalLink(url);
-  };
-
-  const removeWorktree = async (wt: { path: string; branch?: string | null }) => {
-    if (worktreeDirs.has(wt.path)) {
-      unregisterWorktree(wt.path);
-      await removeProject(wt.path);
-    }
-    await client.git.removeWorktree(directory, wt.path);
-    void refreshGitInfo(directory);
-  };
 
   const projectMenuProps: React.ComponentProps<typeof ProjectItemMenu> = {
     pinned: isPinned,
@@ -154,7 +101,7 @@ export function ProjectEntry({
     canCreateSession: isProjectConnected,
     onTogglePin: () => setProjectPinned(directory, !isPinned),
     onNewSession: () => {
-      setActiveTarget(directory, undefined, { newChat: true });
+      setActiveTarget(directory, { newChat: true });
       closeMobileSidebar();
     },
     onToggleCollapsed: () => toggleCollapsed(directory),
@@ -170,26 +117,12 @@ export function ProjectEntry({
     },
     directory,
     isLocalWorkspace,
-    isGitRepo: !!isGitRepo[directory],
-    worktrees: knownWorktrees[directory] ?? [],
-    worktreeParents,
-    onNewWorktree: () => setWorktreeDialogDir(directory),
-    onMergeWorktree: (wt) => {
-      if (!wt.branch) return;
-      setMergeInfo({ mainDir: directory, branch: wt.branch, worktreePath: wt.path });
-    },
-    onOpenWorktreePr: openWorktreePr,
-    onRemoveWorktree: removeWorktree,
   };
 
   return (
     <div key={directory} className="mb-1">
       <SidebarMenu>
-        <ContextMenu.Root
-          onOpenChange={(open) => {
-            if (open) void refreshGitInfo(directory);
-          }}
-        >
+        <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
             <SidebarMenuItem className="overflow-visible">
               <SidebarMenuButton
@@ -254,14 +187,6 @@ export function ProjectEntry({
                     />
                   )}
                   <span className="truncate min-w-0 flex-1">{getProjectName(directory)}</span>
-                  {harnessErrorCount > 0 && (
-                    <span
-                      className="shrink-0 text-[10px] font-medium text-destructive group-data-[collapsible=icon]:hidden"
-                      title={t("projectHarnessStatus.sidebarSummary", { count: harnessErrorCount })}
-                    >
-                      {t("projectHarnessStatus.sidebarSummary", { count: harnessErrorCount })}
-                    </span>
-                  )}
                   {isProjectConnected && (
                     <div
                       role="button"
@@ -270,13 +195,13 @@ export function ProjectEntry({
                       className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setActiveTarget(directory, undefined, { newChat: true });
+                        setActiveTarget(directory, { newChat: true });
                         closeMobileSidebar();
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.stopPropagation();
-                          setActiveTarget(directory, undefined, { newChat: true });
+                          setActiveTarget(directory, { newChat: true });
                           closeMobileSidebar();
                         }
                       }}

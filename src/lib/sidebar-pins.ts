@@ -1,8 +1,3 @@
-import {
-  getSessionPlacementInfo,
-  type WorktreePlacementMap,
-  type WorktreePlacementSessionLike,
-} from "@/lib/worktree-placement";
 import { getSidebarProjectMeta } from "@/lib/sidebar-project-meta";
 import { normalizeProjectPath } from "@/lib/utils";
 
@@ -11,8 +6,10 @@ interface SidebarPinMetaLike {
   displayProjectDir?: string | null;
 }
 
-interface SidebarPinSessionLike extends WorktreePlacementSessionLike {
+interface SidebarPinSessionLike {
   id: string;
+  directory?: string | null;
+  _projectDir?: string | null;
 }
 
 type SidebarProjectEntry<TSession> = [string, TSession[]];
@@ -43,12 +40,8 @@ function getPinnedAt(meta?: SidebarPinMetaLike): string | null {
 
 export function getSidebarSessionProjectDirectory<TSession extends SidebarPinSessionLike>(
   session: TSession,
-  worktreeParents: WorktreePlacementMap,
 ): string {
-  return (
-    getSessionPlacementInfo(session, worktreeParents)?.displayDirectory ??
-    normalizeProjectPath(session._projectDir ?? session.directory)
-  );
+  return normalizeProjectPath(session._projectDir ?? session.directory ?? "");
 }
 
 export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
@@ -56,13 +49,11 @@ export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
   sessionMeta,
   projectMeta,
   workspaceId,
-  worktreeParents,
 }: {
   projectEntries: Array<SidebarProjectEntry<TSession>>;
   sessionMeta: Record<string, SidebarPinMetaLike | undefined>;
   projectMeta: Record<string, SidebarPinMetaLike | undefined>;
   workspaceId?: string | null;
-  worktreeParents: WorktreePlacementMap;
 }): SidebarPinPartitionResult<TSession> {
   const pinnedProjectDirectories = new Set<string>();
   const pinnedEntries: SidebarPinnedEntry<TSession>[] = [];
@@ -98,8 +89,7 @@ export function partitionSidebarPins<TSession extends SidebarPinSessionLike>({
       const displayProjectDir = normalizeProjectPath(
         sessionMeta[session.id]?.displayProjectDir ?? "",
       );
-      const projectDirectory =
-        displayProjectDir || getSidebarSessionProjectDirectory(session, worktreeParents);
+      const projectDirectory = displayProjectDir || getSidebarSessionProjectDirectory(session);
       if (pinnedProjectDirectories.has(projectDirectory)) continue;
       pinnedEntries.push({
         kind: "session",

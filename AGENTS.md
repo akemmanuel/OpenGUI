@@ -23,7 +23,7 @@ Run the app with `pnpm run dev` or `pnpm run start` on desktop; for the browser 
 
 ## Code quality
 
-- Run `pnpm run slop-check` when changing server session paths, `OpenGuiClient`, or harness registry
+- Run `pnpm run slop-check` when changing Host routes, Session paths, or frontend Host transport
 - Prefer `vp check` before submit
 - Prefer `vp lint` / `vp fmt` when narrowing issues
 - Use `pnpm run` only when task is defined in `package.json`

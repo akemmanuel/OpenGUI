@@ -21,12 +21,7 @@ const externals = new Set([
   ...Object.keys(pkg.dependencies ?? {}),
 ]);
 
-const bundledPackagePrefixes = [
-  "@earendil-works/pi-agent-core",
-  "@earendil-works/pi-ai",
-  "@earendil-works/pi-coding-agent",
-  "@earendil-works/pi-tui",
-];
+const bundledPackagePrefixes: string[] = [];
 
 function packageIdFor(id: string) {
   const [scopeOrName, packageName] = id.split("/");
@@ -121,25 +116,6 @@ export default defineConfig({
           sourcemap: true,
           minify: true,
           external: ["electron"],
-          banner: {
-            js: nodeEsmCompatBanner,
-          },
-        });
-
-        await buildWithEsbuild({
-          entryPoints: ["packages/runtime/src/adapters/pi-daemon-server.ts"],
-          outfile: "dist-electron/pi-daemon-server.js",
-          bundle: true,
-          platform: "node",
-          format: "esm",
-          target: "node20",
-          sourcemap: true,
-          minify: true,
-          // Keep Pi packages external in the daemon. Pi's extension loader computes
-          // module aliases from its package location; when bundled, those aliases
-          // point at OpenGUI's dist folder instead of node_modules and global Pi
-          // extensions that import @earendil-works/* fail to load.
-          external: ["electron", ...bundledPackagePrefixes],
           banner: {
             js: nodeEsmCompatBanner,
           },

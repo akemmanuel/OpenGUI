@@ -1,4 +1,4 @@
-import type { Agent, Model, Provider } from "@/protocol/harness-types";
+import type { Agent, Model, Provider } from "@/protocol/agent-types";
 import { useCallback, useMemo } from "react";
 import { persistVariantSelectionsForWorkspace } from "@/hooks/agent-state-persistence";
 import { STORAGE_KEYS } from "@/lib/constants";

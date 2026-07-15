@@ -1,4 +1,4 @@
-import type { Command } from "@/protocol/harness-types";
+import type { Command } from "@/protocol/agent-types";
 import * as React from "react";
 import { useFilteredCommands } from "@/components/SlashCommandPopover";
 

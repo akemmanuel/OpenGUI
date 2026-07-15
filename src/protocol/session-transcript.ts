@@ -1,9 +1,7 @@
 /**
  * OpenGUI-owned Session transcript presentation types.
  *
- * These shapes are the Frontend seam for rendering Harness-sourced transcript
- * content. Harness SDK/native types should be adapted into these types before
- * React presentation code consumes them.
+ * These shapes are the frontend seam for rendering Host transcript content.
  */
 
 export interface TranscriptMessageEntry {

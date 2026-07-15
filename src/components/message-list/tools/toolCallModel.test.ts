@@ -106,6 +106,17 @@ describe("getToolCallViewModel", () => {
     expect(vm.rawOutput).toBe(null);
   });
 
+  test("presents a completed shell exit code", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "shell",
+        state: { status: "completed", output: "done", metadata: { exitCode: 7 } },
+      }),
+    );
+
+    expect(vm.resultLabel).toBe("Exit 7");
+  });
+
   test("uses bash metadata while output is still streaming", () => {
     const vm = getToolCallViewModel(
       toolPart({

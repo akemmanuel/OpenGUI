@@ -1,21 +1,15 @@
 import type {
   Agent,
   Command,
-  HarnessSession as BaseSession,
+  AgentSession as BaseSession,
   Message,
   Part,
   PermissionRequest,
   Provider,
   QuestionRequest,
-} from "@/protocol/harness-types";
-import type { HarnessId } from "@/agents";
-import type {
-  ProjectMetaMap,
-  SessionMetaMap,
-  WorktreeParentMap,
-} from "@/hooks/agent-state-persistence";
+} from "@/protocol/agent-types";
+import type { ProjectMetaMap, SessionMetaMap } from "@/hooks/agent-state-persistence";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
-import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
 import type { QueuedPrompt, SessionDraftMap } from "@/lib/session-drafts";
 import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
 
@@ -26,7 +20,7 @@ import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electro
  * stored *on* each session may differ slightly from the connection directory
  * (trailing slashes, symlink resolution, git-toplevel normalization, etc.).
  *
- * `_projectDir` is set by the bridge/IPC layer to the *connection* directory
+ * `_projectDir` is set by the Host layer to the registered project directory
  * that returned the session, so the UI can group sessions reliably without
  * brittle string equality on `session.directory`. `_workspaceId` tags which
  * workspace owns that connection, so identical paths stay isolated.
@@ -34,13 +28,6 @@ import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electro
 export type Session = BaseSession & {
   _projectDir?: string;
   _workspaceId?: string;
-  _harnessId?: HarnessId;
-  /**
-   * Legacy Harness id from pre-migration sessions. Read-only compat; remove after 2026-08.
-   * @see getSessionHarnessId in agent-session-utils.ts
-   */
-  _backendId?: HarnessId;
-  _rawId?: string;
 };
 
 export interface MessageEntry {
@@ -71,8 +58,6 @@ export interface WorkspaceResourceState {
   commands: Command[];
   /** Per-model variant selections for this workspace. */
   variantSelections: VariantSelections;
-  /** Backend that produced this resource catalog. */
-  loadedHarnessId: HarnessId | null;
   /** Workspace-scoped project key that produced this resource catalog. */
   loadedProjectKey: string | null;
 }
@@ -84,8 +69,6 @@ export interface InternalAgentState {
   activeWorkspaceId: string;
   /** Maps connected project directories to their workspace. */
   projectWorkspaceMap: Record<string, Set<string>>;
-  /** Per-project harness hydration (session list / connect), keyed by projectKey. */
-  projectHydration: Record<string, ProjectHydrationState | undefined>;
   /** Per-project connection statuses keyed by directory */
   connections: Record<string, ConnectionStatus>;
   /** All sessions from all connected projects */
@@ -118,7 +101,7 @@ export interface InternalAgentState {
   selectedModel: SelectedModel | null;
   /** Set of session IDs that are currently busy (generating) */
   busySessionIds: Set<string>;
-  /** Session ids kept in sidebar after live events until harness list includes them. */
+  /** Session ids retained briefly in the sidebar while Host state catches up. */
   liveSessionRetainUntil: Record<string, number>;
   /** Available agents from the server */
   agents: Agent[];
@@ -134,8 +117,6 @@ export interface InternalAgentState {
   defaultChatDirectory: string | null;
   /** Directory selected for the next session before a session exists. */
   activeTargetDirectory: string | null;
-  /** Backend selected for the next session before a session exists. */
-  activeTargetHarnessId: HarnessId | null;
   /** Set of session IDs that are waiting for generated title */
   namingSessionIds: Set<string>;
   /** Set of session IDs that have unread content (finished generating while not active) */
@@ -146,13 +127,6 @@ export interface InternalAgentState {
   sessionMeta: SessionMetaMap;
   /** Local-only project metadata (pins) keyed by workspace+directory */
   projectMeta: ProjectMetaMap;
-  /** Maps worktree directory -> metadata incl. parent project directory (local-only) */
-  worktreeParents: WorktreeParentMap;
-  /** Pending worktree cleanup prompt (shown after last session in a worktree is deleted) */
-  pendingWorktreeCleanup: {
-    worktreeDir: string;
-    parentDir: string;
-  } | null;
   /** Explicit frontend request/turn runs, keyed by turn ID. */
   turnRuns: Record<string, TurnRun>;
   /** Currently running turn ID per session. */
@@ -165,5 +139,5 @@ export interface InternalAgentState {
   _deletedSessionIds: Set<string>;
 }
 
-export type HarnessState = InternalAgentState;
+export type AgentState = InternalAgentState;
 export type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";

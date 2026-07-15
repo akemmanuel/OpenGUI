@@ -1,15 +1,8 @@
 import { SessionRow } from "./SessionRow";
 import { ProjectEntry } from "./ProjectEntry";
 import type { Session } from "@/hooks/agent-state-types";
-import type {
-  ProjectMetaMap,
-  SessionMetaMap,
-  SessionColor,
-  WorktreeParentMap,
-} from "@/hooks/agent-state-persistence";
-import type { OpenGuiClient } from "@/protocol/client";
-import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
-import type { ConnectionStatus, GitWorktree } from "@/types/electron";
+import type { ProjectMetaMap, SessionMetaMap, SessionColor } from "@/hooks/agent-state-persistence";
+import type { ConnectionStatus } from "@/types/electron";
 import type { SidebarCollapsedProjects } from "@/lib/sidebar-collapsed";
 
 interface UseSidebarRenderersArgs {
@@ -17,7 +10,6 @@ interface UseSidebarRenderersArgs {
   availableProjectDirectories: string[];
   busySessionIds: Set<string>;
   cancelEditing: () => void;
-  client: OpenGuiClient;
   closeMobileSidebar: () => void;
   closeOtherProjects: (directory: string) => void | Promise<void>;
   collapsed: SidebarCollapsedProjects;
@@ -31,28 +23,20 @@ interface UseSidebarRenderersArgs {
   hasActiveSearch: boolean;
   hasUnsentDraft: (sessionId: string) => boolean;
   homeDir?: string | null;
-  isGitRepo: Record<string, boolean>;
   isLocalWorkspace: boolean;
-  knownWorktrees: Record<string, GitWorktree[]>;
   moveSessionToProject: (sessionId: string, projectDirectory: string) => void | Promise<void>;
   namingSessionIds: Set<string>;
   pendingPermissions: Record<string, unknown>;
   pendingQuestions: Record<string, unknown>;
   projectMeta: ProjectMetaMap;
-  projectHydration: Record<string, ProjectHydrationState | undefined>;
   queuedPrompts: Record<string, unknown[]>;
-  refreshGitInfo: (directory: string) => void | Promise<void>;
-  remoteUrls: Record<string, string>;
   removeProject: (directory: string) => void | Promise<void>;
   removeSessionFromProject: (sessionId: string) => void | Promise<void>;
   revealSessionInProject: (directory: string) => void;
   selectSession: (sessionId: string) => void | Promise<void>;
   sessionMeta: SessionMetaMap;
-  setActiveTarget: (directory: string, harnessId?: null, options?: { newChat?: boolean }) => void;
+  setActiveTarget: (directory: string, options?: { newChat?: boolean }) => void;
   setEditValue: (value: string) => void;
-  setMergeInfo: React.Dispatch<
-    React.SetStateAction<{ mainDir: string; branch: string; worktreePath: string } | null>
-  >;
   setProjectPinned: (directory: string, pinned: boolean) => void;
   setProjectPopover: React.Dispatch<
     React.SetStateAction<{ directory: string; top: number } | null>
@@ -61,16 +45,12 @@ interface UseSidebarRenderersArgs {
   setSessionPinned: (sessionId: string, pinned: boolean) => void;
   setSessionTags: (sessionId: string, tags: string[]) => void;
   setVisibleByProject: React.Dispatch<React.SetStateAction<Record<string, number>>>;
-  setWorktreeDialogDir: (directory: string) => void;
   sidebarState: "expanded" | "collapsed";
   startEditing: (sessionId: string, currentTitle: string) => void;
   t: (key: string, options?: Record<string, unknown>) => string;
   toggleCollapsed: (directory: string) => void;
   unreadSessionIds: Set<string>;
-  unregisterWorktree: (directory: string) => void;
   visibleByProject: Record<string, number>;
-  worktreeDirs: Set<string>;
-  worktreeParents: WorktreeParentMap;
   workspaceId?: string | null;
 }
 
@@ -80,7 +60,6 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     availableProjectDirectories,
     busySessionIds,
     cancelEditing,
-    client,
     closeMobileSidebar,
     closeOtherProjects,
     collapsed,
@@ -94,18 +73,13 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     hasActiveSearch,
     hasUnsentDraft,
     homeDir,
-    isGitRepo,
     isLocalWorkspace,
-    knownWorktrees,
     moveSessionToProject,
     namingSessionIds,
     pendingPermissions,
     pendingQuestions,
     projectMeta,
-    projectHydration,
     queuedPrompts,
-    refreshGitInfo,
-    remoteUrls,
     removeProject,
     removeSessionFromProject,
     revealSessionInProject,
@@ -113,23 +87,18 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     sessionMeta,
     setActiveTarget,
     setEditValue,
-    setMergeInfo,
     setProjectPinned,
     setProjectPopover,
     setSessionColor,
     setSessionPinned,
     setSessionTags,
     setVisibleByProject,
-    setWorktreeDialogDir,
     sidebarState,
     startEditing,
     t,
     toggleCollapsed,
     unreadSessionIds,
-    unregisterWorktree,
     visibleByProject,
-    worktreeDirs,
-    worktreeParents,
     workspaceId,
   } = args;
 
@@ -153,8 +122,6 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       pendingPermissions={pendingPermissions}
       sessionMeta={sessionMeta}
       namingSessionIds={namingSessionIds}
-      worktreeParents={worktreeParents}
-      knownWorktrees={knownWorktrees}
       availableProjectDirectories={availableProjectDirectories}
       editingSessionId={editingSessionId}
       editValue={editValue}
@@ -201,19 +168,11 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       homeDir={homeDir}
       detachedProject={detachedProject}
       isLocalWorkspace={isLocalWorkspace}
-      isGitRepo={isGitRepo}
-      knownWorktrees={knownWorktrees}
       availableProjectDirectories={availableProjectDirectories}
-      worktreeParents={worktreeParents}
-      remoteUrls={remoteUrls}
-      worktreeDirs={worktreeDirs}
       projectMeta={projectMeta}
       workspaceId={workspaceId}
-      projectHydration={projectHydration}
-      client={client}
       t={t}
       renderSessionRow={renderSessionRow}
-      refreshGitInfo={refreshGitInfo}
       setProjectPopover={setProjectPopover}
       toggleCollapsed={toggleCollapsed}
       setActiveTarget={setActiveTarget}
@@ -221,9 +180,6 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       setProjectPinned={setProjectPinned}
       removeProject={removeProject}
       closeOtherProjects={closeOtherProjects}
-      setWorktreeDialogDir={setWorktreeDialogDir}
-      setMergeInfo={setMergeInfo}
-      unregisterWorktree={unregisterWorktree}
       setVisibleByProject={setVisibleByProject}
     />
   );

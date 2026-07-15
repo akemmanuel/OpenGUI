@@ -83,39 +83,6 @@ function mergeSettingsSync(entries: Record<string, string>) {
   return true;
 }
 
-function subscribeEvents() {
-  let closed = false;
-  let retry: number | undefined;
-  let stream: EventSource | undefined;
-
-  const connect = () => {
-    const url = new URL(`${location.protocol}//${location.host}/api/events`);
-    const token = getConfiguredBackendToken();
-    if (token) url.searchParams.set("token", token);
-    stream = new EventSource(url.toString());
-    stream.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message?.channel) emit(message.channel, message.data);
-      } catch (error) {
-        console.error("Bad web event", error);
-      }
-    };
-    stream.onerror = () => {
-      stream?.close();
-      if (closed) return;
-      retry = window.setTimeout(connect, 1000);
-    };
-  };
-
-  connect();
-  return () => {
-    closed = true;
-    if (retry) window.clearTimeout(retry);
-    stream?.close();
-  };
-}
-
 function isCapacitorNativeRuntime() {
   const capacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })
     .Capacitor;
@@ -126,8 +93,6 @@ export function installWebElectronAPI() {
   if (window.electronAPI) return;
   if (location.protocol === "file:") return;
   if (isCapacitorNativeRuntime()) return;
-
-  subscribeEvents();
 
   const api = {
     kind: "web",
@@ -150,7 +115,6 @@ export function installWebElectronAPI() {
     isMaximized: () => invoke("window:isMaximized"),
     getPlatform: () => invoke("platform:get"),
     getSystemLocale: () => invoke("platform:locale"),
-    getHarnessInventories: () => invoke("platform:harnessInventory"),
     isPackaged: () => invoke("app:isPackaged"),
     onMaximizeChange: () => () => {},
     openDirectory: () => invoke("dialog:openDirectory"),
@@ -171,28 +135,6 @@ export function installWebElectronAPI() {
     openInTerminal: (dirPath: string, command = "") =>
       invoke("shell:openInTerminal", dirPath, command),
     getHomeDir: () => invoke("platform:homeDir"),
-    worktree: {
-      detectSetup: (worktreePath: string) => invoke("worktree:detect-setup", worktreePath),
-      runSetup: (worktreePath: string, command: string) =>
-        invoke("worktree:run-setup", worktreePath, command),
-    },
-    git: {
-      isRepo: (directory: string) => invoke("git:is-repo", directory),
-      listBranches: (directory: string) => invoke("git:branch:list", directory),
-      currentBranch: (directory: string) => invoke("git:current-branch", directory),
-      listWorktrees: (directory: string) => invoke("git:worktree:list", directory),
-      addWorktree: (
-        directory: string,
-        worktreePath: string,
-        branch: string,
-        isNewBranch: boolean,
-      ) => invoke("git:worktree:add", directory, worktreePath, branch, isNewBranch),
-      removeWorktree: (directory: string, worktreePath: string) =>
-        invoke("git:worktree:remove", directory, worktreePath),
-      merge: (directory: string, branch: string) => invoke("git:merge", directory, branch),
-      mergeAbort: (directory: string) => invoke("git:merge:abort", directory),
-      getRemoteUrl: (directory: string) => invoke("git:remote:url", directory),
-    },
   };
 
   window.electronAPI = api as unknown as ElectronAPI;

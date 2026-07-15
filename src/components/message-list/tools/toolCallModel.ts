@@ -43,6 +43,7 @@ export interface ToolCallViewModel {
   matchCount: number | null;
   diffSummary: { added: number; removed: number } | null;
   durationLabel: string | null;
+  resultLabel: string | null;
   output: ToolOutputBlock[];
   rawOutput: string | null;
   expandable: boolean;
@@ -50,7 +51,6 @@ export interface ToolCallViewModel {
 
 const KNOWN_TOOLS: Record<string, ToolCallKind> = {
   read: "read",
-  mcp_read: "read",
   bash: "bash",
   shell: "bash",
   execute_command: "bash",
@@ -66,12 +66,10 @@ const KNOWN_TOOLS: Record<string, ToolCallKind> = {
   create_file: "write",
   overwrite: "write",
   grep: "grep",
-  mcp_grep: "grep",
   search: "grep",
   rg: "grep",
   ripgrep: "grep",
   glob: "glob",
-  mcp_glob: "glob",
   find: "glob",
   list: "glob",
   ls: "glob",
@@ -226,6 +224,15 @@ export function getToolCallViewModel(
   const taskInfo = kind === "task" ? extractTaskInfo(state) : null;
   const todos = kind === "todo" ? extractTodos(state) : null;
   const images = extractImageAttachments(state, serverUrl);
+  const resultLabel =
+    kind === "bash" && status !== "running" && "metadata" in state && isRecord(state.metadata)
+      ? typeof state.metadata.exitCode === "number"
+        ? (t?.("toolLabels.bash.exitCode", { code: state.metadata.exitCode }) ??
+          `Exit ${state.metadata.exitCode}`)
+        : typeof state.metadata.signal === "string"
+          ? state.metadata.signal
+          : null
+      : null;
   const output: ToolOutputBlock[] = [];
   const rawContent = meaningfulText(rawCandidate);
 
@@ -256,6 +263,7 @@ export function getToolCallViewModel(
     matchCount: Number.isFinite(matchCount) ? matchCount : null,
     diffSummary: summarizeApplyPatchFiles(editFiles),
     durationLabel: kind === "task" ? getTaskDurationLabel(state) : null,
+    resultLabel,
     output,
     rawOutput: hasFormattedOutput && rawContent ? rawCandidate : null,
     expandable: status !== "error" && output.length > 0,

@@ -1,10 +1,8 @@
-import { ArrowLeft, ShoppingBag } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsProviders } from "@/components/SettingsProviders";
 import { GeneralSettings } from "@/components/settings/GeneralSettings";
-import { McpTabContent } from "@/components/settings/McpSettings";
-import { PluginsTabContent } from "@/components/settings/PluginsSettings";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -33,25 +31,12 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
             <TabsTrigger value="providers" className="flex-1">
               {t("settings.tabs.providers")}
             </TabsTrigger>
-            <TabsTrigger value="plugins" className="flex-1">
-              <ShoppingBag className="mr-1.5 size-3.5" />
-              {t("settings.tabs.plugins")}
-            </TabsTrigger>
-            <TabsTrigger value="mcp" className="flex-1">
-              {t("settings.tabs.tools")}
-            </TabsTrigger>
           </TabsList>
           <TabsContent value="general" className="mt-0 rounded-lg border p-4">
             <GeneralSettings />
           </TabsContent>
           <TabsContent value="providers" className="mt-0 rounded-lg border p-4">
             <SettingsProviders />
-          </TabsContent>
-          <TabsContent value="plugins" className="mt-0 rounded-lg border p-4">
-            <PluginsTabContent />
-          </TabsContent>
-          <TabsContent value="mcp" className="mt-0 rounded-lg border p-4">
-            <McpTabContent />
           </TabsContent>
         </Tabs>
       </div>

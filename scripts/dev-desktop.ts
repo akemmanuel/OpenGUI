@@ -48,10 +48,7 @@ for (let i = 0; i < maxAttempts; i++) {
 const electronEnv = { ...process.env };
 delete electronEnv.ELECTRON_RUN_AS_NODE;
 
-const electronArgs = ["exec", "electron", ".", "--enable-logging=stderr"];
-if (process.platform === "linux") {
-  electronArgs.push("--no-sandbox");
-}
+const electronArgs = ["exec", "electron", "."];
 if (process.env.OPENGUI_REMOTE_DEBUGGING_PORT) {
   electronArgs.push(`--remote-debugging-port=${process.env.OPENGUI_REMOTE_DEBUGGING_PORT}`);
 }
@@ -63,8 +60,6 @@ const electron = spawn("pnpm", electronArgs, {
     OPENGUI_DEV_SERVER_URL: url,
     OPENGUI_BACKEND_MODE: "local-external",
     OPENGUI_BACKEND_URL: backendUrl,
-    ELECTRON_ENABLE_LOGGING: "1",
-    ELECTRON_ENABLE_STACK_DUMPING: "1",
   },
 });
 

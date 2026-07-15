@@ -9,6 +9,6 @@ describe("cleanSessionTitle", () => {
   });
 
   test("keeps meaningful titles untouched", () => {
-    expect(cleanSessionTitle("OpenCode Sidebar Fix")).toBe("OpenCode Sidebar Fix");
+    expect(cleanSessionTitle("Sidebar Fix")).toBe("Sidebar Fix");
   });
 });

@@ -1,47 +1,58 @@
 /** First-run onboarding for Everyday Builders. */
 
-import { AlertCircle, ArrowRight, Check, Folder, LoaderCircle, RotateCw, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, Check, Folder, X } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
 import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { createHarnessInventoryView } from "@/hooks/harness-inventory-view";
-import { fetchHarnessInventoriesCached } from "@/lib/harness-inventory-cache";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageSet } from "@/lib/safe-storage";
-import { useOpenGuiClient } from "@/protocol/provider";
 import { useDesktopShell } from "@/shell/provider";
-import type { HarnessInventory } from "@/types/electron";
+import { createHostClient } from "@/protocol/host-client";
+import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
+import { notifyUnknownError } from "@/lib/notify";
 
-type Step = "harness" | "folder" | "finish";
-type HarnessState = "detecting" | "ready" | "none" | "error";
+type Step = "model" | "folder" | "finish";
 
 interface Props {
   onComplete: () => void;
 }
 
-function harnessStateFromInventories(inventories: HarnessInventory[]): HarnessState {
-  return createHarnessInventoryView({ inventories }).hasUsableHarness ? "ready" : "none";
-}
-
 function stepNumber(step: Step) {
   const stepToProgressDot: Record<Step, number> = {
-    harness: 0,
+    model: 0,
     folder: 1,
     finish: 2,
   };
   return stepToProgressDot[step];
 }
 
+function createWizardHostClient() {
+  const electronApi = window.electronAPI;
+  if (electronApi?.kind === "electron") {
+    return createHostClient({
+      baseUrl: electronApi.backendUrl ?? "",
+      token: electronApi.backendToken ?? undefined,
+    });
+  }
+  const policy = getShellWorkspacePolicy();
+  return createHostClient({
+    resolveBaseUrl: () => policy.configuredWebWorkspace?.baseUrl || window.location.origin,
+    resolveToken: () => policy.configuredWebWorkspace?.authToken || "",
+  });
+}
+
 export function SetupWizard({ onComplete }: Props) {
   const { t } = useTranslation();
-  const client = useOpenGuiClient();
   const shell = useDesktopShell();
-  const [step, setStep] = useState<Step>("harness");
-  const [inventories, setInventories] = useState<HarnessInventory[]>([]);
-  const [harnessState, setHarnessState] = useState<HarnessState>("detecting");
+  const host = useMemo(() => createWizardHostClient(), []);
+  const [step, setStep] = useState<Step>("model");
   const [folder, setFolder] = useState("");
+  const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
+  const [apiKey, setApiKey] = useState("");
+  const [modelId, setModelId] = useState("gpt-4.1");
+  const [savingModel, setSavingModel] = useState(false);
   const stepRef = useRef(step);
   stepRef.current = step;
 
@@ -51,7 +62,7 @@ export function SetupWizard({ onComplete }: Props) {
     useCallback(() => {
       const current = stepRef.current;
       if (current === "folder") {
-        setStep("harness");
+        setStep("model");
         return true;
       }
       if (current === "finish") {
@@ -64,45 +75,17 @@ export function SetupWizard({ onComplete }: Props) {
   );
 
   const currentStepNumber = stepNumber(step);
-  const canUseAnyHarness = createHarnessInventoryView({ inventories }).hasUsableHarness;
 
   const title = useMemo(() => {
     switch (step) {
-      case "harness":
-        return t("setupWizard.setupAgentsTitle");
+      case "model":
+        return t("setupWizard.connectModelTitle");
       case "folder":
         return t("setupWizard.chooseStartTitle");
       case "finish":
-        return canUseAnyHarness ? t("setupWizard.readyTitle") : t("setupWizard.setupSavedTitle");
+        return t("setupWizard.readyTitle");
     }
-  }, [canUseAnyHarness, step, t]);
-
-  async function refreshHarnessStatus(shouldUpdate = () => true, force = false) {
-    setHarnessState("detecting");
-    try {
-      const result = await fetchHarnessInventoriesCached(client, { force }).catch(() => []);
-      if (!shouldUpdate()) return result;
-      setInventories(result);
-      setHarnessState(harnessStateFromInventories(result));
-      return result;
-    } catch {
-      if (!shouldUpdate()) return [];
-      setInventories([]);
-      setHarnessState("error");
-      return [];
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void refreshHarnessStatus(() => !cancelled);
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [step, t]);
 
   async function browseFolder() {
     try {
@@ -113,6 +96,26 @@ export function SetupWizard({ onComplete }: Props) {
     }
   }
 
+  async function saveModelAndContinue() {
+    setSavingModel(true);
+    try {
+      if (baseUrl.trim() && modelId.trim()) {
+        await host.upsertModelConnection({
+          id: "default",
+          label: "Default",
+          baseUrl: baseUrl.trim(),
+          apiKey: apiKey.trim() || undefined,
+          modelIds: [modelId.trim()],
+        });
+      }
+      setStep("folder");
+    } catch (error) {
+      notifyUnknownError(error);
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
   function complete() {
     if (folder.trim()) storageSet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY, folder.trim());
     storageSet(STORAGE_KEYS.SETUP_COMPLETE, "true");
@@ -120,222 +123,110 @@ export function SetupWizard({ onComplete }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-background/90 backdrop-blur-md">
-      <div className="flex min-h-full items-start justify-center px-4 py-4 sm:items-center sm:py-6">
-        <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-[560px] overflow-y-auto rounded-2xl border bg-background p-4 shadow-xl sm:max-h-[calc(100dvh-3rem)] sm:p-5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="absolute right-2 top-2 size-8"
-            aria-label={t("common.close")}
-            onClick={onComplete}
-          >
-            <X className="size-4" />
-          </Button>
-          <div className="mb-5 text-center">
-            <div className="mb-2 text-xs text-muted-foreground">
-              {Math.max(currentStepNumber, 0) + 1} / 3
-            </div>
-            <h1 className="mb-1.5 text-xl font-semibold tracking-tight">{title}</h1>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg rounded-xl border bg-card p-6 shadow-lg">
+        <button
+          type="button"
+          className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted"
+          onClick={onComplete}
+          aria-label={t("common.close")}
+        >
+          <X className="size-4" />
+        </button>
 
-          <div className="mb-5 flex justify-center gap-1.5">
-            {[0, 1, 2].map((idx) => (
-              <div
-                key={idx}
-                className={[
-                  "h-1.5 rounded-full transition-all duration-300",
-                  idx === currentStepNumber
-                    ? "w-8 bg-foreground"
-                    : idx < currentStepNumber
-                      ? "w-4 bg-foreground/60"
-                      : "w-4 bg-muted",
-                ].join(" ")}
+        <div className="mb-4 text-xs text-muted-foreground">{currentStepNumber + 1} / 3</div>
+        <h1 className="mb-2 text-2xl font-semibold tracking-tight">{title}</h1>
+
+        {step === "model" && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t("setupWizard.connectModelDescription")}
+            </p>
+            <label className="block space-y-1 text-sm">
+              <span>{t("setupWizard.baseUrl")}</span>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2"
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.target.value)}
               />
-            ))}
-          </div>
-
-          {step === "harness" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
-              {harnessState === "detecting" && (
-                <StatusRow
-                  icon={<LoaderCircle className="size-5 animate-spin" />}
-                  title={t("setupWizard.checkingComputer")}
-                  description={t("setupWizard.lookingForHarnesses")}
-                />
-              )}
-              {harnessState === "ready" && (
-                <StatusRow
-                  icon={<Check className="size-5 text-emerald-500" />}
-                  title={t("setupWizard.codingAgentFound")}
-                  description={t("setupWizard.codingAgentFoundDescription")}
-                />
-              )}
-              {harnessState === "none" && (
-                <StatusRow
-                  icon={<AlertCircle className="size-5 text-amber-500" />}
-                  title={t("setupWizard.noHarnessInstalledTitle")}
-                  description={t("setupWizard.noHarnessInstalledDescription")}
-                />
-              )}
-              {harnessState === "error" && (
-                <StatusRow
-                  icon={<AlertCircle className="size-5 text-destructive" />}
-                  title={t("setupWizard.checkHarnessesFailedTitle")}
-                  description={t("setupWizard.checkHarnessesFailedDescription")}
-                />
-              )}
-
-              <div className="mt-5 flex flex-wrap justify-between gap-2">
-                <Button
-                  variant="ghost"
-                  disabled={harnessState === "detecting"}
-                  onClick={() => void refreshHarnessStatus(() => true, true)}
-                >
-                  <RotateCw
-                    className={`mr-1.5 size-4 ${harnessState === "detecting" ? "animate-spin" : ""}`}
-                  />
-                  {t("setupWizard.checkAgain")}
-                </Button>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => setStep("folder")} disabled={harnessState === "detecting"}>
-                    {t("setupWizard.continue")}
-                    <ArrowRight className="ml-1.5 size-4" />
-                  </Button>
-                </div>
-              </div>
-              {inventories.length > 0 && <HarnessInventorySummary inventories={inventories} />}
-            </div>
-          )}
-
-          {step === "folder" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
-              <StatusRow
-                icon={<Folder className="size-5 text-muted-foreground" />}
-                title={t("setupWizard.defaultChatDirectoryTitle")}
-                description={t("setupWizard.defaultChatDirectoryDescription")}
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>{t("setupWizard.apiKey")}</span>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                type="password"
               />
-              <div className="mt-4 flex gap-2">
-                <input
-                  value={folder}
-                  onChange={(event) => setFolder(event.target.value)}
-                  placeholder={t("setupWizard.folderPlaceholder")}
-                  className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                />
-                <Button type="button" variant="outline" onClick={browseFolder}>
-                  <Folder className="mr-1.5 size-4" />
-                  {t("common.browse")}
-                </Button>
-              </div>
-              <StepNav onBack={() => setStep("harness")} onNext={() => setStep("finish")} />
-            </div>
-          )}
-
-          {step === "finish" && (
-            <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
-              <StatusRow
-                icon={<Check className="size-5 text-emerald-500" />}
-                title={
-                  canUseAnyHarness
-                    ? t("setupWizard.readyToWorkTitle")
-                    : t("setupWizard.setupHarnessLaterTitle")
-                }
-                description={
-                  canUseAnyHarness
-                    ? t("setupWizard.readyToWorkDescription")
-                    : t("setupWizard.setupHarnessLaterDescription")
-                }
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>{t("setupWizard.model")}</span>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2"
+                value={modelId}
+                onChange={(event) => setModelId(event.target.value)}
               />
-              <div className="mt-5 flex justify-between gap-2">
-                <Button variant="outline" onClick={() => setStep("folder")}>
-                  {t("common.back")}
-                </Button>
-                <Button onClick={complete}>{t("setupWizard.openOpenGui")}</Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HarnessInventorySummary({ inventories }: { inventories: HarnessInventory[] }) {
-  const { t } = useTranslation();
-
-  function getInventoryDescription(inventory: HarnessInventory) {
-    if (inventory.status === "ready" && inventory.models.length > 0) {
-      return t("setupWizard.harnessReadyDescription");
-    }
-    if (inventory.installed) {
-      return t("setupWizard.harnessCliFoundDescription");
-    }
-    return t("setupWizard.harnessNotFoundDescription");
-  }
-
-  return (
-    <div className="mt-5 rounded-lg border bg-muted/20 p-3">
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {t("setupWizard.harnessInventoryTitle")}
-      </div>
-      <div className="space-y-2">
-        {inventories.map((inventory) => (
-          <div key={inventory.harnessId} className="flex items-start justify-between gap-3 text-sm">
-            <div>
-              <div className="font-medium">{inventory.displayName}</div>
-              <div className="text-xs text-muted-foreground">
-                {getInventoryDescription(inventory)}
-              </div>
-            </div>
-            <div className="shrink-0 text-xs text-muted-foreground">
-              {inventory.status === "ready"
-                ? t("setupWizard.modelsCount", { count: inventory.models.length })
-                : inventory.installed
-                  ? t("setupWizard.cliFound")
-                  : t("setupWizard.notFound")}
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setStep("folder")}>
+                {t("setupWizard.skip")}
+              </Button>
+              <Button
+                type="button"
+                disabled={savingModel}
+                onClick={() => void saveModelAndContinue()}
+              >
+                {t("setupWizard.continue")}
+                <ArrowRight className="size-4" />
+              </Button>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+        )}
 
-function StatusRow({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{title}</div>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  );
-}
+        {step === "folder" && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t("setupWizard.chooseStartDescription")}
+            </p>
+            <div className="flex gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder={t("setupWizard.folderPlaceholder")}
+                value={folder}
+                onChange={(event) => setFolder(event.target.value)}
+              />
+              <Button type="button" variant="outline" onClick={() => void browseFolder()}>
+                <Folder className="size-4" />
+                {t("common.browse")}
+              </Button>
+            </div>
+            <div className="flex justify-between gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setStep("model")}>
+                {t("common.back")}
+              </Button>
+              <Button type="button" onClick={() => setStep("finish")}>
+                {t("setupWizard.continue")}
+                <ArrowRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
-function StepNav({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="mt-5 flex justify-between gap-2">
-      <Button variant="outline" onClick={onBack}>
-        {t("common.back")}
-      </Button>
-      <Button onClick={onNext}>
-        {t("setupWizard.continue")}
-        <ArrowRight className="ml-1.5 size-4" />
-      </Button>
+        {step === "finish" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">{t("setupWizard.readyDescription")}</p>
+            <div className="flex justify-between gap-2">
+              <Button type="button" variant="ghost" onClick={() => setStep("folder")}>
+                {t("common.back")}
+              </Button>
+              <Button type="button" onClick={complete}>
+                <Check className="size-4" />
+                {t("setupWizard.openOpenGui")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

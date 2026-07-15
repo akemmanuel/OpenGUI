@@ -6,7 +6,7 @@ The OpenGUI Frontend reconciles **Live Session stream** events with **Session me
 
 ## Status
 
-accepted
+superseded by ADR-0010
 
 ## Decision
 

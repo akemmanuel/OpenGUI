@@ -1,5 +1,4 @@
 import { normalizeProjectPath } from "@/lib/utils";
-import { getHarnessIdFromSessionId, type HarnessId } from "@/agents";
 import type { ProjectMetaMap, SessionMeta } from "@/hooks/agent-state-persistence";
 import type { Session } from "@/hooks/agent-state-types";
 import type { SelectedModel } from "@/types/electron";
@@ -101,13 +100,6 @@ export function directoryScopeForSessionApi(
   return normalized || raw;
 }
 
-export function getSessionHarnessId(session: Session | undefined | null): HarnessId | null {
-  // Prefer _harnessId; _backendId is legacy wire/persistence only (sunset 2026-08).
-  return (
-    session?._harnessId ?? session?._backendId ?? getHarnessIdFromSessionId(session?.id) ?? null
-  );
-}
-
 export function getSessionSelectedModel(session: Session | undefined | null): SelectedModel | null {
   const model = session?.model;
   if (!model?.providerID || !model.id) return null;
@@ -126,7 +118,7 @@ export function getSessionSelectedAgent(session: Session | undefined | null): st
 
 export function shouldAutoNameSession(session: Session | undefined | null) {
   const title = session?.title?.trim();
-  return !title || title.toLowerCase() === "untitled";
+  return !title || ["untitled", "new session"].includes(title.toLowerCase());
 }
 
 function getSessionSortTime(session: Session | undefined | null): number {

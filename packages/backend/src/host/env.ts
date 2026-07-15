@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { normalizeAllowedRoots } from "@opengui/runtime";
+import { normalizeAllowedRoots } from "./path-safety.ts";
 
 export type BackendHostEnv = {
   port: number;

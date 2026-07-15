@@ -223,6 +223,15 @@ export function ProjectPathDialog() {
         </>
       }
     >
+      <label className="mb-3 block space-y-1 text-sm">
+        <span>{t("projectPath.projectPathLabel")}</span>
+        <input
+          className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          autoComplete="off"
+        />
+      </label>
       {useServerBrowser ? (
         <div className="min-w-0 rounded-lg border p-2">
           <div className="mb-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

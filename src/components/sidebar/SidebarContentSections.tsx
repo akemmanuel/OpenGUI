@@ -17,8 +17,7 @@ import {
 import type { ReactNode } from "react";
 import type { Session } from "@/hooks/agent-state-types";
 import { SESSION_PAGE_SIZE } from "@/lib/constants";
-import { getSessionExecutionDirectory, getSessionPlacementInfo } from "@/lib/worktree-placement";
-import type { SessionMetaMap, WorktreeParentMap } from "@/hooks/agent-state-persistence";
+import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -45,8 +44,6 @@ export function SidebarContentSections({
   visibleChatCount,
   hasMoreChats,
   canShowLessChats,
-  worktreeParents,
-  sessionMeta,
   labels,
   renderProjectEntry,
   renderSessionRow,
@@ -68,8 +65,6 @@ export function SidebarContentSections({
   visibleChatCount: number;
   hasMoreChats: boolean;
   canShowLessChats: boolean;
-  worktreeParents: WorktreeParentMap;
-  sessionMeta: SessionMetaMap;
   labels: {
     pinned: string;
     chats: string;
@@ -168,15 +163,9 @@ export function SidebarContentSections({
             ) : (
               <SidebarMenu>
                 {visibleChatSessions.map((session) =>
-                  renderSessionRow(
-                    session,
-                    getSessionPlacementInfo(
-                      session,
-                      worktreeParents,
-                      sessionMeta[session.id]?.displayProjectDir ?? null,
-                    )?.displayDirectory ?? getSessionExecutionDirectory(session),
-                    { currentProjectDir: null },
-                  ),
+                  renderSessionRow(session, getSessionExecutionDirectory(session) ?? "", {
+                    currentProjectDir: null,
+                  }),
                 )}
                 {hasMoreChats && (
                   <SidebarMenuItem>

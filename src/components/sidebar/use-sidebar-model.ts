@@ -1,22 +1,13 @@
 import { useCallback, useMemo } from "react";
 import type { Session } from "@/hooks/agent-state-types";
-import type {
-  ProjectMetaMap,
-  SessionMetaMap,
-  WorktreeParentMap,
-} from "@/hooks/agent-state-persistence";
+import type { ProjectMetaMap, SessionMetaMap } from "@/hooks/agent-state-persistence";
 import { partitionSidebarPins } from "@/lib/sidebar-pins";
-import {
-  getSessionPlacementInfo,
-  shouldHideTopLevelProjectDirectory,
-  shouldShowSessionInProjectList,
-} from "@/lib/worktree-placement";
 import { getProjectName, normalizeProjectPath } from "@/lib/utils";
 import type { ConnectionStatus, Workspace } from "@/types/electron";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
+import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import { isSidebarProjectHidden } from "@/lib/sidebar-project-meta";
 import { buildSidebarOrderedRootProjectDirectories } from "@/lib/sidebar-project-entries";
-import type { HarnessId } from "@/agents";
 
 function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {
   const meta = sessionMeta[session.id];
@@ -55,11 +46,7 @@ export function shouldKeepSessionOutOfProjectGroups({
   return !displayProjectDir && isDefaultChatDirectory(session._projectDir ?? session.directory);
 }
 
-export function sortSessionsForSidebar(
-  items: Session[],
-  sessionMeta: SessionMetaMap,
-  _preferredHarnessId?: HarnessId | null,
-) {
+export function sortSessionsForSidebar(items: Session[], sessionMeta: SessionMetaMap) {
   return [...items].sort((a, b) => {
     const byUpdated =
       getSidebarSessionSortTime(b, sessionMeta) - getSidebarSessionSortTime(a, sessionMeta);
@@ -72,24 +59,20 @@ export function useSidebarModel({
   sessions,
   sessionMeta,
   projectMeta,
-  worktreeParents,
   activeWorkspace,
   connections,
   detachedProject,
   defaultChatDirectory,
-  preferredHarnessId,
   searchQuery,
   untitledLabel,
 }: {
   sessions: Session[];
   sessionMeta: SessionMetaMap;
   projectMeta: ProjectMetaMap;
-  worktreeParents: WorktreeParentMap;
   activeWorkspace: Workspace | null | undefined;
   connections: Record<string, ConnectionStatus>;
   detachedProject?: string;
   defaultChatDirectory?: string | null;
-  preferredHarnessId?: HarnessId | null;
   searchQuery: string;
   untitledLabel: string;
 }) {
@@ -118,8 +101,8 @@ export function useSidebarModel({
   );
 
   const sortSidebarSessions = useCallback(
-    (items: Session[]) => sortSessionsForSidebar(items, sessionMeta, preferredHarnessId),
-    [preferredHarnessId, sessionMeta],
+    (items: Session[]) => sortSessionsForSidebar(items, sessionMeta),
+    [sessionMeta],
   );
 
   const projectGroups = useMemo(() => {
@@ -132,9 +115,7 @@ export function useSidebarModel({
       .filter(([, status]) => status.state === "connected")
       .map(([projectKey]) => normalizeProjectPath(parseProjectKey(projectKey).directory))
       .filter((dir): dir is string => Boolean(dir) && visibleProjectDirectorySet.has(dir));
-    const rootOpenDirectories = openDirectories.filter(
-      (dir) => !shouldHideTopLevelProjectDirectory(dir, worktreeParents),
-    );
+    const rootOpenDirectories = openDirectories;
     const workspaceProjects = (activeWorkspace?.projects ?? [])
       .map((dir) => normalizeProjectPath(dir))
       .filter(Boolean);
@@ -170,30 +151,18 @@ export function useSidebarModel({
       }
       const effectiveDisplayProjectDir =
         displayProjectDir && projectDirectorySet.has(displayProjectDir) ? displayProjectDir : null;
-      if (
-        !shouldShowSessionInProjectList(session, {
-          worktreeParents,
-          visibleProjectDirectories: visibleProjectDirectorySet,
-          displayProjectDir: effectiveDisplayProjectDir,
-        })
-      ) {
-        continue;
-      }
-      const placement = getSessionPlacementInfo(
-        session,
-        worktreeParents,
-        effectiveDisplayProjectDir,
-      );
-      if (!placement) continue;
+      const executionDirectory = normalizeProjectPath(getSessionExecutionDirectory(session) ?? "");
+      const displayDirectory = effectiveDisplayProjectDir ?? executionDirectory;
+      if (!displayDirectory || !visibleProjectDirectorySet.has(displayDirectory)) continue;
       if (
         normalizedDetachedProject &&
-        placement.displayDirectory !== normalizedDetachedProject &&
-        placement.executionDirectory !== normalizedDetachedProject
+        displayDirectory !== normalizedDetachedProject &&
+        executionDirectory !== normalizedDetachedProject
       ) {
         continue;
       }
-      if (!groups.has(placement.displayDirectory)) groups.set(placement.displayDirectory, []);
-      groups.get(placement.displayDirectory)?.push(session);
+      if (!groups.has(displayDirectory)) groups.set(displayDirectory, []);
+      groups.get(displayDirectory)?.push(session);
     }
 
     return new Map(
@@ -205,7 +174,6 @@ export function useSidebarModel({
   }, [
     sessions,
     connections,
-    worktreeParents,
     detachedProject,
     activeWorkspace,
     availableProjectDirectories,
@@ -273,9 +241,8 @@ export function useSidebarModel({
         sessionMeta,
         projectMeta,
         workspaceId: activeWorkspace?.id,
-        worktreeParents,
       }),
-    [activeWorkspace?.id, projectMeta, searchFilteredProjectEntries, sessionMeta, worktreeParents],
+    [activeWorkspace?.id, projectMeta, searchFilteredProjectEntries, sessionMeta],
   );
 
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Command } from "@/protocol/harness-types";
+import type { Command } from "@/protocol/agent-types";
 import { parseSlashCommand } from "@/hooks/use-slash-command-input";
 
 const commands = [{ name: "review" }, { name: "compact" }] as Command[];

@@ -26,6 +26,18 @@
     "loadOlder": "Load older messages",
     "loadOlderFailed": "Could not load older messages. Try again."
   },
+  "toolGroup": {
+    "commands_one": "Ran one command",
+    "commands_other": "Ran {{count}} commands",
+    "read_one": "read one file",
+    "read_other": "read {{count}} files",
+    "wrote_one": "wrote one file",
+    "wrote_other": "wrote {{count}} files",
+    "edited_one": "edited one file",
+    "edited_other": "edited {{count}} files",
+    "other_one": "used one tool",
+    "other_other": "used {{count}} tools"
+  },
   "settings": {
     "subtitle": "Manage app preferences and providers for active workspace.",
     "tabs": {
@@ -176,19 +188,33 @@
     "stopGenerating": "Stop generating",
     "send": "Send",
     "sendMessage": "Send message",
-    "chooseHarnessAndModelBeforeSend": "Choose a harness and model before sending."
+    "chooseHarnessAndModelBeforeSend": "Choose a model before sending."
   },
   "variantSelector": {
     "off": "off",
     "thinkingEffort": "Thinking effort: {{level}} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)"
+  },
+  "reasoningEffort": {
+    "label": "Reasoning effort",
+    "compact": "Reasoning: {{effort}}",
+    "title": "Reasoning effort: {{effort}}",
+    "levels": {
+      "none": "Off",
+      "minimal": "Minimal",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Extra high",
+      "max": "Maximum"
+    }
   },
   "agentSelector": {
     "placeholder": "Agent"
   },
   "modelSelector": {
     "selectModel": "Select model",
-    "chooseHarnessAndModel": "Choose harness & model",
-    "dialogTitle": "Choose harness & model",
+    "chooseHarnessAndModel": "Choose model",
+    "dialogTitle": "Choose model",
     "searchPlaceholder": "Search provider, model, or id...",
     "favorites": "Favorites",
     "recent": "Recent",
@@ -296,6 +322,34 @@
     "deleteFromDisk": "Also delete worktree files from disk"
   },
   "providers": {
+    "codex": {
+      "title": "ChatGPT",
+      "description": "Use your ChatGPT subscription with Codex models.",
+      "signIn": "Sign in to ChatGPT",
+      "signOut": "Sign out",
+      "code": "Enter code {{code}}",
+      "open": "Open verification page",
+      "check": "I've authorized OpenGUI"
+    },
+    "xai": {
+      "title": "SuperGrok",
+      "description": "Use your SuperGrok or eligible X Premium+ subscription.",
+      "signIn": "Sign in to xAI"
+    },
+    "opencode": {
+      "title": "OpenCode Go",
+      "description": "Use models included with your OpenCode Go subscription.",
+      "signIn": "Sign in to OpenCode"
+    },
+    "zen": {
+      "title": "OpenCode Zen",
+      "description": "Enable free, rate-limited Zen models without an API key, or add your own key for your OpenCode Zen account.",
+      "apiKeyPlaceholder": "API key (optional)",
+      "enable": "Enable free models",
+      "saveKey": "Save API key"
+    },
+    "description": "Connect models used by the OpenGUI agent.",
+    "addProvider": "Add connection",
     "searchPlaceholder": "Search providers...",
     "managerSwitcher": "Provider manager",
     "noManagement": "No Harness with provider management is available.",
@@ -343,6 +397,13 @@
     "duplicateModelIds": "Duplicate model IDs found"
   },
   "setupWizard": {
+    "connectModelTitle": "Connect a model",
+    "connectModelDescription": "Add an OpenAI-compatible connection. You can change this later in Settings.",
+    "baseUrl": "Base URL",
+    "apiKey": "API key",
+    "model": "Model",
+    "skip": "Skip",
+    "readyDescription": "OpenGUI is ready. Connect a project and start a Session with the first-party agent.",
     "title": "Welcome to OpenGUI",
     "setupAgentsTitle": "Set up coding agents",
     "chooseStartTitle": "Choose where new chats start",
@@ -511,7 +572,8 @@
   "toolLabels": {
     "bash": {
       "running": "Running",
-      "done": "Ran"
+      "done": "Ran",
+      "exitCode": "Exit {{code}}"
     },
     "read": {
       "running": "Reading",

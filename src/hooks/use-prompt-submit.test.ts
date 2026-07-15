@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { Command } from "@/protocol/harness-types";
+import type { Command } from "@/protocol/agent-types";
 import { decidePromptSubmit } from "@/hooks/use-prompt-submit";
 
 const command = { name: "review" } as Command;

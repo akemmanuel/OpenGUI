@@ -1,19 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
-import { getSidebarSessionProjectDirectory, partitionSidebarPins } from "../sidebar-pins";
-
-describe("getSidebarSessionProjectDirectory", () => {
-  test("groups worktree sessions under parent project", () => {
-    expect(
-      getSidebarSessionProjectDirectory(
-        { id: "s1", directory: "/repo/worktrees/feature" },
-        {
-          "/repo/worktrees/feature": { parentDir: "/repo" },
-        },
-      ),
-    ).toBe("/repo");
-  });
-});
+import { partitionSidebarPins } from "../sidebar-pins";
 
 describe("partitionSidebarPins", () => {
   const workspaceId = "local";
@@ -29,7 +16,7 @@ describe("partitionSidebarPins", () => {
       "/repo-b",
       [
         { id: "s3", directory: "/repo-b" },
-        { id: "s4", directory: "/repo-b/worktrees/feature" },
+        { id: "s4", directory: "/repo-b" },
       ],
     ],
   ] as const;
@@ -45,9 +32,6 @@ describe("partitionSidebarPins", () => {
         [makeProjectKey(workspaceId, "/repo-a")]: { pinnedAt: "2026-01-01T00:00:00.000Z" },
       },
       workspaceId,
-      worktreeParents: {
-        "/repo-b/worktrees/feature": { parentDir: "/repo-b" },
-      },
     });
 
     expect(result.pinnedEntries).toHaveLength(1);
@@ -70,9 +54,6 @@ describe("partitionSidebarPins", () => {
       },
       projectMeta: {},
       workspaceId,
-      worktreeParents: {
-        "/repo-b/worktrees/feature": { parentDir: "/repo-b" },
-      },
     });
 
     expect(result.pinnedEntries).toHaveLength(2);
@@ -105,7 +86,6 @@ describe("partitionSidebarPins", () => {
         [makeProjectKey(workspaceId, "/repo-a")]: { pinnedAt: "2026-01-01T00:00:00.000Z" },
       },
       workspaceId,
-      worktreeParents: {},
     });
 
     expect(result.pinnedEntries).toHaveLength(1);

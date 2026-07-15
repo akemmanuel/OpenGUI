@@ -3,8 +3,8 @@ import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import type { Hono } from "hono";
-import { findFilesInDirectory } from "../../../../server/services/index.ts";
-import { isWithinAllowedRoot } from "@opengui/runtime";
+import { findFilesInDirectory } from "../../../../server/services/file-search.ts";
+import { isWithinAllowedRoot } from "../host/path-safety.ts";
 import { jsonError } from "../http/json.ts";
 import { contentTypeForPath } from "../transport/static-host.ts";
 import type { BackendHostEnv } from "../host/env.ts";
@@ -12,9 +12,6 @@ import type { BackendHostEnv } from "../host/env.ts";
 export type FsRouteDeps = {
   env: Pick<BackendHostEnv, "allowedRoots" | "uploadMaxFileBytes" | "uploadMaxBatchBytes">;
   resolveSafeDirectory: (inputPath: string | null) => Promise<string>;
-  resolveHarnessDirectoryForSessions: (input: {
-    directory: string;
-  }) => Promise<{ directory: string; canonicalPath: string }>;
 };
 
 async function listServerDirectories(
@@ -83,9 +80,7 @@ export function registerFsRoutes(app: Hono, deps: FsRouteDeps) {
       const query = c.req.query("query") ?? "";
       const limit = Math.max(1, Math.min(200, Number(c.req.query("limit") ?? 50)));
       if (!directoryParam) throw new Error("directory is required");
-      const searchDirectory = (
-        await deps.resolveHarnessDirectoryForSessions({ directory: directoryParam })
-      ).canonicalPath;
+      const searchDirectory = await deps.resolveSafeDirectory(directoryParam);
       const files = await findFilesInDirectory(searchDirectory, query);
       return Response.json({ ok: true, value: files.slice(0, limit) });
     } catch (error) {

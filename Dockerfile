@@ -31,7 +31,7 @@ COPY docker/host-exec /usr/local/bin/opengui-host-exec
 COPY docker/entrypoint.sh /usr/local/bin/opengui-entrypoint
 RUN chmod +x /usr/local/bin/opengui-host-exec /usr/local/bin/opengui-entrypoint \
 	&& mkdir -p /usr/local/host-bin \
-	&& for cmd in git opencode claude codex pi node npm pnpm python python3 bash sh rg fd make gcc g++; do ln -sf /usr/local/bin/opengui-host-exec /usr/local/host-bin/$cmd; done
+	&& for cmd in node npm pnpm python python3 bash sh rg fd make gcc g++; do ln -sf /usr/local/bin/opengui-host-exec /usr/local/host-bin/$cmd; done
 
 ENV HOST=0.0.0.0
 ENV PORT=3000

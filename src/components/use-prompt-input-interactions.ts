@@ -5,8 +5,8 @@ import { getNextPrimaryAgent } from "@/hooks/use-primary-agent-cycle";
 import { usePromptSubmit } from "@/hooks/use-prompt-submit";
 import { useSlashCommandInput } from "@/hooks/use-slash-command-input";
 import type { Session } from "@/hooks/agent-state-types";
-import type { HarnessCapabilities } from "@/agents/backend";
-import type { Command } from "@/protocol/harness-types";
+import type { AgentCapabilities } from "@/hooks/use-agent-backend";
+import type { Command } from "@/protocol/agent-types";
 import type { QueueMode } from "@/lib/session-drafts";
 
 interface UsePromptInputInteractionsProps {
@@ -22,7 +22,7 @@ interface UsePromptInputInteractionsProps {
   activeTargetDirectory: string | null;
   activeWorkspaceId: string | null;
   workspaceServerUrl: string | null;
-  capabilities: HarnessCapabilities | undefined;
+  capabilities: AgentCapabilities | undefined;
   commands: Command[];
   propsOnChange: ((e: React.ChangeEvent<HTMLTextAreaElement>) => void) | undefined;
   noteManualInput: () => void;

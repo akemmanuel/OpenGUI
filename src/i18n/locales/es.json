@@ -21,6 +21,18 @@
     "loadOlder": "Cargar mensajes anteriores",
     "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo."
   },
+  "toolGroup": {
+    "commands_one": "Ejecutó un comando",
+    "commands_other": "Ejecutó {{count}} comandos",
+    "read_one": "leyó un archivo",
+    "read_other": "leyó {{count}} archivos",
+    "wrote_one": "escribió un archivo",
+    "wrote_other": "escribió {{count}} archivos",
+    "edited_one": "editó un archivo",
+    "edited_other": "editó {{count}} archivos",
+    "other_one": "usó una herramienta",
+    "other_other": "usó {{count}} herramientas"
+  },
   "messageError": {
     "showDetails": "Mostrar detalles",
     "hideDetails": "Ocultar detalles",
@@ -176,19 +188,33 @@
     "stopGenerating": "Detener generación",
     "send": "Enviar",
     "sendMessage": "Enviar mensaje",
-    "chooseHarnessAndModelBeforeSend": "Elige un harness y un modelo antes de enviar."
+    "chooseHarnessAndModelBeforeSend": "Elige un modelo antes de enviar."
   },
   "variantSelector": {
     "off": "apagado",
     "thinkingEffort": "Esfuerzo de razonamiento: {{level}} (clic o Ctrl+T para cambiar, Ctrl+Mayús+T para retroceder)"
+  },
+  "reasoningEffort": {
+    "label": "Esfuerzo de razonamiento",
+    "compact": "Razonamiento: {{effort}}",
+    "title": "Esfuerzo de razonamiento: {{effort}}",
+    "levels": {
+      "none": "Desactivado",
+      "minimal": "Mínimo",
+      "low": "Bajo",
+      "medium": "Medio",
+      "high": "Alto",
+      "xhigh": "Muy alto",
+      "max": "Máximo"
+    }
   },
   "agentSelector": {
     "placeholder": "Agente"
   },
   "modelSelector": {
     "selectModel": "Seleccionar modelo",
-    "chooseHarnessAndModel": "Elegir harness y modelo",
-    "dialogTitle": "Elegir harness y modelo",
+    "chooseHarnessAndModel": "Elegir modelo",
+    "dialogTitle": "Elegir modelo",
     "searchPlaceholder": "Buscar proveedor, modelo o ID...",
     "favorites": "Favoritos",
     "recent": "Recientes",
@@ -296,6 +322,34 @@
     "deleteFromDisk": "Eliminar también los archivos del worktree del disco"
   },
   "providers": {
+    "codex": {
+      "title": "ChatGPT",
+      "description": "Usa tu suscripción de ChatGPT con modelos Codex.",
+      "signIn": "Iniciar sesión en ChatGPT",
+      "signOut": "Cerrar sesión",
+      "code": "Introduce el código {{code}}",
+      "open": "Abrir página de verificación",
+      "check": "He autorizado OpenGUI"
+    },
+    "xai": {
+      "title": "SuperGrok",
+      "description": "Usa tu suscripción SuperGrok o X Premium+ compatible.",
+      "signIn": "Iniciar sesión en xAI"
+    },
+    "opencode": {
+      "title": "OpenCode Go",
+      "description": "Usa los modelos incluidos con tu suscripción OpenCode Go.",
+      "signIn": "Iniciar sesión en OpenCode"
+    },
+    "zen": {
+      "title": "OpenCode Zen",
+      "description": "Activa modelos Zen gratuitos con límites de uso sin clave API, o añade la clave de tu cuenta de OpenCode Zen.",
+      "apiKeyPlaceholder": "Clave API (opcional)",
+      "enable": "Activar modelos gratuitos",
+      "saveKey": "Guardar clave API"
+    },
+    "description": "Conecta los modelos que usa el agente de OpenGUI.",
+    "addProvider": "Añadir conexión",
     "searchPlaceholder": "Buscar proveedores...",
     "managerSwitcher": "Gestor de proveedores",
     "noManagement": "No hay ningún Harness con gestión de proveedores disponible.",
@@ -343,6 +397,13 @@
     "duplicateModelIds": "Se encontraron ID de modelo duplicados"
   },
   "setupWizard": {
+    "connectModelTitle": "Conecta un modelo",
+    "connectModelDescription": "Añade una conexión compatible con OpenAI. Puedes cambiarla más tarde en Ajustes.",
+    "baseUrl": "URL base",
+    "apiKey": "Clave de API",
+    "model": "Modelo",
+    "skip": "Omitir",
+    "readyDescription": "OpenGUI está listo. Conecta un proyecto e inicia una sesión con el agente integrado.",
     "title": "Bienvenido a OpenGUI",
     "setupAgentsTitle": "Configurar agentes de código",
     "chooseStartTitle": "Elige dónde empiezan los chats nuevos",
@@ -511,7 +572,8 @@
   "toolLabels": {
     "bash": {
       "running": "Ejecutando",
-      "done": "Ejecutado"
+      "done": "Ejecutado",
+      "exitCode": "Salida {{code}}"
     },
     "read": {
       "running": "Leyendo",

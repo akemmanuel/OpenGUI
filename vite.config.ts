@@ -49,10 +49,12 @@ function openguiElectronBuild(): Plugin {
 function shouldRestartWebBackend(file: string) {
   const normalized = file.replaceAll("\\", "/");
   return (
+    normalized.startsWith("server/") ||
     normalized.includes("/server/") ||
+    normalized.startsWith("packages/backend/") ||
     normalized.includes("/packages/backend/") ||
-    normalized.includes("/packages/runtime/") ||
-    normalized.includes("/lib/grok-acp-client")
+    normalized.startsWith("packages/harness/") ||
+    normalized.includes("/packages/harness/")
   );
 }
 
@@ -182,9 +184,9 @@ export default defineConfig({
   test: {
     include: [
       "**/*.{test,spec}.?(c|m)[jt]s?(x)",
-      "../packages/runtime/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../packages/protocol/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../packages/backend/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../packages/harness/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../server/**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
   },

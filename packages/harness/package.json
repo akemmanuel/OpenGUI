@@ -1,0 +1,28 @@
+{
+  "name": "@opengui/harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "First-party OpenGUI Harness",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./models/openai-chat": {
+      "types": "./src/models/openai-chat.ts",
+      "default": "./src/models/openai-chat.ts"
+    },
+    "./test": {
+      "types": "./src/test/index.ts",
+      "default": "./src/test/index.ts"
+    }
+  },
+  "dependencies": {
+    "kysely": "0.29.3",
+    "kysely-node-native-sqlite": "1.1.0"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

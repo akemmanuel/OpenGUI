@@ -1,10 +1,8 @@
-import type { LiveSessionEvent } from "@opengui/runtime/client";
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import { normalizeProjectPath } from "@/lib/utils";
 
 export type ActiveTranscriptScope = {
   directory: string;
-  harnessId: string;
   sessionId: string;
 };
 
@@ -26,7 +24,6 @@ export type ActiveTranscriptInput =
       error: string;
       phase: ActiveTranscriptPagePhase;
     }
-  | { type: "live"; event: LiveSessionEvent }
   | {
       type: "snapshot.loaded";
       scope: ActiveTranscriptScope;
@@ -59,15 +56,6 @@ export function scopesEqual(
   if (!a || !b) return false;
   return (
     normalizeProjectPath(a.directory) === normalizeProjectPath(b.directory) &&
-    a.harnessId === b.harnessId &&
     a.sessionId === b.sessionId
   );
-}
-
-export function scopeFromLiveEvent(event: LiveSessionEvent): ActiveTranscriptScope {
-  return {
-    directory: event.scope.directory,
-    harnessId: event.scope.harnessId,
-    sessionId: event.scope.sessionId,
-  };
 }

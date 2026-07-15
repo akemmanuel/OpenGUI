@@ -3,8 +3,6 @@ import {
   Copy,
   FolderOpen,
   FolderX,
-  GitBranch,
-  GitMerge,
   Minimize2,
   MoreHorizontal,
   Palette,
@@ -16,7 +14,6 @@ import {
   Terminal,
   Trash2,
   X,
-  ExternalLink,
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -25,8 +22,7 @@ import * as ContextMenu from "@/components/ui/context-menu";
 import type { SessionColor } from "@/hooks/use-agent-state";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet } from "@/lib/safe-storage";
-import { compareWorktreesByLabel, getWorktreeLabel } from "@/lib/worktree-placement";
-import { cn, copyTextToClipboard, formatTimeAgo, getProjectName } from "@/lib/utils";
+import { cn, copyTextToClipboard, getProjectName } from "@/lib/utils";
 import { useDesktopShell } from "@/shell/provider";
 import {
   DropdownMenu,
@@ -273,8 +269,6 @@ export function SessionItemMenu({
   );
 }
 
-type ProjectMenuWorktree = { path: string; branch?: string | null };
-
 type ProjectMenuContentProps = {
   kind: "dropdown" | "context";
   pinned: boolean;
@@ -289,13 +283,6 @@ type ProjectMenuContentProps = {
   onCloseOtherProjects: () => void;
   directory: string;
   isLocalWorkspace: boolean;
-  isGitRepo: boolean;
-  worktrees: ProjectMenuWorktree[];
-  worktreeParents: Record<string, { createdAt: string; parentDir?: string } | undefined>;
-  onNewWorktree: () => void;
-  onMergeWorktree: (worktree: ProjectMenuWorktree) => void;
-  onOpenWorktreePr: (worktree: ProjectMenuWorktree) => void;
-  onRemoveWorktree: (worktree: ProjectMenuWorktree) => void | Promise<void>;
 };
 
 export function ProjectMenuContent({
@@ -312,19 +299,9 @@ export function ProjectMenuContent({
   onCloseOtherProjects,
   directory,
   isLocalWorkspace,
-  isGitRepo,
-  worktrees,
-  worktreeParents,
-  onNewWorktree,
-  onMergeWorktree,
-  onOpenWorktreePr,
-  onRemoveWorktree,
 }: ProjectMenuContentProps) {
   const { t } = useTranslation();
   const shell = useDesktopShell();
-  const extraWorktrees = [...worktrees]
-    .filter((worktree) => worktree.path !== directory)
-    .sort((left, right) => compareWorktreesByLabel(left, right, directory));
 
   if (kind === "dropdown") {
     return (
@@ -397,83 +374,6 @@ export function ProjectMenuContent({
               <Terminal className="size-4" />
               <span>{t("projectMenu.openInTerminal")}</span>
             </DropdownMenuItem>
-          </>
-        )}
-        {isLocalWorkspace && isGitRepo && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={(event) => {
-                event.stopPropagation();
-                onNewWorktree();
-              }}
-            >
-              <GitBranch className="size-4" />
-              <span>{t("projectMenu.newWorktree")}</span>
-            </DropdownMenuItem>
-            {extraWorktrees.length > 0 && (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <GitBranch className="size-4" />
-                  <span>{t("projectMenu.worktrees")}</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {extraWorktrees.map((worktree) => {
-                    const worktreeMeta = worktreeParents[worktree.path];
-                    return (
-                      <DropdownMenuSub key={worktree.path}>
-                        <DropdownMenuSubTrigger>
-                          <div className="flex flex-col truncate">
-                            <span className="truncate">
-                              {getWorktreeLabel({ ...worktree, rootDirectory: directory })}
-                            </span>
-                            {worktreeMeta && (
-                              <span className="text-[10px] text-muted-foreground">
-                                {formatTimeAgo(worktreeMeta.createdAt)}
-                              </span>
-                            )}
-                          </div>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                          {worktree.branch && (
-                            <DropdownMenuItem
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onMergeWorktree(worktree);
-                              }}
-                            >
-                              <GitMerge className="size-4" />
-                              {t("projectMenu.merge")}
-                            </DropdownMenuItem>
-                          )}
-                          {worktree.branch && (
-                            <DropdownMenuItem
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onOpenWorktreePr(worktree);
-                              }}
-                            >
-                              <ExternalLink className="size-4" />
-                              {t("projectMenu.openPullRequest")}
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void onRemoveWorktree(worktree);
-                            }}
-                          >
-                            {t("common.remove")}
-                          </DropdownMenuItem>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    );
-                  })}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            )}
           </>
         )}
         {canRemove && (
@@ -564,86 +464,6 @@ export function ProjectMenuContent({
             <Terminal className="size-4" />
             <span>{t("projectMenu.openInTerminal")}</span>
           </ContextMenu.Item>
-        </>
-      )}
-      {isLocalWorkspace && isGitRepo && (
-        <>
-          <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
-          <ContextMenu.Item
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-            onClick={onNewWorktree}
-          >
-            <GitBranch className="size-4" />
-            <span>{t("projectMenu.newWorktree")}</span>
-          </ContextMenu.Item>
-          {extraWorktrees.length > 0 && (
-            <ContextMenu.Sub>
-              <ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
-                <GitBranch className="size-4" />
-                <span>{t("projectMenu.worktrees")}</span>
-              </ContextMenu.SubTrigger>
-              <ContextMenu.Portal>
-                <ContextMenu.SubContent
-                  className="z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
-                  sideOffset={4}
-                >
-                  {extraWorktrees.map((worktree) => {
-                    const worktreeMeta = worktreeParents[worktree.path];
-                    return (
-                      <ContextMenu.Sub key={worktree.path}>
-                        <ContextMenu.SubTrigger className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent">
-                          <div className="flex flex-col truncate">
-                            <span className="truncate">
-                              {getWorktreeLabel({ ...worktree, rootDirectory: directory })}
-                            </span>
-                            {worktreeMeta && (
-                              <span className="text-[10px] text-muted-foreground">
-                                {formatTimeAgo(worktreeMeta.createdAt)}
-                              </span>
-                            )}
-                          </div>
-                        </ContextMenu.SubTrigger>
-                        <ContextMenu.Portal>
-                          <ContextMenu.SubContent
-                            className="z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
-                            sideOffset={4}
-                          >
-                            {worktree.branch && (
-                              <ContextMenu.Item
-                                className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-                                onClick={() => onMergeWorktree(worktree)}
-                              >
-                                <GitMerge className="size-4" />
-                                {t("projectMenu.merge")}
-                              </ContextMenu.Item>
-                            )}
-                            {worktree.branch && (
-                              <ContextMenu.Item
-                                className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-                                onClick={() => onOpenWorktreePr(worktree)}
-                              >
-                                <ExternalLink className="size-4" />
-                                {t("projectMenu.openPullRequest")}
-                              </ContextMenu.Item>
-                            )}
-                            <ContextMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
-                            <ContextMenu.Item
-                              className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none focus:bg-accent focus:text-destructive"
-                              onClick={() => {
-                                void onRemoveWorktree(worktree);
-                              }}
-                            >
-                              {t("common.remove")}
-                            </ContextMenu.Item>
-                          </ContextMenu.SubContent>
-                        </ContextMenu.Portal>
-                      </ContextMenu.Sub>
-                    );
-                  })}
-                </ContextMenu.SubContent>
-              </ContextMenu.Portal>
-            </ContextMenu.Sub>
-          )}
         </>
       )}
       {canRemove && (

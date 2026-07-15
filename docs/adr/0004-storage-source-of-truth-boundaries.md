@@ -4,7 +4,7 @@ OpenGUI must keep storage responsibilities explicit across Frontend, Backend, an
 
 ## Status
 
-accepted
+superseded by ADR-0010
 
 ## Decision
 

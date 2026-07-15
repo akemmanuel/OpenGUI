@@ -10,7 +10,7 @@ import { App } from "./App";
 import { applyStoredAppearance } from "./hooks/use-theme";
 import { initI18n } from "./i18n";
 import { installWebElectronAPI } from "./lib/web-electron-api";
-import { initializeRuntimeClients } from "./runtime/clients";
+import { getDesktopShellClient } from "./runtime/clients";
 
 function preventDocumentPinchZoom() {
   const prevent = (event: Event) => event.preventDefault();
@@ -26,7 +26,7 @@ function preventDocumentPinchZoom() {
 
 preventDocumentPinchZoom();
 installWebElectronAPI();
-initializeRuntimeClients();
+getDesktopShellClient();
 if (window.Capacitor?.isNativePlatform?.() === true) {
   document.documentElement.dataset.shell = "mobile";
 }
@@ -35,7 +35,7 @@ applyStoredAppearance();
 const elem = document.getElementById("root");
 if (!elem) throw new Error("Root element not found");
 // StrictMode removed: its double-mount behaviour causes IPC event
-// subscriptions (e.g. SSE bridge) to fire twice, producing garbled
+// subscriptions (for example SSE streams) to fire twice, producing garbled
 // streaming output in the Electron renderer.
 const app = <App />;
 

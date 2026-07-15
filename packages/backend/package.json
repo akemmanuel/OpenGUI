@@ -2,7 +2,7 @@
   "name": "@opengui/backend",
   "version": "0.0.0",
   "private": true,
-  "description": "Networked OpenGUI Backend: embeds Runtime, HTTP/IPC, queues",
+  "description": "OpenGUI Host: first-party Harness, HTTP/IPC, multi-client product interface",
   "type": "module",
   "exports": {
     ".": {
@@ -11,11 +11,10 @@
     }
   },
   "dependencies": {
-    "@opengui/protocol": "workspace:*",
-    "@opengui/runtime": "workspace:*",
-    "hono": "^4.12.27"
+    "@opengui/harness": "workspace:*",
+    "hono": "^4.12.30"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   }
 }

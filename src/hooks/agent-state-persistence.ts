@@ -6,9 +6,7 @@ import {
   storageSet,
   storageSetJSON,
 } from "@/lib/safe-storage";
-import { getWorkspaceRootProjectDirectory } from "@/lib/worktree-placement";
 import { normalizeProjectPath } from "@/lib/utils";
-import type { OpenGuiClient, FrontendWorkspaceRecord } from "@/protocol/client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type { SelectedModel, Workspace } from "@/types/electron";
@@ -153,57 +151,6 @@ export function getWorkspaceDefaultChatDirectory(
   return typeof value === "string" && value.trim() ? normalizeProjectPath(value) : null;
 }
 
-interface WorktreeMetadata {
-  parentDir: string;
-  branch: string;
-  createdAt: string;
-  lastOpenedAt: string;
-}
-
-export type WorktreeParentMap = Record<string, WorktreeMetadata>;
-
-export function getWorktreeParents(): WorktreeParentMap {
-  const raw = storageParsed<Record<string, unknown>>(STORAGE_KEYS.WORKTREE_PARENTS) ?? {};
-  const result: WorktreeParentMap = {};
-  let changed = false;
-  for (const [dir, val] of Object.entries(raw)) {
-    const normalizedDir = normalizeProjectPath(dir);
-    if (!normalizedDir) {
-      changed = true;
-      continue;
-    }
-    if (typeof val === "string") {
-      changed = true;
-      result[normalizedDir] = {
-        parentDir: normalizeProjectPath(val),
-        branch: "unknown",
-        createdAt: new Date().toISOString(),
-        lastOpenedAt: new Date().toISOString(),
-      };
-    } else if (val && typeof val === "object" && "parentDir" in val) {
-      const metadata = val as WorktreeMetadata;
-      const normalizedParentDir = normalizeProjectPath(metadata.parentDir);
-      if (!normalizedParentDir) {
-        changed = true;
-        continue;
-      }
-      if (normalizedDir !== dir || normalizedParentDir !== metadata.parentDir) {
-        changed = true;
-      }
-      result[normalizedDir] = {
-        ...metadata,
-        parentDir: normalizedParentDir,
-      };
-    }
-  }
-  if (changed) persistWorktreeParents(result);
-  return result;
-}
-
-export function persistWorktreeParents(map: WorktreeParentMap) {
-  persistOrRemoveJSON(STORAGE_KEYS.WORKTREE_PARENTS, map, Object.keys(map).length === 0);
-}
-
 export function isLocalServer(
   raw = storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL,
 ): boolean {
@@ -213,13 +160,6 @@ export function isLocalServer(
   } catch {
     return false;
   }
-}
-
-export function getWorkspaceRootDirectory(
-  directory: string,
-  worktreeParents: WorktreeParentMap,
-): string {
-  return getWorkspaceRootProjectDirectory(directory, worktreeParents);
 }
 
 export function createLocalWorkspace(): Workspace {
@@ -463,27 +403,27 @@ function getInitialWorkspacesForShell(): Workspace[] {
   return policy.shellKind === "mobile" ? [] : [createLocalWorkspace()];
 }
 
-export async function loadBackendWorkspaces(_client: OpenGuiClient): Promise<Workspace[]> {
+export async function loadBackendWorkspaces(): Promise<Workspace[]> {
   const stored = getLegacyStoredWorkspaces();
   return sortLocalWorkspaces(stored.length > 0 ? stored : getInitialWorkspacesForShell());
 }
 
-export async function migrateLegacyWorkspaceState(_client: OpenGuiClient): Promise<Workspace[]> {
+export async function migrateLegacyWorkspaceState(): Promise<Workspace[]> {
   const workspaces = sortLocalWorkspaces(getLegacyStoredWorkspaces());
   persistWorkspaces(workspaces.length > 0 ? workspaces : getInitialWorkspacesForShell());
   storageSet(LEGACY_WORKSPACE_MIGRATION_KEY, "done");
   return getLegacyStoredWorkspaces();
 }
 
-export async function initializeBackendWorkspaceState(client: OpenGuiClient): Promise<Workspace[]> {
+export async function initializeBackendWorkspaceState(): Promise<Workspace[]> {
   if (backendWorkspaceInitPromise) return await backendWorkspaceInitPromise;
 
   backendWorkspaceInitPromise = (async () => {
     const migrationMarker = storageGet(LEGACY_WORKSPACE_MIGRATION_KEY);
     if (migrationMarker !== "done") {
-      return await migrateLegacyWorkspaceState(client);
+      return await migrateLegacyWorkspaceState();
     }
-    return await loadBackendWorkspaces(client);
+    return await loadBackendWorkspaces();
   })();
 
   try {
@@ -529,4 +469,11 @@ export function persistUnreadSessionIds(ids: Set<string>) {
 export function areNotificationsEnabled(): boolean {
   const raw = storageGet(STORAGE_KEYS.NOTIFICATIONS_ENABLED);
   return raw === null || raw === "true";
+}
+interface FrontendWorkspaceRecord {
+  id: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
+  settings?: Record<string, unknown>;
 }

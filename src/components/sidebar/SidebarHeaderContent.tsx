@@ -2,8 +2,7 @@ import { Search, SquarePen, X } from "lucide-react";
 import type { RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { SidebarHeader } from "@/components/ui/sidebar";
-import logoDark from "../../../assets/opencode-logo-dark.svg";
-import logoLight from "../../../assets/opencode-logo-light.svg";
+import appIcon from "../../../assets/mobile-icon.svg";
 import openguiLogoDark from "../../../assets/opengui-dark.svg";
 import openguiLogoLight from "../../../assets/opengui-light.svg";
 
@@ -47,12 +46,12 @@ export function SidebarHeaderContent({
         }
       >
         <img
-          src={logoDark}
+          src={appIcon}
           alt="OpenGUI"
           className="size-6 shrink-0 hidden group-data-[collapsible=icon]:dark:block"
         />
         <img
-          src={logoLight}
+          src={appIcon}
           alt="OpenGUI"
           className="size-6 shrink-0 hidden group-data-[collapsible=icon]:block group-data-[collapsible=icon]:dark:hidden"
         />

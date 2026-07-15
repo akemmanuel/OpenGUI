@@ -1,4 +1,4 @@
-import type { Agent, Model, Provider } from "@/protocol/harness-types";
+import type { Agent, Model, Provider } from "@/protocol/agent-types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { getDesktopShellClient } from "@/runtime/clients";
@@ -76,7 +76,7 @@ export function getErrorMessage(err: unknown, fallback = "Unexpected error"): st
   return fallback;
 }
 
-/** Open a URL in the system browser via the Electron bridge, with fallback. */
+/** Open a URL in the system browser via the desktop shell, with fallback. */
 export function openExternalLink(url: string): void {
   void getDesktopShellClient().navigation.openExternal(url);
 }

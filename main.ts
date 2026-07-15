@@ -13,7 +13,6 @@ import { createSettingsStore } from "./settings-store.js";
 import { createBackendSidecarController } from "./main/backend-sidecar.js";
 import { broadcastToAllWindows } from "./lib/window-broadcast.js";
 import { findFilesInDirectory } from "./server/services/file-search.js";
-import { getHarnessInventories } from "./server/harness-inventory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -479,8 +478,6 @@ ipcMain.handle("app:isPackaged", () => {
 ipcMain.handle("platform:homeDir", () => {
   return homedir();
 });
-
-ipcMain.handle("platform:harnessInventory", () => getHarnessInventories());
 
 // Open a URL in the system browser (not in Electron)
 ipcMain.handle("shell:openExternal", (_event, url) => {

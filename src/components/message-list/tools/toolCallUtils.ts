@@ -20,7 +20,6 @@ export function toFiniteNumber(value: unknown): number | null {
 export function prettifyToolName(rawName: string): string {
   return (
     rawName
-      .replace(/^mcp[_-]/i, "")
       .split(/[_\s-]+/)
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

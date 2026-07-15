@@ -83,6 +83,11 @@ export function ToolCallPartView({
           {tool.durationLabel}
         </span>
       )}
+      {tool.resultLabel && (
+        <span className="ml-auto opacity-70 tabular-nums text-[11px] whitespace-nowrap">
+          {tool.resultLabel}
+        </span>
+      )}
     </>
   );
 

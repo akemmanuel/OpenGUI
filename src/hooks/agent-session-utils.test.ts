@@ -4,6 +4,7 @@ import {
   createSessionProjectDetachMeta,
   createSessionProjectMoveMeta,
   getSessionProjectTarget,
+  shouldAutoNameSession,
 } from "./agent-session-utils";
 
 function session(directory: string): Session {
@@ -95,5 +96,16 @@ describe("getSessionProjectTarget", () => {
         displayProjectDir: "/project-b",
       }),
     ).toEqual({ directory: "/project-a", workspaceId: undefined });
+  });
+});
+
+describe("shouldAutoNameSession", () => {
+  test.each(["", "Untitled", "New Session", "New session"])(
+    "treats the placeholder title %j as unnamed",
+    (title) => expect(shouldAutoNameSession({ ...session("/project-a"), title })).toBe(true),
+  );
+
+  test("preserves a meaningful title", () => {
+    expect(shouldAutoNameSession(session("/project-a"))).toBe(false);
   });
 });

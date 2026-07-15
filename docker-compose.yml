@@ -10,7 +10,6 @@ services:
       # Safer default for reverse-proxy deploys. Override HOST=0.0.0.0 for direct LAN access.
       HOST: "${HOST:-127.0.0.1}"
       PORT: "${PORT:-4839}"
-      OPENGUI_OPENCODE_PORT: "${OPENGUI_OPENCODE_PORT:-48391}"
       OPENGUI_SERVER_MODE: "${OPENGUI_SERVER_MODE:-combined}"
       OPENGUI_HOST_EXEC: "1"
       OPENGUI_HOST_UID: "${OPENGUI_HOST_UID:-1000}"

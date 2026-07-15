@@ -4,7 +4,7 @@ OpenGUI's Backend grew a dual path for session listing (`sync` vs in-memory `Ses
 
 ## Status
 
-accepted
+superseded by ADR-0010
 
 ## Decision
 

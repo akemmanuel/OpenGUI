@@ -19,12 +19,12 @@ export const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 const key = (name: string) => `opengui:${name}`;
 
 export const STORAGE_KEYS = {
-  HARNESS: key("selectedHarness"),
   SERVER_URL: key("serverUrl"),
   USERNAME: key("username"),
   WORKSPACES: key("workspaces"),
   ACTIVE_WORKSPACE_ID: key("activeWorkspaceId"),
   SELECTED_MODEL: key("selectedModel"),
+  REASONING_EFFORT: key("reasoningEffort"),
   SELECTED_AGENT: key("selectedAgent"),
   VARIANT_SELECTIONS: key("variantSelections"),
   WORKSPACE_VARIANT_SELECTIONS: key("workspaceVariantSelections"),
@@ -34,7 +34,6 @@ export const STORAGE_KEYS = {
   SESSION_META: key("sessionMeta"),
   PROJECT_META: key("projectMeta"),
   DEFAULT_CHAT_DIRECTORY: key("defaultChatDirectory"),
-  WORKTREE_PARENTS: key("worktreeParents"),
   RECENT_MODELS: key("recentModels"),
   FAVORITE_MODELS: key("favoriteModels"),
   MODEL_MAX_AGE_MONTHS: key("modelMaxAgeMonths"),
@@ -51,51 +50,9 @@ export const STORAGE_KEYS = {
   SETUP_COMPLETE: key("setupComplete"),
 } as const;
 
-const legacyKey = (name: string) => `opencode:${name}`;
-
-export const LEGACY_STORAGE_KEYS: Partial<
-  Record<(typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS], string>
-> = {
-  [STORAGE_KEYS.HARNESS]: "harness:selected",
-  [STORAGE_KEYS.SERVER_URL]: legacyKey("serverUrl"),
-  [STORAGE_KEYS.USERNAME]: legacyKey("username"),
-  [STORAGE_KEYS.WORKSPACES]: legacyKey("workspaces"),
-  [STORAGE_KEYS.ACTIVE_WORKSPACE_ID]: legacyKey("activeWorkspaceId"),
-  [STORAGE_KEYS.SELECTED_MODEL]: legacyKey("selectedModel"),
-  [STORAGE_KEYS.SELECTED_AGENT]: legacyKey("selectedAgent"),
-  [STORAGE_KEYS.VARIANT_SELECTIONS]: legacyKey("variantSelections"),
-  [STORAGE_KEYS.WORKSPACE_VARIANT_SELECTIONS]: legacyKey("workspaceVariantSelections"),
-  [STORAGE_KEYS.UNREAD_SESSIONS]: legacyKey("unreadSessionIds"),
-  [STORAGE_KEYS.SESSION_DRAFTS]: legacyKey("sessionDrafts"),
-  [STORAGE_KEYS.NOTIFICATIONS_ENABLED]: legacyKey("notificationsEnabled"),
-  [STORAGE_KEYS.SESSION_META]: legacyKey("sessionMeta"),
-  [STORAGE_KEYS.PROJECT_META]: legacyKey("projectMeta"),
-  [STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY]: legacyKey("defaultChatDirectory"),
-  [STORAGE_KEYS.WORKTREE_PARENTS]: legacyKey("worktreeParents"),
-  [STORAGE_KEYS.RECENT_MODELS]: legacyKey("recentModels"),
-  [STORAGE_KEYS.FAVORITE_MODELS]: legacyKey("favoriteModels"),
-  [STORAGE_KEYS.MODEL_MAX_AGE_MONTHS]: legacyKey("modelMaxAgeMonths"),
-  [STORAGE_KEYS.NEW_CHAT_MODEL_BEHAVIOR]: legacyKey("newChatModelBehavior"),
-  [STORAGE_KEYS.LANGUAGE]: legacyKey("language"),
-  [STORAGE_KEYS.CONTRAST]: legacyKey("contrast"),
-  [STORAGE_KEYS.ACCENT_COLOR]: legacyKey("accentColor"),
-  [STORAGE_KEYS.CODE_FONT_SIZE]: legacyKey("codeFontSize"),
-  [STORAGE_KEYS.DISMISSED_UPDATE_VERSION]: legacyKey("dismissedUpdateVersion"),
-  [STORAGE_KEYS.SIDEBAR_PROJECT_COLLAPSED]: legacyKey("sidebarProjectCollapsed"),
-  [STORAGE_KEYS.FILE_MANAGER]: legacyKey("fileManager"),
-  [STORAGE_KEYS.TERMINAL]: legacyKey("terminal"),
-  [STORAGE_KEYS.SETUP_COMPLETE]: legacyKey("setupComplete"),
-};
-
 // ---------------------------------------------------------------------------
 // UI timing (ms)
 // ---------------------------------------------------------------------------
-
-/** Delay before sending a prompt after a merge operation (ms). */
-export const POST_MERGE_DELAY_MS = 300;
-
-/** Artificial delay after toggling an MCP server to let the server settle (ms). */
-export const MCP_TOGGLE_DELAY_MS = 300;
 
 /** Maximum textarea height in px before scrolling. */
 export const MAX_TEXTAREA_HEIGHT_PX = 200;

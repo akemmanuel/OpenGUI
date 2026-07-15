@@ -6,10 +6,9 @@ import type {
   Provider,
   QuestionAnswer,
   QuestionRequest,
-} from "@/protocol/harness-types";
-import type { HarnessId } from "@/agents";
-import type { ProjectHydrationState } from "@/hooks/agent-project-hydration";
+} from "@/protocol/agent-types";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
+import type { ReasoningEffort } from "@/protocol/host-types";
 import type {
   InternalAgentState,
   QueueMode,
@@ -18,12 +17,7 @@ import type {
   Session,
   WorkspaceResourceState,
 } from "@/hooks/agent-state-types";
-import type {
-  ProjectMetaMap,
-  SessionColor,
-  SessionMetaMap,
-  WorktreeParentMap,
-} from "@/hooks/agent-state-persistence";
+import type { ProjectMetaMap, SessionColor, SessionMetaMap } from "@/hooks/agent-state-persistence";
 import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
 
 export interface SessionContextValue {
@@ -35,7 +29,6 @@ export interface SessionContextValue {
   pendingPermissions: Record<string, PermissionRequest>;
   pendingQuestions: Record<string, QuestionRequest>;
   activeTargetDirectory: string | null;
-  activeTargetHarnessId: HarnessId | null;
   namingSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
   sessionDrafts: Record<string, string>;
@@ -56,6 +49,7 @@ export interface ModelContextValue {
   variantSelections: VariantSelections;
   commands: Command[];
   currentVariant: string | undefined;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ConnectionContextValue {
@@ -75,8 +69,6 @@ export interface ConnectionContextValue {
     }
   >;
   connections: Record<string, ConnectionStatus>;
-  /** Per-project harness hydration keyed by projectKey (directory in sidebar uses parseProjectKey). */
-  projectHydration: Record<string, ProjectHydrationState | undefined>;
   workspaceDirectory: string | null;
   defaultChatDirectory: string | null;
   workspaceServerUrl: string | null;
@@ -90,9 +82,7 @@ export interface ConnectionContextValue {
   bootError: string | null;
   bootLogs: string | null;
   lastError: string | null;
-  worktreeParents: WorktreeParentMap;
   projectMeta: ProjectMetaMap;
-  pendingWorktreeCleanup: InternalAgentState["pendingWorktreeCleanup"];
   workspaceResources: Record<string, WorkspaceResourceState>;
 }
 
@@ -114,13 +104,13 @@ export interface ActionsContextValue {
   replyQuestion: (answers: QuestionAnswer[]) => Promise<void>;
   rejectQuestion: () => Promise<void>;
   setModel: (model: SelectedModel | null) => void;
-  setPromptBoxSelection: (input: { harnessId: HarnessId; model: SelectedModel }) => void;
+  setPromptBoxSelection: (input: { model: SelectedModel }) => void;
   setAgent: (agent: string | null) => void;
   cycleVariant: () => void;
   revertVariant: () => void;
+  setReasoningEffort?: (effort: ReasoningEffort) => Promise<void>;
   clearError: () => void;
   refreshProviders: () => Promise<void>;
-  restartHarnesses: () => Promise<void>;
   getQueuedPrompts: (sessionId: string) => QueuedPrompt[];
   removeFromQueue: (sessionId: string, promptId: string) => void;
   reorderQueue: (sessionId: string, fromIndex: number, toIndex: number) => void;
@@ -138,7 +128,6 @@ export interface ActionsContextValue {
   startNewChat: () => Promise<void>;
   setActiveTarget: (
     directory: string,
-    harnessId?: HarnessId | null,
     options?: { resetSelection?: boolean; newChat?: boolean },
   ) => void;
   setDefaultChatDirectory: (directory: string | null) => void;
@@ -152,9 +141,6 @@ export interface ActionsContextValue {
   moveSessionToProject: (sessionId: string, directory: string) => Promise<void>;
   removeSessionFromProject: (sessionId: string) => Promise<void>;
   setProjectPinned: (directory: string, pinned: boolean) => void;
-  registerWorktree: (worktreeDir: string, parentDir: string, branch: string) => void;
-  unregisterWorktree: (worktreeDir: string) => void;
-  clearWorktreeCleanup: () => void;
   createWorkspace: (input: { name: string; serverUrl: string; authToken?: string }) => void;
   updateWorkspace: (
     workspaceId: string,

@@ -1,4 +1,4 @@
-import type { Agent, Provider } from "@/protocol/harness-types";
+import type { Agent, Provider } from "@/protocol/agent-types";
 import type { SelectedModel } from "@/types/electron";
 
 /**

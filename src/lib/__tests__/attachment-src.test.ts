@@ -21,9 +21,9 @@ describe("resolveAttachmentImageSrc", () => {
 
   test("serves relative paths through the backend with a base directory", () => {
     expect(
-      resolveAttachmentImageSrc("screenshot.png", "https://example.com/opencode", "/repo/project"),
+      resolveAttachmentImageSrc("screenshot.png", "https://example.com/host", "/repo/project"),
     ).toBe(
-      "https://example.com/opencode/api/fs/file?path=%2Frepo%2Fproject%2Fscreenshot.png&directory=%2Frepo%2Fproject",
+      "https://example.com/host/api/fs/file?path=%2Frepo%2Fproject%2Fscreenshot.png&directory=%2Frepo%2Fproject",
     );
   });
 

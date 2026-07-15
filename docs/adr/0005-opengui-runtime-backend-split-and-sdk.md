@@ -4,7 +4,7 @@ OpenGUI grew as one Node server (`web-server.ts`) that simultaneously hosted Har
 
 ## Status
 
-accepted
+superseded by ADR-0010
 
 ## Decision
 

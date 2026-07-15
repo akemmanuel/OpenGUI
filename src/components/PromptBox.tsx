@@ -1,15 +1,12 @@
 import { ArrowUp, ListEnd, Square } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { AgentSelector } from "@/components/AgentSelector";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
 import { PromptImageMentions, usePromptImages } from "@/components/PromptImageMentions";
-import { McpDialog } from "@/components/McpDialog";
 import { ModelSelector } from "@/components/ModelSelector";
+import { ReasoningEffortSelector } from "@/components/ReasoningEffortSelector";
 import { PromptAddMenu } from "@/components/PromptAddMenu";
-import { SlashCommandPopover } from "@/components/SlashCommandPopover";
 import { Button } from "@/components/ui/button";
-import { VariantSelector } from "@/components/VariantSelector";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import { usePromptHistoryNavigation } from "@/hooks/use-prompt-history-navigation";
 import { usePromptDraft } from "@/hooks/use-prompt-draft";
@@ -25,8 +22,6 @@ import {
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
 import { getSessionDraftKey } from "@/lib/session-drafts";
-import { hasPromptBoxSelectionForSend } from "@/hooks/prompt-box-selection";
-import { useCurrentHarnessId } from "@/hooks/use-agent-backend";
 import { shouldShowSendButton, shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
@@ -53,22 +48,13 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
-    const [mcpDialogOpen, setMcpDialogOpen] = React.useState(false);
 
     const isDisabled = Boolean(props.disabled);
 
     const { setAgent, sendCommand, findFiles, setSessionDraft, clearSessionDraft } = useActions();
     const { commands, agents, selectedAgent, selectedModel } = useModelState();
-    const fallbackHarnessId = useCurrentHarnessId();
     const capabilities = useBackendCapabilities();
-    const canManageMcp = Boolean(capabilities?.mcp);
-    const {
-      sessions,
-      activeSessionId,
-      activeTargetDirectory,
-      activeTargetHarnessId,
-      sessionDrafts,
-    } = useSessionState();
+    const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
     const promptHistory = useActiveTranscriptPromptHistory();
 
     const { activeWorkspace, activeWorkspaceId, workspaceServerUrl } = useConnectionState();
@@ -169,12 +155,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
     const hasPromptText = promptSubmit.hasValue;
     const isSessionRunning = Boolean(isLoading);
-    const canSendSelection = hasPromptBoxSelectionForSend({
-      activeSession,
-      activeTargetHarnessId,
-      fallbackHarnessId,
-      selectedModel,
-    });
+    const canSendSelection = Boolean(selectedModel);
 
     React.useEffect(() => {
       fileMention.reset();
@@ -241,18 +222,6 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             </div>
           )}
 
-        {slashCommand.open && slashCommand.filteredCommands.length > 0 && (
-          <div className="relative">
-            <SlashCommandPopover
-              commands={commands}
-              filter={slashCommand.filter}
-              activeIndex={slashCommand.activeIndex}
-              onSelect={slashCommand.select}
-              onHover={slashCommand.setActiveIndex}
-            />
-          </div>
-        )}
-
         <input
           type="file"
           ref={fileInputRef}
@@ -305,19 +274,12 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           {...props}
         />
 
-        <McpDialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen} />
         <div className="flex min-w-0 items-center gap-1.5 px-1.5 pt-1 pb-2">
-          <PromptAddMenu
-            disabled={isDisabled}
-            canManageMcp={canManageMcp}
-            fileInputRef={fileInputRef}
-            onOpenMcp={() => setMcpDialogOpen(true)}
-          />
+          <PromptAddMenu disabled={isDisabled} fileInputRef={fileInputRef} />
 
           <div className="flex min-w-0 items-center gap-1 rounded-lg bg-muted/45 p-0.5 dark:bg-muted/35">
             <ModelSelector />
-            <AgentSelector />
-            <VariantSelector />
+            <ReasoningEffortSelector />
           </div>
 
           {isLoading && (
@@ -325,17 +287,15 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               type="button"
               variant="ghost"
               size="sm"
-              title={queueMode === "after-part" ? t("prompt.steerTitle") : t("prompt.queueTitle")}
+              title={t("prompt.queueTitle")}
               className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
-                onQueueModeChange(queueMode === "queue" ? "after-part" : "queue");
+                onQueueModeChange("queue");
               }}
             >
               <ListEnd className="size-3.5 shrink-0" />
-              <span className="truncate max-w-[100px]">
-                {queueMode === "after-part" ? t("prompt.steer") : t("prompt.queue")}
-              </span>
+              <span className="truncate max-w-[100px]">{t("prompt.queue")}</span>
             </Button>
           )}
 

@@ -10,7 +10,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const MODELS_URL = process.env.OPENCODE_MODELS_URL || "https://models.dev";
+const MODELS_URL = process.env.OPENGUI_MODELS_URL || "https://models.dev";
 const ICONS_DIR = path.join("src", "components", "provider-icons", "svgs");
 
 async function main() {

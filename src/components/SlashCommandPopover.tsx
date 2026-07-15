@@ -4,7 +4,7 @@
  */
 
 import { cn } from "@/lib/utils";
-import type { SlashCommandResource } from "@/protocol/harness-resources";
+import type { SlashCommandResource } from "@/protocol/command-resource";
 
 interface SlashCommandPopoverProps<TCommand extends SlashCommandResource = SlashCommandResource> {
   commands: TCommand[];

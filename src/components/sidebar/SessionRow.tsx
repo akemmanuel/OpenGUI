@@ -1,17 +1,8 @@
-import { BadgeQuestionMark, GitBranch, MessageSquare, ShieldAlert } from "lucide-react";
+import { BadgeQuestionMark, MessageSquare, ShieldAlert } from "lucide-react";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { HARNESS_LABELS } from "@/agents";
 import type { Session } from "@/hooks/agent-state-types";
-import { getSessionHarnessId } from "@/hooks/agent-session-utils";
-import type {
-  SessionColor,
-  SessionMetaMap,
-  WorktreeParentMap,
-} from "@/hooks/agent-state-persistence";
-import { getSessionPlacementInfo, getWorktreeLabel } from "@/lib/worktree-placement";
-import { normalizeProjectPath } from "@/lib/utils";
-import type { GitWorktree } from "@/types/electron";
+import type { SessionColor, SessionMetaMap } from "@/hooks/agent-state-persistence";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -29,8 +20,6 @@ export function SessionRow({
   pendingPermissions,
   sessionMeta,
   namingSessionIds,
-  worktreeParents,
-  knownWorktrees,
   availableProjectDirectories,
   editingSessionId,
   editValue,
@@ -61,8 +50,6 @@ export function SessionRow({
   pendingPermissions: Record<string, unknown>;
   sessionMeta: SessionMetaMap;
   namingSessionIds: Set<string>;
-  worktreeParents: WorktreeParentMap;
-  knownWorktrees: Record<string, GitWorktree[]>;
   availableProjectDirectories: string[];
   editingSessionId: string | null;
   editValue: string;
@@ -100,28 +87,7 @@ export function SessionRow({
   const tags = meta?.tags ?? [];
   const isPinned = !!meta?.pinnedAt;
   const isNaming = namingSessionIds.has(session.id);
-  const harnessId = getSessionHarnessId(session);
   const displayTitle = cleanSessionTitle(session.title) || untitledLabel;
-  const placement = getSessionPlacementInfo(
-    session,
-    worktreeParents,
-    meta?.displayProjectDir ?? null,
-  );
-  const isWorktreeSession = placement?.isKnownWorktree ?? false;
-  const knownWorktree = placement?.rootDirectory
-    ? (knownWorktrees[placement.rootDirectory] ?? []).find(
-        (worktree) => normalizeProjectPath(worktree.path) === placement.executionDirectory,
-      )
-    : null;
-  const worktreeBranch =
-    placement && isWorktreeSession
-      ? getWorktreeLabel({
-          path: placement.executionDirectory,
-          branch: knownWorktree?.branch ?? worktreeParents[placement.executionDirectory]?.branch,
-          detached: knownWorktree?.detached,
-          rootDirectory: placement.rootDirectory,
-        })
-      : null;
 
   const moveToProject = (projectDirectory: string) => {
     revealSessionInProject(projectDirectory);
@@ -195,8 +161,6 @@ export function SessionRow({
             <span className="relative shrink-0">
               {isBusy ? (
                 <Spinner className="size-4 text-muted-foreground" />
-              ) : isWorktreeSession ? (
-                <GitBranch className="size-4" />
               ) : (
                 <MessageSquare className="size-4" />
               )}
@@ -242,16 +206,6 @@ export function SessionRow({
                 }}
               >
                 {displayTitle}
-              </span>
-            )}
-            {harnessId && (
-              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground">
-                {HARNESS_LABELS[harnessId]}
-              </span>
-            )}
-            {worktreeBranch && (
-              <span className="shrink-0 rounded-full bg-purple-500/15 text-purple-500 px-1.5 py-0 text-[9px] font-medium truncate max-w-[4rem]">
-                {worktreeBranch}
               </span>
             )}
             {tags.length > 0 && (
