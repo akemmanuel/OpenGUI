@@ -25,7 +25,15 @@ export interface ModelSelection {
   modelId: string;
 }
 
-export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningLevel =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export interface SessionEntry {
   id: string;

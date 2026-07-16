@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { OPENCODE_GO_PRESET } from "@opengui/protocol";
 import { Button } from "@/components/ui/button";
 import { createHostClient } from "@/protocol/host-client";
 import type {
@@ -40,12 +41,12 @@ export function SettingsProviders() {
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
   const [apiKey, setApiKey] = useState("");
   const [zenApiKey, setZenApiKey] = useState("");
+  const [goApiKey, setGoApiKey] = useState("");
   const [modelId, setModelId] = useState("gpt-4.1");
   const [codex, setCodex] = useState<CodexAuthStatus>({ connected: false, pending: null });
   const [subscriptions, setSubscriptions] = useState<Record<SubscriptionProvider, CodexAuthStatus>>(
     {
       xai: { connected: false, pending: null },
-      opencode: { connected: false, pending: null },
     },
   );
 
@@ -53,7 +54,7 @@ export function SettingsProviders() {
   useEffect(() => {
     void reload().catch(notifyUnknownError);
     void host.codexAuthStatus().then(setCodex).catch(notifyUnknownError);
-    for (const provider of ["xai", "opencode"] as const) {
+    for (const provider of ["xai"] as const) {
       void host
         .subscriptionAuthStatus(provider)
         .then((status) => setSubscriptions((current) => ({ ...current, [provider]: status })))
@@ -93,7 +94,27 @@ export function SettingsProviders() {
     }
   }
 
+  async function enableGo() {
+    try {
+      await host.upsertModelConnection({
+        id: OPENCODE_GO_PRESET.id,
+        label: OPENCODE_GO_PRESET.label,
+        baseUrl: OPENCODE_GO_PRESET.baseUrl,
+        defaultModelId: OPENCODE_GO_PRESET.defaultModelId,
+        modelIds: [...OPENCODE_GO_PRESET.modelIds],
+        modelRoutes: { ...OPENCODE_GO_PRESET.modelRoutes },
+        apiKey: goApiKey.trim(),
+      });
+      setGoApiKey("");
+      await reload();
+      await refreshProviders();
+    } catch (error) {
+      notifyUnknownError(error);
+    }
+  }
+
   const zenEnabled = connections.some((connection) => connection.id === OPENCODE_ZEN.id);
+  const goEnabled = connections.some((connection) => connection.id === OPENCODE_GO_PRESET.id);
 
   return (
     <div className="space-y-5">
@@ -191,7 +212,42 @@ export function SettingsProviders() {
             </Button>
           )}
         </div>
-        {(["xai", "opencode"] as const).map((provider) => {
+        <div className="space-y-3 rounded-lg border p-3">
+          <div>
+            <div className="text-sm font-medium">{t("providers.opencode.title")}</div>
+            <div className="text-xs text-muted-foreground">
+              {t("providers.opencode.description")}
+            </div>
+          </div>
+          <input
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            value={goApiKey}
+            onChange={(event) => setGoApiKey(event.target.value)}
+            type="password"
+            placeholder={t("providers.opencode.apiKeyPlaceholder")}
+          />
+          <div className="flex gap-2">
+            <Button type="button" disabled={!goApiKey.trim()} onClick={() => void enableGo()}>
+              {goEnabled ? t("providers.opencode.saveKey") : t("providers.opencode.enable")}
+            </Button>
+            {goEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  void host
+                    .removeModelConnection(OPENCODE_GO_PRESET.id)
+                    .then(reload)
+                    .then(refreshProviders)
+                    .catch(notifyUnknownError)
+                }
+              >
+                {t("providers.disconnect")}
+              </Button>
+            )}
+          </div>
+        </div>
+        {(["xai"] as const).map((provider) => {
           const status = subscriptions[provider];
           return (
             <div key={provider} className="space-y-3 rounded-lg border p-3">

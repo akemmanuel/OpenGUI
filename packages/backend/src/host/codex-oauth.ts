@@ -28,10 +28,15 @@ function required(body: Record<string, unknown>, key: string) {
 }
 export function accountIdFromJwt(jwt: string) {
   const part = jwt.split(".")[1];
-  if (!part) throw new Error("Invalid OAuth access token");
+  if (!part) throw new Error("Invalid OAuth ID token");
   const claims = object(JSON.parse(Buffer.from(part, "base64url").toString("utf8")));
   const auth = object(claims["https://api.openai.com/auth"]);
   return required(auth, "chatgpt_account_id");
+}
+function seconds(value: unknown, fallback: number) {
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 async function json(response: Response) {
   const body = object(await response.json());
@@ -55,14 +60,14 @@ export async function beginCodexDeviceAuth(
       body: JSON.stringify({ client_id: CODEX_CLIENT_ID }),
     }),
   );
-  const expires = typeof body.expires_in === "number" ? body.expires_in : 900;
+  const expires = seconds(body.expires_in, 900);
   return {
     deviceAuthId: required(body, "device_auth_id"),
     userCode: required(body, "user_code"),
     verificationUri:
       typeof body.verification_uri === "string" ? body.verification_uri : `${AUTH}/codex/device`,
     expiresAt: Date.now() + expires * 1000,
-    interval: typeof body.interval === "number" ? body.interval : 5,
+    interval: seconds(body.interval, 5),
   };
 }
 export async function pollCodexDeviceAuth(
@@ -75,7 +80,6 @@ export async function pollCodexDeviceAuth(
     body: JSON.stringify({
       device_auth_id: device.deviceAuthId,
       user_code: device.userCode,
-      client_id: CODEX_CLIENT_ID,
     }),
   });
   if (response.status === 403 || response.status === 404) return null;
@@ -96,6 +100,7 @@ export async function pollCodexDeviceAuth(
   return tokens(token);
 }
 function tokens(body: Record<string, unknown>, previousRefresh?: string): CodexTokens {
+  const idToken = required(body, "id_token");
   const accessToken = required(body, "access_token");
   const refreshToken =
     typeof body.refresh_token === "string" ? body.refresh_token : previousRefresh;
@@ -103,8 +108,8 @@ function tokens(body: Record<string, unknown>, previousRefresh?: string): CodexT
   return {
     accessToken,
     refreshToken,
-    accountId: accountIdFromJwt(accessToken),
-    expiresAt: Date.now() + (typeof body.expires_in === "number" ? body.expires_in : 3600) * 1000,
+    accountId: accountIdFromJwt(idToken),
+    expiresAt: Date.now() + seconds(body.expires_in, 3600) * 1000,
   };
 }
 export async function refreshCodexTokens(current: CodexTokens, fetchImpl: typeof fetch = fetch) {
@@ -129,7 +134,11 @@ export async function refreshCodexTokens(current: CodexTokens, fetchImpl: typeof
 export async function revokeCodexToken(token: string, fetchImpl: typeof fetch = fetch) {
   await fetchImpl(`${AUTH}/oauth/revoke`, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ token, client_id: CODEX_CLIENT_ID }),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      token,
+      token_type_hint: "refresh_token",
+      client_id: CODEX_CLIENT_ID,
+    }),
   }).catch(() => undefined);
 }

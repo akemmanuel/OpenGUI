@@ -4,6 +4,17 @@ export interface HostModelConnection {
   baseUrl: string;
   apiKey?: string;
   modelIds: string[];
+  defaultModelId?: string;
+  modelRoutes?: Record<string, "openai-chat" | "anthropic-messages" | "responses">;
+  modelCapabilities?: Record<
+    string,
+    {
+      displayName?: string;
+      context?: number;
+      reasoning: boolean;
+      reasoningEfforts?: ReasoningEffort[];
+    }
+  >;
 }
 
 export interface HostProject {
@@ -36,7 +47,15 @@ export interface HostFollowUp {
   createdAt: string;
 }
 
-export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export interface HostSessionSnapshot extends HostSessionSummary {
   model: { connectionId: string; modelId: string } | null;
@@ -97,4 +116,4 @@ export interface CodexAuthStatus {
   connected: boolean;
   pending: { userCode: string; verificationUri: string; expiresAt: number } | null;
 }
-export type SubscriptionProvider = "xai" | "opencode";
+export type SubscriptionProvider = "xai";

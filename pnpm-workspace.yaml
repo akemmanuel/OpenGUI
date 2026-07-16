@@ -2,7 +2,14 @@ packages:
   - "packages/*"
 
 overrides:
+  "@vitest/browser": 4.1.9
+  "@vitest/browser-preview": 4.1.9
   vitest: 4.1.9
+
+peerDependencyRules:
+  allowedVersions:
+    # Vite Plus provides a Vite-compatible API under its own package version.
+    vite: 0.2.4
 
 allowBuilds:
   "@google/genai": true

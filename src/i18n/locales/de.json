@@ -22,6 +22,16 @@
     "loadOlderFailed": "Ältere Nachrichten konnten nicht geladen werden. Versuche es erneut."
   },
   "toolGroup": {
+    "runningCommands_one": "führe einen Befehl aus",
+    "runningCommands_other": "führe {{count}} Befehle aus",
+    "reading_one": "lese eine Datei",
+    "reading_other": "lese {{count}} Dateien",
+    "writing_one": "schreibe eine Datei",
+    "writing_other": "schreibe {{count}} Dateien",
+    "editing_one": "bearbeite eine Datei",
+    "editing_other": "bearbeite {{count}} Dateien",
+    "usingOther_one": "verwende ein Werkzeug",
+    "usingOther_other": "verwende {{count}} Werkzeuge",
     "commands_one": "Einen Befehl ausgeführt",
     "commands_other": "{{count}} Befehle ausgeführt",
     "read_one": "eine Datei gelesen",
@@ -205,7 +215,8 @@
       "medium": "Mittel",
       "high": "Hoch",
       "xhigh": "Sehr hoch",
-      "max": "Maximal"
+      "max": "Maximal",
+      "ultra": "Ultra"
     }
   },
   "agentSelector": {
@@ -230,6 +241,7 @@
     "checkingHarnesses": "Installierte Harnesses werden geprüft…",
     "harnessCliFound": "Installiert — in Einstellungen verbinden, falls Modelle fehlen",
     "harnessReady": "{{count}} Modelle im Inventar",
+    "noModelsAvailable": "Es sind keine Modelle verfügbar.",
     "noModelsMatch": "Keine Modelle passen zu \"{{query}}\".",
     "addFavorite": "Zu Favoriten hinzufügen",
     "removeFavorite": "Aus Favoriten entfernen"
@@ -341,8 +353,10 @@
     },
     "opencode": {
       "title": "OpenCode Go",
-      "description": "Nutze die Modelle deines OpenCode-Go-Abonnements.",
-      "signIn": "Bei OpenCode anmelden"
+      "description": "Füge den API-Schlüssel deines OpenCode-Go-Abonnements ein.",
+      "apiKeyPlaceholder": "OpenCode-Go-API-Schlüssel",
+      "enable": "OpenCode Go aktivieren",
+      "saveKey": "API-Schlüssel speichern"
     },
     "zen": {
       "title": "OpenCode Zen",
@@ -639,6 +653,10 @@
     "remoteDescription": "Dieses Fenster ist mit einem Remote-Server verbunden. Wähle daher ein Projekt, indem du den Pfad auf diesem Server eingibst.",
     "openProject": "Projekt öffnen",
     "projectPathLabel": "Projektpfad",
+    "editPath": "Aktuellen Pfad bearbeiten",
+    "searchFolders": "Ordner durchsuchen",
+    "clearSearch": "Ordnersuche löschen",
+    "noMatchingFolders": "Keine passenden Ordner gefunden",
     "browseServer": "Server durchsuchen",
     "loadingServerFolders": "Serverordner werden geladen..."
   },

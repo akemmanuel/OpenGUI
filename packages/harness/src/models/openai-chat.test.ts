@@ -1,5 +1,10 @@
-import { describe, expect, test } from "vite-plus/test";
-import { chatDeltaEvents, shouldRetryChatCompletion, toChatMessages } from "./openai-chat.ts";
+import { describe, expect, test, vi } from "vite-plus/test";
+import {
+  chatDeltaEvents,
+  OpenAiChatTransport,
+  shouldRetryChatCompletion,
+  toChatMessages,
+} from "./openai-chat.ts";
 
 describe("chatDeltaEvents", () => {
   test("projects interleaved reasoning_content separately from answer text", () => {
@@ -101,5 +106,140 @@ describe("shouldRetryChatCompletion", () => {
       true,
     );
     expect(shouldRetryChatCompletion(400, "Invalid tool schema")).toBe(false);
+  });
+});
+
+describe("OpenAiChatTransport authentication", () => {
+  test("sends an OpenCode Go API key to its documented chat completions endpoint", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+    const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });
+    transport.setConnections([
+      {
+        id: "opencode-go",
+        label: "OpenCode Go",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        apiKey: "go-api-key",
+        modelIds: ["glm-5.2"],
+      },
+    ]);
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "opencode-go", modelId: "glm-5.2" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    )) {
+      events.push(event);
+    }
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://opencode.ai/zen/go/v1/chat/completions",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer go-api-key" }),
+        body: expect.stringContaining('"model":"glm-5.2"'),
+      }),
+    );
+    expect(events).toEqual([{ type: "text_delta", delta: "ok" }, { type: "completed" }]);
+  });
+
+  test("does not retry an invalid OpenCode Go API key", async () => {
+    const fetchImpl = vi.fn(async () => new Response("invalid API key", { status: 401 }));
+    const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });
+    transport.setConnections([
+      {
+        id: "opencode-go",
+        label: "OpenCode Go",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        apiKey: "invalid",
+        modelIds: ["glm-5.2"],
+      },
+    ]);
+    const events = transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "opencode-go", modelId: "glm-5.2" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    );
+
+    await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow("invalid API key");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test("routes Qwen through the documented Anthropic-compatible endpoint", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+          { status: 200 },
+        ),
+    );
+    const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });
+    transport.setConnections([
+      {
+        id: "opencode-go",
+        label: "OpenCode Go",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        apiKey: "go-api-key",
+        modelIds: ["qwen3.7-max"],
+        modelRoutes: { "qwen3.7-max": "anthropic-messages" },
+      },
+    ]);
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "opencode-go", modelId: "qwen3.7-max" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    )) {
+      events.push(event);
+    }
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://opencode.ai/zen/go/v1/messages",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-api-key": "go-api-key",
+          "anthropic-version": "2023-06-01",
+        }),
+        body: expect.stringContaining('"model":"qwen3.7-max"'),
+      }),
+    );
+    expect(events).toEqual([{ type: "text_delta", delta: "ok" }, { type: "completed" }]);
   });
 });

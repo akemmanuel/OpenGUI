@@ -16,6 +16,13 @@ import {
   type SessionSummary,
 } from "@opengui/harness";
 import {
+  CHATGPT_CODEX_PRESET,
+  OPENCODE_GO_PRESET,
+  SUPERGROK_PRESET,
+  supportedOpenCodeGoModelIds,
+  type ProviderConnectionPreset,
+} from "@opengui/protocol";
+import {
   beginCodexDeviceAuth,
   pollCodexDeviceAuth,
   refreshCodexTokens,
@@ -61,49 +68,63 @@ interface HostSettingsFile {
 
 const SETTINGS_FILENAME = "opengui-host-settings.json";
 const SECRETS_FILENAME = "opengui-host-secrets.json";
-const CODEX_CONNECTION = {
-  id: "chatgpt-codex",
-  label: "ChatGPT (Codex)",
-  baseUrl: "https://chatgpt.com/backend-api/codex",
-  modelIds: ["gpt-5.2-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini"],
-};
-const XAI_CONNECTION = {
-  id: "supergrok",
-  label: "SuperGrok",
-  baseUrl: "https://api.x.ai/v1",
-  modelIds: ["grok-build-0.1", "grok-4.3"],
-};
-const OPENCODE_CONNECTION = {
-  id: "opencode-go",
-  label: "OpenCode Go",
-  baseUrl: "https://opencode.ai/zen/go/v1",
-  modelIds: [
-    "glm-5.2",
-    "glm-5.1",
-    "kimi-k2.7-code",
-    "kimi-k2.6",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
-    "mimo-v2.5",
-    "mimo-v2.5-pro",
-  ],
-};
+function connectionFromPreset(preset: ProviderConnectionPreset): HostModelConnection {
+  return {
+    ...preset,
+    modelIds: [...preset.modelIds],
+    modelRoutes: preset.modelRoutes ? { ...preset.modelRoutes } : undefined,
+    modelCapabilities: preset.modelCapabilities
+      ? Object.fromEntries(
+          Object.entries(preset.modelCapabilities).map(([modelId, capabilities]) => [
+            modelId,
+            {
+              ...capabilities,
+              reasoningEfforts: capabilities.reasoningEfforts
+                ? [...capabilities.reasoningEfforts]
+                : undefined,
+            },
+          ]),
+        )
+      : undefined,
+  };
+}
+
+const CODEX_CONNECTION = connectionFromPreset(CHATGPT_CODEX_PRESET);
+const XAI_CONNECTION = connectionFromPreset(SUPERGROK_PRESET);
 const XAI_OAUTH = {
   clientId: "b1a00492-073a-47ea-816f-4c329264a828",
   deviceEndpoint: "https://auth.x.ai/oauth2/device/code",
   tokenEndpoint: "https://auth.x.ai/oauth2/token",
-  scope: "openid profile email offline_access grok-cli:access api:access",
+  scope:
+    "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write",
 };
-const OPENCODE_OAUTH = {
-  clientId: "opencode-cli",
-  deviceEndpoint: "https://console.opencode.ai/auth/device/code",
-  tokenEndpoint: "https://console.opencode.ai/auth/device/token",
-  json: true,
-};
-
 function projectName(directory: string) {
   const parts = directory.split(/[\\/]/u).filter(Boolean);
   return parts.at(-1) || directory;
+}
+
+function validOAuthTokens(value: unknown): OAuthTokens | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const token = value as Record<string, unknown>;
+  return typeof token.accessToken === "string" &&
+    token.accessToken.length > 0 &&
+    typeof token.refreshToken === "string" &&
+    token.refreshToken.length > 0 &&
+    typeof token.expiresAt === "number" &&
+    Number.isFinite(token.expiresAt)
+    ? {
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
+        expiresAt: token.expiresAt,
+      }
+    : null;
+}
+
+function validCodexTokens(value: unknown): CodexTokens | null {
+  const token = validOAuthTokens(value);
+  if (!token || !value || typeof value !== "object") return null;
+  const accountId = (value as Record<string, unknown>).accountId;
+  return typeof accountId === "string" && accountId.length > 0 ? { ...token, accountId } : null;
 }
 
 export class OpenGuiHost {
@@ -115,8 +136,14 @@ export class OpenGuiHost {
     getCredential: () => this.#codexCredential(),
   });
   readonly #xaiTransport = new CodexResponsesTransport({
-    endpoint: "https://api.x.ai/v1/responses",
-    headers: { originator: "opengui", "user-agent": "OpenGUI/1.0" },
+    endpoint: "https://cli-chat-proxy.grok.com/v1/responses",
+    headers: {
+      "x-xai-token-auth": "xai-grok-cli",
+      "x-grok-client-identifier": "opengui",
+    },
+    requestLabel: "SuperGrok",
+    unauthorizedMessage:
+      "SuperGrok sign-in expired or is not entitled to Grok Build. Sign in again in Providers.",
     getCredential: () => this.#subscriptionCredential("xai"),
   });
   #harness: OpenGuiHarness | null = null;
@@ -128,21 +155,26 @@ export class OpenGuiHost {
   #apiKeys: Record<string, string> = {};
   #codexTokens: CodexTokens | null = null;
   #deviceAuth: DeviceAuthorization | null = null;
-  #subscriptionTokens: Partial<Record<"xai" | "opencode", OAuthTokens>> = {};
-  #subscriptionPending: Partial<Record<"xai" | "opencode", DeviceOAuthPending>> = {};
+  #subscriptionTokens: Partial<Record<"xai", OAuthTokens>> = {};
+  #subscriptionPending: Partial<Record<"xai", DeviceOAuthPending>> = {};
+  #codexRefresh: Promise<CodexTokens> | null = null;
+  #xaiRefresh: Promise<OAuthTokens> | null = null;
   readonly #listeners = new Set<(event: HostEvent) => void>();
   readonly #activeRuns = new Map<string, Promise<void>>();
+  readonly #fetch: typeof fetch;
 
-  constructor(dataDirectory: string) {
+  constructor(dataDirectory: string, options: { fetchImpl?: typeof fetch } = {}) {
     this.#dataDirectory = dataDirectory;
     this.#settingsPath = join(dataDirectory, SETTINGS_FILENAME);
     this.#secretsPath = join(dataDirectory, SECRETS_FILENAME);
+    this.#fetch = options.fetchImpl ?? fetch;
   }
 
   async start() {
     await mkdir(this.#dataDirectory, { recursive: true });
     await this.#loadSettings();
     await this.#loadSecrets();
+    await this.#refreshOpenCodeGoCatalog();
     this.#refreshTransport();
     this.#harness = createOpenGuiHarness({
       dataDirectory: this.#dataDirectory,
@@ -156,10 +188,7 @@ export class OpenGuiHost {
             ? this.#codexTransport.stream(request, signal)
             : selected?.type === "user_message" && selected.model.connectionId === XAI_CONNECTION.id
               ? this.#xaiTransport.stream(request, signal)
-              : selected?.type === "user_message" &&
-                  selected.model.connectionId === OPENCODE_CONNECTION.id
-                ? this.#streamOpenCode(request, signal)
-                : this.#transport.stream(request, signal);
+              : this.#transport.stream(request, signal);
         },
       } satisfies ModelTransport,
     });
@@ -206,12 +235,13 @@ export class OpenGuiHost {
             entry[0] !== "codex" && entry[0] !== "subscriptions" && typeof entry[1] === "string",
         ),
       );
-      if (parsed.codex && typeof parsed.codex === "object")
-        this.#codexTokens = parsed.codex as CodexTokens;
-      if (parsed.subscriptions && typeof parsed.subscriptions === "object")
-        this.#subscriptionTokens = parsed.subscriptions as Partial<
-          Record<"xai" | "opencode", OAuthTokens>
-        >;
+      this.#codexTokens = validCodexTokens(parsed.codex);
+      const subscriptions =
+        parsed.subscriptions && typeof parsed.subscriptions === "object"
+          ? (parsed.subscriptions as Record<string, unknown>)
+          : {};
+      const xai = validOAuthTokens(subscriptions.xai);
+      this.#subscriptionTokens = xai ? { xai } : {};
     } catch {
       this.#apiKeys = {};
     }
@@ -230,17 +260,45 @@ export class OpenGuiHost {
 
   #refreshTransport() {
     this.#transport.setConnections(
-      [
-        ...this.#settings.modelConnections.map((connection) => ({
-          ...connection,
-          apiKey: this.#apiKeys[connection.id],
-        })),
-        ...(this.#subscriptionTokens.opencode
-          ? [{ ...OPENCODE_CONNECTION, apiKey: this.#subscriptionTokens.opencode.accessToken }]
-          : []),
-      ],
+      this.#settings.modelConnections.map((connection) => ({
+        ...connection,
+        apiKey: this.#apiKeys[connection.id],
+      })),
       this.#settings.defaultConnectionId,
     );
+  }
+
+  async #openCodeGoConnection(apiKey?: string): Promise<HostModelConnection> {
+    let modelIds: readonly string[] = [...OPENCODE_GO_PRESET.modelIds];
+    try {
+      const response = await this.#fetch(`${OPENCODE_GO_PRESET.baseUrl}/models`, {
+        headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
+      });
+      if (!response.ok) throw new Error(`OpenCode Go model catalog returned ${response.status}`);
+      const body = (await response.json()) as { data?: Array<{ id?: unknown }> };
+      const discovered = supportedOpenCodeGoModelIds(
+        (body.data ?? []).flatMap((model) => (typeof model.id === "string" ? [model.id] : [])),
+      );
+      if (discovered.length > 0) modelIds = discovered;
+    } catch {
+      // The documented catalog is the safe fallback: every entry has a verified route.
+    }
+    const preset = connectionFromPreset(OPENCODE_GO_PRESET);
+    preset.modelIds = [...modelIds];
+    preset.modelRoutes = Object.fromEntries(
+      Object.entries(preset.modelRoutes ?? {}).filter(([modelId]) => modelIds.includes(modelId)),
+    );
+    return preset;
+  }
+
+  async #refreshOpenCodeGoCatalog() {
+    const index = this.#settings.modelConnections.findIndex(
+      (connection) => connection.id === OPENCODE_GO_PRESET.id,
+    );
+    if (index < 0) return;
+    const connection = await this.#openCodeGoConnection(this.#apiKeys[OPENCODE_GO_PRESET.id]);
+    this.#settings.modelConnections[index] = connection;
+    await this.#saveSettings();
   }
 
   health(): HostHealth {
@@ -255,8 +313,7 @@ export class OpenGuiHost {
     return [
       ...(this.#codexTokens ? [CODEX_CONNECTION] : []),
       ...(this.#subscriptionTokens.xai ? [XAI_CONNECTION] : []),
-      ...(this.#subscriptionTokens.opencode ? [OPENCODE_CONNECTION] : []),
-      ...this.#settings.modelConnections,
+      ...this.#settings.modelConnections.map(({ apiKey: _apiKey, ...connection }) => connection),
     ];
   }
 
@@ -277,13 +334,14 @@ export class OpenGuiHost {
     return this.codexAuthStatus();
   }
   async pollCodexAuth() {
-    if (!this.#deviceAuth) throw new Error("No ChatGPT sign-in is pending");
-    if (Date.now() >= this.#deviceAuth.expiresAt) {
+    const pending = this.#deviceAuth;
+    if (!pending) throw new Error("No ChatGPT sign-in is pending");
+    if (Date.now() >= pending.expiresAt) {
       this.#deviceAuth = null;
       throw new Error("The device code expired. Start sign-in again.");
     }
-    const result = await pollCodexDeviceAuth(this.#deviceAuth);
-    if (result) {
+    const result = await pollCodexDeviceAuth(pending);
+    if (result && this.#deviceAuth === pending) {
       this.#codexTokens = result;
       this.#deviceAuth = null;
       await this.#saveSecrets();
@@ -300,19 +358,27 @@ export class OpenGuiHost {
   async #codexCredential() {
     if (!this.#codexTokens) throw new Error("Sign in to ChatGPT in Providers before using Codex");
     if (this.#codexTokens.expiresAt <= Date.now() + 60_000) {
+      const current = this.#codexTokens;
       try {
-        this.#codexTokens = await refreshCodexTokens(this.#codexTokens);
+        this.#codexRefresh ??= refreshCodexTokens(current).finally(() => {
+          this.#codexRefresh = null;
+        });
+        const refreshed = await this.#codexRefresh;
+        if (this.#codexTokens !== current) throw new Error("ChatGPT sign-in changed");
+        this.#codexTokens = refreshed;
         await this.#saveSecrets();
       } catch {
-        this.#codexTokens = null;
-        await this.#saveSecrets();
+        if (this.#codexTokens === current) {
+          this.#codexTokens = null;
+          await this.#saveSecrets();
+        }
         throw new Error("ChatGPT sign-in expired or was revoked. Sign in again in Providers.");
       }
     }
     return { accessToken: this.#codexTokens.accessToken, accountId: this.#codexTokens.accountId };
   }
 
-  subscriptionAuthStatus(provider: "xai" | "opencode") {
+  subscriptionAuthStatus(provider: "xai") {
     const pending = this.#subscriptionPending[provider];
     return {
       connected: Boolean(this.#subscriptionTokens[provider]),
@@ -325,21 +391,19 @@ export class OpenGuiHost {
         : null,
     };
   }
-  async beginSubscriptionAuth(provider: "xai" | "opencode") {
-    this.#subscriptionPending[provider] = await beginDeviceOAuth(
-      provider === "xai" ? XAI_OAUTH : OPENCODE_OAUTH,
-    );
+  async beginSubscriptionAuth(provider: "xai") {
+    this.#subscriptionPending[provider] = await beginDeviceOAuth(XAI_OAUTH);
     return this.subscriptionAuthStatus(provider);
   }
-  async pollSubscriptionAuth(provider: "xai" | "opencode") {
+  async pollSubscriptionAuth(provider: "xai") {
     const pending = this.#subscriptionPending[provider];
     if (!pending) throw new Error("No sign-in is pending");
     if (pending.expiresAt <= Date.now()) {
       delete this.#subscriptionPending[provider];
       throw new Error("The device code expired. Start sign-in again.");
     }
-    const result = await pollDeviceOAuth(provider === "xai" ? XAI_OAUTH : OPENCODE_OAUTH, pending);
-    if (result) {
+    const result = await pollDeviceOAuth(XAI_OAUTH, pending);
+    if (result && this.#subscriptionPending[provider] === pending) {
       this.#subscriptionTokens[provider] = result;
       delete this.#subscriptionPending[provider];
       this.#refreshTransport();
@@ -347,40 +411,46 @@ export class OpenGuiHost {
     }
     return this.subscriptionAuthStatus(provider);
   }
-  async disconnectSubscription(provider: "xai" | "opencode") {
+  async disconnectSubscription(provider: "xai") {
     delete this.#subscriptionTokens[provider];
     delete this.#subscriptionPending[provider];
     this.#refreshTransport();
     await this.#saveSecrets();
   }
-  async #subscriptionCredential(provider: "xai" | "opencode") {
+  async #subscriptionCredential(provider: "xai") {
     let current = this.#subscriptionTokens[provider];
     if (!current) throw new Error("Sign in to this provider in Settings before using it");
     if (current.expiresAt <= Date.now() + 60_000) {
       try {
-        current = await refreshDeviceOAuth(
-          provider === "xai" ? XAI_OAUTH : OPENCODE_OAUTH,
-          current,
-        );
+        const expected = current;
+        this.#xaiRefresh ??= refreshDeviceOAuth(XAI_OAUTH, current).finally(() => {
+          this.#xaiRefresh = null;
+        });
+        current = await this.#xaiRefresh;
+        if (this.#subscriptionTokens[provider] !== expected)
+          throw new Error("Provider sign-in changed");
         this.#subscriptionTokens[provider] = current;
         this.#refreshTransport();
         await this.#saveSecrets();
       } catch {
-        delete this.#subscriptionTokens[provider];
-        this.#refreshTransport();
-        await this.#saveSecrets();
+        if (this.#subscriptionTokens[provider] === current) {
+          delete this.#subscriptionTokens[provider];
+          this.#refreshTransport();
+          await this.#saveSecrets();
+        }
         throw new Error("Provider sign-in expired or was revoked. Sign in again in Settings.");
       }
     }
     return { accessToken: current.accessToken, accountId: "" };
   }
-  async *#streamOpenCode(request: Parameters<ModelTransport["stream"]>[0], signal: AbortSignal) {
-    await this.#subscriptionCredential("opencode");
-    yield* this.#transport.stream(request, signal);
-  }
 
   async upsertModelConnection(connection: HostModelConnection) {
     if (connection.apiKey) this.#apiKeys[connection.id] = connection.apiKey;
+    if (connection.id === OPENCODE_GO_PRESET.id) {
+      connection = await this.#openCodeGoConnection(
+        connection.apiKey ?? this.#apiKeys[OPENCODE_GO_PRESET.id],
+      );
+    }
     const publicConnection = { ...connection, apiKey: undefined };
     const next = this.#settings.modelConnections.filter((item) => item.id !== connection.id);
     next.push(publicConnection);
@@ -431,14 +501,15 @@ export class OpenGuiHost {
 
   async createSession(input: CreateSessionInput): Promise<HostSessionSnapshot> {
     if (!input.model.connectionId || !input.model.modelId) {
-      const connection = this.#settings.modelConnections[0];
-      if (!connection?.modelIds[0])
+      const connection = this.listModelConnections()[0];
+      const defaultModelId = connection?.defaultModelId ?? connection?.modelIds[0];
+      if (!connection || !defaultModelId)
         throw new Error("Configure a model connection before creating a Session");
       input = {
         ...input,
         model: {
           connectionId: connection.id,
-          modelId: connection.modelIds[0],
+          modelId: defaultModelId,
         },
       };
     }

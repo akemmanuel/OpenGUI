@@ -22,6 +22,16 @@
     "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo."
   },
   "toolGroup": {
+    "runningCommands_one": "ejecutando un comando",
+    "runningCommands_other": "ejecutando {{count}} comandos",
+    "reading_one": "leyendo un archivo",
+    "reading_other": "leyendo {{count}} archivos",
+    "writing_one": "escribiendo un archivo",
+    "writing_other": "escribiendo {{count}} archivos",
+    "editing_one": "editando un archivo",
+    "editing_other": "editando {{count}} archivos",
+    "usingOther_one": "usando una herramienta",
+    "usingOther_other": "usando {{count}} herramientas",
     "commands_one": "Ejecutó un comando",
     "commands_other": "Ejecutó {{count}} comandos",
     "read_one": "leyó un archivo",
@@ -205,7 +215,8 @@
       "medium": "Medio",
       "high": "Alto",
       "xhigh": "Muy alto",
-      "max": "Máximo"
+      "max": "Máximo",
+      "ultra": "Ultra"
     }
   },
   "agentSelector": {
@@ -230,6 +241,7 @@
     "checkingHarnesses": "Comprobando harnesses instalados…",
     "harnessCliFound": "Instalado — conecta en Ajustes si faltan modelos",
     "harnessReady": "{{count}} modelos en inventario",
+    "noModelsAvailable": "No hay modelos disponibles.",
     "noModelsMatch": "Ningún modelo coincide con \"{{query}}\".",
     "addFavorite": "Añadir a favoritos",
     "removeFavorite": "Quitar de favoritos"
@@ -341,8 +353,10 @@
     },
     "opencode": {
       "title": "OpenCode Go",
-      "description": "Usa los modelos incluidos con tu suscripción OpenCode Go.",
-      "signIn": "Iniciar sesión en OpenCode"
+      "description": "Pega la clave API de tu suscripción a OpenCode Go.",
+      "apiKeyPlaceholder": "Clave API de OpenCode Go",
+      "enable": "Activar OpenCode Go",
+      "saveKey": "Guardar clave API"
     },
     "zen": {
       "title": "OpenCode Zen",
@@ -639,6 +653,10 @@
     "remoteDescription": "Esta ventana está conectada a un servidor remoto, así que elige un proyecto introduciendo la ruta en ese servidor.",
     "openProject": "Abrir proyecto",
     "projectPathLabel": "Ruta del proyecto",
+    "editPath": "Editar la ruta actual",
+    "searchFolders": "Buscar carpetas",
+    "clearSearch": "Borrar búsqueda de carpetas",
+    "noMatchingFolders": "Ninguna carpeta coincide con tu búsqueda",
     "browseServer": "Explorar servidor",
     "loadingServerFolders": "Cargando carpetas del servidor..."
   },

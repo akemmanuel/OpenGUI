@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@opengui/harness": "workspace:*",
+    "@opengui/protocol": "workspace:*",
     "hono": "^4.12.30"
   },
   "engines": {

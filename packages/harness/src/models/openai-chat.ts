@@ -11,6 +11,21 @@ export interface OpenAiCompatibleConnection {
   baseUrl: string;
   apiKey?: string;
   modelIds: string[];
+  defaultModelId?: string;
+  modelRoutes?: Record<string, "openai-chat" | "anthropic-messages" | "responses">;
+  modelCapabilities?: Record<
+    string,
+    {
+      displayName?: string;
+      context?: number;
+      reasoning: boolean;
+      reasoningEfforts?: string[];
+    }
+  >;
+}
+
+export interface OpenAiChatTransportOptions {
+  fetchImpl?: typeof fetch;
 }
 
 export function toChatMessages(context: ModelContextItem[]) {
@@ -201,8 +216,13 @@ export function chatDeltaEvents(delta: Record<string, any>): ModelStreamEvent[] 
 }
 
 export class OpenAiChatTransport implements ModelTransport {
+  readonly #options: OpenAiChatTransportOptions;
   readonly #connections = new Map<string, OpenAiCompatibleConnection>();
   #defaultConnectionId: string | null = null;
+
+  constructor(options: OpenAiChatTransportOptions = {}) {
+    this.#options = options;
+  }
 
   setConnections(connections: OpenAiCompatibleConnection[], defaultConnectionId?: string | null) {
     this.#connections.clear();
@@ -220,8 +240,13 @@ export class OpenAiChatTransport implements ModelTransport {
     if (!connectionId) throw new Error("No model connection is configured");
     const connection = this.#connections.get(connectionId);
     if (!connection) throw new Error(`Unknown model connection: ${connectionId}`);
-    const modelId = selected?.model.modelId ?? connection.modelIds[0];
+    const modelId = selected?.model.modelId ?? connection.defaultModelId ?? connection.modelIds[0];
     if (!modelId) throw new Error(`No model configured for connection ${connectionId}`);
+
+    if (connection.modelRoutes?.[modelId] === "anthropic-messages") {
+      yield* this.#streamAnthropic(connection, modelId, request, signal);
+      return;
+    }
 
     const baseUrl = connection.baseUrl.replace(/\/+$/, "");
     const body = JSON.stringify({
@@ -243,7 +268,7 @@ export class OpenAiChatTransport implements ModelTransport {
     let response: Response | undefined;
     const maxAttempts = 5;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      response = await fetch(`${baseUrl}/chat/completions`, {
+      response = await (this.#options.fetchImpl ?? fetch)(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -315,4 +340,118 @@ export class OpenAiChatTransport implements ModelTransport {
     }
     yield { type: "completed" };
   }
+
+  async *#streamAnthropic(
+    connection: OpenAiCompatibleConnection,
+    modelId: string,
+    request: ModelRequest,
+    signal: AbortSignal,
+  ): AsyncIterable<ModelStreamEvent> {
+    const toolInputs = new Map<number, { id: string; name: string; json: string }>();
+    const response = await (this.#options.fetchImpl ?? fetch)(
+      `${connection.baseUrl.replace(/\/+$/, "")}/messages`,
+      {
+        method: "POST",
+        signal,
+        headers: {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          ...(connection.apiKey ? { "x-api-key": connection.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          model: modelId,
+          max_tokens: 16_384,
+          stream: true,
+          system: request.systemPrompt,
+          messages: toAnthropicMessages(request.context),
+          tools: TOOLS.map((tool) => ({
+            name: tool.function.name,
+            description: tool.function.description,
+            input_schema: tool.function.parameters,
+          })),
+        }),
+      },
+    );
+    if (!response.ok || !response.body) {
+      const text = await response.text().catch(() => "");
+      throw new Error(text || `Model request failed (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        const raw = frame
+          .split("\n")
+          .find((line) => line.startsWith("data:"))
+          ?.slice(5)
+          .trim();
+        if (!raw) continue;
+        const event = JSON.parse(raw) as Record<string, any>;
+        const index = typeof event.index === "number" ? event.index : 0;
+        if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+          toolInputs.set(index, {
+            id: event.content_block.id,
+            name: event.content_block.name,
+            json: "",
+          });
+        } else if (event.type === "content_block_delta") {
+          if (event.delta?.type === "text_delta" && event.delta.text)
+            yield { type: "text_delta", delta: event.delta.text };
+          if (event.delta?.type === "thinking_delta" && event.delta.thinking)
+            yield { type: "reasoning_delta", delta: event.delta.thinking };
+          const tool = toolInputs.get(index);
+          if (tool && event.delta?.type === "input_json_delta")
+            tool.json += event.delta.partial_json ?? "";
+        } else if (event.type === "content_block_stop") {
+          const tool = toolInputs.get(index);
+          if (tool) {
+            yield {
+              type: "tool_call",
+              id: tool.id,
+              name: tool.name,
+              input: parseArguments(tool.json),
+            };
+            toolInputs.delete(index);
+          }
+        }
+      }
+    }
+    yield { type: "completed" };
+  }
+}
+
+function toAnthropicMessages(context: ModelContextItem[]) {
+  return context.flatMap((item): Array<Record<string, unknown>> => {
+    if (item.type === "user_message") return [{ role: "user", content: item.text }];
+    if (item.type === "assistant_message") return [{ role: "assistant", content: item.text }];
+    if (item.type === "tool_call")
+      return [
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: item.toolCallId, name: item.name, input: item.input ?? {} },
+          ],
+        },
+      ];
+    return [
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: item.toolCallId,
+            content:
+              typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? null),
+          },
+        ],
+      },
+    ];
+  });
 }

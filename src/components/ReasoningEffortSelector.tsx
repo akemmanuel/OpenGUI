@@ -14,7 +14,16 @@ import { findModel } from "@/lib/utils";
 import { notifyUnknownError } from "@/lib/notify";
 import type { ReasoningEffort } from "@/protocol/host-types";
 
-const EFFORTS: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const EFFORTS: ReasoningEffort[] = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+];
 
 export function ReasoningEffortSelector() {
   const { t } = useTranslation();

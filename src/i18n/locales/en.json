@@ -27,6 +27,16 @@
     "loadOlderFailed": "Could not load older messages. Try again."
   },
   "toolGroup": {
+    "runningCommands_one": "running one command",
+    "runningCommands_other": "running {{count}} commands",
+    "reading_one": "reading one file",
+    "reading_other": "reading {{count}} files",
+    "writing_one": "writing one file",
+    "writing_other": "writing {{count}} files",
+    "editing_one": "editing one file",
+    "editing_other": "editing {{count}} files",
+    "usingOther_one": "using one tool",
+    "usingOther_other": "using {{count}} tools",
     "commands_one": "Ran one command",
     "commands_other": "Ran {{count}} commands",
     "read_one": "read one file",
@@ -205,7 +215,8 @@
       "medium": "Medium",
       "high": "High",
       "xhigh": "Extra high",
-      "max": "Maximum"
+      "max": "Maximum",
+      "ultra": "Ultra"
     }
   },
   "agentSelector": {
@@ -230,6 +241,7 @@
     "checkingHarnesses": "Checking installed harnesses…",
     "harnessCliFound": "Installed — connect in Settings if models are missing",
     "harnessReady": "{{count}} models in inventory",
+    "noModelsAvailable": "No models are available.",
     "noModelsMatch": "No models match \"{{query}}\".",
     "addFavorite": "Add to favorites",
     "removeFavorite": "Remove from favorites"
@@ -341,8 +353,10 @@
     },
     "opencode": {
       "title": "OpenCode Go",
-      "description": "Use models included with your OpenCode Go subscription.",
-      "signIn": "Sign in to OpenCode"
+      "description": "Paste the API key from your OpenCode Go subscription.",
+      "apiKeyPlaceholder": "OpenCode Go API key",
+      "enable": "Enable OpenCode Go",
+      "saveKey": "Save API key"
     },
     "zen": {
       "title": "OpenCode Zen",
@@ -639,6 +653,10 @@
     "remoteDescription": "This window is connected to a remote server, so choose a project by entering the path on that server.",
     "openProject": "Open project",
     "projectPathLabel": "Project path",
+    "editPath": "Edit current path",
+    "searchFolders": "Search folders",
+    "clearSearch": "Clear folder search",
+    "noMatchingFolders": "No folders match your search",
     "browseServer": "Browse server",
     "loadingServerFolders": "Loading server folders..."
   },

@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vite-plus/test";
-import { codexResponseEvents } from "./codex-responses.ts";
+import { describe, expect, test, vi } from "vite-plus/test";
+import { CodexResponsesTransport, codexResponseEvents } from "./codex-responses.ts";
 
 describe("codexResponseEvents", () => {
   test("projects streamed reasoning summaries", () => {
@@ -27,5 +27,55 @@ describe("codexResponseEvents", () => {
         },
       }),
     ).toEqual([{ type: "reasoning_delta", delta: "I multiplied the values." }]);
+  });
+});
+
+describe("CodexResponsesTransport", () => {
+  test("routes an OAuth token to the SuperGrok proxy with provider-specific errors", async () => {
+    const fetchImpl = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(null, { status: 401 }),
+    );
+    const transport = new CodexResponsesTransport({
+      endpoint: "https://cli-chat-proxy.grok.com/v1/responses",
+      requestLabel: "SuperGrok",
+      unauthorizedMessage: "SuperGrok authorization failed",
+      headers: {
+        "x-xai-token-auth": "xai-grok-cli",
+        "x-grok-client-identifier": "opengui",
+      },
+      getCredential: async () => ({ accessToken: "xai-oauth", accountId: "" }),
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const events = transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "supergrok", modelId: "grok-build" },
+            reasoning: "medium",
+          },
+        ],
+      },
+      new AbortController().signal,
+    );
+
+    await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow(
+      "SuperGrok authorization failed",
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://cli-chat-proxy.grok.com/v1/responses",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: "Bearer xai-oauth",
+          "x-xai-token-auth": "xai-grok-cli",
+          "x-grok-client-identifier": "opengui",
+        }),
+      }),
+    );
+    expect(fetchImpl.mock.calls[0]?.[1]?.body).toContain('"model":"grok-build"');
   });
 });

@@ -12,12 +12,19 @@ export interface DeviceOAuthPending {
   interval: number;
 }
 
-interface DeviceOAuthConfig {
+export interface DeviceOAuthConfig {
   clientId: string;
   deviceEndpoint: string;
   tokenEndpoint: string;
   scope?: string;
   json?: boolean;
+  fetchImpl?: typeof fetch;
+}
+
+function seconds(value: unknown, fallback: number) {
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function errorMessage(value: Record<string, unknown>, fallback: string) {
@@ -51,12 +58,12 @@ function tokens(value: Record<string, unknown>, previousRefresh?: string): OAuth
       ? value.refresh_token
       : previousRefresh;
   if (!refreshToken) throw new Error("OAuth response missing refresh_token");
-  const expiresIn = typeof value.expires_in === "number" ? value.expires_in : 3600;
+  const expiresIn = seconds(value.expires_in, 3600);
   return { accessToken, refreshToken, expiresAt: Date.now() + expiresIn * 1000 };
 }
 
 export async function beginDeviceOAuth(config: DeviceOAuthConfig): Promise<DeviceOAuthPending> {
-  const response = await fetch(config.deviceEndpoint, {
+  const response = await (config.fetchImpl ?? fetch)(config.deviceEndpoint, {
     method: "POST",
     headers: {
       "content-type": config.json ? "application/json" : "application/x-www-form-urlencoded",
@@ -69,7 +76,7 @@ export async function beginDeviceOAuth(config: DeviceOAuthConfig): Promise<Devic
   });
   const value = await responseObject(response);
   if (!response.ok) throw new Error(errorMessage(value, "OAuth failed"));
-  const expiresIn = typeof value.expires_in === "number" ? value.expires_in : 900;
+  const expiresIn = seconds(value.expires_in, 900);
   return {
     deviceCode: stringField(value, "device_code"),
     userCode: stringField(value, "user_code"),
@@ -78,12 +85,12 @@ export async function beginDeviceOAuth(config: DeviceOAuthConfig): Promise<Devic
         ? value.verification_uri_complete
         : stringField(value, "verification_uri"),
     expiresAt: Date.now() + expiresIn * 1000,
-    interval: typeof value.interval === "number" ? value.interval : 5,
+    interval: seconds(value.interval, 5),
   };
 }
 
 export async function pollDeviceOAuth(config: DeviceOAuthConfig, pending: DeviceOAuthPending) {
-  const response = await fetch(config.tokenEndpoint, {
+  const response = await (config.fetchImpl ?? fetch)(config.tokenEndpoint, {
     method: "POST",
     headers: {
       "content-type": config.json ? "application/json" : "application/x-www-form-urlencoded",
@@ -97,14 +104,18 @@ export async function pollDeviceOAuth(config: DeviceOAuthConfig, pending: Device
   });
   const value = await responseObject(response);
   if (!response.ok) {
-    if (value.error === "authorization_pending" || value.error === "slow_down") return null;
+    if (value.error === "authorization_pending") return null;
+    if (value.error === "slow_down") {
+      pending.interval += 5;
+      return null;
+    }
     throw new Error(errorMessage(value, "OAuth failed"));
   }
   return tokens(value);
 }
 
 export async function refreshDeviceOAuth(config: DeviceOAuthConfig, current: OAuthTokens) {
-  const response = await fetch(config.tokenEndpoint, {
+  const response = await (config.fetchImpl ?? fetch)(config.tokenEndpoint, {
     method: "POST",
     headers: {
       "content-type": config.json ? "application/json" : "application/x-www-form-urlencoded",

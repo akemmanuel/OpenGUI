@@ -14,6 +14,8 @@ export interface CodexResponsesOptions {
   fetchImpl?: typeof fetch;
   endpoint?: string;
   headers?: Record<string, string>;
+  requestLabel?: string;
+  unauthorizedMessage?: string;
 }
 
 const tools = ["read", "write", "edit", "shell"].map((name) => ({
@@ -135,8 +137,9 @@ export class CodexResponsesTransport implements ModelTransport {
     if (!response.ok || !response.body)
       throw new Error(
         response.status === 401
-          ? "ChatGPT sign-in expired or was revoked. Sign in again in Providers."
-          : `Codex request failed (${response.status})`,
+          ? (this.#options.unauthorizedMessage ??
+              "ChatGPT sign-in expired or was revoked. Sign in again in Providers.")
+          : `${this.#options.requestLabel ?? "Codex"} request failed (${response.status})`,
       );
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

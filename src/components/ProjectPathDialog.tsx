@@ -1,4 +1,4 @@
-import { ChevronLeft, Folder, FolderOpen } from "lucide-react";
+import { ChevronLeft, Folder, FolderOpen, Pencil, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
 import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
@@ -57,19 +57,6 @@ function resolveBrowserApiBaseUrl(workspaceServerUrl: string | null | undefined)
   return workspaceServerUrl;
 }
 
-function PathLine({ path }: { path: string }) {
-  return (
-    <div className="min-w-0 w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-      <span
-        className="block w-max max-w-none font-mono text-xs leading-snug whitespace-nowrap sm:text-sm"
-        title={path}
-      >
-        {path}
-      </span>
-    </div>
-  );
-}
-
 export function ProjectPathDialog() {
   const { t } = useTranslation();
   const {
@@ -85,6 +72,9 @@ export function ProjectPathDialog() {
   const [value, setValue] = useState("");
   const [serverListing, setServerListing] = useState<ServerDirectoryListing | null>(null);
   const [serverBrowserLoading, setServerBrowserLoading] = useState(false);
+  const [folderSearch, setFolderSearch] = useState("");
+  const [pathEditing, setPathEditing] = useState(false);
+  const [pathDraft, setPathDraft] = useState("");
   const resolverRef = useRef<((value: string | null) => void) | null>(null);
   const serverBrowseInitialPathRef = useRef<string | undefined>(undefined);
   const useServerBrowser = !supportsNativeDirectoryPicker;
@@ -145,6 +135,8 @@ export function ProjectPathDialog() {
       const trimmed = initial.trim();
       serverBrowseInitialPathRef.current = trimmed || undefined;
       setServerListing(null);
+      setFolderSearch("");
+      setPathEditing(false);
       setOpen(true);
     };
 
@@ -183,9 +175,15 @@ export function ProjectPathDialog() {
   );
 
   const selectServerDirectory = (path: string) => {
+    setFolderSearch("");
+    setPathEditing(false);
     setValue(path);
     void loadServerDirectory(path);
   };
+
+  const visibleEntries = serverListing?.entries.filter((entry) =>
+    entry.name.toLocaleLowerCase().includes(folderSearch.trim().toLocaleLowerCase()),
+  );
 
   const browseNative = async () => {
     const nextPath = await shell.dialog.openDirectory();
@@ -198,8 +196,14 @@ export function ProjectPathDialog() {
       onOpenChange={(nextOpen) => {
         if (!nextOpen) closeWith(null);
       }}
-      className="max-w-[min(32rem,calc(100vw-2rem))] sm:max-w-lg"
+      className={
+        useServerBrowser
+          ? "h-[min(42rem,calc(100dvh-1rem))] max-w-[calc(100vw-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4 sm:max-w-2xl"
+          : "max-w-[calc(100vw-1rem)] gap-3 p-4 sm:max-w-2xl"
+      }
       title={t("projectPath.title")}
+      bodyClassName="flex min-h-0 flex-col"
+      footerClassName="-mx-4 -mb-4 p-3"
       footer={
         <>
           <Button type="button" variant="ghost" onClick={() => closeWith(null)}>
@@ -223,20 +227,45 @@ export function ProjectPathDialog() {
         </>
       }
     >
-      <label className="mb-3 block space-y-1 text-sm">
-        <span>{t("projectPath.projectPathLabel")}</span>
-        <input
-          className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          autoComplete="off"
-        />
-      </label>
       {useServerBrowser ? (
-        <div className="min-w-0 rounded-lg border p-2">
-          <div className="mb-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {serverListing?.path ? (
-              <PathLine path={serverListing.path} />
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border bg-background/40 p-2">
+          <div className="mb-2 flex min-w-0 items-center gap-2 border-b pb-2">
+            {pathEditing ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1">
+                <input
+                  aria-label={t("projectPath.projectPathLabel")}
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-sm outline-none"
+                  value={pathDraft}
+                  onChange={(event) => setPathDraft(event.target.value)}
+                  onBlur={() => setPathEditing(false)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && pathDraft.trim()) {
+                      event.preventDefault();
+                      selectServerDirectory(pathDraft.trim());
+                    } else if (event.key === "Escape") {
+                      setPathEditing(false);
+                    }
+                  }}
+                  autoComplete="off"
+                  autoFocus
+                />
+                <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
+              </div>
+            ) : serverListing?.path ? (
+              <button
+                type="button"
+                className="group flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setPathDraft(serverListing.path);
+                  setPathEditing(true);
+                }}
+                title={t("projectPath.editPath")}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-sm">
+                  {serverListing.path}
+                </span>
+                <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-60 group-hover:opacity-100" />
+              </button>
             ) : (
               <span className="text-xs text-muted-foreground sm:text-sm">
                 {t("projectPath.loadingServerFolders")}
@@ -246,7 +275,7 @@ export function ProjectPathDialog() {
               type="button"
               variant="outline"
               size="sm"
-              className="shrink-0 self-end sm:self-auto"
+              className="shrink-0"
               disabled={!serverListing?.parent || serverBrowserLoading}
               onClick={() => serverListing?.parent && selectServerDirectory(serverListing.parent)}
             >
@@ -254,32 +283,61 @@ export function ProjectPathDialog() {
               <span className="max-sm:sr-only">{t("projectPath.up")}</span>
             </Button>
           </div>
-          <div className="max-h-64 overflow-y-auto rounded border bg-background">
+          <label className="relative mb-1.5 block">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <span className="sr-only">{t("projectPath.searchFolders")}</span>
+            <input
+              type="search"
+              value={folderSearch}
+              onChange={(event) => setFolderSearch(event.target.value)}
+              placeholder={t("projectPath.searchFolders")}
+              className="h-9 w-full rounded-md border bg-background pr-9 pl-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/25 [&::-webkit-search-cancel-button]:appearance-none"
+            />
+            {folderSearch && (
+              <button
+                type="button"
+                onClick={() => setFolderSearch("")}
+                className="absolute top-1/2 right-1.5 flex size-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t("projectPath.clearSearch")}
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </label>
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-md border bg-background">
             {serverBrowserLoading ? (
-              <div className="px-3 py-2 text-sm">{t("common.loading")}</div>
-            ) : serverListing?.entries.length ? (
-              serverListing.entries.map((entry) => (
+              <div className="px-3 py-3 text-sm text-muted-foreground">{t("common.loading")}</div>
+            ) : visibleEntries?.length ? (
+              visibleEntries.map((entry) => (
                 <button
                   key={entry.path}
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                  className="flex min-h-9 w-full items-center gap-2.5 border-b px-3 text-left text-sm transition-colors last:border-b-0 hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
                   onClick={() => selectServerDirectory(entry.path)}
                   onDoubleClick={() => closeWith(entry.path)}
                 >
-                  <Folder className="size-4 shrink-0 text-muted-foreground" />
+                  <Folder className="size-[18px] shrink-0 text-muted-foreground" />
                   <span className="truncate">{entry.name}</span>
                 </button>
               ))
             ) : (
-              <div className="px-3 py-2 text-sm text-muted-foreground">
-                {t("projectPath.noFolders")}
+              <div className="flex h-full min-h-32 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                {folderSearch ? t("projectPath.noMatchingFolders") : t("projectPath.noFolders")}
               </div>
             )}
           </div>
         </div>
-      ) : value.trim() ? (
-        <PathLine path={value} />
-      ) : null}
+      ) : (
+        <label className="block space-y-1.5 text-sm font-medium">
+          <span>{t("projectPath.projectPathLabel")}</span>
+          <input
+            className="h-10 w-full rounded-md border bg-background px-3 font-mono text-sm font-normal outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/25"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            autoComplete="off"
+          />
+        </label>
+      )}
     </DialogShell>
   );
 }

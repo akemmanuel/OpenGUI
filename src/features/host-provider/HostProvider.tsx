@@ -57,6 +57,8 @@ import { connectionsToModelProviders } from "@/lib/models-dev";
 import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { selectedModelFromHostSnapshot } from "@/features/host-provider/host-session-selection";
+import { persistHostModelSelection } from "@/features/host-provider/host-model-selection";
+import { loadHostSessionSummaries } from "@/features/host-provider/host-session-list";
 
 function toSession(
   summary: HostSessionSummary | HostSessionSnapshot,
@@ -144,11 +146,13 @@ function HostProviderBody({
   const [projects, setProjects] = useState<string[]>(() =>
     detachedProject ? [normalizeProjectPath(detachedProject)] : [],
   );
+  const projectsRef = useRef(projects);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeTargetDirectory, setActiveTargetDirectory] = useState<string | null>(
     detachedProject ? normalizeProjectPath(detachedProject) : null,
   );
+  const activeTargetDirectoryRef = useRef(activeTargetDirectory);
   const [busySessionIds, setBusySessionIds] = useState<Set<string>>(new Set());
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);
@@ -160,7 +164,8 @@ function HostProviderBody({
       stored === "medium" ||
       stored === "high" ||
       stored === "xhigh" ||
-      stored === "max"
+      stored === "max" ||
+      stored === "ultra"
       ? stored
       : "medium";
   });
@@ -177,6 +182,7 @@ function HostProviderBody({
   >({});
   const activeSnapshotRef = useRef<HostSessionSnapshot | null>(null);
   const activeStreamRef = useRef<HostTranscriptStream | null>(null);
+  const hydratingSessionIdsRef = useRef(new Set<string>());
   const activeSessionIdRef = useRef(activeSessionId);
 
   const requireHost = useCallback(() => {
@@ -188,38 +194,51 @@ function HostProviderBody({
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
+  useEffect(() => {
+    activeTargetDirectoryRef.current = activeTargetDirectory;
+  }, [activeTargetDirectory]);
+
+  const replaceProjects = useCallback((nextProjects: string[]) => {
+    projectsRef.current = nextProjects;
+    setProjects(nextProjects);
+  }, []);
+
   const refreshModels = useCallback(async () => {
     if (!host) return;
     const connections = await host.listModelConnections();
     const nextProviders = await connectionsToModelProviders(connections);
     setProviders(nextProviders);
-    if (!selectedModel && connections[0]?.modelIds[0]) {
-      setSelectedModel({
-        providerID: connections[0].id,
-        modelID: connections[0].modelIds[0],
-      });
+    const defaultModelId = connections[0]?.defaultModelId ?? connections[0]?.modelIds[0];
+    if (connections[0] && defaultModelId) {
+      setSelectedModel(
+        (current) =>
+          current ?? {
+            providerID: connections[0]!.id,
+            modelID: defaultModelId,
+          },
+      );
     }
-  }, [host, selectedModel]);
+  }, [host]);
 
   const refreshProjects = useCallback(async () => {
-    if (!host) return;
+    if (!host) return [];
     const listed = await host.listProjects();
     const directories = listed.map((project) => normalizeProjectPath(project.directory));
-    setProjects(directories);
-    if (!activeTargetDirectory && directories[0]) {
-      setActiveTargetDirectory(directories[0]);
-    }
-  }, [activeTargetDirectory, host]);
+    replaceProjects(directories);
+    setActiveTargetDirectory((current) => current ?? directories[0] ?? null);
+    return directories;
+  }, [host, replaceProjects]);
 
   const refreshSessions = useCallback(
-    async (directory = activeTargetDirectory) => {
-      if (!directory) {
+    async (directories = projectsRef.current) => {
+      if (directories.length === 0) {
         setSessions([]);
+        setBusySessionIds(new Set());
         return;
       }
       if (!host) return;
-      const listed = await host.listSessions(directory);
-      setSessions(listed.map((item) => toSession(item, LOCAL_WORKSPACE_ID)));
+      const listed = await loadHostSessionSummaries(host, directories);
+      setSessions(listed.map((item) => toSession(item, activeWorkspaceId)));
       setBusySessionIds(
         new Set(listed.filter((item) => item.status === "running").map((item) => item.id)),
       );
@@ -232,7 +251,7 @@ function HostProviderBody({
         return next;
       });
     },
-    [activeTargetDirectory, host],
+    [activeWorkspaceId, host],
   );
 
   const hydrateTranscript = useCallback(
@@ -244,48 +263,57 @@ function HostProviderBody({
         return;
       }
       if (!host) return;
+      if (hydratingSessionIdsRef.current.has(sessionId)) return;
+      hydratingSessionIdsRef.current.add(sessionId);
       const scope = {
-        directory: activeTargetDirectory ?? "",
+        directory: activeTargetDirectoryRef.current ?? "",
         sessionId,
       };
       transcriptStore.select(scope);
-      const snapshot = await host.readSession(sessionId);
-      activeSnapshotRef.current = snapshot;
-      activeStreamRef.current = createHostTranscriptStream(snapshot);
-      setSelectedModel(selectedModelFromHostSnapshot(snapshot));
-      if (snapshot.reasoning) setReasoningEffortState(snapshot.reasoning);
-      const messages = projectHostSnapshotToMessages(snapshot);
-      transcriptStore.dispatch({
-        type: "page.loaded",
-        scope,
-        phase: "initial",
-        messages,
-        hasMore: false,
-        nextCursor: null,
-      });
-      setQueuedPrompts((current) => ({
-        ...current,
-        [sessionId]: snapshot.followUps.map((item) => ({
-          id: item.id,
-          text: item.prompt.text,
-          mode: "queue" as const,
-        })),
-      }));
-      setBusySessionIds((current) => {
-        const next = new Set(current);
-        if (snapshot.status === "running") next.add(sessionId);
-        else next.delete(sessionId);
-        return next;
-      });
+      try {
+        const snapshot = await host.readSession(sessionId);
+        if (activeSessionIdRef.current !== sessionId) return;
+        const snapshotScope = { directory: snapshot.projectDirectory, sessionId };
+        if (snapshotScope.directory !== scope.directory) transcriptStore.select(snapshotScope);
+        activeSnapshotRef.current = snapshot;
+        activeStreamRef.current = createHostTranscriptStream(snapshot);
+        setSelectedModel(selectedModelFromHostSnapshot(snapshot));
+        if (snapshot.reasoning) setReasoningEffortState(snapshot.reasoning);
+        const messages = projectHostSnapshotToMessages(snapshot);
+        transcriptStore.dispatch({
+          type: "page.loaded",
+          scope: snapshotScope,
+          phase: "initial",
+          messages,
+          hasMore: false,
+          nextCursor: null,
+        });
+        setQueuedPrompts((current) => ({
+          ...current,
+          [sessionId]: snapshot.followUps.map((item) => ({
+            id: item.id,
+            text: item.prompt.text,
+            mode: "queue" as const,
+          })),
+        }));
+        setBusySessionIds((current) => {
+          const next = new Set(current);
+          if (snapshot.status === "running") next.add(sessionId);
+          else next.delete(sessionId);
+          return next;
+        });
+      } finally {
+        hydratingSessionIdsRef.current.delete(sessionId);
+      }
     },
-    [activeTargetDirectory, host, transcriptStore],
+    [host, transcriptStore],
   );
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!host) {
-        setProjects([]);
+        replaceProjects([]);
         setSessions([]);
         setBootState("idle");
         return;
@@ -295,8 +323,8 @@ function HostProviderBody({
         await host.health();
         if (cancelled) return;
         await refreshModels();
-        await refreshProjects();
-        await refreshSessions();
+        const directories = await refreshProjects();
+        await refreshSessions(directories);
         if (storageGet(STORAGE_KEYS.SETUP_COMPLETE) !== "true") {
           // Keep setup wizard available; host health is enough for ready.
         }
@@ -310,7 +338,7 @@ function HostProviderBody({
     return () => {
       cancelled = true;
     };
-  }, [host, refreshModels, refreshProjects, refreshSessions]);
+  }, [host, refreshModels, refreshProjects, refreshSessions, replaceProjects]);
 
   useEffect(() => {
     if (!host) return;
@@ -324,6 +352,7 @@ function HostProviderBody({
 
   useEffect(() => {
     if (!host) return;
+    let hasConnected = false;
     const handleEvent = (hostEvent: HostEvent) => {
       const terminalEntry =
         hostEvent.event.type === "entry_appended" &&
@@ -366,6 +395,10 @@ function HostProviderBody({
       if (terminalEntry) void refreshSessions().catch(notifyUnknownError);
     };
     return host.subscribe(handleEvent, undefined, () => {
+      if (!hasConnected) {
+        hasConnected = true;
+        return;
+      }
       const sessionId = activeSessionIdRef.current;
       if (sessionId) void hydrateTranscript(sessionId).catch(notifyUnknownError);
     });
@@ -498,24 +531,27 @@ function HostProviderBody({
       if (!host) throw new Error("Connect to an OpenGUI Host first");
       const normalized = normalizeProjectPath(directory);
       await host.registerProject(normalized);
-      setProjects((current) => (current.includes(normalized) ? current : [normalized, ...current]));
+      const nextProjects = projects.includes(normalized) ? projects : [normalized, ...projects];
+      replaceProjects(nextProjects);
       setActiveTargetDirectory(normalized);
-      await refreshSessions(normalized);
+      await refreshSessions(nextProjects);
     };
 
     return {
       removeProject: async (directory) => {
         const normalized = normalizeProjectPath(directory);
         await requireHost().unregisterProject(normalized);
-        setProjects((current) => current.filter((item) => item !== normalized));
+        const nextProjects = projects.filter((item) => item !== normalized);
+        replaceProjects(nextProjects);
         if (activeTargetDirectory === normalized) {
           setActiveTargetDirectory(null);
+          activeSessionIdRef.current = null;
           setActiveSessionId(null);
         }
-        await refreshSessions(null as unknown as string);
-        setSessions((current) => current.filter((session) => session.directory !== normalized));
+        await refreshSessions(nextProjects);
       },
       selectSession: async (id) => {
+        activeSessionIdRef.current = id;
         setActiveSessionId(id);
         if (id) {
           const session = sessions.find((item) => item.id === id);
@@ -525,7 +561,10 @@ function HostProviderBody({
       loadOlderMessages: async () => false,
       deleteSession: async (id) => {
         await requireHost().deleteSession(id);
-        if (activeSessionId === id) setActiveSessionId(null);
+        if (activeSessionId === id) {
+          activeSessionIdRef.current = null;
+          setActiveSessionId(null);
+        }
         await refreshSessions();
       },
       renameSession: async (id, title) => {
@@ -564,12 +603,12 @@ function HostProviderBody({
               nextCursor: null,
             });
             setActiveSessionId(sessionId);
-            await refreshSessions(directory);
+            await refreshSessions();
           } else {
             const session = sessions.find((item) => item.id === sessionId);
             if (shouldAutoNameSession(session)) {
               await requireHost().renameSession(sessionId, text.trim());
-              await refreshSessions(directory);
+              await refreshSessions();
             }
           }
           setBusySessionIds((current) => new Set(current).add(sessionId!));
@@ -601,8 +640,30 @@ function HostProviderBody({
       respondPermission: async () => {},
       replyQuestion: async () => {},
       rejectQuestion: async () => {},
-      setModel: (model) => setSelectedModel(model),
-      setPromptBoxSelection: ({ model }) => setSelectedModel(model),
+      setModel: async (model) => {
+        const previous = selectedModel;
+        setSelectedModel(model);
+        if (!model) return;
+        try {
+          const snapshot = await persistHostModelSelection(requireHost(), activeSessionId, model);
+          if (snapshot) activeSnapshotRef.current = snapshot;
+        } catch (error) {
+          setSelectedModel(previous);
+          notifyUnknownError(error);
+        }
+      },
+      setPromptBoxSelection: async ({ model }) => {
+        const previous = selectedModel;
+        setSelectedModel(model);
+        if (!model) return;
+        try {
+          const snapshot = await persistHostModelSelection(requireHost(), activeSessionId, model);
+          if (snapshot) activeSnapshotRef.current = snapshot;
+        } catch (error) {
+          setSelectedModel(previous);
+          notifyUnknownError(error);
+        }
+      },
       setAgent: () => {},
       cycleVariant: () => {},
       revertVariant: () => {},
@@ -657,13 +718,14 @@ function HostProviderBody({
           reasoning: effectiveReasoningEffort,
         });
         setActiveSessionId(created.id);
-        await refreshSessions(directory);
+        activeSessionIdRef.current = created.id;
+        await refreshSessions();
         await hydrateTranscript(created.id);
       },
       setActiveTarget: (directory) => {
         setActiveTargetDirectory(normalizeProjectPath(directory));
+        activeSessionIdRef.current = null;
         setActiveSessionId(null);
-        void refreshSessions(normalizeProjectPath(directory));
       },
       setDefaultChatDirectory: () => {},
       setActiveTargetDirectory: (directory) =>
@@ -728,8 +790,9 @@ function HostProviderBody({
         setWorkspaces(next);
         setActiveWorkspaceId(nextWorkspace.id);
         storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, nextWorkspace.id);
-        setProjects([]);
+        replaceProjects([]);
         setSessions([]);
+        activeSessionIdRef.current = null;
         setActiveSessionId(null);
         setActiveTargetDirectory(null);
       },
@@ -757,8 +820,9 @@ function HostProviderBody({
         if (!workspaces.some((item) => item.id === workspaceId)) return;
         setActiveWorkspaceId(workspaceId);
         storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, workspaceId);
-        setProjects([]);
+        replaceProjects([]);
         setSessions([]);
+        activeSessionIdRef.current = null;
         setActiveSessionId(null);
         setActiveTargetDirectory(null);
       },
@@ -770,7 +834,7 @@ function HostProviderBody({
         persistWorkspaces(next);
         setWorkspaces(next);
       },
-      reorderVisibleProjects: (orderedDirectories) => setProjects(orderedDirectories),
+      reorderVisibleProjects: replaceProjects,
     };
   }, [
     activeSessionId,
@@ -780,12 +844,14 @@ function HostProviderBody({
     hydrateTranscript,
     queuedPrompts,
     refreshModels,
+    replaceProjects,
     requireHost,
     refreshSessions,
     effectiveReasoningEffort,
     reasoningEffort,
     selectedModel,
     sessions,
+    projects,
     workspaces,
     activeWorkspaceId,
   ]);

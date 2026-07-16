@@ -54,7 +54,7 @@ export function registerHostProductRoutes(
     await (await input.getHost()).disconnectCodex();
     return Response.json({ ok: true, value: true });
   });
-  for (const provider of ["xai", "opencode"] as const) {
+  for (const provider of ["xai"] as const) {
     app.get(`/api/host/auth/${provider}`, async () =>
       Response.json({ ok: true, value: (await input.getHost()).subscriptionAuthStatus(provider) }),
     );
@@ -184,7 +184,8 @@ export function registerHostProductRoutes(
         reasoningRaw === "medium" ||
         reasoningRaw === "high" ||
         reasoningRaw === "xhigh" ||
-        reasoningRaw === "max"
+        reasoningRaw === "max" ||
+        reasoningRaw === "ultra"
           ? reasoningRaw
           : "medium";
       const session = await host.createSession({
@@ -241,7 +242,8 @@ export function registerHostProductRoutes(
           reasoning !== "medium" &&
           reasoning !== "high" &&
           reasoning !== "xhigh" &&
-          reasoning !== "max"
+          reasoning !== "max" &&
+          reasoning !== "ultra"
         ) {
           throw new Error("Invalid reasoning level");
         }

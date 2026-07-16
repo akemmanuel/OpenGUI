@@ -7,7 +7,7 @@ import type { TranscriptPart, ToolCallTranscriptPart } from "@/protocol/session-
 import { PartView } from "../PartView";
 import { ToolCallPartView } from "./ToolCallPartView";
 
-function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction) {
+function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction, running: boolean) {
   const counts = { command: 0, read: 0, write: 0, edit: 0, other: 0 };
   for (const part of parts) {
     const name = part.tool.toLowerCase();
@@ -19,11 +19,15 @@ function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction) {
   }
 
   const summary = [
-    counts.command && t("toolGroup.commands", { count: counts.command }),
-    counts.read && t("toolGroup.read", { count: counts.read }),
-    counts.write && t("toolGroup.wrote", { count: counts.write }),
-    counts.edit && t("toolGroup.edited", { count: counts.edit }),
-    counts.other && t("toolGroup.other", { count: counts.other }),
+    counts.command &&
+      t(running ? "toolGroup.runningCommands" : "toolGroup.commands", {
+        count: counts.command,
+      }),
+    counts.read && t(running ? "toolGroup.reading" : "toolGroup.read", { count: counts.read }),
+    counts.write && t(running ? "toolGroup.writing" : "toolGroup.wrote", { count: counts.write }),
+    counts.edit && t(running ? "toolGroup.editing" : "toolGroup.edited", { count: counts.edit }),
+    counts.other &&
+      t(running ? "toolGroup.usingOther" : "toolGroup.other", { count: counts.other }),
   ]
     .filter(Boolean)
     .join(", ");
@@ -32,10 +36,12 @@ function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction) {
 
 export function ToolCallGroupView({
   parts,
+  awaitingAssistantResponse = false,
   expandedToolCalls,
   onSetToolCallExpanded,
 }: {
   parts: TranscriptPart[];
+  awaitingAssistantResponse?: boolean;
   expandedToolCalls?: ReadonlySet<string>;
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
 }) {
@@ -43,9 +49,14 @@ export function ToolCallGroupView({
   const groupId = `tool-group:${parts[0]?.id ?? "empty"}`;
   const expanded = expandedToolCalls?.has(groupId) ?? false;
   const tools = parts.filter((part): part is ToolCallTranscriptPart => part.type === "tool");
-  const running = tools.some((part) => part.state.status === "running");
+  // Keep the activity indicator alive after the final tool finishes while the
+  // assistant is still deciding what to say next. Once text follows this
+  // group (or the turn completes), the group settles to its final icon.
+  const running =
+    awaitingAssistantResponse ||
+    tools.some((part) => part.state.status === "running" || part.state.status === "pending");
   const failed = tools.some((part) => part.state.status === "error");
-  const summary = toolGroupSummary(tools, t);
+  const summary = toolGroupSummary(tools, t, running);
 
   return (
     <details

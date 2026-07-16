@@ -34,6 +34,7 @@ export function groupToolsUntilAssistantText(parts: TranscriptPart[]) {
 export function MessagePartsStack({
   parts,
   isUser,
+  isAssistantTurnActive,
   expandedToolCalls,
   onSetToolCallExpanded,
   activeImagePath,
@@ -43,6 +44,7 @@ export function MessagePartsStack({
 }: {
   parts: TranscriptPart[];
   isUser?: boolean;
+  isAssistantTurnActive?: boolean;
   expandedToolCalls?: ReadonlySet<string>;
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
   activeImagePath?: string | null;
@@ -54,7 +56,7 @@ export function MessagePartsStack({
 
   return (
     <div className="flex flex-col gap-1">
-      {groupToolsUntilAssistantText(parts).map((partOrGroup) =>
+      {groupToolsUntilAssistantText(parts).map((partOrGroup, index, groups) =>
         Array.isArray(partOrGroup) ? (
           partOrGroup.length === 1 && partOrGroup[0]?.type === "tool" ? (
             <PartView
@@ -71,6 +73,7 @@ export function MessagePartsStack({
             <ToolCallGroupView
               key={`tool-group:${partOrGroup[0]?.id}`}
               parts={partOrGroup}
+              awaitingAssistantResponse={isAssistantTurnActive && index === groups.length - 1}
               expandedToolCalls={expandedToolCalls}
               onSetToolCallExpanded={onSetToolCallExpanded}
             />

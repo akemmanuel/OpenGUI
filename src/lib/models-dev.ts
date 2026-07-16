@@ -21,6 +21,7 @@ const SUPPORTED_EFFORTS: ReasoningEffort[] = [
   "high",
   "xhigh",
   "max",
+  "ultra",
 ];
 let catalogRequest: Promise<ModelsDevCatalog | null> | null = null;
 
@@ -109,7 +110,22 @@ export async function connectionsToModelProviders(connections: HostModelConnecti
     models: Object.fromEntries(
       connection.modelIds.map((modelId) => [
         modelId,
-        { id: modelId, ...reasoningMetadataForModel(catalog, modelId) },
+        {
+          id: modelId,
+          ...reasoningMetadataForModel(catalog, modelId),
+          ...(connection.modelCapabilities?.[modelId]
+            ? {
+                name: connection.modelCapabilities[modelId].displayName || modelId,
+                capabilities: {
+                  reasoning: connection.modelCapabilities[modelId].reasoning,
+                },
+                reasoningEfforts: connection.modelCapabilities[modelId].reasoningEfforts,
+                ...(connection.modelCapabilities[modelId].context
+                  ? { limit: { context: connection.modelCapabilities[modelId].context } }
+                  : {}),
+              }
+            : {}),
+        },
       ]),
     ),
   }));

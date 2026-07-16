@@ -109,7 +109,11 @@ export const MessageBubble = memo(function MessageBubble({
             {...partProps}
           />
         ) : (
-          <MessagePartsStack parts={parts} {...partProps} />
+          <MessagePartsStack
+            parts={parts}
+            isAssistantTurnActive={!info.time.completed && !info.error}
+            {...partProps}
+          />
         )}
         {info.role === "assistant" && info.error && <AssistantMessageError error={info.error} />}
         <ImageMentionLightbox
