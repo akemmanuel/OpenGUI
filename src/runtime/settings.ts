@@ -1,4 +1,4 @@
-import type { SettingsBridge } from "@/types/electron";
+import type { SettingsBridge } from "@/types/settings";
 
 export function getSettingsBridge(): SettingsBridge | null {
   if (typeof window === "undefined") return null;

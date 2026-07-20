@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/safe-storage";
+import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { compareSemver } from "@/lib/utils";
-import type { AppUpdateState } from "@/types/electron";
+import type { AppUpdateState } from "@/types/shell";
 import packageJson from "../../package.json";
 import { useDesktopShell } from "@/shell/provider";
 

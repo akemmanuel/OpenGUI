@@ -1,14 +1,12 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ActionsContext,
-  ConnectionContext,
-  MessagesContext,
   ModelContext,
   SessionContext,
-  type ActionsContextValue,
-  type ConnectionContextValue,
+  WorkspaceContext,
   type ModelContextValue,
   type SessionContextValue,
+  type WorkspaceContextValue,
 } from "@/hooks/agent-contexts";
 import type { Session } from "@/hooks/agent-state-types";
 import {
@@ -22,21 +20,17 @@ import {
   persistWorkspaces,
   persistProjectMetaMap,
   persistSessionMetaMap,
-  type ProjectMetaMap,
   type SessionColor,
-  type SessionMetaMap,
-} from "@/hooks/agent-state-persistence";
+} from "@/lib/persistence";
 import {
   ActiveSessionTranscriptProvider,
   useActiveTranscriptStore,
 } from "@/features/session-transcript/active-session-transcript-provider";
 import { createHostClient } from "@/protocol/host-client";
 import type {
-  HostEvent,
   HostSessionSnapshot,
   HostSessionSummary,
   OpenGuiHostClient,
-  ReasoningEffort,
 } from "@/protocol/host-types";
 import {
   applyHostTranscriptEvent,
@@ -45,20 +39,29 @@ import {
   projectHostTranscriptStream,
   type HostTranscriptStream,
 } from "@/protocol/host-transcript";
-import type { Provider } from "@/protocol/agent-types";
-import type { SelectedModel } from "@/types/electron";
-import type { Workspace } from "@/types/electron";
+import type { Workspace } from "@/types/workspace";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
-import { findModel, normalizeProjectPath } from "@/lib/utils";
+import { normalizeProjectPath } from "@/lib/path";
+import { findModel } from "@/lib/utils";
 import { shouldAutoNameSession } from "@/hooks/agent-session-utils";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/safe-storage";
+import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { connectionsToModelProviders } from "@/lib/models-dev";
 import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { selectedModelFromHostSnapshot } from "@/features/host-provider/host-session-selection";
 import { persistHostModelSelection } from "@/features/host-provider/host-model-selection";
 import { loadHostSessionSummaries } from "@/features/host-provider/host-session-list";
+import {
+  useHostSlice,
+  type ModelSlice,
+  type ProjectSlice,
+  type SessionSlice,
+  type TransportSlice,
+  type WorkspaceSlice,
+} from "@/features/host-provider/host-domain-state";
+import { useHostEventStream } from "@/features/host-provider/host-event-stream";
+import { HostQueueController, useHostActions } from "@/features/host-provider/host-actions";
 
 function toSession(
   summary: HostSessionSummary | HostSessionSnapshot,
@@ -136,29 +139,47 @@ function HostProviderBody({
 }) {
   const transcriptStore = useActiveTranscriptStore();
   const policy = useMemo(() => getShellWorkspacePolicy(), []);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(initialWorkspaces);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() =>
-    getActiveWorkspaceId(initialWorkspaces()),
-  );
+  const workspaceSlice = useHostSlice<WorkspaceSlice>(() => {
+    const workspaces = initialWorkspaces();
+    return { workspaces, activeWorkspaceId: getActiveWorkspaceId(workspaces) };
+  });
+  const { workspaces, activeWorkspaceId } = workspaceSlice.state;
+  const setWorkspaces = workspaceSlice.setter("workspaces");
+  const setActiveWorkspaceId = workspaceSlice.setter("activeWorkspaceId");
   const workspace =
     workspaces.find((item) => item.id === activeWorkspaceId) ?? workspaces[0] ?? null;
   const host = useMemo(() => (workspace ? createRuntimeHostClient(workspace) : null), [workspace]);
-  const [projects, setProjects] = useState<string[]>(() =>
-    detachedProject ? [normalizeProjectPath(detachedProject)] : [],
-  );
+  const projectSlice = useHostSlice<ProjectSlice>(() => ({
+    projects: detachedProject ? [normalizeProjectPath(detachedProject)] : [],
+    activeTargetDirectory: detachedProject ? normalizeProjectPath(detachedProject) : null,
+    projectMeta: getProjectMetaMap(),
+  }));
+  const { projects, activeTargetDirectory, projectMeta } = projectSlice.state;
+  const setProjects = projectSlice.setter("projects");
+  const setActiveTargetDirectory = projectSlice.setter("activeTargetDirectory");
+  const setProjectMeta = projectSlice.setter("projectMeta");
   const projectsRef = useRef(projects);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [activeTargetDirectory, setActiveTargetDirectory] = useState<string | null>(
-    detachedProject ? normalizeProjectPath(detachedProject) : null,
-  );
+  const sessionSlice = useHostSlice<SessionSlice>(() => ({
+    sessions: [],
+    activeSessionId: null,
+    busySessionIds: new Set(),
+    queuedPrompts: {},
+    sessionDrafts: {},
+    sessionMeta: getSessionMetaMap(),
+  }));
+  const { sessions, activeSessionId, busySessionIds, queuedPrompts, sessionDrafts, sessionMeta } =
+    sessionSlice.state;
+  const setSessions = sessionSlice.setter("sessions");
+  const setActiveSessionId = sessionSlice.setter("activeSessionId");
+  const setBusySessionIds = sessionSlice.setter("busySessionIds");
+  const setQueuedPrompts = sessionSlice.setter("queuedPrompts");
+  const setSessionDrafts = sessionSlice.setter("sessionDrafts");
+  const setSessionMeta = sessionSlice.setter("sessionMeta");
   const activeTargetDirectoryRef = useRef(activeTargetDirectory);
-  const [busySessionIds, setBusySessionIds] = useState<Set<string>>(new Set());
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);
-  const [reasoningEffort, setReasoningEffortState] = useState<ReasoningEffort>(() => {
+  const modelSlice = useHostSlice<ModelSlice>(() => {
     const stored = storageGet(STORAGE_KEYS.REASONING_EFFORT);
-    return stored === "none" ||
+    const reasoningEffort =
+      stored === "none" ||
       stored === "minimal" ||
       stored === "low" ||
       stored === "medium" ||
@@ -166,24 +187,35 @@ function HostProviderBody({
       stored === "xhigh" ||
       stored === "max" ||
       stored === "ultra"
-      ? stored
-      : "medium";
+        ? stored
+        : "medium";
+    return { providers: [], selectedModel: null, reasoningEffort };
   });
-  const [sessionDrafts, setSessionDrafts] = useState<Record<string, string>>({});
-  const [sessionMeta, setSessionMeta] = useState<SessionMetaMap>(() => getSessionMetaMap());
-  const [projectMeta, setProjectMeta] = useState<ProjectMetaMap>(() => getProjectMetaMap());
-  const [bootState, setBootState] = useState<
-    "idle" | "checking-server" | "starting-server" | "ready" | "error"
-  >("checking-server");
-  const [bootError, setBootError] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
-  const [queuedPrompts, setQueuedPrompts] = useState<
-    Record<string, Array<{ id: string; text: string; mode: "queue" }>>
-  >({});
+  const { providers, selectedModel, reasoningEffort } = modelSlice.state;
+  const setProviders = modelSlice.setter("providers");
+  const setSelectedModel = modelSlice.setter("selectedModel");
+  const setReasoningEffortState = modelSlice.setter("reasoningEffort");
+  const transportSlice = useHostSlice<TransportSlice>(() => ({
+    bootState: "checking-server",
+    bootError: null,
+    lastError: null,
+  }));
+  const { bootState, bootError, lastError } = transportSlice.state;
+  const setBootState = transportSlice.setter("bootState");
+  const setBootError = transportSlice.setter("bootError");
+  const setLastError = transportSlice.setter("lastError");
   const activeSnapshotRef = useRef<HostSessionSnapshot | null>(null);
   const activeStreamRef = useRef<HostTranscriptStream | null>(null);
   const hydratingSessionIdsRef = useRef(new Set<string>());
   const activeSessionIdRef = useRef(activeSessionId);
+  const queuedPromptsRef = useRef(queuedPrompts);
+
+  queuedPromptsRef.current = queuedPrompts;
+  const queueController = useMemo(
+    () =>
+      host ? new HostQueueController(host, () => queuedPromptsRef.current, setQueuedPrompts) : null,
+    [host, setQueuedPrompts],
+  );
 
   const requireHost = useCallback(() => {
     if (!host) throw new Error("Connect to an OpenGUI Host first");
@@ -350,59 +382,21 @@ function HostProviderBody({
     void hydrateTranscript(activeSessionId);
   }, [activeSessionId, hydrateTranscript]);
 
-  useEffect(() => {
-    if (!host) return;
-    let hasConnected = false;
-    const handleEvent = (hostEvent: HostEvent) => {
-      const terminalEntry =
-        hostEvent.event.type === "entry_appended" &&
-        ["run_completed", "run_failed", "run_aborted", "run_interrupted"].includes(
-          hostEvent.event.entry.kind,
-        );
-      setBusySessionIds((current) => {
-        const next = new Set(current);
-        if (
-          hostEvent.event.type === "assistant_delta" ||
-          (hostEvent.event.type === "entry_appended" &&
-            hostEvent.event.entry.kind === "run_started")
-        ) {
-          next.add(hostEvent.sessionId);
-        } else if (terminalEntry) {
-          next.delete(hostEvent.sessionId);
-        }
-        return next;
-      });
-
-      const stream = activeStreamRef.current;
-      if (stream && stream.snapshot.id === hostEvent.sessionId) {
-        const nextStream = applyHostTranscriptEvent(stream, hostEvent);
-        activeStreamRef.current = nextStream;
-        activeSnapshotRef.current = nextStream.snapshot;
-        const scope = {
-          directory: nextStream.snapshot.projectDirectory,
-          sessionId: hostEvent.sessionId,
-        };
-        transcriptStore.dispatch({
-          type: "page.loaded",
-          scope,
-          phase: "initial",
-          messages: projectHostTranscriptStream(nextStream),
-          hasMore: false,
-          nextCursor: null,
-        });
-      }
-
-      if (terminalEntry) void refreshSessions().catch(notifyUnknownError);
-    };
-    return host.subscribe(handleEvent, undefined, () => {
-      if (!hasConnected) {
-        hasConnected = true;
-        return;
-      }
-      const sessionId = activeSessionIdRef.current;
-      if (sessionId) void hydrateTranscript(sessionId).catch(notifyUnknownError);
-    });
-  }, [host, hydrateTranscript, refreshSessions, transcriptStore]);
+  const setActiveSnapshot = useCallback((snapshot: HostSessionSnapshot) => {
+    activeSnapshotRef.current = snapshot;
+  }, []);
+  useHostEventStream({
+    host,
+    activeSessionIdRef,
+    activeStreamRef,
+    setActiveSnapshot,
+    setBusySessionIds,
+    transcriptStore,
+    refreshSessions,
+    hydrateTranscript,
+    onFollowUpDispatched: (sessionId, followUpId) =>
+      queueController?.recordDispatched(sessionId, followUpId),
+  });
 
   const sessionValue = useMemo<SessionContextValue>(
     () => ({
@@ -465,7 +459,7 @@ function HostProviderBody({
     [effectiveReasoningEffort, providers, selectedModel],
   );
 
-  const connectionValue = useMemo<ConnectionContextValue>(
+  const workspaceValue = useMemo<WorkspaceContextValue>(
     () => ({
       workspaces: workspaces.map((item) =>
         item.id === activeWorkspaceId ? { ...item, projects } : item,
@@ -518,7 +512,6 @@ function HostProviderBody({
       lastError,
       projectMeta,
       projects,
-      sessions,
       workspace,
       workspaces,
       activeWorkspaceId,
@@ -526,7 +519,7 @@ function HostProviderBody({
     ],
   );
 
-  const actions = useMemo<ActionsContextValue>(() => {
+  const actions = useHostActions(() => {
     const connectToProject = async (directory: string) => {
       if (!host) throw new Error("Connect to an OpenGUI Host first");
       const normalized = normalizeProjectPath(directory);
@@ -572,6 +565,10 @@ function HostProviderBody({
         await refreshSessions();
       },
       sendPrompt: async (text) => {
+        let optimisticMessage: {
+          scope: { directory: string; sessionId: string };
+          id: string;
+        } | null = null;
         try {
           let sessionId = activeSessionId;
           let directory = activeTargetDirectory;
@@ -611,9 +608,73 @@ function HostProviderBody({
               await refreshSessions();
             }
           }
+          const optimisticMessageId = `optimistic:${sessionId}:${Date.now()}`;
+          const scope = { directory, sessionId };
+          if (!busySessionIds.has(sessionId)) {
+            optimisticMessage = { scope, id: optimisticMessageId };
+            transcriptStore.dispatch({
+              type: "message.appended",
+              scope,
+              message: {
+                info: {
+                  id: optimisticMessageId,
+                  sessionID: sessionId,
+                  role: "user",
+                  providerID: selectedModel?.providerID ?? "",
+                  modelID: selectedModel?.modelID ?? "",
+                  time: { created: Date.now() },
+                },
+                parts: [
+                  {
+                    id: `${optimisticMessageId}:text`,
+                    type: "text",
+                    text,
+                    sessionID: sessionId,
+                    messageID: optimisticMessageId,
+                    tokens: {},
+                  },
+                ],
+              },
+            });
+          }
           setBusySessionIds((current) => new Set(current).add(sessionId!));
-          await requireHost().prompt(sessionId, text);
+          const result = await requireHost().prompt(sessionId, text);
+          if (result.mode === "follow_up") {
+            transcriptStore.dispatch({
+              type: "message.removed",
+              scope,
+              messageId: optimisticMessageId,
+            });
+            queueController?.recordEnqueued(sessionId, result.followUp);
+          } else {
+            let stream = activeStreamRef.current;
+            if (stream?.snapshot.id === sessionId) {
+              for (const entry of result.startedEntries) {
+                stream = applyHostTranscriptEvent(stream, {
+                  sessionId,
+                  event: { type: "entry_appended", entry },
+                });
+              }
+              activeStreamRef.current = stream;
+              activeSnapshotRef.current = stream.snapshot;
+              transcriptStore.dispatch({
+                type: "page.loaded",
+                scope: { directory: stream.snapshot.projectDirectory, sessionId },
+                phase: "initial",
+                messages: projectHostTranscriptStream(stream),
+                hasMore: false,
+                nextCursor: null,
+              });
+            }
+          }
         } catch (error) {
+          if (optimisticMessage) {
+            transcriptStore.dispatch({
+              type: "message.removed",
+              scope: optimisticMessage.scope,
+              messageId: optimisticMessage.id,
+            });
+          }
           const message = error instanceof Error ? error.message : String(error);
           setLastError(message);
           notifyError(message);
@@ -692,10 +753,18 @@ function HostProviderBody({
           mode: "queue" as const,
           createdAt: Date.now(),
         })),
-      removeFromQueue: () => {},
-      reorderQueue: () => {},
-      updateQueuedPrompt: () => {},
-      sendQueuedNow: async () => {},
+      removeFromQueue: (sessionId, promptId) => {
+        void queueController?.remove(sessionId, promptId).catch(notifyUnknownError);
+      },
+      reorderQueue: (sessionId, fromIndex, toIndex) => {
+        void queueController?.reorder(sessionId, fromIndex, toIndex).catch(notifyUnknownError);
+      },
+      updateQueuedPrompt: (sessionId, promptId, text) => {
+        void queueController?.update(sessionId, promptId, text).catch(notifyUnknownError);
+      },
+      sendQueuedNow: async (sessionId, promptId) => {
+        await queueController?.sendNow(sessionId, promptId);
+      },
       setSessionDraft: (key, text) => setSessionDrafts((current) => ({ ...current, [key]: text })),
       clearSessionDraft: (key) =>
         setSessionDrafts((current) => {
@@ -858,13 +927,11 @@ function HostProviderBody({
 
   return (
     <SessionContext.Provider value={sessionValue}>
-      <MessagesContext.Provider value={{ turnRuns: {} }}>
-        <ModelContext.Provider value={modelValue}>
-          <ConnectionContext.Provider value={connectionValue}>
-            <ActionsContext.Provider value={actions}>{children}</ActionsContext.Provider>
-          </ConnectionContext.Provider>
-        </ModelContext.Provider>
-      </MessagesContext.Provider>
+      <ModelContext.Provider value={modelValue}>
+        <WorkspaceContext.Provider value={workspaceValue}>
+          <ActionsContext.Provider value={actions}>{children}</ActionsContext.Provider>
+        </WorkspaceContext.Provider>
+      </ModelContext.Provider>
     </SessionContext.Provider>
   );
 }

@@ -1,10 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type {
-  AppUpdateState,
-  DesktopBackendStatus,
-  ElectronAPI,
-  SettingsBridgeChange,
-} from "./src/types/electron";
+import type { ElectronAPI } from "./src/types/preload-api";
+import type { SettingsBridgeChange } from "./src/types/settings";
+import type { AppUpdateState, DesktopBackendStatus } from "./src/types/shell";
 
 type Listener<T = unknown> = (data: T) => void;
 

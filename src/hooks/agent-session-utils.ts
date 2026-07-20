@@ -1,7 +1,8 @@
-import { normalizeProjectPath } from "@/lib/utils";
-import type { ProjectMetaMap, SessionMeta } from "@/hooks/agent-state-persistence";
+import { normalizeProjectPath } from "@/lib/path";
+import type { ProjectMetaMap } from "@/lib/persistence/project";
+import type { SessionMeta } from "@/lib/persistence/session";
 import type { Session } from "@/hooks/agent-state-types";
-import type { SelectedModel } from "@/types/electron";
+import type { SelectedModel } from "@opengui/protocol";
 
 const PROJECT_KEY_SEPARATOR = "\u0000";
 

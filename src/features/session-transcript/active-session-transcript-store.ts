@@ -128,6 +128,14 @@ export class ActiveSessionTranscriptStore {
       });
       return;
     }
+    if (input.type === "message.appended") {
+      this.commit({
+        ...this.snapshot,
+        messages: [...this.snapshot.messages, input.message],
+        revision: this.snapshot.revision + 1,
+      });
+      return;
+    }
     if (input.type === "message.removed") {
       this.commit({
         ...this.snapshot,

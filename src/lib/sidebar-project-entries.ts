@@ -1,4 +1,4 @@
-import { normalizeProjectPath } from "@/lib/utils";
+import { normalizeProjectPath } from "@/lib/path";
 
 /** Workspace Projects that should appear in the sidebar (not hidden by project meta). */
 export function listSidebarAvailableProjectDirectories(

@@ -155,10 +155,22 @@
     "setColor": "Set color",
     "tags": "Tags",
     "addTag": "Add tag...",
+    "removeTag": "Remove {{tag}} tag",
     "moveToProject": "Move to project",
     "removeFromProject": "Remove from {{project}}",
     "deleteSession": "Delete session",
-    "deleteSessionConfirm": "Delete \"{{title}}\"?\n\nThis permanently deletes the session and cannot be undone."
+    "deleteSessionConfirm": "Delete \"{{title}}\"?\n\nThis permanently deletes the session and cannot be undone.",
+    "colors": {
+      "none": "None",
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink",
+      "gray": "Gray"
+    }
   },
   "projectMenu": {
     "pinProject": "Pin project",

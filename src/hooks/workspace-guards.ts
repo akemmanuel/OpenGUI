@@ -1,4 +1,4 @@
-import type { Workspace } from "@/types/electron";
+import type { Workspace } from "@/types/workspace";
 
 /** True when the user has a workspace selected and can attach project directories to it. */
 export function canManageProjects(

@@ -10,15 +10,16 @@ import type {
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
 import type { ReasoningEffort } from "@/protocol/host-types";
 import type {
-  InternalAgentState,
+  TransportAgentState,
   QueueMode,
-  TurnRun,
   QueuedPrompt,
   Session,
   WorkspaceResourceState,
 } from "@/hooks/agent-state-types";
-import type { ProjectMetaMap, SessionColor, SessionMetaMap } from "@/hooks/agent-state-persistence";
-import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
+import type { ProjectMetaMap, SessionColor, SessionMetaMap } from "@/lib/persistence";
+import type { ConnectionStatus } from "@/types/connection";
+import type { SelectedModel } from "@opengui/protocol";
+import type { Workspace } from "@/types/workspace";
 
 export interface SessionContextValue {
   sessions: Session[];
@@ -36,10 +37,6 @@ export interface SessionContextValue {
   sessionErrors: Record<string, string>;
 }
 
-export interface MessagesContextValue {
-  turnRuns: Record<string, TurnRun>;
-}
-
 export interface ModelContextValue {
   providers: Provider[];
   providerDefaults: Record<string, string>;
@@ -52,7 +49,7 @@ export interface ModelContextValue {
   reasoningEffort?: ReasoningEffort;
 }
 
-export interface ConnectionContextValue {
+export interface WorkspaceContextValue {
   workspaces: Workspace[];
   activeWorkspace: Workspace | null;
   activeWorkspaceId: string;
@@ -68,22 +65,22 @@ export interface ConnectionContextValue {
       connected: boolean;
     }
   >;
+  workspaceResources: Record<string, WorkspaceResourceState>;
   connections: Record<string, ConnectionStatus>;
   workspaceDirectory: string | null;
   defaultChatDirectory: string | null;
+  activeDirectory: string | null;
+  projectMeta: ProjectMetaMap;
   workspaceServerUrl: string | null;
   isLocalWorkspace: boolean;
   /** Desktop Shell + Local Workspace: native OS directory picker. */
   supportsNativeDirectoryPicker: boolean;
   /** Base URL for attachment/image paths; null for Electron local backend. */
   attachmentBaseUrl: string | null;
-  activeDirectory: string | null;
-  bootState: InternalAgentState["bootState"];
+  bootState: TransportAgentState["bootState"];
   bootError: string | null;
   bootLogs: string | null;
   lastError: string | null;
-  projectMeta: ProjectMetaMap;
-  workspaceResources: Record<string, WorkspaceResourceState>;
 }
 
 export interface ActionsContextValue {
@@ -153,7 +150,6 @@ export interface ActionsContextValue {
 }
 
 export const SessionContext = createContext<SessionContextValue | null>(null);
-export const MessagesContext = createContext<MessagesContextValue | null>(null);
 export const ModelContext = createContext<ModelContextValue | null>(null);
-export const ConnectionContext = createContext<ConnectionContextValue | null>(null);
+export const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 export const ActionsContext = createContext<ActionsContextValue | null>(null);

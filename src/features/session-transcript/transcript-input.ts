@@ -1,5 +1,5 @@
 import type { MessageEntry } from "@/hooks/agent-state-types";
-import { normalizeProjectPath } from "@/lib/utils";
+import { normalizeProjectPath } from "@/lib/path";
 
 export type ActiveTranscriptScope = {
   directory: string;
@@ -31,6 +31,7 @@ export type ActiveTranscriptInput =
       hasMore: boolean;
       nextCursor: string | null;
     }
+  | { type: "message.appended"; scope: ActiveTranscriptScope; message: MessageEntry }
   | { type: "message.removed"; scope: ActiveTranscriptScope; messageId: string }
   | { type: "reset" };
 

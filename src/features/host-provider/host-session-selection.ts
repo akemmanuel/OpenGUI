@@ -1,5 +1,5 @@
 import type { HostSessionSnapshot } from "@/protocol/host-types";
-import type { SelectedModel } from "@/types/electron";
+import type { SelectedModel } from "@opengui/protocol";
 
 export function selectedModelFromHostSnapshot(snapshot: HostSessionSnapshot): SelectedModel | null {
   if (!snapshot.model) return null;

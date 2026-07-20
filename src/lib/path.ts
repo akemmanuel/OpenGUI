@@ -15,3 +15,11 @@ export function getProjectName(directory: string, fallback = "repo"): string {
   const parts = normalizeProjectPath(directory).split(/[/\\]/);
   return parts[parts.length - 1] || fallback;
 }
+
+/** Abbreviate an absolute path by replacing the home directory prefix with ~. */
+export function abbreviatePath(path: string, homeDir: string): string {
+  if (homeDir && path.startsWith(homeDir)) {
+    return `~${path.slice(homeDir.length)}`;
+  }
+  return path;
+}

@@ -1,10 +1,9 @@
-import { Check, ChevronRight, X } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { TranscriptPart, ToolCallTranscriptPart } from "@/protocol/session-transcript";
-import { PartView } from "../PartView";
 import { ToolCallPartView } from "./ToolCallPartView";
 
 function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction, running: boolean) {
@@ -55,7 +54,6 @@ export function ToolCallGroupView({
   const running =
     awaitingAssistantResponse ||
     tools.some((part) => part.state.status === "running" || part.state.status === "pending");
-  const failed = tools.some((part) => part.state.status === "error");
   const summary = toolGroupSummary(tools, t, running);
 
   return (
@@ -66,22 +64,9 @@ export function ToolCallGroupView({
     >
       <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
         <span className="flex size-3 shrink-0 items-center justify-center">
-          {running ? (
-            <Spinner className="size-3" />
-          ) : failed ? (
-            <X className="size-3 text-destructive" />
-          ) : (
-            <Check className="size-3" />
-          )}
+          {running ? <Spinner className="size-3" /> : <Check className="size-3" />}
         </span>
-        <span
-          className={cn(
-            "min-w-0 truncate font-medium",
-            failed ? "text-destructive/90" : "text-foreground/70",
-          )}
-        >
-          {summary}
-        </span>
+        <span className="min-w-0 truncate font-medium text-foreground/70">{summary}</span>
         <ChevronRight
           className={cn(
             "ml-auto size-3 shrink-0 transition-transform duration-150",
@@ -90,24 +75,17 @@ export function ToolCallGroupView({
         />
       </summary>
       {expanded && (
-        <div className="mt-1 flex flex-col gap-1 pl-[18px]">
-          {parts.map((part) =>
-            part.type === "tool" ? (
+        <div className="mt-1 max-h-64 overflow-y-auto overscroll-contain pl-[18px] pr-1">
+          <div className="flex flex-col gap-1">
+            {tools.map((part) => (
               <ToolCallPartView
                 key={part.id}
                 part={part}
                 expandedToolCalls={expandedToolCalls}
                 onSetToolCallExpanded={onSetToolCallExpanded}
               />
-            ) : (
-              <PartView
-                key={part.id}
-                part={part}
-                expandedToolCalls={expandedToolCalls}
-                onSetToolCallExpanded={onSetToolCallExpanded}
-              />
-            ),
-          )}
+            ))}
+          </div>
         </div>
       )}
     </details>

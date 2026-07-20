@@ -17,12 +17,12 @@ import { useActiveTranscriptPromptHistory } from "@/features/session-transcript/
 import {
   type QueueMode,
   useActions,
-  useConnectionState,
+  useWorkspaceState,
   useModelState,
   useSessionState,
 } from "@/hooks/use-agent-state";
 import { MAX_TEXTAREA_HEIGHT_PX } from "@/lib/constants";
-import { getSessionDraftKey } from "@/lib/session-drafts";
+import { getSessionDraftKey } from "@/lib/persistence/drafts";
 import { shouldShowSendButton, shouldShowStopButton } from "@/lib/session-controls";
 import { cn, getPrimaryAgents } from "@/lib/utils";
 
@@ -75,7 +75,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
     const promptHistory = useActiveTranscriptPromptHistory();
 
-    const { activeWorkspace, activeWorkspaceId, workspaceServerUrl } = useConnectionState();
+    const { activeWorkspace, activeWorkspaceId, workspaceServerUrl } = useWorkspaceState();
     const activeSession = React.useMemo(
       () => sessions.find((session) => session.id === activeSessionId) ?? null,
       [sessions, activeSessionId],

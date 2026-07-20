@@ -88,7 +88,10 @@ export type SessionEvent =
 export interface HarnessSession {
   read(): Promise<SessionSnapshot>;
   run(prompt: PromptInput): AsyncIterable<SessionEvent>;
-  followUp(prompt: PromptInput): Promise<void>;
+  followUp(prompt: PromptInput): Promise<FollowUp>;
+  updateFollowUp(followUpId: string, prompt: PromptInput): Promise<void>;
+  reorderFollowUp(followUpId: string, index: number): Promise<void>;
+  removeFollowUp(followUpId: string): Promise<void>;
   abort(): Promise<void>;
   setModel(selection: ModelSelection): Promise<void>;
   setReasoning(reasoning: ReasoningLevel): Promise<void>;

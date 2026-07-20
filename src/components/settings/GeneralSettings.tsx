@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { NOTIFICATIONS_ENABLED_KEY, useActions, useConnectionState } from "@/hooks/use-agent-state";
+import { NOTIFICATIONS_ENABLED_KEY, useActions, useWorkspaceState } from "@/hooks/use-agent-state";
 import { detectSystemLanguage, SUPPORTED_LANGUAGE_LIST, type SupportedLanguage } from "@/i18n";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, STORAGE_KEYS } from "@/lib/constants";
 import {
@@ -46,7 +46,7 @@ import {
   type NewChatModelBehavior,
 } from "@/lib/new-chat-model-behavior";
 import { getDesktopShellClient } from "@/runtime/clients";
-import { storageGet, storageRemove, storageSet } from "@/lib/safe-storage";
+import { storageGet, storageRemove, storageSet } from "@/lib/persistence/storage";
 import packageJson from "../../../package.json";
 
 // ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ function TerminalSetting() {
 function DefaultChatDirectorySetting() {
   const { t } = useTranslation();
   const { setDefaultChatDirectory, openDirectory } = useActions();
-  const { defaultChatDirectory, supportsNativeDirectoryPicker } = useConnectionState();
+  const { defaultChatDirectory, supportsNativeDirectoryPicker } = useWorkspaceState();
   const [value, setValue] = useState(defaultChatDirectory ?? "");
 
   useEffect(() => {

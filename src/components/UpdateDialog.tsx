@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { Button } from "@/components/ui/button";
 import type { UpdateCheckResult } from "@/hooks/use-update-check";
-import { openExternalLink } from "@/lib/utils";
+import { openExternalLink } from "@/lib/browser";
 import packageJson from "../../package.json";
 
 interface UpdateDialogProps {

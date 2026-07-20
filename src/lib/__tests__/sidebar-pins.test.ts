@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
-import { partitionSidebarPins } from "../sidebar-pins";
+import { partitionSidebarPins } from "../persistence/sidebar-pins";
 
 describe("partitionSidebarPins", () => {
   const workspaceId = "local";

@@ -18,21 +18,21 @@ import { HostProvider } from "@/features/host-provider/HostProvider";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
   useActions,
-  useConnectionState,
   useModelState,
   useSessionState,
+  useWorkspaceState,
 } from "@/hooks/use-agent-state";
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { useContextInfo } from "@/hooks/use-context-info";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/safe-storage";
+import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { DesktopShellProvider } from "@/shell/provider";
 import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
 import { useMobileBackButton } from "@/shell/useMobileBackButton";
 import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { notifyError, notifyErrorDeduped, resetNotifyErrorDedup } from "@/lib/notify";
-import { normalizeTerminalOutput } from "@/lib/utils";
+import { normalizeTerminalOutput } from "@/lib/terminal-output";
 import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShortcuts";
 import { useActiveSessionQueue } from "@/features/session/useActiveSessionQueue";
 import { useChatSessionSurface } from "@/features/session/useChatSessionSurface";
@@ -92,7 +92,7 @@ function AppContent({
     connections,
     workspaces,
     supportsMultipleWorkspaces,
-  } = useConnectionState();
+  } = useWorkspaceState();
   const normalizedBootLogs = useMemo(
     () => (bootLogs ? normalizeTerminalOutput(bootLogs) : null),
     [bootLogs],

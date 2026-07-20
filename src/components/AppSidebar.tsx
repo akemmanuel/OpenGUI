@@ -3,12 +3,12 @@ import { useTranslation } from "react-i18next";
 import { Sidebar, SidebarContent, useSidebar } from "@/components/ui/sidebar";
 import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import { useHomeDir } from "@/hooks/use-home-dir";
-import { useActions, useConnectionState, useSessionState } from "@/hooks/use-agent-state";
+import { useActions, useSessionState, useWorkspaceState } from "@/hooks/use-agent-state";
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import { SESSION_PAGE_SIZE } from "@/lib/constants";
 import { openAddWorkspaceDialog } from "@/hooks/workspace-guards";
 import { notifyInfo, notifyUnknownError } from "@/lib/notify";
-import { normalizeProjectPath } from "@/lib/utils";
+import { normalizeProjectPath } from "@/lib/path";
 import { ProjectPathDialog } from "./ProjectPathDialog";
 import { CollapsedProjectPopover } from "./sidebar/CollapsedProjectPopover";
 import { SidebarContentSections } from "./sidebar/SidebarContentSections";
@@ -78,7 +78,7 @@ export function AppSidebar({
     workspaceDirectory,
     defaultChatDirectory,
     bootState,
-  } = useConnectionState();
+  } = useWorkspaceState();
 
   // Inline rename state
   const [searchQuery, setSearchQuery] = useState("");

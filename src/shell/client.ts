@@ -1,4 +1,5 @@
-import type { AppUpdateState, DesktopBackendStatus, ElectronAPI } from "@/types/electron";
+import type { ElectronAPI } from "@/types/preload-api";
+import type { AppUpdateState, DesktopBackendStatus } from "@/types/shell";
 
 export interface DesktopShellClient {
   runtime: {

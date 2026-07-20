@@ -1,5 +1,5 @@
 import type { OpenGuiHostClient } from "@/protocol/host-types";
-import type { SelectedModel } from "@/types/electron";
+import type { SelectedModel } from "@opengui/protocol";
 
 export function persistHostModelSelection(
   host: OpenGuiHostClient,

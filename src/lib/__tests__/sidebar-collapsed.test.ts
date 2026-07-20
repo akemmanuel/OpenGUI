@@ -6,7 +6,7 @@ import {
   persistSidebarCollapsedProjects,
   pruneSidebarCollapsedProjects,
   toggleSidebarProjectCollapsed,
-} from "../sidebar-collapsed";
+} from "../persistence/sidebar";
 import { polyfillLocalStorage } from "./setup";
 
 beforeAll(() => {

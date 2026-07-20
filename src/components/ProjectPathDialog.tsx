@@ -7,10 +7,10 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
 import { DialogShell } from "@/components/ui/DialogShell";
 import { Button } from "@/components/ui/button";
-import { useConnectionState } from "@/hooks/use-agent-state";
+import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { canManageProjects as resolveCanManageProjects } from "@/hooks/workspace-guards";
 import { notifyInfo } from "@/lib/notify";
-import { normalizeProjectPath } from "@/lib/utils";
+import { normalizeProjectPath } from "@/lib/path";
 import { useDesktopShell } from "@/shell/provider";
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
@@ -66,7 +66,7 @@ export function ProjectPathDialog() {
     workspaceServerUrl,
     workspaceDirectory,
     supportsNativeDirectoryPicker,
-  } = useConnectionState();
+  } = useWorkspaceState();
   const shell = useDesktopShell();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");

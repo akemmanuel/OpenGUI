@@ -149,7 +149,29 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
       (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}/prompt`, {
         method: "POST",
         body: JSON.stringify({ text }),
-      })) as { mode: "run" | "follow_up" },
+      })) as
+        | { mode: "run"; startedEntries: HostSessionSnapshot["entries"] }
+        | { mode: "follow_up"; followUp: HostSessionSnapshot["followUps"][number] },
+    updateFollowUp: async (sessionId, followUpId, text) =>
+      (await request(
+        `/api/host/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
+        { method: "PATCH", body: JSON.stringify({ text }) },
+      )) as HostSessionSnapshot["followUps"],
+    reorderFollowUp: async (sessionId, followUpId, index) =>
+      (await request(
+        `/api/host/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}/reorder`,
+        { method: "POST", body: JSON.stringify({ index }) },
+      )) as HostSessionSnapshot["followUps"],
+    removeFollowUp: async (sessionId, followUpId) =>
+      (await request(
+        `/api/host/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
+        { method: "DELETE" },
+      )) as HostSessionSnapshot["followUps"],
+    sendFollowUpNow: async (sessionId, followUpId) =>
+      (await request(
+        `/api/host/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}/send-now`,
+        { method: "POST", body: "{}" },
+      )) as HostSessionSnapshot["followUps"],
     abort: async (sessionId) => {
       await request(`/api/host/sessions/${encodeURIComponent(sessionId)}/abort`, {
         method: "POST",

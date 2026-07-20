@@ -8,10 +8,12 @@ import type {
   Provider,
   QuestionRequest,
 } from "@/protocol/agent-types";
-import type { ProjectMetaMap, SessionMetaMap } from "@/hooks/agent-state-persistence";
+import type { ProjectMetaMap, SessionMetaMap } from "@/lib/persistence";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
-import type { QueuedPrompt, SessionDraftMap } from "@/lib/session-drafts";
-import type { ConnectionStatus, SelectedModel, Workspace } from "@/types/electron";
+import type { QueuedPrompt, SessionDraftMap } from "@/lib/persistence/drafts";
+import type { ConnectionStatus } from "@/types/connection";
+import type { SelectedModel } from "@opengui/protocol";
+import type { Workspace } from "@/types/workspace";
 
 /**
  * Extended session type that includes project directory session was
@@ -35,18 +37,6 @@ export interface MessageEntry {
   parts: Part[];
 }
 
-export interface TurnRun {
-  id: string;
-  sessionID: string;
-  startedAt: number;
-  completedAt?: number;
-  status: "running" | "completed" | "error" | "aborted";
-  assistantMessageID?: string;
-  providerID?: string;
-  modelID?: string;
-  thinkingLevel?: string;
-}
-
 export interface WorkspaceResourceState {
   /** Available providers and their models for this workspace. */
   providers: Provider[];
@@ -62,15 +52,29 @@ export interface WorkspaceResourceState {
   loadedProjectKey: string | null;
 }
 
-export interface InternalAgentState {
+export interface WorkspaceAgentState {
   /** Configured workspaces. */
   workspaces: Workspace[];
   /** Currently selected workspace tab. */
   activeWorkspaceId: string;
   /** Maps connected project directories to their workspace. */
   projectWorkspaceMap: Record<string, Set<string>>;
+  /** Resource catalogs keyed by workspace ID. */
+  workspaceResources: Record<string, WorkspaceResourceState>;
+}
+
+export interface ProjectAgentState {
   /** Per-project connection statuses keyed by directory */
   connections: Record<string, ConnectionStatus>;
+  /** Default chat directory for Chats section Sessions. */
+  defaultChatDirectory: string | null;
+  /** Directory selected for the next session before a session exists. */
+  activeTargetDirectory: string | null;
+  /** Local-only project metadata (pins) keyed by workspace+directory */
+  projectMeta: ProjectMetaMap;
+}
+
+export interface SessionAgentState {
   /** All sessions from all connected projects */
   sessions: Session[];
   /** Currently selected session ID */
@@ -81,42 +85,12 @@ export interface InternalAgentState {
   pendingPermissions: Record<string, PermissionRequest>;
   /** Pending questions keyed by sessionID */
   pendingQuestions: Record<string, QuestionRequest>;
-  /** Last error surfaced to UI */
-  lastError: string | null;
   /** Last error per session, shown next to active chat input */
   sessionErrors: Record<string, string>;
-  /** App startup status for local server bootstrap */
-  bootState: "idle" | "checking-server" | "starting-server" | "ready" | "error";
-  /** Startup error shown only when bootstrap fails */
-  bootError: string | null;
-  /** Server process logs captured during a failed startup */
-  bootLogs: string | null;
-  /** Resource catalogs keyed by workspace ID. */
-  workspaceResources: Record<string, WorkspaceResourceState>;
-  /** Available providers and their models for the active workspace */
-  providers: Provider[];
-  /** Default model mappings from server config */
-  providerDefaults: { [key: string]: string };
-  /** Currently selected model for prompts (null until resolved/selected) */
-  selectedModel: SelectedModel | null;
-  /** Set of session IDs that are currently busy (generating) */
-  busySessionIds: Set<string>;
   /** Session ids retained briefly in the sidebar while Host state catches up. */
   liveSessionRetainUntil: Record<string, number>;
-  /** Available agents from the server */
-  agents: Agent[];
-  /** Currently selected agent name (null = server default) */
-  selectedAgent: string | null;
-  /** Per-model variant selections */
-  variantSelections: VariantSelections;
-  /** Available slash commands from the server */
-  commands: Command[];
   /** Per-session queued prompts (sent automatically when session becomes idle) */
   queuedPrompts: Record<string, QueuedPrompt[]>;
-  /** Default chat directory for Chats section Sessions. */
-  defaultChatDirectory: string | null;
-  /** Directory selected for the next session before a session exists. */
-  activeTargetDirectory: string | null;
   /** Set of session IDs that are waiting for generated title */
   namingSessionIds: Set<string>;
   /** Set of session IDs that have unread content (finished generating while not active) */
@@ -125,12 +99,6 @@ export interface InternalAgentState {
   sessionDrafts: SessionDraftMap;
   /** Local-only session metadata (colors, tags, pins) keyed by session ID */
   sessionMeta: SessionMetaMap;
-  /** Local-only project metadata (pins) keyed by workspace+directory */
-  projectMeta: ProjectMetaMap;
-  /** Explicit frontend request/turn runs, keyed by turn ID. */
-  turnRuns: Record<string, TurnRun>;
-  /** Currently running turn ID per session. */
-  activeTurnRunBySession: Record<string, string>;
   /** Session IDs that have an "after-part" queued prompt waiting for the current part to finish */
   afterPartPending: Set<string>;
   /** Session IDs where an after-part trigger just fired (effect picks this up to abort + dispatch) */
@@ -139,5 +107,35 @@ export interface InternalAgentState {
   _deletedSessionIds: Set<string>;
 }
 
-export type AgentState = InternalAgentState;
-export type { QueueMode, QueuedPrompt } from "@/lib/session-drafts";
+export interface ModelAgentState {
+  /** Available providers and their models for the active workspace */
+  providers: Provider[];
+  /** Default model mappings from server config */
+  providerDefaults: { [key: string]: string };
+  /** Currently selected model for prompts (null until resolved/selected) */
+  selectedModel: SelectedModel | null;
+  /** Set of session IDs that are currently busy (generating) */
+  busySessionIds: Set<string>;
+  /** Available agents from the server */
+  agents: Agent[];
+  /** Currently selected agent name (null = server default) */
+  selectedAgent: string | null;
+  /** Per-model variant selections */
+  variantSelections: VariantSelections;
+  /** Available slash commands from the server */
+  commands: Command[];
+}
+
+export interface TransportAgentState {
+  lastError: string | null;
+  bootState: "idle" | "checking-server" | "starting-server" | "ready" | "error";
+  bootError: string | null;
+  bootLogs: string | null;
+}
+
+export type AgentState = WorkspaceAgentState &
+  ProjectAgentState &
+  SessionAgentState &
+  ModelAgentState &
+  TransportAgentState;
+export type { QueueMode, QueuedPrompt } from "@/lib/persistence/drafts";

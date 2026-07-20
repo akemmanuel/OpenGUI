@@ -1,5 +1,5 @@
 import * as React from "react";
-import { type SessionDraftMap } from "@/lib/session-drafts";
+import { type SessionDraftMap } from "@/lib/persistence/drafts";
 
 export function usePromptDraft({
   draftKey,

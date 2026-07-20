@@ -9,16 +9,19 @@ import {
 import * as ContextMenu from "@/components/ui/context-menu";
 import type { ReactNode } from "react";
 import type { Session } from "@/hooks/agent-state-types";
-import type { ProjectMetaMap } from "@/hooks/agent-state-persistence";
+import type { ProjectMetaMap } from "@/lib/persistence/project";
 import { SESSION_PAGE_SIZE } from "@/lib/constants";
-import { isSidebarProjectCollapsed, type SidebarCollapsedProjects } from "@/lib/sidebar-collapsed";
-import { abbreviatePath, getProjectName, normalizeProjectPath } from "@/lib/utils";
-import type { ConnectionStatus } from "@/types/electron";
+import {
+  isSidebarProjectCollapsed,
+  type SidebarCollapsedProjects,
+} from "@/lib/persistence/sidebar";
+import { abbreviatePath, getProjectName, normalizeProjectPath } from "@/lib/path";
+import type { ConnectionStatus } from "@/types/connection";
 import { ProjectItemMenu, ProjectMenuContent } from "@/components/SidebarItemMenus";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
-import { isSidebarProjectPinned } from "@/lib/sidebar-project-meta";
+import { isSidebarProjectPinned } from "@/lib/persistence/project";
 
 export function ProjectEntry({
   directory,

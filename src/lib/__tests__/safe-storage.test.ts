@@ -6,7 +6,7 @@ import {
   storageSet,
   storageSetJSON,
   storageSetOrRemove,
-} from "../safe-storage";
+} from "../persistence/storage";
 import { polyfillLocalStorage } from "./setup";
 
 // Polyfill localStorage for the test runner (which runs in a non-browser env)

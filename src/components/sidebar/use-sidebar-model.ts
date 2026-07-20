@@ -1,12 +1,13 @@
 import { useCallback, useMemo } from "react";
 import type { Session } from "@/hooks/agent-state-types";
-import type { ProjectMetaMap, SessionMetaMap } from "@/hooks/agent-state-persistence";
-import { partitionSidebarPins } from "@/lib/sidebar-pins";
-import { getProjectName, normalizeProjectPath } from "@/lib/utils";
-import type { ConnectionStatus, Workspace } from "@/types/electron";
+import type { ProjectMetaMap, SessionMetaMap } from "@/lib/persistence";
+import { partitionSidebarPins } from "@/lib/persistence/sidebar-pins";
+import { getProjectName, normalizeProjectPath } from "@/lib/path";
+import type { ConnectionStatus } from "@/types/connection";
+import type { Workspace } from "@/types/workspace";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
 import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
-import { isSidebarProjectHidden } from "@/lib/sidebar-project-meta";
+import { isSidebarProjectHidden } from "@/lib/persistence/project";
 import { buildSidebarOrderedRootProjectDirectories } from "@/lib/sidebar-project-entries";
 
 function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {

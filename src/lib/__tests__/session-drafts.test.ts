@@ -5,7 +5,7 @@ import {
   getSessionDrafts,
   persistSessionDrafts,
   pruneSessionDrafts,
-} from "../session-drafts";
+} from "../persistence/drafts";
 import { polyfillLocalStorage } from "./setup";
 
 beforeAll(() => {

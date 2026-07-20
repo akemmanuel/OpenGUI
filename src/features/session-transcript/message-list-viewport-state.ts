@@ -3,7 +3,7 @@ import {
   type MessageListViewportState,
 } from "@/components/message-list/message-list-viewport";
 import type { MessageEntry } from "@/hooks/agent-state-types";
-import type { SessionMeta } from "@/hooks/agent-state-persistence";
+import type { SessionMeta } from "@/lib/persistence/session";
 import {
   buildVisibleMessages,
   countRevertedVisibleMessages,

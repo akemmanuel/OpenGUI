@@ -283,6 +283,66 @@ export function registerHostProductRoutes(
     }
   });
 
+  app.patch("/api/host/sessions/:sessionId/follow-ups/:followUpId", async (c) => {
+    try {
+      const host = await input.getHost();
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const text = textField(body, "text");
+      if (!text) throw new Error("text is required");
+      return Response.json({
+        ok: true,
+        value: await host.updateFollowUp(c.req.param("sessionId"), c.req.param("followUpId"), {
+          text,
+        }),
+      });
+    } catch (error) {
+      return jsonError(error, 400);
+    }
+  });
+
+  app.post("/api/host/sessions/:sessionId/follow-ups/:followUpId/reorder", async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (typeof body.index !== "number" || !Number.isFinite(body.index)) {
+        throw new Error("index is required");
+      }
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).reorderFollowUp(c.req.param("sessionId"), c.req.param("followUpId"), body.index),
+      });
+    } catch (error) {
+      return jsonError(error, 400);
+    }
+  });
+
+  app.delete("/api/host/sessions/:sessionId/follow-ups/:followUpId", async (c) => {
+    try {
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).removeFollowUp(c.req.param("sessionId"), c.req.param("followUpId")),
+      });
+    } catch (error) {
+      return jsonError(error, 400);
+    }
+  });
+
+  app.post("/api/host/sessions/:sessionId/follow-ups/:followUpId/send-now", async (c) => {
+    try {
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).sendFollowUpNow(c.req.param("sessionId"), c.req.param("followUpId")),
+      });
+    } catch (error) {
+      return jsonError(error, 400);
+    }
+  });
+
   app.post("/api/host/sessions/:sessionId/abort", async (c) => {
     try {
       const host = await input.getHost();

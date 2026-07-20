@@ -1,6 +1,6 @@
 import { ImageMentionToken, type ImageMention } from "@/components/ImageMentionPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { useConnectionState } from "@/hooks/use-agent-state";
+import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { splitImageMentions } from "@/lib/image-mentions";
 import type { TextTranscriptPart } from "@/protocol/session-transcript";
 
@@ -19,7 +19,7 @@ export function TextPartView({
   onImageOpen?: (image: ImageMention) => void;
   imageBaseDirectory?: string | null;
 }) {
-  const { attachmentBaseUrl } = useConnectionState();
+  const { attachmentBaseUrl } = useWorkspaceState();
   if (!part.text) return null;
 
   if (isUser) {

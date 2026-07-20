@@ -1,5 +1,5 @@
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
-import type { ElectronAPI } from "@/types/electron";
+import type { ElectronAPI } from "@/types/preload-api";
 
 type Listener = (data: unknown) => void;
 
@@ -8,7 +8,7 @@ const listeners = new Map<string, Set<Listener>>();
 
 // Web Shell settings bridge implementation. Direct localStorage access is
 // intentionally confined here and in safe-storage; app code should use
-// src/lib/safe-storage.ts instead of browser storage APIs directly.
+// src/lib/persistence/storage.ts instead of browser storage APIs directly.
 
 function emit(channel: string, data: unknown) {
   for (const listener of listeners.get(channel) ?? []) listener(data);

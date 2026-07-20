@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/safe-storage";
+import { storageGet, storageSet } from "@/lib/persistence/storage";
 
 export type ThemeMode = "dark" | "light" | "system";
 /** Resolved actual theme (never "system") */

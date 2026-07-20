@@ -2,14 +2,14 @@ import { useMemo } from "react";
 import { buildTurnFooterByMessageId } from "@/components/message-list/turn-footers";
 import { buildVisibleMessages } from "@/components/message-list/visible-transcript";
 import { buildTranscriptRows } from "@/features/session-transcript/transcript-row-model";
-import type { MessageEntry, TurnRun } from "@/hooks/agent-state-types";
-import type { SessionMeta } from "@/hooks/agent-state-persistence";
+import type { MessageEntry } from "@/hooks/agent-state-types";
+import type { SessionMeta } from "@/lib/persistence/session";
 
 export function useMessageListTranscriptRows(input: {
   messages: MessageEntry[];
   sessionMetaForActive: SessionMeta | undefined;
   revertMessageID: string | undefined;
-  turnRuns: Record<string, TurnRun>;
+  isBusy: boolean;
   capabilities: { fork?: boolean; revert?: boolean } | null;
   forkFromMessage: (messageId: string) => void;
   revertToMessage: (messageId: string) => void;
@@ -24,8 +24,8 @@ export function useMessageListTranscriptRows(input: {
   );
 
   const turnFooterByMessageId = useMemo(
-    () => buildTurnFooterByMessageId(visibleMessages, input.turnRuns),
-    [visibleMessages, input.turnRuns],
+    () => buildTurnFooterByMessageId(visibleMessages, input.isBusy),
+    [visibleMessages, input.isBusy],
   );
 
   const firstUserMessageIndex = useMemo(

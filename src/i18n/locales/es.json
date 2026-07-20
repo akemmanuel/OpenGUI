@@ -155,10 +155,22 @@
     "setColor": "Definir color",
     "tags": "Etiquetas",
     "addTag": "Añadir etiqueta...",
+    "removeTag": "Quitar etiqueta {{tag}}",
     "moveToProject": "Mover al proyecto",
     "removeFromProject": "Quitar de {{project}}",
     "deleteSession": "Eliminar sesión",
-    "deleteSessionConfirm": "¿Eliminar \"{{title}}\"?\n\nEsta sesión se eliminará permanentemente y no se puede deshacer."
+    "deleteSessionConfirm": "¿Eliminar \"{{title}}\"?\n\nEsta sesión se eliminará permanentemente y no se puede deshacer.",
+    "colors": {
+      "none": "Ninguno",
+      "red": "Rojo",
+      "orange": "Naranja",
+      "yellow": "Amarillo",
+      "green": "Verde",
+      "blue": "Azul",
+      "purple": "Morado",
+      "pink": "Rosa",
+      "gray": "Gris"
+    }
   },
   "projectMenu": {
     "pinProject": "Fijar proyecto",

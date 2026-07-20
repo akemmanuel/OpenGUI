@@ -15,7 +15,8 @@ import ReactMarkdown from "react-markdown";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
-import { cn, copyTextToClipboard, openExternalLink } from "@/lib/utils";
+import { copyTextToClipboard, openExternalLink } from "@/lib/browser";
+import { cn } from "@/lib/utils";
 
 type StarryNight = Awaited<ReturnType<typeof createStarryNight>>;
 

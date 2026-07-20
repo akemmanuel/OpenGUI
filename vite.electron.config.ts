@@ -1,8 +1,7 @@
 import "./build/suppress-node-deprecations.ts";
 
-import { copyFile, readdir, writeFile } from "node:fs/promises";
-import { builtinModules, createRequire } from "node:module";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { builtinModules } from "node:module";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
 import pkg from "./package.json" with { type: "json" };
@@ -39,8 +38,6 @@ function isExternal(id: string) {
   return Boolean(packageId && externals.has(packageId));
 }
 
-const require = createRequire(import.meta.url);
-
 const nodeEsmCompatBanner = [
   "import { createRequire as __openguiCreateRequire } from 'node:module';",
   "import { fileURLToPath as __openguiFileURLToPath } from 'node:url';",
@@ -49,30 +46,6 @@ const nodeEsmCompatBanner = [
   "const __filename = __openguiFileURLToPath(import.meta.url);",
   "const __dirname = __openguiDirname(__filename);",
 ].join(" ");
-
-async function findPhotonWasm() {
-  try {
-    return require.resolve("@silvia-odwyer/photon-node/photon_rs_bg.wasm");
-  } catch {
-    // Fall back to pnpm's virtual store layout when package exports do not expose the wasm file.
-  }
-
-  const pnpmDir = join(process.cwd(), "node_modules", ".pnpm");
-  const entries = await readdir(pnpmDir, { withFileTypes: true });
-  const photonEntry = entries.find(
-    (entry) => entry.isDirectory() && entry.name.startsWith("@silvia-odwyer+photon-node@"),
-  );
-  if (!photonEntry)
-    throw new Error("Could not find @silvia-odwyer/photon-node in node_modules/.pnpm");
-  return join(
-    pnpmDir,
-    photonEntry.name,
-    "node_modules",
-    "@silvia-odwyer",
-    "photon-node",
-    "photon_rs_bg.wasm",
-  );
-}
 
 export default defineConfig({
   plugins: [
@@ -92,8 +65,6 @@ export default defineConfig({
           "dist-electron/package.json",
           `${JSON.stringify(runtimePackage, null, 2)}\n`,
         );
-        await copyFile(await findPhotonWasm(), "dist-electron/photon_rs_bg.wasm");
-
         await buildWithEsbuild({
           entryPoints: ["preload.ts"],
           outfile: "dist-electron/preload.cjs",

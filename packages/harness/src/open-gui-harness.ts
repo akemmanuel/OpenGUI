@@ -64,7 +64,19 @@ class HarnessSessionImpl implements HarnessSession {
   }
 
   async followUp(prompt: { text: string }) {
-    await this.#harness.followUp(this.#id, prompt.text);
+    return await this.#harness.followUp(this.#id, prompt.text);
+  }
+
+  async updateFollowUp(followUpId: string, prompt: { text: string }) {
+    await this.#harness.updateFollowUp(this.#id, followUpId, prompt.text);
+  }
+
+  async reorderFollowUp(followUpId: string, index: number) {
+    await this.#harness.reorderFollowUp(this.#id, followUpId, index);
+  }
+
+  async removeFollowUp(followUpId: string) {
+    await this.#harness.removeFollowUp(this.#id, followUpId);
   }
 
   async abort() {
@@ -157,7 +169,24 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     if (!this.#runningSessions.has(sessionId)) {
       throw new Error("Follow-ups can only be queued while a Session is running");
     }
-    await this.#store.enqueueFollowUp(sessionId, text, this.#clock.now().toISOString());
+    return await this.#store.enqueueFollowUp(sessionId, text, this.#clock.now().toISOString());
+  }
+
+  async updateFollowUp(sessionId: string, followUpId: string, rawText: string) {
+    this.#assertOpen();
+    const text = rawText.trim();
+    if (!text) throw new Error("Follow-up text must not be empty");
+    await this.#store.updateFollowUp(sessionId, followUpId, text);
+  }
+
+  async reorderFollowUp(sessionId: string, followUpId: string, index: number) {
+    this.#assertOpen();
+    await this.#store.reorderFollowUp(sessionId, followUpId, index);
+  }
+
+  async removeFollowUp(sessionId: string, followUpId: string) {
+    this.#assertOpen();
+    await this.#store.removeFollowUp(sessionId, followUpId);
   }
 
   abort(sessionId: string) {

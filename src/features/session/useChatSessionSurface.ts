@@ -1,20 +1,20 @@
 import { useMemo } from "react";
-import type { useConnectionState, useSessionState } from "@/hooks/use-agent-state";
+import type { useSessionState, useWorkspaceState } from "@/hooks/use-agent-state";
 import { parseProjectKey } from "@/hooks/agent-session-utils";
 import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import { getChatSurfaceState, hasProjectConnectedPrompt } from "@/lib/chat-surface";
-import { normalizeProjectPath } from "@/lib/utils";
+import { normalizeProjectPath } from "@/lib/path";
 
 type SessionState = ReturnType<typeof useSessionState>;
-type ConnectionState = ReturnType<typeof useConnectionState>;
+type WorkspaceState = ReturnType<typeof useWorkspaceState>;
 
 interface UseChatSessionSurfaceParams {
   sessions: SessionState["sessions"];
   activeSessionId: SessionState["activeSessionId"];
   activeTargetDirectory: SessionState["activeTargetDirectory"];
   sessionMeta: SessionState["sessionMeta"];
-  connections: ConnectionState["connections"];
-  defaultChatDirectory: ConnectionState["defaultChatDirectory"];
+  connections: WorkspaceState["connections"];
+  defaultChatDirectory: WorkspaceState["defaultChatDirectory"];
 }
 
 export function useChatSessionSurface({

@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { useConnectionState } from "@/hooks/use-agent-state";
+import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import type { FileTranscriptPart } from "@/protocol/session-transcript";
 
 export function FilePartView({ part }: { part: FileTranscriptPart }) {
   const { t } = useTranslation();
-  const { workspaceServerUrl } = useConnectionState();
+  const { workspaceServerUrl } = useWorkspaceState();
   const isImage = (part.mime ?? "").toLowerCase().startsWith("image/");
   const src = resolveAttachmentImageSrc(part.url, workspaceServerUrl);
 

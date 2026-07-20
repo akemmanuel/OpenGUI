@@ -1,3 +1,9 @@
+// Compatibility exports. Canonical shared domain shapes live outside the host
+// transport contract so renderer and preload types cannot drift from it.
+export type { SelectedModel } from "@opengui/protocol";
+export type { ConnectionStatus } from "@/types/connection";
+export type { Workspace } from "@/types/workspace";
+
 export interface HostModelConnection {
   id: string;
   label: string;
@@ -103,7 +109,17 @@ export interface OpenGuiHostClient {
     model: { connectionId: string; modelId: string },
   ): Promise<HostSessionSnapshot>;
   setReasoning(sessionId: string, reasoning: ReasoningEffort): Promise<HostSessionSnapshot>;
-  prompt(sessionId: string, text: string): Promise<{ mode: "run" | "follow_up" }>;
+  prompt(
+    sessionId: string,
+    text: string,
+  ): Promise<
+    | { mode: "run"; startedEntries: HostSessionEntry[] }
+    | { mode: "follow_up"; followUp: HostFollowUp }
+  >;
+  updateFollowUp(sessionId: string, followUpId: string, text: string): Promise<HostFollowUp[]>;
+  reorderFollowUp(sessionId: string, followUpId: string, index: number): Promise<HostFollowUp[]>;
+  removeFollowUp(sessionId: string, followUpId: string): Promise<HostFollowUp[]>;
+  sendFollowUpNow(sessionId: string, followUpId: string): Promise<HostFollowUp[]>;
   abort(sessionId: string): Promise<void>;
   findFiles(directory: string, query: string): Promise<string[]>;
   subscribe(

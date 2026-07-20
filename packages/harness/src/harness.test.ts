@@ -452,6 +452,52 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     await harness.close();
   });
 
+  test("manages pending follow-ups through the Session interface", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const model = new FakeModel([
+      { text: "First complete" },
+      { text: "Third edited complete" },
+      { text: "Second complete" },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory: dataDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "medium",
+    });
+    const stream = session.run({ text: "First" })[Symbol.asyncIterator]();
+    await stream.next();
+    await stream.next();
+
+    const second = await session.followUp({ text: "Second" });
+    const third = await session.followUp({ text: "Third" });
+    const fourth = await session.followUp({ text: "Fourth" });
+    await session.updateFollowUp(third.id, { text: "Third edited" });
+    await session.reorderFollowUp(third.id, 0);
+    await session.removeFollowUp(fourth.id);
+
+    expect((await session.read()).followUps.map((item) => item.prompt.text)).toEqual([
+      "Third edited",
+      "Second",
+    ]);
+    expect(second.prompt.text).toBe("Second");
+
+    while (!(await stream.next()).done) {
+      // Drain the stream through the managed follow-ups.
+    }
+    expect(
+      (await session.read()).entries
+        .filter((entry) => entry.kind === "user_message")
+        .map((entry) => entry.payload.text),
+    ).toEqual(["First", "Third edited", "Second"]);
+    await harness.close();
+  });
+
   test("executes ordered write and exact edit calls before the next model turn", async () => {
     const dataDirectory = await temporaryDirectory();
     const projectDirectory = join(dataDirectory, "project");

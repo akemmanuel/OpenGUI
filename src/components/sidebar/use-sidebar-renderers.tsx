@@ -1,9 +1,9 @@
 import { SessionRow } from "./SessionRow";
 import { ProjectEntry } from "./ProjectEntry";
 import type { Session } from "@/hooks/agent-state-types";
-import type { ProjectMetaMap, SessionMetaMap, SessionColor } from "@/hooks/agent-state-persistence";
-import type { ConnectionStatus } from "@/types/electron";
-import type { SidebarCollapsedProjects } from "@/lib/sidebar-collapsed";
+import type { ProjectMetaMap, SessionMetaMap, SessionColor } from "@/lib/persistence";
+import type { ConnectionStatus } from "@/types/connection";
+import type { SidebarCollapsedProjects } from "@/lib/persistence/sidebar";
 
 interface UseSidebarRenderersArgs {
   activeSessionId: string | null;

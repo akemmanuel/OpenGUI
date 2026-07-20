@@ -108,8 +108,8 @@ authenticated HTTP/events.
 - [ ] Verify setup, provider errors, empty states, offline/reconnecting state, interrupted Runs,
       and destructive confirmations.
 - [ ] Run keyboard-only, screen-reader-label, focus, reduced-motion, and WCAG AA contrast checks.
-- [ ] Verify all changed user-facing strings in English, German, and Spanish; decide whether other
-      tracked locales are supported or best-effort.
+- [ ] Verify all changed user-facing strings in every supported locale: English, German, and
+      Spanish.
 - [ ] Address the 4.25 MB frontend chunk warning with code splitting, or record and enforce an
       accepted bundle-size budget.
 

@@ -2,7 +2,7 @@ import { BadgeQuestionMark, MessageSquare, ShieldAlert } from "lucide-react";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { Session } from "@/hooks/agent-state-types";
-import type { SessionColor, SessionMetaMap } from "@/hooks/agent-state-persistence";
+import type { SessionColor, SessionMetaMap } from "@/lib/persistence/session";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";

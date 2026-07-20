@@ -2,28 +2,20 @@ import { useContext } from "react";
 import {
   ActionsContext,
   type ActionsContextValue,
-  ConnectionContext,
-  type ConnectionContextValue,
-  MessagesContext,
-  type MessagesContextValue,
   ModelContext,
   type ModelContextValue,
   SessionContext,
   type SessionContextValue,
+  WorkspaceContext,
+  type WorkspaceContextValue,
 } from "./agent-contexts";
 
-export { LOCAL_WORKSPACE_ID, NOTIFICATIONS_ENABLED_KEY } from "./agent-state-persistence";
+export { LOCAL_WORKSPACE_ID, NOTIFICATIONS_ENABLED_KEY } from "@/lib/persistence/workspace";
 export { resolveServerDefaultModel } from "./agent-model-selection";
 
 export function useSessionState(): SessionContextValue {
   const context = useContext(SessionContext);
   if (!context) throw new Error("useSessionState must be used within provider");
-  return context;
-}
-
-export function useMessages(): MessagesContextValue {
-  const context = useContext(MessagesContext);
-  if (!context) throw new Error("useMessages must be used within provider");
   return context;
 }
 
@@ -33,9 +25,9 @@ export function useModelState(): ModelContextValue {
   return context;
 }
 
-export function useConnectionState(): ConnectionContextValue {
-  const context = useContext(ConnectionContext);
-  if (!context) throw new Error("useConnectionState must be used within provider");
+export function useWorkspaceState(): WorkspaceContextValue {
+  const context = useContext(WorkspaceContext);
+  if (!context) throw new Error("useWorkspaceState must be used within provider");
   return context;
 }
 
@@ -53,4 +45,4 @@ export type {
   Session,
 } from "./agent-state-types";
 
-export type { SessionColor } from "./agent-state-persistence";
+export type { SessionColor } from "@/lib/persistence/session";

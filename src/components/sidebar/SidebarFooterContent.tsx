@@ -1,7 +1,7 @@
 import { FolderOpen } from "lucide-react";
 import { ConnectionPanel } from "@/components/ConnectionPanel";
 import { SidebarFooter } from "@/components/ui/sidebar";
-import { abbreviatePath } from "@/lib/utils";
+import { abbreviatePath } from "@/lib/path";
 
 export function SidebarFooterContent({
   activeSessionDirectory,

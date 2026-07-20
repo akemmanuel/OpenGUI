@@ -291,6 +291,65 @@ export class SqliteSessionStore {
     return rows.map(decodeFollowUp);
   }
 
+  async updateFollowUp(sessionId: string, followUpId: string, text: string) {
+    await this.#ready;
+    const result = await this.#database
+      .updateTable("session_follow_ups")
+      .set({ prompt_json: JSON.stringify({ text }) })
+      .where("session_id", "=", sessionId)
+      .where("id", "=", followUpId)
+      .where("state", "=", "pending")
+      .executeTakeFirst();
+    if (result.numUpdatedRows !== 1n) throw new Error(`Pending follow-up not found: ${followUpId}`);
+  }
+
+  async removeFollowUp(sessionId: string, followUpId: string) {
+    await this.#ready;
+    const result = await this.#database
+      .deleteFrom("session_follow_ups")
+      .where("session_id", "=", sessionId)
+      .where("id", "=", followUpId)
+      .where("state", "=", "pending")
+      .executeTakeFirst();
+    if (result.numDeletedRows !== 1n) throw new Error(`Pending follow-up not found: ${followUpId}`);
+  }
+
+  async reorderFollowUp(sessionId: string, followUpId: string, requestedIndex: number) {
+    await this.#ready;
+    await this.#database.transaction().execute(async (transaction) => {
+      const rows = await transaction
+        .selectFrom("session_follow_ups")
+        .select(["id", "sequence"])
+        .where("session_id", "=", sessionId)
+        .where("state", "=", "pending")
+        .orderBy("sequence")
+        .execute();
+      const fromIndex = rows.findIndex((row) => row.id === followUpId);
+      if (fromIndex < 0) throw new Error(`Pending follow-up not found: ${followUpId}`);
+      const toIndex = Math.max(0, Math.min(Math.trunc(requestedIndex), rows.length - 1));
+      if (fromIndex === toIndex) return;
+      const reordered = [...rows];
+      const [moved] = reordered.splice(fromIndex, 1);
+      if (!moved) return;
+      reordered.splice(toIndex, 0, moved);
+      const sequences = rows.map((row) => row.sequence).sort((a, b) => a - b);
+      for (let index = 0; index < reordered.length; index += 1) {
+        await transaction
+          .updateTable("session_follow_ups")
+          .set({ sequence: -(index + 1) })
+          .where("id", "=", reordered[index]!.id)
+          .executeTakeFirstOrThrow();
+      }
+      for (let index = 0; index < reordered.length; index += 1) {
+        await transaction
+          .updateTable("session_follow_ups")
+          .set({ sequence: sequences[index]! })
+          .where("id", "=", reordered[index]!.id)
+          .executeTakeFirstOrThrow();
+      }
+    });
+  }
+
   async claimNextFollowUp(sessionId: string) {
     await this.#ready;
     return this.#database.transaction().execute(async (transaction) => {

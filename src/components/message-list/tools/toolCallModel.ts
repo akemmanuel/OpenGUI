@@ -1,7 +1,7 @@
 import type { TodoItem } from "@/lib/todos";
 import type { TFunction } from "i18next";
 import { extractTodos } from "@/lib/todos";
-import { looksLikeTerminalOutput } from "@/lib/utils";
+import { looksLikeTerminalOutput } from "@/lib/terminal-output";
 import type { ToolCallState, ToolCallTranscriptPart } from "@/protocol/session-transcript";
 import type { ApplyPatchFileDiff } from "./applyPatch";
 import {

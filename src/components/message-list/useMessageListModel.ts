@@ -7,14 +7,14 @@ import {
 } from "@/features/session-transcript/message-list-viewport-state";
 import { useActiveTranscriptSnapshot } from "@/features/session-transcript/active-session-transcript-provider";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
-import { useConnectionState, useMessages, useSessionState } from "@/hooks/use-agent-state";
+import { useSessionState, useWorkspaceState } from "@/hooks/use-agent-state";
 
 export type { MessageListViewport } from "@/features/session-transcript/message-list-viewport-state";
 
 export function useMessageListModel() {
   const capabilities = useBackendCapabilities();
   const transcript = useActiveTranscriptSnapshot();
-  const { attachmentBaseUrl } = useConnectionState();
+  const { attachmentBaseUrl } = useWorkspaceState();
   const {
     isBusy,
     pendingPermissions,
@@ -31,7 +31,6 @@ export function useMessageListModel() {
   const olderMessagesError = transcript.olderError;
   const isLoadingMessages = resolveActiveTranscriptLoading(transcript, activeSessionId);
   const imageBaseDirectory = transcript.scope?.directory ?? null;
-  const { turnRuns } = useMessages();
   const { t } = useTranslation();
 
   const activeSession = useMemo(
@@ -86,7 +85,6 @@ export function useMessageListModel() {
     attachmentBaseUrl,
     messages,
     sessionMetaForActive,
-    turnRuns,
     revertMessageID,
     revertedCount,
     pendingPermission,

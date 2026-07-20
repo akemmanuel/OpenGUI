@@ -12,6 +12,7 @@ import {
   type PromptInput,
   type ReasoningLevel,
   type SessionEvent,
+  type SessionEntry,
   type SessionSnapshot,
   type SessionSummary,
 } from "@opengui/harness";
@@ -558,13 +559,24 @@ export class OpenGuiHost {
     const session = await this.#requireHarness().openSession(sessionId);
     const snapshot = await session.read();
     if (snapshot.status === "running" || this.#activeRuns.has(sessionId)) {
-      await session.followUp(prompt);
-      return { mode: "follow_up" as const };
+      const followUp = await session.followUp(prompt);
+      return { mode: "follow_up" as const, followUp };
+    }
+    const iterator = session.run(prompt)[Symbol.asyncIterator]();
+    const startedEntries: SessionEntry[] = [];
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) throw new Error("Run ended before it started");
+      this.#emit(sessionId, next.value);
+      if (next.value.type === "entry_appended") startedEntries.push(next.value.entry);
+      if (next.value.type === "entry_appended" && next.value.entry.kind === "run_started") break;
     }
     const run = (async () => {
       try {
-        for await (const event of session.run(prompt)) {
-          this.#emit(sessionId, event);
+        while (true) {
+          const next = await iterator.next();
+          if (next.done) break;
+          this.#emit(sessionId, next.value);
         }
       } catch (error) {
         console.error("OpenGUI Run failed", error);
@@ -574,7 +586,40 @@ export class OpenGuiHost {
     void run.finally(() => {
       if (this.#activeRuns.get(sessionId) === run) this.#activeRuns.delete(sessionId);
     });
-    return { mode: "run" as const };
+    return { mode: "run" as const, startedEntries };
+  }
+
+  async updateFollowUp(sessionId: string, followUpId: string, prompt: PromptInput) {
+    const session = await this.#requireHarness().openSession(sessionId);
+    await session.updateFollowUp(followUpId, prompt);
+    return (await session.read()).followUps;
+  }
+
+  async reorderFollowUp(sessionId: string, followUpId: string, index: number) {
+    const session = await this.#requireHarness().openSession(sessionId);
+    await session.reorderFollowUp(followUpId, index);
+    return (await session.read()).followUps;
+  }
+
+  async removeFollowUp(sessionId: string, followUpId: string) {
+    const session = await this.#requireHarness().openSession(sessionId);
+    await session.removeFollowUp(followUpId);
+    return (await session.read()).followUps;
+  }
+
+  async sendFollowUpNow(sessionId: string, followUpId: string) {
+    const session = await this.#requireHarness().openSession(sessionId);
+    const followUps = (await session.read()).followUps;
+    const selected = followUps.find((item) => item.id === followUpId);
+    if (!selected) throw new Error(`Pending follow-up not found: ${followUpId}`);
+    await session.reorderFollowUp(followUpId, 0);
+    if (this.#activeRuns.has(sessionId)) {
+      await session.abort();
+      await this.#activeRuns.get(sessionId);
+    }
+    await session.removeFollowUp(followUpId);
+    await this.prompt(sessionId, selected.prompt);
+    return (await session.read()).followUps;
   }
 
   async abort(sessionId: string) {

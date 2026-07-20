@@ -1,5 +1,5 @@
 import type { MessageEntry } from "@/hooks/use-agent-state";
-import type { SessionMeta } from "@/hooks/agent-state-persistence";
+import type { SessionMeta } from "@/lib/persistence/session";
 import type { TranscriptPart } from "@/protocol/session-transcript";
 import {
   buildMessageIndexById,

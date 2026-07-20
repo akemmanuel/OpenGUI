@@ -155,10 +155,22 @@
     "setColor": "Farbe setzen",
     "tags": "Tags",
     "addTag": "Tag hinzufügen...",
+    "removeTag": "Tag {{tag}} entfernen",
     "moveToProject": "In Projekt verschieben",
     "removeFromProject": "Aus {{project}} entfernen",
     "deleteSession": "Sitzung löschen",
-    "deleteSessionConfirm": "\"{{title}}\" löschen?\n\nDiese Sitzung wird dauerhaft gelöscht und kann nicht wiederhergestellt werden."
+    "deleteSessionConfirm": "\"{{title}}\" löschen?\n\nDiese Sitzung wird dauerhaft gelöscht und kann nicht wiederhergestellt werden.",
+    "colors": {
+      "none": "Keine",
+      "red": "Rot",
+      "orange": "Orange",
+      "yellow": "Gelb",
+      "green": "Grün",
+      "blue": "Blau",
+      "purple": "Lila",
+      "pink": "Rosa",
+      "gray": "Grau"
+    }
   },
   "projectMenu": {
     "pinProject": "Projekt anheften",

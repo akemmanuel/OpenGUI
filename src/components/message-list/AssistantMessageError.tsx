@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, Copy } from "lucide-react";
-import { copyTextToClipboard } from "@/lib/utils";
+import { copyTextToClipboard } from "@/lib/browser";
 import type { TranscriptMessageEntry } from "@/protocol/session-transcript";
 
 export function AssistantMessageError({

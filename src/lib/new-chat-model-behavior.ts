@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/safe-storage";
+import { storageGet, storageSet } from "@/lib/persistence/storage";
 
 export const NEW_CHAT_MODEL_BEHAVIORS = ["ask", "last", "workspace-default"] as const;
 

@@ -4,7 +4,7 @@ import {
   persistSidebarCollapsedProjects,
   pruneSidebarCollapsedProjects,
   toggleSidebarProjectCollapsed,
-} from "@/lib/sidebar-collapsed";
+} from "@/lib/persistence/sidebar";
 
 export function useSidebarCollapsedProjects({
   activeWorkspaceProjectDirectories,

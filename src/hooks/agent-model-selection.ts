@@ -1,5 +1,5 @@
 import type { Agent, Provider } from "@/protocol/agent-types";
-import type { SelectedModel } from "@/types/electron";
+import type { SelectedModel } from "@opengui/protocol";
 
 /**
  * Given the list of providers and a `provider -> modelID` default map from the

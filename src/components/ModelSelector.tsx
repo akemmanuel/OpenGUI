@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
-import { storageParsed, storageSetJSON } from "@/lib/safe-storage";
+import { storageParsed, storageSetJSON } from "@/lib/persistence/storage";
 import { cn } from "@/lib/utils";
 import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
 import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";

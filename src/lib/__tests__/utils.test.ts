@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { Provider } from "@/protocol/agent-types";
-import { abbreviatePath, findModel } from "../utils";
+import { abbreviatePath } from "../path";
+import { findModel } from "../utils";
 
 describe("abbreviatePath", () => {
   test("replaces home directory with ~", () => {

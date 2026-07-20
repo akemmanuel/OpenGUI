@@ -7,29 +7,16 @@ export function DurationLabel({ footer }: { footer: TurnFooter }) {
 
   useEffect(() => {
     if (!footer.running || typeof footer.startedAt !== "number") return;
-    const startedAt = footer.startedAt;
-    let timer: number | null = null;
-
-    const tick = () => {
-      const now = Date.now();
-      setNowMs(now);
-      const elapsed = Math.max(0, now - startedAt);
-      const nextSecondIn = 1000 - (elapsed % 1000);
-      timer = window.setTimeout(tick, Math.max(50, nextSecondIn));
-    };
-
-    tick();
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
-    };
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, [footer.running, footer.startedAt]);
 
+  const endedAt = footer.running ? nowMs : footer.completedAt;
   const elapsed =
-    typeof footer.durationMs === "number"
-      ? footer.durationMs
-      : typeof footer.startedAt === "number"
-        ? (footer.running ? nowMs : (footer.completedAt ?? nowMs)) - footer.startedAt
-        : null;
+    typeof footer.startedAt === "number" && typeof endedAt === "number"
+      ? endedAt - footer.startedAt
+      : null;
   if (typeof elapsed !== "number" || !Number.isFinite(elapsed) || elapsed <= 0) return null;
 
   return <span>{formatWholeSecondDuration(elapsed)}</span>;

@@ -7,7 +7,7 @@ import { useSlashCommandInput } from "@/hooks/use-slash-command-input";
 import type { Session } from "@/hooks/agent-state-types";
 import type { AgentCapabilities } from "@/hooks/use-agent-backend";
 import type { Command } from "@/protocol/agent-types";
-import type { QueueMode } from "@/lib/session-drafts";
+import type { QueueMode } from "@/lib/persistence/drafts";
 
 interface UsePromptInputInteractionsProps {
   value: string;

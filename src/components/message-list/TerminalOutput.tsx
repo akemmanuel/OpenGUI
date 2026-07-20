@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { cn, normalizeTerminalOutput } from "@/lib/utils";
+import { normalizeTerminalOutput } from "@/lib/terminal-output";
+import { cn } from "@/lib/utils";
 
 export function TerminalOutput({
   content,

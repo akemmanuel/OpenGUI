@@ -155,7 +155,6 @@
       "!dist/**/*.map",
       "dist-electron/**/*",
       "package.json",
-      "node_modules/@silvia-odwyer/photon-node/**/*",
       "node_modules/typebox/**/*",
       "node_modules/chalk/**/*",
       "node_modules/cli-highlight/**/*",

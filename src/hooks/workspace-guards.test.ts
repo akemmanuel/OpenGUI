@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { canManageProjects } from "./workspace-guards";
-import type { Workspace } from "@/types/electron";
+import type { Workspace } from "@/types/workspace";
 
 function makeWorkspace(id: string): Workspace {
   return {

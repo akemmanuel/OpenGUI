@@ -13,7 +13,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { todoStatusConfig } from "@/lib/todos";
-import { cn, copyTextToClipboard, looksLikeTerminalOutput } from "@/lib/utils";
+import { copyTextToClipboard } from "@/lib/browser";
+import { looksLikeTerminalOutput } from "@/lib/terminal-output";
+import { cn } from "@/lib/utils";
 import { ApplyPatchFilesView } from "./ApplyPatchFilesView";
 import type { ToolOutputBlock } from "./toolCallModel";
 

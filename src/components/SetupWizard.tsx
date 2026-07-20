@@ -7,7 +7,7 @@ import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandl
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageSet } from "@/lib/safe-storage";
+import { storageSet } from "@/lib/persistence/storage";
 import { useDesktopShell } from "@/shell/provider";
 import { createHostClient } from "@/protocol/host-client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";

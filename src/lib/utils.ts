@@ -1,20 +1,9 @@
 import type { Agent, Model, Provider } from "@/protocol/agent-types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { getDesktopShellClient } from "@/runtime/clients";
-
-export { getProjectName, normalizeProjectPath } from "./path";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-/** Abbreviate an absolute path by replacing the home directory prefix with ~. */
-export function abbreviatePath(path: string, homeDir: string): string {
-  if (homeDir && path.startsWith(homeDir)) {
-    return `~${path.slice(homeDir.length)}`;
-  }
-  return path;
 }
 
 /**
@@ -76,33 +65,6 @@ export function getErrorMessage(err: unknown, fallback = "Unexpected error"): st
   return fallback;
 }
 
-/** Open a URL in the system browser via the desktop shell, with fallback. */
-export function openExternalLink(url: string): void {
-  void getDesktopShellClient().navigation.openExternal(url);
-}
-
-/** Copy text to the system clipboard, with a textarea fallback for older WebViews. */
-export async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-
-  try {
-    document.execCommand("copy");
-  } finally {
-    document.body.removeChild(textarea);
-  }
-}
-
 /**
  * Create a UUID in browser-like runtimes where crypto.randomUUID may be absent
  * (for example file://, insecure HTTP, older WebViews), while still preferring
@@ -129,179 +91,6 @@ export function createUuid(): string {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
     .slice(6, 8)
     .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
-}
-
-export function looksLikeTerminalOutput(content: string): boolean {
-  return (
-    content.includes("\u001b[") ||
-    content.includes("\u009b") ||
-    content.includes("\r") ||
-    content.includes("\b") ||
-    /[│┌┐└┘├┤┬┴┼╭╮╯╰═║╔╗╚╝╠╣╦╩╬]/.test(content)
-  );
-}
-
-function writeChar(line: string[], cursor: number, char: string): number {
-  while (line.length < cursor) line.push(" ");
-  line[cursor] = char;
-  return cursor + 1;
-}
-
-export function normalizeTerminalOutput(content: string): string {
-  const lines: string[] = [];
-  let currentLine: string[] = [];
-  let cursor = 0;
-
-  const commitLine = () => {
-    lines.push(currentLine.join(""));
-    currentLine = [];
-    cursor = 0;
-  };
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i] ?? "";
-
-    if (char === "\u001b" || char === "\u009b") {
-      let finalChar = "";
-      let params = "";
-
-      if (char === "\u001b" && content[i + 1] === "]") {
-        i += 2;
-        while (i < content.length) {
-          if (content[i] === "\u0007") break;
-          if (content[i] === "\u001b" && content[i + 1] === "\\") {
-            i += 1;
-            break;
-          }
-          i += 1;
-        }
-        continue;
-      }
-
-      if (char === "\u001b" && content[i + 1] === "[") {
-        i += 2;
-      } else if (char === "\u009b") {
-        i += 1;
-      } else {
-        continue;
-      }
-
-      for (; i < content.length; i++) {
-        const code = content.charCodeAt(i);
-        if (code >= 0x40 && code <= 0x7e) {
-          finalChar = content[i] ?? "";
-          break;
-        }
-        params += content[i] ?? "";
-      }
-
-      const [firstParam = ""] = params.split(";");
-      const amount = Number.parseInt(firstParam, 10);
-      const count = Number.isFinite(amount) ? amount : 1;
-
-      switch (finalChar) {
-        case "C":
-          cursor += count;
-          break;
-        case "D":
-          cursor = Math.max(0, cursor - count);
-          break;
-        case "G":
-          cursor = Math.max(0, count - 1);
-          break;
-        case "K": {
-          const mode = Number.isFinite(amount) ? amount : 0;
-          if (mode === 0) {
-            currentLine.length = cursor;
-          } else if (mode === 1) {
-            for (let j = 0; j <= cursor && j < currentLine.length; j++) {
-              currentLine[j] = " ";
-            }
-          } else if (mode === 2) {
-            currentLine = [];
-            cursor = 0;
-          }
-          break;
-        }
-        case "J":
-          if (amount === 2 || amount === 3) {
-            lines.length = 0;
-            currentLine = [];
-            cursor = 0;
-          }
-          break;
-        default:
-          break;
-      }
-
-      continue;
-    }
-
-    if (char === "\r") {
-      cursor = 0;
-      continue;
-    }
-
-    if (char === "\n") {
-      commitLine();
-      continue;
-    }
-
-    if (char === "\b") {
-      cursor = Math.max(0, cursor - 1);
-      continue;
-    }
-
-    if (char === "\t") {
-      const spaces = 4 - (cursor % 4 || 0);
-      for (let j = 0; j < spaces; j++) {
-        cursor = writeChar(currentLine, cursor, " ");
-      }
-      continue;
-    }
-
-    cursor = writeChar(currentLine, cursor, char);
-  }
-
-  if (currentLine.length > 0 || content.endsWith("\n")) {
-    lines.push(currentLine.join(""));
-  }
-
-  return lines.join("\n");
-}
-
-/** Build a compare URL for creating a pull request from a remote URL and branch. */
-export function buildPRUrl(remoteUrl: string, branch: string, baseBranch = "main"): string | null {
-  let base: string | null = null;
-  const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
-  if (sshMatch) {
-    base = `https://${sshMatch[1]}/${sshMatch[2]}`;
-  }
-  const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
-  if (httpsMatch) {
-    base = `https://${httpsMatch[1]}/${httpsMatch[2]}`;
-  }
-  if (!base) return null;
-  return `${base}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`;
-}
-
-/**
- * Format an ISO date string or timestamp as a relative "X ago" label.
- * Accepts an ISO string or epoch-ms number.
- */
-export function formatTimeAgo(date: string | number): string {
-  const ms = typeof date === "string" ? Date.parse(date) : date;
-  if (Number.isNaN(ms)) return "";
-  const seconds = Math.floor((Date.now() - ms) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
 }
 
 /**

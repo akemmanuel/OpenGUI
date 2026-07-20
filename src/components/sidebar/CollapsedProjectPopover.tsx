@@ -1,7 +1,7 @@
 import { CirclePlus, MessageSquare, ShieldAlert } from "lucide-react";
 import type { RefObject } from "react";
 import type { Session } from "@/hooks/agent-state-types";
-import { getProjectName } from "@/lib/utils";
+import { getProjectName } from "@/lib/path";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 

@@ -1,10 +1,10 @@
 import type { Agent, Model, Provider } from "@/protocol/agent-types";
 import { useCallback, useMemo } from "react";
-import { persistVariantSelectionsForWorkspace } from "@/hooks/agent-state-persistence";
+import { persistVariantSelectionsForWorkspace } from "@/lib/persistence/workspace";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageSetOrRemove } from "@/lib/safe-storage";
+import { storageSetOrRemove } from "@/lib/persistence/storage";
 import { findModel } from "@/lib/utils";
-import type { SelectedModel } from "@/types/electron";
+import type { SelectedModel } from "@opengui/protocol";
 
 export type VariantSelections = Record<string, string | undefined>;
 
