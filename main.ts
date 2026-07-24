@@ -404,7 +404,11 @@ async function subscribeBackendEventsForWebContents(webContents: WebContents) {
             .map((line) => line.slice("data: ".length))
             .join("\n");
           if (data && !webContents.isDestroyed()) {
-            webContents.send("backend:event", JSON.parse(data));
+            try {
+              webContents.send("backend:event", JSON.parse(data));
+            } catch {
+              console.warn("Skipping malformed SSE event from backend");
+            }
           }
           boundary = buffer.indexOf("\n\n");
         }
