@@ -29,6 +29,7 @@ export interface AppUpdateState {
 }
 
 export interface UpdatesBridge {
+  isManaged?: boolean;
   getState(): Promise<AppUpdateState>;
   check(): Promise<AppUpdateState>;
   download(): Promise<AppUpdateState>;

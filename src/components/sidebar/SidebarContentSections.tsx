@@ -33,6 +33,32 @@ type PinnedEntry =
   | { kind: "project"; directory: string; sessions: Session[] }
   | { kind: "session"; session: Session; projectDirectory: string };
 
+export function SidebarSectionAction({
+  collapsed,
+  label,
+  onClick,
+  children,
+}: {
+  collapsed: boolean;
+  label: string;
+  onClick: () => void;
+  children?: ReactNode;
+}) {
+  if (collapsed) return null;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      data-slot="sidebar-section-action"
+      data-responsive-allow="hover-reveal"
+      onClick={onClick}
+      className="h-6 w-6 opacity-0 transition-opacity group-hover/label:opacity-100 group-focus-within/label:opacity-100 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground focus-visible:opacity-100"
+    >
+      {children}
+    </button>
+  );
+}
+
 export function SidebarContentSections({
   pinnedEntries,
   filteredChatSessions,
@@ -54,6 +80,7 @@ export function SidebarContentSections({
   reorderVisibleProjects,
   canManageProjects,
   onAddWorkspace,
+  sidebarCollapsed = false,
 }: {
   pinnedEntries: PinnedEntry[];
   filteredChatSessions: Session[];
@@ -82,6 +109,7 @@ export function SidebarContentSections({
   };
   canManageProjects: boolean;
   onAddWorkspace: () => void;
+  sidebarCollapsed?: boolean;
   renderProjectEntry: (
     directory: string,
     sessions: Session[],
@@ -134,18 +162,16 @@ export function SidebarContentSections({
         <SidebarGroup>
           <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
             <span>{labels.chats}</span>
-            <button
-              type="button"
-              aria-label={labels.newChat}
+            <SidebarSectionAction
+              collapsed={sidebarCollapsed}
+              label={labels.newChat}
               onClick={() => {
                 void startNewChat();
                 closeMobileSidebar();
               }}
-              disabled={!showChatsSection}
-              className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
             >
               <SquarePen className="h-4 w-4" />
-            </button>
+            </SidebarSectionAction>
           </SidebarGroupLabel>
           <SidebarGroupContent>
             {filteredChatSessions.length === 0 ? (
@@ -200,14 +226,13 @@ export function SidebarContentSections({
         <SidebarGroupLabel className="group/label flex items-center justify-between !text-sm">
           {labels.projects}
           {canManageProjects ? (
-            <button
-              type="button"
-              aria-label={labels.addProject}
+            <SidebarSectionAction
+              collapsed={sidebarCollapsed}
+              label={labels.addProject}
               onClick={() => void handleAddProject()}
-              className="opacity-0 group-hover/label:opacity-100 transition-opacity h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground"
             >
               <Plus className="h-4 w-4" />
-            </button>
+            </SidebarSectionAction>
           ) : null}
         </SidebarGroupLabel>
         <SidebarGroupContent>

@@ -2,7 +2,7 @@
 
 ## Setup
 
-Install Node.js 22.5 or newer and pnpm 11.5.2, then run:
+Install Node.js 22.5 or newer and pnpm 11.8.0, then run:
 
 ```bash
 pnpm install

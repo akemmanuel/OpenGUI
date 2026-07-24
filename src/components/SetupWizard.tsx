@@ -1,17 +1,22 @@
 /** First-run onboarding for Everyday Builders. */
 
-import { ArrowRight, Check, Folder, X } from "lucide-react";
+import { ArrowRight, Check, Folder } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
 import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageSet } from "@/lib/persistence/storage";
 import { useDesktopShell } from "@/shell/provider";
 import { createHostClient } from "@/protocol/host-client";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import { notifyUnknownError } from "@/lib/notify";
+import type { DesktopShellClient } from "@/shell/client";
+import { requestProjectPath } from "@/components/ProjectPathDialog";
+import { useActions } from "@/hooks/use-agent-state";
+import type { OpenGuiHostClient } from "@/protocol/host-types";
 
 type Step = "model" | "folder" | "finish";
 
@@ -43,9 +48,57 @@ function createWizardHostClient() {
   });
 }
 
+export function buildSetupModelConnection(input: {
+  baseUrl: string;
+  apiKey: string;
+  modelId: string;
+}) {
+  const baseUrl = input.baseUrl.trim();
+  const modelId = input.modelId.trim();
+  if (!baseUrl || !modelId) return null;
+  return {
+    id: "default",
+    label: "Default",
+    baseUrl,
+    apiKey: input.apiKey.trim() || undefined,
+    modelIds: [modelId],
+  };
+}
+
+export async function saveSetupModelConnection(
+  host: Pick<OpenGuiHostClient, "upsertModelConnection">,
+  input: { baseUrl: string; apiKey: string; modelId: string },
+  refreshProviders: () => Promise<unknown>,
+) {
+  const connection = buildSetupModelConnection(input);
+  if (!connection) return false;
+  await host.upsertModelConnection(connection);
+  await refreshProviders();
+  return true;
+}
+
+export function persistSetupCompletion(folder: string) {
+  const defaultDirectory = folder.trim();
+  if (defaultDirectory) storageSet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY, defaultDirectory);
+  storageSet(STORAGE_KEYS.SETUP_COMPLETE, "true");
+}
+
+type SetupFolderShell = Pick<DesktopShellClient, "runtime" | "dialog">;
+
+export async function selectSetupFolder(
+  shell: SetupFolderShell,
+  initialPath: string,
+  openHostDirectory: (initialPath?: string) => Promise<string | null> = requestProjectPath,
+) {
+  return shell.runtime.isElectron
+    ? shell.dialog.openDirectory()
+    : openHostDirectory(initialPath.trim() || undefined);
+}
+
 export function SetupWizard({ onComplete }: Props) {
   const { t } = useTranslation();
   const shell = useDesktopShell();
+  const { refreshProviders } = useActions();
   const host = useMemo(() => createWizardHostClient(), []);
   const [step, setStep] = useState<Step>("model");
   const [folder, setFolder] = useState("");
@@ -89,7 +142,7 @@ export function SetupWizard({ onComplete }: Props) {
 
   async function browseFolder() {
     try {
-      const nextDirectory = await shell.dialog.openDirectory();
+      const nextDirectory = await selectSetupFolder(shell, folder);
       if (nextDirectory) setFolder(nextDirectory);
     } catch {
       // Dialog unavailable; user can type/paste later in settings.
@@ -99,16 +152,12 @@ export function SetupWizard({ onComplete }: Props) {
   async function saveModelAndContinue() {
     setSavingModel(true);
     try {
-      if (baseUrl.trim() && modelId.trim()) {
-        await host.upsertModelConnection({
-          id: "default",
-          label: "Default",
-          baseUrl: baseUrl.trim(),
-          apiKey: apiKey.trim() || undefined,
-          modelIds: [modelId.trim()],
-        });
-      }
-      setStep("folder");
+      const saved = await saveSetupModelConnection(
+        host,
+        { baseUrl, apiKey, modelId },
+        refreshProviders,
+      );
+      if (saved) setStep("folder");
     } catch (error) {
       notifyUnknownError(error);
     } finally {
@@ -117,25 +166,15 @@ export function SetupWizard({ onComplete }: Props) {
   }
 
   function complete() {
-    if (folder.trim()) storageSet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY, folder.trim());
-    storageSet(STORAGE_KEYS.SETUP_COMPLETE, "true");
+    persistSetupCompletion(folder);
     onComplete();
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-xl border bg-card p-6 shadow-lg">
-        <button
-          type="button"
-          className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted"
-          onClick={onComplete}
-          aria-label={t("common.close")}
-        >
-          <X className="size-4" />
-        </button>
-
+    <Dialog open onOpenChange={(open) => !open && onComplete()}>
+      <DialogContent className="block w-full max-w-lg p-6 sm:max-w-lg">
         <div className="mb-4 text-xs text-muted-foreground">{currentStepNumber + 1} / 3</div>
-        <h1 className="mb-2 text-2xl font-semibold tracking-tight">{title}</h1>
+        <DialogTitle className="mb-2 text-2xl font-semibold tracking-tight">{title}</DialogTitle>
 
         {step === "model" && (
           <div className="space-y-3">
@@ -167,13 +206,13 @@ export function SetupWizard({ onComplete }: Props) {
                 onChange={(event) => setModelId(event.target.value)}
               />
             </label>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setStep("folder")}>
                 {t("setupWizard.skip")}
               </Button>
               <Button
                 type="button"
-                disabled={savingModel}
+                disabled={savingModel || !baseUrl.trim() || !modelId.trim()}
                 onClick={() => void saveModelAndContinue()}
               >
                 {t("setupWizard.continue")}
@@ -188,7 +227,7 @@ export function SetupWizard({ onComplete }: Props) {
             <p className="text-sm text-muted-foreground">
               {t("setupWizard.chooseStartDescription")}
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm"
                 placeholder={t("setupWizard.folderPlaceholder")}
@@ -200,7 +239,7 @@ export function SetupWizard({ onComplete }: Props) {
                 {t("common.browse")}
               </Button>
             </div>
-            <div className="flex justify-between gap-2 pt-2">
+            <div className="flex flex-wrap justify-between gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setStep("model")}>
                 {t("common.back")}
               </Button>
@@ -215,7 +254,7 @@ export function SetupWizard({ onComplete }: Props) {
         {step === "finish" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">{t("setupWizard.readyDescription")}</p>
-            <div className="flex justify-between gap-2">
+            <div className="flex flex-wrap justify-between gap-2">
               <Button type="button" variant="ghost" onClick={() => setStep("folder")}>
                 {t("common.back")}
               </Button>
@@ -226,7 +265,7 @@ export function SetupWizard({ onComplete }: Props) {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

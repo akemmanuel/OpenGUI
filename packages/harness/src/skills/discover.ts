@@ -58,9 +58,11 @@ function loadSkillFromFile(
       ? frontmatter.name.trim()
       : parentDirName;
 
-  for (const message of validateSkillName(name)) {
-    diagnostics.push({ type: "warning", message, path: filePath });
+  const nameErrors = validateSkillName(name);
+  for (const message of nameErrors) {
+    diagnostics.push({ type: "error", message, path: filePath });
   }
+  if (nameErrors.length > 0) return { skill: null, diagnostics };
 
   if (typeof frontmatter.name === "string" && frontmatter.name.trim() !== parentDirName) {
     diagnostics.push({

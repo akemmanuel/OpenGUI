@@ -467,6 +467,29 @@ export class SqliteSessionStore {
     );
   }
 
+  async listAllSessions() {
+    await this.#ready;
+    const sessions = await this.#database
+      .selectFrom("sessions")
+      .selectAll()
+      .orderBy("updated_at", "desc")
+      .orderBy("id", "desc")
+      .execute();
+    return Promise.all(
+      sessions.map(async (session) => {
+        const entries = (
+          await this.#database
+            .selectFrom("session_entries")
+            .selectAll()
+            .where("session_id", "=", session.id)
+            .orderBy("sequence")
+            .execute()
+        ).map(decodeEntry);
+        return this.#summary(session, entries);
+      }),
+    );
+  }
+
   async recoverInterruptedRuns(now: string) {
     await this.#ready;
     await this.#database

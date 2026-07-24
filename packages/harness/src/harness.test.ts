@@ -67,9 +67,9 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       // drain
     }
 
-    expect(model.requests[0]?.systemPrompt).toContain("<name>code-review</name>");
-    expect(model.requests[0]?.systemPrompt).toContain(`<location>${skillPath}</location>`);
-    expect(model.requests[0]?.systemPrompt).toContain("use the read tool");
+    expect(model.requests[0]?.systemPrompt).toContain(`- code-review:`);
+    expect(model.requests[0]?.systemPrompt).toContain(skillPath);
+    expect(model.requests[0]?.systemPrompt).toContain("read that SKILL.md");
     expect(model.requests[1]?.context.at(-1)).toMatchObject({
       type: "tool_result",
       toolCallId: "call-skill",

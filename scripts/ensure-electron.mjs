@@ -4,6 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const electronPackagePath = require.resolve("electron/package.json");
@@ -12,7 +13,8 @@ const electronRequire = createRequire(electronPackagePath);
 const { version } = electronRequire("./package.json");
 const { downloadArtifact } = electronRequire("@electron/get");
 
-function getPlatformPath(platform = os.platform()) {
+/** @param {string} [platform] */
+export function getPlatformPath(platform = os.platform()) {
   switch (platform) {
     case "mas":
     case "darwin":
@@ -28,7 +30,7 @@ function getPlatformPath(platform = os.platform()) {
   }
 }
 
-async function ensureElectron() {
+export async function ensureElectron() {
   const platform =
     process.env.ELECTRON_INSTALL_PLATFORM || process.env.npm_config_platform || process.platform;
   const arch = process.env.ELECTRON_INSTALL_ARCH || process.env.npm_config_arch || process.arch;
@@ -74,7 +76,12 @@ async function ensureElectron() {
   await fsp.writeFile(pathFile, platformPath, "utf8");
 }
 
-ensureElectron().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+) {
+  ensureElectron().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

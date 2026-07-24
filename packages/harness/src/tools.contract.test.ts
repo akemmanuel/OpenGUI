@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
@@ -68,6 +68,19 @@ describe("Harness tool contracts", () => {
     expect(outputs[0]).not.toHaveProperty("content");
   });
 
+  test("read rejects malformed UTF-8 instead of returning replacement characters", async () => {
+    const { outputs } = await runToolCalls(
+      [{ id: "read-invalid-utf8", name: "read", input: { path: "invalid.txt" } }],
+      (directory) => writeFile(join(directory, "invalid.txt"), Buffer.from([0x66, 0x80, 0x6f])),
+    );
+
+    expect(outputs[0]).toMatchObject({
+      error: "read requires valid UTF-8 text",
+      truncated: false,
+    });
+    expect(outputs[0]).not.toHaveProperty("content");
+  });
+
   test("read truncates large UTF-8 text without returning a broken code point", async () => {
     const { outputs } = await runToolCalls(
       [{ id: "read-unicode", name: "read", input: { path: "unicode.txt" } }],
@@ -95,6 +108,22 @@ describe("Harness tool contracts", () => {
     expect(outputs[1]).toMatchObject({ bytesWritten: Buffer.byteLength("hello 🙂") });
     expect(await readFile(join(projectDirectory, "created", "a.txt"), "utf8")).toBe("hello 🙂");
   });
+
+  test.skipIf(process.platform === "win32")(
+    "atomic replacement preserves an existing file's mode",
+    async () => {
+      const { projectDirectory } = await runToolCalls(
+        [{ id: "replace-script", name: "write", input: { path: "script.sh", content: "new\n" } }],
+        async (directory) => {
+          const path = join(directory, "script.sh");
+          await writeFile(path, "old\n");
+          await chmod(path, 0o751);
+        },
+      );
+
+      expect((await stat(join(projectDirectory, "script.sh"))).mode & 0o777).toBe(0o751);
+    },
+  );
 
   test("edit refuses ambiguous matches without mutation and replaceAll is explicit", async () => {
     const { projectDirectory, outputs } = await runToolCalls(
@@ -144,6 +173,25 @@ describe("Harness tool contracts", () => {
       expect(outputs[0]).toMatchObject({ exitCode: 0, timedOut: false, aborted: false });
       expect(outputs[0]?.output).toContain("out:");
       expect(outputs[0]?.output).toContain("|err");
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "shell truncation keeps returned UTF-8 well formed",
+    async () => {
+      const { outputs } = await runToolCalls([
+        {
+          id: "shell-unicode",
+          name: "shell",
+          input: {
+            command: `node -e "process.stdout.write('🙂'.repeat(2000) + 'x')"`,
+          },
+        },
+      ]);
+
+      expect(outputs[0]).toMatchObject({ truncated: true });
+      expect(outputs[0]?.output).not.toContain("�");
+      expect(Buffer.byteLength(String(outputs[0]?.output), "utf8")).toBeLessThanOrEqual(5 * 1024);
     },
   );
 });

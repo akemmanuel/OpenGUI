@@ -250,6 +250,58 @@
     cursor: pointer;
   }
 
+  /* Coarse-pointer sizing is structural, not tied to viewport width. */
+  @media (pointer: coarse) {
+    [data-slot="button"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="select-trigger"],
+    [data-slot="input"],
+    input:not([type="hidden"]),
+    textarea,
+    button:not([data-responsive-allow~="compact-target"]) {
+      min-width: 44px !important;
+      min-height: 44px !important;
+    }
+
+    [data-slot="sidebar-section-action"],
+    [data-slot="sidebar-hover-action"] {
+      opacity: 1 !important;
+    }
+  }
+
+  /* The browser gate uses this explicit equivalent because CDP cannot
+     override the pointer media feature independently of a named device. */
+  html[data-responsive-coarse="true"] {
+    [data-slot="button"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="select-trigger"],
+    [data-slot="input"],
+    input:not([type="hidden"]),
+    textarea,
+    button:not([data-responsive-allow~="compact-target"]) {
+      min-width: 44px !important;
+      min-height: 44px !important;
+    }
+
+    [data-slot="title-bar"] {
+      min-height: calc(44px + var(--app-safe-top));
+    }
+
+    [data-slot="title-bar-leading"],
+    [data-slot="workspace-tabs"] {
+      height: 44px !important;
+    }
+
+    [data-slot="sidebar-section-action"],
+    [data-slot="sidebar-hover-action"] {
+      opacity: 1 !important;
+    }
+  }
+
   /* Webkit scrollbar (Chrome, Edge, Electron) */
   *::-webkit-scrollbar {
     width: 6px;
@@ -286,6 +338,11 @@
 }
 
 .markdown-renderer {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+
   /* Headings */
   & h1,
   & h2,
@@ -430,6 +487,16 @@
   }
 }
 
+@media (pointer: coarse) {
+  .markdown-renderer .group > [data-slot="button"] {
+    opacity: 1 !important;
+  }
+}
+
+html[data-responsive-coarse="true"] .markdown-renderer .group > [data-slot="button"] {
+  opacity: 1 !important;
+}
+
 @keyframes progress-indeterminate {
   0% {
     transform: translateX(-100%);
@@ -441,6 +508,19 @@
 
 @utility animate-progress-indeterminate {
   animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-delay: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .terminal-output {

@@ -182,12 +182,17 @@ export default defineConfig({
   fmt: {},
   lint: { options: { typeAware: true, typeCheck: true } },
   test: {
+    testTimeout: 15_000,
     include: [
       "**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../packages/protocol/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../packages/backend/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../packages/harness/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../server/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../lib/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../main/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../scripts/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
   },
 });

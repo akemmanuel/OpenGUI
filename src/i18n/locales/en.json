@@ -2,6 +2,12 @@
   "mobile": {
     "backAgainToExit": "Press back again to exit"
   },
+  "windowControls": {
+    "minimize": "Minimize window",
+    "maximize": "Maximize window",
+    "restore": "Restore window",
+    "close": "Close window"
+  },
   "common": {
     "autoDetect": "Auto-detect",
     "back": "Back",
@@ -15,12 +21,19 @@
     "settings": "Settings",
     "version": "Version",
     "done": "Done",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "retry": "Try again"
   },
   "messageError": {
     "showDetails": "Show details",
     "hideDetails": "Hide details",
     "copy": "Copy"
+  },
+  "markdown": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyCodeLabel": "Copy code to clipboard",
+    "codeCopied": "Code copied"
   },
   "messageList": {
     "loadOlder": "Load older messages",
@@ -838,6 +851,8 @@
   "queueList": {
     "reorderQueuedPrompt": "Reorder queued prompt",
     "sendNow": "Send now",
+    "remove": "Remove queued prompt",
+    "moreActions": "More queued prompt actions",
     "interrupt": "interrupt",
     "steer": "steer",
     "edit": "Edit",
@@ -856,6 +871,7 @@
     "restore": "Restore"
   },
   "sessionShare": {
+    "loadFailed": "Sharing settings could not be loaded.",
     "title": "Share Session",
     "description": "Manage access to “{{title}}”. Sessions are private until you share them.",
     "people": "People and Team",

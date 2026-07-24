@@ -20,3 +20,6 @@ allowBuilds:
   msw: false
   protobufjs: true
   sharp: true
+
+minimumReleaseAgeExclude:
+  - agent-browser@0.33.0

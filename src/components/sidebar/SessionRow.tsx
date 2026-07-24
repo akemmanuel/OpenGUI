@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { Session } from "@/hooks/agent-state-types";
 import type { SessionColor, SessionMetaMap } from "@/lib/persistence/session";
-import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { SidebarMenuItem } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { getColorBorderClass, SessionContextMenu } from "@/components/SessionContextMenu";
@@ -11,6 +11,37 @@ import { SessionItemMenu } from "@/components/SidebarItemMenus";
 import { cleanSessionTitle } from "@/lib/session-title";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { openSessionShareDialog } from "@/features/identity/SessionShareDialog";
+import { SidebarRow } from "./SidebarRow";
+
+type SessionAccessRole = Session["_accessRole"];
+
+export function sessionUiPermissions(role: SessionAccessRole) {
+  return {
+    manage: role === "owner" || role === "admin" || role == null,
+    run: role === "owner" || role === "run" || role == null,
+    delete: role === "owner" || role == null,
+  };
+}
+
+export function SessionRowTitle({
+  displayTitle,
+  isUnread,
+  onDoubleClick,
+}: {
+  displayTitle: string;
+  isUnread: boolean;
+  onDoubleClick: React.MouseEventHandler<HTMLSpanElement>;
+}) {
+  return (
+    <span
+      className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
+      data-responsive-allow="text-clip"
+      onDoubleClick={onDoubleClick}
+    >
+      {displayTitle}
+    </span>
+  );
+}
 
 export function SessionRow({
   session,
@@ -75,8 +106,9 @@ export function SessionRow({
 }) {
   const { t } = useTranslation();
   const identityActor = useIdentityActor();
+  const permissions = sessionUiPermissions(session._accessRole);
   const onShare =
-    identityActor?.type === "user"
+    identityActor?.type === "user" && permissions.manage
       ? () =>
           openSessionShareDialog(
             session.id,
@@ -133,43 +165,46 @@ export function SessionRow({
       onSetTags={(newTags) => setSessionTags(session.id, newTags)}
       onMoveToProject={moveToProject}
       onRemoveFromProject={removeFromProject}
-      onRename={() => startEditing(session.id, isNaming ? "" : session.title || "")}
+      onRename={
+        permissions.manage
+          ? () => startEditing(session.id, isNaming ? "" : session.title || "")
+          : undefined
+      }
       onShare={onShare}
-      onDelete={confirmAndDeleteSession}
+      onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
     >
       <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          tooltip={
-            isNaming
-              ? undefined
-              : {
-                  children: displayTitle,
-                  side: "right",
-                  align: "center",
-                  hidden: editingSessionId === session.id || isNaming,
-                }
-          }
-          isActive={isActive}
-          className={`group/session min-w-0 ${colorBorderClass}`}
-        >
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (editingSessionId === session.id) return;
-              void selectSession(session.id);
-              closeMobileSidebar();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                if (editingSessionId === session.id) return;
-                void selectSession(session.id);
-                closeMobileSidebar();
+        <SidebarRow
+          label={displayTitle}
+          active={isActive}
+          editing={editingSessionId === session.id}
+          className={`group/session ${colorBorderClass}`}
+          onActivate={() => {
+            void selectSession(session.id);
+            closeMobileSidebar();
+          }}
+          actions={
+            <SessionItemMenu
+              pinned={isPinned}
+              currentColor={meta?.color}
+              currentTags={tags}
+              availableProjects={availableProjectDirectories}
+              displayProjectDir={meta?.displayProjectDir ?? null}
+              currentProjectDir={currentProjectDir}
+              onTogglePin={() => setSessionPinned(session.id, !isPinned)}
+              onSetColor={(color) => setSessionColor(session.id, color)}
+              onSetTags={(newTags) => setSessionTags(session.id, newTags)}
+              onMoveToProject={moveToProject}
+              onRemoveFromProject={removeFromProject}
+              onRename={
+                permissions.manage ? () => startEditing(session.id, session.title || "") : undefined
               }
-            }}
-          >
+              onShare={onShare}
+              onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
+            />
+          }
+        >
+          <span className="contents">
             <span className="relative shrink-0">
               {isBusy ? (
                 <Spinner className="size-4 text-muted-foreground" />
@@ -208,17 +243,14 @@ export function SessionRow({
             ) : isNaming ? (
               <Skeleton className="h-4 min-w-0 flex-1 bg-sidebar-foreground/20" />
             ) : (
-              <span
-                role="textbox"
-                tabIndex={-1}
-                className={`truncate min-w-0 flex-1 ${isUnread ? "font-semibold" : ""}`}
+              <SessionRowTitle
+                displayTitle={displayTitle}
+                isUnread={isUnread}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startEditing(session.id, session.title || "");
                 }}
-              >
-                {displayTitle}
-              </span>
+              />
             )}
             {identityActor?.type === "user" && (
               <span
@@ -262,24 +294,8 @@ export function SessionRow({
                 {queueCount}
               </span>
             )}
-            <SessionItemMenu
-              pinned={isPinned}
-              currentColor={meta?.color}
-              currentTags={tags}
-              availableProjects={availableProjectDirectories}
-              displayProjectDir={meta?.displayProjectDir ?? null}
-              currentProjectDir={currentProjectDir}
-              onTogglePin={() => setSessionPinned(session.id, !isPinned)}
-              onSetColor={(color) => setSessionColor(session.id, color)}
-              onSetTags={(newTags) => setSessionTags(session.id, newTags)}
-              onMoveToProject={moveToProject}
-              onRemoveFromProject={removeFromProject}
-              onRename={() => startEditing(session.id, session.title || "")}
-              onShare={onShare}
-              onDelete={confirmAndDeleteSession}
-            />
-          </div>
-        </SidebarMenuButton>
+          </span>
+        </SidebarRow>
       </SidebarMenuItem>
     </SessionContextMenu>
   );

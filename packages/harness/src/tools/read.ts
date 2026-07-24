@@ -20,7 +20,14 @@ export interface ReadToolOutput {
 function isReadToolInput(value: unknown): value is ReadToolInput {
   if (!value || typeof value !== "object") return false;
   const input = value as Record<string, unknown>;
-  return typeof input.path === "string" && input.path.trim().length > 0;
+  return (
+    typeof input.path === "string" &&
+    input.path.trim().length > 0 &&
+    (input.startLine === undefined ||
+      (typeof input.startLine === "number" && Number.isFinite(input.startLine))) &&
+    (input.endLine === undefined ||
+      (typeof input.endLine === "number" && Number.isFinite(input.endLine)))
+  );
 }
 
 export async function executeReadTool(
@@ -29,7 +36,11 @@ export async function executeReadTool(
   authorizedPath?: string,
 ): Promise<ReadToolOutput> {
   if (!isReadToolInput(rawInput)) {
-    return { path: "", error: "read requires a non-empty path", truncated: false };
+    return {
+      path: "",
+      error: "read requires a non-empty path and optional numeric line range",
+      truncated: false,
+    };
   }
 
   const path =
@@ -41,7 +52,12 @@ export async function executeReadTool(
       return { path, error: "read does not support binary files", truncated: false };
     }
 
-    const text = bytes.toString("utf8");
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      return { path, error: "read requires valid UTF-8 text", truncated: false };
+    }
     const lines = text.split(/(?<=\n)/u);
     const startIndex = Math.max(0, Math.floor(rawInput.startLine ?? 1) - 1);
     const requestedEnd = Math.max(

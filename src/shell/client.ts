@@ -143,9 +143,7 @@ export function createElectronDesktopShell(api: ElectronAPI): DesktopShellClient
       getSystemLocale: () => api.getSystemLocale(),
     },
     updates: {
-      // No native auto-updater: the renderer only checks GitHub releases and
-      // shows a dismissible notification dialog.
-      isManaged: false,
+      isManaged: api.updates?.isManaged === true,
       getState: () => api.updates.getState(),
       check: () => api.updates.check(),
       download: () => api.updates.download(),

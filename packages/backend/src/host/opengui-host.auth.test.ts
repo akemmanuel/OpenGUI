@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { OpenGuiHost } from "./opengui-host.ts";
+import { HOST_STATE_FILENAME, OpenGuiHost } from "./opengui-host.ts";
 
 const directories: string[] = [];
 
@@ -46,11 +46,11 @@ describe("OpenGuiHost authentication persistence", () => {
     ]);
     await host.close();
 
-    const secretsPath = join(dataDirectory, "opengui-host-secrets.json");
-    expect(JSON.parse(await readFile(secretsPath, "utf8"))).toMatchObject({
-      "opencode-go": "go-secret",
+    const statePath = join(dataDirectory, HOST_STATE_FILENAME);
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
+      secrets: { apiKeys: { "opencode-go": "go-secret" } },
     });
-    expect((await stat(secretsPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(statePath)).mode & 0o777).toBe(0o600);
 
     const restarted = new OpenGuiHost(dataDirectory, { fetchImpl: catalogFetch as typeof fetch });
     await restarted.start();
@@ -78,5 +78,32 @@ describe("OpenGuiHost authentication persistence", () => {
     expect(host.codexAuthStatus().connected).toBe(false);
     expect(host.listModelConnections()).toEqual([]);
     await host.close();
+  });
+
+  test("migrates legacy Project settings into the transactional state", async () => {
+    const dataDirectory = await directory();
+    await writeFile(
+      join(dataDirectory, "opengui-host-settings.json"),
+      JSON.stringify({
+        modelConnections: [],
+        defaultConnectionId: null,
+        projects: [dataDirectory],
+      }),
+    );
+    const host = new OpenGuiHost(dataDirectory);
+    await host.start();
+
+    expect(await host.listProjects()).toEqual([
+      { directory: dataDirectory, name: dataDirectory.split("/").at(-1) },
+    ]);
+    await host.disconnectSubscription("xai");
+    await host.close();
+
+    expect(
+      JSON.parse(await readFile(join(dataDirectory, HOST_STATE_FILENAME), "utf8")),
+    ).toMatchObject({
+      settings: { projects: [dataDirectory] },
+      secrets: { subscriptionTokens: {} },
+    });
   });
 });

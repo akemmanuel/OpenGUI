@@ -1,5 +1,5 @@
 import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageParsed, storageSet, storageSetJSON } from "./storage";
+import { storageGet, storageParsed, storageSet } from "./storage";
 import { normalizeProjectPath } from "@/lib/path";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
@@ -368,7 +368,9 @@ export function persistWorkspaces(workspaces: Workspace[]) {
       : policy.shellKind === "web"
         ? normalized.filter((workspace) => workspace.id === LOCAL_WORKSPACE_ID).slice(0, 1)
         : normalized;
-  storageSetJSON(STORAGE_KEYS.WORKSPACES, sortLocalWorkspaces(scoped));
+  const serialized = JSON.stringify(sortLocalWorkspaces(scoped));
+  storageSet(STORAGE_KEYS.WORKSPACES, serialized);
+  return storageGet(STORAGE_KEYS.WORKSPACES) === serialized;
 }
 
 export function getActiveWorkspaceId(workspaces: Workspace[]) {

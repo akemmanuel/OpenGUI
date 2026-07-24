@@ -46,6 +46,15 @@ export interface TransportSlice {
   lastError: string | null;
 }
 
+export function resolveRestoredSessionId(
+  currentSessionId: string | null,
+  savedSessionId: string | null | undefined,
+  listedSessionIds: readonly string[],
+) {
+  if (currentSessionId && listedSessionIds.includes(currentSessionId)) return currentSessionId;
+  return savedSessionId && listedSessionIds.includes(savedSessionId) ? savedSessionId : null;
+}
+
 type SliceAction<S> = { [K in keyof S]: { key: K; value: SetStateAction<S[K]> } }[keyof S];
 
 export function reduceHostSlice<S>(state: S, action: SliceAction<S>): S {

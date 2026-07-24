@@ -1,6 +1,3 @@
-import { common, createStarryNight } from "@wooorm/starry-night";
-import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import onigurumaWasmUrl from "vscode-oniguruma/release/onig.wasm?url";
 import { Check, Copy } from "lucide-react";
 import {
   isValidElement,
@@ -12,29 +9,25 @@ import {
   useState,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import remarkGfm from "remark-gfm";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { copyTextToClipboard, openExternalLink } from "@/lib/browser";
 import { cn } from "@/lib/utils";
-
-type StarryNight = Awaited<ReturnType<typeof createStarryNight>>;
-
-let starryNightPromise: Promise<StarryNight> | null = null;
-
-function getStarryNight() {
-  starryNightPromise ??= createStarryNight(common, {
-    getOnigurumaUrlFetch() {
-      return new URL(onigurumaWasmUrl, window.location.href);
-    },
-  });
-  return starryNightPromise;
-}
 
 function nodeToString(node: React.ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeToString).join("");
   return "";
+}
+
+function isSafeExternalUrl(value: string): boolean {
+  try {
+    const url = new URL(value, window.location.href);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 function guessCodeLanguage(code: string): string | null {
@@ -68,6 +61,7 @@ function guessCodeLanguage(code: string): string | null {
 }
 
 function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
+  const { t } = useTranslation();
   const code = nodeToString(children).replace(/\n$/, "");
   const explicitLanguage = /language-([^\s]+)/.exec(className ?? "")?.[1];
   const language = explicitLanguage ?? guessCodeLanguage(code);
@@ -82,16 +76,11 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
       return;
     }
 
-    getStarryNight()
-      .then((starryNight) => {
+    import("@/lib/syntax-highlighter")
+      .then(async ({ highlightCode }) => {
         if (cancelled) return;
-        const scope = starryNight.flagToScope(language);
-        if (!scope) {
-          setHighlighted(null);
-          return;
-        }
-        const tree = starryNight.highlight(code, scope);
-        setHighlighted(toJsxRuntime(tree, { Fragment, jsx, jsxs }));
+        const highlightedCode = await highlightCode(code, language, window.location.href);
+        if (!cancelled) setHighlighted(highlightedCode);
       })
       .catch(() => {
         if (!cancelled) setHighlighted(null);
@@ -117,17 +106,24 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
   return (
     <div className="group relative my-3 max-w-full">
       <Button
+        data-responsive-allow="hover-reveal"
         type="button"
         variant="outline"
         size="icon-sm"
         className="absolute top-2 right-2 z-10 bg-background/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity focus:opacity-100 group-hover:opacity-100"
         onClick={handleCopy}
-        aria-label={copied ? "Code copied" : "Copy code to clipboard"}
-        title={copied ? "Copied" : "Copy"}
+        aria-label={copied ? t("markdown.codeCopied") : t("markdown.copyCodeLabel")}
+        title={copied ? t("markdown.copied") : t("markdown.copy")}
       >
         {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       </Button>
-      <pre className="max-w-full overflow-x-auto rounded-lg border border-border/60 bg-muted/60 p-3">
+      <span className="sr-only" role="status" aria-live="polite">
+        {copied ? t("markdown.codeCopied") : ""}
+      </span>
+      <pre
+        data-responsive-allow="horizontal-scroll"
+        className="max-w-full overflow-x-auto rounded-lg border border-border/60 bg-muted/60 p-3"
+      >
         <code
           className={cn(
             "font-mono text-[var(--code-font-size)] leading-relaxed",
@@ -145,7 +141,7 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
 const markdownComponents = {
   table({ children, node: _node, ...props }: ComponentProps<"table"> & { node?: unknown }) {
     return (
-      <div className="markdown-table-scroll">
+      <div className="markdown-table-scroll" data-responsive-allow="horizontal-scroll">
         <table {...props}>{children}</table>
       </div>
     );
@@ -165,8 +161,8 @@ const markdownComponents = {
     return <pre>{children}</pre>;
   },
   a({ children, href, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
+    if (!href || !isSafeExternalUrl(href)) return <span>{children}</span>;
     const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-      if (!href) return;
       event.preventDefault();
       openExternalLink(href);
     };
@@ -183,6 +179,11 @@ const markdownComponents = {
         {children}
       </a>
     );
+  },
+  img({ alt }: ComponentProps<"img">) {
+    // Model-authored markdown is untrusted. Do not automatically contact an
+    // arbitrary image origin (tracking pixels can leak IP and URL metadata).
+    return alt ? <span className="text-muted-foreground">{alt}</span> : null;
   },
   code({ children, node: _node, ...props }: ComponentProps<"code"> & { node?: unknown }) {
     return (

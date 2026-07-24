@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, dialog, ipcMain, shell, session } =
   require("electron") as typeof import("electron");
+const { autoUpdater } = require("electron-updater") as typeof import("electron-updater");
 import { homedir } from "node:os";
 import { execSync, spawn } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
@@ -13,6 +14,19 @@ import { createSettingsStore } from "./settings-store.js";
 import { createBackendSidecarController } from "./main/backend-sidecar.js";
 import { broadcastToAllWindows } from "./lib/window-broadcast.js";
 import { findFilesInDirectory } from "./server/services/file-search.js";
+import {
+  defaultTerminalInvocation,
+  installWebNavigationPolicy,
+  isWebUrl,
+} from "./main/desktop-shell.js";
+import { bootstrapDesktopApp } from "./main/desktop-bootstrap.js";
+import { createDesktopUpdateController } from "./main/update-controller.js";
+import pkg from "./package.json" with { type: "json" };
+import {
+  assertBackendFetchRequest,
+  assertProjectPath,
+  registerValidatedIpcHandler,
+} from "./main/ipc-security.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +35,9 @@ app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));
 
 const DEV_SERVER_URL = process.env.OPENGUI_DEV_SERVER_URL || "http://localhost:3000";
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
+const APP_ENTRY_URL = isDev
+  ? DEV_SERVER_URL
+  : new URL(`file://${path.join(__dirname, "..", "dist", "index.html")}`).href;
 const settingsStore = createSettingsStore(app.getPath("userData"));
 const backendSidecar = createBackendSidecarController({
   app,
@@ -30,6 +47,13 @@ const backendSidecar = createBackendSidecarController({
   onStatusChange: (status) => {
     broadcastToAllWindows("backend:status-changed", status);
   },
+});
+const desktopUpdates = createDesktopUpdateController({
+  updater: autoUpdater,
+  currentVersion: pkg.version,
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  publish: (state) => broadcastToAllWindows("update:state-changed", state),
 });
 
 let mainWindow: BrowserWindowType | null = null;
@@ -121,11 +145,6 @@ function openLinuxTerminal(dirPath: string, spawnOpts: SpawnOptions) {
   trySpawnCandidates(getLinuxTerminalCandidates(dirPath), spawnOpts);
 }
 
-/** Check if a URL uses a web protocol (http/https). */
-function isWebUrl(url: unknown) {
-  return typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"));
-}
-
 function createBrowserWindow({
   width,
   height,
@@ -155,19 +174,10 @@ function createBrowserWindow({
     ...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
   });
 
-  // Intercept all external link navigations and open them in the system browser.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isWebUrl(url)) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-
-  win.webContents.on("will-navigate", (event, url) => {
-    const appOrigins = [DEV_SERVER_URL, "file://"];
-    const isInternal = appOrigins.some((origin) => url.startsWith(origin));
-    if (!isInternal) {
-      event.preventDefault();
-      if (isWebUrl(url)) void shell.openExternal(url);
-    }
+  installWebNavigationPolicy({
+    webContents: win.webContents,
+    appEntryUrl: APP_ENTRY_URL,
+    openExternal: (url) => shell.openExternal(url),
   });
 
   win.on("maximize", () => {
@@ -336,33 +346,28 @@ ipcMain.handle("backend:restart-managed", async () => {
   };
 });
 
-function assertLocalBackendUrl(rawUrl: string, backendUrl: string) {
-  const requested = new URL(rawUrl, backendUrl);
-  const backend = new URL(backendUrl);
-  if (requested.protocol !== backend.protocol || requested.host !== backend.host) {
-    throw new Error("Refusing to proxy non-local backend request");
-  }
-  return requested;
-}
-
-ipcMain.handle("backend:fetch", async (_event, request) => {
-  const config = backendSidecar.getConfig() ?? (await backendSidecar.start());
-  const url = assertLocalBackendUrl(String(request?.url ?? "/"), config.url);
-  const headers = new Headers(request?.headers ?? {});
-  if (config.token && !headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${config.token}`);
-  }
-  const response = await fetch(url, {
-    method: typeof request?.method === "string" ? request.method : "GET",
-    headers,
-    body: typeof request?.body === "string" ? request.body : undefined,
-  });
-  return {
-    status: response.status,
-    statusText: response.statusText,
-    headers: Object.fromEntries(response.headers.entries()),
-    body: await response.text(),
-  };
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "backend:fetch",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: (request) => request,
+  handler: async (rawRequest) => {
+    const config = backendSidecar.getConfig() ?? (await backendSidecar.start());
+    const request = assertBackendFetchRequest(rawRequest, config.url);
+    const headers = new Headers(request.headers);
+    if (config.token) headers.set("authorization", `Bearer ${config.token}`);
+    const response = await fetch(new URL(request.url, config.url), {
+      method: request.method,
+      headers,
+      body: request.body,
+    });
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: await response.text(),
+    };
+  },
 });
 
 const backendEventSubscriptions = new Map<number, AbortController>();
@@ -454,9 +459,12 @@ ipcMain.handle("window:focus", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.focus();
 });
 
-ipcMain.handle("window:detachProject", (_event, projectDir) => {
-  if (typeof projectDir !== "string" || projectDir.length === 0) return;
-  createProjectWindow(projectDir);
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "window:detachProject",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: (projectDir) => assertProjectPath(projectDir, process.platform),
+  handler: (projectDir) => createProjectWindow(projectDir),
 });
 
 ipcMain.handle("window:getDetachedProjects", () => {
@@ -475,60 +483,112 @@ ipcMain.handle("app:isPackaged", () => {
   return app.isPackaged;
 });
 
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "update:get-state",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: () => undefined,
+  handler: () => desktopUpdates.getState(),
+});
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "update:check",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: () => undefined,
+  handler: () => desktopUpdates.check(),
+});
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "update:download",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: () => undefined,
+  handler: () => desktopUpdates.download(),
+});
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "update:install",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: () => undefined,
+  handler: () => desktopUpdates.install(),
+});
+
 ipcMain.handle("platform:homeDir", () => {
   return homedir();
 });
 
 // Open a URL in the system browser (not in Electron)
-ipcMain.handle("shell:openExternal", (_event, url) => {
-  if (isWebUrl(url)) void shell.openExternal(url);
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "shell:openExternal",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: (url) => {
+    if (!isWebUrl(url)) throw new TypeError("Invalid external URL");
+    return url;
+  },
+  handler: (url) => shell.openExternal(url),
 });
 
 // Open a directory in the system file browser
-ipcMain.handle("shell:openInFileBrowser", (_event, dirPath, command = "") => {
-  if (typeof dirPath !== "string" || dirPath.length === 0) return;
-  const spawnOpts: SpawnOptions = { detached: true, stdio: "ignore", cwd: dirPath };
-  const parts = parseCommand(command);
-  if (parts.length > 0) {
-    const [cmd, ...args] = parts;
-    if (!cmd) return;
-    const child = spawn(cmd, args.length > 0 ? args : [dirPath], spawnOpts);
-    child.on("error", () => {
-      void shell.openPath(dirPath);
-    });
-    child.unref();
-    return;
-  }
-  void shell.openPath(dirPath);
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "shell:openInFileBrowser",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: (dirPath, command = "") => {
+    if (typeof command !== "string" || command.length > 4_096 || command.includes("\0")) {
+      throw new TypeError("Invalid file browser command");
+    }
+    return { dirPath: assertProjectPath(dirPath, process.platform), command };
+  },
+  handler: ({ dirPath, command }) => {
+    const spawnOpts: SpawnOptions = { detached: true, stdio: "ignore", cwd: dirPath };
+    const parts = parseCommand(command);
+    if (parts.length > 0) {
+      const [cmd, ...args] = parts;
+      if (!cmd) return;
+      const child = spawn(cmd, args.length > 0 ? args : [dirPath], spawnOpts);
+      child.on("error", () => {
+        void shell.openPath(dirPath);
+      });
+      child.unref();
+      return;
+    }
+    void shell.openPath(dirPath);
+  },
 });
 
 // Open a terminal at a directory (cross-platform)
-ipcMain.handle("shell:openInTerminal", (_event, dirPath, command = "") => {
-  if (typeof dirPath !== "string" || dirPath.length === 0) return;
-  const platform = process.platform;
-  const spawnOpts: SpawnOptions = { detached: true, stdio: "ignore", cwd: dirPath };
-  // Custom terminal handling – special case for Ghostty
-  if (command) {
-    const parts = parseCommand(command);
-    const [cmd, ...args] = parts;
-    if (!cmd) return;
-    if (isGhostty(cmd)) {
-      // Ghostty requires explicit --working-directory flag
-      spawn(cmd, [...args, "--working-directory", dirPath], spawnOpts).unref();
-      return;
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "shell:openInTerminal",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: (dirPath, command = "") => {
+    if (typeof command !== "string" || command.length > 4_096 || command.includes("\0")) {
+      throw new TypeError("Invalid terminal command");
     }
-    if (spawnCustomCommand(command, spawnOpts)) return;
-  }
-  if (platform === "darwin") {
-    spawn("open", ["-a", "Terminal", dirPath], spawnOpts);
-  } else if (platform === "win32") {
-    spawn("cmd.exe", ["/c", "start", "cmd.exe", "/k", `cd /d "${dirPath}"`], {
-      ...spawnOpts,
-      shell: true,
-    });
-  } else {
-    openLinuxTerminal(dirPath, spawnOpts);
-  }
+    return { dirPath: assertProjectPath(dirPath, process.platform), command };
+  },
+  handler: ({ dirPath, command }) => {
+    const platform = process.platform;
+    const spawnOpts: SpawnOptions = { detached: true, stdio: "ignore", cwd: dirPath };
+    // Custom terminal handling – special case for Ghostty
+    if (command) {
+      const parts = parseCommand(command);
+      const [cmd, ...args] = parts;
+      if (!cmd) return;
+      if (isGhostty(cmd)) {
+        // Ghostty requires explicit --working-directory flag
+        spawn(cmd, [...args, "--working-directory", dirPath], spawnOpts).unref();
+        return;
+      }
+      if (spawnCustomCommand(command, spawnOpts)) return;
+    }
+    const invocation = defaultTerminalInvocation(platform, dirPath);
+    if (invocation) {
+      spawn(invocation.command, invocation.args, { ...spawnOpts, shell: invocation.shell });
+    } else {
+      openLinuxTerminal(dirPath, spawnOpts);
+    }
+  },
 });
 
 ipcMain.handle("dialog:openDirectory", async (event) => {
@@ -546,37 +606,30 @@ ipcMain.handle("dialog:openDirectory", async (event) => {
   return result.filePaths[0] ?? null;
 });
 
-ipcMain.handle("files:find", async (_event, directory, query) => {
-  return await findFilesInDirectory(directory, query);
-});
-
-void app.whenReady().then(async () => {
-  installDevNetworkFailureLogging();
-
-  try {
-    await backendSidecar.start();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox("OpenGUI backend failed to start", message);
-    app.quit();
-    return;
-  }
-
-  createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+registerValidatedIpcHandler({
+  ipcMain,
+  channel: "files:find",
+  appEntryUrl: APP_ENTRY_URL,
+  validate: (directory, query) => {
+    if (typeof query !== "string" || query.length > 1_000 || query.includes("\0")) {
+      throw new TypeError("Invalid file search query");
     }
-  });
+    return { directory: assertProjectPath(directory, process.platform), query };
+  },
+  handler: async ({ directory, query }) => await findFilesInDirectory(directory, query),
 });
 
-app.on("before-quit", () => {
-  void backendSidecar.stop();
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+void bootstrapDesktopApp({
+  app,
+  platform: process.platform,
+  backend: backendSidecar,
+  createWindow,
+  getAllWindows: () => BrowserWindow.getAllWindows(),
+  installReadyIntegrations: () => {
+    installDevNetworkFailureLogging();
+    void desktopUpdates.check();
+  },
+  showStartupError: (error) =>
+    dialog.showErrorBox("OpenGUI backend failed to start", error.message),
+  reportShutdownError: (error) => console.error("Failed to stop Desktop Host", error),
 });

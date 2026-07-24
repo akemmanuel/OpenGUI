@@ -103,6 +103,7 @@ export function QuestionPanel({
                 value={customTexts[qIdx] ?? ""}
                 onChange={(e) => handleCustomTextChange(qIdx, e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === "Enter" && hasAllAnswers) {
                     e.preventDefault();
                     handleSubmit();

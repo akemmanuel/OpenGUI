@@ -110,6 +110,114 @@ describe("shouldRetryChatCompletion", () => {
 });
 
 describe("OpenAiChatTransport authentication", () => {
+  test("decodes multibyte chat chunks and accepts a terminal marker without a final newline", async () => {
+    const bytes = new TextEncoder().encode(
+      'data: {"choices":[{"delta":{"content":"café 🧪"}}]}\r\ndata: [DONE]',
+    );
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let offset = 0; offset < bytes.length; offset += 3) {
+          controller.enqueue(bytes.slice(offset, offset + 3));
+        }
+        controller.close();
+      },
+    });
+    const transport = new OpenAiChatTransport({
+      fetchImpl: (async () => new Response(body, { status: 200 })) as typeof fetch,
+    });
+    transport.setConnections([
+      { id: "test", label: "Test", baseUrl: "https://example.test/v1", modelIds: ["test"] },
+    ]);
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "test", modelId: "test" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    ))
+      events.push(event);
+
+    expect(events).toEqual([{ type: "text_delta", delta: "café 🧪" }, { type: "completed" }]);
+  });
+
+  test.each(["stop", "tool_calls", "length", "content_filter"])(
+    "treats the %s finish reason as a completed compatible stream",
+    async (finishReason) => {
+      const transport = new OpenAiChatTransport({
+        fetchImpl: (async () =>
+          new Response(
+            `data: {"choices":[{"delta":{},"finish_reason":"${finishReason}"}]}`,
+          )) as typeof fetch,
+      });
+      transport.setConnections([
+        { id: "test", label: "Test", baseUrl: "https://example.test/v1", modelIds: ["test"] },
+      ]);
+      const events = [];
+      for await (const event of transport.stream(
+        {
+          systemPrompt: "help",
+          projectDirectory: "/project",
+          context: [
+            {
+              type: "user_message",
+              text: "hello",
+              model: { connectionId: "test", modelId: "test" },
+              reasoning: "none",
+            },
+          ],
+        },
+        new AbortController().signal,
+      ))
+        events.push(event);
+
+      expect(events).toEqual([{ type: "completed" }]);
+    },
+  );
+
+  test("rejects a chat stream that closes before its completion marker", async () => {
+    const transport = new OpenAiChatTransport({
+      fetchImpl: (async () =>
+        new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', {
+          status: 200,
+        })) as typeof fetch,
+    });
+    transport.setConnections([
+      { id: "test", label: "Test", baseUrl: "https://example.test/v1", modelIds: ["test"] },
+    ]);
+
+    const consume = async () => {
+      for await (const _event of transport.stream(
+        {
+          systemPrompt: "help",
+          projectDirectory: "/project",
+          context: [
+            {
+              type: "user_message",
+              text: "hello",
+              model: { connectionId: "test", modelId: "test" },
+              reasoning: "none",
+            },
+          ],
+        },
+        new AbortController().signal,
+      )) {
+        // Drain until the premature EOF is diagnosed.
+      }
+    };
+
+    await expect(consume()).rejects.toThrow("ended before completion");
+  });
+
   test("omits tools unavailable for the model turn", async () => {
     let requestBody: string | undefined;
     const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
@@ -142,9 +250,17 @@ describe("OpenAiChatTransport authentication", () => {
       // Drain the response.
     }
     const body = JSON.parse(requestBody ?? "") as {
-      tools: Array<{ function: { name: string } }>;
+      tools: Array<{
+        function: {
+          name: string;
+          description: string;
+          parameters: { required?: string[] };
+        };
+      }>;
     };
     expect(body.tools.map((tool) => tool.function.name)).toEqual(["read", "write", "edit"]);
+    expect(body.tools[0]?.function.description).toContain("Read a text file");
+    expect(body.tools[0]?.function.parameters.required).toEqual(["path"]);
   });
 
   test("sends an OpenCode Go API key to its documented chat completions endpoint", async () => {
@@ -224,15 +340,61 @@ describe("OpenAiChatTransport authentication", () => {
       new AbortController().signal,
     );
 
-    await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow("invalid API key");
+    await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow("API key");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ["openai-chat" as const, "/chat/completions"],
+    ["anthropic-messages" as const, "/messages"],
+  ])("redacts credentials echoed by a failed %s endpoint", async (route, expectedPath) => {
+    const secret = "sk-private-never-log";
+    let requestedUrl = "";
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      requestedUrl =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      return new Response(`authorization failed for ${secret}`, { status: 401 });
+    });
+    const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });
+    transport.setConnections([
+      {
+        id: "test",
+        label: "Test",
+        baseUrl: "https://example.test/v1",
+        apiKey: secret,
+        modelIds: ["test"],
+        modelRoutes: { test: route },
+      },
+    ]);
+    const iterator = transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "test", modelId: "test" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    );
+
+    const error = await iterator[Symbol.asyncIterator]()
+      .next()
+      .catch((caught: unknown) => caught);
+    expect(String(error)).toContain("[REDACTED]");
+    expect(String(error)).not.toContain(secret);
+    expect(requestedUrl).toBe(`https://example.test/v1${expectedPath}`);
   });
 
   test("routes Qwen through the documented Anthropic-compatible endpoint", async () => {
     const fetchImpl = vi.fn(
       async () =>
         new Response(
-          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
           { status: 200 },
         ),
     );
@@ -277,6 +439,45 @@ describe("OpenAiChatTransport authentication", () => {
         body: expect.stringContaining('"model":"qwen3.7-max"'),
       }),
     );
+    expect(events).toEqual([{ type: "text_delta", delta: "ok" }, { type: "completed" }]);
+  });
+
+  test("dispatches a final Anthropic message_stop frame at EOF with CRLF framing", async () => {
+    const transport = new OpenAiChatTransport({
+      fetchImpl: (async () =>
+        new Response(
+          'event: content_block_delta\r\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\r\n\r\nevent: message_stop\r\ndata: {"type":"message_stop"}',
+          { status: 200 },
+        )) as typeof fetch,
+    });
+    transport.setConnections([
+      {
+        id: "anthropic",
+        label: "Anthropic compatible",
+        baseUrl: "https://example.test/v1",
+        modelIds: ["model"],
+        modelRoutes: { model: "anthropic-messages" },
+      },
+    ]);
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "anthropic", modelId: "model" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    ))
+      events.push(event);
+
     expect(events).toEqual([{ type: "text_delta", delta: "ok" }, { type: "completed" }]);
   });
 });

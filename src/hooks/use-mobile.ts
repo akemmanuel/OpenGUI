@@ -1,6 +1,8 @@
 import * as React from "react";
 
-const MOBILE_BREAKPOINT = 768;
+// Keep tablet-sized canvases in the drawer layout. A persistent 16rem sidebar
+// leaves too little task space in portrait and under browser/OS text scaling.
+const MOBILE_BREAKPOINT = 1024;
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);

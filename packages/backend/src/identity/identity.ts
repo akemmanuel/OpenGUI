@@ -1214,6 +1214,22 @@ export class IdentityService {
     this.database.prepare("DELETE FROM host_session_access WHERE session_id = ?").run(sessionId);
   }
 
+  async reconcileSessionAccess(sessionIds: string[]) {
+    await this.ready;
+    const live = new Set(sessionIds);
+    const existing = this.database
+      .prepare("SELECT session_id AS sessionId FROM host_session_access")
+      .all() as Array<{ sessionId: string }>;
+    const remove = this.database.prepare("DELETE FROM host_session_access WHERE session_id = ?");
+    // Each deletion is its own SQLite transaction. A partially completed sweep is
+    // privacy-safe (stale rows grant no access without a Session) and is retried at startup.
+    for (const row of existing) if (!live.has(row.sessionId)) remove.run(row.sessionId);
+    const owned = new Set(
+      existing.filter((row) => live.has(row.sessionId)).map((row) => row.sessionId),
+    );
+    return sessionIds.filter((sessionId) => owned.has(sessionId));
+  }
+
   async authorizeSessionAction(
     sessionId: string,
     actor: Actor,
@@ -1229,8 +1245,8 @@ export class IdentityService {
       .get(sessionId) as
       | { ownerType: "user" | "api_key"; ownerId: string; pinnedConnectionId: string | null }
       | undefined;
-    // Legacy Sessions created before ACL rows remain visible to path-authorized actors.
-    if (!access) return;
+    // Missing owner metadata is an interrupted creation, never an ambient grant.
+    if (!access) throw new IdentityError("SESSION_FORBIDDEN", 404, "Session not found");
     const role = this.sessionRoleForActor(sessionId, access, actor);
     if (!role || sessionRoleRank(role) < sessionActionRank(action)) {
       throw new IdentityError("SESSION_FORBIDDEN", 404, "Session not found");
@@ -1263,7 +1279,7 @@ export class IdentityService {
         `SELECT owner_type AS ownerType, owner_id AS ownerId FROM host_session_access WHERE session_id = ?`,
       )
       .get(sessionId) as { ownerType: "user" | "api_key"; ownerId: string } | undefined;
-    if (!access) return { accessRole: "owner" as const, shared: false };
+    if (!access) throw new IdentityError("SESSION_FORBIDDEN", 404, "Session not found");
     const role = this.sessionRoleForActor(sessionId, access, actor);
     const shared = Boolean(
       this.database
@@ -1733,19 +1749,21 @@ export class IdentityService {
 
   private canUseModelConnection(actor: Actor, connectionId: string, modelId = "*") {
     const connection = this.modelConnection(connectionId);
-    if (!connection || actor.type === "api_key") return false;
+    if (!connection) return false;
     if (actor.type === "local") return true;
-    if (connection.plane === "user") return connection.ownerId === actor.id;
+    if (connection.plane === "user") {
+      return actor.type === "user" && connection.ownerId === actor.id;
+    }
     if (actor.role === "owner") return true;
     return Boolean(
       this.database
         .prepare(
           `SELECT 1 FROM host_model_entitlement
        WHERE connection_id = ? AND (? = '*' OR model_id = '*' OR model_id = ?)
-         AND ((subject_type = 'user' AND subject_id = ?)
+         AND ((? = 'user' AND subject_type = 'user' AND subject_id = ?)
            OR (subject_type = 'team' AND subject_id = ?)) LIMIT 1`,
         )
-        .get(connectionId, modelId, modelId, actor.id, TEAM_ID),
+        .get(connectionId, modelId, modelId, actor.type, actor.id, TEAM_ID),
     );
   }
 

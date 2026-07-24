@@ -15,13 +15,14 @@ import {
   isSidebarProjectCollapsed,
   type SidebarCollapsedProjects,
 } from "@/lib/persistence/sidebar";
-import { abbreviatePath, getProjectName, normalizeProjectPath } from "@/lib/path";
+import { getProjectName, normalizeProjectPath } from "@/lib/path";
 import type { ConnectionStatus } from "@/types/connection";
 import { ProjectItemMenu, ProjectMenuContent } from "@/components/SidebarItemMenus";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 import { isSidebarProjectPinned } from "@/lib/persistence/project";
+import { SidebarRow } from "./SidebarRow";
 
 export function ProjectEntry({
   directory,
@@ -33,7 +34,6 @@ export function ProjectEntry({
   connections,
   visibleByProject,
   sidebarState,
-  homeDir,
   detachedProject,
   isLocalWorkspace,
   availableProjectDirectories,
@@ -59,7 +59,6 @@ export function ProjectEntry({
   connections: Record<string, ConnectionStatus>;
   visibleByProject: Record<string, number>;
   sidebarState: "expanded" | "collapsed";
-  homeDir?: string | null;
   detachedProject?: string;
   isLocalWorkspace: boolean;
   availableProjectDirectories: string[];
@@ -128,60 +127,58 @@ export function ProjectEntry({
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
             <SidebarMenuItem className="overflow-visible">
-              <SidebarMenuButton
-                asChild
-                tooltip={abbreviatePath(directory, homeDir ?? "")}
-                className="group/project font-medium min-w-0"
+              <SidebarRow
+                label={getProjectName(directory)}
+                className="group/project font-medium"
+                onActivate={(event) => {
+                  if (sidebarState === "collapsed") {
+                    const top = event.currentTarget.getBoundingClientRect().top;
+                    setProjectPopover((prev) =>
+                      prev?.directory === directory ? null : { directory, top },
+                    );
+                    return;
+                  }
+                  toggleCollapsed(directory);
+                }}
+                leadingAction={
+                  canDrag ? (
+                    <button
+                      {...(dragHandleProps ?? {})}
+                      type="button"
+                      data-project-action
+                      data-project-drag-handle
+                      className="flex size-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/70 hover:bg-accent hover:text-foreground active:cursor-grabbing group-data-[collapsible=icon]:hidden"
+                      aria-label={`Reorder ${getProjectName(directory)}`}
+                    >
+                      <GripVertical className="size-3.5" />
+                    </button>
+                  ) : undefined
+                }
+                actions={
+                  <>
+                    {isProjectConnected && (
+                      <button
+                        type="button"
+                        data-project-action
+                        data-slot="sidebar-hover-action"
+                        data-responsive-allow="hover-reveal"
+                        className="opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+                        aria-label={t("projectMenu.newSession")}
+                        onClick={() => {
+                          setActiveTarget(directory, { newChat: true });
+                          closeMobileSidebar();
+                        }}
+                      >
+                        <SquarePen className="size-3" />
+                      </button>
+                    )}
+                    <ProjectItemMenu {...projectMenuProps} />
+                  </>
+                }
               >
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    const target = event.target;
-                    if (target instanceof Element && target.closest("[data-project-action]")) {
-                      return;
-                    }
-                    if (sidebarState === "collapsed") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
-                      setProjectPopover((prev) =>
-                        prev?.directory === directory ? null : { directory, top: rect.top },
-                      );
-                      return;
-                    }
-                    toggleCollapsed(directory);
-                  }}
-                  onKeyDown={(event) => {
-                    const target = event.target;
-                    if (target instanceof Element && target.closest("[data-project-action]")) {
-                      return;
-                    }
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      toggleCollapsed(directory);
-                    }
-                  }}
-                >
+                <span data-project-directory={directory} className="contents">
                   {isProjectConnecting ? (
                     <Spinner className="shrink-0 size-4 text-muted-foreground" />
-                  ) : canDrag ? (
-                    <span className="relative -ml-1 flex size-5 shrink-0 items-center justify-center">
-                      <ChevronRight
-                        className={`size-4 transition-all group-hover/project:scale-75 group-hover/project:opacity-0 ${
-                          !isCollapsed ? "rotate-90" : ""
-                        }`}
-                      />
-                      <span
-                        {...(dragHandleProps ?? {})}
-                        data-project-action
-                        data-project-drag-handle
-                        className="absolute inset-0 flex cursor-grab items-center justify-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground active:cursor-grabbing group-hover/project:opacity-100"
-                        aria-label={`Reorder ${getProjectName(directory)}`}
-                      >
-                        <GripVertical className="size-3.5" />
-                      </span>
-                    </span>
                   ) : sidebarState === "collapsed" ? (
                     <FolderOpen className="shrink-0 size-4" />
                   ) : (
@@ -189,32 +186,11 @@ export function ProjectEntry({
                       className={`shrink-0 size-4 transition-transform ${!isCollapsed ? "rotate-90" : ""}`}
                     />
                   )}
-                  <span className="truncate min-w-0 flex-1">{getProjectName(directory)}</span>
-                  {isProjectConnected && (
-                    <div
-                      role="button"
-                      data-project-action
-                      tabIndex={0}
-                      className="ml-auto opacity-0 group-hover/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveTarget(directory, { newChat: true });
-                        closeMobileSidebar();
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.stopPropagation();
-                          setActiveTarget(directory, { newChat: true });
-                          closeMobileSidebar();
-                        }
-                      }}
-                    >
-                      <SquarePen className="size-3" />
-                    </div>
-                  )}
-                  <ProjectItemMenu {...projectMenuProps} />
-                </div>
-              </SidebarMenuButton>
+                  <span className="truncate min-w-0 flex-1" data-responsive-allow="text-clip">
+                    {getProjectName(directory)}
+                  </span>
+                </span>
+              </SidebarRow>
             </SidebarMenuItem>
           </ContextMenu.Trigger>
           <ContextMenu.Portal>

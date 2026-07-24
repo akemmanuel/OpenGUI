@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
 import { createHostContext } from "./host/bootstrap.ts";
 import { readBackendHostEnv, type BackendHostEnv } from "./host/env.ts";
@@ -18,15 +19,17 @@ import {
   createLocalPolicyResolver,
   HostPathAuthorizer,
 } from "./path-policy/enforcement.ts";
-import type { DurableActor } from "@opengui/harness";
+import type { DurableActor, ModelTransport } from "@opengui/harness";
 import type { SessionAccessAction } from "./identity/identity.ts";
 
 export type CreateBackendHostOptions = {
+  dataDirectory?: string;
   env?: BackendHostEnv;
   identityDatabase?: DatabaseSync;
   identityDatabasePath?: string;
   identitySecret?: string;
   identityBaseURL?: string;
+  model?: ModelTransport;
 };
 
 export type BackendHost = {
@@ -36,6 +39,10 @@ export type BackendHost = {
   ready: Promise<void>;
   identity?: IdentityService;
 };
+
+export function shouldApplyRequestBodyLimit(method: string) {
+  return method === "POST" || method === "PUT" || method === "PATCH";
+}
 
 export function createBackendHost(options: CreateBackendHostOptions = {}): BackendHost {
   const env = options.env ?? readBackendHostEnv();
@@ -83,7 +90,8 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     ? {
         async onCreated(sessionId: string, actor: DurableActor) {
           const resolved = await identity.resolveDurableActor(actor);
-          if (resolved) await identity.recordSessionOwner(sessionId, resolved);
+          if (!resolved) throw new Error("Session owner no longer exists");
+          await identity.recordSessionOwner(sessionId, resolved);
         },
         async onDeleted(sessionId: string) {
           await identity.deleteSessionAccess(sessionId);
@@ -104,11 +112,17 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
           if (!resolved) return [];
           return await identity.filterVisibleSessionIds(sessionIds, resolved);
         },
+        async reconcile(sessionIds: string[]) {
+          return await identity.reconcileSessionAccess(sessionIds);
+        },
       }
     : undefined;
-  const hostReady = createHostContext({ resolveExecutionPolicy, sessionAccess }).then(
-    (context) => context.host,
-  );
+  const hostReady = createHostContext({
+    dataDirectory: options.dataDirectory,
+    resolveExecutionPolicy,
+    sessionAccess,
+    model: options.model,
+  }).then((context) => context.host);
   const ready = Promise.all([hostReady, identity?.ready]).then(() => undefined);
 
   const app = new Hono<BackendRequestEnv>();
@@ -156,6 +170,29 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
       return;
     }
     await next();
+  });
+
+  const requestBodyLimit = bodyLimit({
+    maxSize: env.requestMaxBytes ?? 1024 * 1024,
+    onError: () =>
+      Response.json(
+        { ok: false, error: "Request body exceeds size limit", code: "REQUEST_TOO_LARGE" },
+        { status: 413 },
+      ),
+  });
+  const uploadBodyLimit = bodyLimit({
+    // Allow bounded multipart framing in addition to the configured file bytes.
+    maxSize: env.uploadMaxBatchBytes + 1024 * 1024,
+    onError: () =>
+      Response.json(
+        { ok: false, error: "Upload request exceeds size limit", code: "REQUEST_TOO_LARGE" },
+        { status: 413 },
+      ),
+  });
+  app.use("/api/*", async (c, next) => {
+    if (!shouldApplyRequestBodyLimit(c.req.method)) return await next();
+    const limit = c.req.path === "/api/fs/upload" ? uploadBodyLimit : requestBodyLimit;
+    return await limit(c, next);
   });
 
   registerHostProductRoutes(app, {

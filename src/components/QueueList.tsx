@@ -51,6 +51,25 @@ interface QueueListProps {
   onReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
+export function QueueDragHandle({
+  label,
+  dragHandleProps,
+}: {
+  label: string;
+  dragHandleProps?: Record<string, unknown>;
+}) {
+  return (
+    <button
+      {...dragHandleProps}
+      type="button"
+      className="size-3.5 cursor-grab text-muted-foreground/50 shrink-0 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={label}
+    >
+      <GripVertical className="size-3.5" />
+    </button>
+  );
+}
+
 function QueueItemRow({
   item,
   index,
@@ -81,6 +100,7 @@ function QueueItemRow({
   const [editValue, setEditValue] = React.useState(item.text);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const menuId = React.useId();
   const { t } = useTranslation();
   const rowRef = React.useRef<HTMLDivElement>(null);
 
@@ -138,8 +158,14 @@ function QueueItemRow({
         newLeft = window.innerWidth - menuWidth - padding;
       }
       setMenuCoords({ top: newTop, left: newLeft });
+      menuRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
     });
   }, [menuOpen]);
+
+  const closeMenuAndRestoreFocus = () => {
+    setMenuOpen(false);
+    requestAnimationFrame(() => buttonRef.current?.focus());
+  };
 
   const handleEditSave = () => {
     const trimmed = editValue.trim();
@@ -147,6 +173,13 @@ function QueueItemRow({
       onEdit?.(item.id, trimmed);
     }
     setEditing(false);
+    requestAnimationFrame(() => buttonRef.current?.focus());
+  };
+
+  const cancelEdit = () => {
+    setEditValue(item.text);
+    setEditing(false);
+    requestAnimationFrame(() => buttonRef.current?.focus());
   };
 
   return (
@@ -157,13 +190,10 @@ function QueueItemRow({
         "hover:bg-accent/50 transition-colors",
       )}
     >
-      <div
-        {...dragHandleProps}
-        className="size-3.5 cursor-grab text-muted-foreground/50 shrink-0 active:cursor-grabbing"
-        aria-label={t("queueList.reorderQueuedPrompt")}
-      >
-        <GripVertical className="size-3.5" />
-      </div>
+      <QueueDragHandle
+        label={t("queueList.reorderQueuedPrompt")}
+        dragHandleProps={dragHandleProps}
+      />
 
       {editing ? (
         <input
@@ -172,10 +202,7 @@ function QueueItemRow({
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleEditSave();
-            if (e.key === "Escape") {
-              setEditValue(item.text);
-              setEditing(false);
-            }
+            if (e.key === "Escape") cancelEdit();
           }}
           onBlur={handleEditSave}
           className="flex-1 min-w-0 bg-transparent border border-border rounded px-1.5 py-0.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
@@ -223,6 +250,7 @@ function QueueItemRow({
             }}
             className="text-muted-foreground hover:text-foreground"
             title={t("queueList.sendNow")}
+            aria-label={t("queueList.sendNow")}
           >
             <Send className="size-3" />
           </Button>
@@ -236,6 +264,7 @@ function QueueItemRow({
               onRemove?.(item.id);
             }}
             className="text-muted-foreground hover:text-destructive"
+            aria-label={t("queueList.remove")}
           >
             <Trash2 className="size-3" />
           </Button>
@@ -251,18 +280,31 @@ function QueueItemRow({
                 setMenuOpen((v) => !v);
               }}
               className="text-muted-foreground hover:text-foreground"
+              aria-label={t("queueList.moreActions")}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? menuId : undefined}
             >
               <Ellipsis className="size-3" />
             </Button>
 
             {menuOpen && (
               <div
+                id={menuId}
                 ref={menuRef}
+                role="menu"
                 className="fixed z-50 min-w-[140px] rounded-md border bg-popover p-1 shadow-md"
                 style={{ top: menuCoords.top, left: menuCoords.left }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeMenuAndRestoreFocus();
+                  }
+                }}
               >
                 <button
                   type="button"
+                  role="menuitem"
                   className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
                   onClick={() => {
                     setMenuOpen(false);
@@ -277,6 +319,7 @@ function QueueItemRow({
                 {!isFirst && (
                   <button
                     type="button"
+                    role="menuitem"
                     className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
                     onClick={() => {
                       setMenuOpen(false);
@@ -291,6 +334,7 @@ function QueueItemRow({
                 {!isLast && (
                   <button
                     type="button"
+                    role="menuitem"
                     className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors text-left"
                     onClick={() => {
                       setMenuOpen(false);

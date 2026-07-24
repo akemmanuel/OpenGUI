@@ -13,19 +13,23 @@ import path from "node:path";
 const MODELS_URL = process.env.OPENGUI_MODELS_URL || "https://models.dev";
 const ICONS_DIR = path.join("src", "components", "provider-icons", "svgs");
 
-async function main() {
-  console.info(`Fetching provider list from ${MODELS_URL}/api.json ...`);
-  const apiRes = await fetch(`${MODELS_URL}/api.json`);
+interface FetchProviderIconsOptions {
+  modelsUrl: string;
+  iconsDir: string;
+  fetch: (url: string) => Promise<Response>;
+  mkdir: (path: string, options: { recursive: true }) => Promise<unknown>;
+  writeFile: (path: string, contents: string) => Promise<unknown>;
+}
+
+export async function fetchProviderIcons(options: FetchProviderIconsOptions) {
+  const apiRes = await options.fetch(`${options.modelsUrl}/api.json`);
   if (!apiRes.ok) {
     throw new Error(`Failed to fetch api.json: ${apiRes.status}`);
   }
   const api = (await apiRes.json()) as Record<string, unknown>;
   const providerIds = Object.keys(api);
-  console.info(`Found ${providerIds.length} providers`);
-
-  // Ensure output directories exist
-  await mkdir(ICONS_DIR, { recursive: true });
-  await writeFile(path.join(ICONS_DIR, ".gitkeep"), "");
+  await options.mkdir(options.iconsDir, { recursive: true });
+  await options.writeFile(path.join(options.iconsDir, ".gitkeep"), "");
 
   const succeeded: string[] = [];
   const failed: string[] = [];
@@ -36,8 +40,8 @@ async function main() {
     const batch = providerIds.slice(i, i + BATCH_SIZE);
     const results = await Promise.allSettled(
       batch.map(async (id) => {
-        const url = `${MODELS_URL}/logos/${id}.svg`;
-        const res = await fetch(url);
+        const url = `${options.modelsUrl}/logos/${id}.svg`;
+        const res = await options.fetch(url);
         if (!res.ok) {
           throw new Error(`${res.status} for ${id}`);
         }
@@ -46,7 +50,7 @@ async function main() {
         if (!svg.includes("<svg")) {
           throw new Error(`Invalid SVG for ${id}`);
         }
-        await writeFile(path.join(ICONS_DIR, `${id}.svg`), svg);
+        await options.writeFile(path.join(options.iconsDir, `${id}.svg`), svg);
         return id;
       }),
     );
@@ -61,18 +65,29 @@ async function main() {
     }
   }
 
-  console.info(`Downloaded ${succeeded.length} icons, ${failed.length} failed`);
-  if (failed.length > 0) {
-    console.info(`Failed: ${failed.join(", ")}`);
-  }
-
-  // Sort for deterministic output
   succeeded.sort();
+  failed.sort();
+  return { succeeded, failed };
+}
+
+async function main() {
+  console.info(`Fetching provider list from ${MODELS_URL}/api.json ...`);
+  const result = await fetchProviderIcons({
+    modelsUrl: MODELS_URL,
+    iconsDir: ICONS_DIR,
+    fetch,
+    mkdir,
+    writeFile,
+  });
+  console.info(`Downloaded ${result.succeeded.length} icons, ${result.failed.length} failed`);
+  if (result.failed.length > 0) console.info(`Failed: ${result.failed.join(", ")}`);
 
   console.info("Done!");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

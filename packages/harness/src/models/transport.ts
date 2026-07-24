@@ -14,7 +14,7 @@ export type ModelToolName = "read" | "write" | "edit" | "shell";
 export interface ModelRequest {
   projectDirectory: string;
   context: ModelContextItem[];
-  /** Full system prompt for this turn (skills catalog, env, tool summary). */
+  /** Full system prompt for this turn (identity, env, skills catalog). */
   systemPrompt: string;
   /** Tools available for this turn. Omitted by legacy callers to mean all tools. */
   tools?: readonly ModelToolName[];

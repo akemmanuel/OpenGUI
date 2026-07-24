@@ -1,11 +1,19 @@
 import { createRequire } from "node:module";
-import type { BrowserWindow as BrowserWindowType } from "electron";
 
 const require = createRequire(import.meta.url);
-const { BrowserWindow } = require("electron") as { BrowserWindow: typeof BrowserWindowType };
+const { BrowserWindow } = require("electron") as typeof import("electron");
 
-function broadcastToAllWindows(channel: string, payload: unknown) {
-  for (const win of BrowserWindow.getAllWindows()) {
+interface BroadcastWindow {
+  isDestroyed(): boolean;
+  webContents: { send(channel: string, payload: unknown): void };
+}
+
+function broadcastToAllWindows(
+  channel: string,
+  payload: unknown,
+  getAllWindows: () => BroadcastWindow[] = () => BrowserWindow.getAllWindows(),
+) {
+  for (const win of getAllWindows()) {
     if (!win.isDestroyed()) {
       win.webContents.send(channel, payload);
     }

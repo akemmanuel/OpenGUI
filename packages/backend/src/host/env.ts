@@ -12,6 +12,7 @@ export type BackendHostEnv = {
   allowedRoots: string[];
   uploadMaxFileBytes: number;
   uploadMaxBatchBytes: number;
+  requestMaxBytes?: number;
   identityMode: "remote" | "desktop-local";
   pathGrantsMode?: "disabled" | "enforced";
 };
@@ -75,6 +76,7 @@ export function readBackendHostEnv(): BackendHostEnv {
       "OPENGUI_UPLOAD_MAX_BATCH_BYTES",
       500 * 1024 * 1024,
     ),
+    requestMaxBytes: parsePositiveIntegerEnv("OPENGUI_REQUEST_MAX_BYTES", 1024 * 1024),
     identityMode,
     pathGrantsMode:
       configuredPathGrantsMode === "disabled"

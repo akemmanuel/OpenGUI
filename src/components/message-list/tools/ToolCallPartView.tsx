@@ -113,7 +113,11 @@ export function ToolCallPartView({
         <div className={cn(ROW, "cursor-default")}>{rowContent}</div>
       )}
       {tool.expandable && expanded && (
-        <div ref={outputRef} className="max-h-96 overflow-auto">
+        <div
+          ref={outputRef}
+          data-responsive-allow="horizontal-scroll"
+          className="max-h-96 overflow-auto"
+        >
           <ToolCallOutputView blocks={tool.output} rawOutput={tool.rawOutput} />
         </div>
       )}

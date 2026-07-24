@@ -16,13 +16,15 @@ const initialSessionLog: Migration = {
     const columns = await sql<{ name: string }>`PRAGMA table_info(sessions)`.execute(database);
     const columnNames = new Set(columns.rows.map((column) => column.name));
 
-    // Compatibility with the first unreleased v1 schema. Selection is now
-    // represented by ordered model_changed/reasoning_changed entries.
     if (columnNames.has("model_json")) {
-      await sql`ALTER TABLE sessions DROP COLUMN model_json`.execute(database);
-    }
-    if (columnNames.has("reasoning")) {
-      await sql`ALTER TABLE sessions DROP COLUMN reasoning`.execute(database);
+      const corrupt = await sql<{ id: string }>`
+        SELECT id FROM sessions WHERE NOT json_valid(model_json) LIMIT 1
+      `.execute(database);
+      if (corrupt.rows[0]) {
+        throw new Error(
+          `Session ${corrupt.rows[0].id} legacy model selection is corrupt; migration was not applied`,
+        );
+      }
     }
 
     await sql`
@@ -40,6 +42,51 @@ const initialSessionLog: Migration = {
         UNIQUE(session_id, sequence)
       )
     `.execute(database);
+
+    // Compatibility with the first unreleased v1 schema. Selection is now
+    // represented by ordered entries, so migrate values before removing the
+    // legacy columns. Existing entry-log selections remain authoritative.
+    if (columnNames.has("model_json")) {
+      await sql`
+        INSERT INTO session_entries (id, session_id, sequence, kind, payload_json, created_at)
+        SELECT
+          'migration:model:' || sessions.id,
+          sessions.id,
+          coalesce((SELECT max(sequence) FROM session_entries WHERE session_id = sessions.id), 0) + 1,
+          'model_changed',
+          json_object('model', json(sessions.model_json)),
+          sessions.updated_at
+        FROM sessions
+        WHERE json_valid(sessions.model_json)
+          AND NOT EXISTS (
+            SELECT 1 FROM session_entries
+            WHERE session_id = sessions.id AND kind = 'model_changed'
+          )
+      `.execute(database);
+    }
+    if (columnNames.has("reasoning")) {
+      await sql`
+        INSERT INTO session_entries (id, session_id, sequence, kind, payload_json, created_at)
+        SELECT
+          'migration:reasoning:' || sessions.id,
+          sessions.id,
+          coalesce((SELECT max(sequence) FROM session_entries WHERE session_id = sessions.id), 0) + 1,
+          'reasoning_changed',
+          json_object('reasoning', sessions.reasoning),
+          sessions.updated_at
+        FROM sessions
+        WHERE NOT EXISTS (
+          SELECT 1 FROM session_entries
+          WHERE session_id = sessions.id AND kind = 'reasoning_changed'
+        )
+      `.execute(database);
+    }
+    if (columnNames.has("model_json")) {
+      await sql`ALTER TABLE sessions DROP COLUMN model_json`.execute(database);
+    }
+    if (columnNames.has("reasoning")) {
+      await sql`ALTER TABLE sessions DROP COLUMN reasoning`.execute(database);
+    }
     await sql`
       CREATE TABLE IF NOT EXISTS session_follow_ups (
         id TEXT PRIMARY KEY,

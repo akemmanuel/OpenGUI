@@ -30,9 +30,9 @@ export interface SessionMenuProps {
   onSetTags: (tags: string[]) => void;
   onMoveToProject: (directory: string) => void;
   onRemoveFromProject: (() => void) | null;
-  onRename: () => void;
+  onRename?: () => void;
   onShare?: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }
 
 export interface SessionMenuSlots {
@@ -123,6 +123,7 @@ export function SessionMenuContent({
           onChange={(event) => setTagInput(event.target.value)}
           onKeyDown={(event) => {
             event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "Enter") {
               event.preventDefault();
               addTag();
@@ -146,14 +147,15 @@ export function SessionMenuContent({
         props.onTogglePin,
       )}
       {slots.separator("after-pin")}
-      {slots.item(
-        "rename",
-        <>
-          <Pencil className="size-4" />
-          <span>{t("sessionMenu.rename")}</span>
-        </>,
-        props.onRename,
-      )}
+      {props.onRename &&
+        slots.item(
+          "rename",
+          <>
+            <Pencil className="size-4" />
+            <span>{t("sessionMenu.rename")}</span>
+          </>,
+          props.onRename,
+        )}
       {props.onShare &&
         slots.item(
           "share",
@@ -237,15 +239,16 @@ export function SessionMenuContent({
           )}
         </>
       )}
-      {slots.separator("before-delete")}
-      {slots.item(
-        "delete",
-        <>
-          <Trash2 className="size-4" />
-          <span>{t("sessionMenu.deleteSession")}</span>
-        </>,
-        props.onDelete,
-      )}
+      {props.onDelete && slots.separator("before-delete")}
+      {props.onDelete &&
+        slots.item(
+          "delete",
+          <>
+            <Trash2 className="size-4" />
+            <span>{t("sessionMenu.deleteSession")}</span>
+          </>,
+          props.onDelete,
+        )}
     </>
   );
 }

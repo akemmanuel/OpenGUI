@@ -294,10 +294,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           {...props}
         />
 
-        <div className="flex min-w-0 items-center gap-1.5 px-1.5 pt-1 pb-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-1.5 pt-1 pb-2">
           <PromptAddMenu disabled={isDisabled} fileInputRef={fileInputRef} />
 
-          <div className="flex min-w-0 items-center gap-1 rounded-lg bg-muted/45 p-0.5 dark:bg-muted/35">
+          <div className="flex min-w-0 basis-full flex-wrap items-center gap-1 rounded-lg bg-muted/45 p-0.5 dark:bg-muted/35 sm:basis-auto sm:flex-1">
             <ModelSelector />
             <ReasoningEffortSelector />
           </div>
@@ -315,7 +315,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               }}
             >
               <ListEnd className="size-3.5 shrink-0" />
-              <span className="truncate max-w-[100px]">{t("prompt.queue")}</span>
+              <span className="max-w-[100px] truncate" data-responsive-allow="text-clip">
+                {t("prompt.queue")}
+              </span>
             </Button>
           )}
 

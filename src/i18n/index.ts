@@ -53,6 +53,11 @@ async function detectInitialLanguage(): Promise<SupportedLanguage> {
 
 let initPromise: Promise<typeof i18n> | null = null;
 let subscribedToSettings = false;
+let subscribedToDocumentLanguage = false;
+
+function updateDocumentLanguage(language: string) {
+  if (typeof document !== "undefined") document.documentElement.lang = language;
+}
 
 export function initI18n(): Promise<typeof i18n> {
   if (!initPromise) {
@@ -63,8 +68,14 @@ export function initI18n(): Promise<typeof i18n> {
         fallbackLng: FALLBACK_LANGUAGE,
         interpolation: { escapeValue: false },
       });
+      updateDocumentLanguage(i18n.resolvedLanguage ?? language);
       return i18n;
     });
+  }
+
+  if (!subscribedToDocumentLanguage && typeof document !== "undefined") {
+    subscribedToDocumentLanguage = true;
+    i18n.on("languageChanged", updateDocumentLanguage);
   }
 
   if (!subscribedToSettings) {

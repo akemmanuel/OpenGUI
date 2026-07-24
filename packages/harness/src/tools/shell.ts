@@ -27,7 +27,13 @@ function parseInput(value: unknown): ShellToolInput | null {
   if (!value || typeof value !== "object") return null;
   const input = value as Record<string, unknown>;
   if (typeof input.command !== "string" || !input.command.trim()) return null;
-  if (input.timeoutMs !== undefined && typeof input.timeoutMs !== "number") return null;
+  if (
+    input.timeoutMs !== undefined &&
+    (typeof input.timeoutMs !== "number" ||
+      !Number.isFinite(input.timeoutMs) ||
+      input.timeoutMs <= 0)
+  )
+    return null;
   return input as unknown as ShellToolInput;
 }
 
@@ -58,6 +64,12 @@ function safePathSegment(value: string) {
   return value.replaceAll(/[^a-zA-Z0-9._-]/gu, "_");
 }
 
+function utf8Tail(buffer: Buffer, maximumBytes: number) {
+  let tail = buffer.subarray(Math.max(0, buffer.byteLength - maximumBytes));
+  while (tail.byteLength > 0 && (tail[0]! & 0xc0) === 0x80) tail = tail.subarray(1);
+  return tail;
+}
+
 export async function executeShellTool(context: ShellToolContext, rawInput: unknown) {
   const input = parseInput(rawInput);
   if (!input) return { error: "shell requires a non-empty command and optional timeoutMs" };
@@ -73,7 +85,7 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
   await mkdir(outputDirectory, { recursive: true });
   const fullOutputPath = join(outputDirectory, `${safePathSegment(context.toolCallId)}.log`);
   const fullOutput = createWriteStream(fullOutputPath, { flags: "w" });
-  let returnedOutput = Buffer.alloc(0);
+  let returnedOutput: Buffer = Buffer.alloc(0);
   let timedOut = false;
   let aborted = false;
 
@@ -89,7 +101,7 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
     fullOutput.write(chunk);
     returnedOutput = Buffer.concat([returnedOutput, chunk]);
     if (returnedOutput.byteLength > MAX_RETURNED_BYTES) {
-      returnedOutput = returnedOutput.subarray(returnedOutput.byteLength - MAX_RETURNED_BYTES);
+      returnedOutput = utf8Tail(returnedOutput, MAX_RETURNED_BYTES);
     }
   };
   child.stdout?.on("data", capture);
@@ -133,12 +145,7 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
   const truncationNotice = `\nThe full output has been saved to ${fullOutputPath}.`;
   const output = truncated
     ? Buffer.concat([
-        returnedOutput.subarray(
-          Math.max(
-            0,
-            returnedOutput.byteLength - (MAX_RETURNED_BYTES - Buffer.byteLength(truncationNotice)),
-          ),
-        ),
+        utf8Tail(returnedOutput, MAX_RETURNED_BYTES - Buffer.byteLength(truncationNotice)),
         Buffer.from(truncationNotice),
       ]).toString("utf8")
     : returnedOutput.toString("utf8");

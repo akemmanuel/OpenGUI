@@ -39,7 +39,7 @@ When adding or changing user-facing text, update i18n files in `src/i18n/locales
 ## Project notes
 
 - `vite.config.ts` uses `vite-plus`
-- `packageManager` is `pnpm@11.5.2`
+- `packageManager` is pinned to pnpm 11.8.0
 - Keep docs aligned with Vite+ / pnpm workflow
 
 ## NEVER RUN

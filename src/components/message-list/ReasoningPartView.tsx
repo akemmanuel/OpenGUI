@@ -54,6 +54,7 @@ export function ReasoningPartView({ part }: { part: ReasoningTranscriptPart }) {
       {expanded && (
         <div
           ref={contentRef}
+          data-responsive-allow="horizontal-scroll"
           className="pl-5 pt-1 text-xs text-muted-foreground leading-relaxed max-h-96 overflow-auto"
         >
           <div className="[&_.markdown-renderer]:text-xs [&_.markdown-renderer]:text-muted-foreground [&_.markdown-renderer_code]:text-[0.85em]">

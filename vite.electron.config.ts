@@ -5,6 +5,10 @@ import { builtinModules } from "node:module";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
 import pkg from "./package.json" with { type: "json" };
+import {
+  createElectronRuntimePackage,
+  packageIdForImport,
+} from "./scripts/electron-package-metadata.ts";
 
 const entries = {
   main: "main.ts",
@@ -22,11 +26,6 @@ const externals = new Set([
 
 const bundledPackagePrefixes: string[] = [];
 
-function packageIdFor(id: string) {
-  const [scopeOrName, packageName] = id.split("/");
-  return scopeOrName?.startsWith("@") ? `${scopeOrName}/${packageName}` : scopeOrName;
-}
-
 function isBundledPackage(id: string) {
   return bundledPackagePrefixes.some((prefix) => id === prefix || id.startsWith(`${prefix}/`));
 }
@@ -34,7 +33,7 @@ function isBundledPackage(id: string) {
 function isExternal(id: string) {
   if (id.startsWith("node:")) return true;
   if (isBundledPackage(id)) return false;
-  const packageId = packageIdFor(id);
+  const packageId = packageIdForImport(id);
   return Boolean(packageId && externals.has(packageId));
 }
 
@@ -53,13 +52,7 @@ export default defineConfig({
       name: "opengui-electron-artifacts",
       apply: "build",
       async closeBundle() {
-        const runtimePackage = {
-          name: pkg.name,
-          version: pkg.version,
-          type: pkg.type,
-          main: pkg.main,
-          dependencies: pkg.dependencies,
-        };
+        const runtimePackage = createElectronRuntimePackage(pkg);
 
         await writeFile(
           "dist-electron/package.json",

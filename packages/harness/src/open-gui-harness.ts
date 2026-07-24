@@ -116,6 +116,8 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #resolveExecutionPolicy: OpenGuiHarnessOptions["resolveExecutionPolicy"];
   readonly #runningSessions = new Set<string>();
   readonly #abortControllers = new Map<string, AbortController>();
+  readonly #runCompletions = new Map<string, Promise<void>>();
+  readonly #completeRuns = new Map<string, () => void>();
   readonly #ready: Promise<void>;
   #closed = false;
 
@@ -190,6 +192,12 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#assertOpen();
     await this.#ready;
     return this.#store.listSessions(projectDirectory);
+  }
+
+  async listAllSessions() {
+    this.#assertOpen();
+    await this.#ready;
+    return this.#store.listAllSessions();
   }
 
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
@@ -298,6 +306,14 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     if (this.#runningSessions.has(sessionId))
       throw new Error("A run is already active for this Session");
     this.#runningSessions.add(sessionId);
+    let completeRun!: () => void;
+    this.#runCompletions.set(
+      sessionId,
+      new Promise<void>((resolve) => {
+        completeRun = resolve;
+      }),
+    );
+    this.#completeRuns.set(sessionId, completeRun);
     const abortController = new AbortController();
     this.#abortControllers.set(sessionId, abortController);
     let activeRunId: string | undefined;
@@ -371,6 +387,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             // not expose or retain a chunk until current actor and Project
             // access have both been re-resolved.
             await revalidate(nextPrompt.actor, current.projectDirectory);
+            abortController.signal.throwIfAborted();
             if (event.type === "text_delta") {
               assistantText += event.delta;
               yield { type: "assistant_delta", runId, delta: event.delta };
@@ -453,6 +470,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               nextPrompt.actor,
               current.projectDirectory,
             );
+            abortController.signal.throwIfAborted();
             const output = await executeTool(
               {
                 projectDirectory: current.projectDirectory,
@@ -500,12 +518,17 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     } finally {
       this.#runningSessions.delete(sessionId);
       this.#abortControllers.delete(sessionId);
+      this.#completeRuns.get(sessionId)?.();
+      this.#completeRuns.delete(sessionId);
+      this.#runCompletions.delete(sessionId);
     }
   }
 
   async close() {
     if (this.#closed) return;
     this.#closed = true;
+    for (const controller of this.#abortControllers.values()) controller.abort();
+    await Promise.all(this.#runCompletions.values());
     await this.#store.close();
   }
 }

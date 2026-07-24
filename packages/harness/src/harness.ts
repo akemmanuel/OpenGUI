@@ -110,6 +110,7 @@ export interface HarnessSession {
 
 export interface OpenGuiHarness {
   listSessions(projectDirectory: string): Promise<SessionSummary[]>;
+  listAllSessions(): Promise<SessionSummary[]>;
   createSession(input: CreateSessionInput): Promise<HarnessSession>;
   openSession(sessionId: string): Promise<HarnessSession>;
   close(): Promise<void>;

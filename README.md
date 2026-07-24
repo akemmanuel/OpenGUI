@@ -7,7 +7,7 @@ The Harness exposes four workspace tools: `read`, `write`, `edit`, and `shell`.
 ## Requirements
 
 - Node.js 22.5 or newer
-- pnpm 11.5.2
+- pnpm 11.8.0
 - An OpenAI-compatible model endpoint and API key
 
 No external coding-agent CLI or SDK is required.

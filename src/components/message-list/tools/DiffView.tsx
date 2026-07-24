@@ -46,7 +46,10 @@ export function DiffView({ lines }: { lines: DiffLine[] }) {
   }
 
   return (
-    <div className="mt-1 ml-5 rounded border border-border/40 bg-background/60 overflow-auto max-h-64 text-[11px] font-mono leading-relaxed">
+    <div
+      data-responsive-allow="horizontal-scroll"
+      className="mt-1 ml-5 rounded border border-border/40 bg-background/60 overflow-auto max-h-64 text-[11px] font-mono leading-relaxed"
+    >
       {elements}
     </div>
   );

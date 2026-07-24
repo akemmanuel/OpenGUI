@@ -190,7 +190,12 @@ function IdentityForm({
             <AlertDescription>{visibleError}</AlertDescription>
           </Alert>
         )}
-        <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+        <Button
+          type="submit"
+          size="lg"
+          className="h-auto w-full whitespace-normal [overflow-wrap:anywhere]"
+          disabled={submitting}
+        >
           {submitting ? t(submitBusyKey) : t(submitKey)}
           {!submitting && <ArrowRight className="size-4" />}
         </Button>

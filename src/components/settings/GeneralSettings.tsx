@@ -128,13 +128,13 @@ function IdentitySessionSetting() {
   if (!workspace?.authToken || identityWorkspaceIsLocalBypass(workspace)) return null;
 
   return (
-    <div className="flex items-center justify-between gap-3 border-t pt-3">
-      <div className="space-y-1">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+      <div className="min-w-0 space-y-1">
         <div className="flex items-center gap-2">
           <LogOut className="size-4 text-muted-foreground" />
           <span className="text-sm">{t("identity.accountSession")}</span>
         </div>
-        <p className="text-[11px] text-muted-foreground">{workspace.name}</p>
+        <p className="break-words text-[11px] text-muted-foreground">{workspace.name}</p>
       </div>
       <Button
         variant="outline"
@@ -252,14 +252,17 @@ function LanguageSetting() {
     language === "auto" ? t("common.autoDetect") : t(`languages.${language}`);
 
   return (
-    <div className="flex items-center justify-between gap-3 pt-3 border-t">
+    <div className="flex flex-col items-stretch gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <div className="flex items-center gap-2">
         <Globe className="size-4 text-muted-foreground" />
         <Label className="text-sm font-normal">{t("settings.general.language")}</Label>
       </div>
       <Select value={language} onValueChange={handleChange}>
-        <SelectTrigger className="w-[180px] h-8">
-          <SelectValue placeholder={t("settings.general.language")}>
+        <SelectTrigger className="h-8 w-full sm:w-[180px]">
+          <SelectValue
+            placeholder={t("settings.general.language")}
+            data-responsive-allow="text-clip"
+          >
             {selectedLanguageLabel}
           </SelectValue>
         </SelectTrigger>
@@ -297,7 +300,7 @@ function NewChatModelBehaviorSetting() {
   };
 
   return (
-    <div className="flex items-center justify-between gap-3 pt-3 border-t">
+    <div className="flex flex-col items-stretch gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <BrainCircuit className="size-4 text-muted-foreground" />
@@ -310,8 +313,11 @@ function NewChatModelBehaviorSetting() {
         </p>
       </div>
       <Select value={behavior} onValueChange={handleChange}>
-        <SelectTrigger id="new-chat-model-behavior" className="w-[220px] h-8">
-          <SelectValue placeholder={t("settings.general.newChatModelBehavior")}>
+        <SelectTrigger id="new-chat-model-behavior" className="h-8 w-full sm:w-[220px]">
+          <SelectValue
+            placeholder={t("settings.general.newChatModelBehavior")}
+            data-responsive-allow="text-clip"
+          >
             {selectedBehaviorLabel}
           </SelectValue>
         </SelectTrigger>
@@ -456,10 +462,13 @@ function NotificationsToggle() {
     typeof Notification !== "undefined" && Notification.permission === "denied";
 
   return (
-    <div className="flex items-center justify-between gap-3 pt-3 border-t">
-      <div className="flex items-center gap-2">
-        <Bell className="size-4 text-muted-foreground" />
-        <Label htmlFor="notifications-toggle" className="text-sm font-normal">
+    <div className="flex items-center justify-between gap-3 border-t pt-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <Bell className="size-4 shrink-0 text-muted-foreground" />
+        <Label
+          htmlFor="notifications-toggle"
+          className="min-w-0 text-sm font-normal [overflow-wrap:anywhere]"
+        >
           {t("settings.general.desktopNotifications")}
         </Label>
       </div>

@@ -90,6 +90,21 @@ describe("loadSkillsFromDir", () => {
     expect(result.skills).toEqual([]);
     expect(result.diagnostics.some((item) => item.type === "error")).toBe(true);
   });
+
+  test("does not advertise a skill with an invalid Agent Skills name", async () => {
+    const root = await temporaryDirectory();
+    await writeSkill(root, "valid-directory", "# Invalid metadata", {
+      name: "Invalid Name",
+      description: "Must not be exposed to the model.",
+    });
+
+    const result = loadSkillsFromDir(root, "project");
+
+    expect(result.skills).toEqual([]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ type: "error", message: expect.stringContaining("name must be") }),
+    );
+  });
 });
 
 describe("discoverSkills", () => {
@@ -150,7 +165,7 @@ describe("discoverSkills", () => {
 });
 
 describe("formatSkillsForPrompt", () => {
-  test("formats XML catalog and omits disable-model-invocation skills", () => {
+  test("formats a compact catalog and omits disable-model-invocation skills", () => {
     const prompt = formatSkillsForPrompt([
       {
         name: "code-review",
@@ -170,11 +185,10 @@ describe("formatSkillsForPrompt", () => {
       },
     ]);
 
-    expect(prompt).toContain("<available_skills>");
-    expect(prompt).toContain("<name>code-review</name>");
-    expect(prompt).toContain("<description>Review &quot;code&quot; &amp; PRs</description>");
-    expect(prompt).toContain("<location>/tmp/.agents/skills/code-review/SKILL.md</location>");
-    expect(prompt).toContain("use the read tool");
+    expect(prompt).toContain("Skills: when a description matches, read that SKILL.md");
+    expect(prompt).toContain(
+      '- code-review: Review "code" & PRs (/tmp/.agents/skills/code-review/SKILL.md)',
+    );
     expect(prompt).not.toContain("hidden");
   });
 

@@ -38,6 +38,27 @@ const OPENCODE_ZEN = {
   ],
 } as const;
 
+export function buildCustomModelConnection(input: {
+  id: string;
+  baseUrl: string;
+  apiKey: string;
+  modelId: string;
+  plane: "host" | "team" | "user";
+}) {
+  const baseUrl = input.baseUrl.trim();
+  const modelId = input.modelId.trim();
+  if (!baseUrl || !modelId) return null;
+  return {
+    id: input.id,
+    label: modelId,
+    baseUrl,
+    apiKey: input.apiKey.trim() || undefined,
+    modelIds: [modelId],
+    plane: input.plane,
+    credentialKind: "byok" as const,
+  };
+}
+
 export function SettingsProviders() {
   const { t } = useTranslation();
   const { refreshProviders } = useActions();
@@ -121,15 +142,15 @@ export function SettingsProviders() {
 
   async function addConnection() {
     try {
-      await host.upsertModelConnection({
+      const connection = buildCustomModelConnection({
         id: `connection_${Date.now()}`,
-        label: modelId.trim(),
-        baseUrl: baseUrl.trim(),
-        apiKey: apiKey.trim() || undefined,
-        modelIds: [modelId.trim()],
+        baseUrl,
+        apiKey,
+        modelId,
         plane,
-        credentialKind: "byok",
       });
+      if (!connection) return;
+      await host.upsertModelConnection(connection);
       setApiKey("");
       await reload();
       await refreshProviders();
@@ -203,7 +224,13 @@ export function SettingsProviders() {
                       key={connection.id}
                       className="flex items-center justify-between gap-3 py-2"
                     >
-                      <span className="min-w-0 truncate text-sm">{connection.label}</span>
+                      <span
+                        className="min-w-0 truncate text-sm"
+                        title={connection.label}
+                        data-responsive-allow="text-clip"
+                      >
+                        {connection.label}
+                      </span>
                       <span className="flex items-center gap-2 text-xs text-muted-foreground">
                         {t("providers.teamAccess")}
                         <Switch
@@ -436,12 +463,22 @@ export function SettingsProviders() {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <div className="truncate text-sm font-medium">{connection.label}</div>
+                  <div
+                    className="truncate text-sm font-medium"
+                    title={connection.label}
+                    data-responsive-allow="text-clip"
+                  >
+                    {connection.label}
+                  </div>
                   {connection.plane && (
                     <Badge variant="outline">{t(`providers.planes.${connection.plane}`)}</Badge>
                   )}
                 </div>
-                <div className="truncate text-xs text-muted-foreground">
+                <div
+                  className="truncate text-xs text-muted-foreground"
+                  title={`${connection.baseUrl} · ${connection.modelIds.join(", ")}`}
+                  data-responsive-allow="text-clip"
+                >
                   {connection.baseUrl} · {connection.modelIds.join(", ")}
                 </div>
               </div>

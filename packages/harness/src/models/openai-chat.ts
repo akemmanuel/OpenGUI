@@ -1,3 +1,4 @@
+import { toolDefinitionsFor } from "../tools/tool-definitions.ts";
 import type {
   ModelContextItem,
   ModelRequest,
@@ -89,78 +90,15 @@ export function toChatMessages(context: ModelContextItem[]) {
   return messages;
 }
 
-const TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "read",
-      description: "Read a text file. Absolute or Project-relative paths are allowed.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          startLine: { type: "number" },
-          endLine: { type: "number" },
-        },
-        required: ["path"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "write",
-      description: "Create or replace a text file.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          content: { type: "string" },
-          createParents: { type: "boolean" },
-        },
-        required: ["path", "content"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "edit",
-      description: "Apply an exact text replacement in a file.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          oldText: { type: "string" },
-          newText: { type: "string" },
-          replaceAll: { type: "boolean" },
-        },
-        required: ["path", "oldText", "newText"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "shell",
-      description:
-        "Run one non-interactive shell command in the Project directory. Output is limited to 5 KiB; when truncated, the result identifies the file containing the full output.",
-      parameters: {
-        type: "object",
-        properties: {
-          command: { type: "string" },
-          timeoutMs: { type: "number" },
-        },
-        required: ["command"],
-      },
-    },
-  },
-] as const;
-
 function toolsForRequest(request: ModelRequest) {
-  if (!request.tools) return [...TOOLS];
-  const allowed = new Set<string>(request.tools);
-  return TOOLS.filter((tool) => allowed.has(tool.function.name));
+  return toolDefinitionsFor(request.tools).map((tool) => ({
+    type: "function" as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    },
+  }));
 }
 
 function parseArguments(raw: string) {
@@ -170,6 +108,11 @@ function parseArguments(raw: string) {
   } catch {
     return { raw };
   }
+}
+
+function safeProviderError(body: string, status: number, apiKey?: string) {
+  const redacted = apiKey ? body.replaceAll(apiKey, "[REDACTED]") : body;
+  return redacted || `Model request failed (${status})`;
 }
 
 export function shouldRetryChatCompletion(status: number, body: string) {
@@ -286,7 +229,7 @@ export class OpenAiChatTransport implements ModelTransport {
       if (response.ok && response.body) break;
       const text = await response.text().catch(() => "");
       if (attempt === maxAttempts - 1 || !shouldRetryChatCompletion(response.status, text)) {
-        throw new Error(text || `Model request failed (${response.status})`);
+        throw new Error(safeProviderError(text, response.status, connection.apiKey));
       }
       await waitForRetry(500 * 2 ** attempt, signal);
     }
@@ -294,21 +237,27 @@ export class OpenAiChatTransport implements ModelTransport {
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let completed = false;
     const toolBuffers = new Map<number, { id: string; name: string; arguments: string }>();
     const reader = response.body.getReader();
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+      if (done) buffer = "";
+      else buffer = lines.pop() ?? "";
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed.startsWith("data:")) continue;
         const data = trimmed.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
+        if (!data) continue;
+        if (data === "[DONE]") {
+          completed = true;
+          continue;
+        }
         const parsed = JSON.parse(data) as {
           choices?: Array<{
+            finish_reason?: string | null;
             delta?: {
               content?: string | null;
               reasoning?: string | null;
@@ -322,7 +271,9 @@ export class OpenAiChatTransport implements ModelTransport {
             };
           }>;
         };
-        const delta = parsed.choices?.[0]?.delta;
+        const choice = parsed.choices?.[0];
+        if (typeof choice?.finish_reason === "string") completed = true;
+        const delta = choice?.delta;
         if (!delta) continue;
         for (const event of chatDeltaEvents(delta)) yield event;
         for (const toolCall of delta.tool_calls ?? []) {
@@ -334,7 +285,10 @@ export class OpenAiChatTransport implements ModelTransport {
           toolBuffers.set(index, existing);
         }
       }
+      if (done) break;
     }
+
+    if (!completed) throw new Error("Model stream ended before completion");
 
     for (const toolCall of toolBuffers.values()) {
       yield {
@@ -380,26 +334,28 @@ export class OpenAiChatTransport implements ModelTransport {
     );
     if (!response.ok || !response.body) {
       const text = await response.text().catch(() => "");
-      throw new Error(text || `Model request failed (${response.status})`);
+      throw new Error(safeProviderError(text, response.status, connection.apiKey));
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let completed = false;
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const frames = buffer.split("\n\n");
-      buffer = frames.pop() ?? "";
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      const frames = buffer.split(/\r?\n\r?\n/);
+      if (done) buffer = "";
+      else buffer = frames.pop() ?? "";
       for (const frame of frames) {
         const raw = frame
-          .split("\n")
+          .split(/\r?\n/)
           .find((line) => line.startsWith("data:"))
           ?.slice(5)
           .trim();
         if (!raw) continue;
         const event = JSON.parse(raw) as Record<string, any>;
+        if (event.type === "message_stop") completed = true;
         const index = typeof event.index === "number" ? event.index : 0;
         if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
           toolInputs.set(index, {
@@ -428,7 +384,9 @@ export class OpenAiChatTransport implements ModelTransport {
           }
         }
       }
+      if (done) break;
     }
+    if (!completed) throw new Error("Model stream ended before completion");
     yield { type: "completed" };
   }
 }

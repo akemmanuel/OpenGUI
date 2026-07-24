@@ -239,7 +239,7 @@ export function ModelSelector() {
 
   const selectModel = useCallback(
     (model: ModelOption) => {
-      setModel({ providerID: model.providerID, modelID: model.modelID });
+      void setModel({ providerID: model.providerID, modelID: model.modelID });
       setRecentValues((values) => {
         const next = [model.value, ...values.filter((value) => value !== model.value)].slice(
           0,
@@ -306,14 +306,17 @@ export function ModelSelector() {
               ? `${t("modelSelector.dialogTitle")}: ${currentModel.providerName} · ${currentModel.label}`
               : t("modelSelector.dialogTitle")
           }
-          className="!h-7 min-w-0 shrink gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+          data-responsive-allow="text-clip"
+          className="!h-7 !min-w-0 flex-1 !shrink gap-1.5 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           {selectedModel ? (
             <ProviderIcon provider={selectedModel.providerID} className="size-3.5 shrink-0" />
           ) : (
             <BrainCircuit className="size-3.5 shrink-0" />
           )}
-          <span className="truncate">{triggerLabel ?? t("modelSelector.dialogTitle")}</span>
+          <span className="truncate" data-responsive-allow="text-clip">
+            {triggerLabel ?? t("modelSelector.dialogTitle")}
+          </span>
         </Button>
       </DialogTrigger>
       <DialogContent

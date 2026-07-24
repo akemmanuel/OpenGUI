@@ -5,6 +5,7 @@ import openguiLogoDark from "@/../assets/opengui-dark.svg";
 import openguiLogoLight from "@/../assets/opengui-light.svg";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { HostSessionSnapshot } from "@/protocol/host-types";
 import { createIdentityClient } from "./identity-client";
@@ -46,9 +47,12 @@ export function ViewLinkScreen({ token }: { token: string }) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<HostSessionSnapshot | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setSnapshot(null);
+    setFailed(false);
     void createIdentityClient({ baseUrl: window.location.origin })
       .resolveSessionViewLink(token)
       .then((value) => {
@@ -60,7 +64,7 @@ export function ViewLinkScreen({ token }: { token: string }) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, attempt]);
 
   const items = useMemo(() => (snapshot ? transcript(snapshot) : []), [snapshot]);
 
@@ -73,11 +77,11 @@ export function ViewLinkScreen({ token }: { token: string }) {
             <img src={openguiLogoLight} alt="OpenGUI" className="h-5 dark:hidden" />
           </picture>
           <div className="min-w-0 flex-1 border-l pl-3">
-            <h1 className="truncate text-sm font-medium">
+            <h1 className="truncate text-sm font-medium" data-responsive-allow="text-clip">
               {snapshot?.title || t("viewLink.loadingTitle")}
             </h1>
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Eye className="size-3" />
+            <p className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+              <Eye className="size-3 shrink-0" />
               {t("viewLink.readOnly")}
             </p>
           </div>
@@ -86,10 +90,19 @@ export function ViewLinkScreen({ token }: { token: string }) {
 
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         {failed ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertDescription>{t("viewLink.invalid")}</AlertDescription>
-          </Alert>
+          <div className="space-y-3">
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertDescription>{t("viewLink.invalid")}</AlertDescription>
+            </Alert>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              {t("common.retry")}
+            </Button>
+          </div>
         ) : !snapshot ? (
           <div className="space-y-6" role="status" aria-label={t("common.loading")}>
             <Skeleton className="h-20 w-3/4" />
@@ -118,7 +131,7 @@ export function ViewLinkScreen({ token }: { token: string }) {
                       : "max-w-none"
                   }
                 >
-                  <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground [overflow-wrap:anywhere]">
                     {item.kind === "user"
                       ? item.actor || t("viewLink.user")
                       : t("viewLink.assistant")}

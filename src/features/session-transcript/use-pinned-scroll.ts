@@ -85,6 +85,18 @@ export function usePinnedScroll(input: {
     }
   }, [input.contentKey, input.pinWhenNearBottom, markProgrammatic]);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!input.pinWhenNearBottom || !pinnedRef.current) return;
+      markProgrammatic();
+      pinToBottom(el);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [input.pinWhenNearBottom, input.sessionId, markProgrammatic]);
+
   return {
     scrollRef,
     onScroll,

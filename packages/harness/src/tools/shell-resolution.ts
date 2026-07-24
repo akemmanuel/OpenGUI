@@ -15,9 +15,13 @@ function isExecutable(path: string) {
   }
 }
 
-function findOnPath(command: string, environment: NodeJS.ProcessEnv) {
+function findOnPath(
+  command: string,
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+) {
   if (isAbsolute(command)) return isExecutable(command) ? command : null;
-  const extensions = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  const extensions = platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
   for (const directory of (environment.PATH ?? "").split(delimiter)) {
     if (!directory) continue;
     for (const extension of extensions) {
@@ -40,16 +44,20 @@ export function resolveNativeShell(input: {
   const platform = input.platform ?? process.platform;
   const environment = input.environment ?? process.env;
   if (input.configuredExecutable) {
-    const executable = findOnPath(input.configuredExecutable, environment);
+    const executable = findOnPath(input.configuredExecutable, environment, platform);
     if (!executable)
       throw new Error(`Configured shell is not executable: ${input.configuredExecutable}`);
     return { executable, family: shellFamily(executable) };
   }
   if (platform === "win32") {
-    const executable = findOnPath("pwsh", environment) ?? findOnPath("powershell.exe", environment);
+    const executable =
+      findOnPath("pwsh", environment, platform) ??
+      findOnPath("powershell.exe", environment, platform);
     if (!executable) throw new Error("Neither pwsh nor Windows PowerShell is available");
     return { executable, family: "powershell" };
   }
-  const configured = environment.SHELL ? findOnPath(environment.SHELL, environment) : null;
+  const configured = environment.SHELL
+    ? findOnPath(environment.SHELL, environment, platform)
+    : null;
   return { executable: configured ?? "/bin/sh", family: "posix" };
 }

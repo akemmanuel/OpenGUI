@@ -22,7 +22,10 @@ export function SidebarFooterContent({
           className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-muted-foreground border-b border-sidebar-border group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-b-0 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-2"
         >
           <FolderOpen className="size-3.5 shrink-0" />
-          <span className="truncate min-w-0 group-data-[collapsible=icon]:hidden">
+          <span
+            className="truncate min-w-0 group-data-[collapsible=icon]:hidden"
+            data-responsive-allow="text-clip"
+          >
             {abbreviatePath(activeSessionDirectory, homeDir ?? "")}
           </span>
         </div>

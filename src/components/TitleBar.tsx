@@ -47,6 +47,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Native title bars maximize on double-click. */}
       <div
+        data-slot="title-bar"
         className="relative z-20 app-safe-top-bar bg-sidebar border-b border-border select-none shrink-0"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         onDoubleClick={() => {
@@ -54,6 +55,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
         }}
       >
         <div
+          data-slot="title-bar-leading"
           className="absolute left-0 top-[var(--app-safe-top)] h-9 flex items-center px-2"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >

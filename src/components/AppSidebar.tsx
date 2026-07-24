@@ -9,7 +9,7 @@ import { SESSION_PAGE_SIZE } from "@/lib/constants";
 import { openAddWorkspaceDialog } from "@/hooks/workspace-guards";
 import { notifyInfo, notifyUnknownError } from "@/lib/notify";
 import { normalizeProjectPath } from "@/lib/path";
-import { ProjectPathDialog } from "./ProjectPathDialog";
+import { ProjectPathDialog, requestProjectPath } from "./ProjectPathDialog";
 import { CollapsedProjectPopover } from "./sidebar/CollapsedProjectPopover";
 import { SidebarContentSections } from "./sidebar/SidebarContentSections";
 import { SidebarFooterContent } from "./sidebar/SidebarFooterContent";
@@ -94,17 +94,6 @@ export function AppSidebar({
   } = useSidebarRename({ sessions, renameSession });
 
   const homeDir = useHomeDir();
-  const requestProjectPath = useCallback(
-    (initialPath?: string) =>
-      new Promise<string | null>((resolve) => {
-        window.dispatchEvent(
-          new CustomEvent("opengui:open-project-path-dialog", {
-            detail: { resolve, initialPath },
-          }),
-        );
-      }),
-    [],
-  );
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeSessionDirectory =
     getSessionExecutionDirectory(activeSession) || activeTargetDirectory || null;
@@ -258,7 +247,6 @@ export function AppSidebar({
     editingSessionId,
     hasActiveSearch,
     hasUnsentDraft,
-    homeDir,
     isLocalWorkspace,
     moveSessionToProject,
     namingSessionIds,
@@ -343,6 +331,7 @@ export function AppSidebar({
           setVisibleChatCount={setVisibleChatCount}
           handleAddProject={handleAddProject}
           reorderVisibleProjects={reorderVisibleProjects}
+          sidebarCollapsed={sidebarState === "collapsed"}
         />
 
         {projectPopover && sidebarState === "collapsed" && (

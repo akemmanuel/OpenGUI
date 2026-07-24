@@ -8,6 +8,19 @@ import type {
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+const SECRET_JSON_FIELD =
+  /("(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret)"\s*:\s*")[^"]*(")/giu;
+const BEARER_CREDENTIAL = /(\bBearer\s+)[^\s,;]+/giu;
+const SECRET_QUERY_PARAMETER = /([?&](?:api[_-]?key|access[_-]?token|token|secret)=)[^&#\s]+/giu;
+
+/** Prevent untrusted Host/proxy diagnostics from becoming frontend secret disclosures. */
+export function redactHostError(message: string): string {
+  return message
+    .replace(SECRET_JSON_FIELD, "$1[REDACTED]$2")
+    .replace(BEARER_CREDENTIAL, "$1[REDACTED]")
+    .replace(SECRET_QUERY_PARAMETER, "$1[REDACTED]");
+}
+
 export interface CreateHostClientOptions {
   baseUrl?: string;
   token?: string;
@@ -26,7 +39,9 @@ async function readJson(response: Response) {
     body = null;
   }
   if (!response.ok || !body?.ok) {
-    throw new Error(body?.error || `Host request failed (${response.status})`);
+    throw new Error(
+      body?.error ? redactHostError(body.error) : `Host request failed (${response.status})`,
+    );
   }
   return body.value;
 }
@@ -184,16 +199,15 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         body: JSON.stringify({ channel: "files:find", args: [directory, query] }),
       })) as string[],
     subscribe: (listener, sessionId, onReady) => {
-      const base = resolveBase();
-      const token = resolveToken();
       const params = new URLSearchParams();
       if (sessionId) params.set("sessionId", sessionId);
-      const url = `${base}/api/host/events?${params.toString()}`;
       const controller = new AbortController();
       void (async () => {
         while (!controller.signal.aborted) {
           try {
+            const url = `${resolveBase()}/api/host/events?${params.toString()}`;
             const headers = new Headers();
+            const token = resolveToken();
             if (token) headers.set("authorization", `Bearer ${token}`);
             const response = await fetchImpl(url, { headers, signal: controller.signal });
             if (!response.ok || !response.body)
@@ -205,10 +219,10 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
               const { done, value } = await reader.read();
               if (done) break;
               buffer += decoder.decode(value, { stream: true });
-              const frames = buffer.split("\n\n");
+              const frames = buffer.split(/\r?\n\r?\n/u);
               buffer = frames.pop() ?? "";
               for (const frame of frames) {
-                const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+                const dataLine = frame.split(/\r?\n/u).find((line) => line.startsWith("data:"));
                 if (!dataLine) continue;
                 try {
                   const data = JSON.parse(dataLine.slice(5).trim()) as
@@ -227,7 +241,19 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
           } catch {
             if (controller.signal.aborted) return;
           }
-          await new Promise((resolve) => setTimeout(resolve, options.reconnectDelayMs ?? 1_000));
+          if (controller.signal.aborted) return;
+          await new Promise<void>((resolve) => {
+            const finishWaiting = () => {
+              controller.signal.removeEventListener("abort", stopWaiting);
+              resolve();
+            };
+            const stopWaiting = () => {
+              clearTimeout(timer);
+              finishWaiting();
+            };
+            const timer = setTimeout(finishWaiting, options.reconnectDelayMs ?? 1_000);
+            controller.signal.addEventListener("abort", stopWaiting, { once: true });
+          });
         }
       })().catch(() => undefined);
       return () => controller.abort();

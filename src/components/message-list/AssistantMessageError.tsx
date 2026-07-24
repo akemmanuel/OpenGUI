@@ -41,10 +41,10 @@ export function AssistantMessageError({
         </pre>
       )}
 
-      <div className="flex items-center justify-between gap-2 border-t border-destructive/15 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-destructive/15 px-3 py-2">
         <button
           type="button"
-          className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-destructive/85 transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/45"
+          className="inline-flex min-h-8 min-w-0 max-w-full flex-none items-center gap-1.5 rounded-md px-2 text-left text-xs font-medium whitespace-normal text-destructive/85 [overflow-wrap:anywhere] transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/45"
           onClick={() => setExpanded((value) => !value)}
         >
           <ChevronDown
@@ -59,7 +59,7 @@ export function AssistantMessageError({
         </button>
         <button
           type="button"
-          className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-destructive/85 transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/45"
+          className="inline-flex min-h-8 min-w-0 max-w-full flex-none items-center gap-1.5 rounded-md px-2 text-left text-xs font-medium whitespace-normal text-destructive/85 [overflow-wrap:anywhere] transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/45"
           onClick={() => void copyTextToClipboard(message)}
         >
           <Copy className="size-3.5" aria-hidden="true" />

@@ -9,6 +9,9 @@ const ROOT_EXIT_WINDOW_MS = 2000;
 
 let rootBackPressCount = 0;
 let rootBackPressTimer: ReturnType<typeof setTimeout> | null = null;
+let mobileBackConsumers = 0;
+let mobileBackListener: { remove: () => Promise<void> } | null = null;
+let mobileBackRegistration: Promise<void> | null = null;
 
 function resetRootBackPress() {
   rootBackPressCount = 0;
@@ -37,34 +40,46 @@ async function handleRootBack(): Promise<void> {
   toast(i18n.t("mobile.backAgainToExit"), { duration: ROOT_EXIT_WINDOW_MS });
 }
 
+async function dispatchMobileBack() {
+  if (runMobileBackHandlers()) return;
+  if (dismissTopOverlayViaEscape()) return;
+  await handleRootBack();
+}
+
+function retainMobileBackListener() {
+  mobileBackConsumers += 1;
+  if (mobileBackRegistration) return;
+  mobileBackRegistration = (async () => {
+    await App.toggleBackButtonHandler({ enabled: false });
+    const registered = await App.addListener("backButton", () => void dispatchMobileBack());
+    mobileBackListener = registered;
+    if (mobileBackConsumers === 0) {
+      mobileBackListener = null;
+      await registered.remove();
+      await App.toggleBackButtonHandler({ enabled: true });
+      mobileBackRegistration = null;
+    }
+  })();
+}
+
+function releaseMobileBackListener() {
+  mobileBackConsumers = Math.max(0, mobileBackConsumers - 1);
+  if (mobileBackConsumers > 0) return;
+  resetRootBackPress();
+  void mobileBackRegistration?.then(async () => {
+    if (mobileBackConsumers > 0 || !mobileBackListener) return;
+    const registered = mobileBackListener;
+    mobileBackListener = null;
+    await registered.remove();
+    await App.toggleBackButtonHandler({ enabled: true });
+    mobileBackRegistration = null;
+  });
+}
+
 export function useMobileBackButton() {
   useEffect(() => {
     if (getShellKind() !== "mobile") return;
-
-    let cancelled = false;
-    let listener: { remove: () => Promise<void> } | undefined;
-
-    void (async () => {
-      await App.toggleBackButtonHandler({ enabled: false });
-      const registered = await App.addListener("backButton", () => {
-        void (async () => {
-          if (runMobileBackHandlers()) return;
-          if (dismissTopOverlayViaEscape()) return;
-          await handleRootBack();
-        })();
-      });
-      if (cancelled) {
-        void registered.remove();
-        return;
-      }
-      listener = registered;
-    })();
-
-    return () => {
-      cancelled = true;
-      resetRootBackPress();
-      void listener?.remove();
-      void App.toggleBackButtonHandler({ enabled: true });
-    };
+    retainMobileBackListener();
+    return releaseMobileBackListener;
   }, []);
 }

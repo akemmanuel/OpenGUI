@@ -1,5 +1,5 @@
 import { Check, Copy, Link2, Share2, Trash2, Users } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,32 +63,34 @@ export function SessionShareDialog() {
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const loadRequestRef = useRef(0);
 
   const load = useCallback(
     async (detail: OpenShareDetail) => {
       if (!client) return;
+      const request = ++loadRequestRef.current;
       setBusy(true);
+      setLoadError(false);
       try {
         const [available, currentShares, currentLinks] = await Promise.all([
           client.sharePrincipals(),
           client.sessionShares(detail.sessionId),
           client.sessionViewLinks(detail.sessionId),
         ]);
+        if (request !== loadRequestRef.current) return;
         setPrincipals([
-          ...available.teams.map((item) => ({
-            ...item,
-            name: t("sessionShare.types.team"),
-            type: "team" as const,
-          })),
+          ...available.teams.map((item) => ({ ...item, type: "team" as const })),
           ...available.users.map((item) => ({ ...item, type: "user" as const })),
         ]);
         setShares(currentShares);
         setLinks(currentLinks);
       } catch (error) {
+        if (request !== loadRequestRef.current) return;
         notifyUnknownError(error);
-        setSession(null);
+        setLoadError(true);
       } finally {
-        setBusy(false);
+        if (request === loadRequestRef.current) setBusy(false);
       }
     },
     [client],
@@ -100,10 +102,18 @@ export function SessionShareDialog() {
       const detail = (event as CustomEvent<OpenShareDetail>).detail;
       setSession(detail);
       setCreatedUrl(null);
+      setCopied(false);
+      setPrincipalKey("");
+      setPrincipals([]);
+      setShares([]);
+      setLinks([]);
       void load(detail);
     };
     window.addEventListener(OPEN_SESSION_SHARE_EVENT, open);
-    return () => window.removeEventListener(OPEN_SESSION_SHARE_EVENT, open);
+    return () => {
+      loadRequestRef.current += 1;
+      window.removeEventListener(OPEN_SESSION_SHARE_EVENT, open);
+    };
   }, [client, load]);
 
   async function addShare(event: FormEvent) {
@@ -155,6 +165,22 @@ export function SessionShareDialog() {
         </DialogHeader>
 
         <div className="space-y-5">
+          {loadError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 rounded-lg border border-destructive/40 p-3 text-sm text-destructive"
+            >
+              <span>{t("sessionShare.loadFailed")}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => session && void load(session)}
+              >
+                {t("common.retry")}
+              </Button>
+            </div>
+          )}
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Users className="size-4 text-muted-foreground" />
@@ -174,8 +200,14 @@ export function SessionShareDialog() {
                   if (value.startsWith("user:") && role === "run") setRole("view");
                 }}
               >
-                <SelectTrigger id="session-share-principal" className="min-w-0 flex-1">
-                  <SelectValue placeholder={t("sessionShare.choosePrincipal")} />
+                <SelectTrigger
+                  id="session-share-principal"
+                  className="w-full min-w-0 max-w-full flex-1"
+                >
+                  <SelectValue
+                    placeholder={t("sessionShare.choosePrincipal")}
+                    data-responsive-allow="text-clip"
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {principals.map((item) => (
@@ -186,7 +218,10 @@ export function SessionShareDialog() {
                 </SelectContent>
               </Select>
               <Select value={role} onValueChange={(value) => setRole(value as typeof role)}>
-                <SelectTrigger className="sm:w-32" aria-label={t("sessionShare.access")}>
+                <SelectTrigger
+                  className="w-full max-w-full sm:w-32"
+                  aria-label={t("sessionShare.access")}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -197,7 +232,11 @@ export function SessionShareDialog() {
                   <SelectItem value="admin">{t("sessionShare.roles.admin")}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button type="submit" disabled={!principalKey || busy}>
+              <Button
+                type="submit"
+                className="w-full max-w-full sm:w-auto"
+                disabled={!principalKey || busy}
+              >
                 <Share2 />
                 {t("sessionShare.share")}
               </Button>
@@ -236,8 +275,8 @@ export function SessionShareDialog() {
           </section>
 
           <section className="space-y-3 border-t pt-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Link2 className="size-4 text-muted-foreground" />
                   {t("sessionShare.viewLinks")}
@@ -250,6 +289,7 @@ export function SessionShareDialog() {
                 type="button"
                 variant="outline"
                 size="sm"
+                className="h-auto max-w-full whitespace-normal [overflow-wrap:anywhere]"
                 disabled={busy}
                 onClick={() => void createLink()}
               >

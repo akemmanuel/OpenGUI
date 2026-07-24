@@ -19,6 +19,16 @@ interface OpenProjectPathDialogDetail {
   initialPath?: string;
 }
 
+export function requestProjectPath(initialPath?: string) {
+  return new Promise<string | null>((resolve) => {
+    window.dispatchEvent(
+      new CustomEvent("opengui:open-project-path-dialog", {
+        detail: { resolve, initialPath } satisfies OpenProjectPathDialogDetail,
+      }),
+    );
+  });
+}
+
 interface ServerDirectoryEntry {
   name: string;
   path: string;

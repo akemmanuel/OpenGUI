@@ -148,7 +148,10 @@ export function ToolCallOutputView({
                 <DialogTitle>{t("toolOutput.rawTitle")}</DialogTitle>
                 <DialogDescription>{t("toolOutput.rawDescription")}</DialogDescription>
               </DialogHeader>
-              <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 text-xs text-muted-foreground whitespace-pre-wrap break-words">
+              <pre
+                data-responsive-allow="horizontal-scroll"
+                className="max-h-[60vh] overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 text-xs text-muted-foreground whitespace-pre-wrap break-words"
+              >
                 {rawOutput}
               </pre>
               <DialogFooter>

@@ -133,6 +133,8 @@ export function usePromptInputInteractions({
   });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter confirms the current IME candidate; it must not also submit the prompt.
+    if (e.nativeEvent.isComposing) return;
     if (handleFileMentionKeyboard(e)) return;
     if (handleSlashKeyboard(e)) return;
     if (handleHistoryKeyDown(e)) return;

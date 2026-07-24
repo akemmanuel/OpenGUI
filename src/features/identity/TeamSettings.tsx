@@ -82,7 +82,7 @@ function SettingsSection({
           <span className="mt-0.5 text-muted-foreground" aria-hidden="true">
             {icon}
           </span>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1 [overflow-wrap:anywhere]">
             <h2 className="text-sm font-medium">{title}</h2>
             <p className="max-w-2xl text-xs leading-5 text-muted-foreground">{description}</p>
           </div>
@@ -389,8 +389,10 @@ export function TeamSettings() {
             }}
             disabled={busy === "registration-mode"}
           >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue />
+            <SelectTrigger className="w-[200px] max-w-full">
+              <SelectValue data-responsive-allow="text-clip">
+                {t(`identity.registrationModes.${registrationMode}`)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="invite_only">
@@ -406,9 +408,9 @@ export function TeamSettings() {
               (["allowByok", "allowByos"] as const).map((kind) => (
                 <label
                   key={`${scope}:${kind}`}
-                  className="flex items-center justify-between gap-4 px-3 py-3"
+                  className="flex min-w-0 items-center justify-between gap-4 px-3 py-3"
                 >
-                  <span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
                     <span className="block text-sm font-medium">
                       {t(`identity.modelPolicy.${scope}.${kind}`)}
                     </span>
@@ -438,18 +440,33 @@ export function TeamSettings() {
             <EmptyRow>{t("identity.noMembers")}</EmptyRow>
           ) : (
             members.map((member) => (
-              <div key={member.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{member.username}</span>
+              <div
+                key={member.id}
+                className="flex flex-col items-stretch gap-3 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="truncate text-sm font-medium"
+                      title={member.username}
+                      data-responsive-allow="text-clip"
+                    >
+                      {member.username}
+                    </span>
                     <Badge variant="outline">{t(`identity.roles.${member.role}`)}</Badge>
                     {member.id === currentUserId && (
                       <span className="text-xs text-muted-foreground">{t("identity.you")}</span>
                     )}
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                  <p
+                    className="truncate text-xs text-muted-foreground"
+                    title={member.email}
+                    data-responsive-allow="text-clip"
+                  >
+                    {member.email}
+                  </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   {member.role !== "owner" && (
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Switch
@@ -463,7 +480,7 @@ export function TeamSettings() {
                   )}
                   {pathGrantAdministrationEnabled(pathPolicy) &&
                     (member.role === "owner" ? (
-                      <span className="px-2 text-xs text-muted-foreground">
+                      <span className="min-w-0 px-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">
                         {t("identity.pathGrants.unrestricted")}
                       </span>
                     ) : (
@@ -525,13 +542,16 @@ export function TeamSettings() {
             </Button>
           </div>
           {accessibleRoots.length > 0 && (
-            <fieldset className="space-y-2 rounded-lg border p-3">
+            <fieldset className="min-w-0 max-w-full space-y-2 rounded-lg border p-3">
               <legend className="px-1 text-xs font-medium">{t("identity.invitePaths")}</legend>
               <p className="text-xs text-muted-foreground">{t("identity.invitePathsHelp")}</p>
               {accessibleRoots.map((root) => {
                 const grant = invitePathGrants.find((item) => item.root === root);
                 return (
-                  <div key={root} className="flex flex-wrap items-center gap-2 py-1">
+                  <div
+                    key={root}
+                    className="flex min-w-0 max-w-full flex-wrap items-center gap-2 py-1"
+                  >
                     <Checkbox
                       id={`invite-root-${root}`}
                       checked={!!grant}
@@ -545,7 +565,9 @@ export function TeamSettings() {
                     />
                     <Label
                       htmlFor={`invite-root-${root}`}
-                      className="min-w-0 flex-1 truncate font-mono text-xs"
+                      className="w-0 min-w-0 max-w-full flex-1 truncate font-mono text-xs"
+                      title={root}
+                      data-responsive-allow="text-clip"
                     >
                       {root}
                     </Label>
@@ -638,7 +660,7 @@ export function TeamSettings() {
             onValueChange={(value) => setKeyRole(value as "owner" | "member")}
           >
             <SelectTrigger className="sm:w-36" aria-label={t("identity.keyRole")}>
-              <SelectValue />
+              <SelectValue data-responsive-allow="text-clip" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="member">{t("identity.roles.member")}</SelectItem>

@@ -1,3 +1,4 @@
+import { toolDefinitionsFor } from "../tools/tool-definitions.ts";
 import type {
   ModelContextItem,
   ModelRequest,
@@ -18,18 +19,14 @@ export interface CodexResponsesOptions {
   unauthorizedMessage?: string;
 }
 
-const tools = ["read", "write", "edit", "shell"].map((name) => ({
-  type: "function",
-  name,
-  description: `${name} using OpenGUI's Project tools`,
-  parameters: { type: "object", additionalProperties: true },
-  strict: false,
-}));
-
 function toolsForRequest(request: ModelRequest) {
-  if (!request.tools) return tools;
-  const allowed = new Set<string>(request.tools);
-  return tools.filter((tool) => allowed.has(tool.name));
+  return toolDefinitionsFor(request.tools).map((tool) => ({
+    type: "function" as const,
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+    strict: false,
+  }));
 }
 
 export function codexInput(context: ModelContextItem[]) {
@@ -55,6 +52,15 @@ export function codexInput(context: ModelContextItem[]) {
       output: typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? null),
     };
   });
+}
+
+function parseArguments(raw: string) {
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return { raw };
+  }
 }
 
 export function codexResponseEvents(event: Record<string, any>): ModelStreamEvent[] {
@@ -85,7 +91,7 @@ export function codexResponseEvents(event: Record<string, any>): ModelStreamEven
         type: "tool_call",
         id: event.item.call_id ?? event.item.id,
         name: event.item.name,
-        input: JSON.parse(event.item.arguments || "{}"),
+        input: parseArguments(event.item.arguments || "{}"),
       },
     ];
   return [];
@@ -151,18 +157,24 @@ export class CodexResponsesTransport implements ModelTransport {
     const decoder = new TextDecoder();
     let buffer = "";
     let reasoningEmitted = false;
+    let completed = false;
     while (true) {
       const chunk = await reader.read();
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const frames = buffer.split("\n\n");
-      buffer = frames.pop() ?? "";
+      buffer += chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true });
+      const frames = buffer.split(/\r?\n\r?\n/);
+      if (chunk.done) buffer = "";
+      else buffer = frames.pop() ?? "";
       for (const frame of frames) {
-        const line = frame.split("\n").find((x) => x.startsWith("data:"));
+        const line = frame.split(/\r?\n/).find((x) => x.startsWith("data:"));
         if (!line) continue;
         const raw = line.slice(5).trim();
-        if (!raw || raw === "[DONE]") continue;
+        if (!raw) continue;
+        if (raw === "[DONE]") {
+          completed = true;
+          continue;
+        }
         const event = JSON.parse(raw) as Record<string, any>;
+        if (event.type === "response.completed") completed = true;
         for (const parsed of codexResponseEvents(event)) {
           if (parsed.type === "reasoning_delta") {
             const isCompletedFallback =
@@ -173,7 +185,9 @@ export class CodexResponsesTransport implements ModelTransport {
           yield parsed;
         }
       }
+      if (chunk.done) break;
     }
+    if (!completed) throw new Error("Model stream ended before completion");
     yield { type: "completed" };
   }
 }

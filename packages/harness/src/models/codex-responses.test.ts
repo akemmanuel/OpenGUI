@@ -28,9 +28,95 @@ describe("codexResponseEvents", () => {
       }),
     ).toEqual([{ type: "reasoning_delta", delta: "I multiplied the values." }]);
   });
+
+  test("surfaces malformed tool arguments for normal tool validation", () => {
+    expect(
+      codexResponseEvents({
+        type: "response.output_item.done",
+        item: { type: "function_call", call_id: "call-1", name: "write", arguments: '{"path"' },
+      }),
+    ).toEqual([
+      {
+        type: "tool_call",
+        id: "call-1",
+        name: "write",
+        input: { raw: '{"path"' },
+      },
+    ]);
+  });
 });
 
 describe("CodexResponsesTransport", () => {
+  test("decodes multibyte SSE split across CRLF chunks and dispatches the final frame at EOF", async () => {
+    const bytes = new TextEncoder().encode(
+      'data: {"type":"response.output_text.delta","delta":"café 🧪"}\r\n\r\ndata: [DONE]',
+    );
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const end of [63, 66, 68, bytes.length]) {
+          const start = end === 63 ? 0 : [63, 66, 68][[63, 66, 68, bytes.length].indexOf(end) - 1];
+          controller.enqueue(bytes.slice(start, end));
+        }
+        controller.close();
+      },
+    });
+    const transport = new CodexResponsesTransport({
+      getCredential: async () => ({ accessToken: "token", accountId: "account" }),
+      fetchImpl: (async () => new Response(body, { status: 200 })) as typeof fetch,
+    });
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "codex", modelId: "codex" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    ))
+      events.push(event);
+
+    expect(events).toEqual([{ type: "text_delta", delta: "café 🧪" }, { type: "completed" }]);
+  });
+
+  test("rejects a Responses stream that closes before completion", async () => {
+    const transport = new CodexResponsesTransport({
+      getCredential: async () => ({ accessToken: "token", accountId: "account" }),
+      fetchImpl: (async () =>
+        new Response('data: {"type":"response.output_text.delta","delta":"partial"}\n\n', {
+          status: 200,
+        })) as typeof fetch,
+    });
+    const consume = async () => {
+      for await (const _event of transport.stream(
+        {
+          systemPrompt: "help",
+          projectDirectory: "/project",
+          context: [
+            {
+              type: "user_message",
+              text: "hello",
+              model: { connectionId: "codex", modelId: "codex" },
+              reasoning: "none",
+            },
+          ],
+        },
+        new AbortController().signal,
+      )) {
+        // Drain until the premature EOF is diagnosed.
+      }
+    };
+
+    await expect(consume()).rejects.toThrow("ended before completion");
+  });
+
   test("omits tools unavailable for the model turn", async () => {
     let requestBody: string | undefined;
     const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
@@ -63,9 +149,11 @@ describe("CodexResponsesTransport", () => {
       // Drain the response.
     }
     const body = JSON.parse(requestBody ?? "") as {
-      tools: Array<{ name: string }>;
+      tools: Array<{ name: string; description: string; parameters: { required?: string[] } }>;
     };
     expect(body.tools.map((tool) => tool.name)).toEqual(["read", "write", "edit"]);
+    expect(body.tools[0]?.description).toContain("Read a text file");
+    expect(body.tools[0]?.parameters.required).toEqual(["path"]);
   });
 
   test("routes an OAuth token to the SuperGrok proxy with provider-specific errors", async () => {

@@ -97,9 +97,11 @@ export function WorkspaceTabs({
 
   return (
     <div
+      data-slot="workspace-tabs"
       className={`absolute top-[var(--app-safe-top)] h-9 ${isWebRuntime ? "left-9 right-2" : isMac ? "left-9 right-20" : "left-9 right-36"} flex items-center gap-1 px-2`}
     >
       <div
+        data-responsive-allow="horizontal-scroll"
         ref={tabsRef}
         onWheel={(event) => {
           if (event.shiftKey && event.deltaY !== 0 && tabsRef.current) {

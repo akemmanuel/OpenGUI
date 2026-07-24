@@ -95,8 +95,28 @@ export function createHostEventDispatcher({
 
 interface UseHostEventStreamOptions extends HostEventDispatcherDependencies {
   host: OpenGuiHostClient | null;
+  activeSessionId: string | null;
   activeSessionIdRef: MutableRefObject<string | null>;
   hydrateTranscript: (sessionId: string) => Promise<void>;
+}
+
+export function hostEventSubscriptionSession(activeSessionId: string | null) {
+  return activeSessionId ?? undefined;
+}
+
+export function createHostReconnectHandler({
+  activeSessionIdRef,
+  hydrateTranscript,
+}: Pick<UseHostEventStreamOptions, "activeSessionIdRef" | "hydrateTranscript">) {
+  let hasConnected = false;
+  return () => {
+    if (!hasConnected) {
+      hasConnected = true;
+      return;
+    }
+    const sessionId = activeSessionIdRef.current;
+    if (sessionId) void hydrateTranscript(sessionId).catch(notifyUnknownError);
+  };
 }
 
 /** Owns subscription lifetime and rehydrates after every reconnect except initial readiness. */
@@ -106,22 +126,19 @@ export function useHostEventStream(options: UseHostEventStreamOptions): void {
 
   useEffect(() => {
     if (!options.host) return;
-    let hasConnected = false;
     const dispatchEvent = createHostEventDispatcher({
       ...options,
       onFollowUpDispatched: (sessionId, followUpId) =>
         onFollowUpDispatchedRef.current?.(sessionId, followUpId),
     });
-    return options.host.subscribe(dispatchEvent, undefined, () => {
-      if (!hasConnected) {
-        hasConnected = true;
-        return;
-      }
-      const sessionId = options.activeSessionIdRef.current;
-      if (sessionId) void options.hydrateTranscript(sessionId).catch(notifyUnknownError);
-    });
+    return options.host.subscribe(
+      dispatchEvent,
+      hostEventSubscriptionSession(options.activeSessionId),
+      createHostReconnectHandler(options),
+    );
   }, [
     options.host,
+    options.activeSessionId,
     options.hydrateTranscript,
     options.refreshSessions,
     options.transcriptStore,

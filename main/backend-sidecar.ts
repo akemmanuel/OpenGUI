@@ -6,9 +6,10 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 import type { App } from "electron";
 import { Effect } from "effect";
-import { pollUntilEffect, runEffect, tryPromiseEffect } from "../lib/effect-runtime.ts";
+import { runEffect, tryPromiseEffect } from "../lib/effect-runtime.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_PROFILE_KEY = "desktop:backend-profile";
@@ -41,12 +42,28 @@ interface SettingsStoreLike {
   get(key: string): string | null;
 }
 
-interface CreateBackendSidecarControllerOptions {
+export interface BackendSidecarDependencies {
+  spawn: typeof spawn;
+  findAvailablePort: () => Promise<number>;
+  waitForHealth: (
+    url: string,
+    token: string | null,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ) => Promise<void>;
+  resolveBackendEntrypoint: (app: App) => string;
+  randomUUID: () => string;
+  mkdirSync: typeof mkdirSync;
+  homedir: () => string;
+}
+
+export interface CreateBackendSidecarControllerOptions {
   app: App;
   settingsStore: SettingsStoreLike;
   isDev: boolean;
   devServerUrl: string;
   onStatusChange?: (status: BackendStatus) => void;
+  dependencies?: Partial<BackendSidecarDependencies>;
 }
 
 interface ManagedChildState {
@@ -54,13 +71,13 @@ interface ManagedChildState {
   config: BackendRuntimeConfig;
 }
 
-function resolveManagedRuntime(entrypoint: string) {
+export function resolveManagedRuntime(entrypoint: string, executable = process.execPath) {
   const args = entrypoint.endsWith(".ts")
     ? ["--experimental-strip-types", entrypoint]
     : [entrypoint];
 
   return {
-    command: process.execPath,
+    command: executable,
     args,
     env: {
       ...process.env,
@@ -73,7 +90,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function parseProfile(raw: string | null): DesktopBackendProfile | null {
+export function parseBackendProfile(raw: string | null): DesktopBackendProfile | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
@@ -94,7 +111,7 @@ function parseProfile(raw: string | null): DesktopBackendProfile | null {
   }
 }
 
-function defaultProfile(): DesktopBackendProfile {
+export function defaultBackendProfile(): DesktopBackendProfile {
   return {
     id: "local-managed",
     name: "Local Managed Backend",
@@ -104,15 +121,18 @@ function defaultProfile(): DesktopBackendProfile {
   };
 }
 
-function loadBackendProfile(settingsStore: SettingsStoreLike): DesktopBackendProfile {
-  const envMode = process.env.OPENGUI_BACKEND_MODE;
-  const envUrl = process.env.OPENGUI_BACKEND_URL?.trim();
-  const envToken = process.env.OPENGUI_BACKEND_TOKEN?.trim();
-  const forceSidecar = process.env.OPENGUI_USE_SIDECAR === "1";
+export function loadBackendProfile(
+  settingsStore: SettingsStoreLike,
+  environment: NodeJS.ProcessEnv = process.env,
+): DesktopBackendProfile {
+  const envMode = environment.OPENGUI_BACKEND_MODE;
+  const envUrl = environment.OPENGUI_BACKEND_URL?.trim();
+  const envToken = environment.OPENGUI_BACKEND_TOKEN?.trim();
+  const forceSidecar = environment.OPENGUI_USE_SIDECAR === "1";
 
-  if (forceSidecar) return defaultProfile();
+  if (forceSidecar) return defaultBackendProfile();
 
-  if (envMode === "local-managed") return defaultProfile();
+  if (envMode === "local-managed") return defaultBackendProfile();
 
   if (
     (envMode === "local-external" || envMode === "remote") &&
@@ -129,11 +149,11 @@ function loadBackendProfile(settingsStore: SettingsStoreLike): DesktopBackendPro
     };
   }
 
-  const stored = parseProfile(settingsStore.get(BACKEND_PROFILE_KEY));
-  if (!stored) return defaultProfile();
-  if (stored.mode === "local-managed") return { ...defaultProfile(), ...stored };
+  const stored = parseBackendProfile(settingsStore.get(BACKEND_PROFILE_KEY));
+  if (!stored) return defaultBackendProfile();
+  if (stored.mode === "local-managed") return { ...defaultBackendProfile(), ...stored };
   if (!stored.url || (!stored.url.startsWith("http://") && !stored.url.startsWith("https://"))) {
-    return defaultProfile();
+    return defaultBackendProfile();
   }
   return stored;
 }
@@ -156,56 +176,87 @@ async function findAvailablePort() {
   });
 }
 
-async function waitForHealth(url: string, token: string | null, timeoutMs = HEALTH_TIMEOUT_MS) {
-  await runEffect(
-    pollUntilEffect({
-      intervalMs: HEALTH_POLL_INTERVAL_MS,
-      timeoutMs,
-      timeoutMessage: `Timed out waiting for backend health at ${url}`,
-      attempt: async () => {
-        const headers = new Headers();
-        if (token) headers.set("authorization", `Bearer ${token}`);
-        const response = await fetch(`${url.replace(/\/+$/, "")}/api/health`, { headers });
-        return response.ok;
-      },
-    }),
-  );
+async function waitForHealth(
+  url: string,
+  token: string | null,
+  timeoutMs = HEALTH_TIMEOUT_MS,
+  signal?: AbortSignal,
+) {
+  const deadline = Date.now() + timeoutMs;
+  const headers = new Headers();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  while (Date.now() < deadline) {
+    signal?.throwIfAborted();
+    try {
+      const response = await fetch(`${url.replace(/\/+$/, "")}/api/health`, {
+        headers,
+        signal,
+      });
+      if (response.ok) return;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining > 0) {
+      await delay(Math.min(HEALTH_POLL_INTERVAL_MS, remaining), undefined, { signal });
+    }
+  }
+  throw new Error(`Timed out waiting for backend health at ${url}`);
 }
 
-function resolveBackendEntrypoint(app: App) {
-  const override = process.env.OPENGUI_BACKEND_ENTRY?.trim();
-  if (override) return override;
-
+export function selectBackendEntrypoint(
+  input: {
+    override?: string;
+    isPackaged: boolean;
+    resourcesPath: string;
+    appPath: string;
+    moduleDirectory: string;
+    cwd: string;
+  },
+  exists: (candidate: string) => boolean = existsSync,
+) {
+  if (input.override) return input.override;
   const unpackedBundled = path.resolve(
-    process.resourcesPath,
+    input.resourcesPath,
     "app.asar.unpacked",
     "dist-electron",
     "backend.js",
   );
-  if (app.isPackaged && existsSync(unpackedBundled)) return unpackedBundled;
-
+  if (input.isPackaged && exists(unpackedBundled)) return unpackedBundled;
   const candidates = [
-    path.resolve(app.getAppPath(), "dist-electron", "backend.js"),
-    path.resolve(__dirname, "backend.js"),
-    path.resolve(process.cwd(), "dist-electron", "backend.js"),
+    path.resolve(input.appPath, "dist-electron", "backend.js"),
+    path.resolve(input.moduleDirectory, "backend.js"),
+    path.resolve(input.cwd, "dist-electron", "backend.js"),
     unpackedBundled,
   ];
-
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (exists(candidate)) return candidate;
   }
-
-  const source = path.resolve(app.getAppPath(), "server", "web-server.ts");
-  if (existsSync(source)) return source;
-
+  const source = path.resolve(input.appPath, "server", "web-server.ts");
+  if (exists(source)) return source;
   throw new Error("Could not find backend entrypoint for Desktop Shell sidecar");
+}
+
+function resolveBackendEntrypoint(app: App) {
+  const override = process.env.OPENGUI_BACKEND_ENTRY?.trim();
+  return selectBackendEntrypoint({
+    override,
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    moduleDirectory: __dirname,
+    cwd: process.cwd(),
+  });
 }
 
 async function stopChild(childState: ManagedChildState | null) {
   if (!childState?.child || childState.child.killed || childState.child.exitCode !== null) return;
 
   const child = childState.child;
-  const waitForExit = tryPromiseEffect(() => once(child, "exit"));
+  // Subscribe before sending the signal. Small children can exit before a lazy
+  // Effect starts observing them, turning a clean stop into a false timeout.
+  const exitPromise = once(child, "exit");
+  const waitForExit = tryPromiseEffect(() => exitPromise);
 
   await runEffect(
     Effect.gen(function* () {
@@ -227,12 +278,24 @@ async function stopChild(childState: ManagedChildState | null) {
 }
 
 export function createBackendSidecarController(options: CreateBackendSidecarControllerOptions) {
+  const dependencies: BackendSidecarDependencies = {
+    spawn,
+    findAvailablePort,
+    waitForHealth,
+    resolveBackendEntrypoint,
+    randomUUID,
+    mkdirSync,
+    homedir,
+    ...options.dependencies,
+  };
   let status: BackendStatus = "stopped";
   let runtimeConfig: BackendRuntimeConfig | null = null;
   let childState: ManagedChildState | null = null;
   let currentProfile: DesktopBackendProfile | null = null;
   let stoppingForShutdown = false;
   let startPromise: Promise<BackendRuntimeConfig> | null = null;
+  let restartPromise: Promise<BackendRuntimeConfig> | null = null;
+  let healthController: AbortController | null = null;
 
   const setStatus = (nextStatus: BackendStatus) => {
     status = nextStatus;
@@ -243,10 +306,10 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     profile: DesktopBackendProfile,
     preferred?: { port?: number; token?: string | null },
   ) => {
-    const entrypoint = resolveBackendEntrypoint(options.app);
+    const entrypoint = dependencies.resolveBackendEntrypoint(options.app);
     const runtime = resolveManagedRuntime(entrypoint);
-    const port = preferred?.port ?? (await findAvailablePort());
-    const token = preferred?.token || randomUUID();
+    const port = preferred?.port ?? (await dependencies.findAvailablePort());
+    const token = preferred?.token || dependencies.randomUUID();
     const url = `http://${SIDE_CAR_HOST}:${port}`;
     const dataDir = path.join(options.app.getPath("userData"), "backend");
 
@@ -254,20 +317,20 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     // Using the app/source directory as cwd can make macOS show privacy prompts
     // (for example “OpenGUI.app wants access to Documents”) when the app is run
     // from a protected user folder, even though the backend only needs its data dir.
-    mkdirSync(dataDir, { recursive: true });
+    dependencies.mkdirSync(dataDir, { recursive: true });
 
-    const child = spawn(runtime.command, runtime.args, {
+    const child = dependencies.spawn(runtime.command, runtime.args, {
       cwd: dataDir,
       env: {
         ...runtime.env,
         HOST: SIDE_CAR_HOST,
         PORT: String(port),
         OPENGUI_AUTH_TOKEN: token,
-        OPENGUI_ALLOWED_ROOTS: process.env.OPENGUI_ALLOWED_ROOTS || homedir(),
+        OPENGUI_ALLOWED_ROOTS: process.env.OPENGUI_ALLOWED_ROOTS || dependencies.homedir(),
         OPENGUI_DATA_DIR: dataDir,
         OPENGUI_CORS_ORIGIN: process.env.OPENGUI_CORS_ORIGIN || "*",
         OPENGUI_MODE: "desktop-sidecar",
-        OPENGUI_SERVER_MODE: "backend-only",
+        OPENGUI_SERVER_MODE: "desktop-sidecar",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -301,9 +364,26 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     };
 
     childState = { child, config };
-    await waitForHealth(url, token);
-    runtimeConfig = config;
-    return config;
+    healthController = new AbortController();
+    try {
+      await Promise.race([
+        dependencies.waitForHealth(url, token, HEALTH_TIMEOUT_MS, healthController.signal),
+        once(child, "exit").then(([code, signal]) => {
+          throw new Error(`Backend sidecar exited before becoming healthy (${code ?? signal})`);
+        }),
+      ]);
+      runtimeConfig = config;
+      return config;
+    } catch (error) {
+      healthController.abort();
+      await stopChild(childState);
+      childState = null;
+      runtimeConfig = null;
+      if (!stoppingForShutdown) setStatus("crashed");
+      throw error;
+    } finally {
+      healthController = null;
+    }
   };
 
   const start = async () => {
@@ -358,27 +438,38 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
       return await start();
     },
     async restart() {
-      const current = runtimeConfig;
-      if (!current?.managed) {
-        return await start();
+      if (restartPromise) return await restartPromise;
+      restartPromise = (async () => {
+        if (startPromise) await startPromise;
+        const current = runtimeConfig;
+        if (!current?.managed) return await start();
+        const currentPort = Number(new URL(current.url).port || 0) || undefined;
+        const profile = currentProfile ?? loadBackendProfile(options.settingsStore);
+        stoppingForShutdown = true;
+        healthController?.abort();
+        await stopChild(childState);
+        stoppingForShutdown = false;
+        runtimeConfig = null;
+        childState = null;
+        setStatus("starting");
+        const config = await spawnManagedBackend(profile, {
+          port: currentPort,
+          token: current.token,
+        });
+        runtimeConfig = config;
+        setStatus("running");
+        return config;
+      })();
+      try {
+        return await restartPromise;
+      } finally {
+        restartPromise = null;
       }
-      const currentPort = Number(new URL(current.url).port || 0) || undefined;
-      const profile = currentProfile ?? loadBackendProfile(options.settingsStore);
-      stoppingForShutdown = true;
-      await stopChild(childState);
-      stoppingForShutdown = false;
-      runtimeConfig = null;
-      childState = null;
-      setStatus("starting");
-      const config = await spawnManagedBackend(profile, {
-        port: currentPort,
-        token: current.token,
-      });
-      runtimeConfig = config;
-      setStatus("running");
-      return config;
     },
     async stop() {
+      healthController?.abort();
+      if (startPromise) await startPromise.catch(() => undefined);
+      if (restartPromise) await restartPromise.catch(() => undefined);
       if (currentProfile?.mode === "local-managed" && currentProfile.stopWithApp === false) {
         setStatus("running");
         return;

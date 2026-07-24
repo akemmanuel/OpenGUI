@@ -31,7 +31,7 @@ Use in-app Workspace connection settings for the Backend URL and access token.
 
 ## Safe areas (Android and iOS)
 
-The web build uses `viewport-fit=cover` in `src/index.html`. Layout insets come from shared CSS variables on `html` in `styles/globals.css`:
+The web build uses `viewport-fit=cover` and `interactive-widget=resizes-content` in `src/index.html`; browser pinch/text zoom remains enabled. Layout insets come from shared CSS variables on `html` in `styles/globals.css`:
 
 - `--app-safe-*` resolves `var(--safe-area-inset-*, env(safe-area-inset-*, 0px))`.
 - On Android, Capacitor’s **SystemBars** plugin (`insetsHandling: "css"` in `capacitor.config.ts`) injects `--safe-area-inset-*` when WebView `env()` values are wrong or missing.

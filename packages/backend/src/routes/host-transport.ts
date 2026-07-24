@@ -1,7 +1,7 @@
 import type { BackendApp } from "../http/request-context.ts";
 import { homedir } from "node:os";
 import { findFilesInDirectory } from "../../../../server/services/file-search.ts";
-import { jsonError } from "../http/json.ts";
+import { isPlainObject, jsonError } from "../http/json.ts";
 import type { BackendHostEnv } from "../host/env.ts";
 import type { OpenGuiHost } from "../host/opengui-host.ts";
 import { durableActor } from "../identity/types.ts";
@@ -59,7 +59,8 @@ export function registerHostTransportRoutes(app: BackendApp, deps: HostTransport
   app.post("/api/rpc", async (c) => {
     await deps.ready;
     try {
-      const body = (await c.req.raw.json()) as { channel?: unknown; args?: unknown };
+      const body = (await c.req.raw.json()) as unknown;
+      if (!isPlainObject(body)) throw new Error("Request body must be an object");
       const channel = typeof body.channel === "string" ? body.channel : "";
       const args = Array.isArray(body.args) ? body.args : [];
       if (
@@ -78,7 +79,8 @@ export function registerHostTransportRoutes(app: BackendApp, deps: HostTransport
         return Response.json({ ok: true, value: directory });
       }
       if (channel === "files:find") {
-        const requested = typeof args[0] === "string" ? args[0] : "";
+        const requested = typeof args[0] === "string" ? args[0].trim() : "";
+        if (!requested) throw new Error("files:find directory is required");
         const authorized = await deps.pathAuthorizer.authorizePath(
           durableActor(c.get("actor")),
           requested,
@@ -93,7 +95,7 @@ export function registerHostTransportRoutes(app: BackendApp, deps: HostTransport
       }
       throw new Error(`RPC channel not available: ${channel || "<missing>"}`);
     } catch (error) {
-      return jsonError(error, error instanceof PathAuthorizationError ? 403 : 500);
+      return jsonError(error, error instanceof PathAuthorizationError ? 403 : 400);
     }
   });
 }

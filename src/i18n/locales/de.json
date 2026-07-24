@@ -2,6 +2,12 @@
   "mobile": {
     "backAgainToExit": "Zum Beenden erneut Zurück drücken"
   },
+  "windowControls": {
+    "minimize": "Fenster minimieren",
+    "maximize": "Fenster maximieren",
+    "restore": "Fenster wiederherstellen",
+    "close": "Fenster schließen"
+  },
   "common": {
     "autoDetect": "Automatisch erkennen",
     "back": "Zurück",
@@ -15,7 +21,14 @@
     "settings": "Einstellungen",
     "version": "Version",
     "done": "Fertig",
-    "loading": "Lade..."
+    "loading": "Lade...",
+    "retry": "Erneut versuchen"
+  },
+  "markdown": {
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "copyCodeLabel": "Code in die Zwischenablage kopieren",
+    "codeCopied": "Code kopiert"
   },
   "messageList": {
     "loadOlder": "Ältere Nachrichten laden",
@@ -838,6 +851,8 @@
   "queueList": {
     "reorderQueuedPrompt": "Nachricht in Warteschlange neu anordnen",
     "sendNow": "Jetzt senden",
+    "remove": "Nachricht aus der Warteschlange entfernen",
+    "moreActions": "Weitere Aktionen für die Nachricht in der Warteschlange",
     "interrupt": "unterbrechen",
     "steer": "steuern",
     "edit": "Bearbeiten",
@@ -856,6 +871,7 @@
     "restore": "Wiederherstellen"
   },
   "sessionShare": {
+    "loadFailed": "Die Freigabeeinstellungen konnten nicht geladen werden.",
     "title": "Session teilen",
     "description": "Zugriff auf „{{title}}“ verwalten. Sessions bleiben privat, bis du sie teilst.",
     "people": "Personen und Team",

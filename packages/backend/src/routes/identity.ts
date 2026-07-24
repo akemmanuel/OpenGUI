@@ -159,6 +159,10 @@ export function registerIdentityRoutes(app: BackendApp, deps: IdentityRouteDeps)
   app.get("/api/identity/me", (c) => me(c.req.raw));
   app.get("/api/auth/me", (c) => me(c.req.raw));
 
+  // Desktop Local exposes only the local identity status endpoints above.
+  // Remote administration routes require a durable identity service.
+  if (!deps.identity) return;
+
   app.get("/api/identity/audit", async (c) => {
     const actor = await deps.getActor(c.req.raw);
     if (!actor) return authRequired();

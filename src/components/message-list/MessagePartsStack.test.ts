@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { TranscriptPart } from "@/protocol/session-transcript";
-import { groupToolsUntilAssistantText } from "./MessagePartsStack";
+import { groupToolsUntilAssistantText, separateToolGroupParts } from "./MessagePartsStack";
 
 function part(id: string, type: "reasoning" | "text" | "tool"): TranscriptPart {
   if (type === "reasoning") return { id, type, text: id, time: {}, sessionID: "s", messageID: "m" };
@@ -28,5 +28,19 @@ describe("groupToolsUntilAssistantText", () => {
     expect(
       grouped.map((item) => (Array.isArray(item) ? item.map((entry) => entry.id) : item.id)),
     ).toEqual([["read-1", "thought-1", "shell-1"], "answer", ["edit-1"]]);
+  });
+
+  test("keeps reasoning renderable when it shares a compact tool activity group", () => {
+    const separated = separateToolGroupParts([
+      part("thought-before", "reasoning"),
+      part("read-1", "tool"),
+      part("thought-after", "reasoning"),
+    ]);
+
+    expect(separated.reasoning.map((entry) => entry.id)).toEqual([
+      "thought-before",
+      "thought-after",
+    ]);
+    expect(separated.tools.map((entry) => entry.id)).toEqual(["read-1"]);
   });
 });

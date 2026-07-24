@@ -100,8 +100,8 @@ export interface ActionsContextValue {
   respondPermission: (response: "once" | "always" | "reject") => Promise<void>;
   replyQuestion: (answers: QuestionAnswer[]) => Promise<void>;
   rejectQuestion: () => Promise<void>;
-  setModel: (model: SelectedModel | null) => void;
-  setPromptBoxSelection: (input: { model: SelectedModel }) => void;
+  setModel: (model: SelectedModel | null) => Promise<void>;
+  setPromptBoxSelection: (input: { model: SelectedModel }) => Promise<void>;
   setAgent: (agent: string | null) => void;
   cycleVariant: () => void;
   revertVariant: () => void;

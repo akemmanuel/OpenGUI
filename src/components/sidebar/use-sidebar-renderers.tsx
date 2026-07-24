@@ -22,7 +22,6 @@ interface UseSidebarRenderersArgs {
   editingSessionId: string | null;
   hasActiveSearch: boolean;
   hasUnsentDraft: (sessionId: string) => boolean;
-  homeDir?: string | null;
   isLocalWorkspace: boolean;
   moveSessionToProject: (sessionId: string, projectDirectory: string) => void | Promise<void>;
   namingSessionIds: Set<string>;
@@ -72,7 +71,6 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     editingSessionId,
     hasActiveSearch,
     hasUnsentDraft,
-    homeDir,
     isLocalWorkspace,
     moveSessionToProject,
     namingSessionIds,
@@ -165,7 +163,6 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       connections={connections}
       visibleByProject={visibleByProject}
       sidebarState={sidebarState}
-      homeDir={homeDir}
       detachedProject={detachedProject}
       isLocalWorkspace={isLocalWorkspace}
       availableProjectDirectories={availableProjectDirectories}

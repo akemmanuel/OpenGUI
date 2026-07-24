@@ -17,6 +17,7 @@ import {
 import { HostProvider } from "@/features/host-provider/HostProvider";
 import { IdentityGate } from "@/features/identity/IdentityGate";
 import { SessionShareDialog } from "@/features/identity/SessionShareDialog";
+import { sessionUiPermissions } from "@/components/sidebar/SessionRow";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
@@ -48,7 +49,7 @@ import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
 
-function AppContent({
+export function AppContent({
   detachedProject,
   suppressBootErrors,
   onDismissSetup,
@@ -113,6 +114,7 @@ function AppContent({
       connections,
       defaultChatDirectory,
     });
+  const canRunActiveSession = sessionUiPermissions(activeSession?._accessRole).run;
 
   const revertToLastMessage = useCallback(() => {
     if (!capabilities?.revert) return;
@@ -261,7 +263,8 @@ function AppContent({
                         </div>
                       )}
                       <PromptBox
-                        autoFocus
+                        autoFocus={!suppressBootErrors}
+                        disabled={!canRunActiveSession}
                         isLoading={isBusy}
                         queueMode={queueMode}
                         onQueueModeChange={setQueueMode}

@@ -2,6 +2,12 @@
   "mobile": {
     "backAgainToExit": "Pulsa atrás otra vez para salir"
   },
+  "windowControls": {
+    "minimize": "Minimizar ventana",
+    "maximize": "Maximizar ventana",
+    "restore": "Restaurar ventana",
+    "close": "Cerrar ventana"
+  },
   "common": {
     "autoDetect": "Detectar automáticamente",
     "back": "Volver",
@@ -15,7 +21,14 @@
     "settings": "Ajustes",
     "version": "Versión",
     "done": "Listo",
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "retry": "Intentar de nuevo"
+  },
+  "markdown": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copyCodeLabel": "Copiar código al portapapeles",
+    "codeCopied": "Código copiado"
   },
   "messageList": {
     "loadOlder": "Cargar mensajes anteriores",
@@ -838,6 +851,8 @@
   "queueList": {
     "reorderQueuedPrompt": "Reordenar mensaje en cola",
     "sendNow": "Enviar ahora",
+    "remove": "Quitar mensaje de la cola",
+    "moreActions": "Más acciones para el mensaje en cola",
     "interrupt": "interrumpir",
     "steer": "dirigir",
     "edit": "Editar",
@@ -856,6 +871,7 @@
     "restore": "Restaurar"
   },
   "sessionShare": {
+    "loadFailed": "No se pudo cargar la configuración para compartir.",
     "title": "Compartir sesión",
     "description": "Gestiona el acceso a «{{title}}». Las sesiones son privadas hasta que las compartes.",
     "people": "Personas y Equipo",

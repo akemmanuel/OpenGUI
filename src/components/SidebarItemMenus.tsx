@@ -64,7 +64,9 @@ export function SessionItemMenu(props: SessionMenuProps) {
         <button
           type="button"
           aria-label={props.pinned ? t("sessionMenu.unpin") : t("sessionMenu.pin")}
-          className="ml-auto opacity-0 group-hover/session:opacity-100 group-focus-within/session:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent"
+          data-slot="sidebar-hover-action"
+          data-responsive-allow="hover-reveal"
+          className="ml-auto opacity-0 group-hover/session:opacity-100 group-focus-within/session:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
           onClick={(event) => event.stopPropagation()}
         >
           <MoreHorizontal className="size-3.5" />
@@ -311,6 +313,8 @@ export function ProjectItemMenu(props: Omit<ProjectMenuContentProps, "kind">) {
         <button
           type="button"
           aria-label={props.pinned ? t("projectMenu.unpinProject") : t("projectMenu.pinProject")}
+          data-slot="sidebar-hover-action"
+          data-responsive-allow="hover-reveal"
           className="opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
           data-project-action
           onClick={(event) => event.stopPropagation()}

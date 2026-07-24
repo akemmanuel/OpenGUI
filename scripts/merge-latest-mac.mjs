@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const yaml = require("js-yaml");
@@ -39,6 +40,18 @@ function readManifest(dir) {
   process.exit(1);
 }
 
+export function mergeManifests(x64, arm64) {
+  const releaseDate = new Date(
+    Math.max(new Date(x64.releaseDate ?? 0).getTime(), new Date(arm64.releaseDate ?? 0).getTime()),
+  ).toISOString();
+
+  return {
+    version: x64.version ?? arm64.version,
+    releaseDate,
+    files: [...(x64.files ?? []), ...(arm64.files ?? [])],
+  };
+}
+
 function merge() {
   const { x64Dir, arm64Dir, outDir } = parseArgs();
 
@@ -47,15 +60,7 @@ function merge() {
   console.log(`Reading arm64 manifest from: ${arm64Dir}`);
   const arm64 = readManifest(arm64Dir);
 
-  const releaseDate = new Date(
-    Math.max(new Date(x64.releaseDate ?? 0).getTime(), new Date(arm64.releaseDate ?? 0).getTime()),
-  ).toISOString();
-
-  const merged = {
-    version: x64.version ?? arm64.version,
-    releaseDate,
-    files: [...(x64.files ?? []), ...(arm64.files ?? [])],
-  };
+  const merged = mergeManifests(x64, arm64);
 
   if (!existsSync(outDir)) {
     mkdirSync(outDir, { recursive: true });
@@ -69,9 +74,11 @@ function merge() {
   console.log(`  total: ${merged.files.length}`);
 }
 
-try {
-  merge();
-} catch (err) {
-  console.error("Merge failed:", err.message);
-  process.exit(1);
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  try {
+    merge();
+  } catch (err) {
+    console.error("Merge failed:", err.message);
+    process.exit(1);
+  }
 }

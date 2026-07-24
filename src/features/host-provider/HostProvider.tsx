@@ -44,7 +44,7 @@ import type { Workspace } from "@/types/workspace";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import { normalizeProjectPath } from "@/lib/path";
 import { findModel } from "@/lib/utils";
-import { shouldAutoNameSession } from "@/hooks/agent-session-utils";
+import { makeProjectKey, shouldAutoNameSession } from "@/hooks/agent-session-utils";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { connectionsToModelProviders } from "@/lib/models-dev";
@@ -55,6 +55,7 @@ import { persistHostModelSelection } from "@/features/host-provider/host-model-s
 import { loadHostSessionSummaries } from "@/features/host-provider/host-session-list";
 import { createOptimisticUserMessage } from "@/features/host-provider/host-optimistic-message";
 import {
+  resolveRestoredSessionId,
   useHostSlice,
   type ModelSlice,
   type ProjectSlice,
@@ -110,6 +111,9 @@ function createRuntimeHostClient(workspace: Workspace): OpenGuiHostClient {
           !input.includes("/api/host/events")
         ) {
           const headers = new Headers(init?.headers);
+          // The main process owns Local Host authorization. Never send its
+          // credential back across the renderer-controlled request envelope.
+          headers.delete("authorization");
           const response = await electronApi.backendFetch({
             url: input.startsWith("http")
               ? input
@@ -249,6 +253,23 @@ function HostProviderBody({
     setProjects(nextProjects);
   }, []);
 
+  const rememberActiveSession = useCallback(
+    (sessionId: string | null) => {
+      persistWorkspaces(
+        workspaces.map((item) =>
+          item.id === activeWorkspaceId
+            ? normalizeWorkspace({
+                ...item,
+                lastActiveSessionId: sessionId,
+                settings: { ...item.settings, lastActiveSessionId: sessionId },
+              })
+            : item,
+        ),
+      );
+    },
+    [activeWorkspaceId, workspaces],
+  );
+
   const refreshModels = useCallback(async () => {
     if (!host) return;
     const connections = await host.listModelConnections();
@@ -285,6 +306,15 @@ function HostProviderBody({
       if (!host) return;
       const listed = await loadHostSessionSummaries(host, directories);
       setSessions(listed.map((item) => toSession(item, activeWorkspaceId)));
+      const restoredSessionId = resolveRestoredSessionId(
+        activeSessionIdRef.current,
+        workspace?.lastActiveSessionId,
+        listed.map((item) => item.id),
+      );
+      if (restoredSessionId !== activeSessionIdRef.current) {
+        activeSessionIdRef.current = restoredSessionId;
+        setActiveSessionId(restoredSessionId);
+      }
       setBusySessionIds(
         new Set(listed.filter((item) => item.status === "running").map((item) => item.id)),
       );
@@ -297,7 +327,7 @@ function HostProviderBody({
         return next;
       });
     },
-    [activeWorkspaceId, host],
+    [activeWorkspaceId, host, workspace?.lastActiveSessionId],
   );
 
   const hydrateTranscript = useCallback(
@@ -397,6 +427,7 @@ function HostProviderBody({
   }, []);
   useHostEventStream({
     host,
+    activeSessionId,
     activeSessionIdRef,
     activeStreamRef,
     setActiveSnapshot,
@@ -557,6 +588,7 @@ function HostProviderBody({
       selectSession: async (id) => {
         activeSessionIdRef.current = id;
         setActiveSessionId(id);
+        rememberActiveSession(id);
         if (id) {
           const session = sessions.find((item) => item.id === id);
           if (session?.directory) setActiveTargetDirectory(session.directory);
@@ -568,6 +600,7 @@ function HostProviderBody({
         if (activeSessionId === id) {
           activeSessionIdRef.current = null;
           setActiveSessionId(null);
+          rememberActiveSession(null);
         }
         await refreshSessions();
       },
@@ -611,6 +644,7 @@ function HostProviderBody({
               nextCursor: null,
             });
             setActiveSessionId(sessionId);
+            rememberActiveSession(sessionId);
             await refreshSessions();
           } else {
             const session = sessions.find((item) => item.id === sessionId);
@@ -833,11 +867,12 @@ function HostProviderBody({
       moveSessionToProject: async () => {},
       removeSessionFromProject: async () => {},
       setProjectPinned: (directory, pinned) => {
+        const projectKey = makeProjectKey(activeWorkspaceId, directory);
         setProjectMeta((current) => {
           const next = {
             ...current,
-            [directory]: {
-              ...current[directory],
+            [projectKey]: {
+              ...current[projectKey],
               pinnedAt: pinned ? new Date().toISOString() : undefined,
             },
           };
@@ -856,7 +891,7 @@ function HostProviderBody({
           settings: { serverUrl: input.serverUrl, authToken: input.authToken, isLocal: false },
         });
         const next = [...workspaces, nextWorkspace];
-        persistWorkspaces(next);
+        if (!persistWorkspaces(next)) return;
         setWorkspaces(next);
         setActiveWorkspaceId(nextWorkspace.id);
         storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, nextWorkspace.id);
@@ -873,14 +908,14 @@ function HostProviderBody({
             ? normalizeWorkspace({ ...item, ...input, settings: { ...item.settings, ...input } })
             : item,
         );
-        persistWorkspaces(next);
+        if (!persistWorkspaces(next)) return;
         setWorkspaces(next);
         if (workspaceId === activeWorkspaceId) announceIdentityWorkspaceChange();
       },
       removeWorkspace: async (workspaceId) => {
         if (workspaceId === LOCAL_WORKSPACE_ID) return;
         const next = workspaces.filter((item) => item.id !== workspaceId);
-        persistWorkspaces(next);
+        if (!persistWorkspaces(next)) return;
         setWorkspaces(next);
         if (activeWorkspaceId === workspaceId) {
           const fallback = next[0]?.id ?? "";
@@ -905,7 +940,7 @@ function HostProviderBody({
         const [moved] = next.splice(fromIndex, 1);
         if (!moved) return;
         next.splice(toIndex, 0, moved);
-        persistWorkspaces(next);
+        if (!persistWorkspaces(next)) return;
         setWorkspaces(next);
       },
       reorderVisibleProjects: replaceProjects,
@@ -917,6 +952,7 @@ function HostProviderBody({
     currentActor,
     host,
     hydrateTranscript,
+    rememberActiveSession,
     queuedPrompts,
     refreshModels,
     replaceProjects,

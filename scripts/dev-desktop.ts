@@ -5,6 +5,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { waitForDevelopmentServers } from "./dev-desktop-helpers.ts";
 
 const host = "127.0.0.1";
 const port = Number(process.env.OPENGUI_VITE_PORT || 5173);
@@ -30,19 +31,18 @@ const server = spawn("vp", ["dev", "--host", host, "--port", String(port)], {
 
 const maxAttempts = 60;
 
-for (let i = 0; i < maxAttempts; i++) {
-  try {
-    await fetch(url);
-    await fetch(`${backendUrl}/api/health`);
-    break;
-  } catch {
-    if (i === maxAttempts - 1) {
-      console.error(`Server did not start within ${maxAttempts} seconds`);
-      server.kill();
-      process.exit(1);
-    }
-    await sleep(1000);
-  }
+try {
+  await waitForDevelopmentServers({
+    frontendUrl: url,
+    backendUrl,
+    attempts: maxAttempts,
+    fetch,
+    sleep,
+  });
+} catch (error) {
+  console.error(error);
+  server.kill();
+  process.exit(1);
 }
 
 const electronEnv = { ...process.env };
@@ -63,10 +63,13 @@ const electron = spawn("pnpm", electronArgs, {
   },
 });
 
-const exitCode = await new Promise<number>((resolve, reject) => {
-  electron.once("error", reject);
-  electron.once("exit", (code) => resolve(code ?? 0));
-});
-
-server.kill();
+let exitCode = 1;
+try {
+  exitCode = await new Promise<number>((resolve, reject) => {
+    electron.once("error", reject);
+    electron.once("exit", (code) => resolve(code ?? 0));
+  });
+} finally {
+  server.kill();
+}
 process.exit(exitCode);

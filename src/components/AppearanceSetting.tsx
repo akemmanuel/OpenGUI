@@ -47,7 +47,7 @@ export function AppearanceSetting() {
   return (
     <div className="space-y-3">
       {/* Theme mode row */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <Label className="text-sm font-normal shrink-0">{t("settings.general.appearance")}</Label>
         <ToggleGroup
           type="single"
@@ -57,6 +57,7 @@ export function AppearanceSetting() {
           onValueChange={(val) => {
             if (val) setTheme(val as ThemeMode);
           }}
+          className="h-auto w-full flex-wrap sm:w-auto [&_[data-slot=toggle-group-item]]:min-w-0 [&_[data-slot=toggle-group-item]]:flex-none max-[400px]:[&_svg]:hidden"
         >
           <ToggleGroupItem
             value="light"
@@ -86,7 +87,7 @@ export function AppearanceSetting() {
       </div>
 
       {/* Contrast row */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <SlidersHorizontal className="size-4 text-muted-foreground shrink-0" />
         <Label className="text-sm font-normal shrink-0 w-20">
           {t("settings.general.contrast")}
@@ -105,11 +106,13 @@ export function AppearanceSetting() {
       </div>
 
       {/* Accent color row */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Palette className="size-4 text-muted-foreground shrink-0" />
-        <Label className="text-sm font-normal shrink-0 w-20">{t("settings.general.accent")}</Label>
+        <Label className="text-sm font-normal shrink-0 sm:w-20">
+          {t("settings.general.accent")}
+        </Label>
         <TooltipProvider delayDuration={300}>
-          <div className="flex flex-1 items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {ACCENT_PRESET_IDS.map((presetId) => {
               const color = ACCENT_PRESET_COLORS[presetId];
               const label = t(`settings.general.accentPreset.${presetId}`);
@@ -152,12 +155,12 @@ export function AppearanceSetting() {
       </div>
 
       {/* Code font size row */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <CaseSensitive className="size-4 text-muted-foreground shrink-0" />
         <Label htmlFor="code-font-size" className="text-sm font-normal shrink-0 w-20">
           {t("settings.general.codeFontSize")}
         </Label>
-        <div className="flex flex-1 justify-end items-center gap-2">
+        <div className="ml-auto flex min-w-[7rem] items-center justify-end gap-2">
           <Input
             id="code-font-size"
             type="number"

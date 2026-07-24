@@ -1,13 +1,20 @@
 import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import { createBackendHost, type BackendHost } from "../create-backend-host.ts";
 import type { BackendHostEnv } from "../host/env.ts";
 import { IDENTITY_AUDIT_MAX_ENTRIES } from "./audit.ts";
 
 const databases: DatabaseSync[] = [];
+const backends: BackendHost[] = [];
+const dataDirectories: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(backends.splice(0).map(async (backend) => (await backend.hostReady).close()));
   for (const database of databases.splice(0)) database.close();
+  for (const directory of dataDirectories.splice(0)) rmSync(directory, { recursive: true });
 });
 
 function env(identityMode: BackendHostEnv["identityMode"], authToken = ""): BackendHostEnv {
@@ -29,11 +36,16 @@ function env(identityMode: BackendHostEnv["identityMode"], authToken = ""): Back
 function host(identityMode: BackendHostEnv["identityMode"] = "remote", authToken = "") {
   const database = new DatabaseSync(":memory:");
   databases.push(database);
-  return createBackendHost({
+  const dataDirectory = mkdtempSync(join(tmpdir(), "opengui-identity-integration-"));
+  dataDirectories.push(dataDirectory);
+  const backend = createBackendHost({
+    dataDirectory,
     env: env(identityMode, authToken),
     identityDatabase: database,
     identitySecret: "identity-integration-test-secret-with-32-characters",
   });
+  backends.push(backend);
+  return backend;
 }
 
 async function setupOwner(backend: BackendHost) {

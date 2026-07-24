@@ -21,7 +21,12 @@ export function contentTypeForPath(filePath: string) {
 
 export async function serveBuiltFile(request: Request) {
   const url = new URL(request.url);
-  const requestedPath = decodeURIComponent(url.pathname);
+  let requestedPath: string;
+  try {
+    requestedPath = decodeURIComponent(url.pathname);
+  } catch {
+    requestedPath = "/index.html";
+  }
   const safePath = requestedPath.includes("..") ? "/index.html" : requestedPath;
   const distPath = resolve("dist", safePath === "/" ? "index.html" : safePath.slice(1));
   const distRoot = resolve("dist");
