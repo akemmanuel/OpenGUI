@@ -15,6 +15,9 @@ import {
   useActiveTranscriptMessageOrder,
 } from "@/features/session-transcript/active-session-transcript-provider";
 import { HostProvider } from "@/features/host-provider/HostProvider";
+import { IdentityGate } from "@/features/identity/IdentityGate";
+import { SessionShareDialog } from "@/features/identity/SessionShareDialog";
+import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { useBackendCapabilities } from "@/hooks/use-agent-backend";
 import {
   useActions,
@@ -55,6 +58,7 @@ function AppContent({
   onDismissSetup?: () => void;
 }) {
   const { t } = useTranslation();
+  const identityActor = useIdentityActor();
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const leftSidebar = useSidebar();
   const {
@@ -228,6 +232,7 @@ function AppContent({
                   ) : (
                     <NoProjectConnected
                       canStartChat={chatSurfaceState.kind === "default-chat"}
+                      shareOnly={identityActor?.type === "user"}
                       onStartChat={() => {
                         void startNewChat();
                       }}
@@ -274,6 +279,7 @@ function AppContent({
           </div>
         </div>
       </SidebarInset>
+      <SessionShareDialog />
       <UpdateDialog update={updateCheck} />
     </>
   );
@@ -294,17 +300,19 @@ export function App() {
 
   return (
     <DesktopShellProvider>
-      <HostProvider detachedProject={detachedProject}>
-        <SidebarProvider className="!h-dvh">
-          <AppContent
-            detachedProject={detachedProject}
-            suppressBootErrors={showWizard}
-            onDismissSetup={dismissSetup}
-          />
-          {showWizard && <SetupWizard onComplete={dismissSetup} />}
-          <Toaster richColors closeButton />
-        </SidebarProvider>
-      </HostProvider>
+      <IdentityGate>
+        <HostProvider detachedProject={detachedProject}>
+          <SidebarProvider className="!h-dvh">
+            <AppContent
+              detachedProject={detachedProject}
+              suppressBootErrors={showWizard}
+              onDismissSetup={dismissSetup}
+            />
+            {showWizard && <SetupWizard onComplete={dismissSetup} />}
+            <Toaster richColors closeButton />
+          </SidebarProvider>
+        </HostProvider>
+      </IdentityGate>
     </DesktopShellProvider>
   );
 }

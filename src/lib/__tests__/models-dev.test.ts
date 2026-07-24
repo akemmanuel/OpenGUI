@@ -58,6 +58,7 @@ describe("reasoningMetadataForModel", () => {
       "high",
       "xhigh",
       "max",
+      "ultra",
     ]);
   });
 });

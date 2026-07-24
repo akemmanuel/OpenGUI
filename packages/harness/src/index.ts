@@ -1,4 +1,5 @@
 export * from "./harness.ts";
+export * from "./execution-policy.ts";
 export * from "./models/transport.ts";
 export { OpenAiChatTransport, type OpenAiCompatibleConnection } from "./models/openai-chat.ts";
 export {

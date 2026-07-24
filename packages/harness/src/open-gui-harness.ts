@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
 import { buildModelContext } from "./context/build-context.ts";
 import { buildSystemPrompt } from "./context/system-prompt.ts";
+import { type ExecutionPolicy, unrestrictedExecutionPolicy } from "./execution-policy.ts";
 import type {
   Clock,
   CreateSessionInput,
@@ -9,11 +11,14 @@ import type {
   ModelSelection,
   OpenGuiHarness,
   OpenGuiHarnessOptions,
+  PromptInput,
   ReasoningLevel,
   SessionEvent,
   SessionSnapshot,
 } from "./harness.ts";
-import { discoverSkills } from "./skills/discover.ts";
+import type { ModelToolName } from "./models/transport.ts";
+import { discoverSkills, loadSkillsFromDir } from "./skills/discover.ts";
+import type { Skill } from "./skills/types.ts";
 import { SqliteSessionStore } from "./storage/sqlite-store.ts";
 import { executeTool } from "./tools/execute-tool.ts";
 import { resolveNativeShell, type ResolvedShell } from "./tools/shell-resolution.ts";
@@ -59,16 +64,16 @@ class HarnessSessionImpl implements HarnessSession {
     return this.#harness.readSession(this.#id);
   }
 
-  run(prompt: { text: string }): AsyncIterable<SessionEvent> {
-    return this.#harness.run(this.#id, prompt.text);
+  run(prompt: PromptInput): AsyncIterable<SessionEvent> {
+    return this.#harness.run(this.#id, prompt);
   }
 
-  async followUp(prompt: { text: string }) {
-    return await this.#harness.followUp(this.#id, prompt.text);
+  async followUp(prompt: PromptInput) {
+    return await this.#harness.followUp(this.#id, prompt);
   }
 
-  async updateFollowUp(followUpId: string, prompt: { text: string }) {
-    await this.#harness.updateFollowUp(this.#id, followUpId, prompt.text);
+  async updateFollowUp(followUpId: string, prompt: PromptInput) {
+    await this.#harness.updateFollowUp(this.#id, followUpId, prompt);
   }
 
   async reorderFollowUp(followUpId: string, index: number) {
@@ -108,6 +113,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #dataDirectory: string;
   readonly #homeDirectory: string | undefined;
   readonly #shell: ResolvedShell;
+  readonly #resolveExecutionPolicy: OpenGuiHarnessOptions["resolveExecutionPolicy"];
   readonly #runningSessions = new Set<string>();
   readonly #abortControllers = new Map<string, AbortController>();
   readonly #ready: Promise<void>;
@@ -120,12 +126,64 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#dataDirectory = options.dataDirectory;
     this.#homeDirectory = options.homeDirectory;
     this.#shell = resolveNativeShell({ configuredExecutable: options.shell?.executable });
+    this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
     this.#store = new SqliteSessionStore(options.dataDirectory, this.#ids);
     this.#ready = this.#store.recoverInterruptedRuns(this.#clock.now().toISOString());
   }
 
   #assertOpen() {
     if (this.#closed) throw new Error("OpenGuiHarness is closed");
+  }
+
+  async #currentExecutionPolicy(
+    actor: PromptInput["actor"],
+    projectDirectory: string,
+  ): Promise<ExecutionPolicy> {
+    return this.#resolveExecutionPolicy
+      ? await this.#resolveExecutionPolicy(actor)
+      : unrestrictedExecutionPolicy(projectDirectory);
+  }
+
+  async #executionPolicyWithProjectAccess(
+    actor: PromptInput["actor"],
+    projectDirectory: string,
+  ): Promise<{ policy: ExecutionPolicy; canonicalProjectRoot: string }> {
+    const policy = await this.#currentExecutionPolicy(actor, projectDirectory);
+    const decision = await policy.authorizePath(resolve(projectDirectory), "read");
+    if (!decision.allowed || !decision.canonicalPath) {
+      throw new Error(
+        `Execution policy denied Project access${decision.reason ? `: ${decision.reason}` : ""}`,
+      );
+    }
+    return { policy, canonicalProjectRoot: decision.canonicalPath };
+  }
+
+  async #toolsForModel(
+    policy: ExecutionPolicy,
+    canonicalProjectRoot: string,
+  ): Promise<ModelToolName[]> {
+    if (!policy.restricted) {
+      return ["read", "write", "edit", ...(policy.shellAllowed ? (["shell"] as const) : [])];
+    }
+    const writeDecision = await policy.authorizePath(canonicalProjectRoot, "write");
+    return ["read", ...(writeDecision.allowed ? (["write", "edit"] as const) : [])];
+  }
+
+  async #skillsForRun(projectDirectory: string, policy: ExecutionPolicy): Promise<Skill[]> {
+    if (!policy.restricted) {
+      return discoverSkills({
+        projectDirectory,
+        homeDirectory: this.#homeDirectory,
+      }).skills;
+    }
+
+    // Restricted discovery is deliberately project-local and only starts after
+    // the Host has authorized the discovery root. Symlinked SKILL.md files are
+    // rejected by loadSkillsFromDir.
+    const requestedRoot = join(projectDirectory, ".agents", "skills");
+    const decision = await policy.authorizePath(requestedRoot, "read");
+    if (!decision.allowed || !decision.canonicalPath) return [];
+    return loadSkillsFromDir(decision.canonicalPath, "project").skills;
   }
 
   async listSessions(projectDirectory: string) {
@@ -162,21 +220,28 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     };
   }
 
-  async followUp(sessionId: string, rawText: string) {
+  async followUp(sessionId: string, prompt: PromptInput) {
     this.#assertOpen();
-    const text = rawText.trim();
+    const text = prompt.text.trim();
     if (!text) throw new Error("Follow-up text must not be empty");
     if (!this.#runningSessions.has(sessionId)) {
       throw new Error("Follow-ups can only be queued while a Session is running");
     }
-    return await this.#store.enqueueFollowUp(sessionId, text, this.#clock.now().toISOString());
+    return await this.#store.enqueueFollowUp(
+      sessionId,
+      { text, ...(prompt.actor ? { actor: prompt.actor } : {}) },
+      this.#clock.now().toISOString(),
+    );
   }
 
-  async updateFollowUp(sessionId: string, followUpId: string, rawText: string) {
+  async updateFollowUp(sessionId: string, followUpId: string, prompt: PromptInput) {
     this.#assertOpen();
-    const text = rawText.trim();
+    const text = prompt.text.trim();
     if (!text) throw new Error("Follow-up text must not be empty");
-    await this.#store.updateFollowUp(sessionId, followUpId, text);
+    await this.#store.updateFollowUp(sessionId, followUpId, {
+      text,
+      ...(prompt.actor ? { actor: prompt.actor } : {}),
+    });
   }
 
   async reorderFollowUp(sessionId: string, followUpId: string, index: number) {
@@ -227,17 +292,30 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     await this.#store.deleteSession(sessionId);
   }
 
-  async *run(sessionId: string, text: string): AsyncIterable<SessionEvent> {
+  async *run(sessionId: string, prompt: PromptInput): AsyncIterable<SessionEvent> {
     this.#assertOpen();
-    if (!text.trim()) throw new Error("Prompt text must not be empty");
+    if (!prompt.text.trim()) throw new Error("Prompt text must not be empty");
     if (this.#runningSessions.has(sessionId))
       throw new Error("A run is already active for this Session");
     this.#runningSessions.add(sessionId);
     const abortController = new AbortController();
     this.#abortControllers.set(sessionId, abortController);
     let activeRunId: string | undefined;
+    let authorizationFailed = false;
+    const revalidate = async (actor: PromptInput["actor"], projectDirectory: string) => {
+      try {
+        return await this.#executionPolicyWithProjectAccess(actor, projectDirectory);
+      } catch (error) {
+        authorizationFailed = true;
+        abortController.abort(error);
+        throw error;
+      }
+    };
     try {
-      let nextPrompt = text;
+      let nextPrompt: PromptInput | null = {
+        text: prompt.text.trim(),
+        ...(prompt.actor ? { actor: prompt.actor } : {}),
+      };
       let followUpId: string | undefined;
       while (nextPrompt) {
         const runId = this.#ids.next("run");
@@ -245,10 +323,13 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         const snapshot = await this.readSession(sessionId);
         if (!snapshot.model || !snapshot.reasoning)
           throw new Error("Session model selection is incomplete");
+        // Resolve once at the durable run seam. Queued prompts retain their
+        // actor, but never retain a stale policy snapshot.
+        await revalidate(nextPrompt.actor, snapshot.projectDirectory);
         const startedEntries = await this.#store.beginRun({
           sessionId,
           runId,
-          text: nextPrompt,
+          prompt: nextPrompt,
           model: snapshot.model,
           reasoning: snapshot.reasoning,
           followUpId,
@@ -258,26 +339,38 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
 
         while (true) {
           const current = await this.readSession(sessionId);
+          const initialAccess = await revalidate(nextPrompt.actor, current.projectDirectory);
           let assistantText = "";
           let reasoningText = "";
           const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
-          const { skills } = discoverSkills({
-            projectDirectory: current.projectDirectory,
-            homeDirectory: this.#homeDirectory,
-          });
+          const skills = await this.#skillsForRun(current.projectDirectory, initialAccess.policy);
+          // Skill discovery can perform I/O, so refresh once more immediately
+          // before exposing capabilities to the provider.
+          const modelAccess = await revalidate(nextPrompt.actor, current.projectDirectory);
+          const tools = await this.#toolsForModel(
+            modelAccess.policy,
+            modelAccess.canonicalProjectRoot,
+          );
+          const shellAvailable = tools.includes("shell");
           for await (const event of this.#model.stream(
             {
               projectDirectory: current.projectDirectory,
               context: buildModelContext(current.entries),
+              tools,
               systemPrompt: buildSystemPrompt({
                 projectDirectory: current.projectDirectory,
-                shell: this.#shell,
+                ...(shellAvailable ? { shell: this.#shell } : {}),
+                tools,
                 skills,
                 now: this.#clock.now(),
               }),
             },
             abortController.signal,
           )) {
+            // Provider chunks are the finest useful revocation boundary. Do
+            // not expose or retain a chunk until current actor and Project
+            // access have both been re-resolved.
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             if (event.type === "text_delta") {
               assistantText += event.delta;
               yield { type: "assistant_delta", runId, delta: event.delta };
@@ -290,6 +383,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           }
 
           if (reasoningText) {
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
@@ -302,6 +396,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           }
 
           if (toolCalls.length === 0) {
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
@@ -311,6 +406,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
                 this.#clock.now().toISOString(),
               ),
             };
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
@@ -325,6 +421,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           }
 
           if (assistantText) {
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
@@ -337,6 +434,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           }
 
           for (const toolCall of toolCalls) {
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
@@ -349,6 +447,12 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           }
 
           for (const toolCall of toolCalls) {
+            // Re-resolve immediately before every effect. This is the final
+            // enforcement seam for grants, removals, and revocations.
+            const { policy: executionPolicy } = await revalidate(
+              nextPrompt.actor,
+              current.projectDirectory,
+            );
             const output = await executeTool(
               {
                 projectDirectory: current.projectDirectory,
@@ -357,10 +461,12 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
                 toolCallId: toolCall.id,
                 shell: this.#shell,
                 signal: abortController.signal,
+                executionPolicy,
               },
               toolCall.name,
               toolCall.input,
             );
+            await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
@@ -375,13 +481,13 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
 
         const followUp = await this.#store.claimNextFollowUp(sessionId);
         if (!followUp) return;
-        nextPrompt = followUp.prompt.text;
+        nextPrompt = followUp.prompt;
         followUpId = followUp.id;
       }
     } catch (error) {
       const entry = await this.#store.appendEntry(
         sessionId,
-        abortController.signal.aborted ? "run_aborted" : "run_failed",
+        abortController.signal.aborted && !authorizationFailed ? "run_aborted" : "run_failed",
         {
           ...(typeof activeRunId === "string" ? { runId: activeRunId } : {}),
           error: error instanceof Error ? error.message : String(error),

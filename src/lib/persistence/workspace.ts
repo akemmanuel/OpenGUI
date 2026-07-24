@@ -278,6 +278,7 @@ function getLegacyStoredWorkspaces(): Workspace[] {
     return [
       normalizeWorkspace({
         ...local,
+        authToken: storedLocal?.authToken ?? local.authToken,
         projects: storedLocal?.projects ?? [],
         selectedModel: storedLocal?.selectedModel ?? null,
         selectedAgent: storedLocal?.selectedAgent ?? null,
@@ -285,6 +286,7 @@ function getLegacyStoredWorkspaces(): Workspace[] {
         settings: {
           ...storedSettings,
           ...local.settings,
+          authToken: storedLocal?.authToken ?? storedSettings.authToken ?? local.authToken,
           projectOrder: storedSettings.projectOrder,
           hiddenProjects: storedSettings.hiddenProjects,
         },
@@ -375,6 +377,14 @@ export function getActiveWorkspaceId(workspaces: Workspace[]) {
     return stored;
   }
   return workspaces[0]?.id ?? "";
+}
+
+/** Resolve the one persisted active Workspace used by both identity and Host transport. */
+export function getActiveWorkspace(
+  workspaces: Workspace[],
+  activeId = getActiveWorkspaceId(workspaces),
+): Workspace | null {
+  return workspaces.find((workspace) => workspace.id === activeId) ?? null;
 }
 
 export function areNotificationsEnabled(): boolean {

@@ -26,14 +26,15 @@ function isReadToolInput(value: unknown): value is ReadToolInput {
 export async function executeReadTool(
   projectDirectory: string,
   rawInput: unknown,
+  authorizedPath?: string,
 ): Promise<ReadToolOutput> {
   if (!isReadToolInput(rawInput)) {
     return { path: "", error: "read requires a non-empty path", truncated: false };
   }
 
-  const path = isAbsolute(rawInput.path)
-    ? resolve(rawInput.path)
-    : resolve(projectDirectory, rawInput.path);
+  const path =
+    authorizedPath ??
+    (isAbsolute(rawInput.path) ? resolve(rawInput.path) : resolve(projectDirectory, rawInput.path));
   try {
     const bytes = await readFile(path);
     if (bytes.includes(0)) {

@@ -62,6 +62,48 @@ _Avoid_: Shared agent process, unrestricted multi-tenant host
 The URL and authentication material a Frontend uses to reach one Remote Host. It is presentation and transport configuration, not Session identity.
 _Avoid_: Provider connection, Harness selection
 
+### Accounts and Team access
+
+**Account**:
+A person identity on one OpenGUI Host: unique username, password, and email. Login uses username and password; email is not the login identifier in v1.
+_Avoid_: Workspace user, shared host password, cloud-wide OpenGUI account (v1 identity is Host-embedded)
+
+**Team**:
+A named share principal for Accounts on one OpenGUI Host. Membership does not automatically grant paths, model connections, or Sessions.
+_Avoid_: Ambient shared disk, Workspace, cloud organization
+
+**Team membership**:
+An Account's membership on a Host Team, including role (`owner` or `member` in v1).
+_Avoid_: Workspace membership, Session ownership
+
+**Owner**:
+The Account created by first-time Host setup. Manages members, invites, Host API keys, and Host settings including Model connections.
+_Avoid_: Billing owner only, OS root
+
+**Member**:
+A non-owner Account on a Host. Remote access is share-only: paths, shared model connections, and Sessions require explicit grants.
+_Avoid_: Ambient full Host access, OS sandboxed tenant
+
+**Invite**:
+A Host-issued, expiring join token that creates membership and may attach delegable path grants. Hosts may alternatively enable open registration; new Accounts still receive no paths.
+_Avoid_: Shared OPENGUI_AUTH_TOKEN, ambient project access
+
+**Host API key**:
+A named, revocable Host credential for automation or break-glass access. The secret is shown once and stored hashed; it is not an Account password and not a model provider key.
+_Avoid_: OPENGUI_AUTH_TOKEN as product login, provider credential
+
+**Host credential**:
+Whatever a Frontend or script presents to authorize Host product APIs: an Account session (cookie or bearer) or a Host API key. Replaces shared-secret login for ready Remote Hosts.
+_Avoid_: Provider credential, ChatGPT token
+
+**Actor**:
+The Account or Host API key attributed on a Host mutation (prompt, interrupt, rename, and similar). Recorded for shared-Session clarity; not a separate product user object.
+_Avoid_: Frontend tab id, Workspace id as author
+
+**Path grant**:
+A read/write capability for OpenGUI project and file surfaces. Remote Hosts are share-only by default. It is not a shell jail; unrestricted shell commands retain the Host OS user's authority.
+_Avoid_: Project connection, hostile-tenant sandbox
+
 ### Work organization
 
 **Workspace**:
@@ -77,8 +119,8 @@ Frontend presentation state that makes a Host directory available in the sidebar
 _Avoid_: Git clone, Harness attachment, mount
 
 **Session**:
-The canonical conversation and execution history for work against one Project through the OpenGUI Harness. The Host owns and persists it; any connected Frontend may observe and control it.
-_Avoid_: External Harness Session, frontend transcript cache, chat row only
+A user-owned conversation and execution history against one Project. It is private by default and can be shared with view, run, or admin access; public links are view-only.
+_Avoid_: Team-owned chat, ambient shared transcript, frontend transcript cache
 
 **Session entry**:
 One ordered durable fact in a Session, such as a model change, reasoning change, message, tool call/result, compaction, or run lifecycle change. Entries form the canonical append-oriented Session log.
@@ -127,8 +169,8 @@ _Avoid_: Client-side race resolution, Session owner
 ### Models and credentials
 
 **Model connection**:
-A Host-owned configuration that can authenticate and stream requests to a model endpoint. V1 includes a ChatGPT/Codex OAuth preset and custom OpenAI-compatible connections.
-_Avoid_: External Harness, Workspace connection, CLI installation
+A model endpoint and credential in the Host, Team, or User plane. Host/Team connections require entitlements; User connections are personal and solo-only.
+_Avoid_: Host transport connection, ambient Team keyring, External Harness
 
 **Model adapter**:
 Internal Harness code that translates between the common agent-loop model interface and one model wire protocol. Model adapters do not own Sessions, tools, UI capabilities, or Projects.
@@ -151,8 +193,8 @@ Secrets or tokens held by the Host for a Model connection. They must not be incl
 _Avoid_: Host access token, Workspace password, transcript metadata
 
 **Host access token**:
-A credential used by a Frontend to authenticate to a Remote Host. It grants access to that Host but is not a model credential.
-_Avoid_: Provider credential, ChatGPT token
+Legacy name for a shared secret once used to authenticate every Frontend to a Remote Host (`OPENGUI_AUTH_TOKEN`). Superseded for product login by **Host credential** (Account session or **Host API key**) per [ADR 0011](docs/adr/0011-host-embedded-accounts-and-teams.md). May exist only as a short upgrade bridge before owner setup completes.
+_Avoid_: Primary team login, provider credential, ChatGPT token
 
 ### Harness capabilities
 

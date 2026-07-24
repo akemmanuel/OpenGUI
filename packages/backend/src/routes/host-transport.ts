@@ -1,20 +1,34 @@
-import type { Hono } from "hono";
+import type { BackendApp } from "../http/request-context.ts";
 import { homedir } from "node:os";
 import { findFilesInDirectory } from "../../../../server/services/file-search.ts";
 import { jsonError } from "../http/json.ts";
 import type { BackendHostEnv } from "../host/env.ts";
 import type { OpenGuiHost } from "../host/opengui-host.ts";
+import { durableActor } from "../identity/types.ts";
+import { HostPathAuthorizer, PathAuthorizationError } from "../path-policy/enforcement.ts";
 
 export type HostTransportRouteDeps = {
   env: Pick<BackendHostEnv, "allowedRoots" | "serverMode" | "servesFrontend" | "authToken">;
   ready: Promise<void>;
   getHost: () => Promise<OpenGuiHost>;
   resolveSafeDirectory: (inputPath: string | null) => Promise<string>;
+  pathAuthorizer: HostPathAuthorizer;
+  pathGrantsEnforced?: boolean;
 };
 
-export function registerHostTransportRoutes(app: Hono, deps: HostTransportRouteDeps) {
-  app.get("/api/capabilities", () =>
-    Response.json({
+export function registerHostTransportRoutes(app: BackendApp, deps: HostTransportRouteDeps) {
+  app.get("/api/capabilities", async (c) => {
+    const policy = await deps.pathAuthorizer.policy(durableActor(c.get("actor")));
+    const uploads =
+      policy?.restricted !== true ||
+      (
+        await Promise.all(
+          (policy?.grants ?? [])
+            .filter((grant) => grant.access === "write")
+            .map((grant) => policy!.authorizePath(grant.root, "write")),
+        )
+      ).some((decision) => decision.allowed);
+    return Response.json({
       ok: true,
       value: {
         protocolVersion: 1,
@@ -23,14 +37,14 @@ export function registerHostTransportRoutes(app: Hono, deps: HostTransportRouteD
         models: true,
         sessions: true,
         followUps: true,
-        uploads: true,
+        uploads,
         fileSearch: true,
         git: false,
-        permissions: false,
+        permissions: deps.pathGrantsEnforced === true,
         questions: false,
       },
-    }),
-  );
+    });
+  });
 
   app.get("/api/version", () =>
     Response.json({
@@ -56,12 +70,21 @@ export function registerHostTransportRoutes(app: Hono, deps: HostTransportRouteD
         return Response.json({ ok: true, value: true });
       }
       if (channel === "platform:homeDir") {
-        return Response.json({ ok: true, value: homedir() });
+        const directory = await deps.pathAuthorizer.authorizePath(
+          durableActor(c.get("actor")),
+          homedir(),
+          "read",
+        );
+        return Response.json({ ok: true, value: directory });
       }
       if (channel === "files:find") {
-        const directory = await deps.resolveSafeDirectory(
-          typeof args[0] === "string" ? args[0] : "",
+        const requested = typeof args[0] === "string" ? args[0] : "";
+        const authorized = await deps.pathAuthorizer.authorizePath(
+          durableActor(c.get("actor")),
+          requested,
+          "read",
         );
+        const directory = await deps.resolveSafeDirectory(authorized);
         const query = typeof args[1] === "string" ? args[1] : "";
         return Response.json({
           ok: true,
@@ -70,7 +93,7 @@ export function registerHostTransportRoutes(app: Hono, deps: HostTransportRouteD
       }
       throw new Error(`RPC channel not available: ${channel || "<missing>"}`);
     } catch (error) {
-      return jsonError(error);
+      return jsonError(error, error instanceof PathAuthorizationError ? 403 : 500);
     }
   });
 }

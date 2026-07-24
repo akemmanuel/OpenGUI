@@ -31,6 +31,43 @@ describe("codexResponseEvents", () => {
 });
 
 describe("CodexResponsesTransport", () => {
+  test("omits tools unavailable for the model turn", async () => {
+    let requestBody: string | undefined;
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      requestBody = typeof init?.body === "string" ? init.body : undefined;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const transport = new CodexResponsesTransport({
+      getCredential: async () => ({ accessToken: "token", accountId: "account" }),
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    for await (const _event of transport.stream(
+      {
+        systemPrompt: "restricted",
+        projectDirectory: "/project",
+        tools: ["read", "write", "edit"],
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "codex", modelId: "codex" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    )) {
+      // Drain the response.
+    }
+    const body = JSON.parse(requestBody ?? "") as {
+      tools: Array<{ name: string }>;
+    };
+    expect(body.tools.map((tool) => tool.name)).toEqual(["read", "write", "edit"]);
+  });
+
   test("routes an OAuth token to the SuperGrok proxy with provider-specific errors", async () => {
     const fetchImpl = vi.fn(
       async (_input: string | URL | Request, _init?: RequestInit) =>

@@ -53,6 +53,7 @@
     "tabs": {
       "general": "Allgemein",
       "providers": "Anbieter",
+      "team": "Team",
       "plugins": "Plugins",
       "tools": "Werkzeuge"
     },
@@ -170,7 +171,10 @@
       "purple": "Lila",
       "pink": "Rosa",
       "gray": "Grau"
-    }
+    },
+    "share": "Teilen",
+    "private": "Private Session",
+    "shared": "Geteilte Session"
   },
   "projectMenu": {
     "pinProject": "Projekt anheften",
@@ -287,6 +291,143 @@
     "toggleSidebar": "Sidebar umschalten",
     "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest.",
     "addProjectRequiresWorkspace": "Zuerst einen Workspace anlegen"
+  },
+  "identity": {
+    "checkingHost": "Host-Identität wird geprüft",
+    "setupTitle": "Diesen Host einrichten",
+    "setupDescription": "Erstelle das erste Konto für {{host}}. Dieses Konto wird Eigentümer des Hosts und seiner Einstellungen.",
+    "loginTitle": "Bei OpenGUI anmelden",
+    "loginDescription": "Gib deine Kontodaten ein, um {{host}} zu verwenden.",
+    "registerTitle": "Konto erstellen",
+    "registerDescription": "Registriere dich für {{host}}. Ein Eigentümer muss dir weiterhin Ordner freigeben, bevor du Projekte öffnen kannst.",
+    "createAccount": "Konto erstellen",
+    "creatingAccount": "Konto wird erstellt…",
+    "switchToRegister": "Noch kein Konto? Registrieren",
+    "switchToLogin": "Bereits ein Konto? Anmelden",
+    "hostPolicyTitle": "Host-Zugang",
+    "hostPolicyDescription": "Steuere, wie Personen diesem Host beitreten und wer Einladungen senden darf.",
+    "registrationMode": "Registrierung",
+    "registrationModeUpdated": "Registrierungsmodus aktualisiert",
+    "registrationModes": {
+      "invite_only": "Nur mit Einladung",
+      "open": "Offene Registrierung"
+    },
+    "registrationModeHelp": {
+      "invite_only": "Nur Personen mit Einladung können ein Konto erstellen.",
+      "open": "Jeder mit der Host-URL kann ein Konto erstellen. Freigegebene Ordner sind weiterhin nötig, um zu arbeiten."
+    },
+    "canInvite": "Darf einladen",
+    "canInviteLabel": "{{name}} erlauben, Einladungen zu erstellen",
+    "username": "Benutzername",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "confirmPassword": "Passwort bestätigen",
+    "passwordHint": "Verwende mindestens 8 Zeichen.",
+    "passwordMismatch": "Die Passwörter stimmen nicht überein.",
+    "createOwner": "Eigentümerkonto erstellen",
+    "creatingOwner": "Konto wird erstellt…",
+    "signIn": "Anmelden",
+    "signingIn": "Anmeldung läuft…",
+    "accountSession": "Host-Konto",
+    "signOut": "Abmelden",
+    "signingOut": "Abmeldung läuft…",
+    "hostLabel": "Verbindung mit {{host}}",
+    "unavailableTitle": "Host nicht erreichbar",
+    "unavailableDescription": "OpenGUI konnte den Identitätsstatus von {{host}} nicht prüfen.",
+    "connectionError": "Verbindung zum Host nicht möglich.",
+    "authenticationError": "Authentifizierung fehlgeschlagen. Prüfe deine Angaben und versuche es erneut.",
+    "retry": "Erneut versuchen",
+    "acceptInviteTitle": "Diesem Team beitreten",
+    "acceptInviteDescription": "Erstelle dein Konto, um dem Team auf {{host}} beizutreten.",
+    "joinTeam": "Team beitreten",
+    "joiningTeam": "Teambeitritt läuft…",
+    "inviteAcceptError": "Diese Einladung konnte nicht angenommen werden. Sie ist möglicherweise ungültig, abgelaufen oder wurde bereits verwendet.",
+    "membersTitle": "Mitglieder",
+    "membersDescription": "Personen mit Konten auf diesem Host. Sitzungen und Ordner bleiben privat, bis sie freigegeben werden.",
+    "noMembers": "Dieser Host hat keine Mitglieder zurückgegeben.",
+    "you": "Du",
+    "roles": {
+      "owner": "Eigentümer",
+      "member": "Mitglied"
+    },
+    "removeMember": "{{name}} entfernen",
+    "removeMemberConfirm": "Dieses Mitglied aus dem Team entfernen? Sein aktiver Host-Zugriff wird widerrufen.",
+    "resetPassword": "Passwort zurücksetzen",
+    "resetPasswordTitle": "Passwort für {{name}} zurücksetzen",
+    "resetPasswordDescription": "Lege ein vorläufiges Passwort fest und teile es sicher. Es wird nicht in OpenGUI gespeichert.",
+    "passwordReset": "Passwort zurückgesetzt",
+    "invitesTitle": "Einladungen",
+    "invitesDescription": "Einladungslinks gewähren Zugriff auf diesen Host. Teile sie nur mit vertrauenswürdigen Personen.",
+    "inviteEmail": "E-Mail des Mitglieds",
+    "createInvite": "Einladung erstellen",
+    "inviteCreated": "Einladung erstellt",
+    "inviteCreatedTitle": "Einladungslink erstellt",
+    "inviteCreatedDescription": "Kopiere diesen Link jetzt. Aus Sicherheitsgründen wird er nach dem Schließen nicht erneut angezeigt.",
+    "inviteLink": "Einladungslink",
+    "noInvites": "Keine ausstehenden Einladungen.",
+    "pending": "Ausstehend",
+    "expires": "Läuft am {{date}} ab",
+    "copyLink": "Link kopieren",
+    "revokeInvite": "Einladung für {{email}} widerrufen",
+    "revokeInviteConfirm": "Diesen Einladungslink widerrufen? Er funktioniert danach sofort nicht mehr.",
+    "apiKeysTitle": "Host-API-Schlüssel",
+    "apiKeysDescription": "Benannte Zugangsdaten für Automatisierung. Geheimnisse werden einmal angezeigt und können nicht wiederhergestellt werden.",
+    "keyLabel": "Schlüsselname",
+    "keyRole": "Schlüsselrolle",
+    "createKey": "Schlüssel erstellen",
+    "noApiKeys": "Keine API-Schlüssel.",
+    "created": "Erstellt am {{date}}",
+    "neverUsed": "Nutzung nicht erfasst",
+    "revokeKey": "{{label}} widerrufen",
+    "revokeKeyConfirm": "Diesen API-Schlüssel widerrufen? Verwendende Anwendungen verlieren sofort den Zugriff.",
+    "keyCreatedTitle": "API-Schlüssel erstellt",
+    "keyCreatedDescription": "Kopiere dieses Geheimnis jetzt. Nach dem Schließen wird es nicht erneut angezeigt.",
+    "apiKeySecret": "API-Schlüsselgeheimnis",
+    "copySecret": "API-Schlüsselgeheimnis kopieren",
+    "copied": "Kopiert",
+    "teamLoadError": "Die Team-Einstellungen konnten nicht geladen werden. Möglicherweise ist Eigentümerzugriff erforderlich.",
+    "teamRemoteOnly": "Team-Einstellungen sind für angemeldete Remote Hosts verfügbar.",
+    "teamOwnerOnly": "Nur der angemeldete Host-Eigentümer kann Team-Einstellungen verwalten.",
+    "actionError": "Der Host konnte diese Aktion nicht abschließen. Versuche es erneut.",
+    "confirmActionTitle": "Bist du sicher?",
+    "revoke": "Widerrufen",
+    "pathGrants": {
+      "access": "Zugriff",
+      "unrestricted": "Uneingeschränkt",
+      "title": "Projektzugriff für {{name}}",
+      "description": "Lege fest, welche Verzeichnisse dieses Konto oder dieser Schlüssel verwenden darf. Beim Speichern wird die gesamte Zugriffsliste ersetzt.",
+      "root": "Verzeichnis",
+      "accessFor": "Zugriff für {{path}}",
+      "readOnly": "Nur lesen",
+      "readWrite": "Lesen und schreiben",
+      "removePath": "{{path}} entfernen",
+      "path": "Verzeichnispfad",
+      "pathPlaceholder": "/absoluter/pfad/zum/projekt",
+      "addPath": "Pfad hinzufügen",
+      "noAccessTitle": "Kein Projektzugriff",
+      "noAccessDescription": "Dieses Konto oder dieser Schlüssel kann keine verzeichnisbasierten Projekte öffnen.",
+      "shellDisabled": "Die Shell ist für dieses eingeschränkte Konto oder diesen Schlüssel deaktiviert, solange die Pfadkontrolle aktiv ist.",
+      "loadError": "Der Projektzugriff konnte nicht geladen werden. Schließe den Editor und öffne ihn erneut.",
+      "saveError": "Der Projektzugriff konnte nicht gespeichert werden. Prüfe, ob jeder Pfad ein vorhandenes erlaubtes Verzeichnis ist.",
+      "save": "Zugriff speichern",
+      "saving": "Wird gespeichert…"
+    },
+    "invitePaths": "Anfänglicher Projektzugriff",
+    "invitePathsHelp": "Es werden nur Ordner angezeigt, auf die du zugreifen kannst. Die Einladung kann nicht mehr Zugriff gewähren, als du selbst hast.",
+    "modelPolicy": {
+      "allowByok": "Eigene API-Schlüssel erlauben",
+      "allowByokHelp": "Personen dürfen eigene Modellverbindungen mit API-Schlüssel hinzufügen. Eine Host-Sperre hat Vorrang.",
+      "allowByos": "Eigene Abonnements erlauben",
+      "allowByosHelp": "Personen dürfen unterstützte Modellabonnements verbinden. Eine Host-Sperre hat Vorrang.",
+      "host": {
+        "allowByok": "Host: BYOK erlauben",
+        "allowByos": "Host: BYOS erlauben"
+      },
+      "team": {
+        "allowByok": "Team: BYOK erlauben",
+        "allowByos": "Team: BYOS erlauben"
+      }
+    }
   },
   "mcp": {
     "title": "MCPs",
@@ -423,7 +564,22 @@
     "baseUrlInvalid": "Basis-URL muss mit http:// oder https:// beginnen",
     "modelIdsRequired": "Alle Modell-IDs müssen ausgefüllt sein",
     "modelNamesRequired": "Alle Modellnamen müssen ausgefüllt sein",
-    "duplicateModelIds": "Doppelte Modell-IDs gefunden"
+    "duplicateModelIds": "Doppelte Modell-IDs gefunden",
+    "connectionPlane": "Eigentümer der Verbindung",
+    "planes": {
+      "host": "Host",
+      "team": "Team",
+      "user": "Persönlich"
+    },
+    "planeHelp": {
+      "host": "Vom Host-Eigentümer verwaltet und nur mit ausdrücklicher Berechtigung verfügbar.",
+      "team": "Für das Team verwaltet und nur mit ausdrücklicher Berechtigung verfügbar.",
+      "user": "Privat für dein Konto und nur in deinen eigenen Sessions verfügbar."
+    },
+    "removeConnection": "{{name}} entfernen",
+    "teamAccessTitle": "Modellzugriff des Teams",
+    "teamAccessHelp": "Lege fest, welche geteilten Verbindungen Teammitglieder verwenden dürfen.",
+    "teamAccess": "Teamzugriff"
   },
   "setupWizard": {
     "connectModelTitle": "Modell verbinden",
@@ -567,7 +723,8 @@
     "noSessionDescription": "Wähle eine Sitzung aus oder starte eine neue aus einem verbundenen Projekt.",
     "noWorkspaceTitle": "Kein Workspace konfiguriert",
     "noWorkspaceDescription": "Ein Workspace ist dein OpenGUI-Backend. Lege einen an und verbinde dann Projekte.",
-    "addWorkspace": "Workspace hinzufügen"
+    "addWorkspace": "Workspace hinzufügen",
+    "noSharedProjects": "Für dein Konto wurden noch keine Projektordner freigegeben. Bitte den Host-Eigentümer oder eine einladende Person um Zugriff."
   },
   "mergeDialog": {
     "failed": "Merge fehlgeschlagen",
@@ -697,5 +854,41 @@
     "reverted": "{{count}} Nachricht zurückgesetzt",
     "reverted_plural": "{{count}} Nachrichten zurückgesetzt",
     "restore": "Wiederherstellen"
+  },
+  "sessionShare": {
+    "title": "Session teilen",
+    "description": "Zugriff auf „{{title}}“ verwalten. Sessions bleiben privat, bis du sie teilst.",
+    "people": "Personen und Team",
+    "principal": "Person oder Team",
+    "choosePrincipal": "Person oder Team auswählen",
+    "access": "Zugriff",
+    "share": "Teilen",
+    "private": "Nur du kannst diese Session öffnen.",
+    "viewLinks": "Ansichtslinks",
+    "viewLinksHelp": "Jeder mit einem Ansichtslink kann dieses Protokoll ohne Anmeldung lesen. Senden und Werkzeuge sind nicht möglich.",
+    "createLink": "Ansichtslink erstellen",
+    "revokeShare": "Zugriff für {{name}} entfernen",
+    "revokeLink": "Ansichtslink widerrufen",
+    "linkExpires": "Läuft am {{date}} ab",
+    "noExpiry": "Kein Ablaufdatum",
+    "types": {
+      "user": "Person",
+      "team": "Team"
+    },
+    "roles": {
+      "view": "Darf ansehen",
+      "run": "Darf fortsetzen",
+      "admin": "Darf verwalten"
+    }
+  },
+  "viewLink": {
+    "loadingTitle": "Geteilte Session",
+    "readOnly": "Schreibgeschütztes Protokoll",
+    "invalid": "Dieser Ansichtslink ist ungültig, abgelaufen oder wurde widerrufen.",
+    "empty": "Diese Session enthält noch keine Nachrichten.",
+    "usedTool": "{{tool}} verwendet",
+    "user": "Benutzer",
+    "assistant": "OpenGUI",
+    "footer": "Aus OpenGUI geteilt · Schreibgeschützt"
   }
 }

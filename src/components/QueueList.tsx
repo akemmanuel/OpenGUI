@@ -26,7 +26,9 @@ import { CSS } from "@dnd-kit/utilities";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { ActorAttribution } from "@/features/identity/ActorAttribution";
 import { cn } from "@/lib/utils";
+import type { ActorSnapshot } from "@/protocol/host-types";
 
 interface QueueItem {
   id: string;
@@ -34,6 +36,7 @@ interface QueueItem {
   variant?: string;
   agent?: string;
   mode?: string;
+  actor?: ActorSnapshot;
 }
 
 interface QueueListProps {
@@ -180,7 +183,10 @@ function QueueItemRow({
           autoFocus
         />
       ) : (
-        <span className="flex-1 min-w-0 truncate text-xs text-foreground/80">{item.text}</span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <ActorAttribution actor={item.actor} className="leading-3" />
+          <span className="truncate text-xs text-foreground/80">{item.text}</span>
+        </div>
       )}
 
       {/* Show snapshotted variant / agent / mode badges */}

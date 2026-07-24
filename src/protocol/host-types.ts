@@ -12,6 +12,10 @@ export interface HostModelConnection {
   modelIds: string[];
   defaultModelId?: string;
   modelRoutes?: Record<string, "openai-chat" | "anthropic-messages" | "responses">;
+  plane?: "host" | "team" | "user";
+  ownerType?: "host" | "team" | "user";
+  ownerId?: string;
+  credentialKind?: "byok" | "byos";
   modelCapabilities?: Record<
     string,
     {
@@ -35,6 +39,15 @@ export interface HostSessionSummary {
   createdAt: string;
   updatedAt: string;
   status: "idle" | "running" | "failed" | "interrupted" | "stopped";
+  accessRole?: "view" | "run" | "admin" | "owner" | null;
+  shared?: boolean;
+}
+
+/** Persisted attribution only; authorization continues to come from the Host credential. */
+export interface ActorSnapshot {
+  type: "user" | "api_key" | "local";
+  id: string;
+  displayName: string;
 }
 
 export interface HostSessionEntry {
@@ -42,14 +55,19 @@ export interface HostSessionEntry {
   sessionId: string;
   sequence: number;
   kind: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> & { actor?: ActorSnapshot };
   createdAt: string;
+}
+
+export interface HostPrompt {
+  text: string;
+  actor?: ActorSnapshot;
 }
 
 export interface HostFollowUp {
   id: string;
   sequence: number;
-  prompt: { text: string };
+  prompt: HostPrompt;
   createdAt: string;
 }
 

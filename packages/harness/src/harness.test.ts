@@ -452,6 +452,39 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     await harness.close();
   });
 
+  test("persists a role-free actor on an immediate user message without changing model context", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const model = new FakeModel([{ text: "Complete" }]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory: dataDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "medium",
+    });
+    const actor = { type: "user" as const, id: "user-1", displayName: "Ada" };
+
+    for await (const _event of session.run({ text: "First", actor })) {
+      // Drain the Run.
+    }
+
+    const userMessage = (await session.read()).entries.find(
+      (entry) => entry.kind === "user_message",
+    );
+    expect(userMessage?.payload).toMatchObject({ text: "First", actor });
+    expect(model.requests[0]?.context.find((item) => item.type === "user_message")).toEqual({
+      type: "user_message",
+      text: "First",
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "medium",
+    });
+    await harness.close();
+  });
+
   test("manages pending follow-ups through the Session interface", async () => {
     const dataDirectory = await temporaryDirectory();
     const model = new FakeModel([
@@ -470,20 +503,38 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       model: { connectionId: "fake", modelId: "fake-model" },
       reasoning: "medium",
     });
-    const stream = session.run({ text: "First" })[Symbol.asyncIterator]();
+    const stream = session
+      .run({
+        text: "First",
+        actor: { type: "user", id: "user-1", displayName: "Ada" },
+      })
+      [Symbol.asyncIterator]();
     await stream.next();
     await stream.next();
 
-    const second = await session.followUp({ text: "Second" });
-    const third = await session.followUp({ text: "Third" });
+    const second = await session.followUp({
+      text: "Second",
+      actor: { type: "local", id: "desktop-local", displayName: "Local user" },
+    });
+    const third = await session.followUp({
+      text: "Third",
+      actor: { type: "api_key", id: "key-1", displayName: "CI key" },
+    });
     const fourth = await session.followUp({ text: "Fourth" });
-    await session.updateFollowUp(third.id, { text: "Third edited" });
+    await session.updateFollowUp(third.id, {
+      text: "Third edited",
+      actor: { type: "user", id: "editor", displayName: "Editor" },
+    });
     await session.reorderFollowUp(third.id, 0);
     await session.removeFollowUp(fourth.id);
 
     expect((await session.read()).followUps.map((item) => item.prompt.text)).toEqual([
       "Third edited",
       "Second",
+    ]);
+    expect((await session.read()).followUps.map((item) => item.prompt.actor)).toEqual([
+      { type: "user", id: "editor", displayName: "Editor" },
+      { type: "local", id: "desktop-local", displayName: "Local user" },
     ]);
     expect(second.prompt.text).toBe("Second");
 
@@ -493,8 +544,21 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     expect(
       (await session.read()).entries
         .filter((entry) => entry.kind === "user_message")
-        .map((entry) => entry.payload.text),
-    ).toEqual(["First", "Third edited", "Second"]);
+        .map((entry) => ({ text: entry.payload.text, actor: entry.payload.actor })),
+    ).toEqual([
+      {
+        text: "First",
+        actor: { type: "user", id: "user-1", displayName: "Ada" },
+      },
+      {
+        text: "Third edited",
+        actor: { type: "user", id: "editor", displayName: "Editor" },
+      },
+      {
+        text: "Second",
+        actor: { type: "local", id: "desktop-local", displayName: "Local user" },
+      },
+    ]);
     await harness.close();
   });
 

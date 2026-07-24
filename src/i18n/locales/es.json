@@ -53,6 +53,7 @@
     "tabs": {
       "general": "General",
       "providers": "Proveedores",
+      "team": "Equipo",
       "plugins": "Plugins",
       "tools": "Herramientas"
     },
@@ -170,7 +171,10 @@
       "purple": "Morado",
       "pink": "Rosa",
       "gray": "Gris"
-    }
+    },
+    "share": "Compartir",
+    "private": "Sesión privada",
+    "shared": "Sesión compartida"
   },
   "projectMenu": {
     "pinProject": "Fijar proyecto",
@@ -287,6 +291,143 @@
     "toggleSidebar": "Alternar barra lateral",
     "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
     "addProjectRequiresWorkspace": "Crea un espacio de trabajo primero"
+  },
+  "identity": {
+    "checkingHost": "Comprobando la identidad del Host",
+    "setupTitle": "Configurar este Host",
+    "setupDescription": "Crea la primera cuenta para {{host}}. Esta cuenta será la propietaria del Host y de sus ajustes.",
+    "loginTitle": "Iniciar sesión en OpenGUI",
+    "loginDescription": "Introduce los datos de tu cuenta para usar {{host}}.",
+    "registerTitle": "Crear una cuenta",
+    "registerDescription": "Regístrate en {{host}}. Un propietario aún debe compartir carpetas antes de que puedas abrir proyectos.",
+    "createAccount": "Crear cuenta",
+    "creatingAccount": "Creando cuenta…",
+    "switchToRegister": "¿Necesitas una cuenta? Regístrate",
+    "switchToLogin": "¿Ya tienes una cuenta? Inicia sesión",
+    "hostPolicyTitle": "Acceso al Host",
+    "hostPolicyDescription": "Controla cómo se unen las personas a este Host y quién puede enviar invitaciones.",
+    "registrationMode": "Registro",
+    "registrationModeUpdated": "Modo de registro actualizado",
+    "registrationModes": {
+      "invite_only": "Solo por invitación",
+      "open": "Registro abierto"
+    },
+    "registrationModeHelp": {
+      "invite_only": "Solo las personas con una invitación pueden crear una cuenta.",
+      "open": "Cualquiera con la URL del Host puede crear una cuenta. Aún necesitan carpetas compartidas para trabajar."
+    },
+    "canInvite": "Puede invitar",
+    "canInviteLabel": "Permitir que {{name}} cree invitaciones",
+    "username": "Nombre de usuario",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "passwordHint": "Usa al menos 8 caracteres.",
+    "passwordMismatch": "Las contraseñas no coinciden.",
+    "createOwner": "Crear cuenta de propietario",
+    "creatingOwner": "Creando cuenta…",
+    "signIn": "Iniciar sesión",
+    "signingIn": "Iniciando sesión…",
+    "accountSession": "Cuenta del Host",
+    "signOut": "Cerrar sesión",
+    "signingOut": "Cerrando sesión…",
+    "hostLabel": "Conectando con {{host}}",
+    "unavailableTitle": "Host no disponible",
+    "unavailableDescription": "OpenGUI no pudo comprobar el estado de identidad de {{host}}.",
+    "connectionError": "No se pudo conectar con el Host.",
+    "authenticationError": "La autenticación falló. Comprueba tus datos e inténtalo de nuevo.",
+    "retry": "Intentar de nuevo",
+    "acceptInviteTitle": "Unirse a este equipo",
+    "acceptInviteDescription": "Crea tu cuenta para unirte al equipo de {{host}}.",
+    "joinTeam": "Unirse al equipo",
+    "joiningTeam": "Uniéndose al equipo…",
+    "inviteAcceptError": "No se pudo aceptar esta invitación. Puede que no sea válida, haya caducado o ya se haya usado.",
+    "membersTitle": "Miembros",
+    "membersDescription": "Personas con cuentas en este Host. Las sesiones y carpetas son privadas hasta que se compartan.",
+    "noMembers": "Este Host no devolvió ningún miembro.",
+    "you": "Tú",
+    "roles": {
+      "owner": "Propietario",
+      "member": "Miembro"
+    },
+    "removeMember": "Eliminar a {{name}}",
+    "removeMemberConfirm": "¿Eliminar a este miembro del equipo? Se revocará su acceso activo al Host.",
+    "resetPassword": "Restablecer contraseña",
+    "resetPasswordTitle": "Restablecer la contraseña de {{name}}",
+    "resetPasswordDescription": "Define una contraseña temporal y compártela de forma segura. OpenGUI no la guardará.",
+    "passwordReset": "Contraseña restablecida",
+    "invitesTitle": "Invitaciones",
+    "invitesDescription": "Los enlaces de invitación dan acceso a este Host. Compártelos solo con personas de confianza.",
+    "inviteEmail": "Correo del miembro",
+    "createInvite": "Crear invitación",
+    "inviteCreated": "Invitación creada",
+    "inviteCreatedTitle": "Enlace de invitación creado",
+    "inviteCreatedDescription": "Copia este enlace ahora. Por seguridad, no volverá a mostrarse después de cerrar esta ventana.",
+    "inviteLink": "Enlace de invitación",
+    "noInvites": "No hay invitaciones pendientes.",
+    "pending": "Pendiente",
+    "expires": "Caduca el {{date}}",
+    "copyLink": "Copiar enlace",
+    "revokeInvite": "Revocar invitación para {{email}}",
+    "revokeInviteConfirm": "¿Revocar este enlace de invitación? Dejará de funcionar inmediatamente.",
+    "apiKeysTitle": "Claves API del Host",
+    "apiKeysDescription": "Credenciales con nombre para automatización. Los secretos se muestran una sola vez y no se pueden recuperar.",
+    "keyLabel": "Nombre de la clave",
+    "keyRole": "Rol de la clave",
+    "createKey": "Crear clave",
+    "noApiKeys": "No hay claves API.",
+    "created": "Creada el {{date}}",
+    "neverUsed": "Uso no registrado",
+    "revokeKey": "Revocar {{label}}",
+    "revokeKeyConfirm": "¿Revocar esta clave API? Las aplicaciones que la usan perderán el acceso inmediatamente.",
+    "keyCreatedTitle": "Clave API creada",
+    "keyCreatedDescription": "Copia este secreto ahora. No se volverá a mostrar después de cerrar esta ventana.",
+    "apiKeySecret": "Secreto de la clave API",
+    "copySecret": "Copiar secreto de la clave API",
+    "copied": "Copiado",
+    "teamLoadError": "No se pudieron cargar los ajustes del equipo. Puede que se requiera acceso de propietario.",
+    "teamRemoteOnly": "Los ajustes del equipo están disponibles para Hosts remotos con sesión iniciada.",
+    "teamOwnerOnly": "Solo el propietario del Host con sesión iniciada puede gestionar los ajustes del equipo.",
+    "actionError": "El Host no pudo completar esta acción. Inténtalo de nuevo.",
+    "confirmActionTitle": "¿Confirmas esta acción?",
+    "revoke": "Revocar",
+    "pathGrants": {
+      "access": "Acceso",
+      "unrestricted": "Sin restricciones",
+      "title": "Acceso a proyectos de {{name}}",
+      "description": "Elige qué directorios puede usar esta cuenta o clave. Al guardar se sustituye toda su lista de acceso.",
+      "root": "Directorio",
+      "accessFor": "Acceso a {{path}}",
+      "readOnly": "Solo lectura",
+      "readWrite": "Lectura y escritura",
+      "removePath": "Eliminar {{path}}",
+      "path": "Ruta del directorio",
+      "pathPlaceholder": "/ruta/absoluta/al/proyecto",
+      "addPath": "Añadir ruta",
+      "noAccessTitle": "Sin acceso a proyectos",
+      "noAccessDescription": "Esta cuenta o clave no puede abrir ningún proyecto basado en directorios.",
+      "shellDisabled": "El shell está desactivado para esta cuenta o clave restringida mientras esté activa la aplicación de rutas.",
+      "loadError": "No se pudo cargar el acceso a proyectos. Cierra y vuelve a abrir el editor.",
+      "saveError": "No se pudo guardar el acceso a proyectos. Comprueba que cada ruta sea un directorio permitido existente.",
+      "save": "Guardar acceso",
+      "saving": "Guardando…"
+    },
+    "invitePaths": "Acceso inicial a proyectos",
+    "invitePathsHelp": "Solo se muestran las carpetas a las que tienes acceso. La invitación no puede conceder más acceso del que tienes.",
+    "modelPolicy": {
+      "allowByok": "Permitir claves API personales",
+      "allowByokHelp": "Permite añadir conexiones de modelos con claves API propias. Una denegación del Host prevalece.",
+      "allowByos": "Permitir suscripciones personales",
+      "allowByosHelp": "Permite conectar suscripciones de modelos compatibles. Una denegación del Host prevalece.",
+      "host": {
+        "allowByok": "Host: permitir BYOK",
+        "allowByos": "Host: permitir BYOS"
+      },
+      "team": {
+        "allowByok": "Equipo: permitir BYOK",
+        "allowByos": "Equipo: permitir BYOS"
+      }
+    }
   },
   "mcp": {
     "title": "MCPs",
@@ -423,7 +564,22 @@
     "baseUrlInvalid": "La URL base debe empezar por http:// o https://",
     "modelIdsRequired": "Todos los ID de modelo deben estar completos",
     "modelNamesRequired": "Todos los nombres de modelo deben estar completos",
-    "duplicateModelIds": "Se encontraron ID de modelo duplicados"
+    "duplicateModelIds": "Se encontraron ID de modelo duplicados",
+    "connectionPlane": "Propietario de la conexión",
+    "planes": {
+      "host": "Host",
+      "team": "Equipo",
+      "user": "Personal"
+    },
+    "planeHelp": {
+      "host": "Gestionada por el propietario del Host y disponible solo mediante permisos explícitos.",
+      "team": "Gestionada para el Equipo y disponible solo mediante permisos explícitos.",
+      "user": "Privada para tu cuenta y disponible solo en tus propias sesiones."
+    },
+    "removeConnection": "Eliminar {{name}}",
+    "teamAccessTitle": "Acceso del Equipo a modelos",
+    "teamAccessHelp": "Elige qué conexiones compartidas pueden usar los miembros del Equipo.",
+    "teamAccess": "Acceso del Equipo"
   },
   "setupWizard": {
     "connectModelTitle": "Conecta un modelo",
@@ -567,7 +723,8 @@
     "noSessionDescription": "Selecciona una sesión o inicia una nueva desde un proyecto conectado.",
     "noWorkspaceTitle": "No hay ningún espacio de trabajo configurado",
     "noWorkspaceDescription": "Un espacio de trabajo es tu backend de OpenGUI. Créalo y luego añade proyectos.",
-    "addWorkspace": "Añadir espacio de trabajo"
+    "addWorkspace": "Añadir espacio de trabajo",
+    "noSharedProjects": "Todavía no se han compartido carpetas de proyecto con tu cuenta. Pide acceso al propietario del Host o a quien pueda invitar."
   },
   "mergeDialog": {
     "failed": "La fusión falló",
@@ -697,5 +854,41 @@
     "reverted": "{{count}} mensaje revertido",
     "reverted_plural": "{{count}} mensajes revertidos",
     "restore": "Restaurar"
+  },
+  "sessionShare": {
+    "title": "Compartir sesión",
+    "description": "Gestiona el acceso a «{{title}}». Las sesiones son privadas hasta que las compartes.",
+    "people": "Personas y Equipo",
+    "principal": "Persona o Equipo",
+    "choosePrincipal": "Elige una persona o Equipo",
+    "access": "Acceso",
+    "share": "Compartir",
+    "private": "Solo tú puedes abrir esta sesión.",
+    "viewLinks": "Enlaces de lectura",
+    "viewLinksHelp": "Cualquiera con un enlace puede leer esta conversación sin iniciar sesión. No puede enviar mensajes ni usar herramientas.",
+    "createLink": "Crear enlace de lectura",
+    "revokeShare": "Quitar acceso a {{name}}",
+    "revokeLink": "Revocar enlace",
+    "linkExpires": "Caduca el {{date}}",
+    "noExpiry": "Sin caducidad",
+    "types": {
+      "user": "Persona",
+      "team": "Equipo"
+    },
+    "roles": {
+      "view": "Puede ver",
+      "run": "Puede continuar",
+      "admin": "Puede gestionar"
+    }
+  },
+  "viewLink": {
+    "loadingTitle": "Sesión compartida",
+    "readOnly": "Conversación de solo lectura",
+    "invalid": "Este enlace no es válido, ha caducado o ha sido revocado.",
+    "empty": "Esta sesión todavía no tiene mensajes.",
+    "usedTool": "Usó {{tool}}",
+    "user": "Usuario",
+    "assistant": "OpenGUI",
+    "footer": "Compartido desde OpenGUI · Solo lectura"
   }
 }

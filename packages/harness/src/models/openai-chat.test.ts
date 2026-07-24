@@ -110,6 +110,43 @@ describe("shouldRetryChatCompletion", () => {
 });
 
 describe("OpenAiChatTransport authentication", () => {
+  test("omits tools unavailable for the model turn", async () => {
+    let requestBody: string | undefined;
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      requestBody = typeof init?.body === "string" ? init.body : undefined;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });
+    transport.setConnections([
+      { id: "test", label: "Test", baseUrl: "https://example.test/v1", modelIds: ["test"] },
+    ]);
+    for await (const _event of transport.stream(
+      {
+        systemPrompt: "restricted",
+        projectDirectory: "/project",
+        tools: ["read", "write", "edit"],
+        context: [
+          {
+            type: "user_message",
+            text: "hello",
+            model: { connectionId: "test", modelId: "test" },
+            reasoning: "none",
+          },
+        ],
+      },
+      new AbortController().signal,
+    )) {
+      // Drain the response.
+    }
+    const body = JSON.parse(requestBody ?? "") as {
+      tools: Array<{ function: { name: string } }>;
+    };
+    expect(body.tools.map((tool) => tool.function.name)).toEqual(["read", "write", "edit"]);
+  });
+
   test("sends an OpenCode Go API key to its documented chat completions endpoint", async () => {
     const fetchImpl = vi.fn(
       async () =>

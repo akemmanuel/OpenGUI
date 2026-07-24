@@ -13,6 +13,7 @@
   "dependencies": {
     "@opengui/harness": "workspace:*",
     "@opengui/protocol": "workspace:*",
+    "better-auth": "1.6.23",
     "hono": "^4.12.30"
   },
   "engines": {

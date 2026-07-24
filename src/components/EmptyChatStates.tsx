@@ -27,9 +27,11 @@ export function NoWorkspaceConfigured() {
 export function NoProjectConnected({
   canStartChat,
   onStartChat,
+  shareOnly = false,
 }: {
   canStartChat: boolean;
   onStartChat: () => void;
+  shareOnly?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -41,7 +43,11 @@ export function NoProjectConnected({
             {t("emptyStates.noProjectTitle")}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {canStartChat ? t("emptyStates.noProjectCanStart") : t("emptyStates.noProjectConnect")}
+            {shareOnly
+              ? t("emptyStates.noSharedProjects")
+              : canStartChat
+                ? t("emptyStates.noProjectCanStart")
+                : t("emptyStates.noProjectConnect")}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">

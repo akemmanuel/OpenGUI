@@ -26,12 +26,14 @@ export function usePromptFiles({
   value,
   setValue,
   serverUrl,
+  directory,
   textareaRef,
 }: {
   disabled: boolean;
   value: string;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   serverUrl?: string | null;
+  directory?: string | null;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const [isDragging, setIsDragging] = React.useState(false);
@@ -57,6 +59,7 @@ export function usePromptFiles({
       setUploadProgress(0);
       const form = new FormData();
       for (const file of files) form.append("files", file, file.name);
+      if (directory) form.append("directory", directory);
 
       const headers = new Headers();
       const token =
@@ -102,7 +105,7 @@ export function usePromptFiles({
       setUploadProgress(100);
       setIsUploading(false);
     },
-    [appendUploadedPaths, serverUrl],
+    [appendUploadedPaths, directory, serverUrl],
   );
 
   const appendFiles = React.useCallback(

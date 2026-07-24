@@ -4,6 +4,8 @@
  * These shapes are the frontend seam for rendering Host transcript content.
  */
 
+import type { ActorSnapshot } from "@/protocol/host-types";
+
 export interface TranscriptMessageEntry {
   info: TranscriptMessage;
   parts: TranscriptPart[];
@@ -18,6 +20,7 @@ export interface TranscriptMessage {
   id: string;
   sessionID: string;
   role: "user" | "assistant" | (string & {});
+  actor?: ActorSnapshot;
   time: {
     created: number;
     completed?: number;

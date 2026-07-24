@@ -157,6 +157,12 @@ const TOOLS = [
   },
 ] as const;
 
+function toolsForRequest(request: ModelRequest) {
+  if (!request.tools) return [...TOOLS];
+  const allowed = new Set<string>(request.tools);
+  return TOOLS.filter((tool) => allowed.has(tool.function.name));
+}
+
 function parseArguments(raw: string) {
   if (!raw.trim()) return {};
   try {
@@ -262,7 +268,7 @@ export class OpenAiChatTransport implements ModelTransport {
         },
         ...toChatMessages(request.context),
       ],
-      tools: TOOLS,
+      tools: toolsForRequest(request),
     });
 
     let response: Response | undefined;
@@ -364,7 +370,7 @@ export class OpenAiChatTransport implements ModelTransport {
           stream: true,
           system: request.systemPrompt,
           messages: toAnthropicMessages(request.context),
-          tools: TOOLS.map((tool) => ({
+          tools: toolsForRequest(request).map((tool) => ({
             name: tool.function.name,
             description: tool.function.description,
             input_schema: tool.function.parameters,

@@ -1,4 +1,4 @@
-import { BadgeQuestionMark, MessageSquare, ShieldAlert } from "lucide-react";
+import { BadgeQuestionMark, LockKeyhole, MessageSquare, ShieldAlert, Users } from "lucide-react";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { Session } from "@/hooks/agent-state-types";
@@ -9,6 +9,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { getColorBorderClass, SessionContextMenu } from "@/components/SessionContextMenu";
 import { SessionItemMenu } from "@/components/SidebarItemMenus";
 import { cleanSessionTitle } from "@/lib/session-title";
+import { useIdentityActor } from "@/features/identity/identity-actor-context";
+import { openSessionShareDialog } from "@/features/identity/SessionShareDialog";
 
 export function SessionRow({
   session,
@@ -72,6 +74,15 @@ export function SessionRow({
   deleteSession: (sessionId: string) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
+  const identityActor = useIdentityActor();
+  const onShare =
+    identityActor?.type === "user"
+      ? () =>
+          openSessionShareDialog(
+            session.id,
+            cleanSessionTitle(session.title) || t("sidebar.untitled"),
+          )
+      : undefined;
   const isActive = session.id === activeSessionId;
   const isBusy = busySessionIds.has(session.id);
   const isUnread = unreadSessionIds.has(session.id);
@@ -123,6 +134,7 @@ export function SessionRow({
       onMoveToProject={moveToProject}
       onRemoveFromProject={removeFromProject}
       onRename={() => startEditing(session.id, isNaming ? "" : session.title || "")}
+      onShare={onShare}
       onDelete={confirmAndDeleteSession}
     >
       <SidebarMenuItem>
@@ -208,6 +220,18 @@ export function SessionRow({
                 {displayTitle}
               </span>
             )}
+            {identityActor?.type === "user" && (
+              <span
+                className="shrink-0 text-muted-foreground"
+                title={t(session._shared ? "sessionMenu.shared" : "sessionMenu.private")}
+              >
+                {session._shared ? (
+                  <Users className="size-3.5" />
+                ) : (
+                  <LockKeyhole className="size-3.5" />
+                )}
+              </span>
+            )}
             {tags.length > 0 && (
               <span className="shrink-0 flex gap-0.5 overflow-hidden max-w-[4rem]">
                 {tags.slice(0, 2).map((tag) => (
@@ -251,6 +275,7 @@ export function SessionRow({
               onMoveToProject={moveToProject}
               onRemoveFromProject={removeFromProject}
               onRename={() => startEditing(session.id, session.title || "")}
+              onShare={onShare}
               onDelete={confirmAndDeleteSession}
             />
           </div>

@@ -6,6 +6,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Share2,
   Tag,
   Trash2,
   X,
@@ -30,6 +31,7 @@ export interface SessionMenuProps {
   onMoveToProject: (directory: string) => void;
   onRemoveFromProject: (() => void) | null;
   onRename: () => void;
+  onShare?: () => void;
   onDelete: () => void;
 }
 
@@ -152,6 +154,16 @@ export function SessionMenuContent({
         </>,
         props.onRename,
       )}
+      {props.onShare &&
+        slots.item(
+          "share",
+          <>
+            <Share2 className="size-4" />
+            <span>{t("sessionMenu.share")}</span>
+          </>,
+          props.onShare,
+        )}
+      {props.onShare && slots.separator("after-share")}
       {slots.separator("after-rename")}
       {slots.submenu({
         key: "colors",

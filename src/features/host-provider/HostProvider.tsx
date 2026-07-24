@@ -11,6 +11,7 @@ import {
 import type { Session } from "@/hooks/agent-state-types";
 import {
   createLocalWorkspace,
+  getActiveWorkspace,
   getActiveWorkspaceId,
   getProjectMetaMap,
   getSessionMetaMap,
@@ -52,6 +53,7 @@ import { getDesktopShellClient } from "@/runtime/clients";
 import { selectedModelFromHostSnapshot } from "@/features/host-provider/host-session-selection";
 import { persistHostModelSelection } from "@/features/host-provider/host-model-selection";
 import { loadHostSessionSummaries } from "@/features/host-provider/host-session-list";
+import { createOptimisticUserMessage } from "@/features/host-provider/host-optimistic-message";
 import {
   useHostSlice,
   type ModelSlice,
@@ -61,7 +63,16 @@ import {
   type WorkspaceSlice,
 } from "@/features/host-provider/host-domain-state";
 import { useHostEventStream } from "@/features/host-provider/host-event-stream";
-import { HostQueueController, useHostActions } from "@/features/host-provider/host-actions";
+import {
+  HostQueueController,
+  projectHostFollowUps,
+  useHostActions,
+} from "@/features/host-provider/host-actions";
+import { announceIdentityWorkspaceChange } from "@/features/identity/workspace-identity";
+import {
+  snapshotIdentityActor,
+  useIdentityActor,
+} from "@/features/identity/identity-actor-context";
 
 function toSession(
   summary: HostSessionSummary | HostSessionSnapshot,
@@ -79,6 +90,8 @@ function toSession(
     model: model ? { providerID: model.connectionId, id: model.modelId } : undefined,
     _projectDir: summary.projectDirectory,
     _workspaceId: workspaceId,
+    _accessRole: summary.accessRole,
+    _shared: summary.shared,
   };
 }
 
@@ -125,7 +138,7 @@ function initialWorkspaces() {
   const policy = getShellWorkspacePolicy();
   const stored = getStoredWorkspaces();
   if (policy.shellKind === "mobile") return stored.filter((item) => !item.isLocal);
-  if (policy.shellKind === "web") return [createLocalWorkspace()];
+  if (policy.shellKind === "web") return stored.length > 0 ? stored : [createLocalWorkspace()];
   const local = stored.find((item) => item.id === LOCAL_WORKSPACE_ID) ?? createLocalWorkspace();
   return [local, ...stored.filter((item) => item.id !== LOCAL_WORKSPACE_ID)];
 }
@@ -138,6 +151,8 @@ function HostProviderBody({
   detachedProject?: string;
 }) {
   const transcriptStore = useActiveTranscriptStore();
+  const identityActor = useIdentityActor();
+  const currentActor = useMemo(() => snapshotIdentityActor(identityActor), [identityActor]);
   const policy = useMemo(() => getShellWorkspacePolicy(), []);
   const workspaceSlice = useHostSlice<WorkspaceSlice>(() => {
     const workspaces = initialWorkspaces();
@@ -146,8 +161,7 @@ function HostProviderBody({
   const { workspaces, activeWorkspaceId } = workspaceSlice.state;
   const setWorkspaces = workspaceSlice.setter("workspaces");
   const setActiveWorkspaceId = workspaceSlice.setter("activeWorkspaceId");
-  const workspace =
-    workspaces.find((item) => item.id === activeWorkspaceId) ?? workspaces[0] ?? null;
+  const workspace = getActiveWorkspace(workspaces, activeWorkspaceId);
   const host = useMemo(() => (workspace ? createRuntimeHostClient(workspace) : null), [workspace]);
   const projectSlice = useHostSlice<ProjectSlice>(() => ({
     projects: detachedProject ? [normalizeProjectPath(detachedProject)] : [],
@@ -322,11 +336,7 @@ function HostProviderBody({
         });
         setQueuedPrompts((current) => ({
           ...current,
-          [sessionId]: snapshot.followUps.map((item) => ({
-            id: item.id,
-            text: item.prompt.text,
-            mode: "queue" as const,
-          })),
+          [sessionId]: projectHostFollowUps(snapshot.followUps),
         }));
         setBusySessionIds((current) => {
           const next = new Set(current);
@@ -412,6 +422,7 @@ function HostProviderBody({
             text: item.text,
             mode: "queue" as const,
             createdAt: Date.now(),
+            actor: item.actor,
           })),
         ]),
       ),
@@ -615,26 +626,15 @@ function HostProviderBody({
             transcriptStore.dispatch({
               type: "message.appended",
               scope,
-              message: {
-                info: {
-                  id: optimisticMessageId,
-                  sessionID: sessionId,
-                  role: "user",
-                  providerID: selectedModel?.providerID ?? "",
-                  modelID: selectedModel?.modelID ?? "",
-                  time: { created: Date.now() },
-                },
-                parts: [
-                  {
-                    id: `${optimisticMessageId}:text`,
-                    type: "text",
-                    text,
-                    sessionID: sessionId,
-                    messageID: optimisticMessageId,
-                    tokens: {},
-                  },
-                ],
-              },
+              message: createOptimisticUserMessage({
+                id: optimisticMessageId,
+                sessionId,
+                text,
+                actor: currentActor,
+                providerId: selectedModel?.providerID,
+                modelId: selectedModel?.modelID,
+                createdAt: Date.now(),
+              }),
             });
           }
           setBusySessionIds((current) => new Set(current).add(sessionId!));
@@ -752,6 +752,7 @@ function HostProviderBody({
           text: item.text,
           mode: "queue" as const,
           createdAt: Date.now(),
+          actor: item.actor,
         })),
       removeFromQueue: (sessionId, promptId) => {
         void queueController?.remove(sessionId, promptId).catch(notifyUnknownError);
@@ -859,6 +860,7 @@ function HostProviderBody({
         setWorkspaces(next);
         setActiveWorkspaceId(nextWorkspace.id);
         storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, nextWorkspace.id);
+        announceIdentityWorkspaceChange();
         replaceProjects([]);
         setSessions([]);
         activeSessionIdRef.current = null;
@@ -873,6 +875,7 @@ function HostProviderBody({
         );
         persistWorkspaces(next);
         setWorkspaces(next);
+        if (workspaceId === activeWorkspaceId) announceIdentityWorkspaceChange();
       },
       removeWorkspace: async (workspaceId) => {
         if (workspaceId === LOCAL_WORKSPACE_ID) return;
@@ -883,12 +886,14 @@ function HostProviderBody({
           const fallback = next[0]?.id ?? "";
           setActiveWorkspaceId(fallback);
           storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, fallback);
+          announceIdentityWorkspaceChange();
         }
       },
       switchWorkspace: (workspaceId) => {
         if (!workspaces.some((item) => item.id === workspaceId)) return;
         setActiveWorkspaceId(workspaceId);
         storageSet(STORAGE_KEYS.ACTIVE_WORKSPACE_ID, workspaceId);
+        announceIdentityWorkspaceChange();
         replaceProjects([]);
         setSessions([]);
         activeSessionIdRef.current = null;
@@ -909,6 +914,7 @@ function HostProviderBody({
     activeSessionId,
     activeTargetDirectory,
     detachedProject,
+    currentActor,
     host,
     hydrateTranscript,
     queuedPrompts,

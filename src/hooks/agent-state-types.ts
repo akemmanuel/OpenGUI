@@ -30,6 +30,8 @@ import type { Workspace } from "@/types/workspace";
 export type Session = BaseSession & {
   _projectDir?: string;
   _workspaceId?: string;
+  _accessRole?: "view" | "run" | "admin" | "owner" | null;
+  _shared?: boolean;
 };
 
 export interface MessageEntry {

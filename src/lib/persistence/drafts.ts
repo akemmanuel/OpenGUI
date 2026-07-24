@@ -1,4 +1,5 @@
 import type { QueueMode, SelectedModel } from "@opengui/protocol";
+import type { ActorSnapshot } from "@/protocol/host-types";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { persistOrRemoveJSON, storageParsed } from "./storage";
 
@@ -12,6 +13,7 @@ export type QueuedPrompt = {
   agent?: string;
   variant?: string;
   mode: QueueMode;
+  actor?: ActorSnapshot;
 };
 
 export function getSessionDraftKey(input: {

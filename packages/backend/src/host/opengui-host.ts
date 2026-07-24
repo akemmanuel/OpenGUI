@@ -5,6 +5,8 @@ import {
   CodexResponsesTransport,
   OpenAiChatTransport,
   type CreateSessionInput,
+  type DurableActor,
+  type ExecutionPolicyResolver,
   type ModelSelection,
   type ModelTransport,
   type OpenAiCompatibleConnection,
@@ -38,6 +40,19 @@ import {
   type DeviceOAuthPending,
   type OAuthTokens,
 } from "./device-oauth.ts";
+import { HostPathAuthorizer } from "../path-policy/enforcement.ts";
+import type { SessionAccessAction } from "../identity/identity.ts";
+
+export type SessionAccessGate = {
+  onCreated(sessionId: string, actor: DurableActor): Promise<void>;
+  onDeleted(sessionId: string): Promise<void>;
+  authorize(
+    sessionId: string,
+    actor: DurableActor | undefined,
+    action: SessionAccessAction,
+  ): Promise<void>;
+  filterList(sessionIds: string[], actor: DurableActor | undefined): Promise<string[]>;
+};
 
 export interface HostHealth {
   ok: true;
@@ -59,6 +74,12 @@ export interface HostSessionSnapshot extends SessionSnapshot {}
 export interface HostEvent {
   sessionId: string;
   event: SessionEvent;
+}
+
+export class HostSessionNotFoundError extends Error {
+  constructor() {
+    super("Session not found");
+  }
 }
 
 interface HostSettingsFile {
@@ -160,15 +181,28 @@ export class OpenGuiHost {
   #subscriptionPending: Partial<Record<"xai", DeviceOAuthPending>> = {};
   #codexRefresh: Promise<CodexTokens> | null = null;
   #xaiRefresh: Promise<OAuthTokens> | null = null;
-  readonly #listeners = new Set<(event: HostEvent) => void>();
+  readonly #listeners = new Set<(event: HostEvent) => void | Promise<void>>();
   readonly #activeRuns = new Map<string, Promise<void>>();
   readonly #fetch: typeof fetch;
+  readonly #pathAuthorizer: HostPathAuthorizer;
+  readonly #resolveExecutionPolicy: ExecutionPolicyResolver | undefined;
+  readonly #sessionAccess: SessionAccessGate | undefined;
 
-  constructor(dataDirectory: string, options: { fetchImpl?: typeof fetch } = {}) {
+  constructor(
+    dataDirectory: string,
+    options: {
+      fetchImpl?: typeof fetch;
+      resolveExecutionPolicy?: ExecutionPolicyResolver;
+      sessionAccess?: SessionAccessGate;
+    } = {},
+  ) {
     this.#dataDirectory = dataDirectory;
     this.#settingsPath = join(dataDirectory, SETTINGS_FILENAME);
     this.#secretsPath = join(dataDirectory, SECRETS_FILENAME);
     this.#fetch = options.fetchImpl ?? fetch;
+    this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
+    this.#pathAuthorizer = new HostPathAuthorizer(options.resolveExecutionPolicy);
+    this.#sessionAccess = options.sessionAccess;
   }
 
   async start() {
@@ -192,6 +226,7 @@ export class OpenGuiHost {
               : this.#transport.stream(request, signal);
         },
       } satisfies ModelTransport,
+      resolveExecutionPolicy: this.#resolveExecutionPolicy,
     });
   }
 
@@ -203,6 +238,33 @@ export class OpenGuiHost {
   #requireHarness() {
     if (!this.#harness) throw new Error("OpenGUI Host is not started");
     return this.#harness;
+  }
+
+  async #authorizedSession(
+    sessionId: string,
+    actor?: DurableActor,
+    action: SessionAccessAction = "view",
+  ) {
+    try {
+      if (this.#sessionAccess) {
+        await this.#sessionAccess.authorize(sessionId, actor, action);
+      }
+      const session = await this.#requireHarness().openSession(sessionId);
+      const snapshot = await session.read();
+      await this.#pathAuthorizer.authorizePath(actor, snapshot.projectDirectory, "read");
+      return { session, snapshot };
+    } catch {
+      // Deliberately collapse existence and authorization into one observable result.
+      throw new HostSessionNotFoundError();
+    }
+  }
+
+  async authorizeSession(sessionId: string, actor?: DurableActor) {
+    return (await this.#authorizedSession(sessionId, actor, "view")).snapshot;
+  }
+
+  async requiresScopedEvents(actor?: DurableActor) {
+    return await this.#pathAuthorizer.isRestricted(actor);
   }
 
   async #loadSettings() {
@@ -476,14 +538,21 @@ export class OpenGuiHost {
     await this.#saveSecrets();
   }
 
-  listProjects(): HostProject[] {
-    return this.#settings.projects.map((directory) => ({
-      directory,
-      name: projectName(directory),
-    }));
+  async listProjects(actor?: DurableActor): Promise<HostProject[]> {
+    const projects: HostProject[] = [];
+    for (const directory of this.#settings.projects) {
+      try {
+        await this.#pathAuthorizer.authorizePath(actor, directory, "read");
+        projects.push({ directory, name: projectName(directory) });
+      } catch {
+        // Project enumeration is filtered rather than exposing denied paths.
+      }
+    }
+    return projects;
   }
 
-  async registerProject(directory: string) {
+  async registerProject(directory: string, actor?: DurableActor) {
+    directory = await this.#pathAuthorizer.authorizePath(actor, directory, "read");
     if (!this.#settings.projects.includes(directory)) {
       this.#settings.projects = [directory, ...this.#settings.projects];
       await this.#saveSettings();
@@ -491,16 +560,40 @@ export class OpenGuiHost {
     return { directory, name: projectName(directory) };
   }
 
-  async unregisterProject(directory: string) {
+  async unregisterProject(directory: string, actor?: DurableActor) {
+    directory = await this.#pathAuthorizer.authorizePath(actor, directory, "read");
     this.#settings.projects = this.#settings.projects.filter((item) => item !== directory);
     await this.#saveSettings();
   }
 
-  async listSessions(projectDirectory: string): Promise<HostSessionSummary[]> {
-    return this.#requireHarness().listSessions(projectDirectory);
+  async listSessions(
+    projectDirectory: string,
+    actor?: DurableActor,
+  ): Promise<HostSessionSummary[]> {
+    const canonical = await this.#pathAuthorizer.authorizePath(actor, projectDirectory, "read");
+    const sessions = await this.#requireHarness().listSessions(canonical);
+    if (!this.#sessionAccess || !actor) return sessions;
+    const visibleIds = new Set(
+      await this.#sessionAccess.filterList(
+        sessions.map((session) => session.id),
+        actor,
+      ),
+    );
+    return sessions.filter((session) => visibleIds.has(session.id));
   }
 
-  async createSession(input: CreateSessionInput): Promise<HostSessionSnapshot> {
+  async createSession(
+    input: CreateSessionInput,
+    actor?: DurableActor,
+  ): Promise<HostSessionSnapshot> {
+    input = {
+      ...input,
+      projectDirectory: await this.#pathAuthorizer.authorizePath(
+        actor,
+        input.projectDirectory,
+        "read",
+      ),
+    };
     if (!input.model.connectionId || !input.model.modelId) {
       const connection = this.listModelConnections()[0];
       const defaultModelId = connection?.defaultModelId ?? connection?.modelIds[0];
@@ -514,50 +607,85 @@ export class OpenGuiHost {
         },
       };
     }
-    await this.registerProject(input.projectDirectory);
+    await this.registerProject(input.projectDirectory, actor);
     const session = await this.#requireHarness().createSession(input);
-    return session.read();
+    const snapshot = await session.read();
+    if (actor && this.#sessionAccess) {
+      await this.#sessionAccess.onCreated(snapshot.id, actor);
+    }
+    return snapshot;
   }
 
-  async readSession(sessionId: string): Promise<HostSessionSnapshot> {
-    return (await this.#requireHarness().openSession(sessionId)).read();
+  async readSession(sessionId: string, actor?: DurableActor): Promise<HostSessionSnapshot> {
+    return (await this.#authorizedSession(sessionId, actor, "view")).snapshot;
   }
 
-  async renameSession(sessionId: string, title: string) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  /** Internal read after a view-link token has already been validated. */
+  async readSessionForViewLink(sessionId: string): Promise<HostSessionSnapshot> {
+    try {
+      return await (await this.#requireHarness().openSession(sessionId)).read();
+    } catch {
+      throw new HostSessionNotFoundError();
+    }
+  }
+
+  async renameSession(sessionId: string, title: string, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "admin");
     await session.rename(title);
     return session.read();
   }
 
-  async deleteSession(sessionId: string) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async deleteSession(sessionId: string, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "delete");
     await session.delete();
+    await this.#sessionAccess?.onDeleted(sessionId);
   }
 
-  async setModel(sessionId: string, selection: ModelSelection) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async setModel(sessionId: string, selection: ModelSelection, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.setModel(selection);
     return session.read();
   }
 
-  async setReasoning(sessionId: string, reasoning: ReasoningLevel) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async setReasoning(sessionId: string, reasoning: ReasoningLevel, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.setReasoning(reasoning);
     return session.read();
   }
 
-  subscribe(listener: (event: HostEvent) => void) {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+  async subscribe(
+    actor: DurableActor | undefined,
+    sessionId: string | undefined,
+    listener: (event: HostEvent) => void | Promise<void>,
+  ) {
+    const restricted = await this.requiresScopedEvents(actor);
+    if (restricted && !sessionId) throw new HostSessionNotFoundError();
+    if (sessionId) await this.authorizeSession(sessionId, actor);
+    const authorizedListener = async (event: HostEvent) => {
+      if (sessionId && event.sessionId !== sessionId) return;
+      if (restricted) {
+        try {
+          await this.authorizeSession(event.sessionId, actor);
+        } catch {
+          return;
+        }
+      }
+      await listener(event);
+    };
+    this.#listeners.add(authorizedListener);
+    return () => this.#listeners.delete(authorizedListener);
   }
 
   #emit(sessionId: string, event: SessionEvent) {
-    for (const listener of this.#listeners) listener({ sessionId, event });
+    for (const listener of this.#listeners) void listener({ sessionId, event });
   }
 
-  async prompt(sessionId: string, prompt: PromptInput) {
-    const session = await this.#requireHarness().openSession(sessionId);
-    const snapshot = await session.read();
+  async prompt(
+    sessionId: string,
+    prompt: PromptInput,
+    actor: DurableActor | undefined = prompt.actor,
+  ) {
+    const { session, snapshot } = await this.#authorizedSession(sessionId, actor, "run");
     if (snapshot.status === "running" || this.#activeRuns.has(sessionId)) {
       const followUp = await session.followUp(prompt);
       return { mode: "follow_up" as const, followUp };
@@ -589,26 +717,36 @@ export class OpenGuiHost {
     return { mode: "run" as const, startedEntries };
   }
 
-  async updateFollowUp(sessionId: string, followUpId: string, prompt: PromptInput) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async updateFollowUp(
+    sessionId: string,
+    followUpId: string,
+    prompt: PromptInput,
+    actor: DurableActor | undefined = prompt.actor,
+  ) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.updateFollowUp(followUpId, prompt);
     return (await session.read()).followUps;
   }
 
-  async reorderFollowUp(sessionId: string, followUpId: string, index: number) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async reorderFollowUp(
+    sessionId: string,
+    followUpId: string,
+    index: number,
+    actor?: DurableActor,
+  ) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.reorderFollowUp(followUpId, index);
     return (await session.read()).followUps;
   }
 
-  async removeFollowUp(sessionId: string, followUpId: string) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async removeFollowUp(sessionId: string, followUpId: string, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.removeFollowUp(followUpId);
     return (await session.read()).followUps;
   }
 
-  async sendFollowUpNow(sessionId: string, followUpId: string) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async sendFollowUpNow(sessionId: string, followUpId: string, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     const followUps = (await session.read()).followUps;
     const selected = followUps.find((item) => item.id === followUpId);
     if (!selected) throw new Error(`Pending follow-up not found: ${followUpId}`);
@@ -618,22 +756,32 @@ export class OpenGuiHost {
       await this.#activeRuns.get(sessionId);
     }
     await session.removeFollowUp(followUpId);
-    await this.prompt(sessionId, selected.prompt);
+    // The caller is authorized to operate the Session above, but execution
+    // belongs to the actor stored with the accepted prompt. Reauthorize that
+    // actor now rather than transferring the caller's grants.
+    await this.prompt(sessionId, selected.prompt, selected.prompt.actor);
     return (await session.read()).followUps;
   }
 
-  async abort(sessionId: string) {
-    const session = await this.#requireHarness().openSession(sessionId);
+  async abort(sessionId: string, actor?: DurableActor) {
+    const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.abort();
   }
 
-  async waitForIdle(sessionId: string) {
+  async waitForIdle(sessionId: string, actor?: DurableActor) {
+    await this.#authorizedSession(sessionId, actor, "view");
     await this.#activeRuns.get(sessionId);
   }
 }
 
-export async function createOpenGuiHost(dataDirectory: string) {
-  const host = new OpenGuiHost(dataDirectory);
+export async function createOpenGuiHost(
+  dataDirectory: string,
+  options: {
+    resolveExecutionPolicy?: ExecutionPolicyResolver;
+    sessionAccess?: SessionAccessGate;
+  } = {},
+) {
+  const host = new OpenGuiHost(dataDirectory, options);
   await host.start();
   return host;
 }

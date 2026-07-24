@@ -1,13 +1,23 @@
 import { useMemo, type DependencyList } from "react";
 import type { ActionsContextValue } from "@/hooks/agent-contexts";
-import type { HostFollowUp, OpenGuiHostClient } from "@/protocol/host-types";
+import type { ActorSnapshot, HostFollowUp, OpenGuiHostClient } from "@/protocol/host-types";
 
-export type HostQueueItem = { id: string; text: string; mode: "queue" };
+export type HostQueueItem = {
+  id: string;
+  text: string;
+  mode: "queue";
+  actor?: ActorSnapshot;
+};
 export type HostQueueState = Record<string, HostQueueItem[]>;
 type UpdateHostQueueState = (update: (current: HostQueueState) => HostQueueState) => void;
 
-function toQueueItems(followUps: HostFollowUp[]): HostQueueItem[] {
-  return followUps.map((item) => ({ id: item.id, text: item.prompt.text, mode: "queue" }));
+export function projectHostFollowUps(followUps: HostFollowUp[]): HostQueueItem[] {
+  return followUps.map((item) => ({
+    id: item.id,
+    text: item.prompt.text,
+    mode: "queue",
+    actor: item.prompt.actor,
+  }));
 }
 
 /** Coordinates Host-owned Follow-up mutations and their frontend projection. */
@@ -19,7 +29,7 @@ export class HostQueueController {
   ) {}
 
   #replace(sessionId: string, followUps: HostFollowUp[]) {
-    this.updateState((current) => ({ ...current, [sessionId]: toQueueItems(followUps) }));
+    this.updateState((current) => ({ ...current, [sessionId]: projectHostFollowUps(followUps) }));
   }
 
   recordEnqueued(sessionId: string, followUp: HostFollowUp) {
@@ -27,7 +37,7 @@ export class HostQueueController {
       ...current,
       [sessionId]: [
         ...(current[sessionId] ?? []).filter((item) => item.id !== followUp.id),
-        ...toQueueItems([followUp]),
+        ...projectHostFollowUps([followUp]),
       ],
     }));
   }

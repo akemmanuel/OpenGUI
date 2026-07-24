@@ -33,3 +33,7 @@ Avoid generic SaaS dashboard gloss, washed-out gray-on-gray interfaces, decorati
 ## Accessibility & Inclusion
 
 Target WCAG AA contrast for text, placeholders, controls, borders, and focus states. Support reduced motion and avoid color-only state communication.
+
+## Multi-user Host principles
+
+Remote Hosts are user-default and share-only: Accounts own private Sessions, Teams are explicit share principals, project paths and shared model connections require grants, and public Session links are read-only. Desktop Local remains Account-free. Path grants protect OpenGUI product/file surfaces but must never be described as confinement for the unrestricted shell.

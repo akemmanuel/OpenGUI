@@ -22,6 +22,39 @@ function snapshot(): HostSessionSnapshot {
 }
 
 describe("Host transcript streaming", () => {
+  test("projects persisted user-message actors and leaves legacy messages actorless", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "user-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "user_message",
+        payload: {
+          text: "Attributed",
+          actor: { type: "user", id: "actor-1", displayName: "alice" },
+        },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "user-2",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "user_message",
+        payload: { text: "Legacy" },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    expect(messages[0]?.info.actor).toEqual({
+      type: "user",
+      id: "actor-1",
+      displayName: "alice",
+    });
+    expect(messages[1]?.info.actor).toBeUndefined();
+  });
+
   test("shows streamed reasoning and preserves it beside the durable answer", () => {
     let stream = createHostTranscriptStream(snapshot());
     stream = applyHostTranscriptEvent(stream, {

@@ -9,11 +9,15 @@ export type ModelContextItem =
   | { type: "tool_call"; toolCallId: string; name: string; input: unknown }
   | { type: "tool_result"; toolCallId: string; name: string; output: unknown };
 
+export type ModelToolName = "read" | "write" | "edit" | "shell";
+
 export interface ModelRequest {
   projectDirectory: string;
   context: ModelContextItem[];
   /** Full system prompt for this turn (skills catalog, env, tool summary). */
   systemPrompt: string;
+  /** Tools available for this turn. Omitted by legacy callers to mean all tools. */
+  tools?: readonly ModelToolName[];
 }
 
 export type ModelStreamEvent =

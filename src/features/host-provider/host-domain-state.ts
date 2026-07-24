@@ -1,13 +1,18 @@
 import { useMemo, useReducer, type Dispatch, type SetStateAction } from "react";
 import type { Provider } from "@/protocol/agent-types";
-import type { ReasoningEffort } from "@/protocol/host-types";
+import type { ActorSnapshot, ReasoningEffort } from "@/protocol/host-types";
 import type { Session } from "@/hooks/agent-state-types";
 import type { ProjectMetaMap, SessionMetaMap } from "@/lib/persistence";
 import type { SelectedModel } from "@opengui/protocol";
 import type { Workspace } from "@/types/workspace";
 
 export type HostBootState = "idle" | "checking-server" | "starting-server" | "ready" | "error";
-export type HostQueuedPrompt = { id: string; text: string; mode: "queue" };
+export type HostQueuedPrompt = {
+  id: string;
+  text: string;
+  mode: "queue";
+  actor?: ActorSnapshot;
+};
 
 export interface WorkspaceSlice {
   workspaces: Workspace[];

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
+import { DatabaseSync } from "node:sqlite";
 import { createBackendHost } from "./create-backend-host.ts";
 import type { BackendHostEnv } from "./host/env.ts";
 
@@ -14,6 +15,7 @@ function testEnv(overrides: Partial<BackendHostEnv>): BackendHostEnv {
     allowedRoots: ["/tmp"],
     uploadMaxFileBytes: 1024,
     uploadMaxBatchBytes: 2048,
+    identityMode: "remote",
     ...overrides,
   };
 }
@@ -22,6 +24,8 @@ describe("createBackendHost API auth and CORS", () => {
   test("/api/health is reachable without Authorization when auth is enabled", async () => {
     const { app } = createBackendHost({
       env: testEnv({ authToken: "required-secret" }),
+      identityDatabase: new DatabaseSync(":memory:"),
+      identitySecret: "test-secret-that-is-at-least-thirty-two-characters",
     });
     const response = await app.request("http://127.0.0.1/api/health");
     expect(response.status).toBe(200);
@@ -33,6 +37,8 @@ describe("createBackendHost API auth and CORS", () => {
   test("/api/capabilities returns 401 without token when auth is enabled", async () => {
     const { app } = createBackendHost({
       env: testEnv({ authToken: "required-secret" }),
+      identityDatabase: new DatabaseSync(":memory:"),
+      identitySecret: "test-secret-that-is-at-least-thirty-two-characters",
     });
     const response = await app.request("http://127.0.0.1/api/capabilities");
     expect(response.status).toBe(401);
@@ -42,6 +48,8 @@ describe("createBackendHost API auth and CORS", () => {
   test("/api/capabilities succeeds with Bearer token", async () => {
     const { app } = createBackendHost({
       env: testEnv({ authToken: "required-secret" }),
+      identityDatabase: new DatabaseSync(":memory:"),
+      identitySecret: "test-secret-that-is-at-least-thirty-two-characters",
     });
     const response = await app.request("http://127.0.0.1/api/capabilities", {
       headers: { authorization: "Bearer required-secret" },
@@ -53,6 +61,8 @@ describe("createBackendHost API auth and CORS", () => {
   test("OPTIONS preflight returns 204 with CORS headers", async () => {
     const { app } = createBackendHost({
       env: testEnv({ authToken: "required-secret", allowedCorsOrigin: "*" }),
+      identityDatabase: new DatabaseSync(":memory:"),
+      identitySecret: "test-secret-that-is-at-least-thirty-two-characters",
     });
     const response = await app.request("http://127.0.0.1/api/sessions", { method: "OPTIONS" });
     expect(response.status).toBe(204);

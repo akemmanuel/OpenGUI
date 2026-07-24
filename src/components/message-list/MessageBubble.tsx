@@ -9,6 +9,7 @@ import { USER_MSG_COLLAPSE_CHARS } from "@/lib/constants";
 import { splitImageMentions } from "@/lib/image-mentions";
 import { cn } from "@/lib/utils";
 import type { TranscriptMessageEntry } from "@/protocol/session-transcript";
+import { ActorAttribution } from "@/features/identity/ActorAttribution";
 import { AssistantMessageError } from "./AssistantMessageError";
 import { AssistantTurnFooter } from "./AssistantTurnFooter";
 import { CollapsibleUserMessageBody } from "./CollapsibleUserMessageBody";
@@ -88,6 +89,7 @@ export const MessageBubble = memo(function MessageBubble({
         )}
       >
         {isUser && <MessageBubbleActions onFork={onFork} onRevert={onRevert} />}
+        {isUser && <ActorAttribution actor={info.actor} className="mb-1 block" />}
         {userImages.length > 0 && (
           <ImageMentionThumbnails
             images={userImages}

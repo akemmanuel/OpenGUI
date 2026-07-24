@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { ActionsContextValue } from "@/hooks/agent-contexts";
 import type { HostFollowUp, OpenGuiHostClient } from "@/protocol/host-types";
-import { HostActionFactory, HostQueueController, type HostQueueState } from "./host-actions";
+import {
+  HostActionFactory,
+  HostQueueController,
+  projectHostFollowUps,
+  type HostQueueState,
+} from "./host-actions";
 
 describe("HostActionFactory", () => {
   it("creates the coordinated action contract lazily", () => {
@@ -16,6 +21,36 @@ describe("HostActionFactory", () => {
 });
 
 describe("HostQueueController", () => {
+  it("projects optional persisted actors without inventing attribution for legacy Follow-ups", () => {
+    expect(
+      projectHostFollowUps([
+        {
+          id: "attributed",
+          sequence: 1,
+          prompt: {
+            text: "Deploy",
+            actor: { type: "api_key", id: "key-1", displayName: "Release bot" },
+          },
+          createdAt: "2026-07-10T10:00:00.000Z",
+        },
+        {
+          id: "legacy",
+          sequence: 2,
+          prompt: { text: "Check" },
+          createdAt: "2026-07-10T10:01:00.000Z",
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "attributed",
+        text: "Deploy",
+        mode: "queue",
+        actor: { type: "api_key", id: "key-1", displayName: "Release bot" },
+      },
+      { id: "legacy", text: "Check", mode: "queue", actor: undefined },
+    ]);
+  });
+
   it("keeps frontend Follow-ups synchronized with Host queue mutations", async () => {
     let state: HostQueueState = {};
     const followUp = (id: string, text: string, sequence: number): HostFollowUp => ({

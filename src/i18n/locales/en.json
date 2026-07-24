@@ -53,6 +53,7 @@
     "tabs": {
       "general": "General",
       "providers": "Providers",
+      "team": "Team",
       "plugins": "Plugins",
       "tools": "Tools"
     },
@@ -170,7 +171,10 @@
       "purple": "Purple",
       "pink": "Pink",
       "gray": "Gray"
-    }
+    },
+    "share": "Share",
+    "private": "Private Session",
+    "shared": "Shared Session"
   },
   "projectMenu": {
     "pinProject": "Pin project",
@@ -287,6 +291,143 @@
     "toggleSidebar": "Toggle Sidebar",
     "requiredBeforeProject": "Add a workspace before connecting a project.",
     "addProjectRequiresWorkspace": "Create a workspace first"
+  },
+  "identity": {
+    "checkingHost": "Checking Host identity",
+    "setupTitle": "Set up this Host",
+    "setupDescription": "Create the first account for {{host}}. This account will own the Host and its settings.",
+    "loginTitle": "Sign in to OpenGUI",
+    "loginDescription": "Enter your account details to use {{host}}.",
+    "registerTitle": "Create an account",
+    "registerDescription": "Register for {{host}}. An owner must still share folders before you can open projects.",
+    "createAccount": "Create account",
+    "creatingAccount": "Creating account…",
+    "switchToRegister": "Need an account? Register",
+    "switchToLogin": "Already have an account? Sign in",
+    "hostPolicyTitle": "Host access",
+    "hostPolicyDescription": "Control how people join this Host and who may send invites.",
+    "registrationMode": "Registration",
+    "registrationModeUpdated": "Registration mode updated",
+    "registrationModes": {
+      "invite_only": "Invite only",
+      "open": "Open registration"
+    },
+    "registrationModeHelp": {
+      "invite_only": "Only people with an invite can create an account.",
+      "open": "Anyone with the Host URL can create an account. They still need shared folders to work."
+    },
+    "canInvite": "Can invite",
+    "canInviteLabel": "Allow {{name}} to create invites",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "passwordHint": "Use at least 8 characters.",
+    "passwordMismatch": "The passwords do not match.",
+    "createOwner": "Create owner account",
+    "creatingOwner": "Creating account…",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "accountSession": "Host account",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…",
+    "hostLabel": "Connecting to {{host}}",
+    "unavailableTitle": "Host unavailable",
+    "unavailableDescription": "OpenGUI could not check the identity status of {{host}}.",
+    "connectionError": "Could not connect to the Host.",
+    "authenticationError": "Authentication failed. Check your details and try again.",
+    "retry": "Try again",
+    "acceptInviteTitle": "Join this Team",
+    "acceptInviteDescription": "Create your account to join the Team on {{host}}.",
+    "joinTeam": "Join Team",
+    "joiningTeam": "Joining Team…",
+    "inviteAcceptError": "This invite could not be accepted. It may be invalid, expired, or already used.",
+    "membersTitle": "Members",
+    "membersDescription": "People with accounts on this Host. Sessions and folders are private until shared.",
+    "noMembers": "No members were returned by this Host.",
+    "you": "You",
+    "roles": {
+      "owner": "Owner",
+      "member": "Member"
+    },
+    "removeMember": "Remove {{name}}",
+    "removeMemberConfirm": "Remove this member from the Team? Their active Host access will be revoked.",
+    "resetPassword": "Reset password",
+    "resetPasswordTitle": "Reset password for {{name}}",
+    "resetPasswordDescription": "Set a temporary password and share it securely. It is not saved in OpenGUI.",
+    "passwordReset": "Password reset",
+    "invitesTitle": "Invites",
+    "invitesDescription": "Invite links grant access to this Host. Share them only with people you trust.",
+    "inviteEmail": "Member email",
+    "createInvite": "Create invite",
+    "inviteCreated": "Invite created",
+    "inviteCreatedTitle": "Invite link created",
+    "inviteCreatedDescription": "Copy this link now. For security, it will not be shown again after you close this window.",
+    "inviteLink": "Invite link",
+    "noInvites": "No pending invites.",
+    "pending": "Pending",
+    "expires": "Expires {{date}}",
+    "copyLink": "Copy link",
+    "revokeInvite": "Revoke invite for {{email}}",
+    "revokeInviteConfirm": "Revoke this invite link? It will stop working immediately.",
+    "apiKeysTitle": "Host API keys",
+    "apiKeysDescription": "Named credentials for automation. Secrets are shown once and cannot be recovered.",
+    "keyLabel": "Key name",
+    "keyRole": "Key role",
+    "createKey": "Create key",
+    "noApiKeys": "No API keys.",
+    "created": "Created {{date}}",
+    "neverUsed": "Usage not recorded",
+    "revokeKey": "Revoke {{label}}",
+    "revokeKeyConfirm": "Revoke this API key? Applications using it will lose access immediately.",
+    "keyCreatedTitle": "API key created",
+    "keyCreatedDescription": "Copy this secret now. It will not be shown again after you close this window.",
+    "apiKeySecret": "API key secret",
+    "copySecret": "Copy API key secret",
+    "copied": "Copied",
+    "teamLoadError": "Team settings could not be loaded. Owner access may be required.",
+    "teamRemoteOnly": "Team settings are available for signed-in Remote Hosts.",
+    "teamOwnerOnly": "Only the signed-in Host owner can manage Team settings.",
+    "actionError": "The Host could not complete this action. Try again.",
+    "confirmActionTitle": "Are you sure?",
+    "revoke": "Revoke",
+    "pathGrants": {
+      "access": "Access",
+      "unrestricted": "Unrestricted",
+      "title": "Project access for {{name}}",
+      "description": "Choose which directories this account or key can use. Saving replaces its complete access list.",
+      "root": "Directory",
+      "accessFor": "Access for {{path}}",
+      "readOnly": "Read only",
+      "readWrite": "Read and write",
+      "removePath": "Remove {{path}}",
+      "path": "Directory path",
+      "pathPlaceholder": "/absolute/path/to/project",
+      "addPath": "Add path",
+      "noAccessTitle": "No project access",
+      "noAccessDescription": "This account or key cannot open any directory-backed Projects.",
+      "shellDisabled": "Shell is disabled for this restricted account or key while path enforcement is active.",
+      "loadError": "Project access could not be loaded. Try closing and reopening the editor.",
+      "saveError": "Project access could not be saved. Check that every path is an existing allowed directory.",
+      "save": "Save access",
+      "saving": "Saving…"
+    },
+    "invitePaths": "Initial project access",
+    "invitePathsHelp": "Only folders you can access are shown. The invite cannot grant more access than you have.",
+    "modelPolicy": {
+      "allowByok": "Allow personal API keys",
+      "allowByokHelp": "Let people add their own API-key model connections. Host denial overrides Team settings.",
+      "allowByos": "Allow personal subscriptions",
+      "allowByosHelp": "Let people connect supported model subscriptions. Host denial overrides Team settings.",
+      "host": {
+        "allowByok": "Host: allow BYOK",
+        "allowByos": "Host: allow BYOS"
+      },
+      "team": {
+        "allowByok": "Team: allow BYOK",
+        "allowByos": "Team: allow BYOS"
+      }
+    }
   },
   "mcp": {
     "title": "MCPs",
@@ -423,7 +564,22 @@
     "baseUrlInvalid": "Base URL must start with http:// or https://",
     "modelIdsRequired": "All model IDs must be filled in",
     "modelNamesRequired": "All model names must be filled in",
-    "duplicateModelIds": "Duplicate model IDs found"
+    "duplicateModelIds": "Duplicate model IDs found",
+    "connectionPlane": "Connection owner",
+    "planes": {
+      "host": "Host",
+      "team": "Team",
+      "user": "Personal"
+    },
+    "planeHelp": {
+      "host": "Managed by the Host owner and available only through explicit entitlements.",
+      "team": "Managed for the Team and available only through explicit entitlements.",
+      "user": "Private to your account and available only in your own Sessions."
+    },
+    "removeConnection": "Remove {{name}}",
+    "teamAccessTitle": "Team model access",
+    "teamAccessHelp": "Choose which shared connections Team members can use.",
+    "teamAccess": "Team access"
   },
   "setupWizard": {
     "connectModelTitle": "Connect a model",
@@ -567,7 +723,8 @@
     "noSessionDescription": "Select a session or start a new one from a connected project.",
     "noWorkspaceTitle": "No workspace configured",
     "noWorkspaceDescription": "A workspace is your OpenGUI backend. Create one, then add projects to it.",
-    "addWorkspace": "Add workspace"
+    "addWorkspace": "Add workspace",
+    "noSharedProjects": "No project folders have been shared with your account yet. Ask the Host owner or an inviter for access."
   },
   "mergeDialog": {
     "failed": "Merge failed",
@@ -697,5 +854,41 @@
     "reverted": "{{count}} message reverted",
     "reverted_plural": "{{count}} messages reverted",
     "restore": "Restore"
+  },
+  "sessionShare": {
+    "title": "Share Session",
+    "description": "Manage access to “{{title}}”. Sessions are private until you share them.",
+    "people": "People and Team",
+    "principal": "Person or Team",
+    "choosePrincipal": "Choose a person or Team",
+    "access": "Access",
+    "share": "Share",
+    "private": "Only you can open this Session.",
+    "viewLinks": "View links",
+    "viewLinksHelp": "Anyone with a view link can read this transcript without signing in. They cannot send prompts or use tools.",
+    "createLink": "Create view link",
+    "revokeShare": "Remove access for {{name}}",
+    "revokeLink": "Revoke view link",
+    "linkExpires": "Expires {{date}}",
+    "noExpiry": "No expiry",
+    "types": {
+      "user": "Person",
+      "team": "Team"
+    },
+    "roles": {
+      "view": "Can view",
+      "run": "Can continue",
+      "admin": "Can manage"
+    }
+  },
+  "viewLink": {
+    "loadingTitle": "Shared Session",
+    "readOnly": "Read-only transcript",
+    "invalid": "This view link is invalid, expired, or has been revoked.",
+    "empty": "This Session has no messages yet.",
+    "usedTool": "Used {{tool}}",
+    "user": "User",
+    "assistant": "OpenGUI",
+    "footer": "Shared from OpenGUI · Read-only"
   }
 }

@@ -5,6 +5,7 @@ import {
   FolderOpen,
   Globe,
   Layers,
+  LogOut,
   RotateCcw,
   Terminal,
 } from "lucide-react";
@@ -48,6 +49,11 @@ import {
 import { getDesktopShellClient } from "@/runtime/clients";
 import { storageGet, storageRemove, storageSet } from "@/lib/persistence/storage";
 import packageJson from "../../../package.json";
+import {
+  getIdentityWorkspace,
+  identityWorkspaceIsLocalBypass,
+  logoutActiveWorkspaceIdentity,
+} from "@/features/identity/workspace-identity";
 
 // ---------------------------------------------------------------------------
 // General settings (wraps all general tab items)
@@ -56,6 +62,7 @@ import packageJson from "../../../package.json";
 export function GeneralSettings() {
   const { t } = useTranslation();
   const shell = getDesktopShellClient();
+  const isDesktop = shell.runtime.isElectron;
   const [restarting, setRestarting] = useState(false);
 
   const handleRestart = useCallback(async () => {
@@ -73,45 +80,73 @@ export function GeneralSettings() {
     <div className="flex flex-col gap-4">
       <AppearanceSetting />
       <LanguageSetting />
-      <DefaultChatDirectorySetting />
+      {isDesktop && <DefaultChatDirectorySetting />}
       <NewChatModelBehaviorSetting />
-      <FileManagerSetting />
-      <TerminalSetting />
+      {isDesktop && <FileManagerSetting />}
+      {isDesktop && <TerminalSetting />}
       <ModelAgeFilterSetting />
       <NotificationsToggle />
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            disabled={restarting || !shell.backend}
-          >
-            {restarting ? (
-              <Spinner className="size-3.5 mr-2" />
-            ) : (
-              <RotateCcw className="size-3.5 mr-2" />
-            )}
-            {t("settings.general.restartLocalBackend")}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("settings.general.restartLocalBackendTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("settings.general.restartLocalBackendDescription")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRestart}>{t("common.restart")}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <IdentitySessionSetting />
+      {isDesktop && shell.backend && (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" size="sm" className="mt-2" disabled={restarting}>
+              {restarting ? (
+                <Spinner className="size-3.5 mr-2" />
+              ) : (
+                <RotateCcw className="size-3.5 mr-2" />
+              )}
+              {t("settings.general.restartLocalBackend")}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("settings.general.restartLocalBackendTitle")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("settings.general.restartLocalBackendDescription")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleRestart}>{t("common.restart")}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
       <div className="flex items-center justify-between gap-3 pt-3 border-t">
         <span className="text-xs text-muted-foreground">{t("common.version")}</span>
         <span className="text-xs text-muted-foreground font-mono">{packageJson.version}</span>
       </div>
+    </div>
+  );
+}
+
+function IdentitySessionSetting() {
+  const { t } = useTranslation();
+  const workspace = getIdentityWorkspace();
+  const [signingOut, setSigningOut] = useState(false);
+  if (!workspace?.authToken || identityWorkspaceIsLocalBypass(workspace)) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-t pt-3">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <LogOut className="size-4 text-muted-foreground" />
+          <span className="text-sm">{t("identity.accountSession")}</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">{workspace.name}</p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={signingOut}
+        onClick={() => {
+          setSigningOut(true);
+          void logoutActiveWorkspaceIdentity().catch(() => setSigningOut(false));
+        }}
+      >
+        {signingOut ? t("identity.signingOut") : t("identity.signOut")}
+      </Button>
     </div>
   );
 }

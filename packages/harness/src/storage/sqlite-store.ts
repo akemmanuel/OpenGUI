@@ -8,6 +8,7 @@ import type {
   FollowUp,
   IdGenerator,
   ModelSelection,
+  PromptInput,
   ReasoningLevel,
   SessionEntry,
   SessionEntryKind,
@@ -61,7 +62,7 @@ function decodeFollowUp(
   return {
     id: row.id,
     sequence: Number(row.sequence),
-    prompt: JSON.parse(row.prompt_json) as { text: string },
+    prompt: JSON.parse(row.prompt_json) as PromptInput,
     createdAt: row.created_at,
   };
 }
@@ -194,7 +195,7 @@ export class SqliteSessionStore {
   async beginRun(input: {
     sessionId: string;
     runId: string;
-    text: string;
+    prompt: PromptInput;
     model: ModelSelection;
     reasoning: ReasoningLevel;
     followUpId?: string;
@@ -215,7 +216,8 @@ export class SqliteSessionStore {
         "user_message",
         {
           runId: input.runId,
-          text: input.text,
+          text: input.prompt.text,
+          ...(input.prompt.actor ? { actor: input.prompt.actor } : {}),
           model: input.model,
           reasoning: input.reasoning,
           ...(input.followUpId ? { followUpId: input.followUpId } : {}),
@@ -250,7 +252,7 @@ export class SqliteSessionStore {
     });
   }
 
-  async enqueueFollowUp(sessionId: string, text: string, now: string) {
+  async enqueueFollowUp(sessionId: string, prompt: PromptInput, now: string) {
     await this.#ready;
     return this.#database.transaction().execute(async (transaction) => {
       const row = await transaction
@@ -261,7 +263,7 @@ export class SqliteSessionStore {
       const followUp: FollowUp = {
         id: this.#ids.next("follow_up"),
         sequence: Number(row.sequence) + 1,
-        prompt: { text },
+        prompt,
         createdAt: now,
       };
       await transaction
@@ -291,16 +293,23 @@ export class SqliteSessionStore {
     return rows.map(decodeFollowUp);
   }
 
-  async updateFollowUp(sessionId: string, followUpId: string, text: string) {
+  async updateFollowUp(sessionId: string, followUpId: string, prompt: PromptInput) {
     await this.#ready;
-    const result = await this.#database
-      .updateTable("session_follow_ups")
-      .set({ prompt_json: JSON.stringify({ text }) })
-      .where("session_id", "=", sessionId)
-      .where("id", "=", followUpId)
-      .where("state", "=", "pending")
-      .executeTakeFirst();
-    if (result.numUpdatedRows !== 1n) throw new Error(`Pending follow-up not found: ${followUpId}`);
+    await this.#database.transaction().execute(async (transaction) => {
+      const row = await transaction
+        .selectFrom("session_follow_ups")
+        .select("prompt_json")
+        .where("session_id", "=", sessionId)
+        .where("id", "=", followUpId)
+        .where("state", "=", "pending")
+        .executeTakeFirst();
+      if (!row) throw new Error(`Pending follow-up not found: ${followUpId}`);
+      await transaction
+        .updateTable("session_follow_ups")
+        .set({ prompt_json: JSON.stringify(prompt) })
+        .where("id", "=", followUpId)
+        .executeTakeFirstOrThrow();
+    });
   }
 
   async removeFollowUp(sessionId: string, followUpId: string) {

@@ -26,6 +26,12 @@ const tools = ["read", "write", "edit", "shell"].map((name) => ({
   strict: false,
 }));
 
+function toolsForRequest(request: ModelRequest) {
+  if (!request.tools) return tools;
+  const allowed = new Set<string>(request.tools);
+  return tools.filter((tool) => allowed.has(tool.name));
+}
+
 export function codexInput(context: ModelContextItem[]) {
   return context.map((item) => {
     if (item.type === "user_message")
@@ -126,7 +132,7 @@ export class CodexResponsesTransport implements ModelTransport {
           store: false,
           instructions: request.systemPrompt,
           input: codexInput(request.context),
-          tools,
+          tools: toolsForRequest(request),
           reasoning:
             selected.reasoning === "none"
               ? undefined

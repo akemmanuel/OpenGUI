@@ -141,6 +141,7 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
           id,
           sessionID: snapshot.id,
           role: "user",
+          actor: entry.payload.actor,
           providerID: String(
             (entry.payload.model as { connectionId?: string } | undefined)?.connectionId ?? "",
           ),

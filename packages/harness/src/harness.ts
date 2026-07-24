@@ -1,4 +1,5 @@
 import type { ModelTransport } from "./models/transport.ts";
+import type { ExecutionPolicyResolver } from "./execution-policy.ts";
 
 export const SESSION_ENTRY_KINDS = [
   "session_created",
@@ -76,8 +77,16 @@ export interface CreateSessionInput {
   reasoning: ReasoningLevel;
 }
 
+/** Role-free identity captured when durable user intent is accepted by the Host. */
+export interface DurableActor {
+  type: "user" | "api_key" | "local";
+  id: string;
+  displayName: string;
+}
+
 export interface PromptInput {
   text: string;
+  actor?: DurableActor;
 }
 
 export type SessionEvent =
@@ -122,4 +131,6 @@ export interface OpenGuiHarnessOptions {
   homeDirectory?: string;
   clock?: Clock;
   ids?: IdGenerator;
+  /** Resolve current Host-owned execution capabilities for each durable actor. */
+  resolveExecutionPolicy?: ExecutionPolicyResolver;
 }

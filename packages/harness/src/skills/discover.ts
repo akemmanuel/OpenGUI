@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { parseFrontmatter, validateDescription, validateSkillName } from "./parse.ts";
@@ -108,7 +108,7 @@ export function loadSkillsFromDir(dir: string, source: SkillSource): LoadSkillsR
     }
 
     const skillMd = join(current, "SKILL.md");
-    if (existsSync(skillMd) && !isDirectory(skillMd)) {
+    if (existsSync(skillMd) && !isDirectory(skillMd) && !lstatSync(skillMd).isSymbolicLink()) {
       const result = loadSkillFromFile(skillMd, source);
       diagnostics.push(...result.diagnostics);
       if (result.skill) skills.push(result.skill);

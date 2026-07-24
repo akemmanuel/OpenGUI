@@ -30,12 +30,18 @@ function prefixedLines(value: string, prefix: "-" | "+") {
   return lines.map((line) => `${prefix}${line}`).join("\n");
 }
 
-export async function executeEditTool(projectDirectory: string, rawInput: unknown) {
+export async function executeEditTool(
+  projectDirectory: string,
+  rawInput: unknown,
+  authorizedPath?: string,
+) {
   const input = parseInput(rawInput);
   if (!input) {
     return { error: "edit requires path, non-empty oldText, newText, and optional replaceAll" };
   }
-  const path = isAbsolute(input.path) ? resolve(input.path) : resolve(projectDirectory, input.path);
+  const path =
+    authorizedPath ??
+    (isAbsolute(input.path) ? resolve(input.path) : resolve(projectDirectory, input.path));
   try {
     const before = await readFile(path, "utf8");
     const replacements = before.split(input.oldText).length - 1;
