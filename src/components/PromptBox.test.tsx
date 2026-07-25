@@ -11,6 +11,7 @@ const fixture = vi.hoisted(() => ({
   },
   submit: vi.fn(),
   stop: vi.fn(),
+  commands: [] as Array<{ name: string }>,
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -33,9 +34,6 @@ vi.mock("@/components/PromptImageMentions", () => ({
   usePromptImages: () => [],
 }));
 vi.mock("@/components/FileMentionPopover", () => ({ FileMentionPopover: () => null }));
-vi.mock("@/hooks/use-agent-backend", () => ({
-  useBackendCapabilities: () => ({ commands: false, agents: false }),
-}));
 vi.mock("@/features/session-transcript/active-session-transcript-provider", () => ({
   useActiveTranscriptPromptHistory: () => [],
 }));
@@ -63,7 +61,7 @@ vi.mock("@/hooks/use-agent-state", () => ({
     clearSessionDraft: vi.fn(),
   }),
   useModelState: () => ({
-    commands: [],
+    commands: fixture.commands,
     agents: [],
     selectedAgent: null,
     selectedModel: fixture.selectedModel,
@@ -86,8 +84,20 @@ vi.mock("@/hooks/use-agent-state", () => ({
 import { PromptBox } from "./PromptBox";
 
 describe("PromptBox interactions", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fixture.commands = [];
+  });
   afterEach(cleanup);
+
+  test("opens the first-party slash menu for manual compaction", async () => {
+    fixture.commands = [{ name: "compact" }];
+    render(<PromptBox queueMode="queue" onQueueModeChange={vi.fn()} onSubmit={fixture.submit} />);
+
+    await userEvent.type(screen.getByRole("textbox"), "/");
+
+    expect(screen.getByText("/compact")).toBeTruthy();
+  });
 
   test("submits Enter but never submits the Enter used to confirm IME composition", async () => {
     render(<PromptBox queueMode="queue" onQueueModeChange={vi.fn()} onSubmit={fixture.submit} />);

@@ -5,6 +5,12 @@ import type {
   ModelStreamEvent,
   ModelTransport,
 } from "./transport.ts";
+import {
+  isPossibleImageInputRejection,
+  modelContextHasImages,
+  modelToolResultContent,
+  withoutModelContextImages,
+} from "./transport.ts";
 
 export interface CodexCredential {
   accessToken: string;
@@ -46,10 +52,21 @@ export function codexInput(context: ModelContextItem[]) {
         name: item.name,
         arguments: JSON.stringify(item.input ?? {}),
       };
+    const result = modelToolResultContent(item.output);
     return {
       type: "function_call_output",
       call_id: item.toolCallId,
-      output: typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? null),
+      output:
+        result.images.length === 0
+          ? result.text
+          : [
+              ...(result.text ? [{ type: "input_text", text: result.text }] : []),
+              ...result.images.map((image) => ({
+                type: "input_image",
+                detail: "auto",
+                image_url: `data:${image.mimeType};base64,${image.data}`,
+              })),
+            ],
     };
   });
 }
@@ -110,6 +127,7 @@ function reasoningItemText(item: Record<string, any>): string {
 
 export class CodexResponsesTransport implements ModelTransport {
   readonly #options: CodexResponsesOptions;
+  readonly #imageUnsupportedModels = new Set<string>();
   constructor(options: CodexResponsesOptions) {
     this.#options = options;
   }
@@ -117,6 +135,10 @@ export class CodexResponsesTransport implements ModelTransport {
     const selected = [...request.context].reverse().find((x) => x.type === "user_message");
     if (!selected || selected.type !== "user_message")
       throw new Error("Codex request has no user message");
+    const modelKey = selected.model.modelId;
+    const effectiveRequest = this.#imageUnsupportedModels.has(modelKey)
+      ? { ...request, context: withoutModelContextImages(request.context) }
+      : request;
     const credential = await this.#options.getCredential();
     const response = await (this.#options.fetchImpl ?? fetch)(
       this.#options.endpoint ?? "https://chatgpt.com/backend-api/codex/responses",
@@ -137,7 +159,7 @@ export class CodexResponsesTransport implements ModelTransport {
           stream: true,
           store: false,
           instructions: request.systemPrompt,
-          input: codexInput(request.context),
+          input: codexInput(effectiveRequest.context),
           tools: toolsForRequest(request),
           reasoning:
             selected.reasoning === "none"
@@ -146,6 +168,15 @@ export class CodexResponsesTransport implements ModelTransport {
         }),
       },
     );
+    if (
+      isPossibleImageInputRejection(response.status) &&
+      !response.ok &&
+      modelContextHasImages(effectiveRequest.context)
+    ) {
+      this.#imageUnsupportedModels.add(modelKey);
+      yield* this.stream(request, signal);
+      return;
+    }
     if (!response.ok || !response.body)
       throw new Error(
         response.status === 401

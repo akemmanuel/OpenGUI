@@ -137,6 +137,7 @@ export interface OpenGuiHostClient {
     model: { connectionId: string; modelId: string },
   ): Promise<HostSessionSnapshot>;
   setReasoning(sessionId: string, reasoning: ReasoningEffort): Promise<HostSessionSnapshot>;
+  compact(sessionId: string): Promise<{ startedEntries: HostSessionEntry[] }>;
   prompt(
     sessionId: string,
     text: string,

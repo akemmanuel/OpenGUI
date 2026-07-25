@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildModelContext } from "./context/build-context.ts";
+import {
+  buildHandoffPrompt,
+  compactionPaths,
+  DEFAULT_COMPACTION_THRESHOLD_RATIO,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  estimateContextTokens,
+  latestCompletedCompaction,
+} from "./context/compaction.ts";
 import { buildSystemPrompt } from "./context/system-prompt.ts";
 import { type ExecutionPolicy, unrestrictedExecutionPolicy } from "./execution-policy.ts";
 import type {
@@ -103,6 +113,10 @@ class HarnessSessionImpl implements HarnessSession {
     return this.#harness.run(this.#id, prompt);
   }
 
+  compact(actor?: PromptInput["actor"]): AsyncIterable<SessionEvent> {
+    return this.#harness.compact(this.#id, actor);
+  }
+
   async followUp(prompt: PromptInput) {
     return await this.#harness.followUp(this.#id, prompt);
   }
@@ -149,6 +163,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #homeDirectory: string | undefined;
   readonly #shell: ResolvedShell;
   readonly #resolveExecutionPolicy: OpenGuiHarnessOptions["resolveExecutionPolicy"];
+  readonly #compaction: Required<NonNullable<OpenGuiHarnessOptions["compaction"]>>;
   readonly #runningSessions = new Set<string>();
   readonly #abortControllers = new Map<string, AbortController>();
   readonly #runCompletions = new Map<string, Promise<void>>();
@@ -164,6 +179,15 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#homeDirectory = options.homeDirectory;
     this.#shell = resolveNativeShell({ configuredExecutable: options.shell?.executable });
     this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
+    this.#compaction = {
+      enabled: options.compaction?.enabled ?? true,
+      contextWindowTokens: options.compaction?.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS,
+      thresholdRatio: options.compaction?.thresholdRatio ?? DEFAULT_COMPACTION_THRESHOLD_RATIO,
+      tempDirectory: options.compaction?.tempDirectory ?? tmpdir(),
+    };
+    if (this.#compaction.thresholdRatio <= 0 || this.#compaction.thresholdRatio >= 1) {
+      throw new Error("Compaction thresholdRatio must be greater than 0 and less than 1");
+    }
     this.#store = new SqliteSessionStore(options.dataDirectory, this.#ids);
     this.#ready = this.#store.recoverInterruptedRuns(this.#clock.now().toISOString());
   }
@@ -349,6 +373,301 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     await this.#store.deleteSession(sessionId);
   }
 
+  async *#performCompaction(input: {
+    sessionId: string;
+    runId: string;
+    snapshot: SessionSnapshot;
+    tools: ModelToolName[];
+    systemPrompt: string;
+    signal: AbortSignal;
+    tokensBefore: number;
+    reason: "manual" | "threshold";
+    revalidate: () => Promise<{ policy: ExecutionPolicy; canonicalProjectRoot: string }>;
+  }): AsyncIterable<SessionEvent> {
+    const paths = compactionPaths(this.#compaction.tempDirectory, input.sessionId, input.runId);
+    await mkdir(paths.directory, { recursive: true });
+    yield {
+      type: "entry_appended",
+      entry: await this.#store.appendEntry(
+        input.sessionId,
+        "compaction",
+        {
+          runId: input.runId,
+          status: "started",
+          handoffDirectory: paths.directory,
+          handoffPath: paths.handoffPath,
+          tokensBefore: input.tokensBefore,
+          thresholdRatio: this.#compaction.thresholdRatio,
+          reason: input.reason,
+        },
+        this.#clock.now().toISOString(),
+      ),
+    };
+
+    const context = [
+      ...buildModelContext(input.snapshot.entries),
+      {
+        type: "user_message" as const,
+        text: buildHandoffPrompt(paths),
+        model: input.snapshot.model!,
+        reasoning: input.snapshot.reasoning!,
+      },
+    ];
+
+    while (true) {
+      let assistantText = "";
+      let reasoningText = "";
+      const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
+      for await (const event of this.#model.stream(
+        {
+          projectDirectory: input.snapshot.projectDirectory,
+          context,
+          tools: input.tools,
+          systemPrompt: input.systemPrompt,
+        },
+        input.signal,
+      )) {
+        await input.revalidate();
+        input.signal.throwIfAborted();
+        if (event.type === "text_delta") {
+          assistantText += event.delta;
+          yield { type: "assistant_delta", runId: input.runId, delta: event.delta };
+        } else if (event.type === "reasoning_delta") {
+          reasoningText += event.delta;
+          yield { type: "reasoning_delta", runId: input.runId, delta: event.delta };
+        } else if (event.type === "tool_call") {
+          toolCalls.push({ id: event.id, name: event.name, input: event.input });
+        }
+      }
+
+      if (reasoningText) {
+        yield {
+          type: "entry_appended",
+          entry: await this.#store.appendEntry(
+            input.sessionId,
+            "assistant_reasoning",
+            { runId: input.runId, text: reasoningText, purpose: "compaction" },
+            this.#clock.now().toISOString(),
+          ),
+        };
+      }
+      if (assistantText) {
+        context.push({ type: "assistant_message", text: assistantText });
+        yield {
+          type: "entry_appended",
+          entry: await this.#store.appendEntry(
+            input.sessionId,
+            "assistant_message",
+            { runId: input.runId, text: assistantText, purpose: "compaction" },
+            this.#clock.now().toISOString(),
+          ),
+        };
+      }
+      if (toolCalls.length === 0) break;
+
+      for (const toolCall of toolCalls) {
+        context.push({
+          type: "tool_call",
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          input: toolCall.input,
+        });
+        yield {
+          type: "entry_appended",
+          entry: await this.#store.appendEntry(
+            input.sessionId,
+            "tool_call",
+            {
+              runId: input.runId,
+              toolCallId: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.input,
+              purpose: "compaction",
+            },
+            this.#clock.now().toISOString(),
+          ),
+        };
+      }
+      for (const toolCall of toolCalls) {
+        const { policy } = await input.revalidate();
+        input.signal.throwIfAborted();
+        const output = await executeTool(
+          {
+            projectDirectory: input.snapshot.projectDirectory,
+            dataDirectory: this.#dataDirectory,
+            sessionId: input.sessionId,
+            toolCallId: toolCall.id,
+            shell: this.#shell,
+            signal: input.signal,
+            executionPolicy: policy,
+          },
+          toolCall.name,
+          toolCall.input,
+        );
+        context.push({
+          type: "tool_result",
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          output,
+        });
+        yield {
+          type: "entry_appended",
+          entry: await this.#store.appendEntry(
+            input.sessionId,
+            "tool_result",
+            {
+              runId: input.runId,
+              toolCallId: toolCall.id,
+              name: toolCall.name,
+              output,
+              purpose: "compaction",
+            },
+            this.#clock.now().toISOString(),
+          ),
+        };
+      }
+    }
+
+    let handoff: string;
+    try {
+      handoff = await readFile(paths.handoffPath, "utf8");
+    } catch {
+      throw new Error(`Compaction did not create ${paths.handoffPath}`);
+    }
+    if (!handoff.trim()) throw new Error(`Compaction created an empty ${paths.handoffPath}`);
+
+    yield {
+      type: "entry_appended",
+      entry: await this.#store.appendEntry(
+        input.sessionId,
+        "compaction",
+        {
+          runId: input.runId,
+          status: "completed",
+          handoffDirectory: paths.directory,
+          handoffPath: paths.handoffPath,
+          handoff,
+          tokensBefore: input.tokensBefore,
+          thresholdRatio: this.#compaction.thresholdRatio,
+          model: input.snapshot.model,
+          reasoning: input.snapshot.reasoning,
+          reason: input.reason,
+        },
+        this.#clock.now().toISOString(),
+      ),
+    };
+  }
+
+  async *compact(sessionId: string, actor?: PromptInput["actor"]): AsyncIterable<SessionEvent> {
+    this.#assertOpen();
+    if (this.#runningSessions.has(sessionId)) {
+      throw new Error("Cannot compact a running Session");
+    }
+    this.#runningSessions.add(sessionId);
+    const abortController = new AbortController();
+    this.#abortControllers.set(sessionId, abortController);
+    let completeRun!: () => void;
+    this.#runCompletions.set(
+      sessionId,
+      new Promise<void>((resolve) => {
+        completeRun = resolve;
+      }),
+    );
+    this.#completeRuns.set(sessionId, completeRun);
+    const runId = this.#ids.next("run");
+    let authorizationFailed = false;
+    const revalidate = async (projectDirectory: string) => {
+      try {
+        return await this.#executionPolicyWithProjectAccess(actor, projectDirectory);
+      } catch (error) {
+        authorizationFailed = true;
+        abortController.abort(error);
+        throw error;
+      }
+    };
+    try {
+      const snapshot = await this.readSession(sessionId);
+      if (!snapshot.model || !snapshot.reasoning) {
+        throw new Error("Session model selection is incomplete");
+      }
+      if (!snapshot.entries.some((entry) => entry.kind === "user_message")) {
+        throw new Error("There is no Session context to compact");
+      }
+      const initialAccess = await revalidate(snapshot.projectDirectory);
+      const discoveredSkills = await this.#skillsForRun(
+        snapshot.projectDirectory,
+        initialAccess.policy,
+      );
+      const lockedSkills = lockedSkillsFromEntries(snapshot.entries);
+      const skills = selectSkillsForPrompt(discoveredSkills, lockedSkills ?? undefined);
+      const modelAccess = await revalidate(snapshot.projectDirectory);
+      const tools = await this.#toolsForModel(modelAccess.policy, modelAccess.canonicalProjectRoot);
+      const shellAvailable = tools.includes("shell");
+      const systemPrompt = buildSystemPrompt({
+        projectDirectory: snapshot.projectDirectory,
+        ...(shellAvailable ? { shell: this.#shell } : {}),
+        tools,
+        skills,
+        now: this.#clock.now(),
+      });
+      yield {
+        type: "entry_appended",
+        entry: await this.#store.appendEntry(
+          sessionId,
+          "run_started",
+          { runId, purpose: "compaction" },
+          this.#clock.now().toISOString(),
+        ),
+      };
+      const contextTokens = estimateContextTokens(
+        buildModelContext(snapshot.entries),
+        systemPrompt,
+      );
+      for await (const event of this.#performCompaction({
+        sessionId,
+        runId,
+        snapshot,
+        tools,
+        systemPrompt,
+        signal: abortController.signal,
+        tokensBefore: contextTokens,
+        reason: "manual",
+        revalidate: () => revalidate(snapshot.projectDirectory),
+      })) {
+        yield event;
+      }
+      yield {
+        type: "entry_appended",
+        entry: await this.#store.appendEntry(
+          sessionId,
+          "run_completed",
+          { runId, purpose: "compaction" },
+          this.#clock.now().toISOString(),
+        ),
+      };
+    } catch (error) {
+      const entry = await this.#store.appendEntry(
+        sessionId,
+        abortController.signal.aborted && !authorizationFailed ? "run_aborted" : "run_failed",
+        {
+          runId,
+          purpose: "compaction",
+          error: error instanceof Error ? error.message : String(error),
+        },
+        this.#clock.now().toISOString(),
+      );
+      yield { type: "entry_appended", entry };
+      if (abortController.signal.aborted) return;
+      throw error;
+    } finally {
+      this.#runningSessions.delete(sessionId);
+      this.#abortControllers.delete(sessionId);
+      this.#completeRuns.get(sessionId)?.();
+      this.#completeRuns.delete(sessionId);
+      this.#runCompletions.delete(sessionId);
+    }
+  }
+
   async *run(sessionId: string, prompt: PromptInput): AsyncIterable<SessionEvent> {
     this.#assertOpen();
     if (!prompt.text.trim()) throw new Error("Prompt text must not be empty");
@@ -425,18 +744,42 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             modelAccess.canonicalProjectRoot,
           );
           const shellAvailable = tools.includes("shell");
+          const systemPrompt = buildSystemPrompt({
+            projectDirectory: current.projectDirectory,
+            ...(shellAvailable ? { shell: this.#shell } : {}),
+            tools,
+            skills,
+            now: this.#clock.now(),
+          });
+          const modelContext = buildModelContext(current.entries);
+          const contextTokens = estimateContextTokens(modelContext, systemPrompt);
+          const shouldCompact =
+            this.#compaction.enabled &&
+            contextTokens >=
+              this.#compaction.contextWindowTokens * this.#compaction.thresholdRatio &&
+            latestCompletedCompaction(current.entries)?.entry.id !== current.entries.at(-1)?.id;
+          if (shouldCompact) {
+            for await (const event of this.#performCompaction({
+              sessionId,
+              runId,
+              snapshot: current,
+              tools,
+              systemPrompt,
+              signal: abortController.signal,
+              tokensBefore: contextTokens,
+              reason: "threshold",
+              revalidate: () => revalidate(nextPrompt!.actor, current.projectDirectory),
+            })) {
+              yield event;
+            }
+            continue;
+          }
           for await (const event of this.#model.stream(
             {
               projectDirectory: current.projectDirectory,
-              context: buildModelContext(current.entries),
+              context: modelContext,
               tools,
-              systemPrompt: buildSystemPrompt({
-                projectDirectory: current.projectDirectory,
-                ...(shellAvailable ? { shell: this.#shell } : {}),
-                tools,
-                skills,
-                now: this.#clock.now(),
-              }),
+              systemPrompt,
             },
             abortController.signal,
           )) {

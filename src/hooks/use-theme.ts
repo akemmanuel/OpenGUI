@@ -8,7 +8,6 @@ export type Theme = "dark" | "light";
 
 const DEFAULT_CONTRAST = 50;
 const DEFAULT_ACCENT_COLOR = "default";
-const DEFAULT_CODE_FONT_SIZE = 13;
 
 interface RGB {
   r: number;
@@ -36,15 +35,6 @@ function getStoredAccentColor(): string {
   if (stored === "default") return "default";
   if (stored && /^#[0-9a-f]{6}$/i.test(stored)) return stored;
   return DEFAULT_ACCENT_COLOR;
-}
-
-function getStoredCodeFontSize(): number {
-  const stored = storageGet(STORAGE_KEYS.CODE_FONT_SIZE);
-  if (stored) {
-    const parsed = Number(stored);
-    if (Number.isFinite(parsed) && parsed >= 10 && parsed <= 20) return parsed;
-  }
-  return DEFAULT_CODE_FONT_SIZE;
 }
 
 function getSystemTheme(): Theme {
@@ -112,40 +102,34 @@ function applyAccentColor(color: string) {
   root.style.setProperty("--dynamic-primary-rgb", `${rgb.r} ${rgb.g} ${rgb.b}`);
 }
 
-function applyCodeFontSize(size: number) {
-  document.documentElement.style.setProperty("--code-font-size", `${size}px`);
-}
-
 export function applyStoredAppearance() {
-  applyTheme(getStoredMode(), getStoredContrast(), getStoredAccentColor(), getStoredCodeFontSize());
+  applyTheme(getStoredMode(), getStoredContrast(), getStoredAccentColor());
 }
 
-function applyTheme(mode: ThemeMode, contrast: number, accentColor: string, codeFontSize: number) {
+function applyTheme(mode: ThemeMode, contrast: number, accentColor: string) {
   const resolved = resolveTheme(mode);
   document.documentElement.classList.toggle("dark", resolved === "dark");
   applyContrast(contrast, resolved);
   applyAccentColor(accentColor);
-  applyCodeFontSize(codeFontSize);
 }
 
 export function useTheme() {
   const [mode, setModeState] = useState<ThemeMode>(getStoredMode);
   const [contrast, setContrastState] = useState<number>(getStoredContrast);
   const [accentColor, setAccentColorState] = useState<string>(getStoredAccentColor);
-  const [codeFontSize, setCodeFontSizeState] = useState<number>(getStoredCodeFontSize);
 
   useEffect(() => {
-    applyTheme(mode, contrast, accentColor, codeFontSize);
-  }, [mode, contrast, accentColor, codeFontSize]);
+    applyTheme(mode, contrast, accentColor);
+  }, [mode, contrast, accentColor]);
 
   // Follow system preference changes when mode is "system"
   useEffect(() => {
     if (mode !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => applyTheme("system", contrast, accentColor, codeFontSize);
+    const handler = () => applyTheme("system", contrast, accentColor);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
-  }, [mode, contrast, accentColor, codeFontSize]);
+  }, [mode, contrast, accentColor]);
 
   const setTheme = useCallback((t: ThemeMode) => {
     storageSet(STORAGE_KEYS.THEME, t);
@@ -161,12 +145,6 @@ export function useTheme() {
     if (color !== "default" && !/^#[0-9a-f]{6}$/i.test(color)) return;
     storageSet(STORAGE_KEYS.ACCENT_COLOR, color);
     setAccentColorState(color);
-  }, []);
-
-  const setCodeFontSize = useCallback((size: number) => {
-    const clamped = Math.min(Math.max(size, 10), 20);
-    storageSet(STORAGE_KEYS.CODE_FONT_SIZE, String(clamped));
-    setCodeFontSizeState(clamped);
   }, []);
 
   // Resolved theme for consumers that need "dark" | "light"
@@ -191,7 +169,5 @@ export function useTheme() {
     setContrast,
     accentColor,
     setAccentColor,
-    codeFontSize,
-    setCodeFontSize,
   } as const;
 }

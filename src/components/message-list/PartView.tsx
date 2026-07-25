@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { ImageMention } from "@/components/ImageMentionPreview";
+import { CompactionPartView } from "@/components/message-list/CompactionPartView";
 import { ToolCallPartView } from "@/components/message-list/tools/ToolCallPartView";
 import type { TranscriptPart } from "@/protocol/session-transcript";
 import { FilePartView } from "./FilePartView";
@@ -51,11 +52,12 @@ export const PartView = memo(function PartView({
           onSetToolCallExpanded={onSetToolCallExpanded}
         />
       );
+    case "compaction":
+      return <CompactionPartView part={part} />;
     case "step-start":
     case "step-finish":
     case "snapshot":
     case "patch":
-    case "compaction":
     case "retry":
     case "subtask":
     case "agent":

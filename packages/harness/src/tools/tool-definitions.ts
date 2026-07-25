@@ -23,7 +23,8 @@ export interface ToolDefinition {
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "read",
-    description: "Read a text file (absolute or Project-relative path).",
+    description:
+      "Read a text file or image (jpg, png, gif, webp, bmp) from an absolute or Project-relative path. Images are injected into the model as attachments.",
     parameters: {
       type: "object",
       properties: {

@@ -31,7 +31,24 @@ function utf8Tail(value: string, maximumBytes: number) {
   return bytes.subarray(start).toString("utf8");
 }
 
+function hasImageAttachments(result: unknown) {
+  if (!result || typeof result !== "object") return false;
+  const attachments = (result as Record<string, unknown>).attachments;
+  return (
+    Array.isArray(attachments) &&
+    attachments.some(
+      (item) =>
+        item !== null &&
+        typeof item === "object" &&
+        (item as Record<string, unknown>).type === "image",
+    )
+  );
+}
+
 async function limitToolResult(context: ToolExecutionContext, result: unknown) {
+  // Inline image payloads are deliberately larger than the text-result limit and
+  // must remain intact so the following model turn can see them.
+  if (hasImageAttachments(result)) return result;
   const serialized = JSON.stringify(result);
   if (Buffer.byteLength(serialized) <= MAX_TOOL_RESULT_BYTES) return result;
 

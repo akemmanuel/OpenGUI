@@ -5,6 +5,12 @@ import type {
   ModelStreamEvent,
   ModelTransport,
 } from "./transport.ts";
+import {
+  isPossibleImageInputRejection,
+  modelContextHasImages,
+  modelToolResultContent,
+  withoutModelContextImages,
+} from "./transport.ts";
 
 export interface OpenAiCompatibleConnection {
   id: string;
@@ -33,6 +39,7 @@ export function toChatMessages(context: ModelContextItem[]) {
   const messages: Array<Record<string, unknown>> = [];
   let pendingToolCalls: Array<Record<string, unknown>> = [];
   let pendingToolResults: Array<Record<string, unknown>> = [];
+  let pendingImages: Array<{ type: "image_url"; image_url: { url: string } }> = [];
 
   const flushToolExchange = () => {
     if (pendingToolCalls.length === 0) return;
@@ -45,8 +52,15 @@ export function toChatMessages(context: ModelContextItem[]) {
       messages.push({ role: "assistant", content: null, tool_calls: pendingToolCalls });
     }
     messages.push(...pendingToolResults);
+    if (pendingImages.length > 0) {
+      messages.push({
+        role: "user",
+        content: [{ type: "text", text: "Attached image(s) from tool result:" }, ...pendingImages],
+      });
+    }
     pendingToolCalls = [];
     pendingToolResults = [];
+    pendingImages = [];
   };
 
   for (const item of context) {
@@ -78,12 +92,19 @@ export function toChatMessages(context: ModelContextItem[]) {
       continue;
     }
     if (item.type === "tool_result") {
+      const result = modelToolResultContent(item.output);
       pendingToolResults.push({
         role: "tool",
         tool_call_id: item.toolCallId,
         content:
-          typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? null),
+          result.text || (result.images.length > 0 ? "(see attached image)" : "(no tool output)"),
       });
+      pendingImages.push(
+        ...result.images.map((image) => ({
+          type: "image_url" as const,
+          image_url: { url: `data:${image.mimeType};base64,${image.data}` },
+        })),
+      );
     }
   }
   flushToolExchange();
@@ -167,6 +188,7 @@ export function chatDeltaEvents(delta: Record<string, any>): ModelStreamEvent[] 
 export class OpenAiChatTransport implements ModelTransport {
   readonly #options: OpenAiChatTransportOptions;
   readonly #connections = new Map<string, OpenAiCompatibleConnection>();
+  readonly #imageUnsupportedModels = new Set<string>();
   #defaultConnectionId: string | null = null;
 
   constructor(options: OpenAiChatTransportOptions = {}) {
@@ -175,6 +197,7 @@ export class OpenAiChatTransport implements ModelTransport {
 
   setConnections(connections: OpenAiCompatibleConnection[], defaultConnectionId?: string | null) {
     this.#connections.clear();
+    this.#imageUnsupportedModels.clear();
     for (const connection of connections) this.#connections.set(connection.id, connection);
     this.#defaultConnectionId = defaultConnectionId ?? connections[0]?.id ?? null;
   }
@@ -191,9 +214,13 @@ export class OpenAiChatTransport implements ModelTransport {
     if (!connection) throw new Error(`Unknown model connection: ${connectionId}`);
     const modelId = selected?.model.modelId ?? connection.defaultModelId ?? connection.modelIds[0];
     if (!modelId) throw new Error(`No model configured for connection ${connectionId}`);
+    const modelKey = `${connectionId}/${modelId}`;
+    const effectiveRequest = this.#imageUnsupportedModels.has(modelKey)
+      ? { ...request, context: withoutModelContextImages(request.context) }
+      : request;
 
     if (connection.modelRoutes?.[modelId] === "anthropic-messages") {
-      yield* this.#streamAnthropic(connection, modelId, request, signal);
+      yield* this.#streamAnthropic(connection, modelId, effectiveRequest, signal);
       return;
     }
 
@@ -209,7 +236,7 @@ export class OpenAiChatTransport implements ModelTransport {
           role: "system",
           content: request.systemPrompt,
         },
-        ...toChatMessages(request.context),
+        ...toChatMessages(effectiveRequest.context),
       ],
       tools: toolsForRequest(request),
     });
@@ -228,6 +255,14 @@ export class OpenAiChatTransport implements ModelTransport {
       });
       if (response.ok && response.body) break;
       const text = await response.text().catch(() => "");
+      if (
+        isPossibleImageInputRejection(response.status) &&
+        modelContextHasImages(effectiveRequest.context)
+      ) {
+        this.#imageUnsupportedModels.add(modelKey);
+        yield* this.stream(request, signal);
+        return;
+      }
       if (attempt === maxAttempts - 1 || !shouldRetryChatCompletion(response.status, text)) {
         throw new Error(safeProviderError(text, response.status, connection.apiKey));
       }
@@ -334,6 +369,14 @@ export class OpenAiChatTransport implements ModelTransport {
     );
     if (!response.ok || !response.body) {
       const text = await response.text().catch(() => "");
+      if (
+        isPossibleImageInputRejection(response.status) &&
+        modelContextHasImages(request.context)
+      ) {
+        this.#imageUnsupportedModels.add(`${connection.id}/${modelId}`);
+        yield* this.stream(request, signal);
+        return;
+      }
       throw new Error(safeProviderError(text, response.status, connection.apiKey));
     }
 
@@ -391,7 +434,7 @@ export class OpenAiChatTransport implements ModelTransport {
   }
 }
 
-function toAnthropicMessages(context: ModelContextItem[]) {
+export function toAnthropicMessages(context: ModelContextItem[]) {
   return context.flatMap((item): Array<Record<string, unknown>> => {
     if (item.type === "user_message") return [{ role: "user", content: item.text }];
     if (item.type === "assistant_message") return [{ role: "assistant", content: item.text }];
@@ -404,6 +447,7 @@ function toAnthropicMessages(context: ModelContextItem[]) {
           ],
         },
       ];
+    const result = modelToolResultContent(item.output);
     return [
       {
         role: "user",
@@ -411,8 +455,13 @@ function toAnthropicMessages(context: ModelContextItem[]) {
           {
             type: "tool_result",
             tool_use_id: item.toolCallId,
-            content:
-              typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? null),
+            content: [
+              ...(result.text ? [{ type: "text", text: result.text }] : []),
+              ...result.images.map((image) => ({
+                type: "image",
+                source: { type: "base64", media_type: image.mimeType, data: image.data },
+              })),
+            ],
           },
         ],
       },

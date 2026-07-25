@@ -57,6 +57,33 @@ describe("Host event subscription", () => {
   });
 });
 
+describe("Host manual compaction client", () => {
+  test("requests a manual handoff without sending a visible prompt", async () => {
+    const requests: Array<{ url: string; method: string; body: string | null }> = [];
+    const client = createHostClient({
+      baseUrl: "http://host.test",
+      fetchImpl: async (input, init) => {
+        requests.push({
+          url: input,
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : null,
+        });
+        return Response.json({ ok: true, value: { startedEntries: [] } });
+      },
+    });
+
+    await client.compact("session/1");
+
+    expect(requests).toEqual([
+      {
+        url: "http://host.test/api/host/sessions/session%2F1/compact",
+        method: "POST",
+        body: "{}",
+      },
+    ]);
+  });
+});
+
 describe("Host follow-up client", () => {
   test("exposes queue management through the Host API", async () => {
     const requests: Array<{ url: string; method: string; body: string | null }> = [];

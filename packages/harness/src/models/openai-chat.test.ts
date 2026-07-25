@@ -3,6 +3,7 @@ import {
   chatDeltaEvents,
   OpenAiChatTransport,
   shouldRetryChatCompletion,
+  toAnthropicMessages,
   toChatMessages,
 } from "./openai-chat.ts";
 
@@ -54,6 +55,49 @@ describe("toChatMessages", () => {
       { role: "tool", tool_call_id: "call-1", content: "a" },
       { role: "tool", tool_call_id: "call-2", content: "b" },
     ]);
+  });
+
+  test("injects image tool results as native image content", () => {
+    const context = [
+      {
+        type: "tool_call" as const,
+        toolCallId: "call-image",
+        name: "read",
+        input: { path: "pixel.png" },
+      },
+      {
+        type: "tool_result" as const,
+        toolCallId: "call-image",
+        name: "read",
+        output: {
+          content: "Read image file [image/png]",
+          attachments: [{ type: "image", mimeType: "image/png", data: "abc123" }],
+        },
+      },
+    ];
+
+    expect(toChatMessages(context)).toContainEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "Attached image(s) from tool result:" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,abc123" } },
+      ],
+    });
+    expect(toAnthropicMessages(context).at(-1)).toMatchObject({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          content: [
+            { type: "text", text: "Read image file [image/png]" },
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "abc123" },
+            },
+          ],
+        },
+      ],
+    });
   });
 
   test("does not rewrite sequential tool rounds into one parallel tool_calls block", () => {
@@ -148,6 +192,63 @@ describe("OpenAiChatTransport authentication", () => {
       events.push(event);
 
     expect(events).toEqual([{ type: "text_delta", delta: "café 🧪" }, { type: "completed" }]);
+  });
+
+  test("retries without image content when a model rejects images", async () => {
+    const bodies: string[] = [];
+    const transport = new OpenAiChatTransport({
+      fetchImpl: (async (_url, init) => {
+        bodies.push(typeof init?.body === "string" ? init.body : "");
+        return bodies.length === 1
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  message: "Error from provider (Console): Upstream request failed",
+                  type: "invalid_request_error",
+                },
+              }),
+              { status: 400 },
+            )
+          : new Response("data: [DONE]", { status: 200 });
+      }) as typeof fetch,
+    });
+    transport.setConnections([
+      { id: "test", label: "Test", baseUrl: "https://example.test/v1", modelIds: ["test"] },
+    ]);
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "inspect",
+            model: { connectionId: "test", modelId: "test" },
+            reasoning: "none",
+          },
+          { type: "tool_call", toolCallId: "call-image", name: "read", input: {} },
+          {
+            type: "tool_result",
+            toolCallId: "call-image",
+            name: "read",
+            output: {
+              content: "Read image file [image/png]",
+              attachments: [{ type: "image", mimeType: "image/png", data: "abc123" }],
+            },
+          },
+        ],
+      },
+      new AbortController().signal,
+    ))
+      events.push(event);
+
+    expect(events).toEqual([{ type: "completed" }]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toContain("data:image/png;base64,abc123");
+    expect(bodies[1]).not.toContain("data:image/png;base64,abc123");
+    expect(bodies[1]).toContain("Current model does not support images");
   });
 
   test.each(["stop", "tool_calls", "length", "content_filter"])(

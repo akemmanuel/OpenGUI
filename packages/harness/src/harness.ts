@@ -103,6 +103,8 @@ export type SessionEvent =
 export interface HarnessSession {
   read(): Promise<SessionSnapshot>;
   run(prompt: PromptInput): AsyncIterable<SessionEvent>;
+  /** Create a handoff checkpoint and stop. The next user turn resumes from it. */
+  compact(actor?: DurableActor): AsyncIterable<SessionEvent>;
   followUp(prompt: PromptInput): Promise<FollowUp>;
   updateFollowUp(followUpId: string, prompt: PromptInput): Promise<void>;
   reorderFollowUp(followUpId: string, index: number): Promise<void>;
@@ -135,6 +137,14 @@ export interface OpenGuiHarnessOptions {
   dataDirectory: string;
   model: ModelTransport;
   shell?: { executable?: string };
+  /** In-band context handoff. The current model writes a checkpoint before context is reset. */
+  compaction?: {
+    enabled?: boolean;
+    contextWindowTokens?: number;
+    thresholdRatio?: number;
+    /** Root for opengui/handoffs. Defaults to the current user's OS temp directory. */
+    tempDirectory?: string;
+  };
   /** Home directory used for `~/.agents/skills` discovery. Defaults to os.homedir(). */
   homeDirectory?: string;
   clock?: Clock;

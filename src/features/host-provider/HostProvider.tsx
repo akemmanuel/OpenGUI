@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActionsContext,
   ModelContext,
@@ -169,6 +170,7 @@ function HostProviderBody({
   children: ReactNode;
   detachedProject?: string;
 }) {
+  const { t } = useTranslation();
   const transcriptStore = useActiveTranscriptStore();
   const identityActor = useIdentityActor();
   const currentActor = useMemo(() => snapshotIdentityActor(identityActor), [identityActor]);
@@ -543,7 +545,7 @@ function HostProviderBody({
       agents: [],
       selectedAgent: null,
       variantSelections: {},
-      commands: [],
+      commands: [{ name: "compact" }],
       currentVariant: undefined,
       reasoningEffort: effectiveReasoningEffort,
     }),
@@ -619,6 +621,23 @@ function HostProviderBody({
       replaceProjects(nextProjects);
       setActiveTargetDirectory(normalized);
       await refreshSessions(nextProjects);
+    };
+
+    const compactActiveSession = async () => {
+      if (!activeSessionId) throw new Error(t("compaction.selectSession"));
+      setBusySessionIds((current) => new Set(current).add(activeSessionId));
+      try {
+        await requireHost().compact(activeSessionId);
+        await hydrateTranscript(activeSessionId);
+        await refreshSessions();
+      } catch (error) {
+        setBusySessionIds((current) => {
+          const next = new Set(current);
+          next.delete(activeSessionId);
+          return next;
+        });
+        throw error;
+      }
     };
 
     return {
@@ -865,11 +884,15 @@ function HostProviderBody({
           return { ...current, [key]: next };
         });
       },
-      sendCommand: async () => {
-        throw new Error("Slash commands are not available in the first-party Host");
+      sendCommand: async (command, args) => {
+        if (command !== "compact") {
+          throw new Error(t("compaction.unsupportedCommand", { command }));
+        }
+        if (args.trim()) throw new Error(t("compaction.noArguments"));
+        await compactActiveSession();
       },
       summarizeSession: async () => {
-        throw new Error("Summarize is not available yet");
+        await compactActiveSession();
       },
       abortSession: async () => {
         if (!activeSessionId) return;

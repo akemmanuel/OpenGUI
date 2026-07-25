@@ -192,6 +192,26 @@ describe("Harness tool contracts", () => {
     expect(await readFile(join(projectDirectory, "repeat.txt"), "utf8")).toBe("new and new\n");
   });
 
+  test("edit keeps a renderable diff when unchanged file context is large", async () => {
+    const unchanged = `${"unchanged context\n".repeat(400)}`;
+    const { outputs } = await runToolCalls(
+      [
+        {
+          id: "large-file-edit",
+          name: "edit",
+          input: { path: "handoff.md", oldText: "Step 4", newText: "Step 5" },
+        },
+      ],
+      (directory) => writeFile(join(directory, "handoff.md"), `${unchanged}Step 4\n${unchanged}`),
+    );
+
+    expect(outputs[0]).toMatchObject({
+      replacements: 1,
+      diff: "--- handoff.md\n+++ handoff.md\n@@\n-Step 4\n+Step 5\n",
+    });
+    expect(outputs[0]?.truncated).not.toBe(true);
+  });
+
   test("invalid and unknown tool calls become durable results instead of crashing a Run", async () => {
     const { outputs } = await runToolCalls([
       { id: "invalid-write", name: "write", input: { path: "x" } },

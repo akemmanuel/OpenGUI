@@ -113,7 +113,10 @@ export type NonRenderableTranscriptPart =
   | ({ type: "step-finish" } & BaseTranscriptPart)
   | ({ type: "snapshot" } & BaseTranscriptPart)
   | ({ type: "patch" } & BaseTranscriptPart)
-  | ({ type: "compaction" } & BaseTranscriptPart)
+  | ({
+      type: "compaction";
+      metadata?: { status?: string; reason?: string; handoffDirectory?: string };
+    } & BaseTranscriptPart)
   | ({ type: "retry" } & BaseTranscriptPart)
   | ({ type: "subtask" } & BaseTranscriptPart)
   | ({ type: "agent" } & BaseTranscriptPart);

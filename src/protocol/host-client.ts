@@ -168,6 +168,11 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         method: "PATCH",
         body: JSON.stringify({ reasoning }),
       })) as HostSessionSnapshot,
+    compact: async (sessionId) =>
+      (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}/compact`, {
+        method: "POST",
+        body: "{}",
+      })) as { startedEntries: HostSessionSnapshot["entries"] },
     prompt: async (sessionId, text, options) =>
       (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}/prompt`, {
         method: "POST",

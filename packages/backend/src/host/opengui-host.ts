@@ -960,6 +960,51 @@ export class OpenGuiHost {
     for (const listener of this.#listeners) void listener({ sessionId, event });
   }
 
+  async compact(sessionId: string, actor?: DurableActor) {
+    const previousAdmission = this.#promptAdmissions.get(sessionId) ?? Promise.resolve();
+    let releaseAdmission!: () => void;
+    const admission = new Promise<void>((resolve) => {
+      releaseAdmission = resolve;
+    });
+    const queuedAdmission = previousAdmission.then(() => admission);
+    this.#promptAdmissions.set(sessionId, queuedAdmission);
+    await previousAdmission;
+    try {
+      const { session, snapshot } = await this.#authorizedSession(sessionId, actor, "run");
+      if (snapshot.status === "running") throw new Error("Cannot compact a running Session");
+      const iterator = session.compact(actor)[Symbol.asyncIterator]();
+      const startedEntries: SessionEntry[] = [];
+      while (true) {
+        const next = await iterator.next();
+        if (next.done) throw new Error("Compaction ended before it started");
+        this.#emit(sessionId, next.value);
+        if (next.value.type === "entry_appended") startedEntries.push(next.value.entry);
+        if (next.value.type === "entry_appended" && next.value.entry.kind === "run_started") break;
+      }
+      const run = (async () => {
+        try {
+          while (true) {
+            const next = await iterator.next();
+            if (next.done) break;
+            this.#emit(sessionId, next.value);
+          }
+        } catch (error) {
+          console.error("OpenGUI Compaction failed", error);
+        }
+      })();
+      this.#activeRuns.set(sessionId, run);
+      void run.finally(() => {
+        if (this.#activeRuns.get(sessionId) === run) this.#activeRuns.delete(sessionId);
+      });
+      return { startedEntries };
+    } finally {
+      releaseAdmission();
+      if (this.#promptAdmissions.get(sessionId) === queuedAdmission) {
+        this.#promptAdmissions.delete(sessionId);
+      }
+    }
+  }
+
   async prompt(
     sessionId: string,
     prompt: PromptInput,

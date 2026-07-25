@@ -441,6 +441,29 @@ export function registerHostProductRoutes(
     }
   });
 
+  app.post("/api/host/sessions/:sessionId/compact", async (c) => {
+    try {
+      const host = await input.getHost();
+      const actor = c.get("actor") as Actor;
+      const sessionId = c.req.param("sessionId");
+      if (input.identity) {
+        const snapshot = await host.readSession(sessionId, durableActor(actor));
+        if (!snapshot.model) throw new Error("Session has no model connection");
+        await input.identity.authorizeModelSelection(
+          actor,
+          snapshot.model.connectionId,
+          snapshot.model.modelId,
+        );
+      }
+      return Response.json({
+        ok: true,
+        value: await host.compact(sessionId, durableActor(actor)),
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
   app.post("/api/host/sessions/:sessionId/prompt", async (c) => {
     try {
       const host = await input.getHost();

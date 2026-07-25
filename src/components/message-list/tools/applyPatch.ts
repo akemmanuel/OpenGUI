@@ -16,7 +16,9 @@ export interface ApplyPatchFileDiff {
 }
 
 function parseDiffText(value: unknown): DiffResult | null {
-  return typeof value === "string" ? parseUnifiedDiff(value) : null;
+  if (typeof value === "string") return parseUnifiedDiff(value);
+  if (isRecord(value) && typeof value.diff === "string") return parseUnifiedDiff(value.diff);
+  return null;
 }
 
 function computeApplyPatchDiff(file: Record<string, unknown>): DiffResult | null {
@@ -75,7 +77,7 @@ export function extractEditFiles(state: ToolCallState): ApplyPatchFileDiff[] {
   const path = stringField(input, "filePath") ?? stringField(input, "path");
   if (!path) return [];
 
-  const metadataDiff = "metadata" in state && isRecord(state.metadata) ? state.metadata.diff : null;
+  const metadataDiff = "metadata" in state ? state.metadata : null;
   const outputDiff = "output" in state ? state.output : null;
   const diff = parseDiffText(metadataDiff) ?? parseDiffText(outputDiff);
 

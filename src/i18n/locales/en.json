@@ -118,7 +118,6 @@
         "teal": "Teal"
       },
       "customAccent": "Custom accent color",
-      "codeFontSize": "Code font size",
       "language": "Language",
       "defaultChatDirectory": "Default chat directory",
       "defaultChatDirectoryHelp": "New chats start in this working directory.",
@@ -274,6 +273,14 @@
     "noModelsMatch": "No models match \"{{query}}\".",
     "addFavorite": "Add to favorites",
     "removeFavorite": "Remove from favorites"
+  },
+  "compaction": {
+    "inProgress": "Preparing a context handoff…",
+    "completed": "Context compacted. Continuing from the handoff.",
+    "completedManual": "Context compacted. Your next message will continue from the handoff.",
+    "selectSession": "Select a session before compacting context.",
+    "noArguments": "/compact does not accept arguments.",
+    "unsupportedCommand": "Unsupported slash command: /{{command}}"
   },
   "messageActions": {
     "contextCompacted": "Context compacted",

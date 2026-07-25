@@ -55,6 +55,35 @@ describe("Host transcript streaming", () => {
     expect(messages[1]?.info.actor).toBeUndefined();
   });
 
+  test("projects compaction progress without exposing the hidden handoff prompt", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "compact-start",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "compaction",
+        payload: { status: "started", handoffDirectory: "/tmp/opengui/handoffs/session-1/run-1" },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "compact-done",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "compaction",
+        payload: { status: "completed", handoffDirectory: "/tmp/opengui/handoffs/session-1/run-1" },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    expect(messages.map((message) => message.parts[0])).toMatchObject([
+      { type: "compaction", metadata: { status: "started" } },
+      { type: "compaction", metadata: { status: "completed" } },
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("CONTEXT HANDOFF MODE");
+  });
+
   test("shows streamed reasoning and preserves it beside the durable answer", () => {
     let stream = createHostTranscriptStream(snapshot());
     stream = applyHostTranscriptEvent(stream, {

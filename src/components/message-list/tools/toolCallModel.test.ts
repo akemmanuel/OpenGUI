@@ -166,6 +166,40 @@ describe("getToolCallViewModel", () => {
     expect(vm.rawOutput).toBe(null);
   });
 
+  test("renders a structured edit result as a counted line diff", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "edit",
+        state: {
+          status: "completed",
+          input: { path: "src/example.ts" },
+          output: {
+            path: "src/example.ts",
+            diff: "--- src/example.ts\n+++ src/example.ts\n@@\n-old value\n+new value\n",
+          },
+        },
+      }),
+    );
+
+    expect(vm.diffSummary).toEqual({ added: 1, removed: 1 });
+    expect(vm.output).toEqual([
+      {
+        type: "diff",
+        files: [
+          expect.objectContaining({
+            path: "src/example.ts",
+            added: 1,
+            removed: 1,
+            lines: [
+              { type: "remove", text: "old value" },
+              { type: "add", text: "new value" },
+            ],
+          }),
+        ],
+      },
+    ]);
+  });
+
   test("keeps raw output null for formatted output with meaningless text", () => {
     const vm = getToolCallViewModel(
       toolPart({

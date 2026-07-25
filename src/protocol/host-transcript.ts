@@ -162,6 +162,40 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
       continue;
     }
 
+    if (entry.kind === "compaction") {
+      flushAssistant();
+      const id = entry.id;
+      messages.push({
+        info: {
+          id,
+          sessionID: snapshot.id,
+          role: "assistant",
+          providerID: snapshot.model?.connectionId ?? "",
+          modelID: snapshot.model?.modelId ?? "",
+          time: {
+            created: createdMs(entry.createdAt),
+            completed:
+              entry.payload.status === "completed" ? createdMs(entry.createdAt) : undefined,
+          },
+        },
+        parts: [
+          {
+            id: `${id}:compaction`,
+            type: "compaction",
+            sessionID: snapshot.id,
+            messageID: id,
+            tokens: {},
+            metadata: {
+              status: text(entry.payload.status, "started"),
+              reason: text(entry.payload.reason, "threshold"),
+              handoffDirectory: text(entry.payload.handoffDirectory),
+            },
+          },
+        ],
+      });
+      continue;
+    }
+
     if (entry.kind === "assistant_reasoning") {
       const runId = text(entry.payload.runId, entry.id);
       const messageId = `run:${runId}`;

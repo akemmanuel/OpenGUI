@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
+import { detectImageMimeType, processImageFile, type ModelImageAttachment } from "./image.ts";
 
 const DIRECTORY_READ_NOTE = "Read tool SHOULD only be used for files, but here is the content.";
 
@@ -12,6 +13,7 @@ export interface ReadToolInput {
 export interface ReadToolOutput {
   path: string;
   content?: string;
+  attachments?: ModelImageAttachment[];
   error?: string;
   truncated: boolean;
 }
@@ -60,6 +62,19 @@ export async function executeReadTool(
     }
 
     const bytes = await readFile(path);
+    const imageMimeType = detectImageMimeType(bytes);
+    if (imageMimeType) {
+      const image = await processImageFile(path);
+      if (!image) {
+        return { path, error: "read could not process the image", truncated: false };
+      }
+      return {
+        path,
+        content: `Read image file [${image.mimeType}]${image.note ? `\n${image.note}` : ""}`,
+        attachments: [{ type: "image", data: image.data, mimeType: image.mimeType }],
+        truncated: false,
+      };
+    }
     if (bytes.includes(0)) {
       return { path, error: "read does not support binary files", truncated: false };
     }

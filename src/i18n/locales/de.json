@@ -118,7 +118,6 @@
         "teal": "Cyan"
       },
       "customAccent": "Eigene Akzentfarbe",
-      "codeFontSize": "Code-Schriftgröße",
       "language": "Sprache",
       "defaultChatDirectory": "Standard-Chat-Verzeichnis",
       "defaultChatDirectoryHelp": "Neue Chats starten in diesem Arbeitsverzeichnis.",
@@ -274,6 +273,14 @@
     "noModelsMatch": "Keine Modelle passen zu \"{{query}}\".",
     "addFavorite": "Zu Favoriten hinzufügen",
     "removeFavorite": "Aus Favoriten entfernen"
+  },
+  "compaction": {
+    "inProgress": "Kontextübergabe wird vorbereitet…",
+    "completed": "Kontext komprimiert. Die Arbeit wird anhand der Übergabe fortgesetzt.",
+    "completedManual": "Kontext komprimiert. Deine nächste Nachricht wird anhand der Übergabe fortgesetzt.",
+    "selectSession": "Wähle eine Sitzung aus, bevor du den Kontext komprimierst.",
+    "noArguments": "/compact akzeptiert keine Argumente.",
+    "unsupportedCommand": "Nicht unterstützter Slash-Befehl: /{{command}}"
   },
   "messageActions": {
     "contextCompacted": "Kontext komprimiert",

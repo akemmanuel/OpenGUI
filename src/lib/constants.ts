@@ -42,7 +42,6 @@ export const STORAGE_KEYS = {
   THEME: "theme",
   CONTRAST: key("contrast"),
   ACCENT_COLOR: key("accentColor"),
-  CODE_FONT_SIZE: key("codeFontSize"),
   DISMISSED_UPDATE_VERSION: key("dismissedUpdateVersion"),
   SIDEBAR_PROJECT_COLLAPSED: key("sidebarProjectCollapsed"),
   FILE_MANAGER: key("fileManager"),

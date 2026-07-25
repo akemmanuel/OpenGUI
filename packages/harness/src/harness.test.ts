@@ -81,6 +81,148 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     await harness.close();
   });
 
+  test("compacts through a hidden warm-context handoff and resumes from its temp folder", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const handoffRoot = join(dataDirectory, "tmp");
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const handoffDirectory = join(handoffRoot, "opengui", "handoffs", "session-1", "run-10");
+    const handoffPath = join(handoffDirectory, "HANDOFF.md");
+    const model = new FakeModel([
+      { text: `Long work state ${"x".repeat(1_000)}` },
+      {
+        toolCalls: [
+          {
+            id: "write-handoff",
+            name: "write",
+            input: {
+              path: handoffPath,
+              content:
+                "# Handoff\n\n## Goal\nContinue the task.\n\n## Current state\nInitial work is done.\n\n## Relevant files\n- README.md\n\n## Next steps\n1. Continue.\n",
+            },
+          },
+        ],
+      },
+      { text: "Handoff ready." },
+      { text: "Continued from the handoff." },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+      compaction: {
+        contextWindowTokens: 300,
+        thresholdRatio: 0.7,
+        tempDirectory: handoffRoot,
+      },
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({ text: "Start the long task", skills: [] })) {
+      // drain
+    }
+    const events = [];
+    for await (const event of session.run({ text: "Continue" })) events.push(event);
+
+    expect(model.requests[1]?.systemPrompt).toBe(model.requests[0]?.systemPrompt);
+    expect(model.requests[1]?.tools).toEqual(model.requests[0]?.tools);
+    expect(model.requests[1]?.context.at(-1)).toMatchObject({
+      type: "user_message",
+      text: expect.stringContaining(handoffPath),
+    });
+    expect(model.requests[1]?.context.at(-1)).toMatchObject({
+      text: expect.stringContaining("STOP working on the task"),
+    });
+    expect(model.requests[3]?.context).toEqual([
+      expect.objectContaining({
+        type: "user_message",
+        text: expect.stringContaining(`Read and inspect the handoff folder at ${handoffDirectory}`),
+      }),
+    ]);
+    expect(await readFile(handoffPath, "utf8")).toContain("## Next steps");
+
+    const snapshot = await session.read();
+    const compactions = snapshot.entries.filter((entry) => entry.kind === "compaction");
+    expect(compactions.map((entry) => entry.payload.status)).toEqual(["started", "completed"]);
+    expect(compactions.at(-1)?.payload).toMatchObject({
+      handoffDirectory,
+      handoffPath,
+      thresholdRatio: 0.7,
+    });
+    expect(JSON.stringify(snapshot.entries)).not.toContain("STOP working on the task");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "entry_appended",
+        entry: expect.objectContaining({
+          kind: "compaction",
+          payload: expect.objectContaining({ status: "started" }),
+        }),
+      }),
+    );
+    await harness.close();
+  });
+
+  test("manual compaction stops after handoff and resumes only with the next user turn", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const handoffRoot = join(dataDirectory, "tmp");
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const handoffDirectory = join(handoffRoot, "opengui", "handoffs", "session-1", "run-10");
+    const handoffPath = join(handoffDirectory, "HANDOFF.md");
+    const model = new FakeModel([
+      { text: "Initial work." },
+      {
+        toolCalls: [
+          {
+            id: "manual-handoff",
+            name: "write",
+            input: { path: handoffPath, content: "# Handoff\n\n## Next steps\n1. Resume later.\n" },
+          },
+        ],
+      },
+      { text: "Handoff ready." },
+      { text: "Resumed on the next user turn." },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+      compaction: { contextWindowTokens: 10_000, tempDirectory: handoffRoot },
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+    for await (const _event of session.run({ text: "Do some work", skills: [] })) {
+      // drain
+    }
+
+    for await (const _event of session.compact()) {
+      // drain
+    }
+    expect(model.requests).toHaveLength(3);
+    expect((await session.read()).status).toBe("idle");
+
+    for await (const _event of session.run({ text: "Now continue" })) {
+      // drain
+    }
+    expect(model.requests[3]?.context).toMatchObject([
+      {
+        type: "user_message",
+        text: expect.stringContaining(`Read and inspect the handoff folder at ${handoffDirectory}`),
+      },
+      { type: "user_message", text: "Now continue" },
+    ]);
+    await harness.close();
+  });
+
   test("system prompt skills catalog follows the session allowlist and stays locked", async () => {
     const dataDirectory = await temporaryDirectory();
     const homeDirectory = join(dataDirectory, "home");
@@ -199,6 +341,54 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
         payload: expect.objectContaining({ text: "Inspect first." }),
       }),
     );
+    await harness.close();
+  });
+
+  test("injects images read by the model into the next model turn", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const imagePath = join(projectDirectory, "pixel.png");
+    await writeFile(
+      imagePath,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    const model = new FakeModel([
+      { toolCalls: [{ id: "call-image", name: "read", input: { path: imagePath } }] },
+      { text: "The image is visible." },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "vision-model" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({ text: "Read pixel.png" })) {
+      // drain
+    }
+
+    expect(model.requests[1]?.context.at(-1)).toMatchObject({
+      type: "tool_result",
+      output: {
+        content: expect.stringContaining("Read image file [image/png]"),
+        attachments: [
+          {
+            type: "image",
+            mimeType: "image/png",
+            data: expect.any(String),
+          },
+        ],
+      },
+    });
     await harness.close();
   });
 

@@ -118,7 +118,6 @@
         "teal": "Verde azulado"
       },
       "customAccent": "Color de acento personalizado",
-      "codeFontSize": "Tamaño de código",
       "language": "Idioma",
       "defaultChatDirectory": "Directorio de chat predeterminado",
       "defaultChatDirectoryHelp": "Los chats nuevos empiezan en este directorio de trabajo.",
@@ -274,6 +273,14 @@
     "noModelsMatch": "Ningún modelo coincide con \"{{query}}\".",
     "addFavorite": "Añadir a favoritos",
     "removeFavorite": "Quitar de favoritos"
+  },
+  "compaction": {
+    "inProgress": "Preparando la transferencia de contexto…",
+    "completed": "Contexto compactado. Continuando desde la transferencia.",
+    "completedManual": "Contexto compactado. Tu próximo mensaje continuará desde la transferencia.",
+    "selectSession": "Selecciona una sesión antes de compactar el contexto.",
+    "noArguments": "/compact no acepta argumentos.",
+    "unsupportedCommand": "Comando de barra no compatible: /{{command}}"
   },
   "messageActions": {
     "contextCompacted": "Contexto compactado",

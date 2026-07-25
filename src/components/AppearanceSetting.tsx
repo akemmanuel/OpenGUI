@@ -3,12 +3,10 @@
  * - Theme mode (Light / Dark / System)
  * - Contrast slider
  * - Accent color presets (default neutral + 6 colors)
- * - Code font size
  */
 
-import { Ban, CaseSensitive, Monitor, Moon, Palette, SlidersHorizontal, Sun } from "lucide-react";
+import { Ban, Monitor, Moon, Palette, SlidersHorizontal, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -32,17 +30,7 @@ const ACCENT_PRESET_COLORS: Record<(typeof ACCENT_PRESET_IDS)[number], string | 
 
 export function AppearanceSetting() {
   const { t } = useTranslation();
-  const {
-    mode,
-    theme,
-    setTheme,
-    contrast,
-    setContrast,
-    accentColor,
-    setAccentColor,
-    codeFontSize,
-    setCodeFontSize,
-  } = useTheme();
+  const { mode, theme, setTheme, contrast, setContrast, accentColor, setAccentColor } = useTheme();
 
   return (
     <div className="space-y-3">
@@ -152,27 +140,6 @@ export function AppearanceSetting() {
             })}
           </div>
         </TooltipProvider>
-      </div>
-
-      {/* Code font size row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <CaseSensitive className="size-4 text-muted-foreground shrink-0" />
-        <Label htmlFor="code-font-size" className="text-sm font-normal shrink-0 w-20">
-          {t("settings.general.codeFontSize")}
-        </Label>
-        <div className="ml-auto flex min-w-[7rem] items-center justify-end gap-2">
-          <Input
-            id="code-font-size"
-            type="number"
-            min={10}
-            max={20}
-            step={1}
-            value={codeFontSize}
-            onChange={(event) => setCodeFontSize(Number(event.target.value))}
-            className="h-8 w-20 text-right font-mono text-sm"
-          />
-          <span className="text-xs text-muted-foreground">px</span>
-        </div>
       </div>
     </div>
   );

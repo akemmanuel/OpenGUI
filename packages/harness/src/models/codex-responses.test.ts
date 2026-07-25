@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vite-plus/test";
-import { CodexResponsesTransport, codexResponseEvents } from "./codex-responses.ts";
+import { CodexResponsesTransport, codexInput, codexResponseEvents } from "./codex-responses.ts";
 
 describe("codexResponseEvents", () => {
   test("projects streamed reasoning summaries", () => {
@@ -46,6 +46,37 @@ describe("codexResponseEvents", () => {
   });
 });
 
+describe("codexInput", () => {
+  test("injects image tool results as Responses image content", () => {
+    expect(
+      codexInput([
+        {
+          type: "tool_result",
+          toolCallId: "call-image",
+          name: "read",
+          output: {
+            content: "Read image file [image/png]",
+            attachments: [{ type: "image", mimeType: "image/png", data: "abc123" }],
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "function_call_output",
+        call_id: "call-image",
+        output: [
+          { type: "input_text", text: "Read image file [image/png]" },
+          {
+            type: "input_image",
+            detail: "auto",
+            image_url: "data:image/png;base64,abc123",
+          },
+        ],
+      },
+    ]);
+  });
+});
+
 describe("CodexResponsesTransport", () => {
   test("decodes multibyte SSE split across CRLF chunks and dispatches the final frame at EOF", async () => {
     const bytes = new TextEncoder().encode(
@@ -84,6 +115,53 @@ describe("CodexResponsesTransport", () => {
       events.push(event);
 
     expect(events).toEqual([{ type: "text_delta", delta: "café 🧪" }, { type: "completed" }]);
+  });
+
+  test("retries without image content when a Responses model rejects images", async () => {
+    const bodies: string[] = [];
+    const transport = new CodexResponsesTransport({
+      getCredential: async () => ({ accessToken: "token", accountId: "account" }),
+      fetchImpl: (async (_url, init) => {
+        bodies.push(typeof init?.body === "string" ? init.body : "");
+        return bodies.length === 1
+          ? new Response("invalid image input", { status: 400 })
+          : new Response("data: [DONE]", { status: 200 });
+      }) as typeof fetch,
+    });
+
+    const events = [];
+    for await (const event of transport.stream(
+      {
+        systemPrompt: "help",
+        projectDirectory: "/project",
+        context: [
+          {
+            type: "user_message",
+            text: "inspect",
+            model: { connectionId: "codex", modelId: "text-only" },
+            reasoning: "none",
+          },
+          { type: "tool_call", toolCallId: "call-image", name: "read", input: {} },
+          {
+            type: "tool_result",
+            toolCallId: "call-image",
+            name: "read",
+            output: {
+              content: "Read image file [image/png]",
+              attachments: [{ type: "image", mimeType: "image/png", data: "abc123" }],
+            },
+          },
+        ],
+      },
+      new AbortController().signal,
+    ))
+      events.push(event);
+
+    expect(events).toEqual([{ type: "completed" }]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toContain("data:image/png;base64,abc123");
+    expect(bodies[1]).not.toContain("data:image/png;base64,abc123");
+    expect(bodies[1]).toContain("Current model does not support images");
   });
 
   test("rejects a Responses stream that closes before completion", async () => {

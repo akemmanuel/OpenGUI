@@ -30,6 +30,28 @@ function prefixedLines(value: string, prefix: "-" | "+") {
   return lines.map((line) => `${prefix}${line}`).join("\n");
 }
 
+function localizedDiff(before: string, input: EditToolInput, label: string) {
+  const ranges = new Map<string, { start: number; end: number }>();
+  let match = before.indexOf(input.oldText);
+  while (match !== -1) {
+    const start = before.lastIndexOf("\n", Math.max(0, match - 1)) + 1;
+    const followingNewline = before.indexOf("\n", match + input.oldText.length);
+    const end = followingNewline === -1 ? before.length : followingNewline;
+    ranges.set(`${start}:${end}`, { start, end });
+    if (!input.replaceAll) break;
+    match = before.indexOf(input.oldText, match + input.oldText.length);
+  }
+
+  const hunks = [...ranges.values()].map(({ start, end }) => {
+    const oldSnippet = before.slice(start, end);
+    const newSnippet = input.replaceAll
+      ? oldSnippet.replaceAll(input.oldText, input.newText)
+      : oldSnippet.replace(input.oldText, input.newText);
+    return `@@\n${prefixedLines(oldSnippet, "-")}\n${prefixedLines(newSnippet, "+")}`;
+  });
+  return `--- ${label}\n+++ ${label}\n${hunks.join("\n")}\n`;
+}
+
 export async function executeEditTool(
   projectDirectory: string,
   rawInput: unknown,
@@ -60,7 +82,7 @@ export async function executeEditTool(
     return {
       path,
       replacements: input.replaceAll ? replacements : 1,
-      diff: `--- ${label}\n+++ ${label}\n@@\n${prefixedLines(before, "-")}\n${prefixedLines(after, "+")}\n`,
+      diff: localizedDiff(before, input, label),
     };
   } catch (error) {
     return { path, error: error instanceof Error ? error.message : String(error) };

@@ -39,7 +39,6 @@ describe("appearance persistence", () => {
     localStorage.setItem(STORAGE_KEYS.THEME, "light");
     localStorage.setItem(STORAGE_KEYS.CONTRAST, "25");
     localStorage.setItem(STORAGE_KEYS.ACCENT_COLOR, "#ffffff");
-    localStorage.setItem(STORAGE_KEYS.CODE_FONT_SIZE, "18");
 
     applyStoredAppearance();
 
@@ -48,10 +47,9 @@ describe("appearance persistence", () => {
     expect(document.documentElement.style.getPropertyValue("--dynamic-primary-foreground")).toBe(
       "oklch(0.145 0 0)",
     );
-    expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("18px");
   });
 
-  test("follows system changes, persists controls, clamps font size, and cleans up", () => {
+  test("follows system changes, persists controls, and cleans up", () => {
     const query = mediaQuery(true);
     vi.spyOn(window, "matchMedia").mockReturnValue(query as never);
     const { result, unmount } = renderHook(() => useTheme());
@@ -61,15 +59,12 @@ describe("appearance persistence", () => {
     act(() => {
       result.current.setContrast(80);
       result.current.setAccentColor("not-a-color");
-      result.current.setCodeFontSize(99);
       result.current.toggleTheme();
     });
 
     expect(result.current.mode).toBe("light");
-    expect(result.current.codeFontSize).toBe(20);
     expect(result.current.accentColor).toBe("default");
     expect(localStorage.getItem(STORAGE_KEYS.CONTRAST)).toBe("80");
-    expect(localStorage.getItem(STORAGE_KEYS.CODE_FONT_SIZE)).toBe("20");
     expect(query.listenerCount()).toBe(0);
 
     unmount();

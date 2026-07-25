@@ -27,6 +27,7 @@ export class ActiveSessionTranscriptStore {
   private snapshot = emptySnapshot();
   private historySnapshot = this.createHistorySnapshot();
   private promptHistory = this.createPromptHistory();
+  private contextMessages: readonly MessageEntry[] = [];
   private compactionTailMessages: readonly MessageEntry[] = [];
   private readonly listeners = new Set<ActiveTranscriptListener>();
 
@@ -65,7 +66,7 @@ export class ActiveSessionTranscriptStore {
   }
 
   getContextMessages(): readonly MessageEntry[] {
-    return this.snapshot.messages;
+    return this.contextMessages;
   }
 
   getCompactionTailMessages(): readonly MessageEntry[] {
@@ -81,6 +82,17 @@ export class ActiveSessionTranscriptStore {
     this.snapshot = snapshot;
     this.historySnapshot = this.createHistorySnapshot();
     this.promptHistory = this.createPromptHistory();
+    let contextStart = 0;
+    for (let index = this.snapshot.messages.length - 1; index >= 0; index -= 1) {
+      const completedCompaction = this.snapshot.messages[index]?.parts.some(
+        (part) => part.type === "compaction" && part.metadata?.status === "completed",
+      );
+      if (completedCompaction) {
+        contextStart = index + 1;
+        break;
+      }
+    }
+    this.contextMessages = this.snapshot.messages.slice(contextStart);
     this.compactionTailMessages = this.snapshot.messages.slice(-2);
     for (const listener of this.listeners) listener(snapshot);
   }

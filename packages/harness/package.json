@@ -19,6 +19,7 @@
     }
   },
   "dependencies": {
+    "@silvia-odwyer/photon-node": "0.3.4",
     "kysely": "0.29.3",
     "kysely-node-native-sqlite": "1.1.0"
   },

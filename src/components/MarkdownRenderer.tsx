@@ -126,7 +126,7 @@ function StarryCodeBlock({ children, className }: ComponentProps<"code">) {
       >
         <code
           className={cn(
-            "font-mono text-[var(--code-font-size)] leading-relaxed",
+            "font-mono text-[13px] leading-relaxed",
             className,
             language && !explicitLanguage && `language-${language}`,
           )}
