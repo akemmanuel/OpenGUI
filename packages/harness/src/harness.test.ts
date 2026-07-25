@@ -81,6 +81,97 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     await harness.close();
   });
 
+  test("system prompt skills catalog follows the session allowlist and stays locked", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const homeDirectory = join(dataDirectory, "home");
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(join(projectDirectory, ".agents", "skills", "code-review"), { recursive: true });
+    await mkdir(join(homeDirectory, ".agents", "skills", "manual-skill"), { recursive: true });
+    await mkdir(projectDirectory, { recursive: true });
+    await writeFile(
+      join(projectDirectory, ".agents", "skills", "code-review", "SKILL.md"),
+      "---\nname: code-review\ndescription: Auto skill.\n---\n",
+    );
+    await writeFile(
+      join(homeDirectory, ".agents", "skills", "manual-skill", "SKILL.md"),
+      "---\nname: manual-skill\ndescription: Manual skill.\ndisable-model-invocation: true\n---\n",
+    );
+
+    const model = new FakeModel([{ text: "First." }, { text: "Second." }]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      homeDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({
+      text: "Use manual",
+      skills: ["manual-skill"],
+    })) {
+      // drain
+    }
+    expect(model.requests[0]?.systemPrompt).toContain("- manual-skill:");
+    expect(model.requests[0]?.systemPrompt).not.toContain("- code-review:");
+
+    // Later turns cannot widen the catalog; the first allowlist is locked.
+    for await (const _event of session.run({
+      text: "Try to enable auto",
+      skills: ["code-review", "manual-skill"],
+    })) {
+      // drain
+    }
+    expect(model.requests[1]?.systemPrompt).toContain("- manual-skill:");
+    expect(model.requests[1]?.systemPrompt).not.toContain("- code-review:");
+
+    await harness.close();
+  });
+
+  test("sends an explicit no-skills system prompt for an empty allowlist", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(join(projectDirectory, ".agents", "skills", "disabled-skill"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(projectDirectory, ".agents", "skills", "disabled-skill", "SKILL.md"),
+      "---\nname: disabled-skill\ndescription: Must not be exposed.\n---\n",
+    );
+
+    const model = new FakeModel([{ text: "Done." }]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({ text: "Run without skills", skills: [] })) {
+      // drain
+    }
+
+    expect(model.requests[0]?.systemPrompt).toContain(
+      "Skills: no skills are enabled for this Session",
+    );
+    expect(model.requests[0]?.systemPrompt).not.toContain("disabled-skill");
+    const snapshot = await session.read();
+    expect(snapshot.entries.find((entry) => entry.kind === "user_message")?.payload).toMatchObject({
+      skills: [],
+    });
+    await harness.close();
+  });
+
   test("streams and persists model reasoning summaries", async () => {
     const dataDirectory = await temporaryDirectory();
     const projectDirectory = join(dataDirectory, "project");
@@ -644,7 +735,7 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
           {
             id: "call-timeout",
             name: "shell",
-            input: { command: `node -e "setTimeout(() => {}, 5000)"`, timeoutMs: 50 },
+            input: { command: `node -e "setTimeout(() => {}, 5000)"`, timeout: 0.05 },
           },
         ],
       },
@@ -743,4 +834,107 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       await harness.close();
     },
   );
+});
+
+describe("Session message search", () => {
+  test("indexes user and assistant text but excludes reasoning and tool content", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const toolPath = join(projectDirectory, "tool-input-marker.txt");
+    await writeFile(toolPath, "tool-result-marker");
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model: new FakeModel([
+        {
+          reasoningChunks: ["private-plan-marker"],
+          text: "assistant-answer-marker",
+          toolCalls: [{ id: "search-test-read", name: "read", input: { path: toolPath } }],
+        },
+        { text: "Finished." },
+      ]),
+      ids: new SequenceIdGenerator(),
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "high",
+    });
+
+    for await (const _event of session.run({ text: "user-question-marker" })) {
+      // drain
+    }
+
+    await expect(
+      harness.searchSessionMessages([projectDirectory], "user-question"),
+    ).resolves.toEqual([(await session.read()).id]);
+    await expect(
+      harness.searchSessionMessages([projectDirectory], "assistant-answer"),
+    ).resolves.toHaveLength(1);
+    await expect(
+      harness.searchSessionMessages([projectDirectory], "private-plan-marker"),
+    ).resolves.toEqual([]);
+    await expect(
+      harness.searchSessionMessages([projectDirectory], "tool-input-marker"),
+    ).resolves.toEqual([]);
+    await expect(
+      harness.searchSessionMessages([projectDirectory], "tool-result-marker"),
+    ).resolves.toEqual([]);
+    await session.delete();
+    await expect(
+      harness.searchSessionMessages([projectDirectory], "assistant-answer"),
+    ).resolves.toEqual([]);
+    await harness.close();
+  });
+
+  test("searches multiple Project scopes in one FTS query without joining all Sessions", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const firstProject = join(dataDirectory, "first");
+    const secondProject = join(dataDirectory, "second");
+    await mkdir(firstProject);
+    await mkdir(secondProject);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model: new FakeModel([{ text: "shared-search-marker" }, { text: "shared-search-marker" }]),
+      ids: new SequenceIdGenerator(),
+    });
+    const first = await harness.createSession({
+      projectDirectory: firstProject,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+    const second = await harness.createSession({
+      projectDirectory: secondProject,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+    for await (const _event of first.run({ text: "first" })) {
+      // drain
+    }
+    for await (const _event of second.run({ text: "second" })) {
+      // drain
+    }
+
+    await expect(harness.searchSessionMessages([firstProject], "shared-search")).resolves.toEqual([
+      (await first.read()).id,
+    ]);
+    await expect(
+      harness.searchSessionMessages([firstProject, secondProject], "shared-search"),
+    ).resolves.toEqual(expect.arrayContaining([(await first.read()).id, (await second.read()).id]));
+
+    const database = new DatabaseSync(join(dataDirectory, HARNESS_DATABASE_FILENAME), {
+      readOnly: true,
+    });
+    const plan = database
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT DISTINCT session_id
+         FROM session_message_search
+         WHERE session_message_search MATCH ?`,
+      )
+      .all('project_scope:"scope00" AND content:"shared"*') as Array<{ detail: string }>;
+    database.close();
+    expect(plan.map((step) => step.detail).join("\n")).not.toMatch(/SEARCH sessions|ORDER BY/);
+    await harness.close();
+  });
 });

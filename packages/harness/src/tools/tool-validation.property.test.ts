@@ -4,11 +4,25 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import { seeded } from "../test/seeded.ts";
 import { executeTool } from "./execute-tool.ts";
+import { TOOL_DEFINITIONS } from "./tool-definitions.ts";
 
 const cleanup: string[] = [];
 afterEach(async () => Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true }))));
 
 describe("seeded tool argument validation", () => {
+  test("describes the optional shell timeout in seconds with its default and maximum", () => {
+    const shell = TOOL_DEFINITIONS.find((tool) => tool.name === "shell");
+
+    expect(shell?.parameters.properties.timeout).toEqual({
+      type: "number",
+      description: "Timeout in seconds (default 30, maximum 5000).",
+      default: 30,
+      exclusiveMinimum: 0,
+      maximum: 5_000,
+    });
+    expect(shell?.parameters.required).toEqual(["command"]);
+  });
+
   test("500 malformed calls fail as values and never throw, authorize a path, or execute a command", async () => {
     const projectDirectory = await mkdtemp(join(tmpdir(), "opengui-tool-validation-"));
     cleanup.push(projectDirectory);
@@ -66,7 +80,9 @@ describe("seeded tool argument validation", () => {
       error: "read requires a non-empty path and optional numeric line range",
     });
     await expect(
-      executeTool(context, "shell", { command: "printf should-not-run", timeoutMs: Number.NaN }),
-    ).resolves.toEqual({ error: "shell requires a non-empty command and optional timeoutMs" });
+      executeTool(context, "shell", { command: "printf should-not-run", timeout: Number.NaN }),
+    ).resolves.toEqual({
+      error: "shell requires a non-empty command and optional timeout in seconds",
+    });
   });
 });

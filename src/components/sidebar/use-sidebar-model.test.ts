@@ -3,6 +3,7 @@ import type { Session } from "@/hooks/agent-state-types";
 import {
   shouldKeepSessionOutOfProjectGroups,
   shouldShowSessionInChatList,
+  sessionMatchesSidebarSearch,
   sortSessionsForSidebar,
 } from "./use-sidebar-model";
 
@@ -16,6 +17,20 @@ function session(id: string, updated: number): Session {
     time: { created: updated, updated },
   } as Session;
 }
+
+describe("sessionMatchesSidebarSearch", () => {
+  test("matches a session found through message content", () => {
+    expect(
+      sessionMatchesSidebarSearch({
+        session: session("message-match", 10),
+        sessionMeta: {},
+        normalizedQuery: "needle",
+        messageMatchingSessionIds: new Set(["message-match"]),
+        untitledLabel: "Untitled",
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("sortSessionsForSidebar", () => {
   test("sorts by newest update regardless of Harness", () => {

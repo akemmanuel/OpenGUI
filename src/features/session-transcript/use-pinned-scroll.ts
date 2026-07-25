@@ -25,6 +25,7 @@ export function usePinnedScroll(input: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const programmaticRef = useRef(false);
+  const wasPinningRef = useRef(input.pinWhenNearBottom);
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
 
   const markProgrammatic = useCallback(() => {
@@ -78,11 +79,11 @@ export function usePinnedScroll(input: {
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
-    if (input.pinWhenNearBottom && pinnedRef.current) {
-      markProgrammatic();
-      pinToBottom(el);
-    }
+    const shouldPin = input.pinWhenNearBottom || wasPinningRef.current;
+    wasPinningRef.current = input.pinWhenNearBottom;
+    if (!el || !shouldPin || !pinnedRef.current) return;
+    markProgrammatic();
+    pinToBottom(el);
   }, [input.contentKey, input.pinWhenNearBottom, markProgrammatic]);
 
   useEffect(() => {

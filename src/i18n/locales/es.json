@@ -216,6 +216,7 @@
     "uploadingFiles": "Subiendo archivos…",
     "add": "Añadir",
     "addFile": "Añadir archivo",
+
     "mcps": "MCPs",
     "newWorktree": "Nuevo worktree",
     "currentRootWorktree": "Rama actual del worktree raíz.",
@@ -235,7 +236,6 @@
   },
   "reasoningEffort": {
     "label": "Esfuerzo de razonamiento",
-    "compact": "Razonamiento: {{effort}}",
     "title": "Esfuerzo de razonamiento: {{effort}}",
     "levels": {
       "none": "Desactivado",
@@ -738,6 +738,12 @@
     "noWorkspaceDescription": "Un espacio de trabajo es tu backend de OpenGUI. Créalo y luego añade proyectos.",
     "addWorkspace": "Añadir espacio de trabajo",
     "noSharedProjects": "Todavía no se han compartido carpetas de proyecto con tu cuenta. Pide acceso al propietario del Host o a quien pueda invitar."
+  },
+  "emptySession": {
+    "skillsHeading": "Skills",
+    "skillsLocked": "Las skills están bloqueadas para esta sesión",
+    "enableSkill": "Activar skill para esta sesión",
+    "disableSkill": "Desactivar skill para esta sesión"
   },
   "mergeDialog": {
     "failed": "La fusión falló",

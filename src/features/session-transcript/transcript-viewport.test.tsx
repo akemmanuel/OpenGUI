@@ -54,6 +54,24 @@ describe("TranscriptViewport scroll anchoring", () => {
     vi.unstubAllGlobals();
   });
 
+  test("paints its own theme background instead of exposing a compositor backing layer", () => {
+    render(
+      <TranscriptViewport
+        sessionId="s1"
+        contentKey="1"
+        pinWhenNearBottom
+        isLoadingOlder={false}
+        onLoadOlder={async () => true}
+        showLoadOlderRow={false}
+      >
+        <div>message</div>
+      </TranscriptViewport>,
+    );
+
+    const viewport = screen.getByText("message").parentElement!.parentElement!;
+    expect(viewport.className.split(/\s+/)).toContain("bg-background");
+  });
+
   test("keeps a prepended page anchored and retries a failed older-page load", async () => {
     const loadOlder = vi.fn().mockResolvedValue(false);
     const view = render(
@@ -129,6 +147,76 @@ describe("TranscriptViewport scroll anchoring", () => {
     expect(geometry.scrollTop).toBe(700);
     view.unmount();
     expect(resize.disconnect).toHaveBeenCalledOnce();
+  });
+
+  test("keeps a pinned turn at the bottom for its final busy-to-idle update", () => {
+    const view = render(
+      <TranscriptViewport
+        sessionId="s1"
+        contentKey="busy"
+        pinWhenNearBottom
+        isLoadingOlder={false}
+        onLoadOlder={async () => true}
+        showLoadOlderRow={false}
+      >
+        <div>streaming</div>
+      </TranscriptViewport>,
+    );
+    const viewport = screen.getByText("streaming").parentElement!.parentElement!;
+    const geometry = { scrollHeight: 1000, clientHeight: 400, scrollTop: 595 };
+    setGeometry(viewport, geometry);
+    fireEvent.scroll(viewport);
+
+    geometry.scrollHeight = 1100;
+    view.rerender(
+      <TranscriptViewport
+        sessionId="s1"
+        contentKey="complete"
+        pinWhenNearBottom={false}
+        isLoadingOlder={false}
+        onLoadOlder={async () => true}
+        showLoadOlderRow={false}
+      >
+        <div>complete</div>
+      </TranscriptViewport>,
+    );
+
+    expect(geometry.scrollTop).toBe(700);
+  });
+
+  test("does not pin the final busy-to-idle update after the user scrolls up", () => {
+    const view = render(
+      <TranscriptViewport
+        sessionId="s1"
+        contentKey="busy"
+        pinWhenNearBottom
+        isLoadingOlder={false}
+        onLoadOlder={async () => true}
+        showLoadOlderRow={false}
+      >
+        <div>streaming</div>
+      </TranscriptViewport>,
+    );
+    const viewport = screen.getByText("streaming").parentElement!.parentElement!;
+    const geometry = { scrollHeight: 1000, clientHeight: 400, scrollTop: 300 };
+    setGeometry(viewport, geometry);
+    fireEvent.wheel(viewport, { deltaY: -20 });
+
+    geometry.scrollHeight = 1100;
+    view.rerender(
+      <TranscriptViewport
+        sessionId="s1"
+        contentKey="complete"
+        pinWhenNearBottom={false}
+        isLoadingOlder={false}
+        onLoadOlder={async () => true}
+        showLoadOlderRow={false}
+      >
+        <div>complete</div>
+      </TranscriptViewport>,
+    );
+
+    expect(geometry.scrollTop).toBe(300);
   });
 
   test("resets the pin when switching Sessions", () => {

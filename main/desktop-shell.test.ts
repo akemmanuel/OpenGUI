@@ -2,7 +2,9 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import {
   defaultTerminalInvocation,
   createBeforeQuitHandler,
+  desktopWindowFrameOptions,
   handleDesktopActivate,
+  installDesktopChromiumSwitches,
   installWebNavigationPolicy,
   isAllowedAppNavigation,
   isWebUrl,
@@ -16,6 +18,29 @@ describe("Desktop platform decisions", () => {
     ["win32", true],
   ])("window-all-closed quit behavior on %s", (platform, expected) => {
     expect(shouldQuitWhenAllWindowsClosed(platform)).toBe(expected);
+  });
+
+  test("disables the macOS GPU memory-buffer path that bands dark tiles", () => {
+    const appendSwitch = vi.fn();
+
+    installDesktopChromiumSwitches("darwin", { appendSwitch });
+    expect(appendSwitch).toHaveBeenCalledWith("disable-gpu-memory-buffer-compositor-resources");
+    expect(appendSwitch).toHaveBeenCalledWith("force-color-profile", "srgb");
+
+    appendSwitch.mockClear();
+    installDesktopChromiumSwitches("win32", { appendSwitch });
+    expect(appendSwitch).not.toHaveBeenCalled();
+  });
+
+  test("uses the macOS frameless title-bar workaround with an opaque backing store", () => {
+    // frame:false is applied by the BrowserWindow constructor; these options
+    // only configure the opaque macOS backing store and title-bar line fix.
+    expect(desktopWindowFrameOptions("darwin")).toEqual({
+      backgroundColor: "#131313",
+      titleBarStyle: "customButtonsOnHover",
+      trafficLightPosition: { x: -100, y: -100 },
+    });
+    expect(desktopWindowFrameOptions("win32")).toEqual({ backgroundColor: "#1a1a1a" });
   });
 
   test.each([

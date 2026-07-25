@@ -61,10 +61,21 @@ describe("Host transcript streaming", () => {
       sessionId: "session-1",
       event: { type: "reasoning_delta", runId: "run-1", delta: "Inspect the file." },
     });
-    expect(projectHostTranscriptStream(stream)[0]?.parts[0]).toMatchObject({
+    const reasoningPart = projectHostTranscriptStream(stream)[0]?.parts[0];
+    expect(reasoningPart).toMatchObject({
       type: "reasoning",
       text: "Inspect the file.",
     });
+    expect(reasoningPart?.type === "reasoning" && reasoningPart.time.end).toBeUndefined();
+
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "assistant_delta", runId: "run-1", delta: "The answer" },
+    });
+    expect(projectHostTranscriptStream(stream)[0]?.parts).toMatchObject([
+      { type: "reasoning", text: "Inspect the file.", time: { end: expect.any(Number) } },
+      { type: "text", text: "The answer" },
+    ]);
 
     stream = applyHostTranscriptEvent(stream, {
       sessionId: "session-1",
@@ -203,6 +214,53 @@ describe("Host transcript streaming", () => {
       "reasoning",
       "text",
     ]);
+  });
+
+  test("keeps a tool-loop assistant active until the Run reaches a terminal entry", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "message-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "assistant_message",
+        payload: { runId: "run-1", text: "I will inspect that." },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "call-1",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "tool_call",
+        payload: { runId: "run-1", toolCallId: "tool-1", name: "read", input: {} },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+      {
+        id: "result-1",
+        sessionId: input.id,
+        sequence: 3,
+        kind: "tool_result",
+        payload: { runId: "run-1", toolCallId: "tool-1", output: "done" },
+        createdAt: "2026-07-10T00:00:03.000Z",
+      },
+    ];
+
+    expect(
+      projectHostTranscriptStream(createHostTranscriptStream(input))[0]?.info.time.completed,
+    ).toBeUndefined();
+
+    input.entries.push({
+      id: "completed-1",
+      sessionId: input.id,
+      sequence: 4,
+      kind: "run_completed",
+      payload: { runId: "run-1" },
+      createdAt: "2026-07-10T00:00:04.000Z",
+    });
+
+    expect(
+      projectHostTranscriptStream(createHostTranscriptStream(input))[0]?.info.time.completed,
+    ).toBe(Date.parse("2026-07-10T00:00:04.000Z"));
   });
 
   test("projects completed shell output and exit status for transcript presentation", () => {

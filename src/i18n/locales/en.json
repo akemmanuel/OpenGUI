@@ -216,6 +216,7 @@
     "uploadingFiles": "Uploading files…",
     "add": "Add",
     "addFile": "Add file",
+
     "mcps": "MCPs",
     "newWorktree": "New worktree",
     "currentRootWorktree": "Current branch of the root worktree.",
@@ -235,7 +236,6 @@
   },
   "reasoningEffort": {
     "label": "Reasoning effort",
-    "compact": "Reasoning: {{effort}}",
     "title": "Reasoning effort: {{effort}}",
     "levels": {
       "none": "Off",
@@ -738,6 +738,12 @@
     "noWorkspaceDescription": "A workspace is your OpenGUI backend. Create one, then add projects to it.",
     "addWorkspace": "Add workspace",
     "noSharedProjects": "No project folders have been shared with your account yet. Ask the Host owner or an inviter for access."
+  },
+  "emptySession": {
+    "skillsHeading": "Skills",
+    "skillsLocked": "Skills are locked for this session",
+    "enableSkill": "Enable skill for this session",
+    "disableSkill": "Disable skill for this session"
   },
   "mergeDialog": {
     "failed": "Merge failed",

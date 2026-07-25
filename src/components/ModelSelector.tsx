@@ -307,7 +307,7 @@ export function ModelSelector() {
               : t("modelSelector.dialogTitle")
           }
           data-responsive-allow="text-clip"
-          className="!h-7 !min-w-0 flex-1 !shrink gap-1.5 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground"
+          className="!h-7 !min-w-0 !flex-none max-w-44 gap-1.5 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           {selectedModel ? (
             <ProviderIcon provider={selectedModel.providerID} className="size-3.5 shrink-0" />

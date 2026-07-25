@@ -46,7 +46,7 @@ export function TranscriptViewport({
       onWheel={(event) => {
         if (event.deltaY < 0) detachPin();
       }}
-      className="relative flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 [overflow-anchor:none]"
+      className="relative flex-1 overflow-y-auto overflow-x-hidden bg-background px-4 py-4 [overflow-anchor:none]"
     >
       <div className="max-w-2xl mx-auto flex flex-col gap-0">
         {showLoadOlderRow && (

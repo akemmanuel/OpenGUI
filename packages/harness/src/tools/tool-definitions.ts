@@ -5,7 +5,16 @@ export interface ToolDefinition {
   description: string;
   parameters: {
     type: "object";
-    properties: Record<string, { type: string }>;
+    properties: Record<
+      string,
+      {
+        type: string;
+        description?: string;
+        default?: number;
+        exclusiveMinimum?: number;
+        maximum?: number;
+      }
+    >;
     required: string[];
   };
 }
@@ -55,12 +64,18 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "shell",
     description:
-      "Run one non-interactive command in the Project directory; process state does not carry across calls.",
+      "Run one non-interactive command in the Project directory; process state does not carry across calls. Commands time out after 30 seconds by default.",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string" },
-        timeoutMs: { type: "number" },
+        timeout: {
+          type: "number",
+          description: "Timeout in seconds (default 30, maximum 5000).",
+          default: 30,
+          exclusiveMinimum: 0,
+          maximum: 5_000,
+        },
       },
       required: ["command"],
     },

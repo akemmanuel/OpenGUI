@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { TranscriptPart, ToolCallTranscriptPart } from "@/protocol/session-transcript";
+import { ReasoningPartView } from "../ReasoningPartView";
 import { ToolCallPartView } from "./ToolCallPartView";
 
 function toolGroupSummary(parts: ToolCallTranscriptPart[], t: TFunction, running: boolean) {
@@ -55,6 +56,13 @@ export function ToolCallGroupView({
     awaitingAssistantResponse ||
     tools.some((part) => part.state.status === "running" || part.state.status === "pending");
   const summary = toolGroupSummary(tools, t, running);
+  const lastActivityPart = [...parts]
+    .reverse()
+    .find((part) => part.type === "reasoning" || part.type === "tool");
+  const activeReasoningId =
+    awaitingAssistantResponse && lastActivityPart?.type === "reasoning"
+      ? lastActivityPart.id
+      : null;
 
   return (
     <details
@@ -77,14 +85,28 @@ export function ToolCallGroupView({
       {expanded && (
         <div className="mt-1 max-h-64 overflow-y-auto overscroll-contain pl-[18px] pr-1">
           <div className="flex flex-col gap-1">
-            {tools.map((part) => (
-              <ToolCallPartView
-                key={part.id}
-                part={part}
-                expandedToolCalls={expandedToolCalls}
-                onSetToolCallExpanded={onSetToolCallExpanded}
-              />
-            ))}
+            {parts.map((part) => {
+              if (part.type === "reasoning") {
+                return (
+                  <ReasoningPartView
+                    key={part.id}
+                    part={part}
+                    active={part.id === activeReasoningId}
+                  />
+                );
+              }
+              if (part.type === "tool") {
+                return (
+                  <ToolCallPartView
+                    key={part.id}
+                    part={part}
+                    expandedToolCalls={expandedToolCalls}
+                    onSetToolCallExpanded={onSetToolCallExpanded}
+                  />
+                );
+              }
+              return null;
+            })}
           </div>
         </div>
       )}

@@ -44,7 +44,7 @@ export function readBackendHostEnv(): BackendHostEnv {
   }
   const identityMode =
     configuredIdentityMode === "desktop-local" ||
-    (!configuredIdentityMode && process.env.OPENGUI_MODE === "desktop-sidecar")
+    (!configuredIdentityMode && serverMode === "desktop-sidecar")
       ? "desktop-local"
       : "remote";
   const configuredPathGrantsMode = process.env.OPENGUI_PATH_GRANTS?.trim().toLowerCase();

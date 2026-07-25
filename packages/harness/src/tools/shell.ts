@@ -5,13 +5,13 @@ import { join } from "node:path";
 import type { ResolvedShell } from "./shell-resolution.ts";
 
 const MAX_RETURNED_BYTES = 5 * 1024;
-const DEFAULT_TIMEOUT_MS = 120_000;
-const MAX_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_TIMEOUT_SECONDS = 30;
+const MAX_TIMEOUT_SECONDS = 5_000;
 const FORCE_KILL_DELAY_MS = 500;
 
 interface ShellToolInput {
   command: string;
-  timeoutMs?: number;
+  timeout?: number;
 }
 
 export interface ShellToolContext {
@@ -28,10 +28,8 @@ function parseInput(value: unknown): ShellToolInput | null {
   const input = value as Record<string, unknown>;
   if (typeof input.command !== "string" || !input.command.trim()) return null;
   if (
-    input.timeoutMs !== undefined &&
-    (typeof input.timeoutMs !== "number" ||
-      !Number.isFinite(input.timeoutMs) ||
-      input.timeoutMs <= 0)
+    input.timeout !== undefined &&
+    (typeof input.timeout !== "number" || !Number.isFinite(input.timeout) || input.timeout <= 0)
   )
     return null;
   return input as unknown as ShellToolInput;
@@ -72,11 +70,9 @@ function utf8Tail(buffer: Buffer, maximumBytes: number) {
 
 export async function executeShellTool(context: ShellToolContext, rawInput: unknown) {
   const input = parseInput(rawInput);
-  if (!input) return { error: "shell requires a non-empty command and optional timeoutMs" };
-  const timeoutMs = Math.max(
-    1,
-    Math.min(MAX_TIMEOUT_MS, Math.floor(input.timeoutMs ?? DEFAULT_TIMEOUT_MS)),
-  );
+  if (!input)
+    return { error: "shell requires a non-empty command and optional timeout in seconds" };
+  const timeoutMs = Math.min(MAX_TIMEOUT_SECONDS, input.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1_000;
   const outputDirectory = join(
     context.dataDirectory,
     "tool-output",

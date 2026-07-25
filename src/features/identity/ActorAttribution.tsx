@@ -11,7 +11,7 @@ export function actorAttributionText(
 ): string | null {
   if (!actor) return null;
   if (currentActor && actor.type === currentActor.type && actor.id === currentActor.id) {
-    return youLabel;
+    return actor.type === "local" ? null : youLabel;
   }
   const displayName = actor.displayName.trim();
   return displayName || null;

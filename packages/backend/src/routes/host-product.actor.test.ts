@@ -46,6 +46,43 @@ describe("Host product actor attribution", () => {
     },
   );
 
+  test.each([
+    { requested: [] as string[], expected: [] as string[] },
+    { requested: ["enabled", " enabled ", "", 42], expected: ["enabled", "enabled"] },
+  ])(
+    "forwards the exact skills allowlist through the HTTP route",
+    async ({ requested, expected }) => {
+      const prompt = vi.fn(async () => ({ mode: "run" as const, startedEntries: [] }));
+      const app = new Hono<BackendRequestEnv>();
+      app.use("/api/host/*", async (c, next) => {
+        c.set("actor", {
+          type: "local",
+          id: "desktop-local",
+          displayName: "Local user",
+          role: "owner",
+        });
+        await next();
+      });
+      registerHostProductRoutes(app, {
+        getHost: async () => ({ prompt }) as unknown as OpenGuiHost,
+        resolveSafeDirectory: async (path) => path ?? "/tmp",
+      });
+
+      const response = await app.request("http://localhost/api/host/sessions/session-1/prompt", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "Check catalog", skills: requested }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(prompt).toHaveBeenCalledWith("session-1", {
+        text: "Check catalog",
+        skills: expected,
+        actor: { type: "local", id: "desktop-local", displayName: "Local user" },
+      });
+    },
+  );
+
   test("requires restricted SSE subscriptions to name one authorized Session", async () => {
     const actor: Actor = {
       type: "user",

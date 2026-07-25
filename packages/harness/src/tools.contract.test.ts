@@ -55,6 +55,44 @@ describe("Harness tool contracts", () => {
     expect(outputs[0]).toMatchObject({ content: "two\nthree\n", truncated: true });
   });
 
+  test("read lists directory contents with a file-only usage note", async () => {
+    const { outputs } = await runToolCalls(
+      [{ id: "read-directory", name: "read", input: { path: "." } }],
+      async (directory) => {
+        await mkdir(join(directory, "nested"));
+        await writeFile(join(directory, "notes.txt"), "hello\n");
+      },
+    );
+
+    expect(outputs[0]).toMatchObject({
+      content:
+        "nested/\nnotes.txt\n\nRead tool SHOULD only be used for files, but here is the content.",
+      truncated: false,
+    });
+  });
+
+  test("an oversized directory listing preserves both notes", async () => {
+    const { outputs } = await runToolCalls(
+      [{ id: "read-large-directory", name: "read", input: { path: "." } }],
+      async (directory) => {
+        await Promise.all(
+          Array.from({ length: 150 }, (_, index) =>
+            writeFile(
+              join(directory, `${String(index).padStart(3, "0")}-${"x".repeat(40)}.txt`),
+              "",
+            ),
+          ),
+        );
+      },
+    );
+
+    expect(outputs[0]?.output).toContain(
+      "Read tool SHOULD only be used for files, but here is the content.",
+    );
+    expect(outputs[0]?.output).toContain("The full tool result has been saved to");
+    expect(outputs[0]?.truncated).toBe(true);
+  });
+
   test("read rejects binary files without leaking partial content", async () => {
     const { outputs } = await runToolCalls(
       [{ id: "read-binary", name: "read", input: { path: "binary.dat" } }],
@@ -81,16 +119,23 @@ describe("Harness tool contracts", () => {
     expect(outputs[0]).not.toHaveProperty("content");
   });
 
-  test("read truncates large UTF-8 text without returning a broken code point", async () => {
+  test("oversized tool results are truncated safely and saved to a temporary file", async () => {
+    const original = "🙂".repeat(20_000);
     const { outputs } = await runToolCalls(
       [{ id: "read-unicode", name: "read", input: { path: "unicode.txt" } }],
-      (directory) => writeFile(join(directory, "unicode.txt"), "🙂".repeat(20_000)),
+      (directory) => writeFile(join(directory, "unicode.txt"), original),
     );
-    const content = outputs[0]?.content as string;
+    const output = outputs[0]?.output as string;
+    const fullOutputPath = outputs[0]?.fullOutputPath as string;
 
     expect(outputs[0]?.truncated).toBe(true);
-    expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(64 * 1024);
-    expect(content).not.toContain("�");
+    expect(Buffer.byteLength(JSON.stringify(outputs[0]), "utf8")).toBeLessThanOrEqual(5 * 1024);
+    expect(output).not.toContain("�");
+    expect(fullOutputPath).toContain(join(tmpdir(), "opengui-tool-output"));
+    expect(JSON.parse(await readFile(fullOutputPath, "utf8"))).toMatchObject({
+      content: original,
+      truncated: false,
+    });
   });
 
   test("write fails closed on a missing parent unless createParents is requested", async () => {

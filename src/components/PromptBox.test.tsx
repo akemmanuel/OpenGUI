@@ -56,6 +56,9 @@ vi.mock("@/hooks/use-agent-state", () => ({
     setAgent: vi.fn(),
     sendCommand: vi.fn(),
     findFiles: vi.fn().mockResolvedValue([]),
+    listSkills: vi.fn().mockResolvedValue([]),
+    ensureSessionSkills: vi.fn(),
+    toggleSessionSkill: vi.fn(),
     setSessionDraft: vi.fn(),
     clearSessionDraft: vi.fn(),
   }),
@@ -70,6 +73,8 @@ vi.mock("@/hooks/use-agent-state", () => ({
     activeSessionId: "s1",
     activeTargetDirectory: "/project",
     sessionDrafts: {},
+    enabledSkillNames: [],
+    skillsLocked: false,
   }),
   useWorkspaceState: () => ({
     activeWorkspace: { isLocal: true },

@@ -3,6 +3,8 @@ import { join } from "node:path";
 import {
   createOpenGuiHarness,
   CodexResponsesTransport,
+  discoverSkills,
+  loadSkillsFromDir,
   OpenAiChatTransport,
   type CreateSessionInput,
   type DurableActor,
@@ -17,6 +19,7 @@ import {
   type SessionEntry,
   type SessionSnapshot,
   type SessionSummary,
+  type Skill,
 } from "@opengui/harness";
 import {
   CHATGPT_CODEX_PRESET,
@@ -70,6 +73,15 @@ export interface HostModelConnection extends OpenAiCompatibleConnection {}
 export interface HostProject {
   directory: string;
   name: string;
+}
+
+/** UI-safe skill metadata advertised for an empty-session agent overview. */
+export interface HostSkill {
+  name: string;
+  description: string;
+  source: "host" | "project";
+  /** True when the skill is user-invoked only (not auto-advertised to the model). */
+  manual: boolean;
 }
 
 export interface HostSessionSummary extends SessionSummary {}
@@ -768,6 +780,35 @@ export class OpenGuiHost {
     }));
   }
 
+  async listSkills(projectDirectory: string, actor?: DurableActor): Promise<HostSkill[]> {
+    const directory = await this.#pathAuthorizer.authorizePath(actor, projectDirectory, "read");
+    const restricted = await this.#pathAuthorizer.isRestricted(actor);
+    let skills: Skill[];
+    if (restricted) {
+      const requestedRoot = join(directory, ".agents", "skills");
+      const policy = await this.#pathAuthorizer.policy(actor);
+      const decision = policy ? await policy.authorizePath(requestedRoot, "read") : null;
+      skills =
+        decision?.allowed && decision.canonicalPath
+          ? loadSkillsFromDir(decision.canonicalPath, "project").skills
+          : [];
+    } else {
+      skills = discoverSkills({ projectDirectory: directory }).skills;
+    }
+    return skills
+      .map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        source: skill.source,
+        manual: skill.disableModelInvocation,
+      }))
+      .sort((left, right) => {
+        if (left.manual !== right.manual) return left.manual ? -1 : 1;
+        if (left.source !== right.source) return left.source === "project" ? -1 : 1;
+        return left.name.localeCompare(right.name);
+      });
+  }
+
   async listSessions(
     projectDirectory: string,
     actor?: DurableActor,
@@ -782,6 +823,24 @@ export class OpenGuiHost {
       ),
     );
     return sessions.filter((session) => visibleIds.has(session.id));
+  }
+
+  async searchSessionMessages(
+    projectDirectories: readonly string[],
+    query: string,
+    actor?: DurableActor,
+  ): Promise<string[]> {
+    const canonicalDirectories = await Promise.all(
+      Array.from(new Set(projectDirectories)).map((directory) =>
+        this.#pathAuthorizer.authorizePath(actor, directory, "read"),
+      ),
+    );
+    const sessionIds = await this.#requireHarness().searchSessionMessages(
+      canonicalDirectories,
+      query,
+    );
+    if (!this.#sessionAccess || !actor) return sessionIds;
+    return this.#sessionAccess.filterList(sessionIds, actor);
   }
 
   async createSession(

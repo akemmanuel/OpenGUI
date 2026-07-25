@@ -13,6 +13,7 @@ peerDependencyRules:
 
 allowBuilds:
   "@google/genai": true
+  agent-browser: true
   electron: true
   electron-winstaller: true
   esbuild: true

@@ -2,6 +2,7 @@ import { ArrowUp, ListEnd, Square } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
+import { SlashCommandPopover } from "@/components/SlashCommandPopover";
 import { PromptImageMentions, usePromptImages } from "@/components/PromptImageMentions";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ReasoningEffortSelector } from "@/components/ReasoningEffortSelector";
@@ -215,9 +216,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         onDragLeave={promptFiles.handleDragLeave}
         onDrop={promptFiles.handleDrop}
         className={cn(
-          "flex flex-col border border-input border-b-0 bg-card px-2 pt-2 pb-[var(--app-safe-bottom)] shadow-none transition-colors cursor-text rounded-t-xl md:rounded-xl md:border-b md:pb-0 md:shadow-sm",
+          "flex flex-col border border-input border-b-0 bg-background px-2 pt-2 pb-[var(--app-safe-bottom)] shadow-none transition-colors cursor-text rounded-t-xl md:rounded-xl md:border-b md:pb-0 md:shadow-sm",
           "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
-          "dark:bg-card/60 dark:border-input/80",
+          "dark:border-input/80",
           promptFiles.isDragging && "border-ring ring-ring/50 ring-[3px]",
           className,
         )}
@@ -241,6 +242,18 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               />
             </div>
           )}
+
+        {slashCommand.open && slashCommand.filteredCommands.length > 0 && (
+          <div className="relative">
+            <SlashCommandPopover
+              commands={slashCommand.filteredCommands}
+              filter={slashCommand.filter}
+              activeIndex={slashCommand.activeIndex}
+              onSelect={slashCommand.select}
+              onHover={slashCommand.setActiveIndex}
+            />
+          </div>
+        )}
 
         <input
           type="file"
@@ -290,14 +303,14 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
                     : t("prompt.queueMessage")
                 : t("prompt.message")
           }
-          className="w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/95 focus:ring-0 focus-visible:outline-none min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-10 w-full resize-none border-0 bg-transparent px-2 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/95 focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           {...props}
         />
 
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-1.5 pt-1 pb-2">
+        <div className="flex min-w-0 items-center gap-0.5 pb-1.5">
           <PromptAddMenu disabled={isDisabled} fileInputRef={fileInputRef} />
 
-          <div className="flex min-w-0 basis-full flex-wrap items-center gap-1 rounded-lg bg-muted/45 p-0.5 dark:bg-muted/35 sm:basis-auto sm:flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
             <ModelSelector />
             <ReasoningEffortSelector />
           </div>
@@ -308,14 +321,17 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               variant="ghost"
               size="sm"
               title={t("prompt.queueTitle")}
-              className="!h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="!h-7 shrink-0 gap-1.5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 onQueueModeChange("queue");
               }}
             >
               <ListEnd className="size-3.5 shrink-0" />
-              <span className="max-w-[100px] truncate" data-responsive-allow="text-clip">
+              <span
+                className="hidden max-w-[100px] truncate sm:inline"
+                data-responsive-allow="text-clip"
+              >
                 {t("prompt.queue")}
               </span>
             </Button>

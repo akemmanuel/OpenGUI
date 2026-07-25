@@ -113,8 +113,106 @@ const initialSessionLog: Migration = {
   },
 };
 
+const sessionMessageSearch: Migration = {
+  async up(database: Kysely<unknown>) {
+    await sql`
+      CREATE VIRTUAL TABLE session_message_search USING fts5(
+        session_id UNINDEXED,
+        content,
+        tokenize = 'unicode61 remove_diacritics 2'
+      )
+    `.execute(database);
+    await sql`
+      INSERT INTO session_message_search(rowid, session_id, content)
+      SELECT rowid, session_id, json_extract(payload_json, '$.text')
+      FROM session_entries
+      WHERE kind IN ('user_message', 'assistant_message')
+        AND json_type(payload_json, '$.text') = 'text'
+    `.execute(database);
+    await sql`
+      CREATE TRIGGER session_message_search_insert AFTER INSERT ON session_entries
+      WHEN new.kind IN ('user_message', 'assistant_message')
+        AND json_type(new.payload_json, '$.text') = 'text'
+      BEGIN
+        INSERT INTO session_message_search(rowid, session_id, content)
+        VALUES (new.rowid, new.session_id, json_extract(new.payload_json, '$.text'));
+      END
+    `.execute(database);
+    await sql`
+      CREATE TRIGGER session_message_search_delete AFTER DELETE ON session_entries
+      WHEN old.kind IN ('user_message', 'assistant_message')
+      BEGIN
+        DELETE FROM session_message_search WHERE rowid = old.rowid;
+      END
+    `.execute(database);
+  },
+  async down(database: Kysely<unknown>) {
+    await sql`DROP TRIGGER IF EXISTS session_message_search_delete`.execute(database);
+    await sql`DROP TRIGGER IF EXISTS session_message_search_insert`.execute(database);
+    await sql`DROP TABLE IF EXISTS session_message_search`.execute(database);
+  },
+};
+
+const scopedSessionMessageSearch: Migration = {
+  async up(database: Kysely<unknown>) {
+    await sql`DROP TRIGGER IF EXISTS session_message_search_delete`.execute(database);
+    await sql`DROP TRIGGER IF EXISTS session_message_search_insert`.execute(database);
+    await sql`DROP TABLE IF EXISTS session_message_search`.execute(database);
+    await sql`
+      CREATE VIRTUAL TABLE session_message_search USING fts5(
+        session_id UNINDEXED,
+        project_scope,
+        content,
+        tokenize = 'unicode61 remove_diacritics 2'
+      )
+    `.execute(database);
+    await sql`
+      INSERT INTO session_message_search(rowid, session_id, project_scope, content)
+      SELECT
+        entries.rowid,
+        entries.session_id,
+        'scope' || hex(sessions.project_directory),
+        json_extract(entries.payload_json, '$.text')
+      FROM session_entries AS entries
+      INNER JOIN sessions ON sessions.id = entries.session_id
+      WHERE entries.kind IN ('user_message', 'assistant_message')
+        AND json_type(entries.payload_json, '$.text') = 'text'
+    `.execute(database);
+    await sql`
+      CREATE TRIGGER session_message_search_insert AFTER INSERT ON session_entries
+      WHEN new.kind IN ('user_message', 'assistant_message')
+        AND json_type(new.payload_json, '$.text') = 'text'
+      BEGIN
+        INSERT INTO session_message_search(rowid, session_id, project_scope, content)
+        SELECT
+          new.rowid,
+          new.session_id,
+          'scope' || hex(project_directory),
+          json_extract(new.payload_json, '$.text')
+        FROM sessions
+        WHERE id = new.session_id;
+      END
+    `.execute(database);
+    await sql`
+      CREATE TRIGGER session_message_search_delete AFTER DELETE ON session_entries
+      WHEN old.kind IN ('user_message', 'assistant_message')
+      BEGIN
+        DELETE FROM session_message_search WHERE rowid = old.rowid;
+      END
+    `.execute(database);
+  },
+  async down(database: Kysely<unknown>) {
+    await sql`DROP TRIGGER IF EXISTS session_message_search_delete`.execute(database);
+    await sql`DROP TRIGGER IF EXISTS session_message_search_insert`.execute(database);
+    await sql`DROP TABLE IF EXISTS session_message_search`.execute(database);
+    await sessionMessageSearch.up(database);
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "2026-07-10T00-00-00_initial-session-log": initialSessionLog,
+  "2026-07-11T00-00-00_session-message-search": sessionMessageSearch,
+  "2026-07-12T00-00-00_scoped-session-message-search": scopedSessionMessageSearch,
 };
 
 export class HarnessMigrationProvider implements MigrationProvider {

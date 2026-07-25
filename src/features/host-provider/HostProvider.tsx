@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionsContext,
   ModelContext,
@@ -25,6 +25,7 @@ import {
 } from "@/lib/persistence";
 import {
   ActiveSessionTranscriptProvider,
+  useActiveTranscriptSnapshot,
   useActiveTranscriptStore,
 } from "@/features/session-transcript/active-session-transcript-provider";
 import { createHostClient } from "@/protocol/host-client";
@@ -43,6 +44,7 @@ import {
 import type { Workspace } from "@/types/workspace";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import { normalizeProjectPath } from "@/lib/path";
+import { defaultEnabledSkillNames, sessionSkillsKey } from "@/lib/session-skills";
 import { findModel } from "@/lib/utils";
 import { makeProjectKey, shouldAutoNameSession } from "@/hooks/agent-session-utils";
 import { STORAGE_KEYS } from "@/lib/constants";
@@ -74,6 +76,19 @@ import {
   snapshotIdentityActor,
   useIdentityActor,
 } from "@/features/identity/identity-actor-context";
+
+function lockedSkillsFromSnapshot(snapshot: HostSessionSnapshot): string[] | null {
+  for (const entry of snapshot.entries) {
+    if (entry.kind !== "user_message") continue;
+    const skills = entry.payload.skills;
+    if (!Array.isArray(skills)) continue;
+    return skills
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+  return null;
+}
 
 function toSession(
   summary: HostSessionSummary | HostSessionSnapshot,
@@ -193,6 +208,10 @@ function HostProviderBody({
   const setQueuedPrompts = sessionSlice.setter("queuedPrompts");
   const setSessionDrafts = sessionSlice.setter("sessionDrafts");
   const setSessionMeta = sessionSlice.setter("sessionMeta");
+  /** Per-session/pending skill allowlists. Locked once the session has messages. */
+  const [enabledSkillsByKey, setEnabledSkillsByKey] = useState<Record<string, string[]>>({});
+  const enabledSkillsByKeyRef = useRef(enabledSkillsByKey);
+  enabledSkillsByKeyRef.current = enabledSkillsByKey;
   const activeTargetDirectoryRef = useRef(activeTargetDirectory);
   const modelSlice = useHostSlice<ModelSlice>(() => {
     const stored = storageGet(STORAGE_KEYS.REASONING_EFFORT);
@@ -364,6 +383,19 @@ function HostProviderBody({
           hasMore: false,
           nextCursor: null,
         });
+        // Lock skill selection to the first turn's allowlist when present so
+        // reloads keep the same catalog for prompt-cache stability.
+        if (messages.length > 0) {
+          const key = sessionSkillsKey(sessionId, null);
+          if (key) {
+            const locked = lockedSkillsFromSnapshot(snapshot);
+            if (locked) {
+              setEnabledSkillsByKey((current) =>
+                current[key] ? current : { ...current, [key]: locked },
+              );
+            }
+          }
+        }
         setQueuedPrompts((current) => ({
           ...current,
           [sessionId]: projectHostFollowUps(snapshot.followUps),
@@ -439,6 +471,19 @@ function HostProviderBody({
       queueController?.recordDispatched(sessionId, followUpId),
   });
 
+  const activeTranscript = useActiveTranscriptSnapshot();
+  const activeSkillsKey = useMemo(
+    () => sessionSkillsKey(activeSessionId, activeTargetDirectory),
+    [activeSessionId, activeTargetDirectory],
+  );
+  const skillsLocked = Boolean(
+    activeSessionId &&
+    (busySessionIds.has(activeSessionId) ||
+      (activeTranscript.scope?.sessionId === activeSessionId &&
+        activeTranscript.messages.length > 0)),
+  );
+  const enabledSkillNames = activeSkillsKey ? (enabledSkillsByKey[activeSkillsKey] ?? []) : [];
+
   const sessionValue = useMemo<SessionContextValue>(
     () => ({
       sessions,
@@ -465,15 +510,19 @@ function HostProviderBody({
       sessionDrafts,
       sessionMeta,
       sessionErrors: {},
+      enabledSkillNames,
+      skillsLocked,
     }),
     [
       activeSessionId,
       activeTargetDirectory,
       busySessionIds,
+      enabledSkillNames,
       queuedPrompts,
       sessionDrafts,
       sessionMeta,
       sessions,
+      skillsLocked,
     ],
   );
 
@@ -608,7 +657,17 @@ function HostProviderBody({
         await requireHost().renameSession(id, title);
         await refreshSessions();
       },
-      sendPrompt: async (text) => {
+      sendPrompt: async (text, _mode, submittedSkills) => {
+        // The caller captures the visible selection at submit time. Normalize it
+        // before any asynchronous Session creation/refresh can change active keys.
+        const submittedAllowlist =
+          submittedSkills === undefined
+            ? undefined
+            : Array.from(
+                new Set(
+                  submittedSkills.map((name) => name.trim()).filter((name) => name.length > 0),
+                ),
+              );
         let optimisticMessage: {
           scope: { directory: string; sessionId: string };
           id: string;
@@ -672,7 +731,55 @@ function HostProviderBody({
             });
           }
           setBusySessionIds((current) => new Set(current).add(sessionId!));
-          const result = await requireHost().prompt(sessionId, text);
+          // Prefer the session key; if this was a pending new chat, migrate the
+          // pending allowlist onto the created Session so later turns stay stable.
+          const pendingKey = sessionSkillsKey(null, directory);
+          const sessionKey = sessionSkillsKey(sessionId, null);
+          let skillsAllowlist: string[] | undefined;
+          if (sessionKey) {
+            const map = enabledSkillsByKeyRef.current;
+            if (submittedAllowlist !== undefined) {
+              // This is authoritative: it is the selection rendered beside the
+              // prompt at the instant the user submitted.
+              skillsAllowlist = submittedAllowlist;
+              enabledSkillsByKeyRef.current = {
+                ...map,
+                [sessionKey]: submittedAllowlist,
+              };
+              setEnabledSkillsByKey((current) => {
+                const next = { ...current, [sessionKey]: submittedAllowlist };
+                if (pendingKey) delete next[pendingKey];
+                return next;
+              });
+            } else if (Object.hasOwn(map, sessionKey)) {
+              skillsAllowlist = map[sessionKey];
+            } else if (pendingKey && Object.hasOwn(map, pendingKey)) {
+              skillsAllowlist = map[pendingKey];
+              setEnabledSkillsByKey((current) => {
+                const next = { ...current, [sessionKey]: current[pendingKey]! };
+                delete next[pendingKey];
+                return next;
+              });
+            } else {
+              // Non-UI callers retain auto-on/manual-off defaults.
+              try {
+                const discovered = await requireHost().listSkills(directory);
+                skillsAllowlist = defaultEnabledSkillNames(discovered);
+                setEnabledSkillsByKey((current) =>
+                  Object.hasOwn(current, sessionKey)
+                    ? current
+                    : { ...current, [sessionKey]: skillsAllowlist! },
+                );
+              } catch {
+                // Fall through to Host defaults if discovery fails.
+              }
+            }
+          }
+          const result = await requireHost().prompt(
+            sessionId,
+            text,
+            skillsAllowlist !== undefined ? { skills: skillsAllowlist } : undefined,
+          );
           if (result.mode === "follow_up") {
             transcriptStore.dispatch({
               type: "message.removed",
@@ -719,6 +826,44 @@ function HostProviderBody({
         const directory = target?.directory || activeTargetDirectory;
         if (!directory) return [];
         return requireHost().findFiles(directory, query);
+      },
+      listSkills: async (directory) => requireHost().listSkills(directory),
+      searchSessionMessages: async (directory, query) =>
+        requireHost().searchSessionMessages(directory, query),
+      ensureSessionSkills: (skills) => {
+        const key = sessionSkillsKey(activeSessionId, activeTargetDirectory);
+        if (!key) return;
+        // Never invent a mutable selection after the Session has started.
+        const locked =
+          Boolean(activeSessionId) &&
+          ((activeSessionId ? busySessionIds.has(activeSessionId) : false) ||
+            (activeTranscript.scope?.sessionId === activeSessionId &&
+              activeTranscript.messages.length > 0));
+        if (locked) return;
+        setEnabledSkillsByKey((current) => {
+          if (Object.hasOwn(current, key)) return current;
+          return { ...current, [key]: defaultEnabledSkillNames(skills) };
+        });
+      },
+      toggleSessionSkill: (name, catalog = []) => {
+        const trimmed = name.trim();
+        const key = sessionSkillsKey(activeSessionId, activeTargetDirectory);
+        if (!trimmed || !key) return;
+        const locked =
+          Boolean(activeSessionId) &&
+          ((activeSessionId ? busySessionIds.has(activeSessionId) : false) ||
+            (activeTranscript.scope?.sessionId === activeSessionId &&
+              activeTranscript.messages.length > 0));
+        if (locked) return;
+        setEnabledSkillsByKey((current) => {
+          const baseline = Object.hasOwn(current, key)
+            ? current[key]!
+            : defaultEnabledSkillNames(catalog);
+          const next = baseline.includes(trimmed)
+            ? baseline.filter((item) => item !== trimmed)
+            : [...baseline, trimmed];
+          return { ...current, [key]: next };
+        });
       },
       sendCommand: async () => {
         throw new Error("Slash commands are not available in the first-party Host");
@@ -948,6 +1093,9 @@ function HostProviderBody({
   }, [
     activeSessionId,
     activeTargetDirectory,
+    activeTranscript.messages.length,
+    activeTranscript.scope?.sessionId,
+    busySessionIds,
     detachedProject,
     currentActor,
     host,

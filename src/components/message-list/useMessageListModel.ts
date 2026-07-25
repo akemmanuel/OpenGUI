@@ -20,6 +20,7 @@ export function useMessageListModel() {
     pendingPermissions,
     pendingQuestions,
     activeSessionId,
+    activeTargetDirectory,
     sessions,
     sessionMeta,
     sessionErrors,
@@ -37,6 +38,12 @@ export function useMessageListModel() {
     () => sessions.find((session) => session.id === activeSessionId),
     [sessions, activeSessionId],
   );
+  const projectDirectory =
+    imageBaseDirectory ??
+    activeSession?._projectDir ??
+    activeSession?.directory ??
+    activeTargetDirectory ??
+    null;
 
   const revertMessageID = activeSession?.revert?.messageID;
   const sessionMetaForActive = activeSessionId ? sessionMeta[activeSessionId] : undefined;
@@ -82,6 +89,7 @@ export function useMessageListModel() {
     isBusy,
     transcriptRevision,
     imageBaseDirectory,
+    projectDirectory,
     attachmentBaseUrl,
     messages,
     sessionMetaForActive,

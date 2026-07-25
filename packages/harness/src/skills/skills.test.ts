@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import { discoverSkills, loadSkillsFromDir } from "./discover.ts";
-import { formatSkillsForPrompt } from "./format-prompt.ts";
+import {
+  formatSkillsForPrompt,
+  resolveSkillsByName,
+  selectSkillsForPrompt,
+} from "./format-prompt.ts";
 import { parseFrontmatter } from "./parse.ts";
 
 async function temporaryDirectory() {
@@ -165,7 +169,7 @@ describe("discoverSkills", () => {
 });
 
 describe("formatSkillsForPrompt", () => {
-  test("formats a compact catalog and omits disable-model-invocation skills", () => {
+  test("formats the provided catalog as-is", () => {
     const prompt = formatSkillsForPrompt([
       {
         name: "code-review",
@@ -185,14 +189,70 @@ describe("formatSkillsForPrompt", () => {
       },
     ]);
 
-    expect(prompt).toContain("Skills: when a description matches, read that SKILL.md");
+    expect(prompt).toContain("Skills: this is the complete skill catalog for this Session");
     expect(prompt).toContain(
       '- code-review: Review "code" & PRs (/tmp/.agents/skills/code-review/SKILL.md)',
     );
-    expect(prompt).not.toContain("hidden");
+    expect(prompt).toContain("hidden");
   });
 
-  test("returns empty string when no visible skills", () => {
-    expect(formatSkillsForPrompt([])).toBe("");
+  test("explicitly forbids skill discovery when no skills are enabled", () => {
+    expect(formatSkillsForPrompt([])).toBe(
+      "Skills: no skills are enabled for this Session. Do not discover, load, or follow any SKILL.md files.",
+    );
+  });
+});
+
+describe("selectSkillsForPrompt", () => {
+  const skills = [
+    {
+      name: "auto",
+      description: "Auto",
+      filePath: "/tmp/auto/SKILL.md",
+      baseDir: "/tmp/auto",
+      source: "project" as const,
+      disableModelInvocation: false,
+    },
+    {
+      name: "manual",
+      description: "Manual",
+      filePath: "/tmp/manual/SKILL.md",
+      baseDir: "/tmp/manual",
+      source: "host" as const,
+      disableModelInvocation: true,
+    },
+  ];
+
+  test("defaults to non-manual skills", () => {
+    expect(selectSkillsForPrompt(skills, undefined).map((skill) => skill.name)).toEqual(["auto"]);
+  });
+
+  test("uses an exact allowlist including manual skills", () => {
+    expect(selectSkillsForPrompt(skills, ["manual", "auto"]).map((skill) => skill.name)).toEqual([
+      "manual",
+      "auto",
+    ]);
+  });
+
+  test("empty allowlist disables all skills", () => {
+    expect(selectSkillsForPrompt(skills, [])).toEqual([]);
+  });
+});
+
+describe("resolveSkillsByName", () => {
+  test("resolves known names and ignores unknown ones", () => {
+    const skills = [
+      {
+        name: "hidden",
+        description: "Hidden",
+        filePath: "/tmp/hidden/SKILL.md",
+        baseDir: "/tmp/hidden",
+        source: "host" as const,
+        disableModelInvocation: true,
+      },
+    ];
+    expect(resolveSkillsByName(skills, ["hidden", "missing", "hidden"]).map((s) => s.name)).toEqual(
+      ["hidden"],
+    );
   });
 });

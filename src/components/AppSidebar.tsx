@@ -18,6 +18,7 @@ import { useSidebarCollapsedProjects } from "./sidebar/use-sidebar-collapsed-pro
 import { useSidebarRename } from "./sidebar/use-sidebar-rename";
 import { useSidebarRenderers } from "./sidebar/use-sidebar-renderers";
 import { useSidebarModel } from "./sidebar/use-sidebar-model";
+import { useSessionMessageSearch } from "./sidebar/use-session-message-search";
 
 export function AppSidebar({
   detachedProject,
@@ -50,6 +51,7 @@ export function AppSidebar({
     removeSessionFromProject,
     setProjectPinned,
     reorderVisibleProjects,
+    searchSessionMessages,
   } = useActions();
   const {
     sessions,
@@ -99,6 +101,15 @@ export function AppSidebar({
     getSessionExecutionDirectory(activeSession) || activeTargetDirectory || null;
 
   const {
+    matchingSessionIds: messageMatchingSessionIds,
+    effectiveQuery: effectiveSearchQuery,
+    isPending: isMessageSearchPending,
+  } = useSessionMessageSearch({
+    sessions,
+    query: searchQuery,
+    searchSessionMessages,
+  });
+  const {
     hasActiveSearch,
     availableProjectDirectories,
     filteredChatSessions,
@@ -114,7 +125,8 @@ export function AppSidebar({
     connections,
     detachedProject,
     defaultChatDirectory,
-    searchQuery,
+    searchQuery: effectiveSearchQuery,
+    messageMatchingSessionIds,
     untitledLabel: t("sidebar.untitled"),
   });
 
@@ -281,7 +293,7 @@ export function AppSidebar({
       <SidebarHeaderContent
         searchInputRef={searchInputRef}
         searchQuery={searchQuery}
-        hasActiveSearch={hasActiveSearch}
+        hasActiveSearch={searchQuery.trim().length > 0}
         detachedProject={detachedProject}
         showChatsSection={showChatsSection}
         labels={{
@@ -302,6 +314,7 @@ export function AppSidebar({
           visibleChatSessions={visibleChatSessions}
           filteredProjectEntries={filteredProjectEntries}
           hasActiveSearch={hasActiveSearch}
+          isMessageSearchPending={isMessageSearchPending}
           detachedProject={detachedProject}
           showChatsSection={showChatsSection}
           visibleChatCount={visibleChatCount}

@@ -65,6 +65,7 @@ export function SidebarContentSections({
   visibleChatSessions,
   filteredProjectEntries,
   hasActiveSearch,
+  isMessageSearchPending,
   detachedProject,
   showChatsSection,
   visibleChatCount,
@@ -87,6 +88,7 @@ export function SidebarContentSections({
   visibleChatSessions: Session[];
   filteredProjectEntries: ProjectEntryTuple[];
   hasActiveSearch: boolean;
+  isMessageSearchPending: boolean;
   detachedProject?: string;
   showChatsSection: boolean;
   visibleChatCount: number;
@@ -178,9 +180,11 @@ export function SidebarContentSections({
               hasActiveSearch &&
               filteredProjectEntries.length === 0 &&
               pinnedEntries.length === 0 ? (
-                <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
-                  {labels.noMatches}
-                </div>
+                isMessageSearchPending ? null : (
+                  <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+                    {labels.noMatches}
+                  </div>
+                )
               ) : (
                 <div className="px-2 py-1 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
                   {labels.noChats}
@@ -249,9 +253,11 @@ export function SidebarContentSections({
             </div>
           ) : filteredProjectEntries.length === 0 ? (
             hasActiveSearch && pinnedEntries.length === 0 ? (
-              <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
-                {labels.noMatches}
-              </div>
+              isMessageSearchPending ? null : (
+                <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {labels.noMatches}
+                </div>
+              )
             ) : pinnedEntries.length > 0 ? (
               <div className="px-2 py-3 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
                 {labels.allProjectsPinned}

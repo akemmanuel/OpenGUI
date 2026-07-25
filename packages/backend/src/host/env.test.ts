@@ -10,6 +10,14 @@ describe("Host identity mode", () => {
     expect(readBackendHostEnv().identityMode).toBe("remote");
   });
 
+  test("recognizes the canonical server mode as Desktop Local", () => {
+    vi.stubEnv("OPENGUI_MODE", "");
+    vi.stubEnv("OPENGUI_SERVER_MODE", "desktop-sidecar");
+    vi.stubEnv("OPENGUI_IDENTITY_MODE", "");
+    vi.stubEnv("HOST", "127.0.0.1");
+    expect(readBackendHostEnv().identityMode).toBe("desktop-local");
+  });
+
   test("rejects Desktop Local bypass outside a loopback sidecar", () => {
     vi.stubEnv("OPENGUI_MODE", "api-only");
     vi.stubEnv("OPENGUI_IDENTITY_MODE", "desktop-local");

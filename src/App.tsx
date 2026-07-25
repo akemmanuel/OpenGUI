@@ -83,6 +83,7 @@ export function AppContent({
     activeTargetDirectory,
     sessionMeta,
     sessionErrors,
+    enabledSkillNames,
   } = useSessionState();
   const messageOrder = useActiveTranscriptMessageOrder();
   const contextMessages = useActiveTranscriptContextMessages();
@@ -270,7 +271,8 @@ export function AppContent({
                         onQueueModeChange={setQueueMode}
                         contextInfo={contextInfo}
                         onSubmit={(message, mode) => {
-                          return sendPrompt(message, mode);
+                          // Capture exactly what the overview shows at submit time.
+                          return sendPrompt(message, mode, [...enabledSkillNames]);
                         }}
                         onStop={() => abortSession()}
                       />

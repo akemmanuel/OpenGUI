@@ -1,4 +1,6 @@
-import { isAbsolute, resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import type { ExecutionPolicy } from "../execution-policy.ts";
 import { executeEditTool } from "./edit.ts";
 import { executeReadTool } from "./read.ts";
@@ -7,6 +9,48 @@ import { executeWriteTool } from "./write.ts";
 
 export interface ToolExecutionContext extends ShellToolContext {
   executionPolicy: ExecutionPolicy;
+}
+
+const MAX_TOOL_RESULT_BYTES = 5 * 1024;
+
+function safePathSegment(value: string) {
+  return value.replaceAll(/[^a-zA-Z0-9._-]/gu, "_");
+}
+
+function utf8Head(value: string, maximumBytes: number) {
+  const bytes = Buffer.from(value);
+  let end = Math.min(bytes.byteLength, maximumBytes);
+  while (end > 0 && end < bytes.byteLength && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+  return bytes.subarray(0, end).toString("utf8");
+}
+
+function utf8Tail(value: string, maximumBytes: number) {
+  const bytes = Buffer.from(value);
+  let start = Math.max(0, bytes.byteLength - maximumBytes);
+  while (start < bytes.byteLength && (bytes[start]! & 0xc0) === 0x80) start += 1;
+  return bytes.subarray(start).toString("utf8");
+}
+
+async function limitToolResult(context: ToolExecutionContext, result: unknown) {
+  const serialized = JSON.stringify(result);
+  if (Buffer.byteLength(serialized) <= MAX_TOOL_RESULT_BYTES) return result;
+
+  const outputDirectory = join(tmpdir(), "opengui-tool-output", safePathSegment(context.sessionId));
+  await mkdir(outputDirectory, { recursive: true });
+  const fullOutputPath = join(outputDirectory, `${safePathSegment(context.toolCallId)}.json`);
+  await writeFile(fullOutputPath, serialized, "utf8");
+
+  const separator = "\n\n… tool result truncated …\n\n";
+  const notice = `\n\nThe full tool result has been saved to ${fullOutputPath}.`;
+  const availableBytes =
+    MAX_TOOL_RESULT_BYTES - Buffer.byteLength(separator) - Buffer.byteLength(notice) - 512;
+  const headBytes = Math.ceil(availableBytes / 2);
+  const tailBytes = Math.floor(availableBytes / 2);
+  return {
+    output: `${utf8Head(serialized, headBytes)}${separator}${utf8Tail(serialized, tailBytes)}${notice}`,
+    truncated: true,
+    fullOutputPath,
+  };
 }
 
 function requestedPath(input: unknown) {
@@ -48,16 +92,22 @@ export async function executeTool(context: ToolExecutionContext, name: string, i
     }
   }
 
+  let result: unknown;
   switch (name) {
     case "read":
-      return executeReadTool(context.projectDirectory, input, authorizedPath);
+      result = await executeReadTool(context.projectDirectory, input, authorizedPath);
+      break;
     case "write":
-      return executeWriteTool(context.projectDirectory, input, authorizedPath);
+      result = await executeWriteTool(context.projectDirectory, input, authorizedPath);
+      break;
     case "edit":
-      return executeEditTool(context.projectDirectory, input, authorizedPath);
+      result = await executeEditTool(context.projectDirectory, input, authorizedPath);
+      break;
     case "shell":
-      return executeShellTool(context, input);
+      result = await executeShellTool(context, input);
+      break;
     default:
-      return Promise.resolve({ error: `Unknown tool: ${name}` });
+      result = { error: `Unknown tool: ${name}` };
   }
+  return limitToolResult(context, result);
 }

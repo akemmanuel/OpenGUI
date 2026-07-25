@@ -18,6 +18,7 @@ describe("buildSystemPrompt", () => {
         "Project directory: /tmp/proj",
         "Operating system: linux",
         "Shell: /bin/bash (posix)",
+        "Skills: no skills are enabled for this Session. Do not discover, load, or follow any SKILL.md files.",
       ].join("\n"),
     );
     expect(prompt).not.toMatch(/^read:/mu);

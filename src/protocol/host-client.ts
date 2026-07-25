@@ -3,6 +3,7 @@ import type {
   CodexAuthStatus,
   HostModelConnection,
   HostSessionSnapshot,
+  HostSkill,
   OpenGuiHostClient,
 } from "@/protocol/host-types";
 
@@ -124,6 +125,8 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         body: JSON.stringify({ directory }),
       });
     },
+    listSkills: async (directory) =>
+      (await request(`/api/host/skills?directory=${encodeURIComponent(directory)}`)) as HostSkill[],
     listSessions: async (directory) =>
       (await request(`/api/host/sessions?directory=${encodeURIComponent(directory)}`)) as Array<{
         id: string;
@@ -133,6 +136,11 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         updatedAt: string;
         status: HostSessionSnapshot["status"];
       }>,
+    searchSessionMessages: async (directories, query) =>
+      (await request("/api/host/session-message-search", {
+        method: "POST",
+        body: JSON.stringify({ directories, query }),
+      })) as string[],
     createSession: async (input) =>
       (await request("/api/host/sessions", {
         method: "POST",
@@ -160,10 +168,14 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         method: "PATCH",
         body: JSON.stringify({ reasoning }),
       })) as HostSessionSnapshot,
-    prompt: async (sessionId, text) =>
+    prompt: async (sessionId, text, options) =>
       (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}/prompt`, {
         method: "POST",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({
+          text,
+          // Preserve empty arrays: they mean "no skills", not "use defaults".
+          ...(options?.skills !== undefined ? { skills: options.skills } : {}),
+        }),
       })) as
         | { mode: "run"; startedEntries: HostSessionSnapshot["entries"] }
         | { mode: "follow_up"; followUp: HostSessionSnapshot["followUps"][number] },

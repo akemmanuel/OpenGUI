@@ -8,7 +8,7 @@ import type {
   QuestionRequest,
 } from "@/protocol/agent-types";
 import type { VariantSelections } from "@/hooks/use-agent-variant-core";
-import type { ReasoningEffort } from "@/protocol/host-types";
+import type { HostSkill, ReasoningEffort } from "@/protocol/host-types";
 import type {
   TransportAgentState,
   QueueMode,
@@ -35,6 +35,13 @@ export interface SessionContextValue {
   sessionDrafts: Record<string, string>;
   sessionMeta: SessionMetaMap;
   sessionErrors: Record<string, string>;
+  /**
+   * Skills enabled for the active session.
+   * Editable only before the first prompt; locked afterward for prompt-cache stability.
+   */
+  enabledSkillNames: string[];
+  /** True once the session has started and skill selection can no longer change. */
+  skillsLocked: boolean;
 }
 
 export interface ModelContextValue {
@@ -89,11 +96,17 @@ export interface ActionsContextValue {
   loadOlderMessages: () => Promise<boolean>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
-  sendPrompt: (text: string, mode?: QueueMode) => Promise<void>;
+  sendPrompt: (text: string, mode?: QueueMode, enabledSkills?: readonly string[]) => Promise<void>;
   findFiles: (
     target: { directory?: string; workspaceId?: string; baseUrl?: string } | null,
     query: string,
   ) => Promise<string[]>;
+  listSkills: (directory: string) => Promise<HostSkill[]>;
+  searchSessionMessages: (directories: readonly string[], query: string) => Promise<string[]>;
+  /** Ensure defaults exist for the active session (auto on, manual off). */
+  ensureSessionSkills: (skills: HostSkill[]) => void;
+  /** Toggle a skill before the session is locked. No-op when locked. */
+  toggleSessionSkill: (name: string, catalog?: HostSkill[]) => void;
   sendCommand: (command: string, args: string) => Promise<void>;
   summarizeSession: (model?: SelectedModel) => Promise<void>;
   abortSession: () => Promise<void>;

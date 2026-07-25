@@ -48,7 +48,7 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Native title bars maximize on double-click. */}
       <div
         data-slot="title-bar"
-        className="relative z-20 app-safe-top-bar bg-sidebar border-b border-border select-none shrink-0"
+        className="relative z-20 app-safe-top-bar bg-background border-b border-border select-none shrink-0"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         onDoubleClick={() => {
           if (!isWebRuntime) void shell.window.maximize();

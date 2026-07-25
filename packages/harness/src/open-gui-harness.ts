@@ -18,6 +18,7 @@ import type {
 } from "./harness.ts";
 import type { ModelToolName } from "./models/transport.ts";
 import { discoverSkills, loadSkillsFromDir } from "./skills/discover.ts";
+import { selectSkillsForPrompt } from "./skills/format-prompt.ts";
 import type { Skill } from "./skills/types.ts";
 import { SqliteSessionStore } from "./storage/sqlite-store.ts";
 import { executeTool } from "./tools/execute-tool.ts";
@@ -39,6 +40,40 @@ function selectedModel(entries: SessionSnapshot["entries"]): ModelSelection | nu
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry?.kind === "model_changed") return entry.payload.model as ModelSelection;
+  }
+  return null;
+}
+
+function normalizePromptInput(prompt: PromptInput): PromptInput {
+  const text = prompt.text.trim();
+  const hasSkills = prompt.skills !== undefined;
+  const skills = hasSkills
+    ? Array.from(
+        new Set((prompt.skills ?? []).map((name) => name.trim()).filter((name) => name.length > 0)),
+      )
+    : undefined;
+  return {
+    text,
+    ...(prompt.actor ? { actor: prompt.actor } : {}),
+    ...(hasSkills ? { skills } : {}),
+  };
+}
+
+/** First user_message skills field locks the Session catalog for prompt-cache stability. */
+function lockedSkillsFromEntries(entries: SessionSnapshot["entries"]): string[] | null {
+  for (const entry of entries) {
+    if (entry.kind !== "user_message") continue;
+    if (!Object.hasOwn(entry.payload, "skills")) continue;
+    const skills = entry.payload.skills;
+    if (!Array.isArray(skills)) return [];
+    return Array.from(
+      new Set(
+        skills
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ),
+    );
   }
   return null;
 }
@@ -194,6 +229,12 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     return this.#store.listSessions(projectDirectory);
   }
 
+  async searchSessionMessages(projectDirectories: readonly string[], query: string) {
+    this.#assertOpen();
+    await this.#ready;
+    return this.#store.searchSessionMessages(projectDirectories, query);
+  }
+
   async listAllSessions() {
     this.#assertOpen();
     await this.#ready;
@@ -237,7 +278,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     }
     return await this.#store.enqueueFollowUp(
       sessionId,
-      { text, ...(prompt.actor ? { actor: prompt.actor } : {}) },
+      normalizePromptInput(prompt),
       this.#clock.now().toISOString(),
     );
   }
@@ -246,10 +287,18 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#assertOpen();
     const text = prompt.text.trim();
     if (!text) throw new Error("Follow-up text must not be empty");
-    await this.#store.updateFollowUp(sessionId, followUpId, {
-      text,
-      ...(prompt.actor ? { actor: prompt.actor } : {}),
-    });
+    const existing = (await this.#store.listFollowUps(sessionId)).find(
+      (item) => item.id === followUpId,
+    );
+    await this.#store.updateFollowUp(
+      sessionId,
+      followUpId,
+      normalizePromptInput({
+        text,
+        actor: prompt.actor ?? existing?.prompt.actor,
+        skills: prompt.skills ?? existing?.prompt.skills,
+      }),
+    );
   }
 
   async reorderFollowUp(sessionId: string, followUpId: string, index: number) {
@@ -328,10 +377,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
       }
     };
     try {
-      let nextPrompt: PromptInput | null = {
-        text: prompt.text.trim(),
-        ...(prompt.actor ? { actor: prompt.actor } : {}),
-      };
+      let nextPrompt: PromptInput | null = normalizePromptInput(prompt);
       let followUpId: string | undefined;
       while (nextPrompt) {
         const runId = this.#ids.next("run");
@@ -339,6 +385,13 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         const snapshot = await this.readSession(sessionId);
         if (!snapshot.model || !snapshot.reasoning)
           throw new Error("Session model selection is incomplete");
+        // Once a Session has a skill allowlist on its first user message, every
+        // later turn reuses it so the system-prompt skills section stays stable
+        // for provider prompt caching.
+        const lockedSkills = lockedSkillsFromEntries(snapshot.entries);
+        if (lockedSkills !== null) {
+          nextPrompt = { ...nextPrompt, skills: lockedSkills };
+        }
         // Resolve once at the durable run seam. Queued prompts retain their
         // actor, but never retain a stale policy snapshot.
         await revalidate(nextPrompt.actor, snapshot.projectDirectory);
@@ -359,7 +412,11 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           let assistantText = "";
           let reasoningText = "";
           const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
-          const skills = await this.#skillsForRun(current.projectDirectory, initialAccess.policy);
+          const discoveredSkills = await this.#skillsForRun(
+            current.projectDirectory,
+            initialAccess.policy,
+          );
+          const skills = selectSkillsForPrompt(discoveredSkills, nextPrompt.skills);
           // Skill discovery can perform I/O, so refresh once more immediately
           // before exposing capabilities to the provider.
           const modelAccess = await revalidate(nextPrompt.actor, current.projectDirectory);

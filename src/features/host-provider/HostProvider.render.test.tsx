@@ -33,6 +33,7 @@ const host = vi.hoisted(() => ({
   setModel: vi.fn(),
   setReasoning: vi.fn(),
   findFiles: vi.fn(),
+  listSkills: vi.fn(),
   listFollowUps: vi.fn(),
   removeFollowUp: vi.fn(),
   reorderFollowUps: vi.fn(),
@@ -164,9 +165,28 @@ describe("HostProvider render integration", () => {
     expect(host.readSession).toHaveBeenCalledWith("session-1");
 
     await act(() => actions.renameSession("session-1", "Renamed"));
+    // Existing transcript locks skill edits; first send still pins an explicit
+    // allowlist into the Host prompt (and thus the system prompt catalog).
+    host.listSkills.mockResolvedValue([
+      {
+        name: "code-review",
+        description: "Review",
+        source: "project",
+        manual: false,
+      },
+      {
+        name: "impeccable",
+        description: "Design",
+        source: "host",
+        manual: true,
+      },
+    ]);
     await act(() => actions.sendPrompt("continue"));
     expect(host.renameSession).toHaveBeenCalledWith("session-1", "Renamed");
-    expect(host.prompt).toHaveBeenCalledWith("session-1", "continue");
+    expect(host.listSkills).toHaveBeenCalledWith("/project");
+    expect(host.prompt).toHaveBeenCalledWith("session-1", "continue", {
+      skills: ["code-review"],
+    });
     expect(state.isBusy).toBe(true);
 
     await act(() => actions.setReasoningEffort?.("high"));
@@ -194,6 +214,97 @@ describe("HostProvider render integration", () => {
 
     view.unmount();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  test("sends an explicit empty allowlist when every skill is disabled in a new chat", async () => {
+    const created: HostSessionSnapshot = {
+      ...snapshot,
+      id: "session-new",
+      title: "No skills",
+      entries: [],
+    };
+    host.createSession.mockResolvedValue(created);
+    host.listSessions.mockResolvedValue([]);
+
+    render(
+      <HostProvider>
+        <Probe />
+      </HostProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession(null));
+
+    const catalog = [
+      {
+        name: "code-review",
+        description: "Review",
+        source: "project" as const,
+        manual: false,
+      },
+    ];
+    act(() => {
+      actions.ensureSessionSkills(catalog);
+      actions.toggleSessionSkill("code-review", catalog);
+    });
+    await waitFor(() => expect(state.enabledSkillNames).toEqual([]));
+
+    await act(() => actions.sendPrompt("No skills", undefined, []));
+
+    expect(host.prompt).toHaveBeenCalledWith("session-new", "No skills", { skills: [] });
+  });
+
+  test("submits only two selected skills from a large auto-enabled catalog", async () => {
+    const created: HostSessionSnapshot = {
+      ...snapshot,
+      id: "session-two-skills",
+      title: "Two skills",
+      entries: [],
+    };
+    host.createSession.mockResolvedValue(created);
+    host.listSessions.mockResolvedValue([]);
+
+    render(
+      <HostProvider>
+        <Probe />
+      </HostProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession(null));
+
+    const names = [
+      "agent-browser",
+      "code-review",
+      "codebase-design",
+      "diagnosing-bugs",
+      "dogfood",
+      "domain-modeling",
+      "grilling",
+      "impeccable",
+      "prototype",
+      "research",
+      "resolving-merge-conflicts",
+      "tdd",
+    ];
+    const catalog = names.map((name) => ({
+      name,
+      description: name,
+      source: "project" as const,
+      manual: false,
+    }));
+    act(() => actions.ensureSessionSkills(catalog));
+    await waitFor(() => expect(state.enabledSkillNames).toEqual(names));
+
+    const selected = new Set(["dogfood", "impeccable"]);
+    for (const name of names.filter((name) => !selected.has(name))) {
+      act(() => actions.toggleSessionSkill(name, catalog));
+    }
+    await waitFor(() => expect(state.enabledSkillNames).toEqual(["dogfood", "impeccable"]));
+
+    await act(() => actions.sendPrompt("Which skills?", undefined, ["dogfood", "impeccable"]));
+
+    expect(host.prompt).toHaveBeenCalledWith("session-two-skills", "Which skills?", {
+      skills: ["dogfood", "impeccable"],
+    });
   });
 
   test("surfaces bootstrap failure as a stable error state", async () => {

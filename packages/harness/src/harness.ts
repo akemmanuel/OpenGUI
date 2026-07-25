@@ -87,6 +87,12 @@ export interface DurableActor {
 export interface PromptInput {
   text: string;
   actor?: DurableActor;
+  /**
+   * Session skill allowlist for this turn.
+   * `undefined` keeps the default auto catalog; an array (including empty)
+   * is the exact set of skill names exposed to the model.
+   */
+  skills?: string[];
 }
 
 export type SessionEvent =
@@ -110,6 +116,7 @@ export interface HarnessSession {
 
 export interface OpenGuiHarness {
   listSessions(projectDirectory: string): Promise<SessionSummary[]>;
+  searchSessionMessages(projectDirectories: readonly string[], query: string): Promise<string[]>;
   listAllSessions(): Promise<SessionSummary[]>;
   createSession(input: CreateSessionInput): Promise<HarnessSession>;
   openSession(sessionId: string): Promise<HarnessSession>;

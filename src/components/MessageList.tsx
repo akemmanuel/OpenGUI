@@ -10,7 +10,7 @@ export function MessageList() {
   const model = useMessageListModel();
 
   return (
-    <MessageListViewportShell viewport={model.viewport}>
+    <MessageListViewportShell viewport={model.viewport} directory={model.projectDirectory}>
       <MessageListTranscript model={model} />
     </MessageListViewportShell>
   );

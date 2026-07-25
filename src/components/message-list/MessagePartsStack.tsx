@@ -1,6 +1,5 @@
 import type { ImageMention } from "@/components/ImageMentionPreview";
 import type { TranscriptPart } from "@/protocol/session-transcript";
-import { Fragment } from "react";
 import { PartView } from "./PartView";
 import { ToolCallGroupView } from "./tools/ToolCallGroupView";
 
@@ -30,13 +29,6 @@ export function groupToolsUntilAssistantText(parts: TranscriptPart[]) {
   }
   flushActivity();
   return groups;
-}
-
-export function separateToolGroupParts(parts: TranscriptPart[]) {
-  return {
-    reasoning: parts.filter((part) => part.type === "reasoning"),
-    tools: parts.filter((part) => part.type === "tool"),
-  };
 }
 
 export function MessagePartsStack({
@@ -78,28 +70,24 @@ export function MessagePartsStack({
               imageBaseDirectory={imageBaseDirectory}
             />
           ) : (
-            (() => {
-              const separated = separateToolGroupParts(partOrGroup);
-              return (
-                <Fragment key={`tool-group:${partOrGroup[0]?.id}`}>
-                  {separated.reasoning.map((reasoning) => (
-                    <PartView key={reasoning.id} part={reasoning} />
-                  ))}
-                  <ToolCallGroupView
-                    parts={separated.tools}
-                    awaitingAssistantResponse={isAssistantTurnActive && index === groups.length - 1}
-                    expandedToolCalls={expandedToolCalls}
-                    onSetToolCallExpanded={onSetToolCallExpanded}
-                  />
-                </Fragment>
-              );
-            })()
+            <ToolCallGroupView
+              key={`tool-group:${partOrGroup[0]?.id}`}
+              parts={partOrGroup}
+              awaitingAssistantResponse={isAssistantTurnActive && index === groups.length - 1}
+              expandedToolCalls={expandedToolCalls}
+              onSetToolCallExpanded={onSetToolCallExpanded}
+            />
           )
         ) : (
           <PartView
             key={partOrGroup.id}
             part={partOrGroup}
             isUser={isUser}
+            isReasoningActive={
+              partOrGroup.type === "reasoning" &&
+              isAssistantTurnActive &&
+              index === groups.length - 1
+            }
             expandedToolCalls={expandedToolCalls}
             onSetToolCallExpanded={onSetToolCallExpanded}
             activeImagePath={activeImagePath}

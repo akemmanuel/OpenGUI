@@ -10,6 +10,8 @@ import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
 import { isSidebarProjectHidden } from "@/lib/persistence/project";
 import { buildSidebarOrderedRootProjectDirectories } from "@/lib/sidebar-project-entries";
 
+const EMPTY_SESSION_ID_SET: ReadonlySet<string> = new Set();
+
 function getSidebarSessionSortTime(session: Session, sessionMeta: SessionMetaMap) {
   const meta = sessionMeta[session.id];
   if (typeof meta?.sidebarMovedAt === "number") {
@@ -56,6 +58,26 @@ export function sortSessionsForSidebar(items: Session[], sessionMeta: SessionMet
   });
 }
 
+export function sessionMatchesSidebarSearch({
+  session,
+  sessionMeta,
+  normalizedQuery,
+  messageMatchingSessionIds,
+  untitledLabel,
+}: {
+  session: Session;
+  sessionMeta: SessionMetaMap;
+  normalizedQuery: string;
+  messageMatchingSessionIds: ReadonlySet<string>;
+  untitledLabel: string;
+}) {
+  if (messageMatchingSessionIds.has(session.id)) return true;
+  const sessionTags = sessionMeta[session.id]?.tags ?? [];
+  return `${session.title || untitledLabel} ${sessionTags.join(" ")}`
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
 export function useSidebarModel({
   sessions,
   sessionMeta,
@@ -65,6 +87,7 @@ export function useSidebarModel({
   detachedProject,
   defaultChatDirectory,
   searchQuery,
+  messageMatchingSessionIds = EMPTY_SESSION_ID_SET,
   untitledLabel,
 }: {
   sessions: Session[];
@@ -75,6 +98,7 @@ export function useSidebarModel({
   detachedProject?: string;
   defaultChatDirectory?: string | null;
   searchQuery: string;
+  messageMatchingSessionIds?: ReadonlySet<string>;
   untitledLabel: string;
 }) {
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -205,13 +229,23 @@ export function useSidebarModel({
 
   const filteredChatSessions = useMemo(() => {
     if (!hasActiveSearch) return chatSessions;
-    return chatSessions.filter((session) => {
-      const sessionTags = sessionMeta[session.id]?.tags ?? [];
-      const sessionSearchText =
-        `${session.title || untitledLabel} ${sessionTags.join(" ")}`.toLowerCase();
-      return sessionSearchText.includes(normalizedSearchQuery);
-    });
-  }, [chatSessions, hasActiveSearch, normalizedSearchQuery, sessionMeta, untitledLabel]);
+    return chatSessions.filter((session) =>
+      sessionMatchesSidebarSearch({
+        session,
+        sessionMeta,
+        normalizedQuery: normalizedSearchQuery,
+        messageMatchingSessionIds,
+        untitledLabel,
+      }),
+    );
+  }, [
+    chatSessions,
+    hasActiveSearch,
+    messageMatchingSessionIds,
+    normalizedSearchQuery,
+    sessionMeta,
+    untitledLabel,
+  ]);
 
   const projectEntries = useMemo(() => Array.from(projectGroups), [projectGroups]);
   const searchFilteredProjectEntries = useMemo(() => {
@@ -224,16 +258,26 @@ export function useSidebarModel({
           return [directory, dirSessions] as const;
         }
 
-        const matchingSessions = dirSessions.filter((session) => {
-          const sessionTags = sessionMeta[session.id]?.tags ?? [];
-          const sessionSearchText =
-            `${session.title || untitledLabel} ${sessionTags.join(" ")}`.toLowerCase();
-          return sessionSearchText.includes(normalizedSearchQuery);
-        });
+        const matchingSessions = dirSessions.filter((session) =>
+          sessionMatchesSidebarSearch({
+            session,
+            sessionMeta,
+            normalizedQuery: normalizedSearchQuery,
+            messageMatchingSessionIds,
+            untitledLabel,
+          }),
+        );
         return matchingSessions.length > 0 ? ([directory, matchingSessions] as const) : null;
       })
       .filter((entry): entry is (typeof projectEntries)[number] => entry !== null);
-  }, [hasActiveSearch, normalizedSearchQuery, projectEntries, sessionMeta, untitledLabel]);
+  }, [
+    hasActiveSearch,
+    messageMatchingSessionIds,
+    normalizedSearchQuery,
+    projectEntries,
+    sessionMeta,
+    untitledLabel,
+  ]);
 
   const pinnedModel = useMemo(
     () =>

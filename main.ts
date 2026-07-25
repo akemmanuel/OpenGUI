@@ -16,6 +16,8 @@ import { broadcastToAllWindows } from "./lib/window-broadcast.js";
 import { findFilesInDirectory } from "./server/services/file-search.js";
 import {
   defaultTerminalInvocation,
+  desktopWindowFrameOptions,
+  installDesktopChromiumSwitches,
   installWebNavigationPolicy,
   isWebUrl,
 } from "./main/desktop-shell.js";
@@ -32,6 +34,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.setName("OpenGUI");
 app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));
+// Keep Chromium compositor tiles and the native window backing store aligned.
+// Without this, macOS can color-convert only some 256px GPU tiles and show
+// horizontal dark bands inside an otherwise opaque frameless window.
+installDesktopChromiumSwitches(process.platform, app.commandLine);
 
 const DEV_SERVER_URL = process.env.OPENGUI_DEV_SERVER_URL || "http://localhost:3000";
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
@@ -156,8 +162,6 @@ function createBrowserWindow({
   minWidth?: number;
   minHeight?: number;
 }) {
-  const isMac = process.platform === "darwin";
-
   const win = new BrowserWindow({
     width,
     height,
@@ -165,13 +169,12 @@ function createBrowserWindow({
     minHeight,
     show: false,
     frame: false,
-    ...(isMac ? { transparent: true } : {}),
+    ...desktopWindowFrameOptions(process.platform),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.cjs"),
     },
-    ...(!isMac ? { backgroundColor: "#1a1a1a" } : {}),
   });
 
   installWebNavigationPolicy({
@@ -224,6 +227,10 @@ function installDevNetworkFailureLogging() {
     // workspace switches. The renderer owns retry/error handling for these;
     // do not treat their lifecycle as failed HTTP requests in dev logging.
     if (details.url.includes("/api/events/")) return;
+    // Chromium can issue a cache-only font revalidation while Vite replaces a
+    // stylesheet during HMR. The font remains available from Vite and the page
+    // already has the loaded face, so this is not an actionable network error.
+    if (details.error === "net::ERR_CACHE_MISS" && details.url.endsWith(".woff2")) return;
     const key = `${details.method} ${details.url} ${details.error}`;
     if (seen.has(key)) return;
     seen.add(key);

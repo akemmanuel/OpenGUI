@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Kysely, sql, type Transaction } from "kysely";
@@ -218,6 +219,7 @@ export class SqliteSessionStore {
           runId: input.runId,
           text: input.prompt.text,
           ...(input.prompt.actor ? { actor: input.prompt.actor } : {}),
+          ...(input.prompt.skills !== undefined ? { skills: input.prompt.skills } : {}),
           model: input.model,
           reasoning: input.reasoning,
           ...(input.followUpId ? { followUpId: input.followUpId } : {}),
@@ -465,6 +467,34 @@ export class SqliteSessionStore {
         return this.#summary(session, entries);
       }),
     );
+  }
+
+  async searchSessionMessages(projectDirectories: readonly string[], query: string) {
+    await this.#ready;
+    const tokens =
+      query
+        .normalize("NFKC")
+        .match(/[\p{L}\p{N}_]+/gu)
+        ?.slice(0, 16) ?? [];
+    const projectScopes = Array.from(
+      new Set(
+        projectDirectories.map(
+          (directory) => `scope${Buffer.from(directory, "utf8").toString("hex")}`,
+        ),
+      ),
+    );
+    if (tokens.length === 0 || projectScopes.length === 0) return [];
+    const scopeQuery = projectScopes.map((scope) => `project_scope:"${scope}"`).join(" OR ");
+    const contentQuery = tokens
+      .map((token) => `content:"${token.replaceAll('"', '""')}"*`)
+      .join(" AND ");
+    const matchQuery = `(${scopeQuery}) AND ${contentQuery}`;
+    const result = await sql<{ session_id: string }>`
+      SELECT DISTINCT session_id
+      FROM session_message_search
+      WHERE session_message_search MATCH ${matchQuery}
+    `.execute(this.#database);
+    return result.rows.map((row) => row.session_id);
   }
 
   async listAllSessions() {

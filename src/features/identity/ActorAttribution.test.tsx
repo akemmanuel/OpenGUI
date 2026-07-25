@@ -31,8 +31,13 @@ describe("actor attribution", () => {
     ).toBe("");
   });
 
-  test("uses translated You instead of a synthetic local display name", () => {
+  test("leaves desktop-local messages unlabeled", () => {
     const local = { type: "local" as const, id: "desktop-local", displayName: "" };
-    expect(actorAttributionText(local, local, "Tú")).toBe("Tú");
+    expect(actorAttributionText(local, local, "Tú")).toBeNull();
+    expect(
+      renderToStaticMarkup(
+        <ActorAttributionLabel actor={local} currentActor={local} youLabel="Tú" />,
+      ),
+    ).toBe("");
   });
 });

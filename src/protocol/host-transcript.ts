@@ -90,7 +90,7 @@ export function projectHostTranscriptStream(stream: HostTranscriptStream): Messa
                 sessionID: stream.snapshot.id,
                 messageID: messageId,
                 tokens: {},
-                time: { start: now },
+                time: streamedText ? { start: now, end: now } : { start: now },
               },
             ]
           : []),
@@ -219,7 +219,19 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
         messageID: messageId,
         tokens: {},
       });
-      pendingAssistant.info.time.completed = createdMs(entry.createdAt);
+      continue;
+    }
+
+    if (
+      entry.kind === "run_completed" ||
+      entry.kind === "run_aborted" ||
+      entry.kind === "run_interrupted"
+    ) {
+      const runId = text(entry.payload.runId, entry.id);
+      const messageId = `run:${runId}`;
+      if (pendingAssistant?.info.id === messageId) {
+        pendingAssistant.info.time.completed = createdMs(entry.createdAt);
+      }
       continue;
     }
 

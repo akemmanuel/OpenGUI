@@ -13,12 +13,19 @@
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <title>OpenGUI</title>
     <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        background: var(--background, oklch(1 0 0));
+      }
       body {
         margin: 0;
-        background: oklch(1 0 0);
       }
-      .dark body {
-        background: oklch(0.145 0 0);
+      html.dark,
+      html.dark body,
+      html.dark #root {
+        background: var(--background, oklch(0.145 0 0));
       }
       .splash {
         display: flex;

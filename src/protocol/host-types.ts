@@ -32,6 +32,14 @@ export interface HostProject {
   name: string;
 }
 
+export interface HostSkill {
+  name: string;
+  description: string;
+  source: "host" | "project";
+  /** True when the skill is user-invoked only (not auto-advertised to the model). */
+  manual: boolean;
+}
+
 export interface HostSessionSummary {
   id: string;
   projectDirectory: string;
@@ -112,7 +120,9 @@ export interface OpenGuiHostClient {
   listProjects(): Promise<HostProject[]>;
   registerProject(directory: string): Promise<HostProject>;
   unregisterProject(directory: string): Promise<void>;
+  listSkills(directory: string): Promise<HostSkill[]>;
   listSessions(directory: string): Promise<HostSessionSummary[]>;
+  searchSessionMessages(directories: readonly string[], query: string): Promise<string[]>;
   createSession(input: {
     directory: string;
     title?: string;
@@ -130,6 +140,7 @@ export interface OpenGuiHostClient {
   prompt(
     sessionId: string,
     text: string,
+    options?: { skills?: string[] },
   ): Promise<
     | { mode: "run"; startedEntries: HostSessionEntry[] }
     | { mode: "follow_up"; followUp: HostFollowUp }

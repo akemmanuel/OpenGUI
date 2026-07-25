@@ -46,16 +46,14 @@ export function ReasoningEffortSelector() {
           variant="ghost"
           size="sm"
           data-responsive-allow="text-clip"
-          className="!h-7 min-w-0 gap-1.5 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground"
+          className="!h-7 min-w-0 shrink-0 gap-1.5 overflow-hidden px-1.5 text-xs text-muted-foreground hover:text-foreground"
           title={t("reasoningEffort.title", {
             effort: t(`reasoningEffort.levels.${reasoningEffort}`),
           })}
         >
-          <Brain className="size-3.5" />
+          <Brain className="size-3.5 shrink-0" />
           <span className="min-w-0 truncate" data-responsive-allow="text-clip">
-            {t("reasoningEffort.compact", {
-              effort: t(`reasoningEffort.levels.${reasoningEffort}`),
-            })}
+            {t(`reasoningEffort.levels.${reasoningEffort}`)}
           </span>
         </Button>
       </DropdownMenuTrigger>

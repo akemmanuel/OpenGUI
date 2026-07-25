@@ -9,6 +9,7 @@ import { TextPartView } from "./TextPartView";
 export const PartView = memo(function PartView({
   part,
   isUser,
+  isReasoningActive,
   expandedToolCalls,
   onSetToolCallExpanded,
   activeImagePath,
@@ -18,6 +19,7 @@ export const PartView = memo(function PartView({
 }: {
   part: TranscriptPart;
   isUser?: boolean;
+  isReasoningActive?: boolean;
   expandedToolCalls?: ReadonlySet<string>;
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
   activeImagePath?: string | null;
@@ -40,7 +42,7 @@ export const PartView = memo(function PartView({
     case "file":
       return <FilePartView part={part} />;
     case "reasoning":
-      return <ReasoningPartView part={part} />;
+      return <ReasoningPartView part={part} active={isReasoningActive} />;
     case "tool":
       return (
         <ToolCallPartView

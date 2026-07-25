@@ -216,6 +216,7 @@
     "uploadingFiles": "Dateien werden hochgeladen…",
     "add": "Hinzufügen",
     "addFile": "Datei hinzufügen",
+
     "mcps": "MCPs",
     "newWorktree": "Neuer Worktree",
     "currentRootWorktree": "Aktueller Branch des Root-Worktrees.",
@@ -235,7 +236,6 @@
   },
   "reasoningEffort": {
     "label": "Denkaufwand",
-    "compact": "Denken: {{effort}}",
     "title": "Denkaufwand: {{effort}}",
     "levels": {
       "none": "Aus",
@@ -738,6 +738,12 @@
     "noWorkspaceDescription": "Ein Workspace ist dein OpenGUI-Backend. Lege einen an und verbinde dann Projekte.",
     "addWorkspace": "Workspace hinzufügen",
     "noSharedProjects": "Für dein Konto wurden noch keine Projektordner freigegeben. Bitte den Host-Eigentümer oder eine einladende Person um Zugriff."
+  },
+  "emptySession": {
+    "skillsHeading": "Skills",
+    "skillsLocked": "Skills sind für diese Sitzung gesperrt",
+    "enableSkill": "Skill für diese Sitzung aktivieren",
+    "disableSkill": "Skill für diese Sitzung deaktivieren"
   },
   "mergeDialog": {
     "failed": "Merge fehlgeschlagen",

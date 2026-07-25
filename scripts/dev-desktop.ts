@@ -26,7 +26,13 @@ if (build.status !== 0) process.exit(build.status ?? 1);
 
 const server = spawn("vp", ["dev", "--host", host, "--port", String(port)], {
   stdio: "inherit",
-  env: process.env,
+  env: {
+    ...process.env,
+    // The Vite plugin starts the development backend. Mark that child as the
+    // loopback-only Desktop Host so Local mode does not require web identity.
+    OPENGUI_MODE: "desktop-sidecar",
+    OPENGUI_SERVER_MODE: "desktop-sidecar",
+  },
 });
 
 const maxAttempts = 60;

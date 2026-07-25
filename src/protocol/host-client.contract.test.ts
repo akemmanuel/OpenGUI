@@ -81,11 +81,15 @@ describe("Host client HTTP contract", () => {
     });
 
     await client.listSessions("/work/a & b");
+    await client.listSkills("/work/a & b");
+    await client.searchSessionMessages(["/work/a & b", "/work/c"], "needle #1");
     await client.readSession("session/with?reserved");
     await client.findFiles("/work/a & b", "name #1");
 
     expect(urls).toEqual([
       "https://host.example/api/host/sessions?directory=%2Fwork%2Fa%20%26%20b",
+      "https://host.example/api/host/skills?directory=%2Fwork%2Fa%20%26%20b",
+      "https://host.example/api/host/session-message-search",
       "https://host.example/api/host/sessions/session%2Fwith%3Freserved",
       "https://host.example/api/rpc",
     ]);

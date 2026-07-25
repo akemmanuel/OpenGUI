@@ -244,6 +244,21 @@ export function registerHostProductRoutes(
     }
   });
 
+  app.get("/api/host/skills", async (c) => {
+    try {
+      const host = await input.getHost();
+      const directory = c.req.query("directory")?.trim();
+      if (!directory) throw new Error("directory is required");
+      const resolved = await resolveRequestDirectory(durableActor(c.get("actor")), directory);
+      return Response.json({
+        ok: true,
+        value: await host.listSkills(resolved, durableActor(c.get("actor"))),
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
   app.get("/api/host/sessions", async (c) => {
     try {
       const host = await input.getHost();
@@ -260,6 +275,36 @@ export function registerHostProductRoutes(
             })),
           )
         : sessions;
+      return Response.json({ ok: true, value });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.post("/api/host/session-message-search", async (c) => {
+    try {
+      const host = await input.getHost();
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body)) throw new Error("Request body must be an object");
+      const query = textField(body, "query");
+      const directories = Array.isArray(body.directories)
+        ? Array.from(
+            new Set(
+              body.directories
+                .map((directory) => (typeof directory === "string" ? directory.trim() : ""))
+                .filter(Boolean),
+            ),
+          )
+        : [];
+      if (directories.length === 0) throw new Error("directories are required");
+      if (directories.length > 200) throw new Error("at most 200 directories may be searched");
+      if (!query) return Response.json({ ok: true, value: [] });
+      if (query.length > 500) throw new Error("query must be at most 500 characters");
+      const actor = durableActor(c.get("actor"));
+      const resolved = await Promise.all(
+        directories.map((directory) => resolveRequestDirectory(actor, directory)),
+      );
+      const value = await host.searchSessionMessages(resolved, query, actor);
       return Response.json({ ok: true, value });
     } catch (error) {
       return sessionError(error);
@@ -402,6 +447,12 @@ export function registerHostProductRoutes(
       const body = (await c.req.json()) as Record<string, unknown>;
       const text = textField(body, "text");
       if (!text) throw new Error("text is required");
+      const skills = Array.isArray(body.skills)
+        ? body.skills
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)
+        : undefined;
       const actor = c.get("actor") as Actor;
       const sessionId = c.req.param("sessionId");
       if (input.identity) {
@@ -417,6 +468,8 @@ export function registerHostProductRoutes(
         ok: true,
         value: await host.prompt(sessionId, {
           text,
+          // `skills: []` must stay distinct from omitted skills (Host defaults).
+          ...(skills !== undefined ? { skills } : {}),
           actor: durableActor(actor),
         }),
       });

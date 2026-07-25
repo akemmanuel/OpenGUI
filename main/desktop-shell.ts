@@ -58,6 +58,31 @@ export function defaultTerminalInvocation(platform: DesktopPlatform, directory: 
   return null;
 }
 
+export function installDesktopChromiumSwitches(
+  platform: DesktopPlatform,
+  commandLine: { appendSwitch(name: string, value?: string): void },
+) {
+  if (platform !== "darwin") return;
+  // Keep Chromium compositor tiles and the native NSView backing store in one
+  // color path. GPU memory-buffer compositor resources can color-convert only
+  // some 256px tiles on macOS, producing horizontal dark bands.
+  commandLine.appendSwitch("disable-gpu-memory-buffer-compositor-resources");
+  commandLine.appendSwitch("force-color-profile", "srgb");
+}
+
+export function desktopWindowFrameOptions(platform: DesktopPlatform) {
+  if (platform === "darwin") {
+    return {
+      // Opaque frameless window: frame stays false; customButtonsOnHover only
+      // suppresses the native title-bar line, not the custom window chrome.
+      backgroundColor: "#131313",
+      titleBarStyle: "customButtonsOnHover" as const,
+      trafficLightPosition: { x: -100, y: -100 },
+    };
+  }
+  return { backgroundColor: "#1a1a1a" };
+}
+
 export function shouldQuitWhenAllWindowsClosed(platform: DesktopPlatform) {
   return platform !== "darwin";
 }

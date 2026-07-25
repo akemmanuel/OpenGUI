@@ -10,8 +10,14 @@ const TIMELINE_ROW_BASE = "flex min-w-0 items-center gap-1.5";
 const TIMELINE_BUTTON_RESET =
   "m-0 appearance-none border-0 bg-transparent p-0 text-left text-inherit";
 
-export function ReasoningPartView({ part }: { part: ReasoningTranscriptPart }) {
-  const isThinking = !part.time.end;
+export function ReasoningPartView({
+  part,
+  active,
+}: {
+  part: ReasoningTranscriptPart;
+  active?: boolean;
+}) {
+  const isThinking = active ?? !part.time.end;
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);

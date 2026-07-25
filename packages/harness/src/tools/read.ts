@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
-const MAX_RETURNED_BYTES = 64 * 1024;
-const MAX_RETURNED_LINES = 2_000;
+const DIRECTORY_READ_NOTE = "Read tool SHOULD only be used for files, but here is the content.";
 
 export interface ReadToolInput {
   path: string;
@@ -47,6 +46,19 @@ export async function executeReadTool(
     authorizedPath ??
     (isAbsolute(rawInput.path) ? resolve(rawInput.path) : resolve(projectDirectory, rawInput.path));
   try {
+    if ((await stat(path)).isDirectory()) {
+      const entries = await readdir(path, { withFileTypes: true });
+      const listing = entries
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`)
+        .join("\n");
+      return {
+        path,
+        content: `${listing}${listing ? "\n\n" : ""}${DIRECTORY_READ_NOTE}`,
+        truncated: false,
+      };
+    }
+
     const bytes = await readFile(path);
     if (bytes.includes(0)) {
       return { path, error: "read does not support binary files", truncated: false };
@@ -64,19 +76,11 @@ export async function executeReadTool(
       startIndex,
       Math.floor(rawInput.endLine ?? Number.MAX_SAFE_INTEGER),
     );
-    const selected = lines.slice(
-      startIndex,
-      Math.min(requestedEnd, startIndex + MAX_RETURNED_LINES),
-    );
-    const selectedText = selected.join("");
-    const returned = Buffer.from(selectedText).subarray(0, MAX_RETURNED_BYTES).toString("utf8");
+    const selectedText = lines.slice(startIndex, requestedEnd).join("");
     return {
       path,
-      content: returned,
-      truncated:
-        returned.length < selectedText.length ||
-        requestedEnd < lines.length ||
-        startIndex + MAX_RETURNED_LINES < Math.min(requestedEnd, lines.length),
+      content: selectedText,
+      truncated: requestedEnd < lines.length,
     };
   } catch (error) {
     return {
