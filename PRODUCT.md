@@ -36,4 +36,4 @@ Target WCAG AA contrast for text, placeholders, controls, borders, and focus sta
 
 ## Multi-user Host principles
 
-Remote Hosts are user-default and share-only: Accounts own private Sessions, Teams are explicit share principals, project paths and shared model connections require grants, and public Session links are read-only. Desktop Local remains Account-free. Path grants protect OpenGUI product/file surfaces but must never be described as confinement for the unrestricted shell.
+Remote Hosts are user-default and share-only: Accounts own private Sessions, Teams are explicit share principals, project paths and shared model access require grants, and public Session links are read-only. Operators should be able to present intentional **model offerings** (for example “Company Model”) rather than only raw vendor model ids; members use entitled offerings without managing provider plumbing unless personal keys are explicitly allowed. Desktop Local remains Account-free. Path grants protect OpenGUI product/file surfaces but must never be described as confinement for the unrestricted shell.

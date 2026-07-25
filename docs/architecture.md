@@ -43,6 +43,8 @@ Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backe
 
 **Host identity / Team access:** [ADR 0011](./adr/0011-host-embedded-accounts-and-teams.md), [ADR 0012](./adr/0012-host-path-grants-and-tool-enforcement.md), [ADR 0013](./adr/0013-multi-user-host-access-model.md), plans [`host-identity-and-teams.md`](./plans/host-identity-and-teams.md) and [`multi-user-host-access.md`](./plans/multi-user-host-access.md). Remote Hosts provide Accounts, invites, Team management, revocable Host API keys, durable Actor attribution, and path grants. Multi-user access is **user-default** with explicit shares (paths, models, sessions)—not ambient Team roommate semantics. Desktop Local remains Account-free. Path enforcement is disabled by default; when enabled, member access is deny-by-default and restricted shell is unavailable. Shell is not a grant jail until a later sandbox ADR.
 
+**Flexible users & model offerings (proposed):** [ADR 0014](./adr/0014-flexible-users-access-and-model-offerings.md), plan [`flexible-users-access-and-model-offerings.md`](./plans/flexible-users-access-and-model-offerings.md). Target split: **Model backend** + **Provider credentials** + user-facing **Model offering** (slug such as “Company Model”); richer Host roles/capabilities and pluggable Host auth methods; UI for backends, offerings, and entitlements. Do not implement against ad-hoc Settings cards alone—follow the plan phases.
+
 **Host path policy:** [ADR 0012](./adr/0012-host-path-grants-and-tool-enforcement.md). `packages/backend/src/path-policy/` and the identity grant schema/routes are foundation only. Do not describe path grants as enforced until HTTP/RPC/SSE, uploads, Session visibility, and every Harness tool consume `IdentityService.effectivePathPolicy(actor)`. Remote multi-user Hosts are **share-only** for paths (no auto user homes); Desktop keeps device default directories.
 
 Implementation checklists:
@@ -52,6 +54,7 @@ Implementation checklists:
 - [`plans/session-read-slop-removal.md`](./plans/session-read-slop-removal.md) — ADR 0006 detail.
 - [`plans/host-identity-and-teams.md`](./plans/host-identity-and-teams.md) — Accounts, Team management, attribution, and optional path-grant enforcement (Phases 0–4 done).
 - [`plans/multi-user-host-access.md`](./plans/multi-user-host-access.md) — registration modes, canInvite, session ACL, model planes (ADR 0013).
+- [`plans/flexible-users-access-and-model-offerings.md`](./plans/flexible-users-access-and-model-offerings.md) — offerings/slugs, backend auth strategies, roles/UI (ADR 0014, proposed).
 
 Optional CI: `node scripts/slop-check.mjs`.
 

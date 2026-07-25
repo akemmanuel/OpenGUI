@@ -17,6 +17,7 @@ Read these when code or docs disagree about **who owns what**.
 | [0011](./0011-host-embedded-accounts-and-teams.md)          | **Host-embedded Accounts & Team membership**; invite-only Remote Host auth; API keys; shared Sessions |
 | [0012](./0012-host-path-grants-and-tool-enforcement.md)     | **Host path grants**; canonical roots, restricted actors, complete tool/transport mediation           |
 | [0013](./0013-multi-user-host-access-model.md)              | **Multi-user Host access**; user-default shares, session ACL, model planes, registration modes        |
+| [0014](./0014-flexible-users-access-and-model-offerings.md) | **Flexible users & model offerings** (proposed); backends, credentials, slugs, roles/UI               |
 
 Product glossary (no implementation detail): [`CONTEXT.md`](../../CONTEXT.md).
 
@@ -29,3 +30,5 @@ Current replacement plan: [`docs/plans/first-party-harness-replacement.md`](../p
 Host identity / Team access plan: [`docs/plans/host-identity-and-teams.md`](../plans/host-identity-and-teams.md) (ADR 0011).
 
 Host path policy: [ADR 0012](./0012-host-path-grants-and-tool-enforcement.md).
+
+Flexible users / model offerings (proposed): [ADR 0014](./0014-flexible-users-access-and-model-offerings.md), plan [`flexible-users-access-and-model-offerings.md`](../plans/flexible-users-access-and-model-offerings.md).

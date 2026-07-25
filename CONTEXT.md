@@ -73,16 +73,32 @@ A named share principal for Accounts on one OpenGUI Host. Membership does not au
 _Avoid_: Ambient shared disk, Workspace, cloud organization
 
 **Team membership**:
-An Account's membership on a Host Team, including role (`owner` or `member` in v1).
+An Account's membership on a Host Team, including a Host role and optional capability bits (for example `canInvite`).
 _Avoid_: Workspace membership, Session ownership
 
+**Host role**:
+A coarse membership bundle on one Host: `owner`, `admin`, `member`, or `viewer`. Capabilities refine what a role may do without inventing a new role per permission.
+_Avoid_: OS role, Provider admin, Session ACL role
+
 **Owner**:
-The Account created by first-time Host setup. Manages members, invites, Host API keys, and Host settings including Model connections.
-_Avoid_: Billing owner only, OS root
+The primary Account from first-time Host setup (or after explicit ownership transfer). Full Host control including members, Host auth methods, and ownership-sensitive settings.
+_Avoid_: Billing owner only, OS root, every admin
+
+**Admin**:
+A non-owner Account delegated Host operations such as invites, path grants, and Host/Team model backends or offerings—without ownership transfer.
+_Avoid_: Owner, ambient full Host access
 
 **Member**:
-A non-owner Account on a Host. Remote access is share-only: paths, shared model connections, and Sessions require explicit grants.
+A standard Account on a Host. Remote access is share-only: paths, shared model offerings/backends, and Sessions require explicit grants.
 _Avoid_: Ambient full Host access, OS sandboxed tenant
+
+**Viewer**:
+A read-oriented Account bundle; Session and product surfaces still apply explicit grants and never invent ambient transcript access.
+_Avoid_: Session view-link guest, public internet user
+
+**Host auth method**:
+A configured way an Account authenticates to a Remote Host (password today; passkeys, magic link, or OIDC-style Host login as Host policy allows). Distinct from Provider credentials used to call models.
+_Avoid_: Model OAuth, API key for OpenAI, Workspace password
 
 **Invite**:
 A Host-issued, expiring join token that creates membership and may attach delegable path grants. Hosts may alternatively enable open registration; new Accounts still receive no paths.
@@ -168,29 +184,37 @@ _Avoid_: Client-side race resolution, Session owner
 
 ### Models and credentials
 
+**Model backend**:
+A dialable model endpoint configuration on the Host, Team, or User plane (base URL, protocol defaults, auth binding). It is plumbing, not the member-facing catalog entry.
+_Avoid_: Host transport connection, Model offering, ambient Team keyring
+
 **Model connection**:
-A model endpoint and credential in the Host, Team, or User plane. Host/Team connections require entitlements; User connections are personal and solo-only.
-_Avoid_: Host transport connection, ambient Team keyring, External Harness
+Legacy umbrella term for a Model backend plus its bound Provider credentials and formerly inlined model ids. Prefer **Model backend**, **Provider credentials**, and **Model offering** in new design.
+_Avoid_: Host transport connection, External Harness
+
+**Model offering**:
+A user-facing catalog entry with a stable slug and display name (for example slug `company-model`, name “Company Model”) that resolves on the Host to a Model backend and upstream model id. Sessions, pickers, and entitlements on multi-user Hosts speak in offerings.
+_Avoid_: Display-only rename, Provider, raw upstream id as the only identity
 
 **Model adapter**:
 Internal Harness code that translates between the common agent-loop model interface and one model wire protocol. Model adapters do not own Sessions, tools, UI capabilities, or Projects.
 _Avoid_: Harness Adapter, bridge, provider plugin
 
 **Provider**:
-A model vendor or endpoint grouping presented in model selection and connection settings. It is not an executable Harness.
-_Avoid_: Agent backend, model adapter, Host
+A model vendor or endpoint grouping label in settings and picker chrome. It is not an executable Harness and not an Account.
+_Avoid_: Agent backend, model adapter, Host, Model offering
 
 **Model**:
-A concrete language model available through a Model connection.
-_Avoid_: Provider, Harness, agent mode
+A concrete upstream language model id a Model backend can call. Members may never see this id when they only have a Model offering.
+_Avoid_: Provider, Harness, agent mode, offering slug
 
 **Reasoning level**:
 The user selection controlling supported model reasoning effort. A change is recorded in Session order so replay uses the selection that applied to each User message.
 _Avoid_: Harness variant, agent, global hidden default
 
 **Provider credentials**:
-Secrets or tokens held by the Host for a Model connection. They must not be included in Session entries, tool output, or frontend persistence.
-_Avoid_: Host access token, Workspace password, transcript metadata
+Secrets or tokens held by the Host for a Model backend (API keys, subscription/OAuth tokens, or env-sourced references), applied through an auth strategy. They must not be included in Session entries, tool output, or frontend persistence. Distinct from Host credentials.
+_Avoid_: Host access token, Workspace password, transcript metadata, Account password
 
 **Host access token**:
 Legacy name for a shared secret once used to authenticate every Frontend to a Remote Host (`OPENGUI_AUTH_TOKEN`). Superseded for product login by **Host credential** (Account session or **Host API key**) per [ADR 0011](docs/adr/0011-host-embedded-accounts-and-teams.md). May exist only as a short upgrade bridge before owner setup completes.
