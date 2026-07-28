@@ -22,9 +22,8 @@ async function temporaryHost() {
   await mkdir(project, { recursive: true });
   await writeFile(join(project, "readme.txt"), "hello");
 
-  const previousDataDirectory = process.env.OPENGUI_DATA_DIR;
-  process.env.OPENGUI_DATA_DIR = join(root, "host-data");
   const backend = createBackendHost({
+    dataDirectory: join(root, "host-data"),
     env: {
       ...readBackendHostEnv(),
       identityMode: "remote",
@@ -38,8 +37,6 @@ async function temporaryHost() {
     identitySecret: "multi-user-access-secret-with-at-least-32-characters",
     identityBaseURL: "http://localhost",
   });
-  if (previousDataDirectory === undefined) delete process.env.OPENGUI_DATA_DIR;
-  else process.env.OPENGUI_DATA_DIR = previousDataDirectory;
   await backend.ready;
   await backend.hostReady;
 

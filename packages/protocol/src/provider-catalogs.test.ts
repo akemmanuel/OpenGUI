@@ -3,6 +3,7 @@ import {
   CHATGPT_CODEX_PRESET,
   OPENCODE_GO_PRESET,
   SUPERGROK_PRESET,
+  XAI_API_PRESET,
   supportedOpenCodeGoModelIds,
 } from "./provider-catalogs.ts";
 
@@ -26,6 +27,15 @@ describe("first-party provider catalogs", () => {
       defaultModelId: "grok-build",
       modelIds: ["grok-build"],
     });
+    expect(SUPERGROK_PRESET.baseUrl).toBe("https://cli-chat-proxy.grok.com/v1");
+    expect(SUPERGROK_PRESET.modelCapabilities["grok-build"].context).toBe(256_000);
+    expect(XAI_API_PRESET).toMatchObject({
+      baseUrl: "https://api.x.ai/v1",
+      defaultModelId: "grok-build-0.1",
+      modelIds: ["grok-build-0.1", "grok-code-fast-1", "grok-code-fast", "grok-code-fast-1-0825"],
+    });
+    expect(XAI_API_PRESET.modelIds).not.toContain("grok-build");
+    expect(XAI_API_PRESET.modelCapabilities["grok-build-0.1"]?.context).toBe(256_000);
   });
 
   test("only offers discovered OpenCode Go models with documented transports", () => {

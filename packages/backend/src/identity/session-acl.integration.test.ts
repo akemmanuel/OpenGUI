@@ -221,7 +221,7 @@ describe("Remote Session ACL HTTP contracts", () => {
     );
     await expect(
       backend.identity!.authorizeSessionAction(sessionId, memberActor, "run"),
-    ).rejects.toThrow("Session not found");
+    ).resolves.toBeUndefined();
     await expect(
       backend.identity!.authorizeSessionAction(sessionId, memberActor, "admin"),
     ).resolves.toBeUndefined();

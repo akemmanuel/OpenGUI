@@ -304,6 +304,22 @@ export function registerIdentityRoutes(app: BackendApp, deps: IdentityRouteDeps)
     );
   });
 
+  app.put("/api/identity/members/:id/role", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body || (body.role !== "admin" && body.role !== "member" && body.role !== "viewer")) {
+      return invalidRequest("role must be admin, member, or viewer");
+    }
+    return await identityOperation(() =>
+      deps.identity!.setMemberRole(
+        actor,
+        c.req.param("id"),
+        body.role as "admin" | "member" | "viewer",
+      ),
+    );
+  });
+
   app.get("/api/identity/sessions/:sessionId/shares", async (c) => {
     const actor = await deps.getActor(c.req.raw);
     if (!actor) return authRequired();
@@ -474,6 +490,90 @@ export function registerIdentityRoutes(app: BackendApp, deps: IdentityRouteDeps)
     }
     return await identityOperation(() =>
       deps.identity!.replaceModelEntitlements(actor, c.req.param("id"), entitlements),
+    );
+  });
+
+  app.post("/api/identity/model-offerings", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body) return invalidRequest("Invalid request body");
+    const fields = ["id", "displayName", "backendId", "upstreamModelId"] as const;
+    if (fields.some((field) => typeof body[field] !== "string" || !body[field].trim())) {
+      return invalidRequest("slug, name, backend, and upstream model are required");
+    }
+    return await identityOperation(() =>
+      deps.identity!.createModelOffering(actor, {
+        id: String(body.id),
+        displayName: String(body.displayName),
+        description: typeof body.description === "string" ? body.description : null,
+        backendId: String(body.backendId),
+        upstreamModelId: String(body.upstreamModelId),
+      }),
+    );
+  });
+
+  app.put("/api/identity/model-offerings/:id", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body) return invalidRequest("Invalid request body");
+    const fields = ["displayName", "backendId", "upstreamModelId"] as const;
+    if (fields.some((field) => typeof body[field] !== "string" || !body[field].trim())) {
+      return invalidRequest("name, backend, and upstream model are required");
+    }
+    if (body.id !== undefined && body.id !== c.req.param("id")) {
+      return invalidRequest("offering slug is immutable");
+    }
+    return await identityOperation(() =>
+      deps.identity!.updateModelOffering(actor, c.req.param("id"), {
+        displayName: String(body.displayName),
+        description: typeof body.description === "string" ? body.description : null,
+        backendId: String(body.backendId),
+        upstreamModelId: String(body.upstreamModelId),
+      }),
+    );
+  });
+
+  app.delete("/api/identity/model-offerings/:id", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    return await identityOperation(async () => {
+      await deps.identity!.removeModelOffering(actor, c.req.param("id"));
+      return { removed: true };
+    });
+  });
+
+  app.get("/api/identity/model-offerings/:id/entitlements", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    return await identityOperation(() =>
+      deps.identity!.listModelOfferingEntitlements(actor, c.req.param("id")),
+    );
+  });
+
+  app.put("/api/identity/model-offerings/:id/entitlements", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body || !Array.isArray(body.entitlements))
+      return invalidRequest("entitlements must be an array");
+    const entitlements: Array<{ subjectType: "user" | "team"; subjectId: string }> = [];
+    for (const item of body.entitlements) {
+      if (
+        !isPlainObject(item) ||
+        (item.subjectType !== "user" && item.subjectType !== "team") ||
+        typeof item.subjectId !== "string" ||
+        !item.subjectId.trim()
+      )
+        return invalidRequest("each entitlement requires subjectType and subjectId");
+      entitlements.push({
+        subjectType: item.subjectType as "user" | "team",
+        subjectId: item.subjectId.trim(),
+      });
+    }
+    return await identityOperation(() =>
+      deps.identity!.replaceModelOfferingEntitlements(actor, c.req.param("id"), entitlements),
     );
   });
 

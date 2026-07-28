@@ -220,6 +220,7 @@ export class SqliteSessionStore {
           text: input.prompt.text,
           ...(input.prompt.actor ? { actor: input.prompt.actor } : {}),
           ...(input.prompt.skills !== undefined ? { skills: input.prompt.skills } : {}),
+          ...(input.prompt.skillPins !== undefined ? { skillPins: input.prompt.skillPins } : {}),
           model: input.model,
           reasoning: input.reasoning,
           ...(input.followUpId ? { followUpId: input.followUpId } : {}),
@@ -251,6 +252,32 @@ export class SqliteSessionStore {
         .where("id", "=", input.sessionId)
         .executeTakeFirst();
       return [userMessage, runStarted];
+    });
+  }
+
+  async pinSessionSkills(
+    sessionId: string,
+    skillPins: NonNullable<PromptInput["skillPins"]>,
+  ): Promise<void> {
+    await this.#ready;
+    await this.#database.transaction().execute(async (transaction) => {
+      const row = await transaction
+        .selectFrom("session_entries")
+        .select(["id", "payload_json"])
+        .where("session_id", "=", sessionId)
+        .where("kind", "=", "user_message")
+        .orderBy("sequence", "asc")
+        .executeTakeFirst();
+      if (!row) throw new Error("Cannot pin Skills before the first user message");
+      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+      if (Array.isArray(payload.skillPins)) return;
+      payload.skillPins = skillPins;
+      if (!Object.hasOwn(payload, "skills")) payload.skills = skillPins.map((pin) => pin.name);
+      await transaction
+        .updateTable("session_entries")
+        .set({ payload_json: JSON.stringify(payload) })
+        .where("id", "=", row.id)
+        .executeTakeFirstOrThrow();
     });
   }
 

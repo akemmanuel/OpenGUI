@@ -6,6 +6,9 @@ overrides:
   "@vitest/browser-preview": 4.1.9
   vitest: 4.1.9
 
+patchedDependencies:
+  "@earendil-works/pi-ai@0.82.1": "patches/@earendil-works__pi-ai@0.82.1.patch"
+
 peerDependencyRules:
   allowedVersions:
     # Vite Plus provides a Vite-compatible API under its own package version.
@@ -24,3 +27,4 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - agent-browser@0.33.0
+  - "@earendil-works/pi-ai@0.82.1"

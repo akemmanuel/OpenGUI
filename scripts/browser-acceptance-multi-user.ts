@@ -72,6 +72,10 @@ async function startFakeModel(port: number) {
           { delta: { content: `Shared echo: ${typeof content === "string" ? content : ""}` } },
         ],
       });
+      writeSse(response, {
+        choices: [{ delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+      });
       response.write("data: [DONE]\n\n");
       response.end();
     });
@@ -246,7 +250,10 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   await clickButton(ownerBrowser!, "Sign in");
   await waitForText(ownerBrowser!, "Settings");
   await clickButton(ownerBrowser!, "Settings");
-  await waitForText(ownerBrowser!, "Manage app preferences and providers for active workspace.");
+  await waitForText(
+    ownerBrowser!,
+    "Preferences, models, people, and Host administration in one place.",
+  );
 
   log("invite-only registration is closed and the owner-only Team surface is visible");
   const closedRegistration = await apiResponse(backendUrl, "/api/identity/register", {
@@ -258,8 +265,9 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
     },
   });
   assert(closedRegistration.status === 403, "Invite-only Host accepted open registration");
-  await find(ownerBrowser!, "role", "tab", "click", "Team");
+  await clickButton(ownerBrowser!, "Users & access");
   await waitForText(ownerBrowser!, "Members");
+  await clickButton(ownerBrowser!, "Host & admin");
   await expectText(ownerBrowser!, "Invite only");
 
   log("an invite with initial read access is accepted in a second isolated browser");
@@ -502,7 +510,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
     "View share ran a prompt",
   );
 
-  log("admin shares can manage sharing but cannot run; revocation takes effect immediately");
+  log("admin shares can manage sharing and run; revocation takes effect immediately");
   await api(backendUrl, `/api/identity/sessions/${session.id}/shares`, {
     token: owner.token,
     method: "POST",
@@ -517,10 +525,10 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
       await apiResponse(backendUrl, `/api/host/sessions/${session.id}/prompt`, {
         token: registered.token,
         method: "POST",
-        body: { text: "admin is still read-only" },
+        body: { text: "admin can run" },
       })
-    ).status === 404,
-    "Admin share ran a prompt",
+    ).status === 200,
+    "Admin share could not run a prompt",
   );
 
   log("two browsers observe and control one Team-run Session through Host-authoritative events");
@@ -597,8 +605,9 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
 
   log("UI boundary: members cannot see owner Team controls; canInvite remains API-only today");
   await clickButton(invitedBrowser!, "Settings");
-  await expectNoText(invitedBrowser!, "Team");
-  await expectText(invitedBrowser!, "Providers");
+  await waitForText(invitedBrowser!, "Models & providers");
+  await expectNoText(invitedBrowser!, "Users & access");
+  await expectText(invitedBrowser!, "Models & providers");
 
   for (const sessionName of browserSessions) {
     const errors = await browser(sessionName, "errors");

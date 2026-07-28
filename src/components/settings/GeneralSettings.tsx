@@ -80,10 +80,7 @@ export function GeneralSettings() {
     <div className="flex flex-col gap-4">
       <AppearanceSetting />
       <LanguageSetting />
-      {isDesktop && <DefaultChatDirectorySetting />}
       <NewChatModelBehaviorSetting />
-      {isDesktop && <FileManagerSetting />}
-      {isDesktop && <TerminalSetting />}
       <ModelAgeFilterSetting />
       <NotificationsToggle />
       <IdentitySessionSetting />
@@ -117,6 +114,29 @@ export function GeneralSettings() {
         <span className="text-xs text-muted-foreground">{t("common.version")}</span>
         <span className="text-xs text-muted-foreground font-mono">{packageJson.version}</span>
       </div>
+    </div>
+  );
+}
+
+export function PathsAndShellSettings() {
+  const { t } = useTranslation();
+  const shell = getDesktopShellClient();
+  const isDesktop = shell.runtime.isElectron;
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg bg-muted/40 p-3 text-sm leading-6">
+        <p className="font-medium">{t("settings.paths.boundaryTitle")}</p>
+        <p className="text-xs text-muted-foreground">{t("settings.paths.boundaryDescription")}</p>
+      </div>
+      {isDesktop ? (
+        <>
+          <DefaultChatDirectorySetting />
+          <FileManagerSetting />
+          <TerminalSetting />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t("settings.paths.desktopOnly")}</p>
+      )}
     </div>
   );
 }

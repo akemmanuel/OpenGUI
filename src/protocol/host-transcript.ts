@@ -289,7 +289,7 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
         id: entry.id,
         type: "tool",
         callID: text(entry.payload.toolCallId, entry.id),
-        tool: text(entry.payload.name, "tool"),
+        tool: text(entry.payload.displayName, text(entry.payload.name, "tool")),
         sessionID: snapshot.id,
         messageID: messageId,
         tokens: {},
@@ -310,12 +310,21 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
         const error =
           output && typeof output === "object" && "error" in output
             ? text((output as { error?: unknown }).error)
-            : undefined;
+            : output &&
+                typeof output === "object" &&
+                (output as { status?: unknown }).status === "error"
+              ? text((output as { summary?: unknown }).summary, "Tool returned an error")
+              : undefined;
         const structuredOutput = output && typeof output === "object" ? output : null;
         const structuredInput =
           part.state.input && typeof part.state.input === "object" ? part.state.input : null;
-        const toolOutput =
-          part.tool === "shell" && structuredOutput && "output" in structuredOutput
+        const structuredSummary =
+          structuredOutput && "summary" in structuredOutput
+            ? text((structuredOutput as { summary?: unknown }).summary)
+            : "";
+        const toolOutput = structuredSummary
+          ? structuredSummary
+          : part.tool === "shell" && structuredOutput && "output" in structuredOutput
             ? text((structuredOutput as { output?: unknown }).output)
             : part.tool === "read" && structuredOutput && "content" in structuredOutput
               ? text((structuredOutput as { content?: unknown }).content)

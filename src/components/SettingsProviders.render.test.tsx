@@ -63,15 +63,16 @@ describe("SettingsProviders", () => {
   test("validates custom connections and saves normalized member-owned configuration", async () => {
     render(<SettingsProviders />);
     await waitFor(() => expect(fixture.list).toHaveBeenCalled());
-    const textboxes = screen.getAllByRole("textbox") as HTMLInputElement[];
-    const endpoint = textboxes.find((input) => input.placeholder === "https://api.openai.com/v1")!;
-    const model = textboxes.find((input) => input.placeholder === "gpt-4.1")!;
-    const add = screen.getByRole("button", { name: /providers.addProvider/ });
+    await userEvent.click(screen.getByRole("button", { name: "providers.addBackend" }));
+    const endpoint = screen.getByLabelText("providers.baseUrl");
+    const model = screen.getByLabelText("providers.upstreamModelId");
+    const name = screen.getByLabelText("providers.backendName");
+    const add = screen.getByRole("button", { name: "providers.saveBackend" });
     await userEvent.clear(endpoint);
     expect(add.hasAttribute("disabled")).toBe(true);
 
     await userEvent.type(endpoint, " https://models.example/v1 ");
-    await userEvent.clear(model);
+    await userEvent.type(name, "My models");
     await userEvent.type(model, " model-x ");
     await userEvent.click(add);
     await waitFor(() => expect(fixture.upsert).toHaveBeenCalled());
@@ -83,7 +84,7 @@ describe("SettingsProviders", () => {
     expect(fixture.refresh).toHaveBeenCalled();
   });
 
-  test("does not expose removal of a Host connection to a member", async () => {
+  test("does not expose raw shared connections or Host OAuth to a member", async () => {
     fixture.connections = [
       {
         id: "host-model",
@@ -94,13 +95,14 @@ describe("SettingsProviders", () => {
       },
     ];
     render(<SettingsProviders />);
-    expect(await screen.findByText("Shared model")).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: "providers.removeConnection:Shared model" }),
-    ).toBeNull();
+    await waitFor(() => expect(fixture.list).toHaveBeenCalled());
+    expect(screen.queryByText("Shared model")).toBeNull();
+    expect(screen.queryByRole("button", { name: "providers.codex.signIn" })).toBeNull();
+    expect(fixture.codexStatus).not.toHaveBeenCalled();
   });
 
   test("renders the device authorization challenge returned by the Host", async () => {
+    fixture.actor = { type: "user", id: "owner-1", role: "owner" };
     render(<SettingsProviders />);
     await userEvent.click(await screen.findByRole("button", { name: "providers.codex.signIn" }));
     expect(await screen.findByText("providers.codex.code")).toBeTruthy();

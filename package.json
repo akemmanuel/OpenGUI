@@ -38,6 +38,9 @@
     "test:responsive:detector": "vp test scripts/responsive-audit.browser.test.ts",
     "test:responsive": "pnpm run test:responsive:provision && pnpm run test:responsive:detector && node --experimental-strip-types scripts/responsive-regression.ts",
     "test:package-smoke": "node --experimental-strip-types scripts/package-smoke.ts",
+    "test:grok-live": "node --experimental-strip-types scripts/grok-live-smoke.ts",
+    "test:openai-cache-live": "node --experimental-strip-types scripts/openai-cache-live-smoke.ts",
+    "test:anthropic-cache-live": "node --experimental-strip-types scripts/anthropic-cache-live-smoke.ts",
     "check:bundle-budget": "node --experimental-strip-types scripts/bundle-budget.ts",
     "audit:test-inventory": "node scripts/test-coverage-inventory.mjs --output docs/test-coverage-inventory.json",
     "slop-check": "node scripts/slop-check.mjs",
@@ -116,6 +119,9 @@
     "vite-plus": "^0.2.4",
     "vitest": "4.1.9",
     "which": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
   },
   "packageManager": "pnpm@11.8.0+sha512.c1f5e7c4cb241c8f174b743851d82f42b802324afc8b0f116b96adb15aa06664948dde36960a3ba1079ba5b4b29dd0140135b94b5b5f5263592249d68e555f26",
   "build": {

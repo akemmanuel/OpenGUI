@@ -21,7 +21,7 @@ vi.mock("@/components/AppSidebar", () => ({
     </nav>
   ),
 }));
-vi.mock("@/components/ConnectionPanel", () => ({
+vi.mock("@/components/settings/SettingsView", () => ({
   SettingsView: ({ onBack }: any) => (
     <section>
       settings view<button onClick={onBack}>back</button>
@@ -129,7 +129,7 @@ describe("App shell orchestration", () => {
   test("switches settings through sidebar, browser event, back action, and mobile registration", async () => {
     render(<AppContent onDismissSetup={fixture.dismissSetup} />);
     await userEvent.click(screen.getByText("open settings"));
-    expect(screen.getByText("settings view")).toBeTruthy();
+    expect(await screen.findByText("settings view")).toBeTruthy();
     expect(fixture.dismissSetup).toHaveBeenCalled();
     await userEvent.click(screen.getByText("back"));
     expect(screen.getByText("transcript")).toBeTruthy();

@@ -81,7 +81,7 @@ export const CHATGPT_CODEX_PRESET = {
 
 export const SUPERGROK_PRESET = {
   id: "supergrok",
-  label: "SuperGrok",
+  label: "SuperGrok (experimental OAuth)",
   baseUrl: "https://cli-chat-proxy.grok.com/v1",
   defaultModelId: "grok-build",
   modelIds: ["grok-build"],
@@ -89,10 +89,37 @@ export const SUPERGROK_PRESET = {
   modelCapabilities: {
     "grok-build": {
       displayName: "Grok Build",
-      context: 500_000,
+      context: 256_000,
       reasoning: true,
     },
   },
+} as const satisfies ProviderConnectionPreset;
+
+/** Public, documented xAI API surface. This is deliberately not the subscription proxy. */
+export const XAI_API_PRESET = {
+  id: "xai-api",
+  label: "xAI API",
+  baseUrl: "https://api.x.ai/v1",
+  defaultModelId: "grok-build-0.1",
+  modelIds: ["grok-build-0.1", "grok-code-fast-1", "grok-code-fast", "grok-code-fast-1-0825"],
+  modelRoutes: {
+    "grok-build-0.1": "responses",
+    "grok-code-fast-1": "responses",
+    "grok-code-fast": "responses",
+    "grok-code-fast-1-0825": "responses",
+  },
+  modelCapabilities: Object.fromEntries(
+    ["grok-build-0.1", "grok-code-fast-1", "grok-code-fast", "grok-code-fast-1-0825"].map(
+      (modelId) => [
+        modelId,
+        {
+          displayName: modelId === "grok-build-0.1" ? "Grok Build 0.1" : modelId,
+          context: 256_000,
+          reasoning: true,
+        },
+      ],
+    ),
+  ),
 } as const satisfies ProviderConnectionPreset;
 
 export const OPENCODE_GO_PRESET = {

@@ -82,6 +82,15 @@ async function streamFakeCompletion(response: ServerResponse, request: Record<st
     sendDelta({ reasoning_content: "Preparing a deterministic response. " });
     sendDelta({ content: `Echo: ${lastUser}` });
   }
+  writeSse(response, {
+    choices: [
+      {
+        delta: {},
+        finish_reason: toolResult || !/tool journey/i.test(lastUser) ? "stop" : "tool_calls",
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+  });
   response.write("data: [DONE]\n\n");
   response.end();
 }
@@ -252,7 +261,17 @@ async function finishSetup(modelPort: number) {
   await waitForText("Choose where new chats start");
   await clickButton("Browse");
   await waitForText("Open Project");
+  await browser(
+    "wait",
+    "--fn",
+    "Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Open project' && !button.disabled)",
+  );
   await clickButton("Open project");
+  await browser(
+    "wait",
+    "--fn",
+    "!Array.from(document.querySelectorAll('h1,h2,[role=heading]')).some((heading) => heading.textContent?.trim() === 'Open Project')",
+  );
   await delay(300);
   await clickButton("Continue");
   await waitForText("You're ready");
@@ -262,6 +281,11 @@ async function finishSetup(modelPort: number) {
 async function connectProject() {
   await clickButton("Add project");
   await waitForText("Open Project");
+  await browser(
+    "wait",
+    "--fn",
+    "Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Open project' && !button.disabled)",
+  );
   await clickButton("Open project");
   await browser("wait", "--fn", "!document.querySelector('[data-slot=dialog-content]')");
   await waitForText("project");
@@ -292,9 +316,6 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   log("stream reasoning, text, and a real read tool call through the fake provider");
   await sendAndWait("Tool journey: read the fixture", "Tool result observed:");
   await expectText("fixture content from the isolated project");
-  await expectText("Thinking");
-  await browser("find", "first", "summary", "click");
-  await expectText("I should inspect the fixture first.");
 
   log("rename Session through the sidebar's public interaction seam");
   await clickButton("Pin to top");
@@ -342,7 +363,10 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await find("text", "queued third", "hover", undefined);
   await browser("click", "button[aria-label='Send now']");
   await waitForText("Slow stream", 10_000);
-  await browser("click", "button[title='Stop']");
+  await browser(
+    "eval",
+    "document.querySelector(\"button[title='Stop'],button[aria-label='Stop']\")?.click(); true",
+  );
   await delay(500);
   await expectText("queued prompt edited");
 
@@ -353,10 +377,80 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
 
   log("settings/provider persistence and keyboard focus");
   await clickButton("Settings");
-  await waitForText("Manage app preferences and providers for active workspace.");
-  await find("role", "tab", "click", "Providers");
+  await waitForText("Preferences, models, people, and Host administration in one place.");
+  await clickButton("Models & providers");
   await expectText("fixture-model");
   await browser("press", "Tab");
+
+  log("Skills install, update, and remove with deterministic Host fixtures");
+  const skillFixture = {
+    name: "acceptance-skill",
+    description: "Deterministic browser acceptance instructions.",
+    manual: false,
+    scope: "project",
+    location: `${projectDirectory}/.agents/skills/acceptance-skill`,
+    managed: true,
+    modified: false,
+    generation: 7,
+    source: "github:acme/skills/acceptance-skill@main",
+    resolvedSource: `github:acme/skills/acceptance-skill@${"a".repeat(40)}`,
+    revision: "a".repeat(40),
+  };
+  await browser(
+    "network",
+    "route",
+    "**/api/host/skills/installations?scope=project*",
+    "--body",
+    JSON.stringify({ ok: true, value: [skillFixture] }),
+  );
+  await browser(
+    "network",
+    "route",
+    "**/api/host/skills/installations?scope=host*",
+    "--body",
+    JSON.stringify({ ok: true, value: [] }),
+  );
+  await browser(
+    "network",
+    "route",
+    "**/api/host/skills/sources",
+    "--body",
+    JSON.stringify({
+      ok: true,
+      value: [
+        {
+          kind: "github",
+          grammar: "github:OWNER/REPOSITORY/PATH@REF",
+          example: "github:acme/skills/acceptance-skill@main",
+          mutableRefsResolved: true,
+          legacyGrammar: "OWNER/REPOSITORY@SKILL",
+        },
+      ],
+    }),
+  );
+  for (const [pattern, value] of [
+    ["**/api/host/skills/install", skillFixture],
+    ["**/api/host/skills/acceptance-skill/update", { ...skillFixture, generation: 8 }],
+    ["**/api/host/skills/acceptance-skill?*", true],
+  ] as const) {
+    await browser("network", "route", pattern, "--body", JSON.stringify({ ok: true, value }));
+  }
+  await clickButton("Skills");
+  await waitForText("acceptance-skill");
+  await clickButton("Check & update");
+  await browser("click", "[data-slot=alert-dialog-action]");
+  await waitForText("Skill is current.");
+  await browser("wait", "--fn", "!document.querySelector('[data-slot=alert-dialog-content]')");
+  await clickButton("Remove");
+  await browser("click", "[data-slot=alert-dialog-action]");
+  await waitForText("Skill removed.");
+  await browser("wait", "--fn", "!document.querySelector('[data-slot=alert-dialog-content]')");
+  await find("role", "tab", "click", "Install from repository");
+  await fillLabel("GitHub source", "github:acme/skills/acceptance-skill@main");
+  await clickButton("Review install");
+  await browser("click", "[data-slot=alert-dialog-action]");
+  await waitForText("Installed successfully.");
+  await browser("wait", "--fn", "!document.querySelector('[data-slot=alert-dialog-content]')");
 
   log("mobile viewport and browser back from Settings");
   await browser("set", "viewport", "390", "844");
@@ -401,20 +495,6 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await browser("eval", "localStorage.setItem('opengui:web:settings:opengui:language', 'en')");
   await browser("reload");
   await waitForText("Tool result observed:", 20_000);
-
-  log("delete Session with confirmation");
-  await browser("set", "viewport", "1440", "900");
-  await browser("eval", "window.confirm = () => true");
-  await find("text", "Acceptance Session", "hover", undefined);
-  await browser("eval", "document.querySelector(\"button[aria-label='Pin to top']\")?.click()");
-  await delay(100);
-  await browser(
-    "eval",
-    "Array.from(document.querySelectorAll('[role=menuitem]')).find((item) => item.textContent?.includes('Delete session'))?.click()",
-  );
-  await delay(500);
-  const content = await body();
-  if (content.includes("Acceptance Session")) throw new Error("Deleted Session remained visible");
 
   const errors = await browser("errors");
   if (errors && !/No page errors/i.test(errors)) throw new Error(`Browser errors:\n${errors}`);

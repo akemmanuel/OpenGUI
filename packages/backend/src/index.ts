@@ -22,3 +22,16 @@ export {
   type PathPolicyDecision,
 } from "./path-policy/path-policy.ts";
 export { jsonError, isPlainObject } from "./http/json.ts";
+export {
+  createMcpAgentToolSource,
+  createMcpBroker,
+  type McpActorScope,
+  type McpBroker,
+  type McpCatalogSnapshot,
+  type McpCatalogTool,
+  type McpConnection,
+  type McpHttpConnection,
+  type McpStdioConnection,
+  type McpToolRef,
+  type McpToolResult,
+} from "./mcp/mcp-broker.ts";

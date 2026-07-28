@@ -7,8 +7,6 @@ import { Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
-export { SettingsView } from "@/components/settings/SettingsView";
-
 // ---------------------------------------------------------------------------
 // Compact footer badge (always visible in sidebar)
 // ---------------------------------------------------------------------------

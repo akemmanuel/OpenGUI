@@ -94,6 +94,120 @@ describe("Host client HTTP contract", () => {
       "https://host.example/api/rpc",
     ]);
   });
+
+  test("exposes generation-aware Skills management protocol calls", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createHostClient({
+      baseUrl: "https://host.example",
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url,
+          method: init?.method ?? "GET",
+          ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+        });
+        return Response.json({ ok: true, value: [] });
+      },
+    });
+
+    await client.supportedSkillSources();
+    await client.listSkillInstallations("project", "/work/a & b");
+    await client.installManagedSkill({
+      source: "github:acme/skills/demo@main",
+      scope: "project",
+      directory: "/work/a & b",
+      requestId: "request_install_1",
+      expectedGeneration: 2,
+    });
+    await client.updateManagedSkill("demo/unsafe?encoded", {
+      scope: "host",
+      requestId: "request_update_1",
+      expectedGeneration: 3,
+    });
+    await client.removeManagedSkill("demo", {
+      scope: "project",
+      directory: "/work/a & b",
+      requestId: "request_remove_1",
+      expectedGeneration: 4,
+    });
+
+    expect(requests).toEqual([
+      { url: "https://host.example/api/host/skills/sources", method: "GET" },
+      {
+        url: "https://host.example/api/host/skills/installations?scope=project&directory=%2Fwork%2Fa+%26+b",
+        method: "GET",
+      },
+      {
+        url: "https://host.example/api/host/skills/install",
+        method: "POST",
+        body: {
+          source: "github:acme/skills/demo@main",
+          scope: "project",
+          directory: "/work/a & b",
+          requestId: "request_install_1",
+          expectedGeneration: 2,
+        },
+      },
+      {
+        url: "https://host.example/api/host/skills/demo%2Funsafe%3Fencoded/update",
+        method: "POST",
+        body: { scope: "host", requestId: "request_update_1", expectedGeneration: 3 },
+      },
+      {
+        url: "https://host.example/api/host/skills/demo?scope=project&requestId=request_remove_1&directory=%2Fwork%2Fa+%26+b&expectedGeneration=4",
+        method: "DELETE",
+      },
+    ]);
+  });
+
+  test("exposes MCP connection management without putting secrets in URLs", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createHostClient({
+      baseUrl: "https://host.example",
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url,
+          method: init?.method ?? "GET",
+          ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+        });
+        return Response.json({ ok: true, value: [] });
+      },
+    });
+    const connection = {
+      id: "calendar/local",
+      label: "Calendar",
+      enabled: true,
+      commandApproved: true as const,
+      transport: {
+        kind: "stdio" as const,
+        command: "node",
+        args: ["server.mjs"],
+        env: { CALENDAR_TOKEN: "secret" },
+      },
+    };
+
+    await client.listMcpConnections();
+    await client.upsertMcpConnection(connection);
+    await client.inspectMcpConnection(connection.id);
+    await client.removeMcpConnection(connection.id);
+
+    expect(requests).toEqual([
+      { url: "https://host.example/api/host/mcp-connections", method: "GET" },
+      {
+        url: "https://host.example/api/host/mcp-connections",
+        method: "POST",
+        body: connection,
+      },
+      {
+        url: "https://host.example/api/host/mcp-connections/calendar%2Flocal/inspect",
+        method: "POST",
+        body: {},
+      },
+      {
+        url: "https://host.example/api/host/mcp-connections/calendar%2Flocal",
+        method: "DELETE",
+      },
+    ]);
+  });
 });
 
 describe("Host client SSE contract", () => {

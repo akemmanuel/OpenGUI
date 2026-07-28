@@ -6,9 +6,9 @@ const checks = [
     command: ["find", "packages/runtime", "-type", "f"],
   },
   {
-    name: "no external coding-agent dependencies",
+    name: "no external coding-agent runtime dependencies",
     pattern:
-      "@earendil-works/pi|@opencode-ai/sdk|@openai/codex-sdk|claude-agent-sdk-lite|pi-daemon-server",
+      "@earendil-works/pi-(coding-agent|agent-core|tui)|@opencode-ai/sdk|@openai/codex-sdk|claude-agent-sdk-lite|pi-daemon-server",
     paths: ["package.json", "packages", "src", "server", "main.ts", "vite.electron.config.ts"],
   },
   {
@@ -23,7 +23,7 @@ const checks = [
   },
   {
     name: "no removed product controls in active frontend code",
-    pattern: "worktree|Mcp|MCP|externalHarness|restartHarnesses|getHarnessInventories",
+    pattern: "worktree|externalHarness|restartHarnesses|getHarnessInventories",
     paths: ["src/App.tsx", "src/components", "src/features", "src/hooks", "src/protocol"],
   },
 ];

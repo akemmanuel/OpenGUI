@@ -1,4 +1,8 @@
-import { HostSessionNotFoundError, type OpenGuiHost } from "../host/opengui-host.ts";
+import {
+  HostSessionNotFoundError,
+  MODEL_OFFERING_CONNECTION_ID,
+  type OpenGuiHost,
+} from "../host/opengui-host.ts";
 import { resolve } from "node:path";
 import type { BackendApp } from "../http/request-context.ts";
 import { isPlainObject, jsonError } from "../http/json.ts";
@@ -9,10 +13,25 @@ import {
   type ModelConnectionPlane,
 } from "../identity/identity.ts";
 import { HostPathAuthorizer, PathAuthorizationError } from "../path-policy/enforcement.ts";
+import { SkillManagementError } from "../host/skills-management.ts";
 
 function textField(body: Record<string, unknown>, key: string) {
   const value = body[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function skillScope(value: unknown) {
+  if (value === "project" || value === "host") return value;
+  throw new Error("scope must be project or host");
+}
+
+function skillManagementActor(actor: Actor) {
+  if (
+    actor.type !== "local" &&
+    (actor.type !== "user" || (actor.role !== "owner" && actor.role !== "admin"))
+  ) {
+    throw new IdentityError("FORBIDDEN", 403, "Human Host administrator access required");
+  }
 }
 
 function sessionError(error: unknown) {
@@ -25,6 +44,20 @@ function sessionError(error: unknown) {
         : error instanceof PathAuthorizationError
           ? 403
           : 400,
+  );
+}
+
+function skillError(error: unknown) {
+  if (!(error instanceof SkillManagementError)) return sessionError(error);
+  const conflict = [
+    "GENERATION_CONFLICT",
+    "LOCALLY_MODIFIED",
+    "ALREADY_EXISTS",
+    "IDEMPOTENCY_CONFLICT",
+  ].includes(error.code);
+  return Response.json(
+    { ok: false, error: error.message, code: error.code, recoverable: true },
+    { status: conflict ? 409 : 400 },
   );
 }
 
@@ -81,16 +114,57 @@ export function registerHostProductRoutes(
         value: all.map((connection) => ({ ...connection, plane: "host" as const })),
       });
     }
-    await input.identity.registerLegacyHostConnections(all.map((connection) => connection.id));
+    await input.identity.migrateLegacyModelOfferings(all);
     const actor = c.get("actor") as Actor;
     const access = await input.identity.listModelConnectionAccess(actor);
     const byId = new Map(access.map((item) => [item.id, item]));
+    const visible = await Promise.all(
+      all.map(async (connection) => {
+        const metadata = byId.get(connection.id);
+        if (!metadata) return null;
+        const modelIds = await input.identity!.visibleLegacyModelIds(
+          actor,
+          connection.id,
+          connection.modelIds,
+        );
+        if (modelIds.length === 0) return null;
+        const modelCapabilities = connection.modelCapabilities
+          ? Object.fromEntries(
+              Object.entries(connection.modelCapabilities).filter(([modelId]) =>
+                modelIds.includes(modelId),
+              ),
+            )
+          : undefined;
+        const defaultModelId = modelIds.includes(connection.defaultModelId ?? "")
+          ? connection.defaultModelId
+          : modelIds[0];
+        if (
+          actor.type === "user" &&
+          (actor.role === "owner" || actor.role === "admin" || metadata.plane === "user")
+        ) {
+          return { ...connection, ...metadata, modelIds, defaultModelId, modelCapabilities };
+        }
+        return {
+          ...metadata,
+          label: connection.label,
+          modelIds,
+          defaultModelId,
+          modelCapabilities,
+        };
+      }),
+    );
     return Response.json({
       ok: true,
-      value: all.flatMap((connection) => {
-        const metadata = byId.get(connection.id);
-        return metadata ? [{ ...connection, ...metadata }] : [];
-      }),
+      value: visible.filter((connection) => connection !== null),
+    });
+  });
+  app.get("/api/host/model-offerings", async (c) => {
+    if (!input.identity) return Response.json({ ok: true, value: [] });
+    const host = await input.getHost();
+    await input.identity.migrateLegacyModelOfferings(host.listModelConnections());
+    return Response.json({
+      ok: true,
+      value: await input.identity.listModelOfferings(c.get("actor") as Actor),
     });
   });
   app.get("/api/host/auth/codex", async () =>
@@ -100,14 +174,14 @@ export function registerHostProductRoutes(
     try {
       return Response.json({ ok: true, value: await (await input.getHost()).beginCodexAuth() });
     } catch (error) {
-      return jsonError(error, 400);
+      return sessionError(error);
     }
   });
   app.post("/api/host/auth/codex/poll", async () => {
     try {
       return Response.json({ ok: true, value: await (await input.getHost()).pollCodexAuth() });
     } catch (error) {
-      return jsonError(error, 400);
+      return sessionError(error);
     }
   });
   app.delete("/api/host/auth/codex", async () => {
@@ -154,12 +228,90 @@ export function registerHostProductRoutes(
       const baseUrl = textField(body, "baseUrl");
       const apiKey = textField(body, "apiKey") || undefined;
       const modelIds = Array.isArray(body.modelIds)
-        ? body.modelIds.filter(
-            (item): item is string => typeof item === "string" && item.trim().length > 0,
-          )
+        ? body.modelIds
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => item.trim())
+            .filter(Boolean)
         : [];
       if (!baseUrl) throw new Error("baseUrl is required");
       if (modelIds.length === 0) throw new Error("modelIds must include at least one model");
+      let parsedBaseUrl: URL;
+      try {
+        parsedBaseUrl = new URL(baseUrl);
+      } catch {
+        throw new Error("baseUrl must be a valid HTTP or HTTPS URL");
+      }
+      if (parsedBaseUrl.protocol !== "http:" && parsedBaseUrl.protocol !== "https:")
+        throw new Error("baseUrl must be a valid HTTP or HTTPS URL");
+      if (new Set(modelIds).size !== modelIds.length)
+        throw new Error("modelIds must not contain duplicates");
+      const routes = ["openai-chat", "anthropic-messages", "responses"] as const;
+      const rawModelRoutes = isPlainObject(body.modelRoutes) ? body.modelRoutes : null;
+      const modelRoutes = rawModelRoutes
+        ? Object.fromEntries(
+            modelIds.flatMap((modelId) => {
+              const route = rawModelRoutes[modelId];
+              return typeof route === "string" && routes.includes(route as (typeof routes)[number])
+                ? [[modelId, route as (typeof routes)[number]]]
+                : [];
+            }),
+          )
+        : undefined;
+      const rawModelCapabilities = isPlainObject(body.modelCapabilities)
+        ? body.modelCapabilities
+        : null;
+      const modelCapabilities = rawModelCapabilities
+        ? Object.fromEntries(
+            modelIds.flatMap((modelId) => {
+              const raw = rawModelCapabilities[modelId];
+              if (!isPlainObject(raw)) return [];
+              const context =
+                typeof raw.context === "number" && Number.isInteger(raw.context) && raw.context > 0
+                  ? raw.context
+                  : undefined;
+              const displayName =
+                typeof raw.displayName === "string" && raw.displayName.trim()
+                  ? raw.displayName.trim()
+                  : undefined;
+              const reasoningEfforts = Array.isArray(raw.reasoningEfforts)
+                ? raw.reasoningEfforts.filter(
+                    (
+                      effort,
+                    ): effort is
+                      | "none"
+                      | "minimal"
+                      | "low"
+                      | "medium"
+                      | "high"
+                      | "xhigh"
+                      | "max"
+                      | "ultra" =>
+                      typeof effort === "string" &&
+                      [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra",
+                      ].includes(effort),
+                  )
+                : undefined;
+              return [
+                [
+                  modelId,
+                  { displayName, context, reasoning: raw.reasoning === true, reasoningEfforts },
+                ],
+              ];
+            }),
+          )
+        : undefined;
+      const defaultModelId =
+        typeof body.defaultModelId === "string" && modelIds.includes(body.defaultModelId)
+          ? body.defaultModelId
+          : modelIds[0];
       const actor = c.get("actor") as Actor;
       const requestedPlane = textField(body, "plane") as ModelConnectionPlane;
       const plane: ModelConnectionPlane = input.identity
@@ -170,6 +322,9 @@ export function registerHostProductRoutes(
             : "user"
         : "host";
       const credentialKind = body.credentialKind === "byos" ? "byos" : "byok";
+      const previousMetadata = input.identity
+        ? await input.identity.modelConnectionMetadataForMutation(actor, id)
+        : null;
       const metadata = input.identity
         ? await input.identity.recordModelConnection(actor, { id, plane, credentialKind })
         : { plane: "host" as const };
@@ -180,15 +335,29 @@ export function registerHostProductRoutes(
           baseUrl,
           apiKey,
           modelIds,
+          defaultModelId,
+          modelRoutes,
+          modelCapabilities,
         });
         return Response.json({ ok: true, value: { ...connection, ...metadata } });
       } catch (error) {
-        if (input.identity)
-          await input.identity.removeModelConnection(actor, id).catch(() => undefined);
+        if (input.identity) {
+          if (previousMetadata) {
+            await input.identity
+              .recordModelConnection(actor, {
+                id: previousMetadata.id,
+                plane: previousMetadata.plane,
+                credentialKind: previousMetadata.credentialKind,
+              })
+              .catch(() => undefined);
+          } else {
+            await input.identity.removeModelConnection(actor, id).catch(() => undefined);
+          }
+        }
         throw error;
       }
     } catch (error) {
-      return jsonError(error, 400);
+      return sessionError(error);
     }
   });
 
@@ -197,12 +366,114 @@ export function registerHostProductRoutes(
       const host = await input.getHost();
       const connectionId = c.req.param("connectionId");
       if (input.identity) {
-        await input.identity.removeModelConnection(c.get("actor") as Actor, connectionId);
+        // Authorize before touching Host state, then delete the durable Host
+        // half first. The following SQLite delete is synchronous and cannot
+        // strand endpoint/secrets when a Host write fails.
+        await input.identity.authorizeModelConnectionRemoval(c.get("actor") as Actor, connectionId);
       }
       await host.removeModelConnection(connectionId);
+      if (input.identity) {
+        await input.identity.removeModelConnection(c.get("actor") as Actor, connectionId);
+      }
       return Response.json({ ok: true, value: true });
     } catch (error) {
-      return jsonError(error, 400);
+      return sessionError(error);
+    }
+  });
+
+  app.get("/api/host/mcp-connections", async () =>
+    Response.json({ ok: true, value: (await input.getHost()).listMcpConnections() }),
+  );
+
+  app.post("/api/host/mcp-connections", async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body) || !isPlainObject(body.transport)) {
+        throw new Error("Request body and transport must be objects");
+      }
+      const id = textField(body, "id");
+      const label = textField(body, "label");
+      if (!id || !label) throw new Error("id and label are required");
+      const enabled = body.enabled !== false;
+      const transport = body.transport;
+      if (transport.kind === "stdio") {
+        if (body.commandApproved !== true) {
+          throw new Error("The exact MCP server command must be approved before saving");
+        }
+        const command = textField(transport, "command");
+        if (!command) throw new Error("command is required");
+        const args = Array.isArray(transport.args)
+          ? transport.args.filter((item): item is string => typeof item === "string")
+          : [];
+        const env = isPlainObject(transport.env)
+          ? Object.fromEntries(
+              Object.entries(transport.env).filter(
+                (entry): entry is [string, string] => typeof entry[1] === "string",
+              ),
+            )
+          : undefined;
+        return Response.json({
+          ok: true,
+          value: await (
+            await input.getHost()
+          ).upsertMcpConnection({
+            id,
+            label,
+            enabled,
+            transport: {
+              kind: "stdio",
+              command,
+              args,
+              ...(textField(transport, "cwd") ? { cwd: textField(transport, "cwd") } : {}),
+              ...(env ? { env } : {}),
+            },
+          }),
+        });
+      }
+      if (transport.kind !== "http") throw new Error("transport kind must be stdio or http");
+      const url = textField(transport, "url");
+      if (!url) throw new Error("url is required");
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).upsertMcpConnection({
+          id,
+          label,
+          enabled,
+          transport: {
+            kind: "http",
+            url,
+            ...(textField(transport, "bearerToken")
+              ? { bearerToken: textField(transport, "bearerToken") }
+              : {}),
+          },
+        }),
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.post("/api/host/mcp-connections/:connectionId/inspect", async (c) => {
+    try {
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).inspectMcpConnection(c.req.param("connectionId"), durableActor(c.get("actor") as Actor)),
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.delete("/api/host/mcp-connections/:connectionId", async (c) => {
+    try {
+      await (await input.getHost()).removeMcpConnection(c.req.param("connectionId"));
+      return Response.json({ ok: true, value: true });
+    } catch (error) {
+      return sessionError(error);
     }
   });
 
@@ -256,6 +527,139 @@ export function registerHostProductRoutes(
       });
     } catch (error) {
       return sessionError(error);
+    }
+  });
+
+  app.get("/api/host/skills/sources", async () =>
+    Response.json({ ok: true, value: (await input.getHost()).supportedSkillSources() }),
+  );
+
+  app.get("/api/host/skills/installations", async (c) => {
+    try {
+      skillManagementActor(c.get("actor") as Actor);
+      const scope = skillScope(c.req.query("scope"));
+      const directory = c.req.query("directory")?.trim() ?? "";
+      if (scope === "project" && !directory) throw new Error("directory is required");
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).listSkillInstallations(directory, scope, durableActor(c.get("actor"))),
+      });
+    } catch (error) {
+      return skillError(error);
+    }
+  });
+
+  app.post("/api/host/skills/install", async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body)) throw new Error("Request body must be an object");
+      const source = textField(body, "source");
+      const directory = textField(body, "directory");
+      const scope =
+        body.scope === undefined
+          ? body.global === true
+            ? "host"
+            : "project"
+          : skillScope(body.scope);
+      const requestId = textField(body, "requestId");
+      const expectedGeneration = body.expectedGeneration;
+      const actor = c.get("actor") as Actor;
+      if (!source || !requestId || (scope === "project" && !directory))
+        throw new Error("source, requestId, and project directory are required");
+      if (
+        expectedGeneration !== undefined &&
+        (!Number.isSafeInteger(expectedGeneration) || (expectedGeneration as number) < 0)
+      )
+        throw new Error("expectedGeneration must be a non-negative integer");
+      skillManagementActor(actor);
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).installSkill({
+          source,
+          projectDirectory: directory,
+          scope,
+          requestId,
+          ...(typeof expectedGeneration === "number" ? { expectedGeneration } : {}),
+          actor: durableActor(actor),
+        }),
+      });
+    } catch (error) {
+      return skillError(error);
+    }
+  });
+
+  app.post("/api/host/skills/:name/update", async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body)) throw new Error("Request body must be an object");
+      const scope = skillScope(body.scope);
+      const directory = textField(body, "directory");
+      const requestId = textField(body, "requestId");
+      const expectedGeneration = body.expectedGeneration;
+      const actor = c.get("actor") as Actor;
+      if (!requestId || (scope === "project" && !directory))
+        throw new Error("requestId and project directory are required");
+      if (
+        expectedGeneration !== undefined &&
+        (!Number.isSafeInteger(expectedGeneration) || (expectedGeneration as number) < 0)
+      )
+        throw new Error("expectedGeneration must be a non-negative integer");
+      skillManagementActor(actor);
+      return Response.json({
+        ok: true,
+        value: await (
+          await input.getHost()
+        ).updateSkill({
+          name: c.req.param("name"),
+          projectDirectory: directory,
+          scope,
+          requestId,
+          ...(typeof expectedGeneration === "number" ? { expectedGeneration } : {}),
+          actor: durableActor(actor),
+        }),
+      });
+    } catch (error) {
+      return skillError(error);
+    }
+  });
+
+  app.delete("/api/host/skills/:name", async (c) => {
+    try {
+      const directory = c.req.query("directory")?.trim() ?? "";
+      const scope = c.req.query("scope")
+        ? skillScope(c.req.query("scope"))
+        : c.req.query("global") === "true"
+          ? "host"
+          : "project";
+      const requestId = c.req.query("requestId")?.trim() ?? "";
+      const expectedRaw = c.req.query("expectedGeneration");
+      const expectedGeneration = expectedRaw === undefined ? undefined : Number(expectedRaw);
+      const actor = c.get("actor") as Actor;
+      if (!requestId || (scope === "project" && !directory))
+        throw new Error("requestId and project directory are required");
+      if (
+        expectedGeneration !== undefined &&
+        (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 0)
+      )
+        throw new Error("expectedGeneration must be a non-negative integer");
+      skillManagementActor(actor);
+      await (
+        await input.getHost()
+      ).removeSkill({
+        name: c.req.param("name"),
+        projectDirectory: directory,
+        scope,
+        requestId,
+        ...(expectedGeneration !== undefined ? { expectedGeneration } : {}),
+        actor: durableActor(actor),
+      });
+      return Response.json({ ok: true, value: true });
+    } catch (error) {
+      return skillError(error);
     }
   });
 
@@ -339,11 +743,16 @@ export function registerHostProductRoutes(
           ? reasoningRaw
           : "medium";
       const actor = c.get("actor") as Actor;
+      if (input.identity && actor.role === "viewer") {
+        throw new IdentityError("FORBIDDEN", 403, "Viewer access is read-only");
+      }
       if (input.identity && (!model.connectionId || !model.modelId)) {
         throw new Error("An entitled model connection is required");
       }
       if (input.identity) {
-        await input.identity.authorizeModelSelection(actor, model.connectionId, model.modelId);
+        if (model.connectionId === MODEL_OFFERING_CONNECTION_ID)
+          await input.identity.authorizeModelOffering(actor, model.modelId);
+        else await input.identity.authorizeModelSelection(actor, model.connectionId, model.modelId);
       }
       const session = await host.createSession(
         {
@@ -354,8 +763,20 @@ export function registerHostProductRoutes(
         },
         durableActor(actor),
       );
-      if (input.identity && session.model?.connectionId) {
-        await input.identity.pinSessionConnection(session.id, actor, session.model.connectionId);
+      try {
+        if (input.identity && session.model?.connectionId) {
+          if (session.model.connectionId === MODEL_OFFERING_CONNECTION_ID)
+            await input.identity.pinSessionOffering(session.id, actor, session.model.modelId);
+          else
+            await input.identity.pinSessionConnection(
+              session.id,
+              actor,
+              session.model.connectionId,
+            );
+        }
+      } catch (error) {
+        await host.deleteSession(session.id, durableActor(actor)).catch(() => undefined);
+        throw error;
       }
       return Response.json({ ok: true, value: session });
     } catch (error) {
@@ -389,20 +810,36 @@ export function registerHostProductRoutes(
       }
       if (body.model && isPlainObject(body.model)) {
         const actor = c.get("actor") as Actor;
+        const previous = await host.readSession(sessionId, durableActor(actor));
         const selection = {
           connectionId: textField(body.model as Record<string, unknown>, "connectionId"),
           modelId: textField(body.model as Record<string, unknown>, "modelId"),
         };
         if (input.identity) {
-          await input.identity.authorizeModelSelection(
-            actor,
-            selection.connectionId,
-            selection.modelId,
-          );
+          if (selection.connectionId === MODEL_OFFERING_CONNECTION_ID)
+            await input.identity.authorizeModelOffering(actor, selection.modelId);
+          else
+            await input.identity.authorizeModelSelection(
+              actor,
+              selection.connectionId,
+              selection.modelId,
+            );
         }
         const value = await host.setModel(sessionId, selection, durableActor(actor));
-        if (input.identity) {
-          await input.identity.pinSessionConnection(sessionId, actor, selection.connectionId);
+        try {
+          if (input.identity) {
+            if (selection.connectionId === MODEL_OFFERING_CONNECTION_ID)
+              await input.identity.pinSessionOffering(sessionId, actor, selection.modelId);
+            else
+              await input.identity.pinSessionConnection(sessionId, actor, selection.connectionId);
+          }
+        } catch (error) {
+          if (previous.model) {
+            await host
+              .setModel(sessionId, previous.model, durableActor(actor))
+              .catch(() => undefined);
+          }
+          throw error;
         }
         return Response.json({ ok: true, value });
       }
@@ -449,11 +886,14 @@ export function registerHostProductRoutes(
       if (input.identity) {
         const snapshot = await host.readSession(sessionId, durableActor(actor));
         if (!snapshot.model) throw new Error("Session has no model connection");
-        await input.identity.authorizeModelSelection(
-          actor,
-          snapshot.model.connectionId,
-          snapshot.model.modelId,
-        );
+        if (snapshot.model.connectionId === MODEL_OFFERING_CONNECTION_ID)
+          await input.identity.authorizeModelOffering(actor, snapshot.model.modelId);
+        else
+          await input.identity.authorizeModelSelection(
+            actor,
+            snapshot.model.connectionId,
+            snapshot.model.modelId,
+          );
       }
       return Response.json({
         ok: true,
@@ -481,11 +921,14 @@ export function registerHostProductRoutes(
       if (input.identity) {
         const snapshot = await host.readSession(sessionId, durableActor(actor));
         if (!snapshot.model) throw new Error("Session has no model connection");
-        await input.identity.authorizeModelSelection(
-          actor,
-          snapshot.model.connectionId,
-          snapshot.model.modelId,
-        );
+        if (snapshot.model.connectionId === MODEL_OFFERING_CONNECTION_ID)
+          await input.identity.authorizeModelOffering(actor, snapshot.model.modelId);
+        else
+          await input.identity.authorizeModelSelection(
+            actor,
+            snapshot.model.connectionId,
+            snapshot.model.modelId,
+          );
       }
       return Response.json({
         ok: true,

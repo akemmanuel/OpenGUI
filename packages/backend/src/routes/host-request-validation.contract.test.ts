@@ -75,6 +75,8 @@ describe("Host request validation contracts", () => {
     ["POST", "/api/host/projects", "null"],
     ["DELETE", "/api/host/projects", "[]"],
     ["POST", "/api/host/sessions", "null"],
+    ["POST", "/api/host/skills/install", "null"],
+    ["POST", "/api/host/skills/demo/update", "null"],
     ["PATCH", "/api/host/sessions/missing", "[]"],
     ["POST", "/api/host/sessions/missing/prompt", "null"],
     ["PATCH", "/api/host/sessions/missing/follow-ups/missing", "null"],

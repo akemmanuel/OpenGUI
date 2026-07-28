@@ -50,13 +50,13 @@ describe("identity gate state", () => {
 });
 
 describe("owner settings visibility", () => {
-  it("members see neither owner administration tab", () => {
+  it("members can manage personal providers but not Host administration", () => {
     expect(
       ownerSettingsVisibility(
         { type: "user", id: "member", displayName: "Member", role: "member" },
         false,
       ),
-    ).toEqual({ providers: false, team: false });
+    ).toEqual({ providers: true, team: false });
   });
 
   it("only owner users see Team while Desktop Local keeps provider settings", () => {

@@ -1,6 +1,6 @@
-import type { ModelToolName } from "../models/transport.ts";
+import type { ModelRequest, ModelToolDefinition, ModelToolName } from "../models/transport.ts";
 
-export interface ToolDefinition {
+export interface ToolDefinition extends ModelToolDefinition {
   name: ModelToolName;
   description: string;
   parameters: {
@@ -87,4 +87,12 @@ export function toolDefinitionsFor(tools?: readonly ModelToolName[]): ToolDefini
   if (!tools) return [...TOOL_DEFINITIONS];
   const allowed = new Set<string>(tools);
   return TOOL_DEFINITIONS.filter((tool) => allowed.has(tool.name));
+}
+
+export function modelToolDefinitionsFor(
+  request: Pick<ModelRequest, "tools" | "toolDefinitions">,
+): ModelToolDefinition[] {
+  return request.toolDefinitions
+    ? request.toolDefinitions.map((definition) => structuredClone(definition))
+    : toolDefinitionsFor(request.tools);
 }

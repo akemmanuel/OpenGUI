@@ -10,6 +10,20 @@ export function buildModelContext(entries: SessionEntry[]): ModelContextItem[] {
   const context: ModelContextItem[] = [];
   const compaction = latestCompletedCompaction(entries);
   const visibleEntries = compaction ? entries.slice(compaction.index + 1) : entries;
+  const responsesByRun = new Map<
+    string,
+    import("../models/transport.ts").ProviderResponseMetadata
+  >();
+  for (const entry of visibleEntries) {
+    if (entry.kind !== "provider_response" || typeof entry.payload.runId !== "string") continue;
+    const response = entry.payload.response;
+    if (response && typeof response === "object") {
+      responsesByRun.set(
+        entry.payload.runId,
+        response as import("../models/transport.ts").ProviderResponseMetadata,
+      );
+    }
+  }
   if (compaction) {
     context.push({
       type: "user_message",
@@ -32,6 +46,10 @@ export function buildModelContext(entries: SessionEntry[]): ModelContextItem[] {
         context.push({
           type: "assistant_message",
           text: text(entry.payload.text),
+          replay:
+            typeof entry.payload.runId === "string"
+              ? responsesByRun.get(entry.payload.runId)?.replay
+              : undefined,
         });
         break;
       case "tool_call":

@@ -1,4 +1,5 @@
-import { toolDefinitionsFor } from "../tools/tool-definitions.ts";
+import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
+import { CodexResponsesTransport } from "./codex-responses.ts";
 import type {
   ModelContextItem,
   ModelRequest,
@@ -6,11 +7,14 @@ import type {
   ModelTransport,
 } from "./transport.ts";
 import {
+  deriveModelCacheKey,
+  redactProviderText,
   isPossibleImageInputRejection,
   modelContextHasImages,
   modelToolResultContent,
   withoutModelContextImages,
 } from "./transport.ts";
+import type { ModelProtocol, ModelUsage, ProviderReplayState } from "./transport.ts";
 
 export interface OpenAiCompatibleConnection {
   id: string;
@@ -112,7 +116,7 @@ export function toChatMessages(context: ModelContextItem[]) {
 }
 
 function toolsForRequest(request: ModelRequest) {
-  return toolDefinitionsFor(request.tools).map((tool) => ({
+  return modelToolDefinitionsFor(request).map((tool) => ({
     type: "function" as const,
     function: {
       name: tool.name,
@@ -132,7 +136,7 @@ function parseArguments(raw: string) {
 }
 
 function safeProviderError(body: string, status: number, apiKey?: string) {
-  const redacted = apiKey ? body.replaceAll(apiKey, "[REDACTED]") : body;
+  const redacted = redactProviderText(body, apiKey ? [apiKey] : []);
   return redacted || `Model request failed (${status})`;
 }
 
@@ -207,6 +211,8 @@ export class OpenAiChatTransport implements ModelTransport {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent> {
+    const started = Date.now();
+    let firstDeltaMs: number | undefined;
     const selected = [...request.context].reverse().find((item) => item.type === "user_message");
     const connectionId = selected?.model.connectionId ?? this.#defaultConnectionId;
     if (!connectionId) throw new Error("No model connection is configured");
@@ -218,6 +224,45 @@ export class OpenAiChatTransport implements ModelTransport {
     const effectiveRequest = this.#imageUnsupportedModels.has(modelKey)
       ? { ...request, context: withoutModelContextImages(request.context) }
       : request;
+    const configuredRoute = connection.modelRoutes?.[modelId];
+    const protocol: ModelProtocol =
+      configuredRoute === "anthropic-messages"
+        ? "anthropic-messages"
+        : configuredRoute === "responses"
+          ? "openai-responses"
+          : "openai-chat";
+    const cacheKey = deriveModelCacheKey(request, {
+      backendId: connectionId,
+      upstreamModelId: modelId,
+      protocol,
+    });
+    effectiveRequest.cache = request.cache ? { ...request.cache, key: cacheKey } : undefined;
+
+    if (configuredRoute === "responses") {
+      const responses = new CodexResponsesTransport({
+        endpoint: `${connection.baseUrl.replace(/\/+$/, "")}/responses`,
+        requestLabel: connection.label,
+        getCredential: async () => ({ accessToken: connection.apiKey ?? "", accountId: "" }),
+        fetchImpl: this.#options.fetchImpl,
+        protocol: "openai-responses",
+        providerId: connection.id,
+        apiId: "openai-responses",
+      });
+      for await (const event of responses.stream(effectiveRequest, signal)) {
+        if (event.type === "completed" && event.response) {
+          yield {
+            ...event,
+            response: {
+              ...event.response,
+              provider: connection.id,
+              api: "openai-responses",
+              protocol: "openai-responses",
+            },
+          };
+        } else yield event;
+      }
+      return;
+    }
 
     if (connection.modelRoutes?.[modelId] === "anthropic-messages") {
       yield* this.#streamAnthropic(connection, modelId, effectiveRequest, signal);
@@ -239,10 +284,11 @@ export class OpenAiChatTransport implements ModelTransport {
         ...toChatMessages(effectiveRequest.context),
       ],
       tools: toolsForRequest(request),
+      ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
     });
 
     let response: Response | undefined;
-    const maxAttempts = 5;
+    const maxAttempts = (request.delivery?.maxRetries ?? 2) + 1;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       response = await (this.#options.fetchImpl ?? fetch)(`${baseUrl}/chat/completions`, {
         method: "POST",
@@ -264,15 +310,24 @@ export class OpenAiChatTransport implements ModelTransport {
         return;
       }
       if (attempt === maxAttempts - 1 || !shouldRetryChatCompletion(response.status, text)) {
-        throw new Error(safeProviderError(text, response.status, connection.apiKey));
+        const error = new Error(safeProviderError(text, response.status, connection.apiKey));
+        Object.assign(error, { status: response.status });
+        throw error;
       }
-      await waitForRetry(500 * 2 ** attempt, signal);
+      await waitForRetry(
+        Math.min(500 * 2 ** attempt, request.delivery?.maxRetryDelayMs ?? 60_000),
+        signal,
+      );
     }
     if (!response?.body) throw new Error("Model response did not include a body");
 
     const decoder = new TextDecoder();
     let buffer = "";
     let completed = false;
+    let stopReason: "stop" | "length" | "tool_use" = "stop";
+    let responseId: string | undefined;
+    let responseModel: string | undefined;
+    let usage: ModelUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
     const toolBuffers = new Map<number, { id: string; name: string; arguments: string }>();
     const reader = response.body.getReader();
     while (true) {
@@ -291,6 +346,9 @@ export class OpenAiChatTransport implements ModelTransport {
           continue;
         }
         const parsed = JSON.parse(data) as {
+          id?: string;
+          model?: string;
+          usage?: Record<string, any>;
           choices?: Array<{
             finish_reason?: string | null;
             delta?: {
@@ -306,11 +364,25 @@ export class OpenAiChatTransport implements ModelTransport {
             };
           }>;
         };
+        responseId ||= parsed.id;
+        responseModel ||= parsed.model;
+        if (parsed.usage) usage = chatUsage(parsed.usage);
         const choice = parsed.choices?.[0];
-        if (typeof choice?.finish_reason === "string") completed = true;
+        if (typeof choice?.finish_reason === "string") {
+          completed = true;
+          stopReason =
+            choice.finish_reason === "length"
+              ? "length"
+              : choice.finish_reason === "tool_calls" || choice.finish_reason === "function_call"
+                ? "tool_use"
+                : "stop";
+        }
         const delta = choice?.delta;
         if (!delta) continue;
-        for (const event of chatDeltaEvents(delta)) yield event;
+        for (const event of chatDeltaEvents(delta)) {
+          firstDeltaMs ??= Date.now() - started;
+          yield event;
+        }
         for (const toolCall of delta.tool_calls ?? []) {
           const index = toolCall.index ?? 0;
           const existing = toolBuffers.get(index) ?? { id: "", name: "", arguments: "" };
@@ -333,7 +405,24 @@ export class OpenAiChatTransport implements ModelTransport {
         input: parseArguments(toolCall.arguments),
       };
     }
-    yield { type: "completed" };
+    yield request.identity && request.cache
+      ? {
+          type: "completed",
+          response: responseMetadata({
+            request: effectiveRequest,
+            connection,
+            modelId,
+            protocol,
+            responseId,
+            responseModel,
+            usage,
+            stopReason: toolBuffers.size > 0 ? "tool_use" : stopReason,
+            started,
+            firstDeltaMs,
+            attempts: 1,
+          }),
+        }
+      : { type: "completed" };
   }
 
   async *#streamAnthropic(
@@ -342,6 +431,12 @@ export class OpenAiChatTransport implements ModelTransport {
     request: ModelRequest,
     signal: AbortSignal,
   ): AsyncIterable<ModelStreamEvent> {
+    const started = Date.now();
+    let firstDeltaMs: number | undefined;
+    let responseId: string | undefined;
+    let usage: ModelUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+    let stopReason: "stop" | "length" | "tool_use" = "stop";
+    const replayItems: NonNullable<ProviderReplayState["items"]> = [];
     const toolInputs = new Map<number, { id: string; name: string; json: string }>();
     const response = await (this.#options.fetchImpl ?? fetch)(
       `${connection.baseUrl.replace(/\/+$/, "")}/messages`,
@@ -357,12 +452,32 @@ export class OpenAiChatTransport implements ModelTransport {
           model: modelId,
           max_tokens: 16_384,
           stream: true,
-          system: request.systemPrompt,
-          messages: toAnthropicMessages(request.context),
-          tools: toolsForRequest(request).map((tool) => ({
+          system:
+            request.cache?.mode === "session"
+              ? [
+                  {
+                    type: "text",
+                    text: request.systemPrompt,
+                    cache_control: {
+                      type: "ephemeral",
+                      ...(request.cache.retention === "long" ? { ttl: "1h" } : {}),
+                    },
+                  },
+                ]
+              : request.systemPrompt,
+          messages: anthropicMessagesWithCache(request),
+          tools: toolsForRequest(request).map((tool, index, tools) => ({
             name: tool.function.name,
             description: tool.function.description,
             input_schema: tool.function.parameters,
+            ...(request.cache?.mode === "session" && index === tools.length - 1
+              ? {
+                  cache_control: {
+                    type: "ephemeral",
+                    ...(request.cache.retention === "long" ? { ttl: "1h" } : {}),
+                  },
+                }
+              : {}),
           })),
         }),
       },
@@ -377,7 +492,9 @@ export class OpenAiChatTransport implements ModelTransport {
         yield* this.stream(request, signal);
         return;
       }
-      throw new Error(safeProviderError(text, response.status, connection.apiKey));
+      const error = new Error(safeProviderError(text, response.status, connection.apiKey));
+      Object.assign(error, { status: response.status });
+      throw error;
     }
 
     const reader = response.body.getReader();
@@ -398,6 +515,19 @@ export class OpenAiChatTransport implements ModelTransport {
           .trim();
         if (!raw) continue;
         const event = JSON.parse(raw) as Record<string, any>;
+        if (event.type === "message_start") {
+          responseId = event.message?.id;
+          usage = anthropicUsage(event.message?.usage);
+        }
+        if (event.type === "message_delta") {
+          usage = anthropicUsage(event.usage, usage);
+          stopReason =
+            event.delta?.stop_reason === "max_tokens"
+              ? "length"
+              : event.delta?.stop_reason === "tool_use"
+                ? "tool_use"
+                : "stop";
+        }
         if (event.type === "message_stop") completed = true;
         const index = typeof event.index === "number" ? event.index : 0;
         if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
@@ -407,10 +537,19 @@ export class OpenAiChatTransport implements ModelTransport {
             json: "",
           });
         } else if (event.type === "content_block_delta") {
-          if (event.delta?.type === "text_delta" && event.delta.text)
+          if (event.delta?.type === "text_delta" && event.delta.text) {
+            firstDeltaMs ??= Date.now() - started;
             yield { type: "text_delta", delta: event.delta.text };
-          if (event.delta?.type === "thinking_delta" && event.delta.thinking)
+          }
+          if (event.delta?.type === "thinking_delta" && event.delta.thinking) {
+            firstDeltaMs ??= Date.now() - started;
             yield { type: "reasoning_delta", delta: event.delta.thinking };
+          }
+          if (event.delta?.type === "signature_delta" && event.delta.signature) {
+            const current = replayItems.at(-1);
+            if (current?.type === "thinking")
+              current.signature = `${current.signature ?? ""}${event.delta.signature}`;
+          }
           const tool = toolInputs.get(index);
           if (tool && event.delta?.type === "input_json_delta")
             tool.json += event.delta.partial_json ?? "";
@@ -426,18 +565,129 @@ export class OpenAiChatTransport implements ModelTransport {
             toolInputs.delete(index);
           }
         }
+        if (
+          event.type === "content_block_start" &&
+          (event.content_block?.type === "thinking" ||
+            event.content_block?.type === "redacted_thinking")
+        ) {
+          replayItems.push({
+            type: "thinking",
+            ...(event.content_block.data ? { encryptedContent: event.content_block.data } : {}),
+          });
+        }
       }
       if (done) break;
     }
     if (!completed) throw new Error("Model stream ended before completion");
-    yield { type: "completed" };
+    yield request.identity && request.cache
+      ? {
+          type: "completed",
+          response: responseMetadata({
+            request,
+            connection,
+            modelId,
+            protocol: "anthropic-messages",
+            responseId,
+            usage,
+            stopReason,
+            replay: replayItems.length ? { items: replayItems } : undefined,
+            started,
+            firstDeltaMs,
+            attempts: 1,
+          }),
+        }
+      : { type: "completed" };
   }
+}
+
+function chatUsage(raw: Record<string, any>): ModelUsage {
+  const cacheRead = raw.prompt_tokens_details?.cached_tokens ?? raw.prompt_cache_hit_tokens ?? 0;
+  const cacheWrite = raw.prompt_tokens_details?.cache_write_tokens ?? 0;
+  const input = Math.max(0, (raw.prompt_tokens ?? 0) - cacheRead - cacheWrite);
+  const output = raw.completion_tokens ?? 0;
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    reasoning: raw.completion_tokens_details?.reasoning_tokens,
+    total: raw.total_tokens ?? input + output + cacheRead + cacheWrite,
+  };
+}
+
+function anthropicUsage(raw: Record<string, any> | undefined, previous?: ModelUsage): ModelUsage {
+  const input = raw?.input_tokens ?? previous?.input ?? 0;
+  const output = raw?.output_tokens ?? previous?.output ?? 0;
+  const cacheRead = raw?.cache_read_input_tokens ?? previous?.cacheRead ?? 0;
+  const cacheWrite = raw?.cache_creation_input_tokens ?? previous?.cacheWrite ?? 0;
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    reasoning: raw?.output_tokens_details?.thinking_tokens ?? previous?.reasoning,
+    total: input + output + cacheRead + cacheWrite,
+  };
+}
+
+function responseMetadata(input: {
+  request: ModelRequest;
+  connection: OpenAiCompatibleConnection;
+  modelId: string;
+  protocol: ModelProtocol;
+  responseId?: string;
+  responseModel?: string;
+  usage: ModelUsage;
+  stopReason: "stop" | "length" | "tool_use";
+  replay?: ProviderReplayState;
+  started: number;
+  firstDeltaMs?: number;
+  attempts: number;
+}): import("./transport.ts").ProviderResponseMetadata {
+  return {
+    responseId: input.responseId,
+    provider: input.connection.id,
+    api: input.protocol === "anthropic-messages" ? "anthropic-messages" : "openai-completions",
+    model: input.modelId,
+    responseModel: input.responseModel,
+    protocol: input.protocol,
+    usage: input.usage,
+    stopReason: input.stopReason,
+    replay: input.replay,
+    cache: {
+      key: input.request.cache?.key,
+      generation: input.request.cache?.generation ?? "legacy",
+      readTokens: input.usage.cacheRead,
+      writeTokens: input.usage.cacheWrite,
+    },
+    timing: {
+      startedAt: new Date(input.started).toISOString(),
+      firstDeltaMs: input.firstDeltaMs,
+      completedMs: Date.now() - input.started,
+      attempts: input.attempts,
+    },
+  };
 }
 
 export function toAnthropicMessages(context: ModelContextItem[]) {
   return context.flatMap((item): Array<Record<string, unknown>> => {
     if (item.type === "user_message") return [{ role: "user", content: item.text }];
-    if (item.type === "assistant_message") return [{ role: "assistant", content: item.text }];
+    if (item.type === "assistant_message") {
+      const replay = (item.replay?.items ?? []).flatMap<Record<string, unknown>>((state) => {
+        if (state.type !== "thinking") return [];
+        if (state.encryptedContent)
+          return [{ type: "redacted_thinking", data: state.encryptedContent }];
+        if (state.signature)
+          return [{ type: "thinking", thinking: "", signature: state.signature }];
+        return [];
+      });
+      return [
+        {
+          role: "assistant",
+          content: replay.length > 0 ? [...replay, { type: "text", text: item.text }] : item.text,
+        },
+      ];
+    }
     if (item.type === "tool_call")
       return [
         {
@@ -467,4 +717,21 @@ export function toAnthropicMessages(context: ModelContextItem[]) {
       },
     ];
   });
+}
+
+function anthropicMessagesWithCache(request: ModelRequest) {
+  const messages = toAnthropicMessages(request.context);
+  if (request.cache?.mode !== "session" || messages.length === 0) return messages;
+  const cacheControl = {
+    type: "ephemeral",
+    ...(request.cache.retention === "long" ? { ttl: "1h" } : {}),
+  };
+  const message = messages.at(-1)!;
+  if (typeof message.content === "string") {
+    message.content = [{ type: "text", text: message.content, cache_control: cacheControl }];
+  } else if (Array.isArray(message.content)) {
+    const last = message.content.at(-1) as Record<string, unknown> | undefined;
+    if (last) last.cache_control = cacheControl;
+  }
+  return messages;
 }

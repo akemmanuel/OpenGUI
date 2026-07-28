@@ -109,7 +109,7 @@ function formatDate(value: string | number | undefined, locale: string) {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
 }
 
-export function TeamSettings() {
+export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | "host" }) {
   const { t, i18n } = useTranslation();
   const workspace = useMemo(() => getIdentityWorkspace(), []);
   const client = useMemo(
@@ -127,6 +127,9 @@ export function TeamSettings() {
   const [registrationMode, setRegistrationMode] = useState<HostRegistrationMode>("invite_only");
   const [modelPolicy, setModelPolicy] = useState<ModelPolicy | null>(null);
   const [ownerAccess, setOwnerAccess] = useState<boolean | null>(null);
+  const [currentRole, setCurrentRole] = useState<"owner" | "admin" | "member" | "viewer" | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -159,7 +162,8 @@ export function TeamSettings() {
     try {
       const me = await client.me();
       setPathPolicy(me.pathPolicy);
-      if (me.actor.type !== "user" || me.actor.role !== "owner") {
+      setCurrentRole(me.actor.role);
+      if (me.actor.type !== "user" || (me.actor.role !== "owner" && me.actor.role !== "admin")) {
         setOwnerAccess(false);
         setMembers([]);
         setInvites([]);
@@ -167,6 +171,13 @@ export function TeamSettings() {
         return;
       }
       setOwnerAccess(true);
+      if (me.actor.role === "admin") {
+        setCurrentUserId(me.user?.id ?? me.actor.id);
+        setMembers(await client.members());
+        setInvites([]);
+        setApiKeys([]);
+        return;
+      }
       const [nextMembers, nextInvites, nextKeys, hostPolicy, nextModelPolicy, roots] =
         await Promise.all([
           client.members(),
@@ -279,6 +290,22 @@ export function TeamSettings() {
     }
   }
 
+  async function updateMemberRole(member: TeamMember, role: "admin" | "member" | "viewer") {
+    if (!client) return;
+    setBusy(`role:${member.id}`);
+    setError(null);
+    try {
+      await client.setMemberRole(member.id, role);
+      setMembers((items) =>
+        items.map((item) => (item.id === member.id ? { ...item, role } : item)),
+      );
+    } catch {
+      setError(t("identity.actionError"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function createKey(event: FormEvent) {
     event.preventDefault();
     if (!client) return;
@@ -370,357 +397,409 @@ export function TeamSettings() {
         </div>
       )}
 
-      <SettingsSection
-        icon={<Settings2 className="size-4" />}
-        title={t("identity.hostPolicyTitle")}
-        description={t("identity.hostPolicyDescription")}
-      >
-        <div className="flex flex-col gap-3 rounded-lg border px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">{t("identity.registrationMode")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t(`identity.registrationModeHelp.${registrationMode}`)}
-            </p>
+      {view === "host" && currentRole === "owner" && (
+        <SettingsSection
+          icon={<Settings2 className="size-4" />}
+          title={t("identity.hostPolicyTitle")}
+          description={t("identity.hostPolicyDescription")}
+        >
+          <div className="flex flex-col gap-3 rounded-lg border px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{t("identity.registrationMode")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(`identity.registrationModeHelp.${registrationMode}`)}
+              </p>
+            </div>
+            <Select
+              value={registrationMode}
+              onValueChange={(value) => {
+                if (value === "invite_only" || value === "open") void updateRegistrationMode(value);
+              }}
+              disabled={busy === "registration-mode"}
+            >
+              <SelectTrigger className="w-[200px] max-w-full">
+                <SelectValue data-responsive-allow="text-clip">
+                  {t(`identity.registrationModes.${registrationMode}`)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="invite_only">
+                  {t("identity.registrationModes.invite_only")}
+                </SelectItem>
+                <SelectItem value="open">{t("identity.registrationModes.open")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Select
-            value={registrationMode}
-            onValueChange={(value) => {
-              if (value === "invite_only" || value === "open") void updateRegistrationMode(value);
-            }}
-            disabled={busy === "registration-mode"}
-          >
-            <SelectTrigger className="w-[200px] max-w-full">
-              <SelectValue data-responsive-allow="text-clip">
-                {t(`identity.registrationModes.${registrationMode}`)}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="invite_only">
-                {t("identity.registrationModes.invite_only")}
-              </SelectItem>
-              <SelectItem value="open">{t("identity.registrationModes.open")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {modelPolicy && (
-          <div className="divide-y rounded-lg border">
-            {(["host", "team"] as const).flatMap((scope) =>
-              (["allowByok", "allowByos"] as const).map((kind) => (
-                <label
-                  key={`${scope}:${kind}`}
-                  className="flex min-w-0 items-center justify-between gap-4 px-3 py-3"
-                >
-                  <span className="min-w-0 [overflow-wrap:anywhere]">
-                    <span className="block text-sm font-medium">
-                      {t(`identity.modelPolicy.${scope}.${kind}`)}
+          {modelPolicy && (
+            <div className="divide-y rounded-lg border">
+              {(["host", "team"] as const).flatMap((scope) =>
+                (["allowByok", "allowByos"] as const).map((kind) => (
+                  <label
+                    key={`${scope}:${kind}`}
+                    className="flex min-w-0 items-center justify-between gap-4 px-3 py-3"
+                  >
+                    <span className="min-w-0 [overflow-wrap:anywhere]">
+                      <span className="block text-sm font-medium">
+                        {t(`identity.modelPolicy.${scope}.${kind}`)}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {t(`identity.modelPolicy.${kind}Help`)}
+                      </span>
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {t(`identity.modelPolicy.${kind}Help`)}
-                    </span>
-                  </span>
-                  <Switch
-                    checked={modelPolicy[scope][kind]}
-                    disabled={busy === `model-policy:${scope}:${kind}`}
-                    onCheckedChange={(checked) => void updateModelPolicy(scope, kind, checked)}
-                  />
-                </label>
-              )),
-            )}
-          </div>
-        )}
-      </SettingsSection>
+                    <Switch
+                      checked={modelPolicy[scope][kind]}
+                      disabled={busy === `model-policy:${scope}:${kind}`}
+                      onCheckedChange={(checked) => void updateModelPolicy(scope, kind, checked)}
+                    />
+                  </label>
+                )),
+              )}
+            </div>
+          )}
+        </SettingsSection>
+      )}
 
-      <SettingsSection
-        icon={<Users className="size-4" />}
-        title={t("identity.membersTitle")}
-        description={t("identity.membersDescription")}
-      >
-        <div className="divide-y rounded-lg border">
-          {members.length === 0 ? (
-            <EmptyRow>{t("identity.noMembers")}</EmptyRow>
-          ) : (
-            members.map((member) => (
-              <div
-                key={member.id}
-                className="flex flex-col items-stretch gap-3 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className="truncate text-sm font-medium"
-                      title={member.username}
+      {(view === "people" || view === "paths") && (
+        <SettingsSection
+          icon={<Users className="size-4" />}
+          title={t("identity.membersTitle")}
+          description={t("identity.membersDescription")}
+        >
+          <div className="divide-y rounded-lg border">
+            {members.length === 0 ? (
+              <EmptyRow>{t("identity.noMembers")}</EmptyRow>
+            ) : (
+              members.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex flex-col items-stretch gap-3 px-3 py-2.5 xl:flex-row xl:items-center xl:justify-between"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="truncate text-sm font-medium"
+                        title={member.username}
+                        data-responsive-allow="text-clip"
+                      >
+                        {member.username}
+                      </span>
+                      <Badge variant="outline">{t(`identity.roles.${member.role}`)}</Badge>
+                      {member.id === currentUserId && (
+                        <span className="text-xs text-muted-foreground">{t("identity.you")}</span>
+                      )}
+                    </div>
+                    <p
+                      className="truncate text-xs text-muted-foreground"
+                      title={member.email}
                       data-responsive-allow="text-clip"
                     >
-                      {member.username}
-                    </span>
-                    <Badge variant="outline">{t(`identity.roles.${member.role}`)}</Badge>
-                    {member.id === currentUserId && (
-                      <span className="text-xs text-muted-foreground">{t("identity.you")}</span>
-                    )}
+                      {member.email}
+                    </p>
                   </div>
-                  <p
-                    className="truncate text-xs text-muted-foreground"
-                    title={member.email}
-                    data-responsive-allow="text-clip"
-                  >
-                    {member.email}
-                  </p>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    {member.role !== "owner" && (
+                      <>
+                        {view === "people" && currentRole === "owner" && (
+                          <Select
+                            value={member.role}
+                            disabled={busy === `role:${member.id}`}
+                            onValueChange={(role) =>
+                              void updateMemberRole(member, role as "admin" | "member" | "viewer")
+                            }
+                          >
+                            <SelectTrigger
+                              className="h-8 w-32"
+                              aria-label={t("identity.memberRole", { name: member.username })}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="admin">{t("identity.roles.admin")}</SelectItem>
+                              <SelectItem value="member">{t("identity.roles.member")}</SelectItem>
+                              <SelectItem value="viewer">{t("identity.roles.viewer")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {view === "people" && currentRole === "owner" && (
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Switch
+                              checked={!!member.canInvite}
+                              disabled={busy === `can-invite:${member.id}`}
+                              onCheckedChange={(checked) => void toggleCanInvite(member, checked)}
+                              aria-label={t("identity.canInviteLabel", { name: member.username })}
+                            />
+                            {t("identity.canInvite")}
+                          </label>
+                        )}
+                      </>
+                    )}
+                    {view === "paths" &&
+                      currentRole === "owner" &&
+                      pathGrantAdministrationEnabled(pathPolicy) &&
+                      (member.role === "owner" ? (
+                        <span className="min-w-0 px-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                          {t("identity.pathGrants.unrestricted")}
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setGrantSubject({
+                              kind: "member",
+                              id: member.id,
+                              name: member.username,
+                            })
+                          }
+                        >
+                          {t("identity.pathGrants.access")}
+                        </Button>
+                      ))}
+                    {view === "people" &&
+                      currentRole === "owner" &&
+                      member.role !== "owner" &&
+                      member.id !== currentUserId && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => setResetMember(member)}>
+                            {t("identity.resetPassword")}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t("identity.removeMember", { name: member.username })}
+                            disabled={busy === `member:${member.id}`}
+                            onClick={() => setConfirmAction({ kind: "member", id: member.id })}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
+                  </div>
                 </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  {member.role !== "owner" && (
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Switch
-                        checked={!!member.canInvite}
-                        disabled={busy === `can-invite:${member.id}`}
-                        onCheckedChange={(checked) => void toggleCanInvite(member, checked)}
-                        aria-label={t("identity.canInviteLabel", { name: member.username })}
-                      />
-                      {t("identity.canInvite")}
-                    </label>
-                  )}
-                  {pathGrantAdministrationEnabled(pathPolicy) &&
-                    (member.role === "owner" ? (
-                      <span className="min-w-0 px-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                        {t("identity.pathGrants.unrestricted")}
-                      </span>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setGrantSubject({ kind: "member", id: member.id, name: member.username })
+              ))
+            )}
+          </div>
+        </SettingsSection>
+      )}
+
+      {view === "paths" && (
+        <div className="rounded-lg bg-muted/40 px-3 py-3 text-xs leading-5 text-muted-foreground">
+          <p className="font-medium text-foreground">{t("identity.accessSummaryTitle")}</p>
+          <p>{t("identity.accessSummaryPaths")}</p>
+          <p>{t("identity.accessSummaryShell")}</p>
+        </div>
+      )}
+
+      {view === "people" && currentRole === "owner" && (
+        <SettingsSection
+          icon={<UserPlus className="size-4" />}
+          title={t("identity.invitesTitle")}
+          description={t("identity.invitesDescription")}
+        >
+          <form className="space-y-3" onSubmit={(event) => void createInvite(event)}>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Label htmlFor="team-invite-email" className="sr-only">
+                {t("identity.inviteEmail")}
+              </Label>
+              <Input
+                id="team-invite-email"
+                type="email"
+                autoComplete="email"
+                required
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder={t("identity.inviteEmail")}
+              />
+              <Button type="submit" disabled={busy === "create-invite"}>
+                <Link2 />
+                {t("identity.createInvite")}
+              </Button>
+            </div>
+            {accessibleRoots.length > 0 && (
+              <fieldset className="min-w-0 max-w-full space-y-2 rounded-lg border p-3">
+                <legend className="px-1 text-xs font-medium">{t("identity.invitePaths")}</legend>
+                <p className="text-xs text-muted-foreground">{t("identity.invitePathsHelp")}</p>
+                {accessibleRoots.map((root) => {
+                  const grant = invitePathGrants.find((item) => item.root === root);
+                  return (
+                    <div
+                      key={root}
+                      className="flex min-w-0 max-w-full flex-wrap items-center gap-2 py-1"
+                    >
+                      <Checkbox
+                        id={`invite-root-${root}`}
+                        checked={!!grant}
+                        onCheckedChange={(checked) =>
+                          setInvitePathGrants((current) =>
+                            checked
+                              ? [...current, { root, access: "read" }]
+                              : current.filter((item) => item.root !== root),
+                          )
                         }
+                      />
+                      <Label
+                        htmlFor={`invite-root-${root}`}
+                        className="w-0 min-w-0 max-w-full flex-1 truncate font-mono text-xs"
+                        title={root}
+                        data-responsive-allow="text-clip"
                       >
-                        {t("identity.pathGrants.access")}
-                      </Button>
-                    ))}
-                  {member.role !== "owner" && member.id !== currentUserId && (
-                    <>
-                      <Button variant="ghost" size="sm" onClick={() => setResetMember(member)}>
-                        {t("identity.resetPassword")}
-                      </Button>
+                        {root}
+                      </Label>
+                      {grant && (
+                        <Select
+                          value={grant.access}
+                          onValueChange={(access) =>
+                            setInvitePathGrants((current) =>
+                              current.map((item) =>
+                                item.root === root
+                                  ? { ...item, access: access as "read" | "write" }
+                                  : item,
+                              ),
+                            )
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="read">
+                              {t("identity.pathGrants.readOnly")}
+                            </SelectItem>
+                            <SelectItem value="write">
+                              {t("identity.pathGrants.readWrite")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  );
+                })}
+              </fieldset>
+            )}
+          </form>
+          {invites.length === 0 ? (
+            <EmptyRow>{t("identity.noInvites")}</EmptyRow>
+          ) : (
+            <div className="divide-y rounded-lg border">
+              {invites.map((invite) => {
+                const expires = formatDate(invite.expiresAt, i18n.language);
+                return (
+                  <div
+                    key={invite.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm">{invite.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {expires ? t("identity.expires", { date: expires }) : t("identity.pending")}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        aria-label={t("identity.removeMember", { name: member.username })}
-                        disabled={busy === `member:${member.id}`}
-                        onClick={() => setConfirmAction({ kind: "member", id: member.id })}
+                        aria-label={t("identity.revokeInvite", { email: invite.email })}
+                        disabled={busy === `invite:${invite.id}`}
+                        onClick={() => setConfirmAction({ kind: "invite", id: invite.id })}
                       >
                         <Trash2 />
                       </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        icon={<UserPlus className="size-4" />}
-        title={t("identity.invitesTitle")}
-        description={t("identity.invitesDescription")}
-      >
-        <form className="space-y-3" onSubmit={(event) => void createInvite(event)}>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Label htmlFor="team-invite-email" className="sr-only">
-              {t("identity.inviteEmail")}
-            </Label>
-            <Input
-              id="team-invite-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={inviteEmail}
-              onChange={(event) => setInviteEmail(event.target.value)}
-              placeholder={t("identity.inviteEmail")}
-            />
-            <Button type="submit" disabled={busy === "create-invite"}>
-              <Link2 />
-              {t("identity.createInvite")}
-            </Button>
-          </div>
-          {accessibleRoots.length > 0 && (
-            <fieldset className="min-w-0 max-w-full space-y-2 rounded-lg border p-3">
-              <legend className="px-1 text-xs font-medium">{t("identity.invitePaths")}</legend>
-              <p className="text-xs text-muted-foreground">{t("identity.invitePathsHelp")}</p>
-              {accessibleRoots.map((root) => {
-                const grant = invitePathGrants.find((item) => item.root === root);
-                return (
-                  <div
-                    key={root}
-                    className="flex min-w-0 max-w-full flex-wrap items-center gap-2 py-1"
-                  >
-                    <Checkbox
-                      id={`invite-root-${root}`}
-                      checked={!!grant}
-                      onCheckedChange={(checked) =>
-                        setInvitePathGrants((current) =>
-                          checked
-                            ? [...current, { root, access: "read" }]
-                            : current.filter((item) => item.root !== root),
-                        )
-                      }
-                    />
-                    <Label
-                      htmlFor={`invite-root-${root}`}
-                      className="w-0 min-w-0 max-w-full flex-1 truncate font-mono text-xs"
-                      title={root}
-                      data-responsive-allow="text-clip"
-                    >
-                      {root}
-                    </Label>
-                    {grant && (
-                      <Select
-                        value={grant.access}
-                        onValueChange={(access) =>
-                          setInvitePathGrants((current) =>
-                            current.map((item) =>
-                              item.root === root
-                                ? { ...item, access: access as "read" | "write" }
-                                : item,
-                            ),
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="read">{t("identity.pathGrants.readOnly")}</SelectItem>
-                          <SelectItem value="write">
-                            {t("identity.pathGrants.readWrite")}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
+                    </div>
                   </div>
                 );
               })}
-            </fieldset>
+            </div>
           )}
-        </form>
-        {invites.length === 0 ? (
-          <EmptyRow>{t("identity.noInvites")}</EmptyRow>
-        ) : (
-          <div className="divide-y rounded-lg border">
-            {invites.map((invite) => {
-              const expires = formatDate(invite.expiresAt, i18n.language);
-              return (
-                <div
-                  key={invite.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2.5"
-                >
+        </SettingsSection>
+      )}
+
+      {view === "host" && currentRole === "owner" && (
+        <SettingsSection
+          icon={<KeyRound className="size-4" />}
+          title={t("identity.apiKeysTitle")}
+          description={t("identity.apiKeysDescription")}
+        >
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={(event) => void createKey(event)}
+          >
+            <Label htmlFor="api-key-label" className="sr-only">
+              {t("identity.keyLabel")}
+            </Label>
+            <Input
+              id="api-key-label"
+              required
+              value={keyLabel}
+              onChange={(event) => setKeyLabel(event.target.value)}
+              placeholder={t("identity.keyLabel")}
+            />
+            <Select
+              value={keyRole}
+              onValueChange={(value) => setKeyRole(value as "owner" | "member")}
+            >
+              <SelectTrigger className="sm:w-36" aria-label={t("identity.keyRole")}>
+                <SelectValue data-responsive-allow="text-clip" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">{t("identity.roles.member")}</SelectItem>
+                <SelectItem value="owner">{t("identity.roles.owner")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" disabled={busy === "create-key"}>
+              <KeyRound />
+              {t("identity.createKey")}
+            </Button>
+          </form>
+          {apiKeys.length === 0 ? (
+            <EmptyRow>{t("identity.noApiKeys")}</EmptyRow>
+          ) : (
+            <div className="divide-y rounded-lg border">
+              {apiKeys.map((key) => (
+                <div key={key.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="truncate text-sm">{invite.email}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{key.label}</span>
+                      <Badge variant="outline">{t(`identity.roles.${key.role}`)}</Badge>
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {expires ? t("identity.expires", { date: expires }) : t("identity.pending")}
+                      {formatDate(key.createdAt, i18n.language)
+                        ? t("identity.created", { date: formatDate(key.createdAt, i18n.language) })
+                        : t("identity.neverUsed")}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
+                    {pathGrantAdministrationEnabled(pathPolicy) &&
+                      (key.role === "owner" ? (
+                        <span className="px-2 text-xs text-muted-foreground">
+                          {t("identity.pathGrants.unrestricted")}
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setGrantSubject({ kind: "apiKey", id: key.id, name: key.label })
+                          }
+                        >
+                          {t("identity.pathGrants.access")}
+                        </Button>
+                      ))}
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={t("identity.revokeInvite", { email: invite.email })}
-                      disabled={busy === `invite:${invite.id}`}
-                      onClick={() => setConfirmAction({ kind: "invite", id: invite.id })}
+                      aria-label={t("identity.revokeKey", { label: key.label })}
+                      disabled={busy === `key:${key.id}`}
+                      onClick={() => setConfirmAction({ kind: "key", id: key.id })}
                     >
                       <Trash2 />
                     </Button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </SettingsSection>
-
-      <SettingsSection
-        icon={<KeyRound className="size-4" />}
-        title={t("identity.apiKeysTitle")}
-        description={t("identity.apiKeysDescription")}
-      >
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(event) => void createKey(event)}
-        >
-          <Label htmlFor="api-key-label" className="sr-only">
-            {t("identity.keyLabel")}
-          </Label>
-          <Input
-            id="api-key-label"
-            required
-            value={keyLabel}
-            onChange={(event) => setKeyLabel(event.target.value)}
-            placeholder={t("identity.keyLabel")}
-          />
-          <Select
-            value={keyRole}
-            onValueChange={(value) => setKeyRole(value as "owner" | "member")}
-          >
-            <SelectTrigger className="sm:w-36" aria-label={t("identity.keyRole")}>
-              <SelectValue data-responsive-allow="text-clip" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="member">{t("identity.roles.member")}</SelectItem>
-              <SelectItem value="owner">{t("identity.roles.owner")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button type="submit" disabled={busy === "create-key"}>
-            <KeyRound />
-            {t("identity.createKey")}
-          </Button>
-        </form>
-        {apiKeys.length === 0 ? (
-          <EmptyRow>{t("identity.noApiKeys")}</EmptyRow>
-        ) : (
-          <div className="divide-y rounded-lg border">
-            {apiKeys.map((key) => (
-              <div key={key.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{key.label}</span>
-                    <Badge variant="outline">{t(`identity.roles.${key.role}`)}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDate(key.createdAt, i18n.language)
-                      ? t("identity.created", { date: formatDate(key.createdAt, i18n.language) })
-                      : t("identity.neverUsed")}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {pathGrantAdministrationEnabled(pathPolicy) &&
-                    (key.role === "owner" ? (
-                      <span className="px-2 text-xs text-muted-foreground">
-                        {t("identity.pathGrants.unrestricted")}
-                      </span>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setGrantSubject({ kind: "apiKey", id: key.id, name: key.label })
-                        }
-                      >
-                        {t("identity.pathGrants.access")}
-                      </Button>
-                    ))}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("identity.revokeKey", { label: key.label })}
-                    disabled={busy === `key:${key.id}`}
-                    onClick={() => setConfirmAction({ kind: "key", id: key.id })}
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SettingsSection>
+              ))}
+            </div>
+          )}
+        </SettingsSection>
+      )}
 
       {grantSubject && (
         <PathGrantEditor

@@ -46,7 +46,7 @@ export function ReasoningEffortSelector() {
           variant="ghost"
           size="sm"
           data-responsive-allow="text-clip"
-          className="!h-7 min-w-0 shrink-0 gap-1.5 overflow-hidden px-1.5 text-xs text-muted-foreground hover:text-foreground"
+          className="!h-7 min-w-0 !max-w-24 shrink-0 gap-1.5 overflow-hidden px-1.5 text-xs text-muted-foreground hover:text-foreground max-[480px]:gap-0 max-[480px]:[&_span]:hidden"
           title={t("reasoningEffort.title", {
             effort: t(`reasoningEffort.levels.${reasoningEffort}`),
           })}

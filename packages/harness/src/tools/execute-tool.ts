@@ -45,7 +45,7 @@ function hasImageAttachments(result: unknown) {
   );
 }
 
-async function limitToolResult(context: ToolExecutionContext, result: unknown) {
+export async function limitToolResult(context: ToolExecutionContext, result: unknown) {
   // Inline image payloads are deliberately larger than the text-result limit and
   // must remain intact so the following model turn can see them.
   if (hasImageAttachments(result)) return result;

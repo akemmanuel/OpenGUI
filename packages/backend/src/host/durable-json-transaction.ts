@@ -121,6 +121,9 @@ export async function openDurableJsonTransaction<T>(
   options: {
     fallback: T;
     validate(value: unknown): T;
+    /** By default legacy callers recover invalid JSON with fallback. Security-sensitive
+     * state can opt into failing closed while still creating a missing file. */
+    failOnInvalid?: boolean;
     mode?: number;
     fileSystem?: Partial<DurableJsonFileSystem>;
   },
@@ -134,7 +137,12 @@ export async function openDurableJsonTransaction<T>(
   let state: T;
   try {
     state = options.validate(JSON.parse(await fileSystem.read(path)));
-  } catch {
+  } catch (error) {
+    const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+    if (options.failOnInvalid && !missing) {
+      await unlink(lockPath).catch(() => undefined);
+      throw new Error(`Durable JSON state is malformed: ${path}`, { cause: error });
+    }
     state = structuredClone(options.fallback);
   }
   let queue = Promise.resolve();

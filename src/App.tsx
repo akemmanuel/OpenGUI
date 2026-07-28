@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QueueList } from "@/components/QueueList";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -41,13 +41,18 @@ import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShor
 import { useActiveSessionQueue } from "@/features/session/useActiveSessionQueue";
 import { useChatSessionSurface } from "@/features/session/useChatSessionSurface";
 import { AppSidebar } from "./components/AppSidebar";
-import { SettingsView } from "./components/ConnectionPanel";
 import { findLastUserMessageBeforeRevert } from "@/components/message-list/message-revert";
 import { MessageList } from "./components/MessageList";
 import { PromptBox } from "./components/PromptBox";
 import { SetupWizard } from "./components/SetupWizard";
 import { TitleBar } from "./components/TitleBar";
 import "./index.css";
+
+const SettingsView = lazy(() =>
+  import("./components/settings/SettingsView").then((module) => ({
+    default: module.SettingsView,
+  })),
+);
 
 export function AppContent({
   detachedProject,
@@ -223,7 +228,16 @@ export function AppContent({
             )}
 
             {activeView === "settings" ? (
-              <SettingsView onBack={() => setActiveView("chat")} />
+              <Suspense
+                fallback={
+                  <div className="flex min-h-48 items-center justify-center" role="status">
+                    <Spinner className="size-5" />
+                    <span className="sr-only">{t("common.loading")}</span>
+                  </div>
+                }
+              >
+                <SettingsView onBack={() => setActiveView("chat")} />
+              </Suspense>
             ) : (
               <>
                 {workspaces.length === 0 && supportsMultipleWorkspaces ? (
@@ -272,7 +286,9 @@ export function AppContent({
                         contextInfo={contextInfo}
                         onSubmit={(message, mode) => {
                           // Capture exactly what the overview shows at submit time.
-                          return sendPrompt(message, mode, [...enabledSkillNames]);
+                          return enabledSkillNames
+                            ? sendPrompt(message, mode, [...enabledSkillNames])
+                            : sendPrompt(message, mode);
                         }}
                         onStop={() => abortSession()}
                       />

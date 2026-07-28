@@ -1,5 +1,6 @@
 import type { ModelTransport } from "./models/transport.ts";
 import type { ExecutionPolicyResolver } from "./execution-policy.ts";
+import type { AgentToolSource } from "./tools/agent-tools.ts";
 
 export const SESSION_ENTRY_KINDS = [
   "session_created",
@@ -10,6 +11,7 @@ export const SESSION_ENTRY_KINDS = [
   "user_message",
   "assistant_reasoning",
   "assistant_message",
+  "provider_response",
   "tool_call",
   "tool_result",
   "compaction",
@@ -93,6 +95,8 @@ export interface PromptInput {
    * is the exact set of skill names exposed to the model.
    */
   skills?: string[];
+  /** Host-owned immutable content snapshots selected on the first turn. */
+  skillPins?: Array<{ name: string; revision: string; directory: string }>;
 }
 
 export type SessionEvent =
@@ -135,7 +139,11 @@ export interface IdGenerator {
 
 export interface OpenGuiHarnessOptions {
   dataDirectory: string;
+  /** Stable, non-secret Host installation identity used only for transport/cache namespacing. */
+  hostId?: string;
   model: ModelTransport;
+  /** Additional Host-owned tools resolved and authorized for each model turn. */
+  agentTools?: AgentToolSource;
   shell?: { executable?: string };
   /** In-band context handoff. The current model writes a checkpoint before context is reset. */
   compaction?: {

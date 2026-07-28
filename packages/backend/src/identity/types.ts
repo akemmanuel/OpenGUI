@@ -1,4 +1,4 @@
-export type HostRole = "owner" | "member";
+export type HostRole = "owner" | "admin" | "member" | "viewer";
 
 export type Actor = {
   type: "user" | "api_key" | "local";

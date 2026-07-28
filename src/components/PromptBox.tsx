@@ -307,10 +307,16 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
           {...props}
         />
 
-        <div className="flex min-w-0 items-center gap-0.5 pb-1.5">
+        <div
+          className="flex min-w-0 items-center gap-0.5 overflow-hidden px-0.5 pt-0.5 pb-1.5"
+          data-responsive-allow="text-clip"
+        >
           <PromptAddMenu disabled={isDisabled} fileInputRef={fileInputRef} />
 
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+          <div
+            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden py-0.5"
+            data-responsive-allow="text-clip"
+          >
             <ModelSelector />
             <ReasoningEffortSelector />
           </div>

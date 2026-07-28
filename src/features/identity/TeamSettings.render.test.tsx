@@ -78,12 +78,12 @@ describe("TeamSettings render integration", () => {
   });
   afterEach(cleanup);
 
-  test("loads owner-only policy, members and grant-aware controls", async () => {
+  test("loads members and role controls without mixing in path grants", async () => {
     render(<TeamSettings />);
     expect(screen.getByRole("status")).toBeTruthy();
     expect(await screen.findByText("ada")).toBeTruthy();
     expect(screen.getByText("ada@test")).toBeTruthy();
-    expect(screen.getAllByText("identity.pathGrants.access").length).toBeGreaterThan(0);
+    expect(screen.queryByText("identity.pathGrants.access")).toBeNull();
     expect(fixture.client.members).toHaveBeenCalledOnce();
 
     await userEvent.click(screen.getAllByRole("switch").at(-1)!);
@@ -92,7 +92,7 @@ describe("TeamSettings render integration", () => {
     );
   });
 
-  test("creates an invite and API key while keeping one-time secrets out of list metadata", async () => {
+  test("creates an invite while keeping its one-time secret out of list metadata", async () => {
     render(<TeamSettings />);
     await screen.findByText("ada");
     const email = document.querySelector("#team-invite-email") as HTMLInputElement;
@@ -106,8 +106,16 @@ describe("TeamSettings render integration", () => {
       }),
     );
     expect(await screen.findByDisplayValue(/invite=secret/)).toBeTruthy();
+  });
 
-    const label = document.querySelector("#api-key-label") as HTMLInputElement;
+  test("separates path grants and Host API keys into their own views", async () => {
+    const { unmount } = render(<TeamSettings view="paths" />);
+    expect((await screen.findAllByText("identity.pathGrants.access")).length).toBeGreaterThan(0);
+    expect(document.querySelector("#api-key-label")).toBeNull();
+    unmount();
+
+    render(<TeamSettings view="host" />);
+    const label = (await screen.findByLabelText("identity.keyLabel")) as HTMLInputElement;
     fireEvent.change(label, { target: { value: "automation" } });
     fireEvent.submit(label.closest("form")!);
     await waitFor(() => expect(fixture.client.createApiKey).toHaveBeenCalled());

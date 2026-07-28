@@ -27,6 +27,64 @@ export interface HostModelConnection {
   >;
 }
 
+export interface HostModelOffering {
+  id: string;
+  displayName: string;
+  description: string | null;
+  /** Administrative route details are omitted from member/viewer payloads. */
+  backendId?: string;
+  upstreamModelId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type HostMcpConnection =
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: {
+        kind: "stdio";
+        command: string;
+        args: string[];
+        cwd?: string;
+        envKeys: string[];
+      };
+    }
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: { kind: "http"; url: string; bearerTokenConfigured: boolean };
+    };
+
+export type HostMcpConnectionMutation =
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      commandApproved: true;
+      transport: {
+        kind: "stdio";
+        command: string;
+        args?: string[];
+        cwd?: string;
+        env?: Record<string, string>;
+      };
+    }
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: { kind: "http"; url: string; bearerToken?: string };
+    };
+
+export interface HostMcpToolInfo {
+  name: string;
+  title: string;
+  description: string;
+}
+
 export interface HostProject {
   directory: string;
   name: string;
@@ -38,6 +96,41 @@ export interface HostSkill {
   source: "host" | "project";
   /** True when the skill is user-invoked only (not auto-advertised to the model). */
   manual: boolean;
+}
+
+export interface HostInstalledSkill extends HostSkill {
+  location: string;
+}
+
+export type HostSkillScope = "project" | "host";
+
+export interface HostSkillInstallation {
+  name: string;
+  description: string;
+  manual: boolean;
+  scope: HostSkillScope;
+  location: string;
+  managed: boolean;
+  modified: boolean;
+  generation: number;
+  source?: string;
+  resolvedSource?: string;
+  revision?: string;
+}
+
+export interface HostSkillSourceDescriptor {
+  kind: "github";
+  grammar: "github:OWNER/REPOSITORY/PATH@REF";
+  example: string;
+  mutableRefsResolved: true;
+  legacyGrammar: "OWNER/REPOSITORY@SKILL";
+}
+
+export interface HostSkillMutation {
+  scope: HostSkillScope;
+  directory?: string;
+  requestId: string;
+  expectedGeneration?: number;
 }
 
 export interface HostSessionSummary {
@@ -115,12 +208,29 @@ export interface OpenGuiHostClient {
   disconnectSubscription(provider: SubscriptionProvider): Promise<void>;
   health(): Promise<{ ok: true; version: string; shell: string }>;
   listModelConnections(): Promise<HostModelConnection[]>;
+  listModelOfferings(): Promise<HostModelOffering[]>;
   upsertModelConnection(connection: HostModelConnection): Promise<HostModelConnection>;
   removeModelConnection(connectionId: string): Promise<void>;
+  listMcpConnections(): Promise<HostMcpConnection[]>;
+  upsertMcpConnection(connection: HostMcpConnectionMutation): Promise<HostMcpConnection>;
+  inspectMcpConnection(connectionId: string): Promise<HostMcpToolInfo[]>;
+  removeMcpConnection(connectionId: string): Promise<void>;
   listProjects(): Promise<HostProject[]>;
   registerProject(directory: string): Promise<HostProject>;
   unregisterProject(directory: string): Promise<void>;
   listSkills(directory: string): Promise<HostSkill[]>;
+  supportedSkillSources(): Promise<HostSkillSourceDescriptor[]>;
+  listSkillInstallations(
+    scope: HostSkillScope,
+    directory?: string,
+  ): Promise<HostSkillInstallation[]>;
+  installManagedSkill(
+    input: HostSkillMutation & { source: string },
+  ): Promise<HostSkillInstallation>;
+  updateManagedSkill(name: string, input: HostSkillMutation): Promise<HostSkillInstallation>;
+  removeManagedSkill(name: string, input: HostSkillMutation): Promise<void>;
+  installSkill(source: string, directory: string, global: boolean): Promise<HostInstalledSkill>;
+  removeSkill(name: string, directory: string, global: boolean): Promise<void>;
   listSessions(directory: string): Promise<HostSessionSummary[]>;
   searchSessionMessages(directories: readonly string[], query: string): Promise<string[]>;
   createSession(input: {

@@ -33,6 +33,29 @@ export type SessionAccessAction = "view" | "run" | "admin" | "delete";
 export type ModelConnectionPlane = "host" | "team" | "user";
 export type ModelCredentialKind = "byok" | "byos";
 
+export type ModelOffering = {
+  id: string;
+  displayName: string;
+  description: string | null;
+  backendId: string;
+  upstreamModelId: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ModelOfferingSummary = Omit<
+  ModelOffering,
+  "backendId" | "upstreamModelId" | "createdBy"
+> &
+  Partial<Pick<ModelOffering, "backendId" | "upstreamModelId" | "createdBy">>;
+
+export type ModelOfferingEntitlement = {
+  offeringId: string;
+  subjectType: "user" | "team";
+  subjectId: string;
+};
+
 export type ModelConnectionAccess = {
   id: string;
   plane: ModelConnectionPlane;
@@ -290,6 +313,28 @@ export class IdentityService {
         created_at INTEGER NOT NULL,
         PRIMARY KEY(connection_id, subject_type, subject_id, model_id),
         FOREIGN KEY(connection_id) REFERENCES host_model_connection(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS host_model_offering (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        description TEXT,
+        backend_id TEXT NOT NULL,
+        upstream_model_id TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY(backend_id) REFERENCES host_model_connection(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS host_model_offering_backend
+        ON host_model_offering(backend_id, upstream_model_id);
+      CREATE TABLE IF NOT EXISTS host_model_offering_entitlement (
+        offering_id TEXT NOT NULL,
+        subject_type TEXT NOT NULL CHECK(subject_type IN ('user', 'team')),
+        subject_id TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(offering_id, subject_type, subject_id),
+        FOREIGN KEY(offering_id) REFERENCES host_model_offering(id) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS host_team_model_policy (
         team_id TEXT PRIMARY KEY,
@@ -1022,7 +1067,7 @@ export class IdentityService {
 
   async listMembers(actor: Actor) {
     await this.ready;
-    this.requireOwnerUser(actor);
+    this.requireHostAdmin(actor);
     return (
       this.database
         .prepare(
@@ -1076,6 +1121,20 @@ export class IdentityService {
       .prepare("UPDATE host_membership SET can_invite = ? WHERE user_id = ?")
       .run(canInvite ? 1 : 0, userId);
     return { id: userId, canInvite };
+  }
+
+  async setMemberRole(actor: Actor, userId: string, role: Exclude<HostRole, "owner">) {
+    await this.ready;
+    this.requireOwnerUser(actor);
+    const membership = this.membership(userId);
+    if (!membership) throw new IdentityError("MEMBER_NOT_FOUND", 404, "Member not found");
+    if (membership.role === "owner") {
+      throw new IdentityError("OWNER_ROLE_FORBIDDEN", 409, "Transfer ownership explicitly");
+    }
+    this.database
+      .prepare("UPDATE host_membership SET role = ? WHERE user_id = ?")
+      .run(role, userId);
+    return { id: userId, role };
   }
 
   async publicPolicy() {
@@ -1237,6 +1296,9 @@ export class IdentityService {
   ): Promise<void> {
     await this.ready;
     if (actor.type === "local") return;
+    if (actor.role === "viewer" && action !== "view") {
+      throw new IdentityError("SESSION_FORBIDDEN", 404, "Session not found");
+    }
     const access = this.database
       .prepare(
         `SELECT owner_type AS ownerType, owner_id AS ownerId, pinned_connection_id AS pinnedConnectionId
@@ -1252,19 +1314,11 @@ export class IdentityService {
       throw new IdentityError("SESSION_FORBIDDEN", 404, "Session not found");
     }
     if (action === "run" && role !== "owner") {
-      const teamShare =
-        actor.type === "user" &&
-        (this.database
-          .prepare(
-            `SELECT role FROM host_session_share
-         WHERE session_id = ? AND grantee_type = 'team' AND grantee_id = ?`,
-          )
-          .get(sessionId, TEAM_ID) as { role: "view" | "run" | "admin" } | undefined);
       if (
-        !teamShare ||
-        sessionRoleRank(teamShare.role) < sessionRoleRank("run") ||
         !access.pinnedConnectionId ||
-        !this.canUseModelConnection(actor, access.pinnedConnectionId)
+        !(access.pinnedConnectionId.startsWith("offering:")
+          ? this.canUseModelOffering(actor, access.pinnedConnectionId.slice("offering:".length))
+          : this.canUseModelConnection(actor, access.pinnedConnectionId))
       ) {
         throw new IdentityError("SESSION_FORBIDDEN", 404, "Session not found");
       }
@@ -1317,13 +1371,14 @@ export class IdentityService {
     if (input.granteeType === "user") {
       this.requireGrantSubject("user", input.granteeId);
     }
-    // run shares are Team-only under ADR 0013 collab rules.
-    if (input.role === "run" && input.granteeType !== "team") {
-      throw new IdentityError(
-        "INVALID_SESSION_SHARE",
-        400,
-        "run access can only be shared with a Team",
-      );
+    if (input.role !== "view") {
+      const pinned = this.database
+        .prepare("SELECT pinned_connection_id AS id FROM host_session_access WHERE session_id = ?")
+        .get(sessionId) as { id: string | null } | undefined;
+      const connection = pinned?.id ? this.modelConnection(pinned.id) : undefined;
+      if (connection?.plane === "user") {
+        throw new IdentityError("INVALID_COLLAB_MODEL", 400, "Personal models cannot be shared");
+      }
     }
     this.database
       .prepare(
@@ -1551,6 +1606,327 @@ export class IdentityService {
     for (const id of connectionIds) insert.run(id, TEAM_ID, owner.id, now, now);
   }
 
+  /**
+   * Idempotently imports the legacy connection catalog without widening access.
+   * Existing model-level grants are copied to the corresponding offering.
+   */
+  async migrateLegacyModelOfferings(
+    connections: Array<{ id: string; modelIds: readonly string[]; label?: string }>,
+  ) {
+    await this.registerLegacyHostConnections(connections.map((connection) => connection.id));
+    await this.ready;
+    const owner = this.database
+      .prepare("SELECT user_id AS id FROM host_membership WHERE role = 'owner' LIMIT 1")
+      .get() as { id: string } | undefined;
+    if (!owner) return;
+    const now = Date.now();
+    const findOffering = this.database.prepare(
+      "SELECT id FROM host_model_offering WHERE backend_id = ? AND upstream_model_id = ?",
+    );
+    const slugTaken = this.database.prepare("SELECT 1 FROM host_model_offering WHERE id = ?");
+    const insertOffering = this.database.prepare(
+      `INSERT INTO host_model_offering
+       (id, display_name, description, backend_id, upstream_model_id, created_by_user_id, created_at, updated_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
+    );
+    const oldGrants = this.database.prepare(
+      `SELECT subject_type AS subjectType, subject_id AS subjectId
+       FROM host_model_entitlement
+       WHERE connection_id = ? AND (model_id = '*' OR model_id = ?)`,
+    );
+    const copyGrant = this.database.prepare(
+      `INSERT OR IGNORE INTO host_model_offering_entitlement
+       (offering_id, subject_type, subject_id, created_by_user_id, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const connection of connections) {
+        // Personal backends remain solo-only and must never become shared catalog entries.
+        if (this.modelConnection(connection.id)?.plane === "user") continue;
+        for (const modelId of connection.modelIds) {
+          let offering = findOffering.get(connection.id, modelId) as { id: string } | undefined;
+          if (!offering) {
+            const base = modelOfferingSlug(modelId);
+            let id = base;
+            if (slugTaken.get(id)) id = modelOfferingSlug(`${connection.id}-${modelId}`);
+            for (let suffix = 2; slugTaken.get(id); suffix += 1) id = `${base}-${suffix}`;
+            insertOffering.run(id, modelId, connection.id, modelId, owner.id, now, now);
+            offering = { id };
+          }
+          const grants = oldGrants.all(connection.id, modelId) as Array<{
+            subjectType: "user" | "team";
+            subjectId: string;
+          }>;
+          for (const grant of grants) {
+            copyGrant.run(offering.id, grant.subjectType, grant.subjectId, owner.id, now);
+          }
+        }
+      }
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  async listModelOfferings(actor: Actor): Promise<ModelOfferingSummary[]> {
+    await this.ready;
+    const rows = this.database
+      .prepare(
+        `SELECT id, display_name AS displayName, description, backend_id AS backendId,
+                upstream_model_id AS upstreamModelId, created_by_user_id AS createdBy,
+                created_at AS createdAt, updated_at AS updatedAt
+         FROM host_model_offering ORDER BY display_name COLLATE NOCASE, id`,
+      )
+      .all() as ModelOffering[];
+    return rows
+      .filter((offering) => this.canUseModelOffering(actor, offering.id))
+      .map((offering) => this.presentModelOffering(actor, offering));
+  }
+
+  async getModelOffering(actor: Actor, offeringId: string) {
+    await this.ready;
+    const offering = this.modelOffering(offeringId);
+    if (!offering || !this.canUseModelOffering(actor, offeringId)) {
+      throw new IdentityError("MODEL_OFFERING_NOT_FOUND", 404, "Model offering not found");
+    }
+    return this.presentModelOffering(actor, offering);
+  }
+
+  /** Authorizes and resolves in one SQLite statement so callers cannot split the checks. */
+  async resolveModelOfferingForUse(actor: Actor, offeringId: string) {
+    await this.ready;
+    const privilegedUser =
+      actor.type === "local" || actor.role === "owner" || actor.role === "admin";
+    const offering = this.database
+      .prepare(
+        `SELECT o.backend_id AS connectionId, o.upstream_model_id AS modelId
+         FROM host_model_offering o
+         JOIN host_model_connection b ON b.id = o.backend_id AND b.plane <> 'user'
+         WHERE o.id = ? AND (
+           ? = 1 OR EXISTS (
+             SELECT 1 FROM host_model_offering_entitlement e
+             WHERE e.offering_id = o.id
+               AND ((? = 'user' AND e.subject_type = 'user' AND e.subject_id = ?)
+                 OR (e.subject_type = 'team' AND e.subject_id = ?))
+           )
+         )`,
+      )
+      .get(offeringId, privilegedUser ? 1 : 0, actor.type, actor.id, TEAM_ID) as
+      | { connectionId: string; modelId: string }
+      | undefined;
+    if (!offering) {
+      throw new IdentityError(
+        "MODEL_NOT_ENTITLED",
+        403,
+        "Model offering is not available to this account",
+      );
+    }
+    return offering;
+  }
+
+  async createModelOffering(
+    actor: Actor,
+    input: {
+      id: string;
+      displayName: string;
+      description?: string | null;
+      backendId: string;
+      upstreamModelId: string;
+    },
+  ) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    const id = input.id.trim();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 64) {
+      throw new IdentityError(
+        "INVALID_OFFERING_SLUG",
+        400,
+        "Slug must use lowercase letters, numbers, and single hyphens",
+      );
+    }
+    if (!input.displayName.trim() || !input.upstreamModelId.trim()) {
+      throw new IdentityError(
+        "INVALID_MODEL_OFFERING",
+        400,
+        "Name and upstream model are required",
+      );
+    }
+    const backend = this.modelConnection(input.backendId);
+    if (!backend || backend.plane === "user" || !this.canManageModelConnection(actor, backend)) {
+      throw new IdentityError("INVALID_MODEL_BACKEND", 400, "A shared model backend is required");
+    }
+    if (this.modelOffering(id)) {
+      throw new IdentityError("MODEL_OFFERING_EXISTS", 409, "Model offering already exists");
+    }
+    const now = Date.now();
+    this.database
+      .prepare(
+        `INSERT INTO host_model_offering
+         (id, display_name, description, backend_id, upstream_model_id, created_by_user_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.displayName.trim(),
+        input.description?.trim() || null,
+        input.backendId,
+        input.upstreamModelId.trim(),
+        actor.id,
+        now,
+        now,
+      );
+    return this.modelOffering(id)!;
+  }
+
+  async updateModelOffering(
+    actor: Actor,
+    offeringId: string,
+    input: {
+      displayName: string;
+      description?: string | null;
+      backendId: string;
+      upstreamModelId: string;
+    },
+  ) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    if (!this.modelOffering(offeringId)) {
+      throw new IdentityError("MODEL_OFFERING_NOT_FOUND", 404, "Model offering not found");
+    }
+    if (!input.displayName.trim() || !input.upstreamModelId.trim()) {
+      throw new IdentityError(
+        "INVALID_MODEL_OFFERING",
+        400,
+        "Name and upstream model are required",
+      );
+    }
+    const backend = this.modelConnection(input.backendId);
+    if (!backend || backend.plane === "user" || !this.canManageModelConnection(actor, backend)) {
+      throw new IdentityError("INVALID_MODEL_BACKEND", 400, "A shared model backend is required");
+    }
+    this.database
+      .prepare(
+        `UPDATE host_model_offering SET display_name = ?, description = ?, backend_id = ?,
+           upstream_model_id = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        input.displayName.trim(),
+        input.description?.trim() || null,
+        input.backendId,
+        input.upstreamModelId.trim(),
+        Date.now(),
+        offeringId,
+      );
+    return this.modelOffering(offeringId)!;
+  }
+
+  async removeModelOffering(actor: Actor, offeringId: string) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    const result = this.database
+      .prepare("DELETE FROM host_model_offering WHERE id = ?")
+      .run(offeringId);
+    if (result.changes === 0)
+      throw new IdentityError("MODEL_OFFERING_NOT_FOUND", 404, "Model offering not found");
+  }
+
+  async listModelOfferingEntitlements(actor: Actor, offeringId: string) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    if (!this.modelOffering(offeringId))
+      throw new IdentityError("MODEL_OFFERING_NOT_FOUND", 404, "Model offering not found");
+    return this.database
+      .prepare(
+        `SELECT offering_id AS offeringId, subject_type AS subjectType, subject_id AS subjectId
+         FROM host_model_offering_entitlement WHERE offering_id = ?
+         ORDER BY subject_type, subject_id`,
+      )
+      .all(offeringId) as ModelOfferingEntitlement[];
+  }
+
+  async replaceModelOfferingEntitlements(
+    actor: Actor,
+    offeringId: string,
+    entitlements: Array<{ subjectType: "user" | "team"; subjectId: string }>,
+  ) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    if (!this.modelOffering(offeringId))
+      throw new IdentityError("MODEL_OFFERING_NOT_FOUND", 404, "Model offering not found");
+    for (const item of entitlements) {
+      if (item.subjectType === "team" && item.subjectId !== TEAM_ID)
+        throw new IdentityError("INVALID_GRANTEE", 400, "Unknown Team");
+      if (item.subjectType === "user") this.requireGrantSubject("user", item.subjectId);
+    }
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare("DELETE FROM host_model_offering_entitlement WHERE offering_id = ?")
+        .run(offeringId);
+      const insert = this.database.prepare(
+        `INSERT INTO host_model_offering_entitlement
+         (offering_id, subject_type, subject_id, created_by_user_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      );
+      for (const item of entitlements)
+        insert.run(offeringId, item.subjectType, item.subjectId, actor.id, Date.now());
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.listModelOfferingEntitlements(actor, offeringId);
+  }
+
+  async authorizeModelOffering(actor: Actor, offeringId: string) {
+    await this.resolveModelOfferingForUse(actor, offeringId);
+  }
+
+  private modelOffering(id: string): ModelOffering | undefined {
+    return this.database
+      .prepare(
+        `SELECT id, display_name AS displayName, description, backend_id AS backendId,
+                upstream_model_id AS upstreamModelId, created_by_user_id AS createdBy,
+                created_at AS createdAt, updated_at AS updatedAt
+         FROM host_model_offering WHERE id = ?`,
+      )
+      .get(id) as ModelOffering | undefined;
+  }
+
+  private canUseModelOffering(actor: Actor, offeringId: string) {
+    const offering = this.modelOffering(offeringId);
+    if (!offering) return false;
+    if (this.modelConnection(offering.backendId)?.plane === "user") return false;
+    if (actor.type === "local" || actor.role === "owner" || actor.role === "admin") return true;
+    return Boolean(
+      this.database
+        .prepare(
+          `SELECT 1 FROM host_model_offering_entitlement
+           WHERE offering_id = ? AND ((? = 'user' AND subject_type = 'user' AND subject_id = ?)
+             OR (subject_type = 'team' AND subject_id = ?)) LIMIT 1`,
+        )
+        .get(offeringId, actor.type, actor.id, TEAM_ID),
+    );
+  }
+
+  private presentModelOffering(actor: Actor, offering: ModelOffering): ModelOfferingSummary {
+    if (
+      actor.type === "local" ||
+      (actor.type === "user" && (actor.role === "owner" || actor.role === "admin"))
+    ) {
+      return offering;
+    }
+    const {
+      backendId: _backendId,
+      upstreamModelId: _upstreamModelId,
+      createdBy: _createdBy,
+      ...safe
+    } = offering;
+    return safe;
+  }
+
   async listModelConnectionAccess(actor: Actor): Promise<ModelConnectionAccess[]> {
     await this.ready;
     if (actor.type === "local") return [];
@@ -1564,6 +1940,30 @@ export class IdentityService {
     return rows.filter((row) => this.canUseModelConnection(actor, row.id));
   }
 
+  async visibleLegacyModelIds(actor: Actor, connectionId: string, modelIds: readonly string[]) {
+    await this.ready;
+    const connection = this.modelConnection(connectionId);
+    if (!connection) return [];
+    if (
+      actor.type === "local" ||
+      actor.role === "owner" ||
+      actor.role === "admin" ||
+      (actor.type === "user" && connection.plane === "user" && connection.ownerId === actor.id)
+    ) {
+      return [...modelIds];
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT model_id AS modelId FROM host_model_entitlement
+         WHERE connection_id = ? AND ((? = 'user' AND subject_type = 'user' AND subject_id = ?)
+           OR (subject_type = 'team' AND subject_id = ?))`,
+      )
+      .all(connectionId, actor.type, actor.id, TEAM_ID) as Array<{ modelId: string }>;
+    if (rows.some((row) => row.modelId === "*")) return [...modelIds];
+    const entitled = new Set(rows.map((row) => row.modelId));
+    return modelIds.filter((modelId) => entitled.has(modelId));
+  }
+
   async recordModelConnection(
     actor: Actor,
     input: { id: string; plane: ModelConnectionPlane; credentialKind: ModelCredentialKind },
@@ -1572,7 +1972,7 @@ export class IdentityService {
     if (actor.type !== "user") throw new IdentityError("FORBIDDEN", 403, "User access required");
     const ownerType = input.plane === "host" ? "host" : input.plane;
     const ownerId = input.plane === "host" || input.plane === "team" ? TEAM_ID : actor.id;
-    if (input.plane !== "user") this.requireOwnerUser(actor);
+    if (input.plane !== "user") this.requireModelAdmin(actor);
     if (input.plane !== "host" && !this.modelCredentialAllowed(input.credentialKind)) {
       throw new IdentityError(
         "MODEL_CREDENTIAL_POLICY_DENIED",
@@ -1596,6 +1996,29 @@ export class IdentityService {
       )
       .run(input.id, input.plane, ownerType, ownerId, input.credentialKind, actor.id, now, now);
     return this.modelConnection(input.id)!;
+  }
+
+  /**
+   * Capture metadata before a cross-store model mutation. This deliberately
+   * returns only the non-secret SQLite half; the Host owns endpoint secrets.
+   */
+  async modelConnectionMetadataForMutation(actor: Actor, connectionId: string) {
+    await this.ready;
+    const connection = this.modelConnection(connectionId);
+    if (connection && !this.canManageModelConnection(actor, connection)) {
+      throw new IdentityError("FORBIDDEN", 403, "Model connection access denied");
+    }
+    return connection ? { ...connection } : null;
+  }
+
+  async authorizeModelConnectionRemoval(actor: Actor, connectionId: string) {
+    await this.ready;
+    const connection = this.modelConnection(connectionId);
+    if (!connection)
+      throw new IdentityError("MODEL_CONNECTION_NOT_FOUND", 404, "Model connection not found");
+    if (!this.canManageModelConnection(actor, connection)) {
+      throw new IdentityError("FORBIDDEN", 403, "Model connection access denied");
+    }
   }
 
   async removeModelConnection(actor: Actor, connectionId: string) {
@@ -1673,7 +2096,9 @@ export class IdentityService {
 
   async getModelPolicy(actor: Actor) {
     await this.ready;
-    this.requireOwnerUser(actor);
+    if (actor.type !== "user") {
+      throw new IdentityError("FORBIDDEN", 403, "Human user access required");
+    }
     const team = this.database
       .prepare(
         "SELECT allow_byok AS allowByok, allow_byos AS allowByos FROM host_team_model_policy WHERE team_id = ?",
@@ -1726,10 +2151,35 @@ export class IdentityService {
     const connection = this.modelConnection(connectionId);
     if (!connection)
       throw new IdentityError("MODEL_CONNECTION_NOT_FOUND", 404, "Model connection not found");
+    if (
+      connection.plane === "user" &&
+      this.database
+        .prepare(
+          "SELECT 1 FROM host_session_share WHERE session_id = ? AND role IN ('run', 'admin') LIMIT 1",
+        )
+        .get(sessionId)
+    ) {
+      throw new IdentityError("INVALID_COLLAB_MODEL", 400, "Personal models cannot be shared");
+    }
     this.database
       .prepare("UPDATE host_session_access SET pinned_connection_id = ? WHERE session_id = ?")
-      .run(connection.plane === "user" ? null : connectionId, sessionId);
-    return { sessionId, pinnedConnectionId: connection.plane === "user" ? null : connectionId };
+      .run(connectionId, sessionId);
+    return { sessionId, pinnedConnectionId: connectionId };
+  }
+
+  async pinSessionOffering(sessionId: string, actor: Actor, offeringId: string) {
+    await this.authorizeSessionAction(sessionId, actor, "run");
+    await this.authorizeModelOffering(actor, offeringId);
+    const offering = this.modelOffering(offeringId)!;
+    const backend = this.modelConnection(offering.backendId);
+    if (!backend || backend.plane === "user") {
+      throw new IdentityError("INVALID_COLLAB_MODEL", 400, "Personal models cannot be shared");
+    }
+    const pinned = `offering:${offeringId}`;
+    this.database
+      .prepare("UPDATE host_session_access SET pinned_connection_id = ? WHERE session_id = ?")
+      .run(pinned, sessionId);
+    return { sessionId, pinnedOfferingId: offeringId };
   }
 
   private modelConnection(id: string): ModelConnectionAccess | undefined {
@@ -1743,7 +2193,8 @@ export class IdentityService {
 
   private canManageModelConnection(actor: Actor, connection: ModelConnectionAccess) {
     if (actor.type !== "user") return false;
-    if (connection.plane === "host" || connection.plane === "team") return actor.role === "owner";
+    if (connection.plane === "host" || connection.plane === "team")
+      return actor.role === "owner" || actor.role === "admin";
     return connection.ownerId === actor.id;
   }
 
@@ -1754,7 +2205,7 @@ export class IdentityService {
     if (connection.plane === "user") {
       return actor.type === "user" && connection.ownerId === actor.id;
     }
-    if (actor.role === "owner") return true;
+    if (actor.role === "owner" || actor.role === "admin") return true;
     return Boolean(
       this.database
         .prepare(
@@ -1876,7 +2327,7 @@ export class IdentityService {
   }
 
   private isRestrictedActor(actor: Actor) {
-    return this.pathGrantsMode === "enforced" && actor.role === "member";
+    return this.pathGrantsMode === "enforced" && actor.type !== "local" && actor.role !== "owner";
   }
 
   private getAllowedRoots() {
@@ -1928,6 +2379,29 @@ export class IdentityService {
       throw new IdentityError("FORBIDDEN", 403, "Owner access required");
     }
   }
+
+  private requireHostAdmin(actor: Actor) {
+    if (actor.type !== "user" || (actor.role !== "owner" && actor.role !== "admin")) {
+      throw new IdentityError("FORBIDDEN", 403, "Host administrator access required");
+    }
+  }
+
+  private requireModelAdmin(actor: Actor) {
+    if (actor.type !== "user" || (actor.role !== "owner" && actor.role !== "admin")) {
+      throw new IdentityError("FORBIDDEN", 403, "Model administrator access required");
+    }
+  }
+}
+
+function modelOfferingSlug(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "model"
+  );
 }
 
 function coveringGrantAccess(root: string, grants: { root: string; access: PathGrantAccess }[]) {

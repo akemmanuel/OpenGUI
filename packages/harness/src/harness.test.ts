@@ -68,7 +68,8 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     }
 
     expect(model.requests[0]?.systemPrompt).toContain(`- code-review:`);
-    expect(model.requests[0]?.systemPrompt).toContain(skillPath);
+    expect(model.requests[0]?.systemPrompt).toContain(`${join(dataDirectory, "skill-pins")}/`);
+    expect(model.requests[0]?.systemPrompt).not.toContain(skillPath);
     expect(model.requests[0]?.systemPrompt).toContain("read that SKILL.md");
     expect(model.requests[1]?.context.at(-1)).toMatchObject({
       type: "tool_result",
@@ -171,7 +172,12 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     const dataDirectory = await temporaryDirectory();
     const handoffRoot = join(dataDirectory, "tmp");
     const projectDirectory = join(dataDirectory, "project");
-    await mkdir(projectDirectory);
+    const skillPath = join(projectDirectory, ".agents", "skills", "stable", "SKILL.md");
+    await mkdir(join(projectDirectory, ".agents", "skills", "stable"), { recursive: true });
+    await writeFile(
+      skillPath,
+      "---\nname: stable\ndescription: Original stable instructions.\n---\n# Original\n",
+    );
     const handoffDirectory = join(handoffRoot, "opengui", "handoffs", "session-1", "run-10");
     const handoffPath = join(handoffDirectory, "HANDOFF.md");
     const model = new FakeModel([
@@ -200,14 +206,22 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       model: { connectionId: "fake", modelId: "fake-model" },
       reasoning: "none",
     });
-    for await (const _event of session.run({ text: "Do some work", skills: [] })) {
+    for await (const _event of session.run({ text: "Do some work" })) {
       // drain
     }
+
+    await writeFile(
+      skillPath,
+      "---\nname: stable\ndescription: Mutated instructions.\n---\n# Mutated\n",
+    );
 
     for await (const _event of session.compact()) {
       // drain
     }
     expect(model.requests).toHaveLength(3);
+    expect(model.requests[1]?.systemPrompt).toContain("Original stable instructions.");
+    expect(model.requests[1]?.systemPrompt).not.toContain("Mutated instructions.");
+    expect(model.requests[2]?.systemPrompt).toContain("Original stable instructions.");
     expect((await session.read()).status).toBe("idle");
 
     for await (const _event of session.run({ text: "Now continue" })) {
@@ -262,6 +276,11 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     expect(model.requests[0]?.systemPrompt).toContain("- manual-skill:");
     expect(model.requests[0]?.systemPrompt).not.toContain("- code-review:");
 
+    await writeFile(
+      join(homeDirectory, ".agents", "skills", "manual-skill", "SKILL.md"),
+      "---\nname: manual-skill\ndescription: Changed after selection.\ndisable-model-invocation: true\n---\n",
+    );
+
     // Later turns cannot widen the catalog; the first allowlist is locked.
     for await (const _event of session.run({
       text: "Try to enable auto",
@@ -270,6 +289,8 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       // drain
     }
     expect(model.requests[1]?.systemPrompt).toContain("- manual-skill:");
+    expect(model.requests[1]?.systemPrompt).toContain("Manual skill.");
+    expect(model.requests[1]?.systemPrompt).not.toContain("Changed after selection.");
     expect(model.requests[1]?.systemPrompt).not.toContain("- code-review:");
 
     await harness.close();

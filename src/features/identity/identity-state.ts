@@ -1,10 +1,10 @@
 import type { HostIdentityHealth, IdentityActor } from "./identity-client";
 
 export function ownerSettingsVisibility(actor: IdentityActor | null, localBypass: boolean) {
-  const ownerUser = actor?.type === "user" && actor.role === "owner";
+  const adminUser = actor?.type === "user" && (actor.role === "owner" || actor.role === "admin");
   return {
-    providers: localBypass || ownerUser,
-    team: ownerUser && !localBypass,
+    providers: localBypass || adminUser || actor?.role === "member",
+    team: adminUser && !localBypass,
   };
 }
 

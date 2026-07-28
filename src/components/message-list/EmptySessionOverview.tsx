@@ -46,7 +46,7 @@ export function EmptySessionOverview({ directory }: { directory: string | null |
       )}
 
       {skills.length > 0 && (
-        <p
+        <div
           className="mt-3 max-h-[min(14rem,40vh)] max-w-md overflow-y-auto overscroll-contain px-1 text-center text-sm leading-6 text-muted-foreground"
           aria-label={t("emptySession.skillsHeading")}
         >
@@ -82,7 +82,10 @@ export function EmptySessionOverview({ directory }: { directory: string | null |
               </Fragment>
             );
           })}
-        </p>
+          {skillsLocked && (
+            <p className="mt-2 text-xs leading-5">{t("emptySession.skillsRevisionLocked")}</p>
+          )}
+        </div>
       )}
     </div>
   );

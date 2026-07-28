@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { buildModelContext } from "./context/build-context.ts";
 import {
   buildHandoffPrompt,
@@ -26,12 +26,22 @@ import type {
   SessionEvent,
   SessionSnapshot,
 } from "./harness.ts";
-import type { ModelToolName } from "./models/transport.ts";
+import {
+  createModelCachePolicy,
+  DEFAULT_MODEL_DELIVERY,
+  ModelTransportError,
+  normalizeModelError,
+  type ModelRequest,
+  type ModelToolName,
+  type ProviderResponseMetadata,
+} from "./models/transport.ts";
 import { discoverSkills, loadSkillsFromDir } from "./skills/discover.ts";
 import { selectSkillsForPrompt } from "./skills/format-prompt.ts";
 import type { Skill } from "./skills/types.ts";
 import { SqliteSessionStore } from "./storage/sqlite-store.ts";
-import { executeTool } from "./tools/execute-tool.ts";
+import { executeTool, limitToolResult } from "./tools/execute-tool.ts";
+import { toolDefinitionsFor } from "./tools/tool-definitions.ts";
+import type { AgentToolSet } from "./tools/agent-tools.ts";
 import { resolveNativeShell, type ResolvedShell } from "./tools/shell-resolution.ts";
 
 class SystemClock implements Clock {
@@ -44,6 +54,25 @@ class RandomIdGenerator implements IdGenerator {
   next(prefix: "session" | "entry" | "run" | "follow_up") {
     return `${prefix}_${randomUUID()}`;
   }
+}
+
+async function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal) {
+  return await new Promise<IteratorResult<T>>((resolveNext, rejectNext) => {
+    const aborted = () => rejectNext(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    signal.addEventListener("abort", aborted, { once: true });
+    const pending = iterator.next();
+    if (signal.aborted) aborted();
+    void pending.then(
+      (result) => {
+        signal.removeEventListener("abort", aborted);
+        resolveNext(result);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", aborted);
+        rejectNext(error);
+      },
+    );
+  });
 }
 
 function selectedModel(entries: SessionSnapshot["entries"]): ModelSelection | null {
@@ -66,10 +95,31 @@ function normalizePromptInput(prompt: PromptInput): PromptInput {
     text,
     ...(prompt.actor ? { actor: prompt.actor } : {}),
     ...(hasSkills ? { skills } : {}),
+    ...(prompt.skillPins ? { skillPins: prompt.skillPins.map((pin) => ({ ...pin })) } : {}),
   };
 }
 
-/** First user_message skills field locks the Session catalog for prompt-cache stability. */
+type SkillPin = NonNullable<PromptInput["skillPins"]>[number];
+
+function lockedSkillPinsFromEntries(entries: SessionSnapshot["entries"]): SkillPin[] | null {
+  for (const entry of entries) {
+    if (entry.kind !== "user_message") continue;
+    const pins = entry.payload.skillPins;
+    if (!Array.isArray(pins)) continue;
+    const valid = pins.filter(
+      (pin): pin is SkillPin =>
+        Boolean(pin) &&
+        typeof pin === "object" &&
+        typeof (pin as SkillPin).name === "string" &&
+        /^[a-f0-9]{64}$/u.test((pin as SkillPin).revision) &&
+        typeof (pin as SkillPin).directory === "string",
+    );
+    return valid.length === pins.length ? valid : [];
+  }
+  return null;
+}
+
+/** First durable selection locks the Session catalog for prompt-cache stability. */
 function lockedSkillsFromEntries(entries: SessionSnapshot["entries"]): string[] | null {
   for (const entry of entries) {
     if (entry.kind !== "user_message") continue;
@@ -157,9 +207,11 @@ class HarnessSessionImpl implements HarnessSession {
 class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #store: SqliteSessionStore;
   readonly #model: OpenGuiHarnessOptions["model"];
+  readonly #agentTools: OpenGuiHarnessOptions["agentTools"];
   readonly #clock: Clock;
   readonly #ids: IdGenerator;
   readonly #dataDirectory: string;
+  readonly #hostId: string;
   readonly #homeDirectory: string | undefined;
   readonly #shell: ResolvedShell;
   readonly #resolveExecutionPolicy: OpenGuiHarnessOptions["resolveExecutionPolicy"];
@@ -175,7 +227,11 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#clock = options.clock ?? new SystemClock();
     this.#ids = options.ids ?? new RandomIdGenerator();
     this.#model = options.model;
+    this.#agentTools = options.agentTools;
     this.#dataDirectory = options.dataDirectory;
+    this.#hostId =
+      options.hostId ??
+      `legacy_${createHash("sha256").update(options.dataDirectory).digest("hex").slice(0, 24)}`;
     this.#homeDirectory = options.homeDirectory;
     this.#shell = resolveNativeShell({ configuredExecutable: options.shell?.executable });
     this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
@@ -245,6 +301,106 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     const decision = await policy.authorizePath(requestedRoot, "read");
     if (!decision.allowed || !decision.canonicalPath) return [];
     return loadSkillsFromDir(decision.canonicalPath, "project").skills;
+  }
+
+  async #pinSkills(skills: Skill[]): Promise<{ skills: Skill[]; pins: SkillPin[] }> {
+    const pinnedSkills: Skill[] = [];
+    const pins: SkillPin[] = [];
+    for (const skill of skills) {
+      const files: Array<{ path: string; contents: Uint8Array }> = [];
+      const visit = async (directory: string, prefix: string) => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          const absolute = join(directory, entry.name);
+          const info = await lstat(absolute);
+          if (
+            info.isSymbolicLink() ||
+            (!info.isDirectory() && !info.isFile()) ||
+            (info.isFile() && info.nlink !== 1)
+          ) {
+            throw new Error(`Skill ${skill.name} contains a link or special file`);
+          }
+          const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) await visit(absolute, path);
+          else files.push({ path, contents: new Uint8Array(await readFile(absolute)) });
+        }
+      };
+      await visit(skill.baseDir, "");
+      const hash = createHash("sha256");
+      for (const file of files.sort((left, right) => left.path.localeCompare(right.path))) {
+        hash.update(file.path);
+        hash.update("\0");
+        hash.update(file.contents);
+        hash.update("\0");
+      }
+      const revision = hash.digest("hex");
+      const finalDirectory = join(this.#dataDirectory, "skill-pins", revision, skill.name);
+      try {
+        if (!(await lstat(finalDirectory)).isDirectory()) throw new Error("Invalid skill pin");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const stage = `${finalDirectory}.stage-${randomUUID()}`;
+        await mkdir(stage, { recursive: true });
+        try {
+          for (const file of files) {
+            const target = join(stage, ...file.path.split("/"));
+            await mkdir(dirname(target), { recursive: true });
+            await writeFile(target, file.contents, { flag: "wx", mode: 0o600 });
+          }
+          await mkdir(dirname(finalDirectory), { recursive: true });
+          await rename(stage, finalDirectory).catch((renameError) => {
+            const code = (renameError as NodeJS.ErrnoException).code;
+            if (code !== "EEXIST" && code !== "ENOTEMPTY") throw renameError;
+          });
+        } finally {
+          await rm(stage, { recursive: true, force: true });
+        }
+      }
+      const loaded = loadSkillsFromDir(finalDirectory, skill.source).skills.find(
+        (item) => item.name === skill.name,
+      );
+      if (!loaded) throw new Error(`Pinned skill ${skill.name} is invalid`);
+      pinnedSkills.push(loaded);
+      pins.push({ name: skill.name, revision, directory: finalDirectory });
+    }
+    return { skills: pinnedSkills, pins };
+  }
+
+  async #skillsFromPins(pins: SkillPin[]): Promise<Skill[]> {
+    const result: Skill[] = [];
+    for (const pin of pins) {
+      const files: Array<{ path: string; contents: Uint8Array }> = [];
+      const visit = async (directory: string, prefix: string) => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          const absolute = join(directory, entry.name);
+          const info = await lstat(absolute);
+          if (
+            info.isSymbolicLink() ||
+            (!info.isDirectory() && !info.isFile()) ||
+            (info.isFile() && info.nlink !== 1)
+          )
+            throw new Error(`Pinned skill ${pin.name} is not immutable`);
+          const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) await visit(absolute, path);
+          else files.push({ path, contents: new Uint8Array(await readFile(absolute)) });
+        }
+      };
+      await visit(pin.directory, "");
+      const hash = createHash("sha256");
+      for (const file of files.sort((left, right) => left.path.localeCompare(right.path))) {
+        hash.update(file.path);
+        hash.update("\0");
+        hash.update(file.contents);
+        hash.update("\0");
+      }
+      if (hash.digest("hex") !== pin.revision)
+        throw new Error(`Pinned skill ${pin.name} content changed`);
+      const skill = loadSkillsFromDir(pin.directory, "project").skills.find(
+        (item) => item.name === pin.name,
+      );
+      if (!skill) throw new Error(`Pinned skill ${pin.name} is unavailable`);
+      result.push(skill);
+    }
+    return result;
   }
 
   async listSessions(projectDirectory: string) {
@@ -383,6 +539,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     tokensBefore: number;
     reason: "manual" | "threshold";
     revalidate: () => Promise<{ policy: ExecutionPolicy; canonicalProjectRoot: string }>;
+    actor?: PromptInput["actor"];
   }): AsyncIterable<SessionEvent> {
     const paths = compactionPaths(this.#compaction.tempDirectory, input.sessionId, input.runId);
     await mkdir(paths.directory, { recursive: true });
@@ -418,15 +575,31 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
       let assistantText = "";
       let reasoningText = "";
       const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
-      for await (const event of this.#model.stream(
-        {
-          projectDirectory: input.snapshot.projectDirectory,
-          context,
-          tools: input.tools,
-          systemPrompt: input.systemPrompt,
+      const modelRequest: ModelRequest = {
+        identity: {
+          hostId: this.#hostId,
+          sessionId: input.sessionId,
+          runId: input.runId,
+          principalId: input.actor ? `${input.actor.type}:${input.actor.id}` : "local:legacy",
         },
-        input.signal,
-      )) {
+        projectDirectory: input.snapshot.projectDirectory,
+        actor: input.actor,
+        context,
+        tools: input.tools,
+        systemPrompt: input.systemPrompt,
+        cache: createModelCachePolicy({
+          systemPrompt: input.systemPrompt,
+          tools: input.tools,
+          toolSchemas: toolDefinitionsFor(input.tools),
+          permissionScope: { tools: input.tools, project: input.snapshot.projectDirectory },
+          skillRevisions:
+            lockedSkillPinsFromEntries(input.snapshot.entries)?.map((pin) => pin.revision) ?? [],
+          compactionId: latestCompletedCompaction(input.snapshot.entries)?.entry.id,
+        }),
+        delivery: { ...DEFAULT_MODEL_DELIVERY },
+      };
+      let providerResponse: ProviderResponseMetadata | undefined;
+      for await (const event of this.#model.stream(modelRequest, input.signal)) {
         await input.revalidate();
         input.signal.throwIfAborted();
         if (event.type === "text_delta") {
@@ -437,7 +610,21 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           yield { type: "reasoning_delta", runId: input.runId, delta: event.delta };
         } else if (event.type === "tool_call") {
           toolCalls.push({ id: event.id, name: event.name, input: event.input });
+        } else if (event.type === "completed") {
+          providerResponse = event.response;
         }
+      }
+
+      if (providerResponse) {
+        yield {
+          type: "entry_appended",
+          entry: await this.#store.appendEntry(
+            input.sessionId,
+            "provider_response",
+            { runId: input.runId, response: providerResponse, purpose: "compaction" },
+            this.#clock.now().toISOString(),
+          ),
+        };
       }
 
       if (reasoningText) {
@@ -594,12 +781,17 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         throw new Error("There is no Session context to compact");
       }
       const initialAccess = await revalidate(snapshot.projectDirectory);
-      const discoveredSkills = await this.#skillsForRun(
-        snapshot.projectDirectory,
-        initialAccess.policy,
-      );
       const lockedSkills = lockedSkillsFromEntries(snapshot.entries);
-      const skills = selectSkillsForPrompt(discoveredSkills, lockedSkills ?? undefined);
+      const existingPins = lockedSkillPinsFromEntries(snapshot.entries);
+      const pinned = existingPins
+        ? { skills: await this.#skillsFromPins(existingPins), pins: existingPins }
+        : await this.#pinSkills(
+            selectSkillsForPrompt(
+              await this.#skillsForRun(snapshot.projectDirectory, initialAccess.policy),
+              lockedSkills ?? undefined,
+            ),
+          );
+      const skills = pinned.skills;
       const modelAccess = await revalidate(snapshot.projectDirectory);
       const tools = await this.#toolsForModel(modelAccess.policy, modelAccess.canonicalProjectRoot);
       const shellAvailable = tools.includes("shell");
@@ -610,6 +802,9 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         skills,
         now: this.#clock.now(),
       });
+      if (!existingPins) {
+        await this.#store.pinSessionSkills(sessionId, pinned.pins);
+      }
       yield {
         type: "entry_appended",
         entry: await this.#store.appendEntry(
@@ -632,6 +827,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         signal: abortController.signal,
         tokensBefore: contextTokens,
         reason: "manual",
+        actor,
         revalidate: () => revalidate(snapshot.projectDirectory),
       })) {
         yield event;
@@ -699,6 +895,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
       let nextPrompt: PromptInput | null = normalizePromptInput(prompt);
       let followUpId: string | undefined;
       while (nextPrompt) {
+        let admittedSkills: Skill[];
         const runId = this.#ids.next("run");
         activeRunId = runId;
         const snapshot = await this.readSession(sessionId);
@@ -713,7 +910,29 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         }
         // Resolve once at the durable run seam. Queued prompts retain their
         // actor, but never retain a stale policy snapshot.
-        await revalidate(nextPrompt.actor, snapshot.projectDirectory);
+        const admission = await revalidate(nextPrompt.actor, snapshot.projectDirectory);
+        const existingPins = lockedSkillPinsFromEntries(snapshot.entries);
+        if (existingPins) {
+          admittedSkills = await this.#skillsFromPins(existingPins);
+          nextPrompt = {
+            ...nextPrompt,
+            skills: existingPins.map((pin) => pin.name),
+            skillPins: existingPins,
+          };
+        } else {
+          const pinned = await this.#pinSkills(
+            selectSkillsForPrompt(
+              await this.#skillsForRun(snapshot.projectDirectory, admission.policy),
+              nextPrompt.skills,
+            ),
+          );
+          admittedSkills = pinned.skills;
+          nextPrompt = {
+            ...nextPrompt,
+            skills: pinned.pins.map((pin) => pin.name),
+            skillPins: pinned.pins,
+          };
+        }
         const startedEntries = await this.#store.beginRun({
           sessionId,
           runId,
@@ -724,6 +943,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           now: this.#clock.now().toISOString(),
         });
         for (const entry of startedEntries) yield { type: "entry_appended", entry };
+        let runAgentToolSet: AgentToolSet | undefined;
 
         while (true) {
           const current = await this.readSession(sessionId);
@@ -731,11 +951,25 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           let assistantText = "";
           let reasoningText = "";
           const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
-          const discoveredSkills = await this.#skillsForRun(
-            current.projectDirectory,
-            initialAccess.policy,
-          );
-          const skills = selectSkillsForPrompt(discoveredSkills, nextPrompt.skills);
+          let pins: SkillPin[] | null | undefined =
+            nextPrompt.skillPins ?? lockedSkillPinsFromEntries(current.entries);
+          if (!pins) {
+            const pinned = await this.#pinSkills(
+              selectSkillsForPrompt(
+                await this.#skillsForRun(current.projectDirectory, initialAccess.policy),
+                nextPrompt.skills,
+              ),
+            );
+            admittedSkills = pinned.skills;
+            pins = pinned.pins;
+            nextPrompt = {
+              ...nextPrompt,
+              skills: pins.map((pin) => pin.name),
+              skillPins: pins,
+            };
+            await this.#store.pinSessionSkills(sessionId, pins);
+          }
+          const skills = admittedSkills;
           // Skill discovery can perform I/O, so refresh once more immediately
           // before exposing capabilities to the provider.
           const modelAccess = await revalidate(nextPrompt.actor, current.projectDirectory);
@@ -743,11 +977,30 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             modelAccess.policy,
             modelAccess.canonicalProjectRoot,
           );
-          const shellAvailable = tools.includes("shell");
+          runAgentToolSet ??= await this.#agentTools?.resolve(
+            {
+              sessionId,
+              runId,
+              projectDirectory: current.projectDirectory,
+              ...(nextPrompt.actor ? { actor: nextPrompt.actor } : {}),
+            },
+            abortController.signal,
+          );
+          const agentToolSet = runAgentToolSet;
+          const builtInDefinitions = toolDefinitionsFor(tools);
+          const builtInNames = new Set(builtInDefinitions.map((definition) => definition.name));
+          const duplicate = agentToolSet?.definitions.find((definition) =>
+            builtInNames.has(definition.name),
+          );
+          if (duplicate)
+            throw new Error(`Additional tool conflicts with built-in: ${duplicate.name}`);
+          const toolDefinitions = [...builtInDefinitions, ...(agentToolSet?.definitions ?? [])];
+          const modelToolNames = toolDefinitions.map((definition) => definition.name);
+          const shellAvailable = modelToolNames.includes("shell");
           const systemPrompt = buildSystemPrompt({
             projectDirectory: current.projectDirectory,
             ...(shellAvailable ? { shell: this.#shell } : {}),
-            tools,
+            tools: modelToolNames,
             skills,
             now: this.#clock.now(),
           });
@@ -768,35 +1021,84 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               signal: abortController.signal,
               tokensBefore: contextTokens,
               reason: "threshold",
+              actor: nextPrompt.actor,
               revalidate: () => revalidate(nextPrompt!.actor, current.projectDirectory),
             })) {
               yield event;
             }
             continue;
           }
-          for await (const event of this.#model.stream(
-            {
-              projectDirectory: current.projectDirectory,
-              context: modelContext,
-              tools,
-              systemPrompt,
+          const request: ModelRequest = {
+            identity: {
+              hostId: this.#hostId,
+              sessionId,
+              runId,
+              principalId: nextPrompt.actor
+                ? `${nextPrompt.actor.type}:${nextPrompt.actor.id}`
+                : "local:legacy",
             },
-            abortController.signal,
-          )) {
-            // Provider chunks are the finest useful revocation boundary. Do
-            // not expose or retain a chunk until current actor and Project
-            // access have both been re-resolved.
-            await revalidate(nextPrompt.actor, current.projectDirectory);
-            abortController.signal.throwIfAborted();
-            if (event.type === "text_delta") {
-              assistantText += event.delta;
-              yield { type: "assistant_delta", runId, delta: event.delta };
-            } else if (event.type === "reasoning_delta") {
-              reasoningText += event.delta;
-              yield { type: "reasoning_delta", runId, delta: event.delta };
-            } else if (event.type === "tool_call") {
-              toolCalls.push({ id: event.id, name: event.name, input: event.input });
+            projectDirectory: current.projectDirectory,
+            actor: nextPrompt.actor,
+            context: modelContext,
+            tools: modelToolNames,
+            toolDefinitions,
+            systemPrompt,
+            cache: createModelCachePolicy({
+              systemPrompt,
+              tools: modelToolNames,
+              toolSchemas: toolDefinitions,
+              permissionScope: {
+                project: modelAccess.canonicalProjectRoot,
+                tools: modelToolNames,
+                restricted: modelAccess.policy.restricted,
+                agentToolGeneration: agentToolSet?.generation,
+              },
+              skillRevisions: (pins ?? []).map((pin) => pin.revision),
+              compactionId: latestCompletedCompaction(current.entries)?.entry.id,
+            }),
+            delivery: { ...DEFAULT_MODEL_DELIVERY },
+          };
+          const modelIterator = this.#model
+            .stream(request, abortController.signal)
+            [Symbol.asyncIterator]();
+          let providerResponse: ProviderResponseMetadata | undefined;
+          try {
+            while (true) {
+              const nextModelEvent = await nextWithAbort(modelIterator, abortController.signal);
+              if (nextModelEvent.done) break;
+              const event = nextModelEvent.value;
+              // Provider chunks are the finest useful revocation boundary. Do
+              // not expose or retain a chunk until current actor and Project
+              // access have both been re-resolved.
+              await revalidate(nextPrompt.actor, current.projectDirectory);
+              abortController.signal.throwIfAborted();
+              if (event.type === "text_delta") {
+                assistantText += event.delta;
+                yield { type: "assistant_delta", runId, delta: event.delta };
+              } else if (event.type === "reasoning_delta") {
+                reasoningText += event.delta;
+                yield { type: "reasoning_delta", runId, delta: event.delta };
+              } else if (event.type === "tool_call") {
+                toolCalls.push({ id: event.id, name: event.name, input: event.input });
+              } else if (event.type === "completed") {
+                providerResponse = event.response;
+              }
             }
+          } finally {
+            await modelIterator.return?.();
+          }
+
+          if (providerResponse) {
+            await revalidate(nextPrompt.actor, current.projectDirectory);
+            yield {
+              type: "entry_appended",
+              entry: await this.#store.appendEntry(
+                sessionId,
+                "provider_response",
+                { runId, response: providerResponse },
+                this.#clock.now().toISOString(),
+              ),
+            };
           }
 
           if (reasoningText) {
@@ -852,12 +1154,21 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
 
           for (const toolCall of toolCalls) {
             await revalidate(nextPrompt.actor, current.projectDirectory);
+            const displayName = toolDefinitions.find(
+              (definition) => definition.name === toolCall.name,
+            )?.title;
             yield {
               type: "entry_appended",
               entry: await this.#store.appendEntry(
                 sessionId,
                 "tool_call",
-                { runId, toolCallId: toolCall.id, name: toolCall.name, input: toolCall.input },
+                {
+                  runId,
+                  toolCallId: toolCall.id,
+                  name: toolCall.name,
+                  ...(displayName ? { displayName } : {}),
+                  input: toolCall.input,
+                },
                 this.#clock.now().toISOString(),
               ),
             };
@@ -871,19 +1182,26 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               current.projectDirectory,
             );
             abortController.signal.throwIfAborted();
-            const output = await executeTool(
-              {
-                projectDirectory: current.projectDirectory,
-                dataDirectory: this.#dataDirectory,
-                sessionId,
-                toolCallId: toolCall.id,
-                shell: this.#shell,
-                signal: abortController.signal,
-                executionPolicy,
-              },
-              toolCall.name,
-              toolCall.input,
-            );
+            const toolContext = {
+              projectDirectory: current.projectDirectory,
+              dataDirectory: this.#dataDirectory,
+              sessionId,
+              toolCallId: toolCall.id,
+              shell: this.#shell,
+              signal: abortController.signal,
+              executionPolicy,
+            };
+            const output = agentToolSet?.definitions.some(
+              (definition) => definition.name === toolCall.name,
+            )
+              ? await limitToolResult(
+                  toolContext,
+                  await agentToolSet.invoke(
+                    { name: toolCall.name, input: toolCall.input },
+                    abortController.signal,
+                  ),
+                )
+              : await executeTool(toolContext, toolCall.name, toolCall.input);
             await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",
@@ -903,12 +1221,29 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         followUpId = followUp.id;
       }
     } catch (error) {
+      const normalizedError = normalizeModelError(
+        error,
+        authorizationFailed ? undefined : abortController.signal,
+      );
+      if (error instanceof ModelTransportError && typeof activeRunId === "string") {
+        yield {
+          type: "entry_appended",
+          entry: await this.#store.appendEntry(
+            sessionId,
+            "provider_response",
+            { runId: activeRunId, response: error.response },
+            this.#clock.now().toISOString(),
+          ),
+        };
+      }
       const entry = await this.#store.appendEntry(
         sessionId,
         abortController.signal.aborted && !authorizationFailed ? "run_aborted" : "run_failed",
         {
           ...(typeof activeRunId === "string" ? { runId: activeRunId } : {}),
-          error: error instanceof Error ? error.message : String(error),
+          error:
+            authorizationFailed && error instanceof Error ? error.message : normalizedError.message,
+          normalizedError,
         },
         this.#clock.now().toISOString(),
       );

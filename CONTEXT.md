@@ -223,8 +223,8 @@ _Avoid_: Primary team login, provider credential, ChatGPT token
 ### Harness capabilities
 
 **Tool**:
-One of the four fixed capabilities the Harness may expose to a model in v1: `read`, `write`, `edit`, or `shell`.
-_Avoid_: MCP tool, extension, plugin
+A model-callable capability. OpenGUI has four fixed built-in Tools (`read`, `write`, `edit`, and `shell`) and may expose Host-authorized MCP server tools through the same Harness tool seam.
+_Avoid_: Harness plugin, external Harness bridge, treating MCP Roots as a sandbox
 
 **Tool call**:
 A model-requested invocation of a Tool with ordered input, live status, and a final result recorded in the Session.

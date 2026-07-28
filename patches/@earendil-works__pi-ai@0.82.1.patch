@@ -1,0 +1,24 @@
+diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
+index f4e38df..cbb99e4 100644
+--- a/dist/api/openai-codex-responses.js
++++ b/dist/api/openai-codex-responses.js
+@@ -1232,10 +1232,16 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token
+         }
+     }
+     headers.set("Authorization", `Bearer ${token}`);
+-    headers.set("chatgpt-account-id", accountId);
+-    headers.set("originator", "pi");
++    if (!headers.has("chatgpt-account-id")) {
++        headers.set("chatgpt-account-id", accountId);
++    }
++    if (!headers.has("originator")) {
++        headers.set("originator", "pi");
++    }
+     const userAgent = _os ? `pi (${_os.platform()} ${_os.release()}; ${_os.arch()})` : "pi (browser)";
+-    headers.set("User-Agent", userAgent);
++    if (!headers.has("User-Agent")) {
++        headers.set("User-Agent", userAgent);
++    }
+     return headers;
+ }
+ function buildSSEHeaders(initHeaders, additionalHeaders, accountId, token, sessionId) {

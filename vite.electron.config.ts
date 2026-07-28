@@ -1,7 +1,8 @@
 import "./build/suppress-node-deprecations.ts";
 
-import { writeFile } from "node:fs/promises";
-import { builtinModules } from "node:module";
+import { copyFile, writeFile } from "node:fs/promises";
+import { builtinModules, createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { build as buildWithEsbuild } from "esbuild";
 import { defineConfig } from "vite";
 import pkg from "./package.json" with { type: "json" };
@@ -16,6 +17,7 @@ const entries = {
   "settings-store": "settings-store.ts",
   "lib/window-broadcast": "lib/window-broadcast.ts",
 };
+const require = createRequire(import.meta.url);
 
 const externals = new Set([
   "electron",
@@ -64,7 +66,7 @@ export default defineConfig({
           bundle: true,
           platform: "node",
           format: "cjs",
-          target: "node20",
+          target: "node22",
           sourcemap: true,
           minify: true,
           external: ["electron"],
@@ -76,7 +78,7 @@ export default defineConfig({
           bundle: true,
           platform: "node",
           format: "esm",
-          target: "node20",
+          target: "node22",
           sourcemap: true,
           minify: true,
           external: ["electron"],
@@ -84,6 +86,13 @@ export default defineConfig({
             js: nodeEsmCompatBanner,
           },
         });
+        await copyFile(
+          join(
+            dirname(require.resolve("@silvia-odwyer/photon-node/package.json")),
+            "photon_rs_bg.wasm",
+          ),
+          "dist-electron/photon_rs_bg.wasm",
+        );
       },
     },
   ],
@@ -96,7 +105,7 @@ export default defineConfig({
     outDir: "dist-electron",
     sourcemap: true,
     ssr: true,
-    target: "node20",
+    target: "node22",
     rollupOptions: {
       external: isExternal,
       input: entries,

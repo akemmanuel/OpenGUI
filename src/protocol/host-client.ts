@@ -2,8 +2,14 @@ import type {
   HostEvent,
   CodexAuthStatus,
   HostModelConnection,
+  HostModelOffering,
+  HostMcpConnection,
+  HostMcpToolInfo,
   HostSessionSnapshot,
   HostSkill,
+  HostInstalledSkill,
+  HostSkillInstallation,
+  HostSkillSourceDescriptor,
   OpenGuiHostClient,
 } from "@/protocol/host-types";
 
@@ -102,6 +108,8 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
     health: async () =>
       (await request("/api/host/health")) as { ok: true; version: string; shell: string },
     listModelConnections: async () => (await request("/api/host/models")) as HostModelConnection[],
+    listModelOfferings: async () =>
+      (await request("/api/host/model-offerings")) as HostModelOffering[],
     upsertModelConnection: async (connection) =>
       (await request("/api/host/models", {
         method: "POST",
@@ -109,6 +117,23 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
       })) as HostModelConnection,
     removeModelConnection: async (connectionId) => {
       await request(`/api/host/models/${encodeURIComponent(connectionId)}`, {
+        method: "DELETE",
+      });
+    },
+    listMcpConnections: async () =>
+      (await request("/api/host/mcp-connections")) as HostMcpConnection[],
+    upsertMcpConnection: async (connection) =>
+      (await request("/api/host/mcp-connections", {
+        method: "POST",
+        body: JSON.stringify(connection),
+      })) as HostMcpConnection,
+    inspectMcpConnection: async (connectionId) =>
+      (await request(`/api/host/mcp-connections/${encodeURIComponent(connectionId)}/inspect`, {
+        method: "POST",
+        body: "{}",
+      })) as HostMcpToolInfo[],
+    removeMcpConnection: async (connectionId) => {
+      await request(`/api/host/mcp-connections/${encodeURIComponent(connectionId)}`, {
         method: "DELETE",
       });
     },
@@ -127,6 +152,41 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
     },
     listSkills: async (directory) =>
       (await request(`/api/host/skills?directory=${encodeURIComponent(directory)}`)) as HostSkill[],
+    supportedSkillSources: async () =>
+      (await request("/api/host/skills/sources")) as HostSkillSourceDescriptor[],
+    listSkillInstallations: async (scope, directory) => {
+      const params = new URLSearchParams({ scope });
+      if (directory) params.set("directory", directory);
+      return (await request(`/api/host/skills/installations?${params}`)) as HostSkillInstallation[];
+    },
+    installManagedSkill: async (input) =>
+      (await request("/api/host/skills/install", {
+        method: "POST",
+        body: JSON.stringify(input),
+      })) as HostSkillInstallation,
+    updateManagedSkill: async (name, input) =>
+      (await request(`/api/host/skills/${encodeURIComponent(name)}/update`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      })) as HostSkillInstallation,
+    removeManagedSkill: async (name, input) => {
+      const params = new URLSearchParams({ scope: input.scope, requestId: input.requestId });
+      if (input.directory) params.set("directory", input.directory);
+      if (input.expectedGeneration !== undefined)
+        params.set("expectedGeneration", String(input.expectedGeneration));
+      await request(`/api/host/skills/${encodeURIComponent(name)}?${params}`, { method: "DELETE" });
+    },
+    installSkill: async (source, directory, global) =>
+      (await request("/api/host/skills/install", {
+        method: "POST",
+        body: JSON.stringify({ source, directory, global, requestId: crypto.randomUUID() }),
+      })) as HostInstalledSkill,
+    removeSkill: async (name, directory, global) => {
+      await request(
+        `/api/host/skills/${encodeURIComponent(name)}?directory=${encodeURIComponent(directory)}&global=${String(global)}&requestId=${encodeURIComponent(crypto.randomUUID())}`,
+        { method: "DELETE" },
+      );
+    },
     listSessions: async (directory) =>
       (await request(`/api/host/sessions?directory=${encodeURIComponent(directory)}`)) as Array<{
         id: string;

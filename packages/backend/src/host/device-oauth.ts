@@ -28,8 +28,10 @@ function seconds(value: unknown, fallback: number) {
 }
 
 function errorMessage(value: Record<string, unknown>, fallback: string) {
-  if (typeof value.error_description === "string") return value.error_description;
-  if (typeof value.error === "string") return value.error;
+  if (value.error === "access_denied") return "Authorization was denied";
+  if (value.error === "expired_token") return "The authorization code expired";
+  if (value.error === "invalid_grant") return "Authorization expired or was revoked";
+  if (value.error === "unauthorized_client") return "This OAuth client is not authorized";
   return fallback;
 }
 

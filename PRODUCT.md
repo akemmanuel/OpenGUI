@@ -27,7 +27,7 @@ Avoid generic SaaS dashboard gloss, washed-out gray-on-gray interfaces, decorati
 - Make primary actions and system states visible without visual noise.
 - Keep controls dense but readable for lightly technical users.
 - Let color communicate priority, status, and focus rather than decoration.
-- Prefer subtracting obsolete Harness, Git, worktree, MCP, and agent controls over adding task-specific product areas.
+- Prefer subtracting obsolete Harness, Git, worktree, and agent controls. Keep Host-owned MCP connections subordinate to existing settings and inline tool-call presentation.
 - Do not add Files, Activity, Results, or artifact-management surfaces merely to signal a non-programmer audience.
 
 ## Accessibility & Inclusion

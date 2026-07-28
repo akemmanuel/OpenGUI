@@ -3,6 +3,20 @@ export * from "./execution-policy.ts";
 export * from "./models/transport.ts";
 export { OpenAiChatTransport, type OpenAiCompatibleConnection } from "./models/openai-chat.ts";
 export {
+  PiAiTransport,
+  benchmarkPiSerialization,
+  toPiContext,
+  type PiAiProtocol,
+  type PiAiRoute,
+} from "./models/pi-ai.ts";
+export {
+  OpenAiResponsesWebSocketTransport,
+  isOfficialOpenAiResponsesRoute,
+  openAiResponsesWebSocketRequest,
+  type OpenAiResponsesTransportMode,
+  type OpenAiTransportDiagnostic,
+} from "./models/openai-responses-websocket.ts";
+export {
   CodexResponsesTransport,
   codexInput,
   type CodexCredential,
@@ -17,3 +31,4 @@ export {
 export type { LoadSkillsResult, Skill, SkillDiagnostic } from "./skills/types.ts";
 export { buildSystemPrompt } from "./context/system-prompt.ts";
 export { HARNESS_DATABASE_FILENAME } from "./storage/sqlite-store.ts";
+export type { AgentToolScope, AgentToolSet, AgentToolSource } from "./tools/agent-tools.ts";

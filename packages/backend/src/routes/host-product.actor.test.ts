@@ -9,6 +9,112 @@ import { registerHostProductRoutes } from "./host-product.ts";
 
 describe("Host product actor attribution", () => {
   test.each([
+    { type: "user", id: "member", displayName: "Member", role: "member" },
+    { type: "user", id: "viewer", displayName: "Viewer", role: "viewer" },
+    { type: "api_key", id: "key", displayName: "API key", role: "admin" },
+  ] as Actor[])("denies Skills management to $type/$role actors", async (actor) => {
+    const installSkill = vi.fn();
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", actor);
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () => ({ installSkill }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+
+    const response = await app.request("http://localhost/api/host/skills/install", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: "github:acme/skills/demo@main",
+        directory: "/tmp/project",
+        scope: "project",
+        requestId: "request_denied_1",
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(installSkill).not.toHaveBeenCalled();
+  });
+
+  test("normalizes a multi-model backend and preserves route and capability options", async () => {
+    const upsertModelConnection = vi.fn(async (connection) => connection);
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", {
+        type: "local",
+        id: "desktop-local",
+        displayName: "Local user",
+        role: "owner",
+      });
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () => ({ upsertModelConnection }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+
+    const response = await app.request("http://localhost/api/host/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "gateway",
+        label: "Company gateway",
+        baseUrl: "https://models.example/v1",
+        modelIds: [" alpha ", "beta"],
+        defaultModelId: "beta",
+        modelRoutes: { alpha: "responses", beta: "anthropic-messages" },
+        modelCapabilities: {
+          alpha: { displayName: "Alpha", context: 128000, reasoning: true },
+          beta: { reasoning: false },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(upsertModelConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelIds: ["alpha", "beta"],
+        defaultModelId: "beta",
+        modelRoutes: { alpha: "responses", beta: "anthropic-messages" },
+        modelCapabilities: {
+          alpha: expect.objectContaining({
+            displayName: "Alpha",
+            context: 128000,
+            reasoning: true,
+          }),
+          beta: expect.objectContaining({ reasoning: false }),
+        },
+      }),
+    );
+  });
+
+  test("rejects duplicate model IDs in a custom backend", async () => {
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", {
+        type: "local",
+        id: "desktop-local",
+        displayName: "Local user",
+        role: "owner",
+      });
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () => ({ upsertModelConnection: vi.fn() }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+    const response = await app.request("http://localhost/api/host/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ baseUrl: "https://models.example", modelIds: ["same", " same "] }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test.each([
     { type: "user", id: "user-1", displayName: "Ada", role: "member" },
     { type: "api_key", id: "key-1", displayName: "CI key", role: "owner" },
     { type: "local", id: "desktop-local", displayName: "Local user", role: "owner" },

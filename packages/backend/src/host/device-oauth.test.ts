@@ -61,5 +61,15 @@ describe("device OAuth", () => {
         { accessToken: "old-access", refreshToken: "old-refresh", expiresAt: 0 },
       ),
     ).resolves.toMatchObject({ accessToken: "new-access", refreshToken: "new-refresh" });
+
+    const noRotationFetch = vi.fn(async () =>
+      Response.json({ access_token: "next-access", expires_in: 60 }),
+    );
+    await expect(
+      refreshDeviceOAuth(
+        { ...config, fetchImpl: noRotationFetch as typeof fetch },
+        { accessToken: "new-access", refreshToken: "new-refresh", expiresAt: 0 },
+      ),
+    ).resolves.toMatchObject({ accessToken: "next-access", refreshToken: "new-refresh" });
   });
 });

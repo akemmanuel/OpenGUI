@@ -19,6 +19,22 @@ export type ModelEntitlement = {
   modelId: string;
 };
 
+export type ModelOffering = {
+  id: string;
+  displayName: string;
+  description: string | null;
+  backendId: string;
+  upstreamModelId: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ModelOfferingEntitlement = {
+  offeringId: string;
+  subjectType: "user" | "team";
+  subjectId: string;
+};
+
 export type ModelPolicy = {
   host: { allowByok: boolean; allowByos: boolean };
   team: { allowByok: boolean; allowByos: boolean };
@@ -33,7 +49,7 @@ export type HostIdentityHealth = {
 };
 
 export type IdentityActor = ActorSnapshot & {
-  role: "owner" | "member";
+  role: "owner" | "admin" | "member" | "viewer";
 };
 
 export type IdentityUser = {
@@ -77,7 +93,7 @@ export type TeamMember = {
   id: string;
   username: string;
   email: string;
-  role: "owner" | "member";
+  role: "owner" | "admin" | "member" | "viewer";
   canInvite?: boolean;
   createdAt?: string | number;
 };
@@ -213,6 +229,11 @@ export function createIdentityClient({
           body: JSON.stringify({ canInvite }),
         },
       ),
+    setMemberRole: (id: string, role: "admin" | "member" | "viewer") =>
+      request<{ id: string; role: "admin" | "member" | "viewer" }>(
+        `/api/identity/members/${encodeURIComponent(id)}/role`,
+        { method: "PUT", body: JSON.stringify({ role }) },
+      ),
     invites: () => request<TeamInvite[]>("/api/identity/invites"),
     createInvite: (input: { email: string; role: "member"; pathGrants?: PathGrant[] }) =>
       request<CreatedTeamInvite>("/api/identity/invites", {
@@ -270,6 +291,46 @@ export function createIdentityClient({
     replaceModelEntitlements: (connectionId: string, entitlements: ModelEntitlement[]) =>
       request<ModelEntitlement[]>(
         `/api/identity/model-connections/${encodeURIComponent(connectionId)}/entitlements`,
+        { method: "PUT", body: JSON.stringify({ entitlements }) },
+      ),
+    createModelOffering: (input: {
+      id: string;
+      displayName: string;
+      description?: string | null;
+      backendId: string;
+      upstreamModelId: string;
+    }) =>
+      request<ModelOffering>("/api/identity/model-offerings", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    updateModelOffering: (
+      id: string,
+      input: {
+        displayName: string;
+        description?: string | null;
+        backendId: string;
+        upstreamModelId: string;
+      },
+    ) =>
+      request<ModelOffering>(`/api/identity/model-offerings/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    removeModelOffering: (id: string) =>
+      request<void>(`/api/identity/model-offerings/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    modelOfferingEntitlements: (id: string) =>
+      request<ModelOfferingEntitlement[]>(
+        `/api/identity/model-offerings/${encodeURIComponent(id)}/entitlements`,
+      ),
+    replaceModelOfferingEntitlements: (
+      id: string,
+      entitlements: Array<{ subjectType: "user" | "team"; subjectId: string }>,
+    ) =>
+      request<ModelOfferingEntitlement[]>(
+        `/api/identity/model-offerings/${encodeURIComponent(id)}/entitlements`,
         { method: "PUT", body: JSON.stringify({ entitlements }) },
       ),
     apiKeys: () => request<HostApiKey[]>("/api/identity/api-keys"),

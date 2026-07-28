@@ -45,6 +45,8 @@ Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backe
 
 **Flexible users & model offerings (proposed):** [ADR 0014](./adr/0014-flexible-users-access-and-model-offerings.md), plan [`flexible-users-access-and-model-offerings.md`](./plans/flexible-users-access-and-model-offerings.md). Target split: **Model backend** + **Provider credentials** + user-facing **Model offering** (slug such as “Company Model”); richer Host roles/capabilities and pluggable Host auth methods; UI for backends, offerings, and entitlements. Do not implement against ad-hoc Settings cards alone—follow the plan phases.
 
+**MCP tools:** [ADR 0015](./adr/0015-host-owned-mcp-tool-connections.md). MCP connections, credentials, transports, catalog budgeting, and actor/Session isolation are Host-owned in `packages/backend/src/mcp/`. The Harness consumes a protocol-neutral `AgentToolSource`; model adapters never import the MCP SDK. Restricted path-policy actors receive no MCP tools.
+
 **Host path policy:** [ADR 0012](./adr/0012-host-path-grants-and-tool-enforcement.md). `packages/backend/src/path-policy/` and the identity grant schema/routes are foundation only. Do not describe path grants as enforced until HTTP/RPC/SSE, uploads, Session visibility, and every Harness tool consume `IdentityService.effectivePathPolicy(actor)`. Remote multi-user Hosts are **share-only** for paths (no auto user homes); Desktop keeps device default directories.
 
 Implementation checklists:

@@ -7,7 +7,7 @@ import { resolveSafeDirectory as resolveSafeDirectoryInRoots } from "./host/path
 import { createCorsAuth } from "./http/cors-auth.ts";
 import { createAuthorizer } from "./http/authorize.ts";
 import type { BackendApp, BackendRequestEnv } from "./http/request-context.ts";
-import { IdentityService } from "./identity/identity.ts";
+import { IdentityError, IdentityService } from "./identity/identity.ts";
 import { registerFsRoutes } from "./routes/fs.ts";
 import { registerHostProductRoutes } from "./routes/host-product.ts";
 import { registerHostTransportRoutes } from "./routes/host-transport.ts";
@@ -30,6 +30,12 @@ export type CreateBackendHostOptions = {
   identitySecret?: string;
   identityBaseURL?: string;
   model?: ModelTransport;
+  /** Canary switch; OPENGUI_MODEL_TRANSPORT=native is the process-level equivalent. */
+  usePiAiTransport?: boolean;
+  /** Codex-only fallback; OPENGUI_CODEX_TRANSPORT=native is the process-level equivalent. */
+  usePiAiCodexTransport?: boolean;
+  /** Official API-key Responses delivery. Custom endpoints always use SSE. */
+  openAiResponsesTransport?: "auto" | "websocket" | "sse";
 };
 
 export type BackendHost = {
@@ -122,6 +128,41 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     resolveExecutionPolicy,
     sessionAccess,
     model: options.model,
+    usePiAiTransport: options.usePiAiTransport,
+    usePiAiCodexTransport: options.usePiAiCodexTransport,
+    openAiResponsesTransport: options.openAiResponsesTransport,
+    resolveModelOffering: identity
+      ? async (offeringId, durableActor) => {
+          if (!durableActor) throw new Error("Model offering actor is required");
+          const actor = await identity.resolveDurableActor(durableActor);
+          if (!actor) throw new Error("Model offering is not available");
+          return identity.resolveModelOfferingForUse(actor, offeringId);
+        }
+      : undefined,
+    authorizeSkillManagement: identity
+      ? async (durableActor) => {
+          if (!durableActor || durableActor.type === "api_key") {
+            throw new IdentityError("FORBIDDEN", 403, "Human Host administrator access required");
+          }
+          const actor = await identity.resolveDurableActor(durableActor);
+          if (
+            !actor ||
+            actor.type !== "user" ||
+            (actor.role !== "owner" && actor.role !== "admin")
+          ) {
+            throw new IdentityError("FORBIDDEN", 403, "Human Host administrator access required");
+          }
+        }
+      : undefined,
+    authorizeMcpUse: identity
+      ? async (durableActor) => {
+          if (!durableActor || durableActor.type === "api_key") return false;
+          const actor = await identity.resolveDurableActor(durableActor);
+          return Boolean(
+            actor && actor.type === "user" && (actor.role === "owner" || actor.role === "admin"),
+          );
+        }
+      : undefined,
   }).then((context) => context.host);
   const ready = Promise.all([hostReady, identity?.ready]).then(() => undefined);
 
@@ -157,14 +198,29 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
       return;
     }
     c.set("actor", actor);
-    const ownerOnly =
+    const humanAdminOnly =
       c.req.path.startsWith("/api/host/auth/") ||
-      (c.req.path.startsWith("/api/host/models") &&
-        c.req.method !== "GET" &&
-        actor.type !== "user");
-    if (ownerOnly && actor.role !== "owner") {
+      c.req.path.startsWith("/api/host/mcp-connections") ||
+      (c.req.path.startsWith("/api/host/skills") &&
+        (c.req.method !== "GET" || c.req.path.endsWith("/installations")));
+    if (
+      humanAdminOnly &&
+      actor.type !== "local" &&
+      (actor.type !== "user" || (actor.role !== "owner" && actor.role !== "admin"))
+    ) {
       c.res = Response.json(
-        { ok: false, error: "Owner access required", code: "FORBIDDEN" },
+        { ok: false, error: "Human Host administrator access required", code: "FORBIDDEN" },
+        { status: 403 },
+      );
+      return;
+    }
+    if (
+      c.req.path.startsWith("/api/host/models") &&
+      c.req.method !== "GET" &&
+      actor.type === "api_key"
+    ) {
+      c.res = Response.json(
+        { ok: false, error: "Human user access required", code: "FORBIDDEN" },
         { status: 403 },
       );
       return;

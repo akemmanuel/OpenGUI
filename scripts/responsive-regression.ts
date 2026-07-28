@@ -63,11 +63,6 @@ function seededAuditCases(seed: number): AuditCase[] {
 const auditCases = seededAuditCases(0x0f3a_2026);
 const locales = ["en", "de", "es"] as const;
 type Locale = (typeof locales)[number];
-const settingsTabLabels: Record<Locale, { providers: string; team: string }> = {
-  en: { providers: "Providers", team: "Team" },
-  de: { providers: "Anbieter", team: "Team" },
-  es: { providers: "Proveedores", team: "Equipo" },
-};
 const longWord = "UnbrokenResponsiveRegressionWord".repeat(8);
 const hostileUnicode = "超長い設定名مرحبا_שלום_👩🏽‍💻_é_".repeat(10);
 const longTitle = `Responsive regression: ${hostileUnicode}${longWord}`;
@@ -136,6 +131,10 @@ async function startFakeModel(port: number) {
         setTimeout(() => {
           if (response.destroyed) return;
           writeSse(response, { choices: [{ delta: { content: "Loading fixture completed." } }] });
+          writeSse(response, {
+            choices: [{ delta: {}, finish_reason: "stop" }],
+            usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+          });
           response.write("data: [DONE]\n\n");
           response.end();
         }, 120_000);
@@ -152,6 +151,10 @@ async function startFakeModel(port: number) {
             },
           },
         ],
+      });
+      writeSse(response, {
+        choices: [{ delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
       });
       response.write("data: [DONE]\n\n");
       response.end();
@@ -515,32 +518,59 @@ async function run(frontendUrl: string, backendUrl: string, modelPort: number) {
     "eval",
     "window.dispatchEvent(new Event('opengui:open-settings')); true",
   );
-  await waitForText(ownerBrowser!, "Gestiona las preferencias");
+  await waitForText(ownerBrowser!, "Preferencias, modelos");
   await auditMatrix(ownerBrowser!, "owner-settings", async () => {
     await browser(
       ownerBrowser!,
       "eval",
       "window.dispatchEvent(new Event('opengui:open-settings')); true",
     );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('[data-slot=tabs]')");
+    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
   });
-  await auditMatrix(ownerBrowser!, "owner-settings-providers", async (locale) => {
+  await auditMatrix(ownerBrowser!, "owner-settings-providers", async () => {
     await browser(
       ownerBrowser!,
       "eval",
       "window.dispatchEvent(new Event('opengui:open-settings')); true",
     );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('[data-slot=tabs]')");
-    await find(ownerBrowser!, "role", "tab", "click", settingsTabLabels[locale].providers);
+    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
+    await browser(
+      ownerBrowser!,
+      "eval",
+      "const s=document.querySelector('#settings-section'); s.value='models'; s.dispatchEvent(new Event('change',{bubbles:true})); true",
+    );
   });
-  await auditMatrix(ownerBrowser!, "owner-settings-team", async (locale) => {
+  await auditMatrix(ownerBrowser!, "owner-settings-skills", async () => {
     await browser(
       ownerBrowser!,
       "eval",
       "window.dispatchEvent(new Event('opengui:open-settings')); true",
     );
-    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('[data-slot=tabs]')");
-    await find(ownerBrowser!, "role", "tab", "click", settingsTabLabels[locale].team);
+    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
+    await browser(
+      ownerBrowser!,
+      "eval",
+      "const s=document.querySelector('#settings-section'); s.value='skills'; s.dispatchEvent(new Event('change',{bubbles:true})); true",
+    );
+    await browser(
+      ownerBrowser!,
+      "wait",
+      "--fn",
+      "!!document.querySelector('[data-testid=skills-library]')",
+    );
+  });
+  await auditMatrix(ownerBrowser!, "owner-settings-team", async () => {
+    await browser(
+      ownerBrowser!,
+      "eval",
+      "window.dispatchEvent(new Event('opengui:open-settings')); true",
+    );
+    await browser(ownerBrowser!, "wait", "--fn", "!!document.querySelector('#settings-section')");
+    await browser(
+      ownerBrowser!,
+      "eval",
+      "const s=document.querySelector('#settings-section'); s.value='users'; s.dispatchEvent(new Event('change',{bubbles:true})); true",
+    );
   });
   await clickButton(ownerBrowser!, "Volver");
   await waitForText(ownerBrowser!, "Responsive regression:");

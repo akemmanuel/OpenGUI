@@ -19,11 +19,16 @@
     }
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "0.82.1",
     "@silvia-odwyer/photon-node": "0.3.4",
     "kysely": "0.29.3",
-    "kysely-node-native-sqlite": "1.1.0"
+    "kysely-node-native-sqlite": "1.1.0",
+    "ws": "8.21.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.19.0"
   }
 }

@@ -1,4 +1,6 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   createOpenGuiHarness,
@@ -6,11 +8,18 @@ import {
   discoverSkills,
   loadSkillsFromDir,
   OpenAiChatTransport,
+  PiAiTransport,
   type CreateSessionInput,
   type DurableActor,
   type ExecutionPolicyResolver,
   type ModelSelection,
+  type ModelRequest,
+  ModelTransportError,
   type ModelTransport,
+  deriveModelCacheKey,
+  normalizeModelError,
+  type ModelProtocol,
+  type ProviderResponseMetadata,
   type OpenAiCompatibleConnection,
   type OpenGuiHarness,
   type PromptInput,
@@ -25,6 +34,7 @@ import {
   CHATGPT_CODEX_PRESET,
   OPENCODE_GO_PRESET,
   SUPERGROK_PRESET,
+  XAI_API_PRESET,
   supportedOpenCodeGoModelIds,
   type ProviderConnectionPreset,
 } from "@opengui/protocol";
@@ -49,6 +59,19 @@ import {
   openDurableJsonTransaction,
   type DurableJsonTransaction,
 } from "./durable-json-transaction.ts";
+import {
+  SkillsManager,
+  type SkillInstallation,
+  type SkillScope,
+  type SkillSourceDescriptor,
+  type SkillSourceResolver,
+} from "./skills-management.ts";
+import {
+  createMcpAgentToolSource,
+  createMcpBroker,
+  type McpBroker,
+  type McpConnection,
+} from "../mcp/mcp-broker.ts";
 
 export type SessionAccessGate = {
   onCreated(sessionId: string, actor: DurableActor): Promise<void>;
@@ -70,6 +93,48 @@ export interface HostHealth {
 
 export interface HostModelConnection extends OpenAiCompatibleConnection {}
 
+export type HostMcpConnection =
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: {
+        kind: "stdio";
+        command: string;
+        args: string[];
+        cwd?: string;
+        envKeys: string[];
+      };
+    }
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: { kind: "http"; url: string; bearerTokenConfigured: boolean };
+    };
+
+export type HostMcpConnectionInput =
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: {
+        kind: "stdio";
+        command: string;
+        args?: string[];
+        cwd?: string;
+        env?: Record<string, string>;
+      };
+    }
+  | {
+      id: string;
+      label: string;
+      enabled: boolean;
+      transport: { kind: "http"; url: string; bearerToken?: string };
+    };
+
+export const MODEL_OFFERING_CONNECTION_ID = "opengui-offering";
+
 export interface HostProject {
   directory: string;
   name: string;
@@ -83,6 +148,8 @@ export interface HostSkill {
   /** True when the skill is user-invoked only (not auto-advertised to the model). */
   manual: boolean;
 }
+
+export type HostInstalledSkill = HostSkill & { location: string };
 
 export interface HostSessionSummary extends SessionSummary {}
 
@@ -100,15 +167,18 @@ export class HostSessionNotFoundError extends Error {
 }
 
 interface HostSettingsFile {
+  hostId: string;
   modelConnections: HostModelConnection[];
   defaultConnectionId: string | null;
   projects: string[];
+  mcpConnections: HostMcpConnection[];
 }
 
 type HostSecretsFile = {
   apiKeys: Record<string, string>;
   codexTokens: CodexTokens | null;
   subscriptionTokens: Partial<Record<"xai", OAuthTokens>>;
+  mcp: Record<string, { env?: Record<string, string>; bearerToken?: string }>;
 };
 
 type HostDurableState = {
@@ -120,6 +190,7 @@ type HostDurableState = {
 const SETTINGS_FILENAME = "opengui-host-settings.json";
 const SECRETS_FILENAME = "opengui-host-secrets.json";
 export const HOST_STATE_FILENAME = "opengui-host-state.json";
+export const CODEX_DIAGNOSTICS_FILENAME = "opengui-codex-transport.jsonl";
 function connectionFromPreset(preset: ProviderConnectionPreset): HostModelConnection {
   return {
     ...preset,
@@ -143,6 +214,8 @@ function connectionFromPreset(preset: ProviderConnectionPreset): HostModelConnec
 
 const CODEX_CONNECTION = connectionFromPreset(CHATGPT_CODEX_PRESET);
 const XAI_CONNECTION = connectionFromPreset(SUPERGROK_PRESET);
+const XAI_API_CONNECTION = connectionFromPreset(XAI_API_PRESET);
+const OPENCODE_ZEN_CONNECTION_ID = "opencode-zen";
 const XAI_OAUTH = {
   clientId: "b1a00492-073a-47ea-816f-4c329264a828",
   deviceEndpoint: "https://auth.x.ai/oauth2/device/code",
@@ -150,6 +223,7 @@ const XAI_OAUTH = {
   scope:
     "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write",
 };
+
 function projectName(directory: string) {
   const parts = directory.split(/[\\/]/u).filter(Boolean);
   return parts.at(-1) || directory;
@@ -179,36 +253,59 @@ function validCodexTokens(value: unknown): CodexTokens | null {
   return typeof accountId === "string" && accountId.length > 0 ? { ...token, accountId } : null;
 }
 
+/** Provider continuation material is durable Host state, never a public Session payload. */
+function publicSessionEntry(entry: SessionEntry): SessionEntry {
+  if (entry.kind !== "provider_response") return entry;
+  const payload = structuredClone(entry.payload) as Record<string, any>;
+  const response = payload.response;
+  if (response && typeof response === "object") {
+    delete response.replay;
+    if (response.cache && typeof response.cache === "object") delete response.cache.key;
+    if (Array.isArray(response.diagnostics)) {
+      response.diagnostics = response.diagnostics
+        .filter((item: unknown) => item && typeof item === "object")
+        .slice(0, 8)
+        .map((item: { code?: unknown }) => ({
+          code: typeof item.code === "string" ? item.code : "unknown",
+        }));
+    }
+  }
+  return { ...entry, payload } as SessionEntry;
+}
+
+function publicSessionSnapshot(snapshot: SessionSnapshot): HostSessionSnapshot {
+  return { ...snapshot, entries: snapshot.entries.map(publicSessionEntry) };
+}
+
+function publicSessionEvent(event: SessionEvent): SessionEvent {
+  return event.type === "entry_appended"
+    ? { ...event, entry: publicSessionEntry(event.entry) }
+    : event;
+}
+
 export class OpenGuiHost {
   readonly #dataDirectory: string;
   readonly #settingsPath: string;
   readonly #secretsPath: string;
   readonly #statePath: string;
   readonly #transport = new OpenAiChatTransport();
-  readonly #codexTransport = new CodexResponsesTransport({
-    getCredential: () => this.#codexCredential(),
-  });
-  readonly #xaiTransport = new CodexResponsesTransport({
-    endpoint: "https://cli-chat-proxy.grok.com/v1/responses",
-    headers: {
-      "x-xai-token-auth": "xai-grok-cli",
-      "x-grok-client-identifier": "opengui",
-    },
-    requestLabel: "SuperGrok",
-    unauthorizedMessage:
-      "SuperGrok sign-in expired or is not entitled to Grok Build. Sign in again in Providers.",
-    getCredential: () => this.#subscriptionCredential("xai"),
-  });
+  readonly #piAiTransport: PiAiTransport;
+  readonly #codexTransport: CodexResponsesTransport;
+  readonly #xaiTransport: CodexResponsesTransport;
+  readonly #xaiApiTransport: CodexResponsesTransport;
   #harness: OpenGuiHarness | null = null;
   #settings: HostSettingsFile = {
+    hostId: "",
     modelConnections: [],
     defaultConnectionId: null,
     projects: [],
+    mcpConnections: [],
   };
   #apiKeys: Record<string, string> = {};
   #codexTokens: CodexTokens | null = null;
   #deviceAuth: DeviceAuthorization | null = null;
   #subscriptionTokens: Partial<Record<"xai", OAuthTokens>> = {};
+  #mcpSecrets: HostSecretsFile["mcp"] = {};
   #subscriptionPending: Partial<Record<"xai", DeviceOAuthPending>> = {};
   #codexRefresh: Promise<CodexTokens> | null = null;
   #xaiRefresh: Promise<OAuthTokens> | null = null;
@@ -218,9 +315,23 @@ export class OpenGuiHost {
   readonly #promptAdmissions = new Map<string, Promise<void>>();
   readonly #fetch: typeof fetch;
   readonly #model: ModelTransport | undefined;
+  readonly #mcpBroker: McpBroker = createMcpBroker({ connections: [] });
+  readonly #usePiAiTransport: boolean;
+  readonly #usePiAiCodexTransport: boolean;
+  readonly #codexPiTransport: "auto" | "websocket" | "websocket-cached" | "sse";
+  readonly #ownerModelDiagnostics: boolean;
+  #diagnosticWrite = Promise.resolve();
   readonly #pathAuthorizer: HostPathAuthorizer;
+  readonly #skillsManager: SkillsManager;
   readonly #resolveExecutionPolicy: ExecutionPolicyResolver | undefined;
+  readonly #authorizeMcpUse: ((actor: DurableActor | undefined) => Promise<boolean>) | undefined;
   readonly #sessionAccess: SessionAccessGate | undefined;
+  readonly #resolveModelOffering:
+    | ((
+        offeringId: string,
+        actor?: DurableActor,
+      ) => Promise<{ connectionId: string; modelId: string }>)
+    | undefined;
   #starting: Promise<void> | null = null;
   #closing: Promise<void> | null = null;
 
@@ -231,6 +342,20 @@ export class OpenGuiHost {
       model?: ModelTransport;
       resolveExecutionPolicy?: ExecutionPolicyResolver;
       sessionAccess?: SessionAccessGate;
+      resolveModelOffering?: (
+        offeringId: string,
+        actor?: DurableActor,
+      ) => Promise<{ connectionId: string; modelId: string }>;
+      homeDirectory?: string;
+      skillSourceResolver?: SkillSourceResolver;
+      authorizeSkillManagement?: (actor: DurableActor | undefined) => Promise<void>;
+      authorizeMcpUse?: (actor: DurableActor | undefined) => Promise<boolean>;
+      /** Explicit canary fallback. Defaults to the OpenGUI-owned pi-ai adapter. */
+      usePiAiTransport?: boolean;
+      usePiAiCodexTransport?: boolean;
+      codexPiTransport?: "auto" | "websocket" | "websocket-cached" | "sse";
+      openAiResponsesTransport?: "auto" | "websocket" | "sse";
+      ownerModelDiagnostics?: boolean;
     } = {},
   ) {
     this.#dataDirectory = dataDirectory;
@@ -238,10 +363,117 @@ export class OpenGuiHost {
     this.#secretsPath = join(dataDirectory, SECRETS_FILENAME);
     this.#statePath = join(dataDirectory, HOST_STATE_FILENAME);
     this.#fetch = options.fetchImpl ?? fetch;
+    this.#usePiAiTransport = options.usePiAiTransport ?? true;
+    this.#usePiAiCodexTransport = options.usePiAiCodexTransport ?? true;
+    this.#codexPiTransport = options.codexPiTransport ?? "auto";
+    this.#ownerModelDiagnostics = options.ownerModelDiagnostics ?? false;
+    this.#piAiTransport = new PiAiTransport({
+      openAiResponsesTransport: options.openAiResponsesTransport ?? "auto",
+      diagnostics: options.ownerModelDiagnostics
+        ? (event) => {
+            process.stderr.write(`[OpenGUI model transport] ${JSON.stringify(event)}\n`);
+          }
+        : undefined,
+      resolve: async (request) => {
+        const selection = request.context.findLast((item) => item.type === "user_message")?.model;
+        if (!selection) throw new Error("Model request has no selected model");
+        const connection =
+          selection.connectionId === CODEX_CONNECTION.id
+            ? CODEX_CONNECTION
+            : this.#settings.modelConnections.find((item) => item.id === selection.connectionId);
+        if (!connection) throw new Error(`Unknown model connection: ${selection.connectionId}`);
+        if (!connection.modelIds.includes(selection.modelId)) {
+          throw new Error(`Unknown model ${selection.modelId} for ${connection.id}`);
+        }
+        const configuredRoute = connection.modelRoutes?.[selection.modelId];
+        const capabilities = connection.modelCapabilities?.[selection.modelId];
+        if (connection.id === CODEX_CONNECTION.id) {
+          const credential = await this.#codexCredential();
+          return {
+            backendId: connection.id,
+            providerId: "openai-codex",
+            label: connection.label,
+            protocol: "codex-responses" as const,
+            baseUrl: connection.baseUrl,
+            modelId: selection.modelId,
+            apiKey: credential.accessToken,
+            headers: {
+              "chatgpt-account-id": credential.accountId,
+              originator: "opengui",
+              "user-agent": "OpenGUI/1.0",
+            },
+            reasoning: capabilities?.reasoning,
+            reasoningEfforts: capabilities?.reasoningEfforts,
+            contextWindow: capabilities?.context,
+            transport: this.#codexPiTransport,
+            websocketConnectTimeoutMs: 15_000,
+          };
+        }
+        const apiKey = this.#apiKeys[connection.id];
+        return {
+          backendId: connection.id,
+          label: connection.label,
+          protocol:
+            configuredRoute === "responses"
+              ? "openai-responses"
+              : configuredRoute === "anthropic-messages"
+                ? "anthropic-messages"
+                : "openai-chat",
+          baseUrl: connection.baseUrl,
+          modelId: selection.modelId,
+          apiKey,
+          authHeader: connection.id === OPENCODE_ZEN_CONNECTION_ID && !apiKey ? false : undefined,
+          reasoning: capabilities?.reasoning,
+          reasoningEfforts: capabilities?.reasoningEfforts,
+          contextWindow: capabilities?.context,
+        };
+      },
+    });
+    this.#codexTransport = new CodexResponsesTransport({
+      fetchImpl: this.#fetch,
+      getCredential: (forceRefresh) => this.#codexCredential(forceRefresh),
+    });
+    this.#xaiTransport = new CodexResponsesTransport({
+      fetchImpl: this.#fetch,
+      endpoint: "https://cli-chat-proxy.grok.com/v1/responses",
+      headers: {
+        "x-xai-token-auth": "xai-grok-cli",
+        "x-grok-client-identifier": "opengui",
+      },
+      requestLabel: "SuperGrok experimental subscription proxy",
+      unauthorizedMessage:
+        "SuperGrok proxy authorization expired. Reconnect the experimental third-party OAuth authorization in Providers.",
+      getCredential: (forceRefresh) => this.#subscriptionCredential("xai", forceRefresh),
+    });
+    this.#xaiApiTransport = new CodexResponsesTransport({
+      fetchImpl: this.#fetch,
+      endpoint: "https://api.x.ai/v1/responses",
+      requestLabel: "xAI API",
+      unauthorizedMessage: "The xAI API key was rejected. Save a valid API key in Providers.",
+      getCredential: async () => {
+        const accessToken = this.#apiKeys[XAI_API_PRESET.id];
+        if (!accessToken)
+          throw new Error("Add an xAI API key in Providers before using Grok Build");
+        return { accessToken, accountId: "" };
+      },
+    });
     this.#model = options.model;
     this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
+    this.#authorizeMcpUse = options.authorizeMcpUse;
     this.#pathAuthorizer = new HostPathAuthorizer(options.resolveExecutionPolicy);
+    this.#skillsManager = new SkillsManager({
+      homeDirectory: options.homeDirectory ?? homedir(),
+      resolver: options.skillSourceResolver,
+      authorizeManagement: async (actor, scope, projectDirectory) => {
+        await options.authorizeSkillManagement?.(actor);
+        if (scope === "project") {
+          if (!projectDirectory) throw new Error("Project directory is required");
+          await this.#pathAuthorizer.authorizePath(actor, projectDirectory, "write");
+        }
+      },
+    });
     this.#sessionAccess = options.sessionAccess;
+    this.#resolveModelOffering = options.resolveModelOffering;
   }
 
   async start() {
@@ -262,6 +494,9 @@ export class OpenGuiHost {
 
   async #start() {
     await mkdir(this.#dataDirectory, { recursive: true });
+    const durableStateAlreadyExists = await readFile(this.#statePath)
+      .then(() => true)
+      .catch(() => false);
     const fallback = await this.#loadLegacyState();
     this.#stateStore = await openDurableJsonTransaction(this.#statePath, {
       fallback,
@@ -269,27 +504,29 @@ export class OpenGuiHost {
       mode: 0o600,
     });
     this.#applyState(this.#stateStore.current());
+    if (!this.#settings.hostId) {
+      this.#settings.hostId = `host_${randomUUID()}`;
+      // Existing Host state is migrated eagerly. A brand-new Host remains
+      // write-lazy so start() does not create product state until first use.
+      if (durableStateAlreadyExists) await this.#saveSettings();
+    }
     await this.#refreshOpenCodeGoCatalog();
     this.#refreshTransport();
+    await this.#refreshMcpBroker();
     const harness = createOpenGuiHarness({
       dataDirectory: this.#dataDirectory,
-      model:
-        this.#model ??
-        ({
-          stream: (request, signal) => {
-            const selected = [...request.context]
-              .reverse()
-              .find((item) => item.type === "user_message");
-            return selected?.type === "user_message" &&
-              selected.model.connectionId === CODEX_CONNECTION.id
-              ? this.#codexTransport.stream(request, signal)
-              : selected?.type === "user_message" &&
-                  selected.model.connectionId === XAI_CONNECTION.id
-                ? this.#xaiTransport.stream(request, signal)
-                : this.#transport.stream(request, signal);
-          },
-        } satisfies ModelTransport),
+      hostId: this.#settings.hostId,
+      model: {
+        stream: (request, signal) => this.#streamModel(request, signal),
+      } satisfies ModelTransport,
       resolveExecutionPolicy: this.#resolveExecutionPolicy,
+      agentTools: createMcpAgentToolSource(this.#mcpBroker, {
+        authorize: async (scope) => {
+          if (this.#authorizeMcpUse && !(await this.#authorizeMcpUse(scope.actor))) return false;
+          if (!this.#resolveExecutionPolicy) return true;
+          return !(await this.#resolveExecutionPolicy(scope.actor)).restricted;
+        },
+      }),
     });
     // Do not report the Host as started while the Harness store is still
     // migrating/recovering; close() must be safe immediately after start().
@@ -337,6 +574,8 @@ export class OpenGuiHost {
       );
       await Promise.allSettled(activeRuns);
       await harness.close();
+      await this.#mcpBroker.close();
+      this.#piAiTransport.close();
       await this.#stateStore?.close();
       this.#stateStore = null;
       this.#activeRuns.clear();
@@ -353,6 +592,212 @@ export class OpenGuiHost {
   #requireHarness() {
     if (!this.#harness) throw new Error("OpenGUI Host is not started");
     return this.#harness;
+  }
+
+  async *#streamModel(request: ModelRequest, signal: AbortSignal) {
+    const started = Date.now();
+    const timeoutSignal = request.delivery?.timeoutMs
+      ? AbortSignal.timeout(request.delivery.timeoutMs)
+      : undefined;
+    const deliverySignal = timeoutSignal ? AbortSignal.any([signal, timeoutSignal]) : signal;
+    const selectedIndex = request.context.findLastIndex((item) => item.type === "user_message");
+    const selected = request.context[selectedIndex];
+    let effectiveRequest = request;
+    let connectionId = selected?.type === "user_message" ? selected.model.connectionId : "";
+    if (
+      selected?.type === "user_message" &&
+      selected.model.connectionId === MODEL_OFFERING_CONNECTION_ID
+    ) {
+      if (!this.#resolveModelOffering) throw new Error("Model offerings are not available");
+      const resolved = await this.#resolveModelOffering(selected.model.modelId, request.actor);
+      connectionId = resolved.connectionId;
+      effectiveRequest = {
+        ...request,
+        context: request.context.map((item, index) =>
+          index === selectedIndex && item.type === "user_message"
+            ? { ...item, model: resolved }
+            : item,
+        ),
+      };
+    }
+    const routedSelection = effectiveRequest.context.findLast(
+      (item) => item.type === "user_message",
+    )?.model;
+    const modelId = routedSelection?.modelId ?? "unknown";
+    const connection = this.#settings.modelConnections.find((item) => item.id === connectionId);
+    const protocol: ModelProtocol =
+      connectionId === CODEX_CONNECTION.id ||
+      connectionId === XAI_CONNECTION.id ||
+      connectionId === XAI_API_CONNECTION.id
+        ? "codex-responses"
+        : connection?.modelRoutes?.[modelId] === "anthropic-messages"
+          ? "anthropic-messages"
+          : connection?.modelRoutes?.[modelId] === "responses"
+            ? "openai-responses"
+            : "openai-chat";
+    try {
+      if (this.#model) {
+        yield* this.#model.stream(effectiveRequest, deliverySignal);
+        return;
+      }
+      if (connectionId === CODEX_CONNECTION.id) {
+        if (this.#usePiAiCodexTransport) {
+          yield* this.#streamCodexPi(effectiveRequest, deliverySignal);
+        } else {
+          yield* this.#codexTransport.stream(effectiveRequest, deliverySignal);
+        }
+        return;
+      }
+      if (connectionId === XAI_CONNECTION.id) {
+        yield* this.#xaiTransport.stream(effectiveRequest, deliverySignal);
+        return;
+      }
+      if (connectionId === XAI_API_CONNECTION.id) {
+        yield* this.#xaiApiTransport.stream(effectiveRequest, deliverySignal);
+        return;
+      }
+      if (this.#usePiAiTransport) {
+        yield* this.#piAiTransport.stream(effectiveRequest, deliverySignal);
+        return;
+      }
+      yield* this.#transport.stream(effectiveRequest, deliverySignal);
+    } catch (error) {
+      if (error instanceof ModelTransportError) throw error;
+      const normalized = timeoutSignal?.aborted
+        ? {
+            code: "timeout" as const,
+            message: `Model request timed out after ${request.delivery?.timeoutMs}ms`,
+            retryable: true,
+          }
+        : normalizeModelError(error, signal);
+      const key = deriveModelCacheKey(effectiveRequest, {
+        backendId: connectionId,
+        upstreamModelId: modelId,
+        protocol,
+      });
+      throw new ModelTransportError(normalized, {
+        provider: connectionId || "unknown",
+        api: protocol,
+        model: modelId,
+        protocol,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        stopReason: normalized.code === "aborted" ? "aborted" : "error",
+        cache: {
+          key,
+          generation: effectiveRequest.cache?.generation ?? "legacy",
+          readTokens: 0,
+          writeTokens: 0,
+        },
+        timing: {
+          startedAt: new Date(started).toISOString(),
+          completedMs: Date.now() - started,
+          attempts: 1,
+        },
+        diagnostics: [{ code: normalized.code, message: normalized.message }],
+      });
+    }
+  }
+
+  async *#streamCodexPi(request: ModelRequest, signal: AbortSignal) {
+    let attempts = 0;
+    while (attempts < 2) {
+      attempts += 1;
+      let emitted = false;
+      try {
+        for await (const event of this.#piAiTransport.stream(request, signal)) {
+          if (event.type !== "completed") emitted = true;
+          if (event.type === "completed" && event.response && attempts > 1) {
+            const completed = {
+              ...event,
+              response: {
+                ...event.response,
+                timing: { ...event.response.timing, attempts },
+              },
+            };
+            await this.#recordCodexDiagnostic(request, completed.response);
+            yield completed;
+          } else {
+            if (event.type === "completed" && event.response) {
+              await this.#recordCodexDiagnostic(request, event.response);
+            }
+            yield event;
+          }
+        }
+        return;
+      } catch (error) {
+        if (
+          attempts !== 1 ||
+          emitted ||
+          !(error instanceof ModelTransportError) ||
+          error.normalized.code !== "authentication"
+        ) {
+          if (error instanceof ModelTransportError) {
+            await this.#recordCodexDiagnostic(request, error.response);
+          }
+          throw error;
+        }
+        // A provider 401 occurs before response output. Refresh exactly once;
+        // never replay after any model delta or tool argument has escaped.
+        await this.#codexCredential(true);
+      }
+    }
+  }
+
+  async #recordCodexDiagnostic(request: ModelRequest, response: ProviderResponseMetadata) {
+    if (!this.#ownerModelDiagnostics) return;
+    const path = join(this.#dataDirectory, CODEX_DIAGNOSTICS_FILENAME);
+    const session = createHash("sha256")
+      .update(request.identity?.sessionId ?? "legacy")
+      .digest("hex")
+      .slice(0, 24);
+    const record = {
+      at: new Date().toISOString(),
+      session,
+      model: createHash("sha256").update(response.model).digest("hex").slice(0, 24),
+      stopReason: response.stopReason,
+      usage: response.usage,
+      cache: {
+        readTokens: response.cache.readTokens,
+        writeTokens: response.cache.writeTokens,
+      },
+      timing: response.timing,
+      diagnostics: response.diagnostics?.map(({ code }) => ({ code })).slice(0, 8),
+    };
+    const line = `${JSON.stringify(record)}\n`;
+    const write = this.#diagnosticWrite.then(async () => {
+      let previous = "";
+      try {
+        const info = await lstat(path);
+        if (!info.isFile() || info.isSymbolicLink()) return;
+        const length = Math.min(info.size, 64 * 1024);
+        const buffer = Buffer.alloc(length);
+        const file = await open(path, "r");
+        try {
+          const { bytesRead } = await file.read(buffer, 0, length, Math.max(0, info.size - length));
+          previous = buffer.subarray(0, bytesRead).toString("utf8");
+          if (info.size > length) previous = previous.slice(previous.indexOf("\n") + 1);
+        } finally {
+          await file.close();
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+      }
+      const records = `${previous}${line}`.split("\n").filter(Boolean);
+      while (records.length > 1 && Buffer.byteLength(`${records.join("\n")}\n`) > 64 * 1024) {
+        records.shift();
+      }
+      const bounded = `${records.join("\n")}\n`;
+      const temporary = `${path}.tmp-${randomUUID()}`;
+      try {
+        await writeFile(temporary, bounded, { encoding: "utf8", flag: "wx", mode: 0o600 });
+        await rename(temporary, path);
+        await chmod(path, 0o600);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+    });
+    this.#diagnosticWrite = write.catch(() => undefined);
+    await write;
   }
 
   async #authorizedSession(
@@ -391,15 +836,23 @@ export class OpenGuiHost {
       const raw = await readFile(this.#settingsPath, "utf8");
       const parsed = JSON.parse(raw) as Partial<HostSettingsFile>;
       return {
+        hostId: typeof parsed.hostId === "string" ? parsed.hostId : "",
         modelConnections: Array.isArray(parsed.modelConnections) ? parsed.modelConnections : [],
         defaultConnectionId:
           typeof parsed.defaultConnectionId === "string" ? parsed.defaultConnectionId : null,
         projects: Array.isArray(parsed.projects)
           ? parsed.projects.filter((item): item is string => typeof item === "string")
           : [],
+        mcpConnections: [],
       };
     } catch {
-      return { modelConnections: [], defaultConnectionId: null, projects: [] };
+      return {
+        hostId: "",
+        modelConnections: [],
+        defaultConnectionId: null,
+        projects: [],
+        mcpConnections: [],
+      };
     }
   }
 
@@ -419,9 +872,9 @@ export class OpenGuiHost {
           ? (parsed.subscriptions as Record<string, unknown>)
           : {};
       const xai = validOAuthTokens(subscriptions.xai);
-      return { apiKeys, codexTokens, subscriptionTokens: xai ? { xai } : {} };
+      return { apiKeys, codexTokens, subscriptionTokens: xai ? { xai } : {}, mcp: {} };
     } catch {
-      return { apiKeys: {}, codexTokens: null, subscriptionTokens: {} };
+      return { apiKeys: {}, codexTokens: null, subscriptionTokens: {}, mcp: {} };
     }
   }
 
@@ -442,6 +895,7 @@ export class OpenGuiHost {
     return {
       version: 1,
       settings: {
+        hostId: typeof state.settings.hostId === "string" ? state.settings.hostId : "",
         modelConnections: Array.isArray(state.settings.modelConnections)
           ? state.settings.modelConnections
           : [],
@@ -451,6 +905,9 @@ export class OpenGuiHost {
             : null,
         projects: Array.isArray(state.settings.projects)
           ? state.settings.projects.filter((item): item is string => typeof item === "string")
+          : [],
+        mcpConnections: Array.isArray(state.settings.mcpConnections)
+          ? (state.settings.mcpConnections as HostMcpConnection[])
           : [],
       },
       secrets: {
@@ -466,6 +923,10 @@ export class OpenGuiHost {
         subscriptionTokens: validOAuthTokens(subscriptions.xai)
           ? { xai: validOAuthTokens(subscriptions.xai)! }
           : {},
+        mcp:
+          state.secrets.mcp && typeof state.secrets.mcp === "object"
+            ? structuredClone(state.secrets.mcp)
+            : {},
       },
     };
   }
@@ -475,6 +936,7 @@ export class OpenGuiHost {
     this.#apiKeys = { ...state.secrets.apiKeys };
     this.#codexTokens = state.secrets.codexTokens ? { ...state.secrets.codexTokens } : null;
     this.#subscriptionTokens = structuredClone(state.secrets.subscriptionTokens);
+    this.#mcpSecrets = structuredClone(state.secrets.mcp);
     this.#refreshTransport();
   }
 
@@ -500,6 +962,7 @@ export class OpenGuiHost {
       apiKeys: { ...this.#apiKeys },
       codexTokens: this.#codexTokens ? { ...this.#codexTokens } : null,
       subscriptionTokens: structuredClone(this.#subscriptionTokens),
+      mcp: structuredClone(this.#mcpSecrets),
     };
     await this.#updateState((state) => ({ ...state, secrets }));
   }
@@ -512,6 +975,42 @@ export class OpenGuiHost {
       })),
       this.#settings.defaultConnectionId,
     );
+  }
+
+  #mcpRuntimeConnections(): McpConnection[] {
+    const result: McpConnection[] = [];
+    for (const connection of this.#settings.mcpConnections) {
+      if (!connection.enabled) continue;
+      const secret = this.#mcpSecrets[connection.id];
+      result.push(
+        connection.transport.kind === "stdio"
+          ? {
+              id: connection.id,
+              label: connection.label,
+              transport: {
+                kind: "stdio",
+                command: connection.transport.command,
+                args: [...connection.transport.args],
+                cwd: connection.transport.cwd,
+                env: secret?.env,
+              },
+            }
+          : {
+              id: connection.id,
+              label: connection.label,
+              transport: {
+                kind: "http",
+                url: connection.transport.url,
+                bearerToken: secret?.bearerToken,
+              },
+            },
+      );
+    }
+    return result;
+  }
+
+  async #refreshMcpBroker() {
+    await this.#mcpBroker.replaceConnections(this.#mcpRuntimeConnections());
   }
 
   async #openCodeGoConnection(apiKey?: string): Promise<HostModelConnection> {
@@ -555,11 +1054,164 @@ export class OpenGuiHost {
     };
   }
 
+  listMcpConnections(): HostMcpConnection[] {
+    return structuredClone(this.#settings.mcpConnections);
+  }
+
+  async upsertMcpConnection(input: HostMcpConnectionInput): Promise<HostMcpConnection> {
+    const id = input.id.trim();
+    const label = input.label.trim();
+    if (!/^[a-zA-Z0-9._-]{1,64}$/u.test(id)) {
+      throw new Error(
+        "MCP connection id must use 1-64 letters, numbers, dots, dashes, or underscores",
+      );
+    }
+    if (!label) throw new Error("MCP connection label is required");
+    let publicConnection: HostMcpConnection;
+    if (input.transport.kind === "stdio") {
+      const command = input.transport.command.trim();
+      if (!command) throw new Error("MCP stdio command is required");
+      const env = input.transport.env
+        ? Object.fromEntries(
+            Object.entries(input.transport.env)
+              .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) && value !== "")
+              .map(([key, value]) => [key, String(value)]),
+          )
+        : undefined;
+      const effectiveEnv = env ?? this.#mcpSecrets[id]?.env;
+      publicConnection = {
+        id,
+        label,
+        enabled: input.enabled,
+        transport: {
+          kind: "stdio",
+          command,
+          args: (input.transport.args ?? []).map((argument) => String(argument)),
+          ...(input.transport.cwd?.trim() ? { cwd: input.transport.cwd.trim() } : {}),
+          envKeys: effectiveEnv ? Object.keys(effectiveEnv).sort() : [],
+        },
+      };
+      await this.#updateState((state) => ({
+        ...state,
+        settings: {
+          ...state.settings,
+          mcpConnections: [
+            ...state.settings.mcpConnections.filter((connection) => connection.id !== id),
+            publicConnection,
+          ],
+        },
+        secrets: {
+          ...state.secrets,
+          mcp: {
+            ...state.secrets.mcp,
+            [id]: effectiveEnv ? { env: effectiveEnv } : {},
+          },
+        },
+      }));
+    } else {
+      let url: URL;
+      try {
+        url = new URL(input.transport.url);
+      } catch {
+        throw new Error("MCP HTTP URL is invalid");
+      }
+      if (url.protocol !== "https:" && url.protocol !== "http:") {
+        throw new Error("MCP HTTP URL must use HTTP or HTTPS");
+      }
+      if (url.username || url.password) {
+        throw new Error("MCP HTTP credentials must not be embedded in the URL");
+      }
+      const hostname = url.hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+      const loopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+      if (url.protocol === "http:" && !loopback) {
+        throw new Error("MCP HTTP endpoints must use HTTPS unless they are on loopback");
+      }
+      if (hostname === "169.254.169.254" || hostname === "metadata.google.internal") {
+        throw new Error("MCP HTTP endpoint is not allowed");
+      }
+      const existingToken = this.#mcpSecrets[id]?.bearerToken;
+      const bearerToken =
+        input.transport.bearerToken?.trim().replace(/^Bearer\s+/iu, "") || existingToken;
+      publicConnection = {
+        id,
+        label,
+        enabled: input.enabled,
+        transport: {
+          kind: "http",
+          url: url.toString(),
+          bearerTokenConfigured: Boolean(bearerToken),
+        },
+      };
+      await this.#updateState((state) => ({
+        ...state,
+        settings: {
+          ...state.settings,
+          mcpConnections: [
+            ...state.settings.mcpConnections.filter((connection) => connection.id !== id),
+            publicConnection,
+          ],
+        },
+        secrets: {
+          ...state.secrets,
+          mcp: {
+            ...state.secrets.mcp,
+            [id]: bearerToken ? { bearerToken } : {},
+          },
+        },
+      }));
+    }
+    await this.#refreshMcpBroker();
+    return structuredClone(publicConnection);
+  }
+
+  async removeMcpConnection(id: string) {
+    await this.#updateState((state) => {
+      const mcp = { ...state.secrets.mcp };
+      delete mcp[id];
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          mcpConnections: state.settings.mcpConnections.filter(
+            (connection) => connection.id !== id,
+          ),
+        },
+        secrets: { ...state.secrets, mcp },
+      };
+    });
+    await this.#refreshMcpBroker();
+  }
+
+  async inspectMcpConnection(id: string, actor?: DurableActor) {
+    if (this.#authorizeMcpUse && !(await this.#authorizeMcpUse(actor))) {
+      throw new Error("MCP tools are unavailable for this actor");
+    }
+    if (this.#resolveExecutionPolicy && (await this.#resolveExecutionPolicy(actor)).restricted) {
+      throw new Error("MCP tools are unavailable for restricted actors");
+    }
+    const catalog = await this.#mcpBroker.catalog({
+      actorId: actor ? `${actor.type}:${actor.id}` : "local:settings",
+      sessionId: `mcp-settings:${id}`,
+    });
+    return catalog.tools
+      .filter((tool) => tool.ref.connectionId === id)
+      .map((tool) => ({
+        name: tool.ref.toolName,
+        title: tool.title,
+        description: tool.description,
+      }));
+  }
+
   listModelConnections() {
     return [
       ...(this.#codexTokens ? [CODEX_CONNECTION] : []),
       ...(this.#subscriptionTokens.xai ? [XAI_CONNECTION] : []),
-      ...this.#settings.modelConnections.map(({ apiKey: _apiKey, ...connection }) => connection),
+      ...this.#settings.modelConnections
+        .filter(
+          (connection) =>
+            connection.id !== XAI_API_PRESET.id || Boolean(this.#apiKeys[XAI_API_PRESET.id]),
+        )
+        .map(({ apiKey: _apiKey, ...connection }) => connection),
     ];
   }
 
@@ -599,18 +1251,29 @@ export class OpenGuiHost {
     this.#codexTokens = null;
     this.#deviceAuth = null;
     await this.#saveSecrets();
+    this.#piAiTransport.close();
     if (tokens) await revokeCodexToken(tokens.refreshToken);
   }
-  async #codexCredential() {
+  async #codexCredential(forceRefresh = false) {
     if (!this.#codexTokens) throw new Error("Sign in to ChatGPT in Providers before using Codex");
-    if (this.#codexTokens.expiresAt <= Date.now() + 60_000) {
+    if (forceRefresh || this.#codexTokens.expiresAt <= Date.now() + 60_000) {
       const current = this.#codexTokens;
       try {
         this.#codexRefresh ??= refreshCodexTokens(current).finally(() => {
           this.#codexRefresh = null;
         });
         const refreshed = await this.#codexRefresh;
-        if (this.#codexTokens !== current) throw new Error("ChatGPT sign-in changed");
+        if (this.#codexTokens !== current) {
+          if (
+            this.#codexTokens?.accessToken === refreshed.accessToken &&
+            this.#codexTokens.refreshToken === refreshed.refreshToken
+          )
+            return {
+              accessToken: this.#codexTokens.accessToken,
+              accountId: this.#codexTokens.accountId,
+            };
+          throw new Error("ChatGPT sign-in changed");
+        }
         this.#codexTokens = refreshed;
         await this.#saveSecrets();
       } catch {
@@ -638,7 +1301,10 @@ export class OpenGuiHost {
     };
   }
   async beginSubscriptionAuth(provider: "xai") {
-    this.#subscriptionPending[provider] = await beginDeviceOAuth(XAI_OAUTH);
+    this.#subscriptionPending[provider] = await beginDeviceOAuth({
+      ...XAI_OAUTH,
+      fetchImpl: this.#fetch,
+    });
     return this.subscriptionAuthStatus(provider);
   }
   async pollSubscriptionAuth(provider: "xai") {
@@ -648,7 +1314,7 @@ export class OpenGuiHost {
       delete this.#subscriptionPending[provider];
       throw new Error("The device code expired. Start sign-in again.");
     }
-    const result = await pollDeviceOAuth(XAI_OAUTH, pending);
+    const result = await pollDeviceOAuth({ ...XAI_OAUTH, fetchImpl: this.#fetch }, pending);
     if (result && this.#subscriptionPending[provider] === pending) {
       this.#subscriptionTokens[provider] = result;
       delete this.#subscriptionPending[provider];
@@ -663,23 +1329,33 @@ export class OpenGuiHost {
     this.#refreshTransport();
     await this.#saveSecrets();
   }
-  async #subscriptionCredential(provider: "xai") {
+  async #subscriptionCredential(provider: "xai", forceRefresh = false) {
     let current = this.#subscriptionTokens[provider];
     if (!current) throw new Error("Sign in to this provider in Settings before using it");
-    if (current.expiresAt <= Date.now() + 60_000) {
+    if (forceRefresh || current.expiresAt <= Date.now() + 60_000) {
+      const expected = current;
       try {
-        const expected = current;
-        this.#xaiRefresh ??= refreshDeviceOAuth(XAI_OAUTH, current).finally(() => {
+        this.#xaiRefresh ??= refreshDeviceOAuth(
+          { ...XAI_OAUTH, fetchImpl: this.#fetch },
+          current,
+        ).finally(() => {
           this.#xaiRefresh = null;
         });
         current = await this.#xaiRefresh;
-        if (this.#subscriptionTokens[provider] !== expected)
+        const latest = this.#subscriptionTokens[provider];
+        if (latest !== expected) {
+          if (
+            latest?.accessToken === current.accessToken &&
+            latest.refreshToken === current.refreshToken
+          )
+            return { accessToken: latest.accessToken, accountId: "" };
           throw new Error("Provider sign-in changed");
+        }
         this.#subscriptionTokens[provider] = current;
         this.#refreshTransport();
         await this.#saveSecrets();
       } catch {
-        if (this.#subscriptionTokens[provider] === current) {
+        if (this.#subscriptionTokens[provider] === expected) {
           delete this.#subscriptionTokens[provider];
           this.#refreshTransport();
           await this.#saveSecrets();
@@ -695,11 +1371,14 @@ export class OpenGuiHost {
     await this.#updateState(async (state) => {
       const apiKeys = { ...state.secrets.apiKeys };
       if (connection.apiKey) apiKeys[connection.id] = connection.apiKey;
+      if (connection.id === XAI_API_PRESET.id && !apiKeys[XAI_API_PRESET.id]?.trim())
+        throw new Error("An xAI API key is required to enable the xAI API");
       if (connection.id === OPENCODE_GO_PRESET.id) {
         connection = await this.#openCodeGoConnection(
           connection.apiKey ?? apiKeys[OPENCODE_GO_PRESET.id],
         );
       }
+      if (connection.id === XAI_API_PRESET.id) connection = connectionFromPreset(XAI_API_PRESET);
       publicConnection = { ...connection, apiKey: undefined };
       const next = state.settings.modelConnections.filter((item) => item.id !== connection.id);
       next.push(publicConnection);
@@ -742,10 +1421,11 @@ export class OpenGuiHost {
     const projects: HostProject[] = [];
     for (const directory of this.#settings.projects) {
       try {
-        await this.#pathAuthorizer.authorizePath(actor, directory, "read");
-        projects.push({ directory, name: projectName(directory) });
+        const authorized = await this.#pathAuthorizer.authorizePath(actor, directory, "read");
+        if (!(await lstat(authorized)).isDirectory()) continue;
+        projects.push({ directory: authorized, name: projectName(authorized) });
       } catch {
-        // Project enumeration is filtered rather than exposing denied paths.
+        // Project enumeration omits denied and currently unavailable paths.
       }
     }
     return projects;
@@ -807,6 +1487,67 @@ export class OpenGuiHost {
         if (left.source !== right.source) return left.source === "project" ? -1 : 1;
         return left.name.localeCompare(right.name);
       });
+  }
+
+  supportedSkillSources(): SkillSourceDescriptor[] {
+    return this.#skillsManager.sources();
+  }
+
+  async listSkillInstallations(
+    projectDirectory: string,
+    scope: SkillScope,
+    actor?: DurableActor,
+  ): Promise<SkillInstallation[]> {
+    const directory =
+      scope === "project"
+        ? await this.#pathAuthorizer.authorizePath(actor, projectDirectory, "read")
+        : undefined;
+    return this.#skillsManager.list(scope, directory);
+  }
+
+  async installSkill(input: {
+    source: string;
+    projectDirectory: string;
+    scope: SkillScope;
+    requestId: string;
+    expectedGeneration?: number;
+    actor?: DurableActor;
+  }): Promise<SkillInstallation> {
+    const directory =
+      input.scope === "project"
+        ? await this.#pathAuthorizer.authorizePath(input.actor, input.projectDirectory, "write")
+        : undefined;
+    return this.#skillsManager.install({ ...input, projectDirectory: directory });
+  }
+
+  async updateSkill(input: {
+    name: string;
+    projectDirectory: string;
+    scope: SkillScope;
+    requestId: string;
+    expectedGeneration?: number;
+    actor?: DurableActor;
+  }): Promise<SkillInstallation> {
+    const directory =
+      input.scope === "project"
+        ? await this.#pathAuthorizer.authorizePath(input.actor, input.projectDirectory, "write")
+        : undefined;
+    return this.#skillsManager.update({ ...input, projectDirectory: directory });
+  }
+
+  async removeSkill(input: {
+    name: string;
+    projectDirectory: string;
+    scope: SkillScope;
+    requestId: string;
+    expectedGeneration?: number;
+    actor?: DurableActor;
+  }) {
+    const directory =
+      input.scope === "project"
+        ? await this.#pathAuthorizer.authorizePath(input.actor, input.projectDirectory, "write")
+        : undefined;
+    await this.#skillsManager.remove({ ...input, projectDirectory: directory });
   }
 
   async listSessions(
@@ -879,17 +1620,21 @@ export class OpenGuiHost {
         throw error;
       }
     }
-    return snapshot;
+    return publicSessionSnapshot(snapshot);
   }
 
   async readSession(sessionId: string, actor?: DurableActor): Promise<HostSessionSnapshot> {
-    return (await this.#authorizedSession(sessionId, actor, "view")).snapshot;
+    return publicSessionSnapshot(
+      (await this.#authorizedSession(sessionId, actor, "view")).snapshot,
+    );
   }
 
   /** Internal read after a view-link token has already been validated. */
   async readSessionForViewLink(sessionId: string): Promise<HostSessionSnapshot> {
     try {
-      return await (await this.#requireHarness().openSession(sessionId)).read();
+      return publicSessionSnapshot(
+        await (await this.#requireHarness().openSession(sessionId)).read(),
+      );
     } catch {
       throw new HostSessionNotFoundError();
     }
@@ -898,7 +1643,7 @@ export class OpenGuiHost {
   async renameSession(sessionId: string, title: string, actor?: DurableActor) {
     const { session } = await this.#authorizedSession(sessionId, actor, "admin");
     await session.rename(title);
-    return session.read();
+    return publicSessionSnapshot(await session.read());
   }
 
   async deleteSession(sessionId: string, actor?: DurableActor) {
@@ -910,13 +1655,13 @@ export class OpenGuiHost {
   async setModel(sessionId: string, selection: ModelSelection, actor?: DurableActor) {
     const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.setModel(selection);
-    return session.read();
+    return publicSessionSnapshot(await session.read());
   }
 
   async setReasoning(sessionId: string, reasoning: ReasoningLevel, actor?: DurableActor) {
     const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.setReasoning(reasoning);
-    return session.read();
+    return publicSessionSnapshot(await session.read());
   }
 
   async subscribe(
@@ -957,7 +1702,8 @@ export class OpenGuiHost {
   }
 
   #emit(sessionId: string, event: SessionEvent) {
-    for (const listener of this.#listeners) void listener({ sessionId, event });
+    const publicEvent = publicSessionEvent(event);
+    for (const listener of this.#listeners) void listener({ sessionId, event: publicEvent });
   }
 
   async compact(sessionId: string, actor?: DurableActor) {
@@ -989,7 +1735,7 @@ export class OpenGuiHost {
             this.#emit(sessionId, next.value);
           }
         } catch (error) {
-          console.error("OpenGUI Compaction failed", error);
+          console.error("OpenGUI Compaction failed", normalizeModelError(error).code);
         }
       })();
       this.#activeRuns.set(sessionId, run);
@@ -1052,7 +1798,7 @@ export class OpenGuiHost {
             this.#emit(sessionId, next.value);
           }
         } catch (error) {
-          console.error("OpenGUI Run failed", error);
+          console.error("OpenGUI Run failed", normalizeModelError(error).code);
         }
       })();
       this.#activeRuns.set(sessionId, run);
@@ -1132,6 +1878,16 @@ export async function createOpenGuiHost(
     resolveExecutionPolicy?: ExecutionPolicyResolver;
     sessionAccess?: SessionAccessGate;
     model?: ModelTransport;
+    resolveModelOffering?: (
+      offeringId: string,
+      actor?: DurableActor,
+    ) => Promise<{ connectionId: string; modelId: string }>;
+    usePiAiTransport?: boolean;
+    usePiAiCodexTransport?: boolean;
+    codexPiTransport?: "auto" | "websocket" | "websocket-cached" | "sse";
+    openAiResponsesTransport?: "auto" | "websocket" | "sse";
+    ownerModelDiagnostics?: boolean;
+    authorizeMcpUse?: (actor: DurableActor | undefined) => Promise<boolean>;
   } = {},
 ) {
   const host = new OpenGuiHost(dataDirectory, options);

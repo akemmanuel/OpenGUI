@@ -293,19 +293,50 @@ function HostProviderBody({
 
   const refreshModels = useCallback(async () => {
     if (!host) return;
-    const connections = await host.listModelConnections();
+    const [listedConnections, offerings] = await Promise.all([
+      host.listModelConnections(),
+      host.listModelOfferings?.() ?? Promise.resolve([]),
+    ]);
+    const personalConnections = listedConnections.filter(
+      (connection) => connection.plane === "user",
+    );
+    const offeringConnection =
+      offerings.length > 0
+        ? [
+            {
+              id: "opengui-offering",
+              label: "OpenGUI",
+              baseUrl: "",
+              modelIds: offerings.map((offering) => offering.id),
+              defaultModelId: offerings[0]?.id,
+              modelCapabilities: Object.fromEntries(
+                offerings.map((offering) => [
+                  offering.id,
+                  { displayName: offering.displayName, reasoning: true },
+                ]),
+              ),
+            },
+          ]
+        : [];
+    const connections =
+      offeringConnection.length > 0
+        ? [...offeringConnection, ...personalConnections]
+        : listedConnections;
     const nextProviders = await connectionsToModelProviders(connections);
     setProviders(nextProviders);
     const defaultModelId = connections[0]?.defaultModelId ?? connections[0]?.modelIds[0];
-    if (connections[0] && defaultModelId) {
-      setSelectedModel(
-        (current) =>
-          current ?? {
-            providerID: connections[0]!.id,
-            modelID: defaultModelId,
-          },
-      );
-    }
+    setSelectedModel((current) => {
+      const stillVisible =
+        current &&
+        connections.some(
+          (connection) =>
+            connection.id === current.providerID && connection.modelIds.includes(current.modelID),
+        );
+      if (stillVisible) return current;
+      return connections[0] && defaultModelId
+        ? { providerID: connections[0].id, modelID: defaultModelId }
+        : null;
+    });
   }, [host]);
 
   const refreshProjects = useCallback(async () => {

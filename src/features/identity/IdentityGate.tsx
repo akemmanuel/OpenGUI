@@ -193,7 +193,7 @@ function IdentityForm({
         <Button
           type="submit"
           size="lg"
-          className="h-auto w-full whitespace-normal [overflow-wrap:anywhere]"
+          className="h-auto min-h-11 w-full whitespace-normal [overflow-wrap:anywhere]"
           disabled={submitting}
         >
           {submitting ? t(submitBusyKey) : t(submitKey)}

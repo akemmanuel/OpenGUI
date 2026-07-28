@@ -55,7 +55,7 @@ describe("EmptySessionOverview", () => {
     await waitFor(() => {
       expect(screen.getByText("impeccable")).toBeTruthy();
     });
-    expect(ensureSessionSkills).toHaveBeenCalled();
+    await waitFor(() => expect(ensureSessionSkills).toHaveBeenCalled());
     expect(screen.getByLabelText("emptySession.skillsHeading").textContent).toBe(
       "code-review, impeccable",
     );

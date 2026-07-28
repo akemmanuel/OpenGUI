@@ -15,6 +15,7 @@
     "cancel": "Cancel",
     "close": "Close",
     "add": "Add",
+    "edit": "Edit",
     "remove": "Remove",
     "save": "Save",
     "restart": "Restart",
@@ -62,13 +63,36 @@
     "other_other": "used {{count}} tools"
   },
   "settings": {
-    "subtitle": "Manage app preferences and providers for active workspace.",
+    "subtitle": "Preferences, models, people, and Host administration in one place.",
+    "navigationLabel": "Settings sections",
+    "skillsPlaceholderTitle": "Skill management is not available yet",
+    "skillsPlaceholderDescription": "Skills can be used by the agent, but installing and managing them will arrive in a later update.",
     "tabs": {
       "general": "General",
-      "providers": "Providers",
+      "providers": "Models & providers",
+      "models": "Models & providers",
+      "integrations": "Integrations",
+      "users": "Users & access",
+      "paths": "Paths & Shell",
+      "host": "Host & admin",
+      "skills": "Skills",
       "team": "Team",
       "plugins": "Plugins",
       "tools": "Tools"
+    },
+    "sectionDescriptions": {
+      "general": "Appearance, language, notifications, and everyday model preferences.",
+      "models": "Connect provider backends, publish model offerings, and control who can use them.",
+      "integrations": "Connect trusted MCP servers that provide additional tools to the agent.",
+      "users": "Manage members, invitations, roles, and account access.",
+      "paths": "Control OpenGUI path access and understand the separate authority of Shell commands.",
+      "host": "Registration policy, personal credential policy, and automation keys.",
+      "skills": "Reusable instructions available to the agent."
+    },
+    "paths": {
+      "boundaryTitle": "Path grants are not a sandbox",
+      "boundaryDescription": "Read and write grants control OpenGUI's project and file operations. They do not confine commands run by an unrestricted Shell, which has the Host operating-system user's authority.",
+      "desktopOnly": "Default directories, file manager, and terminal commands are configured in the Desktop app."
     },
     "plugins": {
       "title": "Plugins",
@@ -368,8 +392,14 @@
     "you": "You",
     "roles": {
       "owner": "Owner",
-      "member": "Member"
+      "admin": "Admin",
+      "member": "Member",
+      "viewer": "Viewer"
     },
+    "memberRole": "Role for {{name}}",
+    "accessSummaryTitle": "How access works",
+    "accessSummaryPaths": "Project paths control which folders OpenGUI can browse and edit for this account.",
+    "accessSummaryShell": "Shell access is separate and is not sandboxed by these path grants. Restricted accounts cannot use Shell while path enforcement is active; otherwise commands have the Host operating-system user's authority.",
     "removeMember": "Remove {{name}}",
     "removeMemberConfirm": "Remove this member from the Team? Their active Host access will be revoked.",
     "resetPassword": "Reset password",
@@ -436,9 +466,9 @@
     "invitePathsHelp": "Only folders you can access are shown. The invite cannot grant more access than you have.",
     "modelPolicy": {
       "allowByok": "Allow personal API keys",
-      "allowByokHelp": "Let people add their own API-key model connections. Host denial overrides Team settings.",
+      "allowByokHelp": "BYOK means “bring your own key.” A person supplies an API key for a private model connection. The Host stores it but does not reveal it to administrators. Host denial overrides Team settings.",
       "allowByos": "Allow personal subscriptions",
-      "allowByosHelp": "Let people connect supported model subscriptions. Host denial overrides Team settings.",
+      "allowByosHelp": "BYOS means “bring your own subscription.” A person signs in to an eligible provider subscription. Tokens stay in Host custody and are not shared with collaborators. Host denial overrides Team settings.",
       "host": {
         "allowByok": "Host: allow BYOK",
         "allowByos": "Host: allow BYOS"
@@ -450,8 +480,44 @@
     }
   },
   "mcp": {
-    "title": "MCPs",
-    "description": "Toggle MCP servers on or off for this session.",
+    "title": "MCP",
+    "heading": "Connected tool servers",
+    "description": "Connect trusted MCP servers to give the agent additional tools. Enabled connections are available to unrestricted Sessions on this Host.",
+    "addConnection": "Add connection",
+    "editor": "MCP connection details",
+    "loading": "Loading MCP connections…",
+    "emptyTitle": "No MCP connections yet",
+    "emptyDescription": "Add a trusted local command or Streamable HTTP endpoint. Local commands run with the Host operating-system user's authority.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "toggle": "Toggle {{name}}",
+    "inspect": "Test & inspect",
+    "inspecting": "Connecting…",
+    "toolCount_one": "One tool available",
+    "toolCount_other": "{{count}} tools available",
+    "save": "Save connection",
+    "saving": "Saving…",
+    "saved": "MCP connection saved",
+    "removeConfirm": "Remove {{name}}? Its credentials will also be deleted.",
+    "commandWarning": "This command can access anything available to the Host process.",
+    "commandPlaceholder": "Enter a command to review it here.",
+    "commandApproval": "I reviewed and approve this exact executable and argument list.",
+    "bearerTokenHelp": "OpenGUI sends this as the Authorization: Bearer header. Paste either the token or the complete Bearer value.",
+    "fields": {
+      "label": "Display name",
+      "id": "Connection ID",
+      "transport": "Connection type",
+      "command": "Executable",
+      "arguments": "Arguments, one per line",
+      "environment": "Secret environment values, NAME=value",
+      "cwd": "Working directory (optional)",
+      "url": "MCP endpoint URL",
+      "bearerToken": "Bearer token (optional)"
+    },
+    "transport": {
+      "stdio": "Local command",
+      "http": "Streamable HTTP"
+    },
     "noManagement": "Current backend has no MCP management.",
     "noneConfigured": "No MCP servers configured.",
     "connected": "Connected",
@@ -520,9 +586,16 @@
       "check": "I've authorized OpenGUI"
     },
     "xai": {
-      "title": "SuperGrok",
-      "description": "Use your SuperGrok or eligible X Premium+ subscription.",
-      "signIn": "Sign in to xAI"
+      "title": "SuperGrok proxy (experimental)",
+      "description": "Experimental subscription access through cli-chat-proxy.grok.com. OpenGUI authorizes the third-party Grok CLI OAuth client; xAI has not published permission for OpenGUI to reuse that client, and your plan may not be entitled.",
+      "signIn": "Authorize third-party OAuth client"
+    },
+    "xaiApi": {
+      "title": "xAI API",
+      "description": "Use the documented Responses API at api.x.ai with your xAI API key and Grok Build 0.1 models.",
+      "apiKeyPlaceholder": "xAI API key",
+      "enable": "Enable xAI API",
+      "saveKey": "Save API key"
     },
     "opencode": {
       "title": "OpenCode Go",
@@ -599,7 +672,134 @@
     "removeConnection": "Remove {{name}}",
     "teamAccessTitle": "Team model access",
     "teamAccessHelp": "Choose which shared connections Team members can use.",
-    "teamAccess": "Team access"
+    "teamAccess": "Team access",
+    "backendConcept": "Backends",
+    "backendConceptHelp": "Endpoints and credentials used to call model APIs. Members do not need to see this plumbing.",
+    "offeringConcept": "Model offerings",
+    "offeringConceptHelp": "Friendly names that expose one exact model. Offerings are what members choose.",
+    "credentialsConcept": "BYOK & BYOS",
+    "credentialsConceptHelp": "BYOK uses an API key; BYOS connects an eligible subscription. Both remain private credentials.",
+    "offeringsTitle": "Model offerings",
+    "offeringsHelp": "Publish a stable name and slug for one model, then grant it to everyone or selected users.",
+    "noOfferings": "No model offerings yet. Create one to give members a clear model menu.",
+    "offeringNamePlaceholder": "Display name, e.g. Company Model",
+    "offeringSlugPlaceholder": "slug, e.g. company-model",
+    "chooseBackend": "Choose backend",
+    "upstreamModelPlaceholder": "Upstream model ID, e.g. gpt-4.1",
+    "addOffering": "Add offering",
+    "saveOffering": "Save offering",
+    "editOffering": "Edit {{name}}",
+    "removeOffering": "Remove {{name}}",
+    "everyone": "Everyone on this Host",
+    "customBackendTitle": "Custom OpenAI-compatible backend",
+    "customBackendHelp": "Add one endpoint once, then list every model it supports on separate lines or separated by commas.",
+    "backendNamePlaceholder": "Backend name",
+    "modelIdsPlaceholder": "Model IDs, one per line",
+    "backendName": "Backend name",
+    "addBackend": "Add custom backend",
+    "saveBackend": "Save backend",
+    "savingBackend": "Saving backend…",
+    "editConnection": "Edit {{name}}",
+    "noCustomBackends": "No custom backends yet. Add one endpoint and all of its supported models here.",
+    "keepCredentialPlaceholder": "Leave blank to keep the saved credential",
+    "credentialCustodyHelp": "The Host process keeps this secret. It is never returned in settings lists or shown to collaborators.",
+    "upstreamModels": "Upstream models",
+    "upstreamModelsHelp": "Each model ID is sent to this endpoint. Friendly member-facing names belong in Model offerings.",
+    "upstreamModelId": "Model ID",
+    "modelDisplayName": "Administrative display name",
+    "modelNumber": "Model {{number}}",
+    "removeModel": "Remove model {{number}}",
+    "addModel": "Add model",
+    "protocolRoute": "API route",
+    "contextWindow": "Context window (tokens)",
+    "reasoningModel": "Reasoning model",
+    "reasoningModelHelp": "Advertise reasoning controls for this model.",
+    "defaultModel": "Use as this backend's default",
+    "routes": {
+      "openai-chat": "OpenAI Chat Completions",
+      "responses": "OpenAI Responses",
+      "anthropic-messages": "Anthropic Messages"
+    }
+  },
+  "skillsSettings": {
+    "title": "Skills",
+    "aboutTitle": "Instructions and working assets—not executable plugins",
+    "aboutDescription": "Skills package instructions, references, and supporting files for the agent. Installing a Skill does not install an executable plugin or run a shell command.",
+    "sessionPins": "Existing Sessions keep the exact Skill revisions they started with. Updates apply to new Sessions, so ongoing work stays reproducible.",
+    "viewsLabel": "Skills library views",
+    "installed": "Installed",
+    "discover": "Install from repository",
+    "readOnlyHelp": "You have read-only access to this library. You can inspect which Skills are available; a Host administrator manages installations.",
+    "searchLabel": "Search installed Skills",
+    "searchPlaceholder": "Search by name, description, source, or revision…",
+    "scopeFilterLabel": "Filter by scope",
+    "scope": { "all": "All scopes", "host": "Host", "project": "Project" },
+    "refresh": "Refresh",
+    "loadFailed": "The Skills library could not be loaded",
+    "retry": "Try again",
+    "retrySameRequest": "Retry safely",
+    "selectProjectReadOnly": "Select a Project to see the Project and Host Skills available there.",
+    "empty": "No Skills are installed in this scope yet.",
+    "noResults": "No installed Skills match this search.",
+    "installTitle": "Install a reviewed GitHub Skill",
+    "installDescription": "OpenGUI accepts the documented GitHub source format, validates the Skill tree, and resolves mutable refs to an immutable commit before publishing it.",
+    "chooseScope": "Installation scope",
+    "scopeHelp": {
+      "project": "Available only in the selected Project and stored with its Project configuration.",
+      "host": "Available to every Project on this Host. Host administrators can manage it."
+    },
+    "projectWriteRequired": "This Project is not writable with your current path grants. Choose Host scope or ask an owner for Project write access.",
+    "selectProject": "Select a Project before installing at Project scope.",
+    "repositorySource": "GitHub source",
+    "reviewInstall": "Review install",
+    "invalidSource": "Use github:OWNER/REPOSITORY/PATH@REF or the legacy OWNER/REPOSITORY@SKILL format.",
+    "sourceHelp": "This is not arbitrary Git input. OpenGUI reads a public GitHub repository through its API and never invokes npx or a shell installer.",
+    "githubOnlyTitle": "GitHub repositories only",
+    "githubOnlyDescription": "The current Host supports the exact source grammar shown above. Other Git hosts and arbitrary URLs are not supported.",
+    "trustTitle": "Review before trusting",
+    "trustDescription": "Source and revision metadata establish provenance, not safety. Review the repository and its SKILL.md before installing.",
+    "manual": "Manual only",
+    "modified": "Locally modified",
+    "metadata": {
+      "source": "Requested source",
+      "revision": "Current revision",
+      "generation": "Library generation",
+      "trust": "Trust",
+      "localSource": "Local or unmanaged installation",
+      "unpinned": "Not reported",
+      "unavailable": "Unavailable",
+      "reviewSource": "Source review required",
+      "unverified": "Unverified local content"
+    },
+    "preview": {
+      "title": "Files and SKILL.md preview",
+      "unavailable": "This Host API does not expose Skill file contents yet. Review the source repository or the location below; OpenGUI will not fabricate a preview."
+    },
+    "repairTitle": "Repair required.",
+    "repairDescription": "OpenGUI detected local changes and will not overwrite or remove them. Restore the managed files at the location above, refresh, then retry the update or removal.",
+    "update": "Check & update",
+    "remove": "Remove",
+    "progress": {
+      "install": "Validating and installing…",
+      "update": "Checking and updating…",
+      "remove": "Removing…"
+    },
+    "success": {
+      "install": "Installed successfully.",
+      "update": "Skill is current.",
+      "remove": "Skill removed."
+    },
+    "confirm": {
+      "installTitle": "Install {{name}}?",
+      "installDescription": "OpenGUI will validate this source and publish it at {{scope}} scope. No shell installer will run.",
+      "installAction": "Install Skill",
+      "updateTitle": "Check {{name}} for updates?",
+      "updateDescription": "OpenGUI will resolve the saved source again and atomically publish its latest immutable revision at {{scope}} scope.",
+      "updateAction": "Check & update",
+      "removeTitle": "Remove {{name}}?",
+      "removeDescription": "This removes the managed {{scope}} installation. Existing Sessions remain revision-locked.",
+      "removeAction": "Remove Skill"
+    }
   },
   "setupWizard": {
     "connectModelTitle": "Connect a model",
@@ -750,7 +950,8 @@
     "skillsHeading": "Skills",
     "skillsLocked": "Skills are locked for this session",
     "enableSkill": "Enable skill for this session",
-    "disableSkill": "Disable skill for this session"
+    "disableSkill": "Disable skill for this session",
+    "skillsRevisionLocked": "This Session keeps these Skill revisions even if the library is updated. New Sessions receive updates."
   },
   "mergeDialog": {
     "failed": "Merge failed",

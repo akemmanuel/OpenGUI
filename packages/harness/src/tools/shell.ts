@@ -4,7 +4,9 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ResolvedShell } from "./shell-resolution.ts";
 
-const MAX_RETURNED_BYTES = 5 * 1024;
+// Leave room for command/status metadata so the shared 5 KiB tool-result limiter
+// does not wrap an already-bounded shell result and discard exit information.
+const MAX_RETURNED_BYTES = 4 * 1024;
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MAX_TIMEOUT_SECONDS = 5_000;
 const FORCE_KILL_DELAY_MS = 500;
