@@ -2,8 +2,10 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Folder,
   FolderOpen,
   GripVertical,
+  Plus,
   SquarePen,
 } from "lucide-react";
 import * as ContextMenu from "@/components/ui/context-menu";
@@ -122,14 +124,14 @@ export function ProjectEntry({
   };
 
   return (
-    <div key={directory} className="mb-1">
+    <div key={directory} className="group/project-block mb-1.5">
       <SidebarMenu>
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
             <SidebarMenuItem className="overflow-visible">
               <SidebarRow
                 label={getProjectName(directory)}
-                className="group/project font-medium"
+                className="group/project relative font-medium"
                 onActivate={(event) => {
                   if (sidebarState === "collapsed") {
                     const top = event.currentTarget.getBoundingClientRect().top;
@@ -141,17 +143,32 @@ export function ProjectEntry({
                   toggleCollapsed(directory);
                 }}
                 leadingAction={
-                  canDrag ? (
-                    <button
-                      {...(dragHandleProps ?? {})}
-                      type="button"
-                      data-project-action
-                      data-project-drag-handle
-                      className="flex size-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/70 hover:bg-accent hover:text-foreground active:cursor-grabbing group-data-[collapsible=icon]:hidden"
-                      aria-label={`Reorder ${getProjectName(directory)}`}
-                    >
-                      <GripVertical className="size-3.5" />
-                    </button>
+                  sidebarState !== "collapsed" ? (
+                    <span className="relative flex size-5 shrink-0 items-center justify-center group-data-[collapsible=icon]:hidden">
+                      <button
+                        type="button"
+                        data-project-action
+                        className={`flex size-5 items-center justify-center rounded text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground ${canDrag ? "group-hover/project-block:opacity-0 group-focus-within/project-block:opacity-0" : ""}`}
+                        aria-label={getProjectName(directory)}
+                        onClick={() => toggleCollapsed(directory)}
+                      >
+                        <ChevronRight
+                          className={`size-3.5 transition-transform ${!isCollapsed ? "rotate-90" : ""}`}
+                        />
+                      </button>
+                      {canDrag && (
+                        <button
+                          {...(dragHandleProps ?? {})}
+                          type="button"
+                          data-project-action
+                          data-project-drag-handle
+                          className="pointer-events-none absolute inset-0 flex size-5 cursor-grab items-center justify-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/project-block:pointer-events-auto group-hover/project-block:opacity-100 group-focus-within/project-block:pointer-events-auto group-focus-within/project-block:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 active:cursor-grabbing"
+                          aria-label={`Reorder ${getProjectName(directory)}`}
+                        >
+                          <GripVertical className="size-3.5" />
+                        </button>
+                      )}
+                    </span>
                   ) : undefined
                 }
                 actions={
@@ -181,10 +198,10 @@ export function ProjectEntry({
                     <Spinner className="shrink-0 size-4 text-muted-foreground" />
                   ) : sidebarState === "collapsed" ? (
                     <FolderOpen className="shrink-0 size-4" />
+                  ) : isCollapsed ? (
+                    <Folder className="shrink-0 size-4 text-muted-foreground" />
                   ) : (
-                    <ChevronRight
-                      className={`shrink-0 size-4 transition-transform ${!isCollapsed ? "rotate-90" : ""}`}
-                    />
+                    <FolderOpen className="shrink-0 size-4 text-muted-foreground" />
                   )}
                   <span className="truncate min-w-0 flex-1" data-responsive-allow="text-clip">
                     {getProjectName(directory)}
@@ -204,11 +221,20 @@ export function ProjectEntry({
         </ContextMenu.Root>
       </SidebarMenu>
       {!isCollapsed && sidebarState !== "collapsed" && (
-        <SidebarMenu className="ml-3 border-l border-sidebar-border pl-2 w-[calc(100%-0.75rem)] overflow-x-hidden">
+        <SidebarMenu className="ml-3 w-[calc(100%-0.75rem)] gap-0.5 overflow-x-hidden pl-2">
           {dirSessions.length === 0 ? (
-            <div className="px-2 py-1 text-[11px] text-muted-foreground">
-              {t("sidebar.noSessionsYet")}
-            </div>
+            <button
+              type="button"
+              aria-label={t("sidebar.newSession")}
+              className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              onClick={() => {
+                setActiveTarget(directory, { newChat: true });
+                closeMobileSidebar();
+              }}
+            >
+              <Plus className="size-3.5 shrink-0" />
+              <span className="truncate">{t("projectMenu.newSession")}</span>
+            </button>
           ) : (
             <>
               {visibleSessions.map((session) =>

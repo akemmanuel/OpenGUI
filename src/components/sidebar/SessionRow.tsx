@@ -124,9 +124,7 @@ export function SessionRow({
   const hasPermission = !!pendingPermissions[session.id];
   const meta = sessionMeta[session.id];
   const hasColor = !!meta?.color;
-  const colorBorderClass = hasColor
-    ? `border-l-[3px] -ml-[3px] ${getColorBorderClass(meta.color)}`
-    : "";
+  const colorDotClass = hasColor ? getColorBorderClass(meta.color).replace("border-", "bg-") : "";
   const tags = meta?.tags ?? [];
   const isPinned = !!meta?.pinnedAt;
   const isNaming = namingSessionIds.has(session.id);
@@ -178,7 +176,7 @@ export function SessionRow({
           label={displayTitle}
           active={isActive}
           editing={editingSessionId === session.id}
-          className={`group/session ${colorBorderClass}`}
+          className={`group/session text-muted-foreground ${isActive ? "text-sidebar-accent-foreground" : ""}`}
           onActivate={() => {
             void selectSession(session.id);
             closeMobileSidebar();
@@ -216,6 +214,11 @@ export function SessionRow({
               )}
               {hasUnsent && (
                 <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-amber-500 ring-1 ring-sidebar" />
+              )}
+              {hasColor && (
+                <span
+                  className={`absolute -left-1 top-1/2 size-1.5 -translate-y-1/2 rounded-full ring-1 ring-sidebar ${colorDotClass}`}
+                />
               )}
             </span>
             {editingSessionId === session.id ? (

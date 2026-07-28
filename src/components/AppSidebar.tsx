@@ -97,8 +97,19 @@ export function AppSidebar({
 
   const homeDir = useHomeDir();
   const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const activeSessionDirectory =
+  const executionDirectory =
     getSessionExecutionDirectory(activeSession) || activeTargetDirectory || null;
+  const activeSessionSidebarMeta = activeSession ? sessionMeta[activeSession.id] : undefined;
+  const activeSessionIsChat = activeSession
+    ? activeSessionSidebarMeta?.sidebarSection === "chats" ||
+      (!activeSessionSidebarMeta?.sidebarSection &&
+        normalizeProjectPath(getSessionExecutionDirectory(activeSession) ?? "") ===
+          normalizeProjectPath(defaultChatDirectory ?? ""))
+    : normalizeProjectPath(activeTargetDirectory ?? "") ===
+      normalizeProjectPath(defaultChatDirectory ?? "");
+  const activeSessionDirectory = activeSessionIsChat
+    ? null
+    : activeSessionSidebarMeta?.displayProjectDir || executionDirectory;
 
   const {
     matchingSessionIds: messageMatchingSessionIds,
