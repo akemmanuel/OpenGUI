@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { SessionEntry } from "../harness.ts";
-import type { ModelContextItem } from "../models/transport.ts";
+import { modelToolResultContent, type ModelContextItem } from "../models/transport.ts";
 
 export const DEFAULT_COMPACTION_THRESHOLD_RATIO = 0.7;
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
@@ -60,7 +60,14 @@ function textLength(value: unknown): number {
 /** Conservative provider-independent estimate used only for the soft compaction trigger. */
 export function estimateContextTokens(context: readonly ModelContextItem[], systemPrompt: string) {
   const characters =
-    systemPrompt.length + context.reduce((total, item) => total + textLength(item), 0);
+    systemPrompt.length +
+    context.reduce((total, item) => {
+      if (item.type !== "tool_result") return total + textLength(item);
+      const result = modelToolResultContent(item.output);
+      // Provider image accounting is model-specific. Count only a conservative
+      // placeholder here; never treat base64 bytes as ordinary text tokens.
+      return total + textLength({ ...item, output: result.text }) + result.images.length * 1_000;
+    }, 0);
   return Math.ceil(characters / 4);
 }
 

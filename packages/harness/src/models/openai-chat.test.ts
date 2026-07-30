@@ -413,6 +413,73 @@ describe("OpenAiChatTransport authentication", () => {
     expect(events).toEqual([{ type: "text_delta", delta: "ok" }, { type: "completed" }]);
   });
 
+  test("cancels an active OpenCode Zen chat response when its Run is aborted", async () => {
+    let responseCancelled = false;
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'),
+              );
+            },
+            cancel() {
+              responseCancelled = true;
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    );
+    const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });
+    transport.setConnections([
+      {
+        id: "opencode-zen",
+        label: "OpenCode Zen",
+        baseUrl: "https://opencode.ai/zen/v1",
+        modelIds: ["deepseek-v4-flash-free"],
+      },
+    ]);
+    const controller = new AbortController();
+    const iterator = transport
+      .stream(
+        {
+          systemPrompt: "help",
+          projectDirectory: "/project",
+          context: [
+            {
+              type: "user_message",
+              text: "hello",
+              model: {
+                connectionId: "opencode-zen",
+                modelId: "deepseek-v4-flash-free",
+              },
+              reasoning: "maximum",
+            },
+          ],
+        },
+        controller.signal,
+      )
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: "text_delta", delta: "partial" },
+    });
+    const pending = iterator.next();
+    controller.abort();
+
+    await expect(
+      Promise.race([
+        pending.then(
+          () => "settled",
+          () => "settled",
+        ),
+        new Promise<string>((resolve) => setTimeout(() => resolve("timed-out"), 50)),
+      ]),
+    ).resolves.toBe("settled");
+    expect(responseCancelled).toBe(true);
+  });
+
   test("does not retry an invalid OpenCode Go API key", async () => {
     const fetchImpl = vi.fn(async () => new Response("invalid API key", { status: 401 }));
     const transport = new OpenAiChatTransport({ fetchImpl: fetchImpl as typeof fetch });

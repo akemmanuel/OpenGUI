@@ -9,6 +9,7 @@ import {
   deriveModelCacheKey,
   isPossibleImageInputRejection,
   modelContextHasImages,
+  modelImageData,
   modelToolResultContent,
   withoutModelContextImages,
 } from "./transport.ts";
@@ -96,7 +97,7 @@ export function codexInput(context: ModelContextItem[]) {
                 ...result.images.map((image) => ({
                   type: "input_image",
                   detail: "auto",
-                  image_url: `data:${image.mimeType};base64,${image.data}`,
+                  image_url: `data:${image.mimeType};base64,${modelImageData(image)}`,
                 })),
               ],
       },

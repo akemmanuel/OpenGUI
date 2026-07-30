@@ -405,11 +405,14 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
           {
             type: "image",
             mimeType: "image/png",
-            data: expect.any(String),
+            path: expect.any(String),
           },
         ],
       },
     });
+    expect(JSON.stringify((await session.read()).entries)).not.toContain(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+    );
     await harness.close();
   });
 

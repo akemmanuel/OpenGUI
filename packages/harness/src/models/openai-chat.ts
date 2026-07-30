@@ -11,6 +11,7 @@ import {
   redactProviderText,
   isPossibleImageInputRejection,
   modelContextHasImages,
+  modelImageData,
   modelToolResultContent,
   withoutModelContextImages,
 } from "./transport.ts";
@@ -106,7 +107,7 @@ export function toChatMessages(context: ModelContextItem[]) {
       pendingImages.push(
         ...result.images.map((image) => ({
           type: "image_url" as const,
-          image_url: { url: `data:${image.mimeType};base64,${image.data}` },
+          image_url: { url: `data:${image.mimeType};base64,${modelImageData(image)}` },
         })),
       );
     }
@@ -330,71 +331,79 @@ export class OpenAiChatTransport implements ModelTransport {
     let usage: ModelUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
     const toolBuffers = new Map<number, { id: string; name: string; arguments: string }>();
     const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      if (done) buffer = "";
-      else buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const data = trimmed.slice(5).trim();
-        if (!data) continue;
-        if (data === "[DONE]") {
-          completed = true;
-          continue;
+    const abortReader = () => void reader.cancel(signal.reason).catch(() => undefined);
+    signal.addEventListener("abort", abortReader, { once: true });
+    if (signal.aborted) abortReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        if (done) buffer = "";
+        else buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const data = trimmed.slice(5).trim();
+          if (!data) continue;
+          if (data === "[DONE]") {
+            completed = true;
+            continue;
+          }
+          const parsed = JSON.parse(data) as {
+            id?: string;
+            model?: string;
+            usage?: Record<string, any>;
+            choices?: Array<{
+              finish_reason?: string | null;
+              delta?: {
+                content?: string | null;
+                reasoning?: string | null;
+                reasoning_content?: string | null;
+                reasoning_details?: Array<Record<string, unknown>>;
+                tool_calls?: Array<{
+                  index?: number;
+                  id?: string;
+                  function?: { name?: string; arguments?: string };
+                }>;
+              };
+            }>;
+          };
+          responseId ||= parsed.id;
+          responseModel ||= parsed.model;
+          if (parsed.usage) usage = chatUsage(parsed.usage);
+          const choice = parsed.choices?.[0];
+          if (typeof choice?.finish_reason === "string") {
+            completed = true;
+            stopReason =
+              choice.finish_reason === "length"
+                ? "length"
+                : choice.finish_reason === "tool_calls" || choice.finish_reason === "function_call"
+                  ? "tool_use"
+                  : "stop";
+          }
+          const delta = choice?.delta;
+          if (!delta) continue;
+          for (const event of chatDeltaEvents(delta)) {
+            firstDeltaMs ??= Date.now() - started;
+            yield event;
+          }
+          for (const toolCall of delta.tool_calls ?? []) {
+            const index = toolCall.index ?? 0;
+            const existing = toolBuffers.get(index) ?? { id: "", name: "", arguments: "" };
+            if (toolCall.id) existing.id = toolCall.id;
+            if (toolCall.function?.name) existing.name = toolCall.function.name;
+            if (toolCall.function?.arguments) existing.arguments += toolCall.function.arguments;
+            toolBuffers.set(index, existing);
+          }
         }
-        const parsed = JSON.parse(data) as {
-          id?: string;
-          model?: string;
-          usage?: Record<string, any>;
-          choices?: Array<{
-            finish_reason?: string | null;
-            delta?: {
-              content?: string | null;
-              reasoning?: string | null;
-              reasoning_content?: string | null;
-              reasoning_details?: Array<Record<string, unknown>>;
-              tool_calls?: Array<{
-                index?: number;
-                id?: string;
-                function?: { name?: string; arguments?: string };
-              }>;
-            };
-          }>;
-        };
-        responseId ||= parsed.id;
-        responseModel ||= parsed.model;
-        if (parsed.usage) usage = chatUsage(parsed.usage);
-        const choice = parsed.choices?.[0];
-        if (typeof choice?.finish_reason === "string") {
-          completed = true;
-          stopReason =
-            choice.finish_reason === "length"
-              ? "length"
-              : choice.finish_reason === "tool_calls" || choice.finish_reason === "function_call"
-                ? "tool_use"
-                : "stop";
-        }
-        const delta = choice?.delta;
-        if (!delta) continue;
-        for (const event of chatDeltaEvents(delta)) {
-          firstDeltaMs ??= Date.now() - started;
-          yield event;
-        }
-        for (const toolCall of delta.tool_calls ?? []) {
-          const index = toolCall.index ?? 0;
-          const existing = toolBuffers.get(index) ?? { id: "", name: "", arguments: "" };
-          if (toolCall.id) existing.id = toolCall.id;
-          if (toolCall.function?.name) existing.name = toolCall.function.name;
-          if (toolCall.function?.arguments) existing.arguments += toolCall.function.arguments;
-          toolBuffers.set(index, existing);
-        }
+        if (done) break;
       }
-      if (done) break;
+    } finally {
+      signal.removeEventListener("abort", abortReader);
     }
 
+    if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
     if (!completed) throw new Error("Model stream ended before completion");
 
     for (const toolCall of toolBuffers.values()) {
@@ -709,7 +718,11 @@ export function toAnthropicMessages(context: ModelContextItem[]) {
               ...(result.text ? [{ type: "text", text: result.text }] : []),
               ...result.images.map((image) => ({
                 type: "image",
-                source: { type: "base64", media_type: image.mimeType, data: image.data },
+                source: {
+                  type: "base64",
+                  media_type: image.mimeType,
+                  data: modelImageData(image),
+                },
               })),
             ],
           },

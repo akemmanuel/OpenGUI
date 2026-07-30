@@ -106,6 +106,29 @@ describe("Harness tool contracts", () => {
     expect(outputs[0]).not.toHaveProperty("content");
   });
 
+  test("read stores image bytes outside the durable tool result", async () => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const { outputs } = await runToolCalls(
+      [{ id: "read-image", name: "read", input: { path: "pixel.png" } }],
+      (directory) => writeFile(join(directory, "pixel.png"), png),
+    );
+
+    const output = outputs[0] as {
+      attachments: Array<{ type: string; mimeType: string; path: string; data?: string }>;
+    };
+    expect(output.attachments[0]).toMatchObject({
+      type: "image",
+      mimeType: "image/png",
+      path: expect.any(String),
+    });
+    expect(output.attachments[0]).not.toHaveProperty("data");
+    expect(JSON.stringify(output)).not.toContain(png.toString("base64"));
+    expect(await readFile(output.attachments[0]!.path)).toEqual(png);
+  });
+
   test("read rejects malformed UTF-8 instead of returning replacement characters", async () => {
     const { outputs } = await runToolCalls(
       [{ id: "read-invalid-utf8", name: "read", input: { path: "invalid.txt" } }],

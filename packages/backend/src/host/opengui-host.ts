@@ -18,6 +18,7 @@ import {
   type ModelTransport,
   deriveModelCacheKey,
   normalizeModelError,
+  withoutModelContextImages,
   type ModelProtocol,
   type ProviderResponseMetadata,
   type OpenAiCompatibleConnection,
@@ -216,6 +217,7 @@ const CODEX_CONNECTION = connectionFromPreset(CHATGPT_CODEX_PRESET);
 const XAI_CONNECTION = connectionFromPreset(SUPERGROK_PRESET);
 const XAI_API_CONNECTION = connectionFromPreset(XAI_API_PRESET);
 const OPENCODE_ZEN_CONNECTION_ID = "opencode-zen";
+const TEXT_ONLY_MODELS = new Set([`${OPENCODE_ZEN_CONNECTION_ID}/deepseek-v4-flash-free`]);
 const XAI_OAUTH = {
   clientId: "b1a00492-073a-47ea-816f-4c329264a828",
   deviceEndpoint: "https://auth.x.ai/oauth2/device/code",
@@ -624,6 +626,12 @@ export class OpenGuiHost {
       (item) => item.type === "user_message",
     )?.model;
     const modelId = routedSelection?.modelId ?? "unknown";
+    if (TEXT_ONLY_MODELS.has(`${connectionId}/${modelId}`)) {
+      effectiveRequest = {
+        ...effectiveRequest,
+        context: withoutModelContextImages(effectiveRequest.context),
+      };
+    }
     const connection = this.#settings.modelConnections.find((item) => item.id === connectionId);
     const protocol: ModelProtocol =
       connectionId === CODEX_CONNECTION.id ||
@@ -1863,6 +1871,7 @@ export class OpenGuiHost {
   async abort(sessionId: string, actor?: DurableActor) {
     const { session } = await this.#authorizedSession(sessionId, actor, "run");
     await session.abort();
+    await this.#activeRuns.get(sessionId);
   }
 
   async waitForIdle(sessionId: string, actor?: DurableActor) {

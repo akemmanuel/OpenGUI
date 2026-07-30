@@ -45,12 +45,49 @@ function hasImageAttachments(result: unknown) {
   );
 }
 
+function imageExtension(mimeType: string) {
+  if (mimeType === "image/jpeg") return ".jpg";
+  if (mimeType === "image/gif") return ".gif";
+  if (mimeType === "image/webp") return ".webp";
+  if (mimeType === "image/bmp") return ".bmp";
+  return ".png";
+}
+
+async function externalizeImageAttachments(context: ToolExecutionContext, result: unknown) {
+  if (!hasImageAttachments(result) || !result || typeof result !== "object") return result;
+  const record = result as Record<string, unknown>;
+  const outputDirectory = join(
+    context.dataDirectory,
+    "tool-output",
+    safePathSegment(context.sessionId),
+  );
+  await mkdir(outputDirectory, { recursive: true });
+  const attachments = await Promise.all(
+    (record.attachments as unknown[]).map(async (attachment, index) => {
+      if (!attachment || typeof attachment !== "object") return attachment;
+      const image = attachment as Record<string, unknown>;
+      if (
+        image.type !== "image" ||
+        typeof image.data !== "string" ||
+        typeof image.mimeType !== "string"
+      )
+        return attachment;
+      const path = join(
+        outputDirectory,
+        `${safePathSegment(context.toolCallId)}-${index}${imageExtension(image.mimeType)}`,
+      );
+      await writeFile(path, Buffer.from(image.data, "base64"));
+      const { data: _data, ...reference } = image;
+      return { ...reference, path };
+    }),
+  );
+  return { ...record, attachments };
+}
+
 export async function limitToolResult(context: ToolExecutionContext, result: unknown) {
-  // Inline image payloads are deliberately larger than the text-result limit and
-  // must remain intact so the following model turn can see them.
-  if (hasImageAttachments(result)) return result;
-  const serialized = JSON.stringify(result);
-  if (Buffer.byteLength(serialized) <= MAX_TOOL_RESULT_BYTES) return result;
+  const durableResult = await externalizeImageAttachments(context, result);
+  const serialized = JSON.stringify(durableResult);
+  if (Buffer.byteLength(serialized) <= MAX_TOOL_RESULT_BYTES) return durableResult;
 
   const outputDirectory = join(tmpdir(), "opengui-tool-output", safePathSegment(context.sessionId));
   await mkdir(outputDirectory, { recursive: true });

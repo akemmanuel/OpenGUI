@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vite-plus/test";
@@ -90,6 +90,86 @@ describe("OpenGuiHost concurrent arbitration", () => {
     const snapshot = await host.readSession(session.id);
     expect(snapshot.followUps.map((followUp) => followUp.prompt.text)).toEqual(["second arrival"]);
     await host.abort(session.id);
+    await host.close();
+  });
+
+  test("abort does not resolve until the running Session is stopped", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opengui-host-abort-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "project");
+    await mkdir(project);
+    const model: ModelTransport = {
+      async *stream(_request, signal) {
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => setTimeout(() => reject(new Error("aborted")), 10),
+            { once: true },
+          );
+        });
+        yield { type: "completed" };
+      },
+    };
+    const host = new OpenGuiHost(root, { model });
+    await host.start();
+    const session = await host.createSession({
+      projectDirectory: project,
+      model: { connectionId: "offline", modelId: "fixture-model" },
+      reasoning: "none",
+    });
+
+    await host.prompt(session.id, { text: "keep running" });
+    await host.abort(session.id);
+
+    const snapshot = await host.readSession(session.id);
+    expect(snapshot.status).not.toBe("running");
+    expect(snapshot.entries.at(-1)?.kind).toBe("run_aborted");
+    await host.close();
+  });
+
+  test("never sends image bytes to the text-only DeepSeek Zen model", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opengui-host-text-only-image-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "project");
+    await mkdir(project);
+    const imagePath = join(project, "pixel.png");
+    await writeFile(
+      imagePath,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    const requests: Parameters<ModelTransport["stream"]>[0][] = [];
+    const model: ModelTransport = {
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield { type: "tool_call", id: "read-image", name: "read", input: { path: imagePath } };
+        }
+        yield { type: "completed" };
+      },
+    };
+    const host = new OpenGuiHost(root, { model });
+    await host.start();
+    await host.upsertModelConnection({
+      id: "opencode-zen",
+      label: "OpenCode Zen",
+      baseUrl: "https://opencode.ai/zen/v1",
+      modelIds: ["deepseek-v4-flash-free"],
+    });
+    const session = await host.createSession({
+      projectDirectory: project,
+      model: { connectionId: "opencode-zen", modelId: "deepseek-v4-flash-free" },
+      reasoning: "max",
+    });
+
+    await host.prompt(session.id, { text: "read the image" });
+    await host.waitForIdle(session.id);
+
+    expect(JSON.stringify(requests[1]?.context)).not.toMatch(/iVBOR|read-image-0\.png/);
+    expect(JSON.stringify(requests[1]?.context)).toContain('"attachments":[]');
+    expect(JSON.stringify(requests[1]?.context)).toContain("image was omitted");
     await host.close();
   });
 

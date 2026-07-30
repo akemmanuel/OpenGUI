@@ -27,6 +27,7 @@ import {
 import {
   deriveModelCacheKey,
   deriveModelConnectionKey,
+  modelImageData,
   modelToolResultContent,
   ModelTransportError,
   normalizeModelError,
@@ -208,7 +209,11 @@ export function toPiContext(request: ModelRequest, model: Model<Api>, timestamp 
         toolName: item.name,
         content: [
           ...(result.text ? [{ type: "text" as const, text: result.text }] : []),
-          ...result.images,
+          ...result.images.map((image) => ({
+            type: "image" as const,
+            data: modelImageData(image),
+            mimeType: image.mimeType,
+          })),
         ],
         isError: false,
         timestamp,

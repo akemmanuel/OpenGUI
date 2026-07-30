@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 export interface ProviderReplayState {
   /** Opaque provider output items required for stateless multi-turn replay. */
@@ -33,16 +34,26 @@ export interface ModelToolDefinition {
 
 export interface ModelImageContent {
   type: "image";
-  data: string;
   mimeType: string;
+  data?: string;
+  path?: string;
 }
 
 function isModelImageContent(value: unknown): value is ModelImageContent {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   return (
-    item.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string"
+    item.type === "image" &&
+    typeof item.mimeType === "string" &&
+    (typeof item.data === "string" || typeof item.path === "string")
   );
+}
+
+/** Load image bytes only at the provider boundary; durable context stores a file reference. */
+export function modelImageData(image: ModelImageContent) {
+  if (typeof image.data === "string") return image.data;
+  if (typeof image.path === "string") return readFileSync(image.path).toString("base64");
+  throw new Error("Image attachment has no data source");
 }
 
 /** Normalize durable tool output into provider-facing text and image blocks. */
