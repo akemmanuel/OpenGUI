@@ -16,21 +16,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-ENV BUN_INSTALL=/bun
-ENV PATH=/app/node_modules/.bin:$BUN_INSTALL/bin:$PATH
-
-RUN npm install -g bun@1.3.13
-
-COPY package.json pnpm-workspace.yaml ./
-COPY scripts/ensure-electron.mjs ./scripts/ensure-electron.mjs
-RUN bun install
+ENV PATH=/app/node_modules/.bin:$PATH
 
 COPY . .
-RUN vp build
+RUN corepack enable \
+	&& corepack prepare pnpm@11.8.0 --activate \
+	&& pnpm install --frozen-lockfile \
+	&& pnpm vp build
 COPY docker/host-exec /usr/local/bin/opengui-host-exec
 COPY docker/entrypoint.sh /usr/local/bin/opengui-entrypoint
 RUN chmod +x /usr/local/bin/opengui-host-exec /usr/local/bin/opengui-entrypoint \
-	&& mkdir -p /usr/local/host-bin \
+	&& mkdir -p /usr/local/host-bin /workspace \
 	&& for cmd in node npm pnpm python python3 bash sh rg fd make gcc g++; do ln -sf /usr/local/bin/opengui-host-exec /usr/local/host-bin/$cmd; done
 
 ENV HOST=0.0.0.0
