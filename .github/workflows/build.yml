@@ -294,4 +294,10 @@ jobs:
           fi
           args=("$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes)
           [[ "$GITHUB_REF_NAME" == *-* ]] && args+=(--prerelease)
-          gh release create "${args[@]}" candidate/SHA256SUMS.txt $(find candidate/artifacts -type f ! -name 'latest-mac-*.yml' -print)
+          mapfile -d '' assets < <(
+            find candidate/artifacts -type f ! -name 'latest-mac*.yml' -print0 | sort -z
+          )
+          # Both architecture jobs emit latest-mac.yml. Upload only the merged manifest produced
+          # in desktop-mac-x64 so GitHub never receives two assets with the same basename.
+          assets+=(candidate/artifacts/desktop-mac-x64/latest-mac.yml)
+          gh release create "${args[@]}" candidate/SHA256SUMS.txt "${assets[@]}"
