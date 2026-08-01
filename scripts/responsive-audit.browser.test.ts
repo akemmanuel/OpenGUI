@@ -48,7 +48,7 @@ beforeAll(async () => {
   origin = `http://127.0.0.1:${address.port}`;
   await browser("open", origin);
   await browser("set", "viewport", "320", "240");
-});
+}, 30_000);
 
 afterAll(async () => {
   await browser("close").catch(() => undefined);
