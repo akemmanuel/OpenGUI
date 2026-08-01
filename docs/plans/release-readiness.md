@@ -17,8 +17,11 @@ open.
 On 2026-07-31 the release-preparation pass also corrected the stale sidebar test, completed bounded
 MCP health/refresh behavior, synchronized the current architecture and deployment docs, added the
 0.5.x migration warning, and changed tag CI so the GitHub Release waits for Linux, Windows, macOS,
-Android, and Docker jobs. Automated gates must still be rerun from the final clean candidate and
-platform artifacts must be smoke-tested before tagging.
+Android, and Docker jobs. On 2026-08-01, pull request #138 passed the complete Node.js 24 quality
+gate and the non-publishing candidate workflow built Linux, Windows, macOS x64/arm64, Android, and
+Docker amd64/arm64 artifacts, health-smoked both Docker images, merged updater metadata, and
+generated checksums. Those candidate artifacts still require the manual platform and product smoke
+tests below before tagging.
 
 This plan supersedes the unchecked phase status in
 [`first-party-harness-replacement.md`](./first-party-harness-replacement.md) for release tracking.
