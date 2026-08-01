@@ -1,416 +1,291 @@
-name: Build
+name: Release candidate
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version to validate and build (without a leading v)
+        required: true
+        default: 0.6.0-rc.1
   push:
     tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm exec vp lint
-
-      - name: Check
-        run: pnpm exec vp check
-
-      - name: Build frontend
-        run: pnpm exec vp build
-
-      - name: Run unit tests
-        run: pnpm exec vp test
-
-      - name: Upload frontend build
-        uses: actions/upload-artifact@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Verify requested version
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          requested_version=${REQUESTED_VERSION#v}
+          if ! [[ "$requested_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Version is not strict SemVer: $requested_version" >&2
+            exit 1
+          fi
+          test "$package_version" = "$requested_version" || {
+            echo "Requested version $requested_version does not match package.json $package_version" >&2
+            exit 1
+          }
+      - run: pnpm run check
+      - run: pnpm run test
+      - run: pnpm run slop-check
+      - run: pnpm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: frontend-build
           path: |
             dist
             dist-electron
           retention-days: 1
+          if-no-files-found: error
 
-  create-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: preflight
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
-
-  build-linux:
-    needs: [preflight, create-release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Cache node_modules
-        id: cache-nm
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Cache Electron binaries
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/electron
-            ~/.cache/electron-builder
-          key: electron-cache-${{ runner.os }}-x64-${{ hashFiles('package.json') }}
-
-      - name: Restore frontend build
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build
-
-      - name: Package Linux artifacts
-        run: pnpm exec electron-builder --linux deb AppImage --publish never
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-release
-          path: |
-            release/*.deb
-            release/*.AppImage
-          retention-days: 30
-
-      - name: Attach Linux artifacts to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.deb
-            release/*.AppImage
-
-  build-mac:
+  build-desktop:
     needs: preflight
     strategy:
-      matrix:
-        arch: [x64, arm64]
       fail-fast: false
-    runs-on: macos-latest
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            name: linux
+            command: pnpm exec electron-builder --linux deb AppImage --publish never
+            artifacts: |
+              release/*.deb
+              release/*.AppImage
+              release/latest-linux.yml
+          - runner: windows-latest
+            name: windows
+            command: pnpm exec electron-builder --win nsis --publish never
+            artifacts: |
+              release/*.exe
+              release/*.blockmap
+              release/latest.yml
+          - runner: macos-latest
+            name: mac-x64
+            command: pnpm exec electron-builder --mac dmg zip --x64 --publish never
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+              release/*.blockmap
+              release/latest-mac*.yml
+          - runner: macos-latest
+            name: mac-arm64
+            command: pnpm exec electron-builder --mac dmg zip --arm64 --publish never
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+              release/*.blockmap
+              release/latest-mac*.yml
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
-
-      - name: Cache node_modules
-        id: cache-nm
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ matrix.arch }}-nm-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Cache Electron binaries
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/electron
-            ~/.cache/electron-builder
-          key: electron-cache-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package.json') }}
-
-      - name: Restore frontend build
-        uses: actions/download-artifact@v4
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: frontend-build
-
-      - name: Package mac ${{ matrix.arch }}
-        run: pnpm exec electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+      - name: Package ${{ matrix.name }} without publishing
+        run: ${{ matrix.command }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-
-      - name: Normalize update manifest filename
-        run: |
-          if ls release/latest-mac-*.yml >/dev/null 2>&1; then
-            cp release/latest-mac-*.yml release/latest-mac.yml
-          fi
-          ls -la release/latest-mac*.yml
-
-      - name: Upload mac ${{ matrix.arch }} artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mac-release-${{ matrix.arch }}
-          path: release/*
+          name: desktop-${{ matrix.name }}
+          path: ${{ matrix.artifacts }}
           retention-days: 30
-
-  build-windows:
-    needs: [preflight, create-release]
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Cache Electron binaries
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/electron
-            ~/.cache/electron-builder
-          key: electron-cache-${{ runner.os }}-x64-${{ hashFiles('package.json') }}
-
-      - name: Restore frontend build
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build
-
-      - name: Package .exe (NSIS)
-        run: pnpm exec electron-builder --win nsis --publish never
-
-      - name: Verify Windows updater metadata
-        shell: pwsh
-        run: |
-          $latest = "release/latest.yml"
-          if (!(Test-Path $latest)) {
-            throw "Missing $latest"
-          }
-
-          $content = Get-Content $latest -Raw
-          $paths = @()
-          foreach ($line in ($content -split "`n")) {
-            if ($line -match '^\s*-?\s*url:\s*(.+)$') {
-              $paths += $Matches[1].Trim().Trim('"').Trim("'")
-            }
-            if ($line -match '^path:\s*(.+)$') {
-              $paths += $Matches[1].Trim().Trim('"').Trim("'")
-            }
-          }
-
-          if ($paths.Count -eq 0) {
-            throw "No updater asset paths found in $latest"
-          }
-
-          foreach ($asset in ($paths | Select-Object -Unique)) {
-            $assetPath = Join-Path "release" $asset
-            if (!(Test-Path $assetPath)) {
-              throw "Windows updater metadata references missing asset: $asset"
-            }
-          }
-
-      - name: Upload Windows updater artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-nsis
-          path: |
-            release/*.exe
-            release/*.blockmap
-            release/latest.yml
-          retention-days: 30
-
-      - name: Attach Windows artifacts to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.exe
-            release/*.blockmap
-            release/latest.yml
+          if-no-files-found: error
 
   build-android:
-    needs: [preflight, create-release]
+    needs: preflight
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
-
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
         with:
           distribution: temurin
           java-version: 21
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Restore frontend build
-        uses: actions/download-artifact@v4
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: frontend-build
-
-      - name: Sync Capacitor Android
-        run: pnpm exec cap sync android
-
-      - name: Build release APK
-        run: cd android && ./gradlew assembleRelease
-
-      - name: Rename release APK
+      - run: pnpm exec cap sync android
+      - run: cd android && ./gradlew assembleRelease
+        env:
+          OPENGUI_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+      - name: Collect APK
+        shell: bash
         run: |
+          version='${{ github.event_name == 'push' && github.ref_name || inputs.version }}'
           mkdir -p release-android
-          cp android/app/build/outputs/apk/release/*.apk "release-android/OpenGUI-${GITHUB_REF_NAME}-android-release.apk"
-
-      - name: Upload Android APK artifact
-        uses: actions/upload-artifact@v4
+          cp android/app/build/outputs/apk/release/*.apk "release-android/OpenGUI-${version#v}-android-release.apk"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: opengui-android-release-apk
+          name: android
           path: release-android/*.apk
           retention-days: 30
+          if-no-files-found: error
 
-      - name: Attach Android APK to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  build-docker:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            suffix: amd64
+          - platform: linux/arm64
+            suffix: arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          files: release-android/*.apk
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: opengui-candidate:${{ matrix.suffix }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke image health
+        shell: bash
+        run: |
+          cid=$(docker run -d --platform '${{ matrix.platform }}' -p 127.0.0.1::3000 \
+            -e OPENGUI_ALLOWED_ROOTS=/workspace "opengui-candidate:${{ matrix.suffix }}")
+          trap 'docker logs "$cid"; docker rm -f "$cid"' EXIT
+          port=$(docker port "$cid" 3000/tcp | awk -F: '{print $NF}')
+          for attempt in {1..60}; do
+            if curl --fail --silent "http://127.0.0.1:$port/api/health" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Container did not become healthy" >&2
+          exit 1
+
+  prepare-candidate:
+    needs: [build-desktop, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-*
+          path: artifacts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android
+          path: artifacts/android
+      - name: Merge macOS updater metadata
+        run: |
+          node scripts/merge-latest-mac.mjs \
+            --x64-dir artifacts/desktop-mac-x64 \
+            --arm64-dir artifacts/desktop-mac-arm64 \
+            --out-dir artifacts/desktop-mac-x64
+      - name: Verify updater metadata and generate checksums
+        shell: bash
+        run: |
+          test -f artifacts/desktop-linux/latest-linux.yml
+          test -f artifacts/desktop-windows/latest.yml
+          test -f artifacts/desktop-mac-x64/latest-mac.yml
+          find artifacts -type f ! -name 'latest-mac-*.yml' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate
+          path: |
+            artifacts
+            SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
 
   publish-docker:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: preflight
+    needs: [build-desktop, build-android, build-docker, prepare-candidate]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/akemmanuel/opengui
           tags: |
             type=ref,event=tag
             type=semver,pattern={{version}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
             org.opencontainers.image.title=OpenGUI
-            org.opencontainers.image.description=OpenGUI web command center for coding agents
+            org.opencontainers.image.description=OpenGUI first-party agent Host and web interface
             org.opencontainers.image.source=https://github.com/akemmanuel/OpenGUI
-            org.opencontainers.image.url=https://github.com/akemmanuel/OpenGUI
             org.opencontainers.image.licenses=MIT
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          provenance: mode=max
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
-  publish-mac:
+  create-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-mac, create-release]
+    needs: [publish-docker, prepare-candidate]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install script dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download mac x64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mac-release-x64
-          path: artifacts/mac-release
-
-      - name: Download mac arm64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mac-release-arm64
-          path: artifacts/mac-release-arm64
-
-      - name: List downloaded artifacts
+          name: release-candidate
+          path: candidate
+      - name: Create prerelease and upload validated artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
         run: |
-          echo "=== mac-release ==="
-          ls -la artifacts/mac-release/ 2>/dev/null || echo "(empty)"
-          echo "=== mac-release-arm64 ==="
-          ls -la artifacts/mac-release-arm64/ 2>/dev/null || echo "(empty)"
-
-      - name: Merge mac update manifests
-        run: |
-          node scripts/merge-latest-mac.mjs \
-            --x64-dir artifacts/mac-release \
-            --arm64-dir artifacts/mac-release-arm64 \
-            --out-dir artifacts/mac-release
-
-      - name: Attach mac artifacts to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/mac-release/*.dmg
-            artifacts/mac-release/*.zip
-            artifacts/mac-release/*.blockmap
-            artifacts/mac-release-arm64/*.dmg
-            artifacts/mac-release-arm64/*.zip
-            artifacts/mac-release-arm64/*.blockmap
-            artifacts/mac-release/latest-mac.yml
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; refusing to mutate ambiguous state" >&2
+            exit 1
+          fi
+          args=("$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes)
+          [[ "$GITHUB_REF_NAME" == *-* ]] && args+=(--prerelease)
+          gh release create "${args[@]}" candidate/SHA256SUMS.txt $(find candidate/artifacts -type f ! -name 'latest-mac-*.yml' -print)
