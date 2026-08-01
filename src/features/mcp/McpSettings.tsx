@@ -105,6 +105,14 @@ export function McpSettings() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!connections.some((connection) => connection.status?.state === "refreshing")) return;
+    const timer = window.setTimeout(() => {
+      void reload().catch(notifyUnknownError);
+    }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [connections]);
+
   const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
   };
@@ -172,8 +180,10 @@ export function McpSettings() {
     try {
       const result = await host.inspectMcpConnection(connection.id);
       setTools((current) => ({ ...current, [connection.id]: result }));
+      await reload();
     } catch (error) {
       notifyUnknownError(error);
+      await reload().catch(() => undefined);
     } finally {
       setInspecting(null);
     }
@@ -369,14 +379,40 @@ export function McpSettings() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{connection.label}</p>
-                    <Badge variant={connection.enabled ? "secondary" : "outline"}>
-                      {t(connection.enabled ? "mcp.enabled" : "mcp.disabled")}
+                    <Badge
+                      variant={
+                        connection.status?.state === "offline"
+                          ? "destructive"
+                          : connection.status?.state === "ready"
+                            ? "secondary"
+                            : "outline"
+                      }
+                    >
+                      {t(
+                        connection.status
+                          ? `mcp.status.${connection.status.state}`
+                          : connection.enabled
+                            ? "mcp.enabled"
+                            : "mcp.disabled",
+                      )}
                     </Badge>
                     <Badge variant="outline">
                       {t(`mcp.transport.${connection.transport.kind}`)}
                     </Badge>
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">{connection.id}</p>
+                  {connection.status && (
+                    <p
+                      className={`mt-1 text-xs ${
+                        connection.status.problem ? "text-destructive" : "text-muted-foreground"
+                      }`}
+                      role={connection.status.problem ? "status" : undefined}
+                    >
+                      {connection.status.problem
+                        ? t(`mcp.problem.${connection.status.problem.code}`)
+                        : t("mcp.toolCount", { count: connection.status.toolCount })}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Switch

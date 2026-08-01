@@ -8,6 +8,21 @@ release yet. The repository currently passes the local quality gates (`check`, `
 dependencies. The remaining work is primarily correctness coverage, platform acceptance,
 security/operations, documentation, and release automation.
 
+The repository is prepared as **0.6.0-rc.1**, not 1.0.0. The first-party architecture, multi-user
+Host, model offerings, MCP, compaction, image handling, and sidebar hierarchy justify a SemVer
+minor release from 0.5.x. A 1.0.0 stability promise is not justified while platform signing and
+acceptance, credential custody, backup/corruption procedures, and several P0/P1 checks below remain
+open.
+
+On 2026-07-31 the release-preparation pass also corrected the stale sidebar test, completed bounded
+MCP health/refresh behavior, synchronized the current architecture and deployment docs, added the
+0.5.x migration warning, and changed tag CI so the GitHub Release waits for Linux, Windows, macOS,
+Android, and Docker jobs. On 2026-08-01, pull request #138 passed the complete Node.js 24 quality
+gate and the non-publishing candidate workflow built Linux, Windows, macOS x64/arm64, Android, and
+Docker amd64/arm64 artifacts, health-smoked both Docker images, merged updater metadata, and
+generated checksums. Those candidate artifacts still require the manual platform and product smoke
+tests below before tagging.
+
 This plan supersedes the unchecked phase status in
 [`first-party-harness-replacement.md`](./first-party-harness-replacement.md) for release tracking.
 That document remains the architectural migration plan.
@@ -27,17 +42,17 @@ The release must not require Git or an external coding-agent CLI.
 
 ## P0 — stabilize the migration branch
 
-- [ ] Split the very large migration into reviewable commits (decision/docs, Harness, Host,
+- [x] Split the release-preparation work into reviewable commits (decision/docs, Harness, Host,
       Frontend cutover, legacy deletion, OAuth/provider work, release docs).
-- [ ] Resolve staged/unstaged overlap and commit all intended files; do not release from a dirty
+- [x] Resolve staged/unstaged overlap and commit all intended files; do not release from a dirty
       tree.
 - [ ] Update `first-party-harness-replacement.md` checkboxes to match implemented reality and
       explicitly list deferred items.
-- [ ] Replace the stale legacy architecture map in `docs/architecture.md` with the current
+- [x] Replace the stale legacy architecture map in `docs/architecture.md` with the current
       Frontend → Host → Harness ownership and paths.
-- [ ] Archive or clearly mark superseded plans so contributors do not follow Runtime/bridge plans.
-- [ ] Align the pnpm version in `package.json`, `README.md`, `CONTRIBUTING.md`, and `AGENTS.md`.
-- [ ] Add pull-request CI for `check`, `test`, `slop-check`, and `build`; tag-only preflight is too
+- [x] Archive or clearly mark superseded plans so contributors do not follow Runtime/bridge plans.
+- [x] Align the pnpm version in `package.json`, `README.md`, `CONTRIBUTING.md`, and `AGENTS.md`.
+- [x] Add pull-request CI for `check`, `test`, `slop-check`, and `build`; tag-only preflight is too
       late to discover regressions.
 
 **Exit gate:** clean tree, coherent documentation, and required checks passing on every PR.
@@ -71,7 +86,7 @@ Windows CI.
 - [ ] Store Desktop model credentials in OS-backed secure storage and define encrypted/secret-store
       handling for Remote Hosts; prove secrets never enter Session SQLite, logs, or frontend
       persistence.
-- [ ] Document the exact supported OpenAI-compatible contract and reject unsupported endpoint
+- [x] Document the exact supported OpenAI-compatible contract and reject unsupported endpoint
       behavior with actionable errors.
 - [ ] Add provider diagnostics visible to users: endpoint reachability, authentication state,
       selected model, and retry guidance.
@@ -90,8 +105,8 @@ application restart.
       has no token.
 - [ ] Define CORS/origin behavior, TLS reverse-proxy guidance, upload limits, allowed-root behavior,
       and path traversal tests.
-- [ ] Add SQLite backup, restore, corruption handling, WAL checkpoint, and upgrade documentation.
-- [ ] Decide what happens to legacy queued prompts and old Session databases; never silently
+- [x] Add SQLite backup, restore, corruption handling, WAL checkpoint, and upgrade documentation.
+- [x] Decide what happens to legacy queued prompts and old Session databases; never silently
       dispatch or claim import.
 
 **Exit gate:** multi-client and restart acceptance pass against both Desktop private transport and
@@ -136,18 +151,19 @@ checksums are retained.
 
 ## P1 — release documentation and automation
 
-- [ ] Rewrite `docs/docker.md` to remove external CLI/agent wording and document first-party Host
+- [x] Rewrite `docs/docker.md` to remove external CLI/agent wording and document first-party Host
       execution and its unrestricted security implications.
-- [ ] Rewrite `docs/mobile.md` to use Host terminology and provide an actual connection procedure.
-- [ ] Add security, privacy/telemetry, credential storage, backup/restore, troubleshooting, and
+- [x] Rewrite `docs/mobile.md` to use Host terminology and provide an actual connection procedure.
+- [x] Add security, privacy/telemetry, credential storage, backup/restore, troubleshooting, and
       supported-platform documentation.
-- [ ] Add a changelog/migration note stating that old external-Harness Sessions are not imported.
-- [ ] Correct stale Docker image labels and add image smoke/health tests before publishing.
-- [ ] Add version/tag consistency validation and a release-candidate workflow that packages without
-      immediately publishing.
-- [ ] Make GitHub Release publication wait for every required artifact; currently a release may be
-      created before platform jobs complete.
-- [ ] Add artifact checksum generation and signing/provenance where supported.
+- [x] Add a changelog/migration note stating that old external-Harness Sessions are not imported.
+- [x] Correct stale Docker image labels and add amd64/arm64 image smoke/health tests before publishing.
+- [x] Add a manually dispatched release-candidate workflow that packages without immediately publishing. Tag/package
+      version consistency validation is now part of the tag preflight.
+- [x] Make GitHub Release publication wait for every required artifact; Linux, Windows, macOS,
+      Android, and Docker jobs now gate Release creation.
+- [x] Generate SHA-256 checksums for candidate artifacts. Signing, attestations, and provenance
+      remain secret-/policy-dependent release work.
 
 ## Release-candidate sequence
 

@@ -244,7 +244,7 @@
     "newWorktree": "Nuevo worktree",
     "currentRootWorktree": "Rama actual del worktree raíz.",
     "queueTitle": "Cola: esperar la respuesta completa y luego enviar (Ctrl/Cmd+D para alternar)",
-    "steerTitle": "Guiar: esperar a que termine la parte actual y luego enviar (Ctrl/Cmd+D para alternar)",
+    "steerTitle": "Guiar: esperar a que termine la parte actual del modelo y luego enviar (Ctrl/Cmd+D para alternar)",
     "queue": "Cola",
     "steer": "Guiar",
     "stop": "Detener",
@@ -492,6 +492,21 @@
     "toggle": "Cambiar {{name}}",
     "inspect": "Probar e inspeccionar",
     "inspecting": "Conectando…",
+    "status": {
+      "disabled": "Desactivada",
+      "refreshing": "Comprobando…",
+      "ready": "Lista",
+      "degraded": "Usando herramientas en caché",
+      "offline": "Sin conexión"
+    },
+    "problem": {
+      "timeout": "La conexión agotó el tiempo de espera. El chat sigue disponible sin estas herramientas.",
+      "authentication": "La autenticación fue rechazada. Revisa las credenciales guardadas.",
+      "permission": "El servidor MCP denegó el acceso.",
+      "unavailable": "El servidor MCP no está disponible. El chat sigue disponible.",
+      "protocol": "El servidor devolvió una respuesta MCP no válida.",
+      "unknown": "No se pudieron descubrir las herramientas. El chat sigue disponible."
+    },
     "toolCount_one": "Una herramienta disponible",
     "toolCount_other": "{{count}} herramientas disponibles",
     "save": "Guardar conexión",

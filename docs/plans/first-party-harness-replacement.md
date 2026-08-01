@@ -4,24 +4,26 @@ Companion to [ADR 0010](../adr/0010-first-party-opengui-harness.md). Canonical p
 
 ## Status
 
-Planned. No implementation phase has started.
+Core migration implemented. This plan now records the shipped architecture; unchecked items below
+are deferred release acceptance or follow-up hardening. The current release gate is
+[`release-readiness.md`](./release-readiness.md).
 
 ## Fixed product constraints
 
-| Constraint | Decision                                                                                                                         |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Audience   | Lightly technical everyday builders, commonly familiar with WordPress and basic HTML/CSS/JavaScript                              |
-| UI         | Preserve the current Projects/Sessions sidebar, transcript, inline tool calls, PromptBox, model/reasoning controls, and settings |
-| Execution  | One first-party OpenGUI Harness; no Pi, OpenCode, Codex CLI/SDK, Claude Code, or Grok bridge                                     |
-| Tools      | Exactly `read`, `write`, `edit`, and `shell`                                                                                     |
-| Safety     | Unrestricted v1; no sandbox, approvals, command policy, MCP, or extensions                                                       |
-| Sessions   | Host-owned append-oriented SQLite log                                                                                            |
-| Models     | Codex/ChatGPT OAuth preset plus custom OpenAI-compatible connections                                                             |
-| Skills     | Agent Skills `SKILL.md` format with progressive disclosure                                                                       |
-| Targets    | Desktop local Host; Web and Mobile clients; self-hosted and OpenGUI-hosted remote Hosts                                          |
-| Mobile     | Remote client only in v1; no phone-local reduced Harness                                                                         |
-| Work       | General-purpose directory work, including presentations, email, HTML, WordPress over SSH, and Next.js                            |
-| Git        | No Git or worktree product integration or prerequisite                                                                           |
+| Constraint | Decision                                                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Audience   | Lightly technical everyday builders, commonly familiar with WordPress and basic HTML/CSS/JavaScript                                           |
+| UI         | Preserve the current Projects/Sessions sidebar, transcript, inline tool calls, PromptBox, model/reasoning controls, and settings              |
+| Execution  | One first-party OpenGUI Harness; no Pi, OpenCode, Codex CLI/SDK, Claude Code, or Grok bridge                                                  |
+| Tools      | Exactly `read`, `write`, `edit`, and `shell`                                                                                                  |
+| Safety     | Unrestricted native tools; Host-authorized MCP is the narrow exception accepted by [ADR 0015](../adr/0015-host-owned-mcp-tool-connections.md) |
+| Sessions   | Host-owned append-oriented SQLite log                                                                                                         |
+| Models     | Codex/ChatGPT OAuth preset plus custom OpenAI-compatible connections                                                                          |
+| Skills     | Agent Skills `SKILL.md` format with progressive disclosure                                                                                    |
+| Targets    | Desktop local Host; Web and Mobile clients; self-hosted and OpenGUI-hosted remote Hosts                                                       |
+| Mobile     | Remote client only in v1; no phone-local reduced Harness                                                                                      |
+| Work       | General-purpose directory work, including presentations, email, HTML, WordPress over SSH, and Next.js                                         |
+| Git        | No Git or worktree product integration or prerequisite                                                                                        |
 
 ## Non-goals
 
@@ -29,7 +31,7 @@ Planned. No implementation phase has started.
 - Files, Activity, Results, artifact manifests, output directories, or task-type-specific UI
 - Direct local execution on iOS or Android
 - External Harness compatibility or optional legacy bridge plugins
-- MCP, extension hooks, custom tool registration, or provider plugins
+- Frontend-owned MCP, extension hooks, arbitrary custom tool registration, or provider plugins
 - Multi-tenant execution without per-customer infrastructure isolation
 - Automatic import of existing external-Harness Sessions
 - A public SDK in the first migration
@@ -325,40 +327,40 @@ Do not add new Files, Activity, Results, or task-template surfaces.
 
 ### Phase 1: remove Git and worktree product code
 
-- [ ] Remove `OpenGuiClient.git` and `OpenGuiClient.worktree`.
-- [ ] Delete worktree hooks, dialogs, selectors, placement rules, setup detection, and merge actions.
-- [ ] Delete Git branch/remote/status presentation and shell handlers.
-- [ ] Remove worktree state, persistence keys, types, tests, and translations.
-- [ ] Keep generic Project directories and the `shell` tool's ability to execute any installed command. “No Git” means no product integration or prerequisite, not a shell command blacklist.
+- [x] Remove `OpenGuiClient.git` and `OpenGuiClient.worktree`.
+- [x] Delete worktree hooks, dialogs, selectors, placement rules, setup detection, and merge actions.
+- [x] Delete Git branch/remote/status presentation and shell handlers.
+- [x] Remove worktree state, persistence keys, types, tests, and translations.
+- [x] Keep generic Project directories and the `shell` tool's ability to execute any installed command. “No Git” means no product integration or prerequisite, not a shell command blacklist.
 
 **Exit:** the shipped UI and protocol contain no Git/worktree feature.
 
 ### Phase 2: create the independent Harness foundation
 
-- [ ] Create `packages/harness` with no legacy Runtime imports.
-- [ ] Define the small Harness/Session interface and semantic event union.
-- [ ] Add deterministic fake model, fake clock, temporary SQLite database, and process runner test helpers.
-- [ ] Implement SQLite schema/migrations and append/replay first.
-- [ ] Implement model/reasoning changes, Session CRUD, run lifecycle, interruption recovery, and FIFO follow-ups.
+- [x] Create `packages/harness` with no legacy Runtime imports.
+- [x] Define the small Harness/Session interface and semantic event union.
+- [x] Add deterministic fake model, temporary SQLite database, and process runner test helpers.
+- [x] Implement SQLite schema/migrations and append/replay first.
+- [x] Implement model/reasoning changes, Session CRUD, run lifecycle, interruption recovery, and FIFO follow-ups.
 
 **Exit:** a test can create a Session, append and replay entries, restart the Harness, and obtain the same snapshot.
 
 ### Phase 3: implement the four tools and agent loop
 
-- [ ] Implement `read`, `write`, and `edit` with bounded output and clear error results.
-- [ ] Implement platform-native `shell` resolution and process-tree cancellation.
-- [ ] Implement streamed tool updates and final tool results.
-- [ ] Implement the model/tool loop against the fake model.
-- [ ] Implement minimal system prompt and skills discovery/loading.
-- [ ] Implement abort, retry classification, context accounting, and compaction.
+- [x] Implement `read`, `write`, and `edit` with bounded output and clear error results.
+- [x] Implement platform-native `shell` resolution and process-tree cancellation.
+- [x] Implement streamed tool updates and final tool results.
+- [x] Implement the model/tool loop against the fake model.
+- [x] Implement minimal system prompt and skills discovery/loading.
+- [x] Implement abort, retry classification, context accounting, and compaction.
 
 **Exit:** deterministic tests cover text-only turns, multiple sequential tool calls, tool failure, malformed arguments, abort, timeout, context compaction, and restart after an interrupted run.
 
 ### Phase 4: model connections and authentication
 
-- [ ] Implement the internal model transport seam.
-- [ ] Implement custom OpenAI-compatible Chat Completions streaming, including tool calls and usage.
-- [ ] Implement Codex Responses streaming and OAuth login/refresh.
+- [x] Implement the internal model transport seam.
+- [x] Implement custom OpenAI-compatible Chat Completions streaming, including tool calls and usage.
+- [x] Implement Codex Responses streaming and OAuth login/refresh.
 - [ ] Implement credential storage for Desktop and remote Hosts without putting secrets in Session SQLite.
 - [ ] Add adapter conformance tests for text, reasoning, tool calls, abort, Unicode, empty output, usage, rate limits, malformed streams, and context overflow.
 - [ ] Validate Codex OAuth distribution and refresh behavior before making it the default setup path.
@@ -367,37 +369,37 @@ Do not add new Files, Activity, Results, or task-template surfaces.
 
 ### Phase 5: embed the Harness in the Host
 
-- [ ] Create one Host-owned Harness instance per Host process.
-- [ ] Replace external Harness bootstrap with first-party Harness bootstrap.
-- [ ] Add the narrow Host endpoints and private Desktop transport methods.
-- [ ] Stream ordered semantic events and current-run snapshots to multiple clients.
-- [ ] Move queue arbitration onto the new FIFO follow-up model.
-- [ ] Keep existing uploads/file mentions and directory browsing working.
-- [ ] Ensure a run continues after all Frontends disconnect.
+- [x] Create one Host-owned Harness instance per Host process.
+- [x] Replace external Harness bootstrap with first-party Harness bootstrap.
+- [x] Add the narrow Host endpoints and private Desktop transport methods.
+- [x] Stream ordered semantic events and current-run snapshots to multiple clients.
+- [x] Move queue arbitration onto the new FIFO follow-up model.
+- [x] Keep existing uploads/file mentions and directory browsing working.
+- [x] Ensure a run continues after all Frontends disconnect.
 
 **Exit:** two clients can observe and control the same running Session, disconnect, reconnect, and recover from SQLite plus the live snapshot.
 
 ### Phase 6: cut the current UI over
 
-- [ ] Replace setup wizard external-Harness checks with model authentication/Host connection.
-- [ ] Replace resource catalog and model routing with Host-owned model connections.
-- [ ] Connect existing Project, Session, transcript, tool-call, PromptBox, queue, and notification UI to the new Host interface.
-- [ ] Replace the external-Harness reducer/provider state with minimal Project, Session, selection, run, follow-up, draft, and connection state.
-- [ ] Remove Harness, agent, variant, MCP, permission, question, and worktree controls.
-- [ ] Keep model/reasoning selection and existing visual layout.
+- [x] Replace setup wizard external-Harness checks with model authentication/Host connection.
+- [x] Replace resource catalog and model routing with Host-owned model connections.
+- [x] Connect existing Project, Session, transcript, tool-call, PromptBox, queue, and notification UI to the new Host interface.
+- [x] Replace the external-Harness reducer/provider state with minimal Project, Session, selection, run, follow-up, draft, and connection state.
+- [x] Remove legacy Harness, agent, variant, permission, question, and worktree controls. Host-owned MCP settings are intentional under ADR 0015.
+- [x] Keep model/reasoning selection and existing visual layout.
 
 **Exit:** the default Desktop build uses only the first-party Harness for a complete Project/Session workflow.
 
 ### Phase 7: delete the legacy architecture
 
-- [ ] Delete `packages/runtime/src/adapters/**`.
-- [ ] Delete `packages/claude-agent-sdk-lite/**`.
-- [ ] Delete bridge registration, bridge IPC coercion, project slots, daemon/RPC compatibility, and Harness inventory.
-- [ ] Delete external event normalization, transcript reconciliation, dispatch indexes, session identity codecs, and legacy external Session routing.
-- [ ] Remove Pi, OpenCode, Codex SDK, Claude Code, and Grok dependencies and packaged assets.
-- [ ] Remove old bridge scripts, tests, quality gates, docs, and package scripts.
-- [ ] Remove the old `@opengui/runtime` public SDK unless a still-used internal module earns retention under a non-legacy interface.
-- [ ] Add a slop check banning old Harness IDs, bridge registration, and frontend native provider event types.
+- [x] Delete `packages/runtime/src/adapters/**`.
+- [x] Delete tracked `packages/claude-agent-sdk-lite/**` sources and packaging references.
+- [x] Delete bridge registration, bridge IPC coercion, project slots, daemon/RPC compatibility, and Harness inventory.
+- [x] Delete external event normalization, transcript reconciliation, dispatch indexes, session identity codecs, and legacy external Session routing.
+- [x] Remove Pi, OpenCode, Codex SDK, Claude Code, and Grok dependencies and packaged assets.
+- [x] Remove old bridge scripts, tests, quality gates, docs, and package scripts; retained documents are explicitly archived.
+- [x] Remove the old `@opengui/runtime` public SDK.
+- [x] Add a slop check banning old Harness IDs, bridge registration, and frontend native provider event types.
 
 **Exit:** repository search finds no product dependency on external coding-agent Harnesses; build artifacts contain none of their SDKs or daemons.
 
@@ -416,12 +418,12 @@ Do not add new Files, Activity, Results, or task-template surfaces.
 ### Phase 9: release migration and documentation
 
 - [ ] Preserve existing Project/Workspace presentation where paths and Host connections remain valid.
-- [ ] Start new first-party Sessions in the new database.
-- [ ] Leave external Harness session files untouched; do not claim they were imported.
+- [x] Start new first-party Sessions in the new database.
+- [x] Leave external Harness session files untouched; do not claim they were imported.
 - [ ] Decide separately whether to offer a one-time read-only transcript importer.
 - [ ] Handle legacy queued prompts explicitly; never dispatch them against guessed new Sessions.
-- [ ] Rewrite README, setup, architecture, security, self-hosting, and mobile docs for the first-party Harness.
-- [ ] Remove or archive superseded implementation plans after the release branch no longer needs them.
+- [x] Rewrite README, setup, architecture, self-hosting, and mobile docs for the first-party Harness. Security/operations hardening remains in the release plan.
+- [x] Remove or archive superseded implementation plans after the release branch no longer needs them.
 
 **Exit:** a new user can install Desktop, authenticate, add a Project, and run a long task without installing Git or an external coding-agent CLI.
 

@@ -1,5 +1,7 @@
 apply plugin: 'com.android.application'
 
+import groovy.json.JsonSlurper
+
 android {
     namespace = "com.opengui.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,25 +9,27 @@ android {
         applicationId "com.opengui.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        def resolvedVersionName = System.getenv("GITHUB_REF_NAME")
-            ?: providers.exec {
-                commandLine "git", "describe", "--tags", "--abbrev=0"
-                ignoreExitValue = true
-            }.standardOutput.asText.get().trim()
-            ?: "v0.0.1"
+        def packageVersion = new JsonSlurper().parse(rootProject.file('../package.json')).version
+        def resolvedVersionName = System.getenv("OPENGUI_VERSION") ?: packageVersion ?: "0.0.1"
         resolvedVersionName = resolvedVersionName.replaceFirst(/^v/, "")
 
-        def semverMatch = resolvedVersionName =~ /^(\d+)\.(\d+)\.(\d+)/
+        def semverMatch = resolvedVersionName =~ /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/
         if (!semverMatch) {
             resolvedVersionName = "0.0.1"
-            semverMatch = resolvedVersionName =~ /^(\d+)\.(\d+)\.(\d+)/
+            semverMatch = resolvedVersionName =~ /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/
         }
 
         def major = semverMatch[0][1].toInteger()
         def minor = semverMatch[0][2].toInteger()
         def patch = semverMatch[0][3].toInteger()
 
-        versionCode Math.max(1, major * 1000000 + minor * 1000 + patch)
+        def prerelease = semverMatch[0][4]
+        def prereleaseNumber = prerelease
+            ? ((prerelease =~ /(?:^|\.)(\d+)$/).with { it ? it[0][1].toInteger() : 1 })
+            : 99
+        def releaseSequence = prerelease ? Math.max(1, Math.min(98, prereleaseNumber)) : 99
+
+        versionCode Math.max(1, (major * 1000000 + minor * 1000 + patch) * 100 + releaseSequence)
         versionName resolvedVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

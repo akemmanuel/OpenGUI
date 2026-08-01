@@ -1,6 +1,6 @@
 {
   "name": "opengui",
-  "version": "0.5.27",
+  "version": "0.6.0-rc.1",
   "private": false,
   "description": "OpenGUI - first-party coding agent for desktop and web",
   "homepage": "https://github.com/akemmanuel/OpenGUI",

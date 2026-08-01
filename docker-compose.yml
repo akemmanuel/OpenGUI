@@ -11,10 +11,20 @@ services:
       HOST: "${HOST:-127.0.0.1}"
       PORT: "${PORT:-4839}"
       OPENGUI_SERVER_MODE: "${OPENGUI_SERVER_MODE:-combined}"
+      OPENGUI_DATA_DIR: "/app/.opengui-data"
+      OPENGUI_BASE_URL: "${OPENGUI_BASE_URL:-}"
+      OPENGUI_AUTH_SECRET: "${OPENGUI_AUTH_SECRET:-}"
+      OPENGUI_AUTH_TOKEN: "${OPENGUI_AUTH_TOKEN:-}"
+      OPENGUI_CORS_ORIGIN: "${OPENGUI_CORS_ORIGIN:-}"
+      OPENGUI_PATH_GRANTS: "${OPENGUI_PATH_GRANTS:-enforced}"
+      OPENGUI_UPLOAD_MAX_FILE_BYTES: "${OPENGUI_UPLOAD_MAX_FILE_BYTES:-104857600}"
+      OPENGUI_UPLOAD_MAX_BATCH_BYTES: "${OPENGUI_UPLOAD_MAX_BATCH_BYTES:-209715200}"
+      OPENGUI_REQUEST_MAX_BYTES: "${OPENGUI_REQUEST_MAX_BYTES:-1048576}"
       OPENGUI_HOST_EXEC: "1"
       OPENGUI_HOST_UID: "${OPENGUI_HOST_UID:-1000}"
       OPENGUI_HOST_GID: "${OPENGUI_HOST_GID:-1000}"
       OPENGUI_HOST_HOME: "${HOME}"
+      OPENGUI_HOST_PATH: "${OPENGUI_HOST_PATH:-}"
       OPENGUI_ALLOWED_ROOTS: "${OPENGUI_ALLOWED_ROOTS:-${HOME}/Code}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
@@ -23,6 +33,12 @@ services:
     volumes:
       - "${HOME}:${HOME}"
       - opengui-data:/app/.opengui-data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:${PORT:-4839}/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   opengui-data:

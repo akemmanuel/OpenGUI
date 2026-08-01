@@ -1,8 +1,10 @@
 # @opengui/backend
 
-Networked **OpenGUI Backend**: embeds `@opengui/runtime`, adds HTTP/WebSocket/SSE (and Desktop IPC), queued prompts, arbitration, Backend persistence.
+Networked **OpenGUI Host** package: owns one first-party `@opengui/harness`, durable Sessions,
+authentication/authorization, follow-up arbitration, HTTP/events, and Desktop private transport.
 
-**Status:** Host wiring lives here (`createBackendHost`: CORS/auth, SSE, RPC, FS, static, product API). `server/web-server.ts` only calls `serve()` on the Hono app. Service implementations remain in `server/services/*` until a later pass.
+`createBackendHost` wires CORS/auth, event streaming, filesystem routes, static assets, and the
+product API. `server/web-server.ts` is the deployment entry point that serves the Hono app.
 
 ```ts
 import { createBackendHost } from "@opengui/backend";

@@ -21,22 +21,23 @@ lines.on("line", (line) => {
     return;
   }
   if (message.method === "tools/list") {
+    if (process.env.MCP_HANG_LIST === "1") return;
+    const toolName = process.env.MCP_PID_TOOL === "1" ? `echo_${process.pid}` : "echo";
+    const toolCount = Number.parseInt(process.env.MCP_TOOL_COUNT ?? "1", 10);
     send({
       jsonrpc: "2.0",
       id: message.id,
       result: {
-        tools: [
-          {
-            name: "echo",
-            title: "Echo",
-            description: "Return the supplied message.",
-            inputSchema: {
-              type: "object",
-              properties: { message: { type: "string" } },
-              required: ["message"],
-            },
+        tools: Array.from({ length: toolCount }, (_, index) => ({
+          name: index === 0 ? toolName : `${toolName}_${index}`,
+          title: "Echo",
+          description: "Return the supplied message.",
+          inputSchema: {
+            type: "object",
+            properties: { message: { type: "string" } },
+            required: ["message"],
           },
-        ],
+        })),
       },
     });
     return;

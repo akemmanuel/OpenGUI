@@ -31,6 +31,7 @@ import {
 } from "./main/ipc-security.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+process.env.OPENGUI_VERSION ??= pkg.version;
 
 app.setName("OpenGUI");
 app.setPath("userData", path.join(app.getPath("appData"), "OpenGUI"));

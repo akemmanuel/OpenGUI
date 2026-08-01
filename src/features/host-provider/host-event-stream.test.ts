@@ -107,4 +107,24 @@ describe("Host event dispatch", () => {
 
     expect(onFollowUpDispatched).toHaveBeenCalledWith("session-1", "follow-up-1");
   });
+
+  it("notifies when a model part ends so Steer can dispatch", () => {
+    const onModelPartEnded = vi.fn();
+    const dispatch = createHostEventDispatcher({
+      activeStreamRef: { current: null },
+      setActiveSnapshot: vi.fn(),
+      setBusySessionIds: vi.fn(),
+      transcriptStore: { dispatch: vi.fn() } as never,
+      refreshSessions: vi.fn(async () => {}),
+      onModelPartEnded,
+    });
+
+    dispatch(entryEvent("assistant_message"));
+    dispatch(entryEvent("tool_call"));
+    dispatch(entryEvent("user_message"));
+
+    expect(onModelPartEnded).toHaveBeenCalledTimes(2);
+    expect(onModelPartEnded).toHaveBeenNthCalledWith(1, "session-1");
+    expect(onModelPartEnded).toHaveBeenNthCalledWith(2, "session-1");
+  });
 });

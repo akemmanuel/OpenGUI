@@ -51,7 +51,7 @@ export function registerHostTransportRoutes(app: BackendApp, deps: HostTransport
       ok: true,
       value: {
         protocolVersion: 1,
-        appVersion: process.env.npm_package_version || "0.0.0",
+        appVersion: process.env.OPENGUI_VERSION || process.env.npm_package_version || "0.0.0",
       },
     }),
   );

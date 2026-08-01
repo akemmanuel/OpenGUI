@@ -248,6 +248,9 @@ function HostProviderBody({
   const hydratingSessionIdsRef = useRef(new Set<string>());
   const activeSessionIdRef = useRef(activeSessionId);
   const queuedPromptsRef = useRef(queuedPrompts);
+  /** Steer (after-part) Follow-ups waiting for the current model part to end. */
+  const afterPartFollowUpsRef = useRef<Record<string, string[]>>({});
+  const steeringSessionIdsRef = useRef(new Set<string>());
 
   queuedPromptsRef.current = queuedPrompts;
   const queueController = useMemo(
@@ -446,6 +449,38 @@ function HostProviderBody({
     [host, transcriptStore],
   );
 
+  const forgetAfterPartFollowUp = useCallback((sessionId: string, followUpId: string) => {
+    const pending = afterPartFollowUpsRef.current[sessionId];
+    if (!pending?.length) return;
+    const next = pending.filter((id) => id !== followUpId);
+    if (next.length === pending.length) return;
+    if (next.length === 0) delete afterPartFollowUpsRef.current[sessionId];
+    else afterPartFollowUpsRef.current[sessionId] = next;
+  }, []);
+
+  const dispatchAfterPartSteer = useCallback(
+    (sessionId: string) => {
+      const followUpId = afterPartFollowUpsRef.current[sessionId]?.[0];
+      if (!followUpId || steeringSessionIdsRef.current.has(sessionId)) return;
+      steeringSessionIdsRef.current.add(sessionId);
+      void (async () => {
+        try {
+          await queueController?.sendNow(sessionId, followUpId);
+          forgetAfterPartFollowUp(sessionId, followUpId);
+          if (activeSessionIdRef.current === sessionId) {
+            await hydrateTranscript(sessionId);
+          }
+        } catch {
+          // Run may have completed and already claimed this Follow-up as FIFO.
+          forgetAfterPartFollowUp(sessionId, followUpId);
+        } finally {
+          steeringSessionIdsRef.current.delete(sessionId);
+        }
+      })();
+    },
+    [forgetAfterPartFollowUp, hydrateTranscript, queueController],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -500,8 +535,11 @@ function HostProviderBody({
     transcriptStore,
     refreshSessions,
     hydrateTranscript,
-    onFollowUpDispatched: (sessionId, followUpId) =>
-      queueController?.recordDispatched(sessionId, followUpId),
+    onFollowUpDispatched: (sessionId, followUpId) => {
+      forgetAfterPartFollowUp(sessionId, followUpId);
+      queueController?.recordDispatched(sessionId, followUpId);
+    },
+    onModelPartEnded: (sessionId) => dispatchAfterPartSteer(sessionId),
   });
 
   const activeTranscript = useActiveTranscriptSnapshot();
@@ -529,7 +567,7 @@ function HostProviderBody({
           items.map((item) => ({
             id: item.id,
             text: item.text,
-            mode: "queue" as const,
+            mode: item.mode,
             createdAt: Date.now(),
             actor: item.actor,
           })),
@@ -707,7 +745,7 @@ function HostProviderBody({
         await requireHost().renameSession(id, title);
         await refreshSessions();
       },
-      sendPrompt: async (text, _mode, submittedSkills) => {
+      sendPrompt: async (text, mode, submittedSkills) => {
         // The caller captures the visible selection at submit time. Normalize it
         // before any asynchronous Session creation/refresh can change active keys.
         const submittedAllowlist =
@@ -718,6 +756,8 @@ function HostProviderBody({
                   submittedSkills.map((name) => name.trim()).filter((name) => name.length > 0),
                 ),
               );
+        // Steer is after-part. interrupt remains available for programmatic send-now paths.
+        const queueMode = mode === "after-part" || mode === "interrupt" ? mode : "queue";
         let optimisticMessage: {
           scope: { directory: string; sessionId: string };
           id: string;
@@ -825,18 +865,26 @@ function HostProviderBody({
               }
             }
           }
-          const result = await requireHost().prompt(
-            sessionId,
-            text,
-            skillsAllowlist !== undefined ? { skills: skillsAllowlist } : undefined,
-          );
+          const result = await requireHost().prompt(sessionId, text, {
+            ...(skillsAllowlist !== undefined ? { skills: skillsAllowlist } : {}),
+            // interrupt = send immediately (used by send-now). Steer/after-part queues
+            // and dispatches when the current model part ends.
+            ...(queueMode === "interrupt" ? { interrupt: true } : {}),
+          });
           if (result.mode === "follow_up") {
-            transcriptStore.dispatch({
-              type: "message.removed",
-              scope,
-              messageId: optimisticMessageId,
-            });
-            queueController?.recordEnqueued(sessionId, result.followUp);
+            if (optimisticMessage) {
+              transcriptStore.dispatch({
+                type: "message.removed",
+                scope,
+                messageId: optimisticMessageId,
+              });
+            }
+            const followUpMode = queueMode === "after-part" ? "after-part" : "queue";
+            queueController?.recordEnqueued(sessionId, result.followUp, followUpMode);
+            if (followUpMode === "after-part") {
+              const pending = afterPartFollowUpsRef.current[sessionId] ?? [];
+              afterPartFollowUpsRef.current[sessionId] = [...pending, result.followUp.id];
+            }
           } else {
             let stream = activeStreamRef.current;
             if (stream?.snapshot.id === sessionId) {
@@ -856,6 +904,9 @@ function HostProviderBody({
                 hasMore: false,
                 nextCursor: null,
               });
+            }
+            if (queueMode === "interrupt") {
+              await hydrateTranscript(sessionId);
             }
           }
         } catch (error) {
@@ -983,11 +1034,12 @@ function HostProviderBody({
         (queuedPrompts[sessionId] ?? []).map((item) => ({
           id: item.id,
           text: item.text,
-          mode: "queue" as const,
+          mode: item.mode,
           createdAt: Date.now(),
           actor: item.actor,
         })),
       removeFromQueue: (sessionId, promptId) => {
+        forgetAfterPartFollowUp(sessionId, promptId);
         void queueController?.remove(sessionId, promptId).catch(notifyUnknownError);
       },
       reorderQueue: (sessionId, fromIndex, toIndex) => {
@@ -997,7 +1049,13 @@ function HostProviderBody({
         void queueController?.update(sessionId, promptId, text).catch(notifyUnknownError);
       },
       sendQueuedNow: async (sessionId, promptId) => {
+        forgetAfterPartFollowUp(sessionId, promptId);
         await queueController?.sendNow(sessionId, promptId);
+        // send-now aborts the live Run then starts a new one. Rehydrate so any
+        // in-flight stream buffers cannot leave ghost assistant rows behind.
+        if (activeSessionIdRef.current === sessionId) {
+          await hydrateTranscript(sessionId);
+        }
       },
       setSessionDraft: (key, text) => setSessionDrafts((current) => ({ ...current, [key]: text })),
       clearSessionDraft: (key) =>
@@ -1152,10 +1210,12 @@ function HostProviderBody({
     busySessionIds,
     detachedProject,
     currentActor,
+    forgetAfterPartFollowUp,
     host,
     hydrateTranscript,
     rememberActiveSession,
     queuedPrompts,
+    queueController,
     refreshModels,
     replaceProjects,
     requireHost,

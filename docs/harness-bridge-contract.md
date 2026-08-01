@@ -1,4 +1,8 @@
-# Harness bridge IPC contract
+# Archived: legacy Harness bridge IPC contract
+
+> **Superseded by [ADR 0010](./adr/0010-first-party-opengui-harness.md).** The referenced Runtime,
+> adapters, registries, and bridge paths were deleted. This file is retained only as migration
+> history; do not follow it for current development. See [`docs/architecture.md`](./architecture.md).
 
 Contributors adding a **Harness Adapter** (`packages/runtime/src/adapters/*-bridge.ts`) should match this contract. Domain terms: [CONTEXT.md](../CONTEXT.md). Registry: [`src/agents/harness-registry.ts`](../src/agents/harness-registry.ts).
 

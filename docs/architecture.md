@@ -1,135 +1,91 @@
-# OpenGUI architecture notes
+# OpenGUI architecture
 
-Contributor map of the repo **as it exists today**. Product language and ownership: [`CONTEXT.md`](../CONTEXT.md). Accepted decisions: [`docs/adr/`](./adr/).
+Contributor map of the repository as it exists for the 0.6 release line. Canonical product
+language is in [`CONTEXT.md`](../CONTEXT.md); accepted decisions are indexed in
+[`docs/adr/`](./adr/README.md).
 
-## Layers (canonical)
+## Runtime shape
 
-Four layers — same definitions as [`CONTEXT.md` → Architecture](../CONTEXT.md#architecture):
-
-| Layer                | Owns                                                                                                                                                                                                                                                                           | Does not own                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **OpenGUI Runtime**  | Harness Adapters, normalized `HarnessEvent` stream, Harness Inventory, Agent sends on **Harness Scope** (`harnessId` + directory + harness session id). Session/transcript **truth** stays in the Harness.                                                                     | Queued prompts, multi-Frontend transport, Workspaces, queue UI, `OpenGuiClient`                |
-| **OpenGUI Backend**  | One embedded Runtime per process; HTTP/WebSocket/SSE and Desktop IPC transport; Queued prompts + Queue dispatch; Backend arbitration; Host-embedded Account and API-key authorization; Backend persistence (identity, queue, uploads cleanup). Delegates execution to Runtime. | Workspace connection state, sidebar Project membership, Pending prompts, presentation metadata |
-| **OpenGUI Frontend** | Workspaces, Frontend Projects (saved paths), Pending prompts, queue UI, session presentation metadata, UI preferences (via **Frontend persistence**). Talks only to Backend via `OpenGuiClient`.                                                                               | Harness SDK/CLI, session/transcript source of truth, shared queue storage                      |
-| **Shell**            | Bootstrap Frontend (Desktop / Web / Mobile): window chrome, file picker, sidecar lifecycle, static hosting.                                                                                                                                                                    | Harness execution, session truth, queue dispatch                                               |
-
-**SDK v1** is in-process only: [`@opengui/runtime`](../packages/runtime/README.md). Target surface: `OpenGUI.create`, `at(directory)`, `SessionHandle` (`send`, `onStream`, `waitUntilIdle`) per [ADR 0007](./adr/0007-runtime-sdk-minimal-surface.md) and [`runtime-sdk-minimal-surface.md`](./plans/runtime-sdk-minimal-surface.md). No queue API in the SDK — use Backend for shared queues ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
-
-**Harness** = coding-agent CLI/runtime (OpenCode, Claude Code, Codex, Pi). **Provider** = model/API vendor inside a Harness. Never call the OpenGUI server process an “agent backend” ([ADR 0001](./adr/0001-harness-terminology.md)).
-
-## Where code lives today
-
-Target layout is in [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backend-sdk-split.md). Current mapping:
-
-| Layer               | Package / entry                  | Main paths                                                                                                                                                                                                                                |
-| ------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared wire types   | `@opengui/protocol`              | `packages/protocol/src/` (`HarnessId`, `OpenGuiCapabilities`, `QueueMode`, `SelectedModel`)                                                                                                                                               |
-| Runtime             | `@opengui/runtime`               | `packages/runtime/src/` (`host.ts`, `harness-service.ts`, `harness-runtime.ts`, `open-gui.ts`)                                                                                                                                            |
-| Harness Adapters    | `packages/runtime/src/adapters/` | `*-bridge.ts`, `harness-adapter-kit.ts`                                                                                                                                                                                                   |
-| Runtime descriptors | Shared with Frontend protocol    | `src/agents/` (`backend.ts`, `cli-harness-factory.ts`, `protocol/`)                                                                                                                                                                       |
-| Backend             | `@opengui/backend` + thin entry  | `packages/backend/src/` (`createBackendHost`, `host/`, `routes/`, `transport/` — SSE, RPC, FS, static, product API); `server/web-server.ts` (~15 lines, `serve()` only); queue/control services in `server/services/*` until a later pass |
-| Frontend            | React app                        | `src/` (`App.tsx`, `components/`, `hooks/`, `features/`, `protocol/`)                                                                                                                                                                     |
-| Desktop Shell       | Electron                         | `main.ts`, `preload.ts`, `main/backend-sidecar.ts`                                                                                                                                                                                        |
-
-**Rule:** UI and hooks call **Backend** APIs only, not bridge IPC. Bridges register inside the Backend process via Runtime ([ADR 0005](./adr/0005-opengui-runtime-backend-split-and-sdk.md)).
-
-**Repo map maintenance:** Any PR that moves `server/web-server.ts`, `packages/backend/**`, or Harness bridge modules under `packages/runtime/src/adapters/` must update this section (layer table and paths) in the same PR. CI guard: `pnpm run slop-check` (thin `web-server`, no `lib/harness-adapter-kit`).
-
-**Storage:** [ADR 0004](./adr/0004-storage-source-of-truth-boundaries.md) — Harness owns sessions/transcripts; Backend SQLite owns queues/uploads; Frontend persistence owns Workspaces/Projects/UI.
-
-**Session reads:** [ADR 0006](./adr/0006-harness-only-session-and-transcript-reads.md), plan [`session-read-slop-removal.md`](./plans/session-read-slop-removal.md), manual [`session-read-acceptance.md`](./manual/session-read-acceptance.md).
-
-**Desktop transport:** [ADR 0003](./adr/0003-persistent-desktop-backend-transport.md) — Local Workspace uses private IPC, not loopback HTTP.
-
-**Host identity / Team access:** [ADR 0011](./adr/0011-host-embedded-accounts-and-teams.md), [ADR 0012](./adr/0012-host-path-grants-and-tool-enforcement.md), [ADR 0013](./adr/0013-multi-user-host-access-model.md), plans [`host-identity-and-teams.md`](./plans/host-identity-and-teams.md) and [`multi-user-host-access.md`](./plans/multi-user-host-access.md). Remote Hosts provide Accounts, invites, Team management, revocable Host API keys, durable Actor attribution, and path grants. Multi-user access is **user-default** with explicit shares (paths, models, sessions)—not ambient Team roommate semantics. Desktop Local remains Account-free. Path enforcement is disabled by default; when enabled, member access is deny-by-default and restricted shell is unavailable. Shell is not a grant jail until a later sandbox ADR.
-
-**Flexible users & model offerings (proposed):** [ADR 0014](./adr/0014-flexible-users-access-and-model-offerings.md), plan [`flexible-users-access-and-model-offerings.md`](./plans/flexible-users-access-and-model-offerings.md). Target split: **Model backend** + **Provider credentials** + user-facing **Model offering** (slug such as “Company Model”); richer Host roles/capabilities and pluggable Host auth methods; UI for backends, offerings, and entitlements. Do not implement against ad-hoc Settings cards alone—follow the plan phases.
-
-**MCP tools:** [ADR 0015](./adr/0015-host-owned-mcp-tool-connections.md). MCP connections, credentials, transports, catalog budgeting, and actor/Session isolation are Host-owned in `packages/backend/src/mcp/`. The Harness consumes a protocol-neutral `AgentToolSource`; model adapters never import the MCP SDK. Restricted path-policy actors receive no MCP tools.
-
-**Host path policy:** [ADR 0012](./adr/0012-host-path-grants-and-tool-enforcement.md). `packages/backend/src/path-policy/` and the identity grant schema/routes are foundation only. Do not describe path grants as enforced until HTTP/RPC/SSE, uploads, Session visibility, and every Harness tool consume `IdentityService.effectivePathPolicy(actor)`. Remote multi-user Hosts are **share-only** for paths (no auto user homes); Desktop keeps device default directories.
-
-Implementation checklists:
-
-- [`plans/runtime-backend-sdk-split.md`](./plans/runtime-backend-sdk-split.md) — packages / SDK (Phases 1–3 largely done).
-- [`plans/contributor-experience-and-slop-removal.md`](./plans/contributor-experience-and-slop-removal.md) — docs, session index, naming, registry, guardrails.
-- [`plans/session-read-slop-removal.md`](./plans/session-read-slop-removal.md) — ADR 0006 detail.
-- [`plans/host-identity-and-teams.md`](./plans/host-identity-and-teams.md) — Accounts, Team management, attribution, and optional path-grant enforcement (Phases 0–4 done).
-- [`plans/multi-user-host-access.md`](./plans/multi-user-host-access.md) — registration modes, canInvite, session ACL, model planes (ADR 0013).
-- [`plans/flexible-users-access-and-model-offerings.md`](./plans/flexible-users-access-and-model-offerings.md) — offerings/slugs, backend auth strategies, roles/UI (ADR 0014, proposed).
-
-Optional CI: `node scripts/slop-check.mjs`.
-
-## Harness architecture
-
-Harness-facing modules live in `src/agents/`:
-
-- `backend.ts` defines the normalized Harness interface and event shapes used by the app.
-- `index.ts` defines supported Harness IDs and routing helpers.
-- `cli-harness-factory.ts` contains shared local-CLI defaults and `createCliHarnessNormalizer()` for local CLI Harnesses.
-- `claude-code.ts`, `codex.ts`, and `pi.ts` are small descriptors built from the CLI factory.
-- `opencode.ts` declares OpenCode capabilities/workspace shape and delegates SDK event translation to `src/agents/protocol/opencode-map.ts`.
-- `id-codec.ts` is the Harness ID-codec seam. `shared.ts` re-exports it and keeps session/message tagging helpers.
-
-When adding or changing a Harness, keep protocol-specific mapping out of UI code. Normalize native events into `HarnessEvent` as close to the adapter as possible, then let the rest of the app consume the normalized event stream.
-
-## Adding a Harness
-
-A **Harness Adapter** is a bridge (`setupXBridge`) plus registry metadata. Start with [`docs/harness-bridge-contract.md`](./harness-bridge-contract.md) and `node scripts/scaffold-harness.mjs <id>`.
-
-1. [`src/agents/harness-registry.ts`](../src/agents/harness-registry.ts) + [`harness-ids.ts`](../src/agents/harness-ids.ts) — id, label, CLI command.
-2. [`cli-harness-factory.ts`](../src/agents/cli-harness-factory.ts) — `HARNESS_BACKEND_META`, `normalizeEvent`.
-3. [`harness-bridge-registrations.ts`](../packages/runtime/src/harness-bridge-registrations.ts) — register bridge in `BRIDGE_SETUP_BY_HARNESS_ID`.
-4. New `*-bridge.ts` under `packages/runtime/src/adapters/`.
-5. [`server/harness-inventory.ts`](../server/harness-inventory.ts) — uses registry CLI map.
-6. [`session-identity.ts`](../src/lib/session-identity.ts) — parse legacy ids only; new ids via `composeFrontendSessionId`.
-
-Descriptors in `src/agents/<harness>.ts`: use `makeLocalCliCapabilities()` and `createCliHarnessNormalizer()` for tagged CLI streams; custom SDK events go in `src/agents/protocol/` with tests. Session IDs: `composeFrontendSessionId` / codecs in `src/agents/shared.ts`, not ad-hoc strings.
-
-## Frontend feature slices
-
-The current frontend is still centered on `src/App.tsx`, but several orchestration concerns have been moved into `src/features/`:
-
-- `features/app-shell/useAppKeyboardShortcuts.ts` owns app-level keyboard shortcut orchestration.
-- `features/session/useActiveSessionQueue.ts` owns active-session queue UI handlers.
-- `features/session/useChatSessionSurface.ts` derives the active chat surface state.
-- `features/worktree/useActiveWorktreeMerge.ts` owns active worktree merge and pull-request actions.
-- `features/local-intent/` owns **Local intent orchestration** (Pending prompt → Agent send, Queued prompt dispatch from PromptBox). `HarnessProvider` (`use-agent-impl-core.tsx`) wires React state and delegates `sendPrompt` / `sendCommand` / queue side effects through `useLocalIntentOrchestration`.
-- `features/agent-bootstrap/` — workspace persistence load + post-ready project/server bootstrap.
-- `features/agent-resources/` — `loadServerResources` / resource catalog dedupe (`useAgentResourceCatalog`).
-
-New UI orchestration should follow this direction: keep reusable visual pieces in `src/components/`, keep cross-component state orchestration in a named `src/features/<area>/` hook, and keep pure domain utilities in `src/lib/`.
-
-## Shared UI primitives
-
-Reusable UI building blocks live in `src/components/ui/`. Recent dialog work uses:
-
-- `DialogShell` for common dialog layout and footer/body structure.
-- `DialogHeader` for consistent dialog titles, descriptions, and icons.
-- `ButtonGroup`, `FormField`, and `ToggleSwitch` for repeated form/action patterns.
-
-Prefer these primitives before adding another one-off dialog header, footer, button group, or toggle implementation.
-
-## Provider icons
-
-Provider icons are resolved by `src/components/provider-icons/ProviderIcon.tsx` and `types.ts`. Vite expands the SVG asset manifest from `src/components/provider-icons/svgs/*.svg` with `import.meta.glob`, so adding an icon should only require dropping in a correctly named SVG unless new fallback or alias behavior is needed.
-
-## Commands
-
-Vite+ (`vp`) is a dev dependency. After `pnpm install`, use **`pnpm vp …`** or **`pnpm run <script>`** for tasks; a global `vp` on `PATH` is optional.
-
-```bash
-pnpm install        # install dependencies
-pnpm run dev        # desktop dev; use dev:web for browser (append :web)
-pnpm run start      # desktop prod; use start:web for browser (append :web)
-pnpm vp check       # lint, format, and type checks
-pnpm vp lint        # lint only
-pnpm vp fmt         # format only
-pnpm vp test        # tests
-pnpm run build      # production build
-pnpm vp run <task>  # named project tasks such as dist:linux
-pnpm add <pkg>      # dependency changes
-pnpm remove <pkg>   # dependency changes
+```text
+Desktop Shell ─┐
+Web Shell ─────┼─ OpenGUI Frontend ── authenticated Host API/events ── OpenGUI Host
+Mobile Shell ──┘                                                   ├─ identity + authorization
+                                                                   ├─ model/provider credentials
+                                                                   ├─ MCP connections
+                                                                   └─ first-party Harness
+                                                                      ├─ Session SQLite
+                                                                      ├─ model adapters
+                                                                      └─ built-in + MCP tools
 ```
 
-Do not run `tsc` directly for typechecking.
+| Layer              | Owns                                                                                                                   | Main paths                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Shells**         | Electron lifecycle/native integration, browser hosting, and Capacitor packaging                                        | `main.ts`, `main/`, `preload.ts`, `server/`, `android/`, `src/shell/` |
+| **Frontend**       | Workspaces (Host connections), Projects in the sidebar, presentation state, PromptBox, transcript and settings UI      | `src/components/`, `src/features/`, `src/hooks/`, `src/lib/`          |
+| **Host**           | Product routes and events, Session lifecycle, queues, identity/authz, settings/secrets, model access, MCP, path policy | `packages/backend/src/`                                               |
+| **Harness**        | Agent loop, durable Session entries, context/compaction, Skills, model transports, and tool execution                  | `packages/harness/src/`                                               |
+| **Wire contracts** | Shared provider catalogs and protocol primitives; frontend Host contracts remain in the app until extracted            | `packages/protocol/src/`, `src/protocol/`                             |
+
+There is no active external-Harness Runtime, bridge registry, or coding-agent CLI adapter. The
+package name `@opengui/backend` remains for compatibility, but product and architecture language
+calls the running process the **OpenGUI Host**. Historical Runtime/bridge plans describe superseded
+migration states, not the current implementation ([ADR 0010](./adr/0010-first-party-opengui-harness.md)).
+
+## Ownership rules
+
+- A **Host** contains one first-party **Harness**. The Harness owns durable Session entries and Run
+  execution; the Host owns access, orchestration, settings, and the client-facing API.
+- Frontend code talks through `OpenGuiHostClient` in `src/protocol/`. It does not import the Harness,
+  MCP SDK, identity database, or model transport implementations.
+- Desktop starts a private loopback Host sidecar and uses Desktop Local identity bypass. Web and
+  Mobile connect to an authenticated Remote Host; Mobile never executes a phone-local Harness.
+- Remote Hosts are share-only by default. Identity, roles, Session ACLs, model entitlements, and
+  path grants live under `packages/backend/src/identity/` and `path-policy/`. Path grants mediate
+  product/file surfaces; they are not an operating-system shell sandbox.
+- Model adapters implement wire protocols behind the Harness model interface. Provider credentials
+  and backend/offering resolution stay Host-side ([ADR 0014](./adr/0014-flexible-users-access-and-model-offerings.md)).
+- MCP lifecycle, credentials, catalog limits, diagnostics, and actor policy stay behind
+  `packages/backend/src/mcp/McpBroker`; the Harness consumes only `AgentToolSource`
+  ([ADR 0015](./adr/0015-host-owned-mcp-tool-connections.md)).
+
+## Persistence
+
+| Data                                                                         | Authority                                                   |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Sessions, entries, follow-ups, Run replay                                    | Harness SQLite in the Host data directory                   |
+| Accounts, memberships, grants, ACLs, offerings, entitlements, API-key hashes | Host identity SQLite                                        |
+| Model/MCP endpoint settings and secret slots                                 | Host durable state; secrets are never returned by list APIs |
+| Workspace connections, connected sidebar Projects, UI preferences            | Frontend persistence                                        |
+
+External-Harness Sessions are not imported into first-party Harness storage. See
+[`CHANGELOG.md`](../CHANGELOG.md) before upgrading from 0.5.x.
+
+## Important seams
+
+- `packages/backend/src/host/opengui-host.ts` — Host application boundary and Harness bootstrap.
+- `packages/backend/src/routes/` — authenticated HTTP product, identity, filesystem, and event APIs.
+- `packages/backend/src/identity/` — Accounts, roles, grants, Session ACL, model offerings.
+- `packages/backend/src/mcp/` — MCP broker and Harness tool-source adapter.
+- `packages/harness/src/open-gui-harness.ts` — first-party Harness composition.
+- `packages/harness/src/storage/` — schema-versioned Session persistence.
+- `packages/harness/src/models/` — model transport adapters.
+- `packages/harness/src/tools/` — `read`, `write`, `edit`, `shell`, and image handling.
+- `src/features/host-provider/` — Frontend Host state/event orchestration.
+- `src/features/session-transcript/` — live plus durable transcript projection.
+
+When changing Host routes, Session paths, or frontend Host transport, run
+`pnpm run slop-check` in addition to the standard gates.
+
+## Development commands
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run dev           # Desktop development
+pnpm run dev:web       # Web development
+pnpm run check         # format, lint, and type checks through Vite+
+pnpm run test
+pnpm run slop-check
+pnpm run build
+```
+
+Release CI uses Node.js 24 and pnpm 11.8.0. Never invoke `tsc` directly; use Vite+ checks.

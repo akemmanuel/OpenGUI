@@ -244,7 +244,7 @@
     "newWorktree": "Neuer Worktree",
     "currentRootWorktree": "Aktueller Branch des Root-Worktrees.",
     "queueTitle": "Warteschlange: auf vollständige Antwort warten und dann senden (Strg/Cmd+D zum Umschalten)",
-    "steerTitle": "Steuern: auf aktuellen Teil warten und dann senden (Strg/Cmd+D zum Umschalten)",
+    "steerTitle": "Steuern: auf aktuellen Modellteil warten und dann senden (Strg/Cmd+D zum Umschalten)",
     "queue": "Warteschlange",
     "steer": "Steuern",
     "stop": "Stoppen",
@@ -492,6 +492,21 @@
     "toggle": "{{name}} umschalten",
     "inspect": "Testen & prüfen",
     "inspecting": "Verbindung wird hergestellt…",
+    "status": {
+      "disabled": "Deaktiviert",
+      "refreshing": "Wird geprüft…",
+      "ready": "Bereit",
+      "degraded": "Zwischengespeicherte Werkzeuge",
+      "offline": "Offline"
+    },
+    "problem": {
+      "timeout": "Zeitüberschreitung bei der Verbindung. Der Chat bleibt ohne diese Werkzeuge verfügbar.",
+      "authentication": "Die Authentifizierung wurde abgelehnt. Prüfe die gespeicherten Zugangsdaten.",
+      "permission": "Der MCP-Server hat den Zugriff verweigert.",
+      "unavailable": "Der MCP-Server ist nicht verfügbar. Der Chat bleibt verfügbar.",
+      "protocol": "Der Server hat eine ungültige MCP-Antwort zurückgegeben.",
+      "unknown": "Die Werkzeugsuche ist fehlgeschlagen. Der Chat bleibt verfügbar."
+    },
     "toolCount_one": "Ein Werkzeug verfügbar",
     "toolCount_other": "{{count}} Werkzeuge verfügbar",
     "save": "Verbindung speichern",

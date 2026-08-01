@@ -352,6 +352,31 @@ export class SqliteSessionStore {
     if (result.numDeletedRows !== 1n) throw new Error(`Pending follow-up not found: ${followUpId}`);
   }
 
+  /** Atomically claim a pending follow-up for immediate dispatch (send-now). */
+  async takePendingFollowUp(sessionId: string, followUpId: string) {
+    await this.#ready;
+    return this.#database.transaction().execute(async (transaction) => {
+      const row = await transaction
+        .selectFrom("session_follow_ups")
+        .select(["id", "sequence", "prompt_json", "created_at"])
+        .where("session_id", "=", sessionId)
+        .where("id", "=", followUpId)
+        .where("state", "=", "pending")
+        .executeTakeFirst();
+      if (!row) throw new Error(`Pending follow-up not found: ${followUpId}`);
+      const deleted = await transaction
+        .deleteFrom("session_follow_ups")
+        .where("id", "=", followUpId)
+        .where("session_id", "=", sessionId)
+        .where("state", "=", "pending")
+        .executeTakeFirst();
+      if (deleted.numDeletedRows !== 1n) {
+        throw new Error(`Pending follow-up not found: ${followUpId}`);
+      }
+      return decodeFollowUp(row);
+    });
+  }
+
   async reorderFollowUp(sessionId: string, followUpId: string, requestedIndex: number) {
     await this.#ready;
     await this.#database.transaction().execute(async (transaction) => {

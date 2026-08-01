@@ -1,5 +1,6 @@
 import { serve as honoServe } from "@hono/node-server";
 import { createBackendHost as createHost } from "@opengui/backend";
+import packageJson from "../package.json" with { type: "json" };
 
 type BackendHost = ReturnType<typeof createHost>;
 type Server = ReturnType<typeof honoServe>;
@@ -12,6 +13,7 @@ export interface WebServerDependencies {
 }
 
 export function startWebServer(dependencies: Partial<WebServerDependencies> = {}): Server {
+  process.env.OPENGUI_VERSION ??= packageJson.version;
   const createBackendHost = dependencies.createBackendHost ?? createHost;
   const serve = dependencies.serve ?? honoServe;
   const info = dependencies.info ?? console.info;

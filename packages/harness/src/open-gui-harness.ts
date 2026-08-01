@@ -183,6 +183,10 @@ class HarnessSessionImpl implements HarnessSession {
     await this.#harness.removeFollowUp(this.#id, followUpId);
   }
 
+  async takeFollowUp(followUpId: string) {
+    return await this.#harness.takeFollowUp(this.#id, followUpId);
+  }
+
   async abort() {
     this.#harness.abort(this.#id);
   }
@@ -489,6 +493,11 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   async removeFollowUp(sessionId: string, followUpId: string) {
     this.#assertOpen();
     await this.#store.removeFollowUp(sessionId, followUpId);
+  }
+
+  async takeFollowUp(sessionId: string, followUpId: string) {
+    this.#assertOpen();
+    return await this.#store.takePendingFollowUp(sessionId, followUpId);
   }
 
   abort(sessionId: string) {

@@ -4,6 +4,8 @@ import { createMcpAgentToolSource, type McpBroker, type McpCatalogSnapshot } fro
 function catalog(): McpCatalogSnapshot {
   return {
     generation: "large-generation",
+    problems: [],
+    checkedAt: {},
     tools: [
       {
         ref: { connectionId: "crm", toolName: "find_customer" },
@@ -34,10 +36,101 @@ function catalog(): McpCatalogSnapshot {
 }
 
 describe("MCP AgentToolSource", () => {
+  test("turns an unavailable MCP invocation into a recoverable tool result", async () => {
+    const unavailable = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("connect timed out"), {
+        code: "UND_ERR_CONNECT_TIMEOUT",
+      }),
+    });
+    const broker: McpBroker = {
+      catalog: async () => catalog(),
+      refresh: async () => catalog(),
+      call: async () => {
+        throw unavailable;
+      },
+      replaceConnections: async () => undefined,
+      close: async () => undefined,
+    };
+    const tools = await createMcpAgentToolSource(broker).resolve(
+      { sessionId: "session", runId: "run", projectDirectory: "/project" },
+      new AbortController().signal,
+    );
+
+    await expect(
+      tools.invoke(
+        { name: "mcp__crm__find_customer__11111111", input: { email: "ada@example.com" } },
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({
+      status: "error",
+      summary: "MCP connection timed out",
+      content: [],
+      error: { code: "timeout", retryable: true },
+    });
+  });
+
+  test.each([
+    ["ENOTFOUND", "unavailable"],
+    ["EAI_AGAIN", "unavailable"],
+    ["ECONNRESET", "unavailable"],
+    ["ECONNREFUSED", "unavailable"],
+    ["EHOSTUNREACH", "unavailable"],
+    ["ETIMEDOUT", "timeout"],
+  ])("classifies nested invocation transport code %s", async (code, expectedCode) => {
+    const broker: McpBroker = {
+      catalog: async () => catalog(),
+      refresh: async () => catalog(),
+      call: async () => {
+        throw Object.assign(new Error("transport failed"), {
+          cause: Object.assign(new Error(code), { code }),
+        });
+      },
+      replaceConnections: async () => undefined,
+      close: async () => undefined,
+    };
+    const tools = await createMcpAgentToolSource(broker).resolve(
+      { sessionId: "session", runId: "run", projectDirectory: "/project" },
+      new AbortController().signal,
+    );
+    await expect(
+      tools.invoke(
+        { name: "mcp__crm__find_customer__11111111", input: {} },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      status: "error",
+      error: { code: expectedCode, retryable: true },
+    });
+  });
+
+  test("does not hide an unexpected invocation defect as a discovery error", async () => {
+    const defect = new Error("Invariant violated");
+    const broker: McpBroker = {
+      catalog: async () => catalog(),
+      refresh: async () => catalog(),
+      call: async () => {
+        throw defect;
+      },
+      replaceConnections: async () => undefined,
+      close: async () => undefined,
+    };
+    const tools = await createMcpAgentToolSource(broker).resolve(
+      { sessionId: "session", runId: "run", projectDirectory: "/project" },
+      new AbortController().signal,
+    );
+    await expect(
+      tools.invoke(
+        { name: "mcp__crm__find_customer__11111111", input: {} },
+        new AbortController().signal,
+      ),
+    ).rejects.toBe(defect);
+  });
+
   test("uses stable search, inspect, and call tools when direct schemas exceed the budget", async () => {
     const call = vi.fn(async () => ({ status: "ok" as const, summary: "updated", content: [] }));
     const broker: McpBroker = {
       catalog: async () => catalog(),
+      refresh: async () => catalog(),
       call,
       replaceConnections: async () => undefined,
       close: async () => undefined,

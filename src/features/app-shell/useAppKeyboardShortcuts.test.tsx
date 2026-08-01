@@ -43,7 +43,7 @@ describe("application keyboard shortcuts", () => {
     vi.useRealTimers();
   });
 
-  test("toggles queue steering only for a running Session outside dialogs", () => {
+  test("toggles queue steer only for a running Session outside dialogs", () => {
     render(<Harness />);
     fireEvent.keyDown(window, { key: "d", ctrlKey: true });
     expect(screen.getByText("after-part")).toBeTruthy();
@@ -52,6 +52,8 @@ describe("application keyboard shortcuts", () => {
       ctrlKey: true,
     });
     expect(screen.getByText("after-part")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "d", ctrlKey: true });
+    expect(screen.getByText("queue")).toBeTruthy();
   });
 
   test("protects editable text from undo and sidebar search shortcuts", () => {
