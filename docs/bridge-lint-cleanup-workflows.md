@@ -1,4 +1,8 @@
-# Harness bridge TypeScript lint cleanup — workflows
+# Archived: Harness bridge TypeScript lint cleanup workflows
+
+> **Historical only.** ADR 0010 replaced the external Harness Runtime and the bridge files this
+> plan targeted have been deleted. Do not run these workflows or recreate those paths. Current
+> quality commands are documented in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 **Source:** Pi workflow `bridge_lint_cleanup_workflows` (run `mr46we1f-4074lc`, verdict `plans_ready`).
 

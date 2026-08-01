@@ -4,7 +4,8 @@ Companion to [ADR 0014](../adr/0014-flexible-users-access-and-model-offerings.md
 
 ## Status
 
-Design proposed. Implementation not started.
+ADR accepted. Phases 1 and 3 have shipped as a first vertical slice; phases 2, 4, and 5 remain
+partial or deferred as described below.
 
 ## North star
 
@@ -151,20 +152,20 @@ Migration: existing `modelConnections[]` + `apiKeys` + identity `host_model_conn
 - [x] This plan
 - [x] Glossary terms in `CONTEXT.md`
 - [x] ADR index + architecture pointers
-- [ ] Accept ADR 0014 after review (status → accepted)
+- [x] Accept ADR 0014 after review (status → accepted)
 - [ ] Wayfinding residual tickets resolved or explicitly deferred
 
 ### Phase 1 — Model offerings (vertical slice)
 
 **Goal:** “Company Model” works on current API-key backends.
 
-- [ ] Identity tables (or equivalent) for offerings + entitlements
-- [ ] Model access service: create/update/list offerings; resolve slug → backend+upstream
-- [ ] Migrate/link existing connections to backends; auto-offerings per model id
-- [ ] Prompt/setModel authorize on offering id; pin collab to shared offering/backend
-- [ ] Picker + Settings UI for offerings
-- [ ] i18n
-- [ ] Tests: entitlement deny, resolve, collab pin rejects user-plane credential, migration smoke
+- [x] Identity tables (or equivalent) for offerings + entitlements
+- [x] Model access service: create/update/list offerings; resolve slug → backend+upstream
+- [x] Migrate/link existing connections to backends; auto-offerings per model id
+- [x] Prompt/setModel authorize on offering id; pin collab to shared offering/backend
+- [x] Picker + Settings UI for offerings
+- [x] i18n
+- [x] Tests: entitlement deny, resolve, collab pin rejects user-plane credential, migration smoke
 
 **Exit:** Member with team entitlement sees “Company Model”, runs against upstream; no upstream id required in picker.
 
@@ -187,12 +188,12 @@ Migration: existing `modelConnections[]` + `apiKeys` + identity `host_model_conn
 
 **Goal:** Access control matches ADR 0014 without full SSO.
 
-- [ ] Persist `admin` / `viewer` (or capability bundles); migration from member
-- [ ] Replace blanket `requireOwnerUser` with capability checks where admin should act
-- [ ] Fix session `run` authorization (user grant + pin + entitlement)
+- [x] Persist `admin` / `viewer` (or capability bundles); migration from member
+- [x] Replace blanket `requireOwnerUser` with capability checks where admin should act
+- [x] Fix session `run` authorization (user grant + pin + entitlement)
 - [ ] API key scope field (even if only role-equivalent at first)
-- [ ] Team settings UI for roles/capabilities
-- [ ] Tests: admin model manage, viewer limits, user-run share
+- [x] Team settings UI for roles/capabilities
+- [x] Tests: admin model manage, viewer limits, user-run share
 
 **Exit:** Operator can delegate model/member admin without sharing owner; session share run works for a named user.
 

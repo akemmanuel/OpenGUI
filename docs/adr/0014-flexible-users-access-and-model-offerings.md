@@ -6,7 +6,17 @@ This ADR decides the target shape for a flexible **users and access** system—i
 
 ## Status
 
-proposed
+accepted
+
+Accepted by implementation on 2026-07-28. The merged vertical slice includes model offerings and
+entitlements, Host-side offering resolution, `admin` / `viewer` roles, direct-user collaborative
+`run` authorization, backend-oriented settings, and the corresponding integration tests. Evidence:
+implementation commit `28ca43c`, the
+[`flexible users and model offerings` plan](../plans/flexible-users-access-and-model-offerings.md),
+and `packages/backend/src/identity/roles-model-offerings.integration.test.ts`. Later
+auth strategies, Host login methods, secret-custody upgrades, and named Teams remain phased work;
+they do not reopen the object and authorization boundaries decided here. In particular, this
+acceptance does not claim that deferred plan phases 2, 4, or 5 have shipped.
 
 ## North star
 
