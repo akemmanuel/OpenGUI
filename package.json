@@ -1,6 +1,6 @@
 {
   "name": "opengui",
-  "version": "0.6.0-rc.1",
+  "version": "0.6.0-rc.2",
   "private": false,
   "description": "OpenGUI - first-party coding agent for desktop and web",
   "homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -134,7 +134,8 @@
     "asarUnpack": [
       "dist-electron/backend.js",
       "dist-electron/backend.js.map",
-      "dist-electron/package.json"
+      "dist-electron/package.json",
+      "dist-electron/*.wasm"
     ],
     "linux": {
       "target": [

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0-rc.2 — release candidate
+
+- Fixed Linux and other packaged Desktop builds failing to start the Host sidecar because Photon’s
+  WebAssembly runtime was not unpacked beside `dist-electron/backend.js`.
+
 ## 0.6.0-rc.1 — release candidate
 
 This candidate replaces the external coding-agent integration architecture with the first-party
