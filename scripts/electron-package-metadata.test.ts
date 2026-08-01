@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
+import packageJson from "../package.json" with { type: "json" };
 import { createElectronRuntimePackage, packageIdForImport } from "./electron-package-metadata";
 
 describe("Electron package metadata", () => {
@@ -28,5 +29,9 @@ describe("Electron package metadata", () => {
     ["@opengui/backend/routes", "@opengui/backend"],
   ])("resolves package boundary for %s", (specifier, expected) => {
     expect(packageIdForImport(specifier)).toBe(expected);
+  });
+
+  test("unpacks sidecar WebAssembly assets beside the backend bundle", () => {
+    expect(packageJson.build.asarUnpack).toContain("dist-electron/*.wasm");
   });
 });
