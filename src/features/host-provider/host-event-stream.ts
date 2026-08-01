@@ -49,6 +49,16 @@ export interface HostEventDispatcherDependencies {
   transcriptStore: ActiveSessionTranscriptStore;
   refreshSessions: () => Promise<void>;
   onFollowUpDispatched?: (sessionId: string, followUpId: string) => void;
+  /** Fires when the live model part ends (text committed or tool calls begin). */
+  onModelPartEnded?: (sessionId: string) => void;
+}
+
+function isModelPartEndEvent(hostEvent: HostEvent): boolean {
+  return (
+    hostEvent.event.type === "entry_appended" &&
+    (hostEvent.event.entry.kind === "assistant_message" ||
+      hostEvent.event.entry.kind === "tool_call")
+  );
 }
 
 /** Applies each event synchronously so deltas retain the Host's delivery order. */
@@ -59,6 +69,7 @@ export function createHostEventDispatcher({
   transcriptStore,
   refreshSessions,
   onFollowUpDispatched,
+  onModelPartEnded,
 }: HostEventDispatcherDependencies): (hostEvent: HostEvent) => void {
   return (hostEvent) => {
     const terminal = isTerminalHostEvent(hostEvent);
@@ -89,6 +100,7 @@ export function createHostEventDispatcher({
       });
     }
 
+    if (isModelPartEndEvent(hostEvent)) onModelPartEnded?.(hostEvent.sessionId);
     if (terminal) void refreshSessions().catch(notifyUnknownError);
   };
 }
@@ -124,12 +136,16 @@ export function useHostEventStream(options: UseHostEventStreamOptions): void {
   const onFollowUpDispatchedRef = useRef(options.onFollowUpDispatched);
   onFollowUpDispatchedRef.current = options.onFollowUpDispatched;
 
+  const onModelPartEndedRef = useRef(options.onModelPartEnded);
+  onModelPartEndedRef.current = options.onModelPartEnded;
+
   useEffect(() => {
     if (!options.host) return;
     const dispatchEvent = createHostEventDispatcher({
       ...options,
       onFollowUpDispatched: (sessionId, followUpId) =>
         onFollowUpDispatchedRef.current?.(sessionId, followUpId),
+      onModelPartEnded: (sessionId) => onModelPartEndedRef.current?.(sessionId),
     });
     return options.host.subscribe(
       dispatchEvent,

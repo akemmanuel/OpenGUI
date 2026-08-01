@@ -113,6 +113,8 @@ export interface HarnessSession {
   updateFollowUp(followUpId: string, prompt: PromptInput): Promise<void>;
   reorderFollowUp(followUpId: string, index: number): Promise<void>;
   removeFollowUp(followUpId: string): Promise<void>;
+  /** Remove a pending follow-up and return it for immediate dispatch. */
+  takeFollowUp(followUpId: string): Promise<FollowUp>;
   abort(): Promise<void>;
   setModel(selection: ModelSelection): Promise<void>;
   setReasoning(reasoning: ReasoningLevel): Promise<void>;

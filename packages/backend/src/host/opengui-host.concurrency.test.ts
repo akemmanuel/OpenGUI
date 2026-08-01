@@ -213,6 +213,106 @@ describe("OpenGuiHost concurrent arbitration", () => {
     await host.close();
   });
 
+  test("interrupt prompt aborts the live Run and accepts the new user message immediately", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opengui-host-interrupt-prompt-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "project");
+    await mkdir(project);
+    let requestCount = 0;
+    const model: ModelTransport = {
+      async *stream(_request, signal) {
+        requestCount += 1;
+        if (requestCount === 1) {
+          yield { type: "text_delta", delta: "partial " };
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          });
+        }
+        yield { type: "text_delta", delta: `answer-${requestCount}` };
+        yield { type: "completed" };
+      },
+    };
+    const host = new OpenGuiHost(root, { model });
+    await host.start();
+    const session = await host.createSession({
+      projectDirectory: project,
+      model: { connectionId: "offline", modelId: "fixture-model" },
+      reasoning: "none",
+    });
+    await host.prompt(session.id, { text: "active" });
+    const queued = await host.prompt(session.id, { text: "stay queued" });
+    expect(queued.mode).toBe("follow_up");
+
+    const interrupted = await host.prompt(session.id, { text: "jump the line" }, undefined, {
+      interrupt: true,
+    });
+    expect(interrupted.mode).toBe("run");
+    await host.waitForIdle(session.id);
+
+    const snapshot = await host.readSession(session.id);
+    expect(
+      snapshot.entries
+        .filter((entry) => entry.kind === "user_message")
+        .map((entry) => entry.payload.text),
+    ).toEqual(["active", "jump the line", "stay queued"]);
+    expect(snapshot.entries.some((entry) => entry.kind === "run_aborted")).toBe(true);
+    expect(snapshot.entries.some((entry) => entry.payload.text === "partial ")).toBe(false);
+    expect(snapshot.followUps).toEqual([]);
+    await host.close();
+  });
+
+  test("send-now keeps durable transcript order and does not duplicate the follow-up", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opengui-host-send-now-history-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "project");
+    await mkdir(project);
+    let requestCount = 0;
+    const model: ModelTransport = {
+      async *stream(_request, signal) {
+        requestCount += 1;
+        if (requestCount === 1) {
+          yield { type: "text_delta", delta: "partial answer" };
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          });
+        }
+        yield { type: "text_delta", delta: `answer-${requestCount}` };
+        yield { type: "completed" };
+      },
+    };
+    const host = new OpenGuiHost(root, { model });
+    await host.start();
+    const session = await host.createSession({
+      projectDirectory: project,
+      model: { connectionId: "offline", modelId: "fixture-model" },
+      reasoning: "none",
+    });
+    await host.prompt(session.id, { text: "active" });
+    const first = await host.prompt(session.id, { text: "queued first" });
+    const second = await host.prompt(session.id, { text: "queued second" });
+    expect(first.mode).toBe("follow_up");
+    expect(second.mode).toBe("follow_up");
+    if (second.mode !== "follow_up") throw new Error("expected queued second");
+
+    await host.sendFollowUpNow(session.id, second.followUp.id);
+    await host.waitForIdle(session.id);
+
+    const snapshot = await host.readSession(session.id);
+    expect(
+      snapshot.entries
+        .filter((entry) => entry.kind === "user_message")
+        .map((entry) => entry.payload.text),
+    ).toEqual(["active", "queued second", "queued first"]);
+    expect(
+      snapshot.entries.filter(
+        (entry) => entry.kind === "user_message" && entry.payload.text === "queued second",
+      ),
+    ).toHaveLength(1);
+    expect(snapshot.entries.some((entry) => entry.kind === "run_aborted")).toBe(true);
+    expect(snapshot.followUps).toEqual([]);
+    await host.close();
+  });
+
   test("concurrent send-now requests dispatch a durable follow-up at most once", async () => {
     const root = await mkdtemp(join(tmpdir(), "opengui-host-send-now-race-"));
     temporaryDirectories.push(root);

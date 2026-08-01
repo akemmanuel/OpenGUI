@@ -141,6 +141,83 @@ describe("Host transcript streaming", () => {
     ]);
   });
 
+  test("clears live stream buffers on abort so send-now does not leave ghost assistants", () => {
+    let stream = createHostTranscriptStream(snapshot());
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "entry_appended",
+        entry: {
+          id: "user-1",
+          sessionId: "session-1",
+          sequence: 1,
+          kind: "user_message",
+          payload: { text: "first", runId: "run-1" },
+          createdAt: "2026-07-10T00:00:01.000Z",
+        },
+      },
+    });
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "assistant_delta", runId: "run-1", delta: "partial answer" },
+    });
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "reasoning_delta", runId: "run-1", delta: "thinking" },
+    });
+    expect(projectHostTranscriptStream(stream).map((message) => message.info.id)).toEqual([
+      "user-1",
+      "stream:run-1",
+    ]);
+
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "entry_appended",
+        entry: {
+          id: "abort-1",
+          sessionId: "session-1",
+          sequence: 2,
+          kind: "run_aborted",
+          payload: { runId: "run-1" },
+          createdAt: "2026-07-10T00:00:02.000Z",
+        },
+      },
+    });
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "entry_appended",
+        entry: {
+          id: "user-2",
+          sessionId: "session-1",
+          sequence: 3,
+          kind: "user_message",
+          payload: { text: "send now please", runId: "run-2" },
+          createdAt: "2026-07-10T00:00:03.000Z",
+        },
+      },
+    });
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "assistant_delta", runId: "run-2", delta: "fresh answer" },
+    });
+
+    const messages = projectHostTranscriptStream(stream);
+    expect(messages.map((message) => message.info.id)).toEqual([
+      "user-1",
+      "user-2",
+      "stream:run-2",
+    ]);
+    expect(messages.map((message) => message.parts[0])).toMatchObject([
+      { type: "text", text: "first" },
+      { type: "text", text: "send now please" },
+      { type: "text", text: "fresh answer" },
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("partial answer");
+    expect(JSON.stringify(messages)).not.toContain("thinking");
+  });
+
   test("shows assistant deltas immediately and replaces them with the durable message", () => {
     let stream = createHostTranscriptStream(snapshot());
     stream = applyHostTranscriptEvent(stream, {

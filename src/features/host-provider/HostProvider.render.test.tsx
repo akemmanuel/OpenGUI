@@ -307,6 +307,43 @@ describe("HostProvider render integration", () => {
     });
   });
 
+  test("steer mode queues an after-part Follow-up without interrupting immediately", async () => {
+    host.prompt.mockResolvedValue({
+      mode: "follow_up",
+      followUp: {
+        id: "follow-steer",
+        sequence: 1,
+        prompt: { text: "steer me" },
+        createdAt: "2026-01-01T00:00:02.000Z",
+      },
+    });
+
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession("session-1"));
+    await waitFor(() =>
+      expect(messages[0]?.parts?.[0]).toMatchObject({ text: "hydrated transcript" }),
+    );
+
+    await act(() => actions.sendPrompt("steer me", "after-part", ["code-review"]));
+
+    expect(host.prompt).toHaveBeenCalledWith("session-1", "steer me", {
+      skills: ["code-review"],
+    });
+    expect(host.sendFollowUpNow).not.toHaveBeenCalled();
+    expect(actions.getQueuedPrompts("session-1")).toEqual([
+      expect.objectContaining({ id: "follow-steer", text: "steer me", mode: "after-part" }),
+    ]);
+  });
+
   test("surfaces bootstrap failure as a stable error state", async () => {
     host.health.mockRejectedValueOnce(new Error("Host offline"));
     render(

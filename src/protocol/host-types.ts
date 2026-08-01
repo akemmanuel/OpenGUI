@@ -38,7 +38,19 @@ export interface HostModelOffering {
   updatedAt: number;
 }
 
-export type HostMcpConnection =
+export interface HostMcpConnectionStatus {
+  state: "disabled" | "refreshing" | "ready" | "degraded" | "offline";
+  toolCount: number;
+  lastCheckedAt?: string;
+  problem?: {
+    code: string;
+    stage: string;
+    message: string;
+    retryable: boolean;
+  };
+}
+
+export type HostMcpConnection = (
   | {
       id: string;
       label: string;
@@ -56,7 +68,8 @@ export type HostMcpConnection =
       label: string;
       enabled: boolean;
       transport: { kind: "http"; url: string; bearerTokenConfigured: boolean };
-    };
+    }
+) & { status?: HostMcpConnectionStatus };
 
 export type HostMcpConnectionMutation =
   | {
@@ -251,7 +264,7 @@ export interface OpenGuiHostClient {
   prompt(
     sessionId: string,
     text: string,
-    options?: { skills?: string[] },
+    options?: { skills?: string[]; interrupt?: boolean },
   ): Promise<
     | { mode: "run"; startedEntries: HostSessionEntry[] }
     | { mode: "follow_up"; followUp: HostFollowUp }

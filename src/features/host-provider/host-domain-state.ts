@@ -10,7 +10,7 @@ export type HostBootState = "idle" | "checking-server" | "starting-server" | "re
 export type HostQueuedPrompt = {
   id: string;
   text: string;
-  mode: "queue";
+  mode: "queue" | "after-part";
   actor?: ActorSnapshot;
 };
 

@@ -94,7 +94,19 @@ export interface HostHealth {
 
 export interface HostModelConnection extends OpenAiCompatibleConnection {}
 
-export type HostMcpConnection =
+export interface HostMcpConnectionStatus {
+  state: "disabled" | "refreshing" | "ready" | "degraded" | "offline";
+  toolCount: number;
+  lastCheckedAt?: string;
+  problem?: {
+    code: string;
+    stage: string;
+    message: string;
+    retryable: boolean;
+  };
+}
+
+export type HostMcpConnection = (
   | {
       id: string;
       label: string;
@@ -112,7 +124,8 @@ export type HostMcpConnection =
       label: string;
       enabled: boolean;
       transport: { kind: "http"; url: string; bearerTokenConfigured: boolean };
-    };
+    }
+) & { status?: HostMcpConnectionStatus };
 
 export type HostMcpConnectionInput =
   | {
@@ -1019,6 +1032,9 @@ export class OpenGuiHost {
 
   async #refreshMcpBroker() {
     await this.#mcpBroker.replaceConnections(this.#mcpRuntimeConnections());
+    void this.#mcpBroker
+      .refresh({ actorId: "local:settings", sessionId: "mcp-settings" })
+      .catch(() => undefined);
   }
 
   async #openCodeGoConnection(apiKey?: string): Promise<HostModelConnection> {
@@ -1057,13 +1073,50 @@ export class OpenGuiHost {
   health(): HostHealth {
     return {
       ok: true,
-      version: process.env.npm_package_version || "0.0.0",
+      version: process.env.OPENGUI_VERSION || process.env.npm_package_version || "0.0.0",
       shell: process.env.SHELL || (process.platform === "win32" ? "powershell" : "/bin/sh"),
     };
   }
 
-  listMcpConnections(): HostMcpConnection[] {
-    return structuredClone(this.#settings.mcpConnections);
+  async listMcpConnections(): Promise<HostMcpConnection[]> {
+    const catalog = await this.#mcpBroker.catalog({
+      actorId: "local:settings",
+      sessionId: "mcp-settings",
+    });
+    return structuredClone(
+      this.#settings.mcpConnections.map((connection) => {
+        const tools = catalog.tools.filter((tool) => tool.ref.connectionId === connection.id);
+        const problem = catalog.problems.find((item) => item.connectionId === connection.id);
+        const lastCheckedAt = catalog.checkedAt[connection.id];
+        const state: HostMcpConnectionStatus["state"] = !connection.enabled
+          ? "disabled"
+          : problem && tools.length > 0
+            ? "degraded"
+            : problem
+              ? "offline"
+              : lastCheckedAt
+                ? "ready"
+                : "refreshing";
+        return {
+          ...connection,
+          status: {
+            state,
+            toolCount: tools.length,
+            ...(lastCheckedAt ? { lastCheckedAt } : {}),
+            ...(problem
+              ? {
+                  problem: {
+                    code: problem.code,
+                    stage: problem.stage,
+                    message: problem.message,
+                    retryable: problem.retryable,
+                  },
+                }
+              : {}),
+          },
+        };
+      }),
+    );
   }
 
   async upsertMcpConnection(input: HostMcpConnectionInput): Promise<HostMcpConnection> {
@@ -1197,10 +1250,12 @@ export class OpenGuiHost {
     if (this.#resolveExecutionPolicy && (await this.#resolveExecutionPolicy(actor)).restricted) {
       throw new Error("MCP tools are unavailable for restricted actors");
     }
-    const catalog = await this.#mcpBroker.catalog({
-      actorId: actor ? `${actor.type}:${actor.id}` : "local:settings",
-      sessionId: `mcp-settings:${id}`,
-    });
+    const scope = { actorId: "local:settings", sessionId: "mcp-settings" };
+    const catalog = await this.#mcpBroker.refresh(scope, id);
+    const problem = catalog.problems.find((item) => item.connectionId === id);
+    if (problem && !catalog.tools.some((tool) => tool.ref.connectionId === id)) {
+      throw new Error(problem.message);
+    }
     return catalog.tools
       .filter((tool) => tool.ref.connectionId === id)
       .map((tool) => ({
@@ -1763,6 +1818,7 @@ export class OpenGuiHost {
     sessionId: string,
     prompt: PromptInput,
     actor: DurableActor | undefined = prompt.actor,
+    options?: { interrupt?: boolean },
   ) {
     const previousAdmission = this.#promptAdmissions.get(sessionId) ?? Promise.resolve();
     let releaseAdmission!: () => void;
@@ -1775,18 +1831,27 @@ export class OpenGuiHost {
     try {
       const { session, snapshot } = await this.#authorizedSession(sessionId, actor, "run");
       if (snapshot.status === "running") {
-        try {
-          const followUp = await session.followUp(prompt);
-          return { mode: "follow_up" as const, followUp };
-        } catch (error) {
-          if (
-            !(error instanceof Error) ||
-            error.message !== "Follow-ups can only be queued while a Session is running"
-          ) {
-            throw error;
+        if (options?.interrupt) {
+          // Abort the live Run under admission, then accept this prompt as the next Run.
+          // Existing Follow-ups stay queued and run after this interrupted turn completes.
+          if (this.#activeRuns.has(sessionId)) {
+            await session.abort();
+            await this.#activeRuns.get(sessionId);
           }
-          // A very short Run may finish between the status read and queue write.
-          // Admission remains serialized, so it is safe to accept this as the next Run.
+        } else {
+          try {
+            const followUp = await session.followUp(prompt);
+            return { mode: "follow_up" as const, followUp };
+          } catch (error) {
+            if (
+              !(error instanceof Error) ||
+              error.message !== "Follow-ups can only be queued while a Session is running"
+            ) {
+              throw error;
+            }
+            // A very short Run may finish between the status read and queue write.
+            // Admission remains serialized, so it is safe to accept this as the next Run.
+          }
         }
       }
       const iterator = session.run(prompt)[Symbol.asyncIterator]();
@@ -1852,15 +1917,13 @@ export class OpenGuiHost {
 
   async sendFollowUpNow(sessionId: string, followUpId: string, actor?: DurableActor) {
     const { session } = await this.#authorizedSession(sessionId, actor, "run");
-    const followUps = (await session.read()).followUps;
-    const selected = followUps.find((item) => item.id === followUpId);
-    if (!selected) throw new Error(`Pending follow-up not found: ${followUpId}`);
-    await session.reorderFollowUp(followUpId, 0);
+    // Take the row first so a finishing Run cannot claim the same Follow-up and
+    // duplicate it into the transcript while we abort + re-prompt.
+    const selected = await session.takeFollowUp(followUpId);
     if (this.#activeRuns.has(sessionId)) {
       await session.abort();
       await this.#activeRuns.get(sessionId);
     }
-    await session.removeFollowUp(followUpId);
     // The caller is authorized to operate the Session above, but execution
     // belongs to the actor stored with the accepted prompt. Reauthorize that
     // actor now rather than transferring the caller's grants.

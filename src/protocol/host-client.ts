@@ -240,6 +240,7 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
           text,
           // Preserve empty arrays: they mean "no skills", not "use defaults".
           ...(options?.skills !== undefined ? { skills: options.skills } : {}),
+          ...(options?.interrupt ? { interrupt: true } : {}),
         }),
       })) as
         | { mode: "run"; startedEntries: HostSessionSnapshot["entries"] }

@@ -46,6 +46,20 @@ export function applyHostTranscriptEvent(
     const runId = text(event.entry.payload.runId);
     if (runId) delete reasoningTextByRun[runId];
   }
+  // Terminal run markers must drop live buffers. Otherwise abort/send-now leaves
+  // ghost stream:* assistant rows that corrupt message history after the next turn.
+  if (
+    event.entry.kind === "run_completed" ||
+    event.entry.kind === "run_aborted" ||
+    event.entry.kind === "run_failed" ||
+    event.entry.kind === "run_interrupted"
+  ) {
+    const runId = text(event.entry.payload.runId);
+    if (runId) {
+      delete assistantTextByRun[runId];
+      delete reasoningTextByRun[runId];
+    }
+  }
   return {
     snapshot: {
       ...stream.snapshot,

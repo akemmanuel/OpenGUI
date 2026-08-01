@@ -147,10 +147,24 @@ describe("PromptBox interactions", () => {
       "prompt.steerDirection",
     );
     expect(screen.getByText("context 73")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "prompt.queue" }));
+    await userEvent.click(screen.getByRole("button", { name: "prompt.steer" }));
     await userEvent.click(screen.getByRole("button", { name: "prompt.stopGenerating" }));
     expect(onQueueModeChange).toHaveBeenCalledWith("queue");
     expect(fixture.stop).toHaveBeenCalledOnce();
+  });
+
+  test("toggles from queue mode into steer mode", async () => {
+    const onQueueModeChange = vi.fn();
+    render(
+      <PromptBox
+        isLoading
+        queueMode="queue"
+        onQueueModeChange={onQueueModeChange}
+        onSubmit={fixture.submit}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "prompt.queue" }));
+    expect(onQueueModeChange).toHaveBeenCalledWith("after-part");
   });
 
   test("requires a selected model before enabling send", async () => {

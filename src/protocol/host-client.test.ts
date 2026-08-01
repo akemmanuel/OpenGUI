@@ -84,6 +84,36 @@ describe("Host manual compaction client", () => {
   });
 });
 
+describe("Host prompt client", () => {
+  test("forwards interrupt prompts without dropping an empty skill allowlist", async () => {
+    const requests: Array<{ url: string; method: string; body: string | null }> = [];
+    const client = createHostClient({
+      baseUrl: "http://host.test",
+      fetchImpl: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : null,
+        });
+        return Response.json({
+          ok: true,
+          value: { mode: "run", startedEntries: [] },
+        });
+      },
+    });
+
+    await client.prompt("session/1", "cut in", { skills: [], interrupt: true });
+
+    expect(requests).toEqual([
+      {
+        url: "http://host.test/api/host/sessions/session%2F1/prompt",
+        method: "POST",
+        body: JSON.stringify({ text: "cut in", skills: [], interrupt: true }),
+      },
+    ]);
+  });
+});
+
 describe("Host follow-up client", () => {
   test("exposes queue management through the Host API", async () => {
     const requests: Array<{ url: string; method: string; body: string | null }> = [];

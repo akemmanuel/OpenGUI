@@ -381,9 +381,10 @@ export function registerHostProductRoutes(
     }
   });
 
-  app.get("/api/host/mcp-connections", async () =>
-    Response.json({ ok: true, value: (await input.getHost()).listMcpConnections() }),
-  );
+  app.get("/api/host/mcp-connections", async () => {
+    const host = await input.getHost();
+    return Response.json({ ok: true, value: await host.listMcpConnections() });
+  });
 
   app.post("/api/host/mcp-connections", async (c) => {
     try {
@@ -916,6 +917,7 @@ export function registerHostProductRoutes(
             .map((item) => item.trim())
             .filter((item) => item.length > 0)
         : undefined;
+      const interrupt = body.interrupt === true;
       const actor = c.get("actor") as Actor;
       const sessionId = c.req.param("sessionId");
       if (input.identity) {
@@ -930,14 +932,17 @@ export function registerHostProductRoutes(
             snapshot.model.modelId,
           );
       }
+      const prompt = {
+        text,
+        // `skills: []` must stay distinct from omitted skills (Host defaults).
+        ...(skills !== undefined ? { skills } : {}),
+        actor: durableActor(actor),
+      };
       return Response.json({
         ok: true,
-        value: await host.prompt(sessionId, {
-          text,
-          // `skills: []` must stay distinct from omitted skills (Host defaults).
-          ...(skills !== undefined ? { skills } : {}),
-          actor: durableActor(actor),
-        }),
+        value: interrupt
+          ? await host.prompt(sessionId, prompt, prompt.actor, { interrupt: true })
+          : await host.prompt(sessionId, prompt),
       });
     } catch (error) {
       return sessionError(error);

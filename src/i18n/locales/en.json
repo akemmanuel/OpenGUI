@@ -244,7 +244,7 @@
     "newWorktree": "New worktree",
     "currentRootWorktree": "Current branch of the root worktree.",
     "queueTitle": "Queue: wait for full response, then send (Ctrl/Cmd+D to toggle)",
-    "steerTitle": "Steer: wait for current part to finish, then send (Ctrl/Cmd+D to toggle)",
+    "steerTitle": "Steer: wait for the current model part to finish, then send (Ctrl/Cmd+D to toggle)",
     "queue": "Queue",
     "steer": "Steer",
     "stop": "Stop",
@@ -493,6 +493,21 @@
     "toggle": "Toggle {{name}}",
     "inspect": "Test & inspect",
     "inspecting": "Connecting…",
+    "status": {
+      "disabled": "Disabled",
+      "refreshing": "Checking…",
+      "ready": "Ready",
+      "degraded": "Using cached tools",
+      "offline": "Offline"
+    },
+    "problem": {
+      "timeout": "Connection timed out. Chat remains available without these tools.",
+      "authentication": "Authentication was rejected. Check the saved credentials.",
+      "permission": "The MCP server denied access.",
+      "unavailable": "The MCP server is unavailable. Chat remains available.",
+      "protocol": "The server returned an invalid MCP response.",
+      "unknown": "Tool discovery failed. Chat remains available."
+    },
     "toolCount_one": "One tool available",
     "toolCount_other": "{{count}} tools available",
     "save": "Save connection",

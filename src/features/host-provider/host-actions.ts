@@ -5,17 +5,20 @@ import type { ActorSnapshot, HostFollowUp, OpenGuiHostClient } from "@/protocol/
 export type HostQueueItem = {
   id: string;
   text: string;
-  mode: "queue";
+  mode: "queue" | "after-part";
   actor?: ActorSnapshot;
 };
 export type HostQueueState = Record<string, HostQueueItem[]>;
 type UpdateHostQueueState = (update: (current: HostQueueState) => HostQueueState) => void;
 
-export function projectHostFollowUps(followUps: HostFollowUp[]): HostQueueItem[] {
+export function projectHostFollowUps(
+  followUps: HostFollowUp[],
+  mode: HostQueueItem["mode"] = "queue",
+): HostQueueItem[] {
   return followUps.map((item) => ({
     id: item.id,
     text: item.prompt.text,
-    mode: "queue",
+    mode,
     actor: item.prompt.actor,
   }));
 }
@@ -29,15 +32,24 @@ export class HostQueueController {
   ) {}
 
   #replace(sessionId: string, followUps: HostFollowUp[]) {
-    this.updateState((current) => ({ ...current, [sessionId]: projectHostFollowUps(followUps) }));
+    this.updateState((current) => {
+      const previousModes = new Map((current[sessionId] ?? []).map((item) => [item.id, item.mode]));
+      return {
+        ...current,
+        [sessionId]: projectHostFollowUps(followUps).map((item) => ({
+          ...item,
+          mode: previousModes.get(item.id) ?? "queue",
+        })),
+      };
+    });
   }
 
-  recordEnqueued(sessionId: string, followUp: HostFollowUp) {
+  recordEnqueued(sessionId: string, followUp: HostFollowUp, mode: HostQueueItem["mode"] = "queue") {
     this.updateState((current) => ({
       ...current,
       [sessionId]: [
         ...(current[sessionId] ?? []).filter((item) => item.id !== followUp.id),
-        ...projectHostFollowUps([followUp]),
+        ...projectHostFollowUps([followUp], mode),
       ],
     }));
   }

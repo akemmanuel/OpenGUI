@@ -1,4 +1,4 @@
-import { ArrowUp, ListEnd, Square } from "lucide-react";
+import { ArrowUp, ListEnd, Square, Compass } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { FileMentionPopover } from "@/components/FileMentionPopover";
@@ -296,10 +296,10 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
             isDisabled
               ? t("prompt.selectOrCreateSession")
               : isLoading
-                ? queueMode === "interrupt"
-                  ? t("prompt.interruptAndSend")
-                  : queueMode === "after-part"
-                    ? t("prompt.steerDirection")
+                ? queueMode === "after-part"
+                  ? t("prompt.steerDirection")
+                  : queueMode === "interrupt"
+                    ? t("prompt.interruptAndSend")
                     : t("prompt.queueMessage")
                 : t("prompt.message")
           }
@@ -326,19 +326,23 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
               type="button"
               variant="ghost"
               size="sm"
-              title={t("prompt.queueTitle")}
+              title={queueMode === "after-part" ? t("prompt.steerTitle") : t("prompt.queueTitle")}
               className="!h-7 shrink-0 gap-1.5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
-                onQueueModeChange("queue");
+                onQueueModeChange(queueMode === "after-part" ? "queue" : "after-part");
               }}
             >
-              <ListEnd className="size-3.5 shrink-0" />
+              {queueMode === "after-part" ? (
+                <Compass className="size-3.5 shrink-0" />
+              ) : (
+                <ListEnd className="size-3.5 shrink-0" />
+              )}
               <span
                 className="hidden max-w-[100px] truncate sm:inline"
                 data-responsive-allow="text-clip"
               >
-                {t("prompt.queue")}
+                {queueMode === "after-part" ? t("prompt.steer") : t("prompt.queue")}
               </span>
             </Button>
           )}

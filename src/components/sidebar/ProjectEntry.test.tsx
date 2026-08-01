@@ -70,11 +70,13 @@ describe("ProjectEntry", () => {
   test("creates a Session and collapses an expanded connected Project", async () => {
     const input = props();
     render(<ProjectEntry {...input} />);
-    expect(screen.getByText("sidebar.noSessionsYet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "sidebar.newSession" }).textContent).toContain(
+      "projectMenu.newSession",
+    );
     await userEvent.click(screen.getByRole("button", { name: "projectMenu.newSession" }));
     expect(input.setActiveTarget).toHaveBeenCalledWith("/work/Alpha", { newChat: true });
     expect(input.closeMobileSidebar).toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "Alpha" }));
+    await userEvent.click(screen.getByText("Alpha").closest("button")!);
     expect(input.toggleCollapsed).toHaveBeenCalledWith("/work/Alpha");
   });
 
