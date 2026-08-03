@@ -1,5 +1,6 @@
 export * from "./harness.ts";
 export * from "./execution-policy.ts";
+export type { ShellToolExecutor, ToolExecutionContext } from "./tools/execute-tool.ts";
 export * from "./models/transport.ts";
 export { OpenAiChatTransport, type OpenAiCompatibleConnection } from "./models/openai-chat.ts";
 export {

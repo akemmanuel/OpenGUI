@@ -1,5 +1,6 @@
 import type { ModelTransport } from "./models/transport.ts";
 import type { ExecutionPolicyResolver } from "./execution-policy.ts";
+import type { ShellToolExecutor } from "./tools/execute-tool.ts";
 import type { AgentToolSource } from "./tools/agent-tools.ts";
 
 export const SESSION_ENTRY_KINDS = [
@@ -161,4 +162,6 @@ export interface OpenGuiHarnessOptions {
   ids?: IdGenerator;
   /** Resolve current Host-owned execution capabilities for each durable actor. */
   resolveExecutionPolicy?: ExecutionPolicyResolver;
+  /** Executes restricted shell calls outside the Host process in an embedding-owned sandbox. */
+  shellExecutor?: ShellToolExecutor;
 }

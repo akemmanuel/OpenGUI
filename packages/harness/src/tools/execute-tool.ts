@@ -9,7 +9,10 @@ import { executeWriteTool } from "./write.ts";
 
 export interface ToolExecutionContext extends ShellToolContext {
   executionPolicy: ExecutionPolicy;
+  shellExecutor?: ShellToolExecutor;
 }
+
+export type ShellToolExecutor = (context: ToolExecutionContext, input: unknown) => Promise<unknown>;
 
 const MAX_TOOL_RESULT_BYTES = 5 * 1024;
 
@@ -123,10 +126,7 @@ function denied(context: ToolExecutionContext, name: string, reason?: string) {
 }
 
 export async function executeTool(context: ToolExecutionContext, name: string, input: unknown) {
-  if (
-    name === "shell" &&
-    (context.executionPolicy.restricted || !context.executionPolicy.shellAllowed)
-  ) {
+  if (name === "shell" && !context.executionPolicy.shellAllowed) {
     return denied(context, name, "shell_not_allowed");
   }
 
@@ -158,7 +158,10 @@ export async function executeTool(context: ToolExecutionContext, name: string, i
       result = await executeEditTool(context.projectDirectory, input, authorizedPath);
       break;
     case "shell":
-      result = await executeShellTool(context, input);
+      result = context.executionPolicy.restricted
+        ? await context.shellExecutor?.(context, input)
+        : await executeShellTool(context, input);
+      if (result === undefined) result = denied(context, name, "sandbox_not_configured");
       break;
     default:
       result = { error: `Unknown tool: ${name}` };

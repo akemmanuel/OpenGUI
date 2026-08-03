@@ -21,6 +21,7 @@ import {
 } from "./path-policy/enforcement.ts";
 import type { DurableActor, ModelTransport } from "@opengui/harness";
 import type { SessionAccessAction } from "./identity/identity.ts";
+import { createSandboxShellExecutor } from "./execution/sandbox-shell-client.ts";
 
 export type CreateBackendHostOptions = {
   dataDirectory?: string;
@@ -85,12 +86,22 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     }
   }
 
-  const resolveExecutionPolicy =
+  const baseExecutionPolicyResolver =
     env.pathGrantsMode !== "enforced"
       ? undefined
       : identity
         ? createEnforcedPolicyResolver(identity)
         : createLocalPolicyResolver(env.allowedRoots);
+  const sandboxSocket = process.env.OPENGUI_SHELL_SANDBOX_SOCKET?.trim();
+  const resolveExecutionPolicy =
+    baseExecutionPolicyResolver && sandboxSocket
+      ? async (actor: DurableActor | undefined) => {
+          const policy = await baseExecutionPolicyResolver(actor);
+          return policy.restricted && policy.grants?.length
+            ? { ...policy, shellAllowed: true }
+            : policy;
+        }
+      : baseExecutionPolicyResolver;
   const pathAuthorizer = new HostPathAuthorizer(resolveExecutionPolicy);
   const sessionAccess: SessionAccessGate | undefined = identity
     ? {
@@ -126,6 +137,7 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
   const hostReady = createHostContext({
     dataDirectory: options.dataDirectory,
     resolveExecutionPolicy,
+    shellExecutor: sandboxSocket ? createSandboxShellExecutor(sandboxSocket) : undefined,
     sessionAccess,
     model: options.model,
     usePiAiTransport: options.usePiAiTransport,

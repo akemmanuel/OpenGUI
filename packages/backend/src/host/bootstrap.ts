@@ -2,7 +2,12 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createOpenGuiHost, type OpenGuiHost, type SessionAccessGate } from "./opengui-host.ts";
-import type { DurableActor, ExecutionPolicyResolver, ModelTransport } from "@opengui/harness";
+import type {
+  DurableActor,
+  ExecutionPolicyResolver,
+  ModelTransport,
+  ShellToolExecutor,
+} from "@opengui/harness";
 import type { SkillSourceResolver } from "./skills-management.ts";
 
 export function modelTransportEnvironment(env: NodeJS.ProcessEnv = process.env) {
@@ -38,6 +43,7 @@ export async function createHostContext(
   options: {
     dataDirectory?: string;
     resolveExecutionPolicy?: ExecutionPolicyResolver;
+    shellExecutor?: ShellToolExecutor;
     sessionAccess?: SessionAccessGate;
     model?: ModelTransport;
     resolveModelOffering?: (
