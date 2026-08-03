@@ -289,7 +289,11 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
       return ["read", "write", "edit", ...(policy.shellAllowed ? (["shell"] as const) : [])];
     }
     const writeDecision = await policy.authorizePath(canonicalProjectRoot, "write");
-    return ["read", ...(writeDecision.allowed ? (["write", "edit"] as const) : [])];
+    return [
+      "read",
+      ...(writeDecision.allowed ? (["write", "edit"] as const) : []),
+      ...(policy.shellAllowed ? (["shell"] as const) : []),
+    ];
   }
 
   async #skillsForRun(projectDirectory: string, policy: ExecutionPolicy): Promise<Skill[]> {

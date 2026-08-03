@@ -29,13 +29,14 @@ function containsPath(root: string, candidate: string) {
 function restrictedPolicy(input: {
   root: string;
   revision?: number;
+  shellAllowed?: boolean;
   writeAllowed?: () => boolean;
   afterAuthorizedWrite?: () => void;
 }): ExecutionPolicy {
   return {
     restricted: true,
     revision: input.revision ?? 1,
-    shellAllowed: false,
+    shellAllowed: input.shellAllowed ?? false,
     async authorizePath(path, access, options = {}) {
       const target = resolve(path);
       if (!containsPath(input.root, target)) return { allowed: false, reason: "outside_grants" };
@@ -170,6 +171,38 @@ describe("Harness execution policy", () => {
     expect(model.requests[0]?.systemPrompt).not.toMatch(/\b(?:write|edit)\b/iu);
     expect(model.requests[0]?.systemPrompt).toContain("project-skill");
     expect(model.requests[0]?.systemPrompt).not.toContain("home-skill");
+    await harness.close();
+  });
+
+  test("offers isolated shell to a restricted model turn when policy allows it", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const model = new FakeModel([{ text: "Done" }]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      resolveExecutionPolicy: async () =>
+        restrictedPolicy({
+          root: await realpath(projectDirectory),
+          shellAllowed: true,
+        }),
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({
+      text: "Run pwd",
+      actor: { type: "user", id: "member-1", displayName: "Member" },
+    })) {
+      // Drain the Run.
+    }
+
+    expect(model.requests[0]?.tools).toEqual(["read", "write", "edit", "shell"]);
+    expect(model.requests[0]?.systemPrompt).toMatch(/\bshell\b/iu);
     await harness.close();
   });
 
