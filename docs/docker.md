@@ -34,6 +34,11 @@ home bind mount, and `OPENGUI_HOST_EXEC`. Mount only intended Project directorie
 then run inside the container with the container process's permissions. Container isolation is the
 security boundary; OpenGUI Project paths alone are not a shell sandbox.
 
+For mutually untrusted customers who need shell and Git deployment, use a separate rootless
+gVisor Remote Host for each customer. The supported Compose contract and complete setup are in
+[`sandbox-hosting.md`](./sandbox-hosting.md). Do not register unrelated customers on one
+host-control-mode Host.
+
 ## Configuration
 
 | Variable                                                          | Purpose                                                                                                |

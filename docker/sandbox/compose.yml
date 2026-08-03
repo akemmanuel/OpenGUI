@@ -1,0 +1,79 @@
+name: "${OPENGUI_SANDBOX_NAME:-opengui-sandbox}"
+
+services:
+  opengui:
+    image: "${OPENGUI_IMAGE:-ghcr.io/akemmanuel/opengui:0.6.0-rc.2}"
+    container_name: "${OPENGUI_SANDBOX_NAME:-opengui-sandbox}"
+    runtime: "${OPENGUI_SANDBOX_RUNTIME:-runsc}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    ports:
+      - "127.0.0.1:${OPENGUI_SANDBOX_PORT:-4840}:3000"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      NODE_ENV: "production"
+      HOME: "/home/opengui"
+      OPENGUI_SERVER_MODE: "combined"
+      OPENGUI_DATA_DIR: "/app/.opengui-data"
+      OPENGUI_BASE_URL: "${OPENGUI_BASE_URL:?set OPENGUI_BASE_URL}"
+      OPENGUI_CORS_ORIGIN: "${OPENGUI_BASE_URL:?set OPENGUI_BASE_URL}"
+      OPENGUI_AUTH_SECRET: "${OPENGUI_AUTH_SECRET:-}"
+      OPENGUI_ALLOWED_ROOTS: "/workspace"
+      # One sandbox is one customer trust domain. Accounts inside it may use shell.
+      OPENGUI_PATH_GRANTS: "disabled"
+      GIT_SSH_COMMAND: >-
+        ssh -i /run/secrets/github_deploy_key
+        -o IdentitiesOnly=yes
+        -o UserKnownHostsFile=/run/secrets/github_known_hosts
+        -o StrictHostKeyChecking=yes
+    volumes:
+      - type: bind
+        source: "${OPENGUI_WORKSPACE:?set OPENGUI_WORKSPACE}"
+        target: /workspace
+        bind:
+          create_host_path: false
+      - type: volume
+        source: opengui_data
+        target: /app/.opengui-data
+      - type: volume
+        source: user_home
+        target: /home/opengui
+    secrets:
+      - source: github_deploy_key
+        target: github_deploy_key
+        mode: "0400"
+      - source: github_known_hosts
+        target: github_known_hosts
+        mode: "0444"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m
+      - /run:rw,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: "${OPENGUI_SANDBOX_MEMORY:-3g}"
+    cpus: "${OPENGUI_SANDBOX_CPUS:-2.0}"
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  opengui_data:
+  user_home:
+
+secrets:
+  github_deploy_key:
+    file: "${OPENGUI_GITHUB_DEPLOY_KEY_FILE:?set OPENGUI_GITHUB_DEPLOY_KEY_FILE}"
+  github_known_hosts:
+    file: "${OPENGUI_GITHUB_KNOWN_HOSTS_FILE:?set OPENGUI_GITHUB_KNOWN_HOSTS_FILE}"

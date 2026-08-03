@@ -1,0 +1,18 @@
+{
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/bin/runsc",
+      "runtimeArgs": [
+        "--platform=systrap",
+        "--network=host",
+        "--ignore-cgroups=true",
+        "--systemd-cgroup=false"
+      ]
+    }
+  },
+  "log-driver": "local",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
