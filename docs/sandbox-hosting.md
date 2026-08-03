@@ -115,10 +115,27 @@ Terminate public HTTPS at Caddy, nginx, or another reverse proxy and forward onl
 
 ## 5. Account setup and deployment
 
-Open the public URL. The first person completes Host setup and becomes owner. Invite additional
-people only when they belong to the same customer trust domain. This deployment deliberately uses
-`OPENGUI_PATH_GRANTS=disabled`: authenticated Accounts can use shell, but only inside that
-customer's gVisor environment.
+Open the public URL. The first person completes Host setup and becomes owner. The supplied
+single-customer Compose deployment uses `OPENGUI_PATH_GRANTS=disabled`, so Accounts in that
+customer trust domain share the sandbox.
+
+For Accounts that must have different path grants on one Host, set `OPENGUI_PATH_GRANTS=enforced`
+and run [`../scripts/sandbox-shell-broker.ts`](../scripts/sandbox-shell-broker.ts) outside the Host
+container. Configure the Host with an authenticated `OPENGUI_SHELL_SANDBOX_ENDPOINT` and
+`OPENGUI_SHELL_SANDBOX_TOKEN`. Configure the broker with:
+
+- `OPENGUI_SHELL_IMAGE`: immutable image used for each shell call;
+- `OPENGUI_SHELL_ALLOWED_ROOTS`: outer roots the broker may ever mount;
+- `OPENGUI_SHELL_BROKER_HOST`, `OPENGUI_SHELL_BROKER_PORT`, and
+  `OPENGUI_SHELL_BROKER_TOKEN`;
+- `OPENGUI_SHELL_RESOLV_CONF`: trusted resolver configuration mounted read-only;
+- optional `OPENGUI_SHELL_DEPLOY_CREDENTIALS`: repository-root to deploy-key mappings.
+
+The Host re-resolves the actor's policy immediately before every tool effect. Restricted shell is
+enabled only when the actor has grants and the broker is configured. Every invocation gets a new
+gVisor container with only those canonical grant roots mounted; `read` grants are mounted read-only
+and `write` grants read-write. The broker rejects projects outside the effective grants and mounts
+neither Host data nor the Docker socket.
 
 The customer can ask OpenGUI to edit, test, commit, and push, for example:
 

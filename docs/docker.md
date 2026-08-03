@@ -52,6 +52,8 @@ host-control-mode Host.
 | `OPENGUI_CORS_ORIGIN`                                             | Allowed browser origin. Set the exact public origin for split frontend/API deployments.                |
 | `OPENGUI_ALLOWED_ROOTS`                                           | Comma-separated outer roots exposed to Host project/file APIs. Avoid `/` unless fully trusted.         |
 | `OPENGUI_PATH_GRANTS`                                             | Remote default is `enforced`; `disabled` is trusted-circle compatibility mode.                         |
+| `OPENGUI_SHELL_SANDBOX_ENDPOINT`                                  | Optional authenticated shell-broker endpoint for restricted actors with grants.                        |
+| `OPENGUI_SHELL_SANDBOX_TOKEN`                                     | Shared secret for the shell broker; inject from deployment secrets, never Project files.               |
 | `OPENGUI_UPLOAD_MAX_FILE_BYTES`, `OPENGUI_UPLOAD_MAX_BATCH_BYTES` | Upload limits.                                                                                         |
 | `OPENGUI_REQUEST_MAX_BYTES`                                       | General JSON/request body limit.                                                                       |
 
