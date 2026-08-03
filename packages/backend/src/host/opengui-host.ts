@@ -29,6 +29,7 @@ import {
   type SessionEntry,
   type SessionSnapshot,
   type SessionSummary,
+  type ShellToolExecutor,
   type Skill,
 } from "@opengui/harness";
 import {
@@ -339,6 +340,7 @@ export class OpenGuiHost {
   readonly #pathAuthorizer: HostPathAuthorizer;
   readonly #skillsManager: SkillsManager;
   readonly #resolveExecutionPolicy: ExecutionPolicyResolver | undefined;
+  readonly #shellExecutor: ShellToolExecutor | undefined;
   readonly #authorizeMcpUse: ((actor: DurableActor | undefined) => Promise<boolean>) | undefined;
   readonly #sessionAccess: SessionAccessGate | undefined;
   readonly #resolveModelOffering:
@@ -356,6 +358,7 @@ export class OpenGuiHost {
       fetchImpl?: typeof fetch;
       model?: ModelTransport;
       resolveExecutionPolicy?: ExecutionPolicyResolver;
+      shellExecutor?: ShellToolExecutor;
       sessionAccess?: SessionAccessGate;
       resolveModelOffering?: (
         offeringId: string,
@@ -474,6 +477,7 @@ export class OpenGuiHost {
     });
     this.#model = options.model;
     this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
+    this.#shellExecutor = options.shellExecutor;
     this.#authorizeMcpUse = options.authorizeMcpUse;
     this.#pathAuthorizer = new HostPathAuthorizer(options.resolveExecutionPolicy);
     this.#skillsManager = new SkillsManager({
@@ -535,6 +539,7 @@ export class OpenGuiHost {
         stream: (request, signal) => this.#streamModel(request, signal),
       } satisfies ModelTransport,
       resolveExecutionPolicy: this.#resolveExecutionPolicy,
+      shellExecutor: this.#shellExecutor,
       agentTools: createMcpAgentToolSource(this.#mcpBroker, {
         authorize: async (scope) => {
           if (this.#authorizeMcpUse && !(await this.#authorizeMcpUse(scope.actor))) return false;
@@ -1309,6 +1314,10 @@ export class OpenGuiHost {
     }
     return this.codexAuthStatus();
   }
+  async cancelCodexAuth() {
+    this.#deviceAuth = null;
+    return this.codexAuthStatus();
+  }
   async disconnectCodex() {
     const tokens = this.#codexTokens;
     this.#codexTokens = null;
@@ -1384,6 +1393,10 @@ export class OpenGuiHost {
       this.#refreshTransport();
       await this.#saveSecrets();
     }
+    return this.subscriptionAuthStatus(provider);
+  }
+  async cancelSubscriptionAuth(provider: "xai") {
+    delete this.#subscriptionPending[provider];
     return this.subscriptionAuthStatus(provider);
   }
   async disconnectSubscription(provider: "xai") {
@@ -1948,6 +1961,7 @@ export async function createOpenGuiHost(
   dataDirectory: string,
   options: {
     resolveExecutionPolicy?: ExecutionPolicyResolver;
+    shellExecutor?: ShellToolExecutor;
     sessionAccess?: SessionAccessGate;
     model?: ModelTransport;
     resolveModelOffering?: (
