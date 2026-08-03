@@ -92,9 +92,11 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
       : identity
         ? createEnforcedPolicyResolver(identity)
         : createLocalPolicyResolver(env.allowedRoots);
-  const sandboxSocket = process.env.OPENGUI_SHELL_SANDBOX_SOCKET?.trim();
+  const sandboxEndpoint = (
+    process.env.OPENGUI_SHELL_SANDBOX_ENDPOINT ?? process.env.OPENGUI_SHELL_SANDBOX_SOCKET
+  )?.trim();
   const resolveExecutionPolicy =
-    baseExecutionPolicyResolver && sandboxSocket
+    baseExecutionPolicyResolver && sandboxEndpoint
       ? async (actor: DurableActor | undefined) => {
           const policy = await baseExecutionPolicyResolver(actor);
           return policy.restricted && policy.grants?.length
@@ -137,7 +139,9 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
   const hostReady = createHostContext({
     dataDirectory: options.dataDirectory,
     resolveExecutionPolicy,
-    shellExecutor: sandboxSocket ? createSandboxShellExecutor(sandboxSocket) : undefined,
+    shellExecutor: sandboxEndpoint
+      ? createSandboxShellExecutor(sandboxEndpoint, process.env.OPENGUI_SHELL_SANDBOX_TOKEN?.trim())
+      : undefined,
     sessionAccess,
     model: options.model,
     usePiAiTransport: options.usePiAiTransport,

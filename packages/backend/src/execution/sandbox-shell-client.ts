@@ -3,14 +3,20 @@ import type { ShellToolExecutor } from "@opengui/harness";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
-function post(socketPath: string, body: string, signal: AbortSignal) {
+function post(endpoint: string, token: string | undefined, body: string, signal: AbortSignal) {
   return new Promise<unknown>((resolve, reject) => {
+    const remote = endpoint.startsWith("/") ? null : new URL(endpoint);
     const req = request(
       {
-        socketPath,
-        path: "/v1/execute",
+        ...(remote
+          ? { hostname: remote.hostname, port: remote.port, path: remote.pathname }
+          : { socketPath: endpoint, path: "/v1/execute" }),
         method: "POST",
-        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
         signal,
       },
       (response) => {
@@ -38,10 +44,11 @@ function post(socketPath: string, body: string, signal: AbortSignal) {
   });
 }
 
-export function createSandboxShellExecutor(socketPath: string): ShellToolExecutor {
+export function createSandboxShellExecutor(endpoint: string, token?: string): ShellToolExecutor {
   return async (context, input) => {
     return await post(
-      socketPath,
+      endpoint,
+      token,
       JSON.stringify({
         projectDirectory: context.projectDirectory,
         grants: context.executionPolicy.grants ?? [],

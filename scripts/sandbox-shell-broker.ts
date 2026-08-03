@@ -143,6 +143,9 @@ async function execute(args: string[], name: string, timeoutSeconds: number) {
 
 function main() {
   const socket = process.env.OPENGUI_SHELL_BROKER_SOCKET || "/run/opengui-shell-broker.sock";
+  const host = process.env.OPENGUI_SHELL_BROKER_HOST;
+  const port = Number(process.env.OPENGUI_SHELL_BROKER_PORT || 0);
+  const token = process.env.OPENGUI_SHELL_BROKER_TOKEN;
   const image = process.env.OPENGUI_SHELL_IMAGE;
   if (!image) throw new Error("OPENGUI_SHELL_IMAGE is required");
   const allowedRoots = (process.env.OPENGUI_SHELL_ALLOWED_ROOTS || "")
@@ -158,6 +161,10 @@ function main() {
   const server = createServer(async (request, response) => {
     if (request.method !== "POST" || request.url !== "/v1/execute") {
       response.writeHead(404).end();
+      return;
+    }
+    if (token && request.headers.authorization !== `Bearer ${token}`) {
+      response.writeHead(401).end();
       return;
     }
     try {
@@ -180,10 +187,16 @@ function main() {
         .end(JSON.stringify({ denied: true, error: "Sandbox shell request was rejected" }));
     }
   });
-  server.listen(socket, () => {
-    chmodSync(socket, 0o660);
-    console.info(`OpenGUI shell broker listening on ${socket}`);
-  });
+  if (host && port > 0) {
+    server.listen(port, host, () =>
+      console.info(`OpenGUI shell broker listening on ${host}:${port}`),
+    );
+  } else {
+    server.listen(socket, () => {
+      chmodSync(socket, 0o660);
+      console.info(`OpenGUI shell broker listening on ${socket}`);
+    });
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) main();
