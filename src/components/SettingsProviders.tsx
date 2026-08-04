@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OPENCODE_GO_PRESET, XAI_API_PRESET } from "@opengui/protocol";
+import { DeviceAuthDialog } from "@/components/DeviceAuthDialog";
 import { Button } from "@/components/ui/button";
 import { createHostClient } from "@/protocol/host-client";
 import type {
@@ -107,12 +108,27 @@ export function SettingsProviders() {
       xai: { connected: false, pending: null },
     },
   );
+  const [activeDeviceAuth, setActiveDeviceAuth] = useState<
+    { kind: "codex" } | { kind: "subscription"; provider: SubscriptionProvider } | null
+  >(null);
   const canManageShared =
     actor?.type !== "user" || actor.role === "owner" || actor.role === "admin";
   const personalByokAllowed =
     !identity ||
     canManageShared ||
     Boolean(modelPolicy?.host.allowByok && modelPolicy.team.allowByok);
+  const activeDevicePending =
+    activeDeviceAuth?.kind === "codex"
+      ? codex.pending
+      : activeDeviceAuth?.kind === "subscription"
+        ? subscriptions[activeDeviceAuth.provider]?.pending
+        : null;
+  const activeDeviceTitle =
+    activeDeviceAuth?.kind === "codex"
+      ? t("providers.codex.authorizeTitle")
+      : activeDeviceAuth?.kind === "subscription"
+        ? t(`providers.${activeDeviceAuth.provider}.authorizeTitle`)
+        : "";
 
   const reload = async () => {
     setLoadError(false);
@@ -149,11 +165,20 @@ export function SettingsProviders() {
   useEffect(() => {
     void reload().catch(notifyUnknownError);
     if (canManageShared) {
-      void host.codexAuthStatus().then(setCodex).catch(notifyUnknownError);
+      void host
+        .codexAuthStatus()
+        .then((status) => {
+          setCodex(status);
+          if (status.pending) setActiveDeviceAuth({ kind: "codex" });
+        })
+        .catch(notifyUnknownError);
       for (const provider of ["xai"] as const) {
         void host
           .subscriptionAuthStatus(provider)
-          .then((status) => setSubscriptions((current) => ({ ...current, [provider]: status })))
+          .then((status) => {
+            setSubscriptions((current) => ({ ...current, [provider]: status }));
+            if (status.pending) setActiveDeviceAuth({ kind: "subscription", provider });
+          })
           .catch(notifyUnknownError);
       }
     }
@@ -580,42 +605,7 @@ export function SettingsProviders() {
             <div className="text-sm font-medium">{t("providers.codex.title")}</div>
             <div className="text-xs text-muted-foreground">{t("providers.codex.description")}</div>
           </div>
-          {codex.pending && (
-            <div className="space-y-2">
-              <p className="text-sm">
-                {t("providers.codex.code", { code: codex.pending.userCode })}
-              </p>
-              <a
-                className="text-sm underline"
-                href={codex.pending.verificationUri}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {t("providers.codex.open")}
-              </a>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  void host
-                    .pollCodexAuth()
-                    .then(setCodex)
-                    .then(reload)
-                    .then(refreshProviders)
-                    .catch(notifyUnknownError)
-                }
-              >
-                {t("providers.codex.check")}
-              </Button>
-            </div>
-          )}
-          {!codex.connected && !codex.pending && (
-            <Button
-              onClick={() => void host.beginCodexAuth().then(setCodex).catch(notifyUnknownError)}
-            >
-              {t("providers.codex.signIn")}
-            </Button>
-          )}
-          {codex.connected && (
+          {codex.connected ? (
             <Button
               variant="outline"
               onClick={() =>
@@ -628,6 +618,20 @@ export function SettingsProviders() {
               }
             >
               {t("providers.codex.signOut")}
+            </Button>
+          ) : (
+            <Button
+              onClick={() =>
+                void host
+                  .beginCodexAuth()
+                  .then((status) => {
+                    setCodex(status);
+                    setActiveDeviceAuth({ kind: "codex" });
+                  })
+                  .catch(notifyUnknownError)
+              }
+            >
+              {t("providers.codex.signIn")}
             </Button>
           )}
         </div>
@@ -677,51 +681,7 @@ export function SettingsProviders() {
                   {t(`providers.${provider}.description`)}
                 </div>
               </div>
-              {status.pending && (
-                <div className="space-y-2">
-                  <p className="text-sm">
-                    {t("providers.codex.code", { code: status.pending.userCode })}
-                  </p>
-                  <a
-                    className="text-sm underline"
-                    href={status.pending.verificationUri}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t("providers.codex.open")}
-                  </a>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      void host
-                        .pollSubscriptionAuth(provider)
-                        .then((next) =>
-                          setSubscriptions((current) => ({ ...current, [provider]: next })),
-                        )
-                        .then(reload)
-                        .then(refreshProviders)
-                        .catch(notifyUnknownError)
-                    }
-                  >
-                    {t("providers.codex.check")}
-                  </Button>
-                </div>
-              )}
-              {!status.connected && !status.pending && (
-                <Button
-                  onClick={() =>
-                    void host
-                      .beginSubscriptionAuth(provider)
-                      .then((next) =>
-                        setSubscriptions((current) => ({ ...current, [provider]: next })),
-                      )
-                      .catch(notifyUnknownError)
-                  }
-                >
-                  {t(`providers.${provider}.signIn`)}
-                </Button>
-              )}
-              {status.connected && (
+              {status.connected ? (
                 <Button
                   variant="outline"
                   onClick={() =>
@@ -739,6 +699,20 @@ export function SettingsProviders() {
                   }
                 >
                   {t("providers.codex.signOut")}
+                </Button>
+              ) : (
+                <Button
+                  onClick={() =>
+                    void host
+                      .beginSubscriptionAuth(provider)
+                      .then((next) => {
+                        setSubscriptions((current) => ({ ...current, [provider]: next }));
+                        setActiveDeviceAuth({ kind: "subscription", provider });
+                      })
+                      .catch(notifyUnknownError)
+                  }
+                >
+                  {t(`providers.${provider}.signIn`)}
                 </Button>
               )}
             </div>
@@ -841,6 +815,53 @@ export function SettingsProviders() {
           )}
         </div>
       )}
+      <DeviceAuthDialog
+        open={activeDeviceAuth != null}
+        title={activeDeviceTitle}
+        pending={activeDevicePending}
+        onPoll={async () => {
+          if (activeDeviceAuth?.kind === "subscription") {
+            return host.pollSubscriptionAuth(activeDeviceAuth.provider);
+          }
+          return host.pollCodexAuth();
+        }}
+        onCancel={async () => {
+          if (activeDeviceAuth?.kind === "subscription") {
+            const next = await host.cancelSubscriptionAuth(activeDeviceAuth.provider);
+            setSubscriptions((current) => ({
+              ...current,
+              [activeDeviceAuth.provider]: next,
+            }));
+            return;
+          }
+          if (activeDeviceAuth?.kind === "codex") {
+            setCodex(await host.cancelCodexAuth());
+          }
+        }}
+        onClose={() => setActiveDeviceAuth(null)}
+        onSuccess={(status) => {
+          if (activeDeviceAuth?.kind === "subscription") {
+            setSubscriptions((current) => ({
+              ...current,
+              [activeDeviceAuth.provider]: status,
+            }));
+          } else {
+            setCodex(status);
+          }
+          void reload().then(refreshProviders).catch(notifyUnknownError);
+        }}
+        onRetry={async () => {
+          if (activeDeviceAuth?.kind === "subscription") {
+            const next = await host.beginSubscriptionAuth(activeDeviceAuth.provider);
+            setSubscriptions((current) => ({
+              ...current,
+              [activeDeviceAuth.provider]: next,
+            }));
+            return;
+          }
+          setCodex(await host.beginCodexAuth());
+        }}
+      />
     </div>
   );
 }

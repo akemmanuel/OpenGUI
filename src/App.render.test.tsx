@@ -126,6 +126,14 @@ describe("App shell orchestration", () => {
     expect(screen.getByTestId("prompt").dataset.disabled).toBe("true");
   });
 
+  test("stacks the prompt footer above the transcript so its focus ring stays visible", () => {
+    render(<AppContent />);
+    const promptFooter = screen.getByTestId("prompt").closest(".app-safe-bottom-inset-prompt");
+
+    expect(promptFooter?.classList.contains("relative")).toBe(true);
+    expect(promptFooter?.classList.contains("z-[1]")).toBe(true);
+  });
+
   test("switches settings through sidebar, browser event, back action, and mobile registration", async () => {
     render(<AppContent onDismissSetup={fixture.dismissSetup} />);
     await userEvent.click(screen.getByText("open settings"));

@@ -97,6 +97,27 @@ describe("IdentityGate render integration", () => {
     view.unmount();
   });
 
+  test("keeps the app mounted while checking identity after a Workspace switch", async () => {
+    render(
+      <IdentityGate>
+        <ActorProbe />
+      </IdentityGate>,
+    );
+    expect(await screen.findByText("actor:Ada")).toBeTruthy();
+
+    fixtures.workspace = {
+      ...fixtures.workspace!,
+      id: "remote-2",
+      name: "Second Host",
+      authToken: "second-token",
+    };
+    fixtures.client.me.mockImplementationOnce(() => new Promise(() => {}));
+    void act(() => window.dispatchEvent(new Event("opengui:test-workspace-change")));
+
+    await waitFor(() => expect(fixtures.client.health).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("actor:none")).toBeTruthy();
+  });
+
   test("clears an invalid saved session, then logs in through the public form", async () => {
     const { IdentityRequestError } = await import("./identity-client");
     fixtures.client.me.mockRejectedValueOnce(new IdentityRequestError("expired", 401));

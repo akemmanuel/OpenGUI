@@ -260,7 +260,7 @@ export function AppContent({
                 )}
 
                 {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
-                  <div className="shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
+                  <div className="relative z-[1] shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
                     <div className="w-full md:max-w-2xl md:mx-auto">
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">

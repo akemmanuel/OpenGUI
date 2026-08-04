@@ -1,12 +1,34 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-afterEach(cleanup);
+const identity = vi.hoisted(() => ({
+  health: vi.fn(),
+  policy: vi.fn(),
+  me: vi.fn(),
+  login: vi.fn(),
+  setup: vi.fn(),
+  register: vi.fn(),
+}));
+vi.mock("@/features/identity/identity-client", () => ({
+  createIdentityClient: () => identity,
+  IdentityRequestError: class IdentityRequestError extends Error {
+    constructor(
+      message: string,
+      public status: number,
+    ) {
+      super(message);
+    }
+  },
+}));
+afterEach(() => {
+  cleanup();
+  for (const method of Object.values(identity)) method.mockReset();
+});
 
 const initial = {
   name: "Remote",
@@ -17,6 +39,7 @@ const initial = {
 
 describe("WorkspaceDialog", () => {
   test("validates, trims, and submits a new Workspace from the keyboard", async () => {
+    identity.health.mockResolvedValue({ authRequired: false, identity: "ready" });
     const submit = vi.fn();
     const change = vi.fn();
     render(
@@ -28,17 +51,54 @@ describe("WorkspaceDialog", () => {
         onOpenChange={change}
       />,
     );
-    const save = screen.getByRole("button", { name: "common.add" });
+    const save = screen.getByRole("button", { name: /workspace.continue/ });
     expect((save as HTMLButtonElement).disabled).toBe(true);
     await userEvent.type(screen.getByLabelText("workspace.name"), "  Team  ");
     await userEvent.clear(screen.getByLabelText("workspace.backendUrl"));
     await userEvent.type(screen.getByLabelText("workspace.backendUrl"), "  https://remote.test  ");
     await userEvent.type(screen.getByLabelText(/workspace.accessToken/), " token {Enter}");
-    expect(submit).toHaveBeenCalledWith({
-      name: "Team",
-      serverUrl: "https://remote.test",
-      authToken: "token",
-    });
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith({
+        name: "Team",
+        serverUrl: "https://remote.test",
+        authToken: "token",
+      }),
+    );
+    expect(change).toHaveBeenCalledWith(false);
+  });
+
+  test("keeps the current app visible while signing in, then adds the authenticated Workspace", async () => {
+    identity.health.mockResolvedValue({ authRequired: true, identity: "ready" });
+    identity.policy.mockResolvedValue({ registrationMode: "invite_only" });
+    identity.login.mockResolvedValue({ token: "session-token" });
+    const submit = vi.fn();
+    const change = vi.fn();
+    render(
+      <WorkspaceDialog
+        open
+        mode="add"
+        initial={{ ...initial, authToken: "" }}
+        onSubmit={submit}
+        onOpenChange={change}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /workspace.continue/ }));
+    expect(await screen.findByText("workspace.signInTitle")).toBeTruthy();
+    expect(submit).not.toHaveBeenCalled();
+    expect(change).not.toHaveBeenCalledWith(false);
+
+    await userEvent.type(screen.getByLabelText("identity.username"), "ada");
+    await userEvent.type(screen.getByLabelText("identity.password"), "password-123");
+    await userEvent.click(screen.getByRole("button", { name: /workspace.signInAndAdd/ }));
+
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith({
+        name: "Remote",
+        serverUrl: "https://host.test",
+        authToken: "session-token",
+      }),
+    );
     expect(change).toHaveBeenCalledWith(false);
   });
 

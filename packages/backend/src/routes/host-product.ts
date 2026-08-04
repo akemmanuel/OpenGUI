@@ -184,6 +184,9 @@ export function registerHostProductRoutes(
       return sessionError(error);
     }
   });
+  app.post("/api/host/auth/codex/cancel", async () =>
+    Response.json({ ok: true, value: await (await input.getHost()).cancelCodexAuth() }),
+  );
   app.delete("/api/host/auth/codex", async () => {
     await (await input.getHost()).disconnectCodex();
     return Response.json({ ok: true, value: true });
@@ -212,6 +215,12 @@ export function registerHostProductRoutes(
         return jsonError(error, 400);
       }
     });
+    app.post(`/api/host/auth/${provider}/cancel`, async () =>
+      Response.json({
+        ok: true,
+        value: await (await input.getHost()).cancelSubscriptionAuth(provider),
+      }),
+    );
     app.delete(`/api/host/auth/${provider}`, async () => {
       await (await input.getHost()).disconnectSubscription(provider);
       return Response.json({ ok: true, value: true });

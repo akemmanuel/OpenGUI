@@ -214,10 +214,12 @@ export interface OpenGuiHostClient {
   codexAuthStatus(): Promise<CodexAuthStatus>;
   beginCodexAuth(): Promise<CodexAuthStatus>;
   pollCodexAuth(): Promise<CodexAuthStatus>;
+  cancelCodexAuth(): Promise<CodexAuthStatus>;
   disconnectCodex(): Promise<void>;
   subscriptionAuthStatus(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
   beginSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
   pollSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
+  cancelSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
   disconnectSubscription(provider: SubscriptionProvider): Promise<void>;
   health(): Promise<{ ok: true; version: string; shell: string }>;
   listModelConnections(): Promise<HostModelConnection[]>;

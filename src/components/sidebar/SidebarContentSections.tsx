@@ -50,9 +50,8 @@ export function SidebarSectionAction({
       type="button"
       aria-label={label}
       data-slot="sidebar-section-action"
-      data-responsive-allow="hover-reveal"
       onClick={onClick}
-      className="h-6 w-6 opacity-0 transition-opacity group-hover/label:opacity-100 group-focus-within/label:opacity-100 flex items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground focus-visible:opacity-100"
+      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
     >
       {children}
     </button>

@@ -87,6 +87,11 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         method: "POST",
         body: "{}",
       })) as CodexAuthStatus,
+    cancelCodexAuth: async () =>
+      (await request("/api/host/auth/codex/cancel", {
+        method: "POST",
+        body: "{}",
+      })) as CodexAuthStatus,
     disconnectCodex: async () => {
       await request("/api/host/auth/codex", { method: "DELETE" });
     },
@@ -99,6 +104,11 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
       })) as CodexAuthStatus,
     pollSubscriptionAuth: async (provider) =>
       (await request(`/api/host/auth/${provider}/poll`, {
+        method: "POST",
+        body: "{}",
+      })) as CodexAuthStatus,
+    cancelSubscriptionAuth: async (provider) =>
+      (await request(`/api/host/auth/${provider}/cancel`, {
         method: "POST",
         body: "{}",
       })) as CodexAuthStatus,

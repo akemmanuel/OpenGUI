@@ -263,7 +263,6 @@ function IdentityGateContent({
   useEffect(() => {
     if (bypass || !workspace) return;
     let cancelled = false;
-    setAuthorizedWorkspaceId(null);
     dispatch({ type: "check" });
     setSubmitError(null);
     const client = createIdentityClient({
@@ -323,7 +322,10 @@ function IdentityGateContent({
     return <InviteAcceptScreen token={inviteToken} workspace={workspace} />;
   }
   if (bypass) return children;
-  if (!workspace || state.status === "checking") return <IdentityLoading />;
+  if (!workspace || (state.status === "checking" && !authorizedWorkspaceId)) {
+    return <IdentityLoading />;
+  }
+  if (state.status === "checking") return children;
   if (state.status === "error") {
     return (
       <IdentityShell>

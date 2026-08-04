@@ -178,8 +178,7 @@ export function ProjectEntry({
                         type="button"
                         data-project-action
                         data-slot="sidebar-hover-action"
-                        data-responsive-allow="hover-reveal"
-                        className="opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-accent group-data-[collapsible=icon]:hidden"
+                        className="flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-accent group-data-[collapsible=icon]:hidden"
                         aria-label={t("projectMenu.newSession")}
                         onClick={() => {
                           setActiveTarget(directory, { newChat: true });

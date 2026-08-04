@@ -12,8 +12,13 @@ const fixture = vi.hoisted(() => ({
   upsert: vi.fn().mockResolvedValue(undefined),
   remove: vi.fn().mockResolvedValue(undefined),
   beginCodex: vi.fn(),
+  pollCodex: vi.fn().mockResolvedValue({ connected: false, pending: null }),
+  cancelCodex: vi.fn().mockResolvedValue({ connected: false, pending: null }),
   codexStatus: vi.fn().mockResolvedValue({ connected: false, pending: null }),
   subscriptionStatus: vi.fn().mockResolvedValue({ connected: false, pending: null }),
+  beginSubscription: vi.fn(),
+  pollSubscription: vi.fn().mockResolvedValue({ connected: false, pending: null }),
+  cancelSubscription: vi.fn().mockResolvedValue({ connected: false, pending: null }),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -36,11 +41,13 @@ vi.mock("@/protocol/host-client", () => ({
     removeModelConnection: fixture.remove,
     codexAuthStatus: fixture.codexStatus,
     beginCodexAuth: fixture.beginCodex,
-    pollCodexAuth: vi.fn(),
+    pollCodexAuth: fixture.pollCodex,
+    cancelCodexAuth: fixture.cancelCodex,
     disconnectCodex: vi.fn(),
     subscriptionAuthStatus: fixture.subscriptionStatus,
-    beginSubscriptionAuth: vi.fn(),
-    pollSubscriptionAuth: vi.fn(),
+    beginSubscriptionAuth: fixture.beginSubscription,
+    pollSubscriptionAuth: fixture.pollSubscription,
+    cancelSubscriptionAuth: fixture.cancelSubscription,
     disconnectSubscription: vi.fn(),
   }),
 }));
@@ -101,12 +108,28 @@ describe("SettingsProviders", () => {
     expect(fixture.codexStatus).not.toHaveBeenCalled();
   });
 
-  test("renders the device authorization challenge returned by the Host", async () => {
+  test("opens the device authorization dialog returned by the Host", async () => {
     fixture.actor = { type: "user", id: "owner-1", role: "owner" };
+    fixture.beginCodex.mockResolvedValue({
+      connected: false,
+      pending: {
+        userCode: "ABCD",
+        verificationUri: "https://auth.example/device",
+        expiresAt: Date.now() + 60_000,
+      },
+    });
+    fixture.pollCodex.mockResolvedValue({
+      connected: false,
+      pending: {
+        userCode: "ABCD",
+        verificationUri: "https://auth.example/device",
+        expiresAt: Date.now() + 60_000,
+      },
+    });
     render(<SettingsProviders />);
     await userEvent.click(await screen.findByRole("button", { name: "providers.codex.signIn" }));
-    expect(await screen.findByText("providers.codex.code")).toBeTruthy();
-    const link = screen.getByRole("link", { name: "providers.codex.open" }) as HTMLAnchorElement;
-    expect(link.href).toBe("https://auth.example/device");
+    expect(await screen.findByText("providers.codex.authorizeTitle")).toBeTruthy();
+    expect(screen.getByText("ABCD")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "providers.deviceAuth.stop" })).toBeTruthy();
   });
 });
