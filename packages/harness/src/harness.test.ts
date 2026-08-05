@@ -832,6 +832,8 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     });
     await session.reorderFollowUp(third.id, 0);
     await session.removeFollowUp(fourth.id);
+    // Removal can race with dispatch in the UI and must therefore be safe to retry.
+    await session.removeFollowUp(fourth.id);
 
     expect((await session.read()).followUps.map((item) => item.prompt.text)).toEqual([
       "Third edited",

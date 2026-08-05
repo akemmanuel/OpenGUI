@@ -343,13 +343,15 @@ export class SqliteSessionStore {
 
   async removeFollowUp(sessionId: string, followUpId: string) {
     await this.#ready;
-    const result = await this.#database
+    // Deleting a Follow-up is intentionally idempotent. A completing Run may
+    // dispatch the item between the frontend rendering it and this request
+    // arriving; in that race the user's desired end state is already true.
+    await this.#database
       .deleteFrom("session_follow_ups")
       .where("session_id", "=", sessionId)
       .where("id", "=", followUpId)
       .where("state", "=", "pending")
       .executeTakeFirst();
-    if (result.numDeletedRows !== 1n) throw new Error(`Pending follow-up not found: ${followUpId}`);
   }
 
   /** Atomically claim a pending follow-up for immediate dispatch (send-now). */
