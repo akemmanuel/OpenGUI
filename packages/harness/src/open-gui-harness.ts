@@ -56,23 +56,26 @@ class RandomIdGenerator implements IdGenerator {
   }
 }
 
-async function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal) {
-  return await new Promise<IteratorResult<T>>((resolveNext, rejectNext) => {
-    const aborted = () => rejectNext(signal.reason ?? new DOMException("Aborted", "AbortError"));
+async function promiseWithAbort<T>(pending: Promise<T>, signal: AbortSignal) {
+  return await new Promise<T>((resolvePending, rejectPending) => {
+    const aborted = () => rejectPending(signal.reason ?? new DOMException("Aborted", "AbortError"));
     signal.addEventListener("abort", aborted, { once: true });
-    const pending = iterator.next();
     if (signal.aborted) aborted();
     void pending.then(
       (result) => {
         signal.removeEventListener("abort", aborted);
-        resolveNext(result);
+        resolvePending(result);
       },
       (error: unknown) => {
         signal.removeEventListener("abort", aborted);
-        rejectNext(error);
+        rejectPending(error);
       },
     );
   });
+}
+
+async function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal) {
+  return await promiseWithAbort(iterator.next(), signal);
 }
 
 function selectedModel(entries: SessionSnapshot["entries"]): ModelSelection | null {
@@ -1210,12 +1213,11 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             const output = agentToolSet?.definitions.some(
               (definition) => definition.name === toolCall.name,
             )
-              ? await limitToolResult(
-                  toolContext,
-                  await agentToolSet.invoke(
-                    { name: toolCall.name, input: toolCall.input },
-                    abortController.signal,
-                  ),
+              ? await promiseWithAbort(
+                  agentToolSet
+                    .invoke({ name: toolCall.name, input: toolCall.input }, abortController.signal)
+                    .then((result) => limitToolResult(toolContext, result)),
+                  abortController.signal,
                 )
               : await executeTool(toolContext, toolCall.name, toolCall.input);
             await revalidate(nextPrompt.actor, current.projectDirectory);
