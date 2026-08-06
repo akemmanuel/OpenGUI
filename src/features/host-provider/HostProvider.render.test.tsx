@@ -209,6 +209,26 @@ describe("HostProvider render integration", () => {
 
     act(() => actions.setSessionPinned("session-1", true));
     expect(state.sessionMeta["session-1"]?.pinnedAt).toEqual(expect.any(String));
+    await act(() => actions.moveSessionToProject("session-1", "/other/"));
+    expect(state.sessionMeta["session-1"]).toEqual(
+      expect.objectContaining({
+        sidebarSection: "projects",
+        displayProjectDir: "/other",
+        sidebarMovedAt: expect.any(Number),
+      }),
+    );
+    expect(JSON.parse(persisted.values.get(STORAGE_KEYS.SESSION_META) ?? "{}")).toEqual(
+      expect.objectContaining({
+        "session-1": expect.objectContaining({
+          sidebarSection: "projects",
+          displayProjectDir: "/other",
+        }),
+      }),
+    );
+    await act(() => actions.removeSessionFromProject("session-1"));
+    expect(state.sessionMeta["session-1"]).toEqual(
+      expect.objectContaining({ sidebarSection: "chats", displayProjectDir: null }),
+    );
     await act(() => actions.deleteSession("session-1"));
     expect(host.deleteSession).toHaveBeenCalledWith("session-1");
 
