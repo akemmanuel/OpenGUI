@@ -363,7 +363,12 @@ export function normalizeModelError(error: unknown, signal?: AbortSignal): Norma
       retryable: false,
       status,
     };
-  if (status === 429)
+  if (
+    status === 429 ||
+    /usage limit|usage_limit|rate limit|rate_limit|insufficient[_ -]?quota|quota exceeded/i.test(
+      message,
+    )
+  )
     return {
       code: "rate_limit",
       message: "Model provider rate limit reached",
@@ -386,7 +391,12 @@ export function normalizeModelError(error: unknown, signal?: AbortSignal): Norma
       retryable: false,
       status,
     };
-  if ((status !== undefined && status >= 500) || /overloaded|unavailable/i.test(message))
+  if (
+    (status !== undefined && status >= 500) ||
+    /overloaded|unavailable|fetch failed|network error|econn\w*|socket|websocket|connection (?:closed|failed|lost|reset|refused)/i.test(
+      message,
+    )
+  )
     return {
       code: "provider_unavailable",
       message: "Model provider is unavailable",

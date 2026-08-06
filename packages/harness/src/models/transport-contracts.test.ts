@@ -148,6 +148,14 @@ describe("durable transport cache contract", () => {
       retryable: false,
     });
   });
+
+  test.each([
+    ["You have hit your ChatGPT usage limit (pro plan).", "rate_limit"],
+    ["WebSocket connection closed unexpectedly", "provider_unavailable"],
+    ["TypeError: fetch failed", "provider_unavailable"],
+  ])("normalizes transient provider failure: %s", (message, code) => {
+    expect(normalizeModelError(new Error(message))).toMatchObject({ code, retryable: true });
+  });
 });
 
 test("provider replay metadata survives restart and deltas remain ordered", async () => {

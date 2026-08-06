@@ -31,6 +31,7 @@ import {
   DEFAULT_MODEL_DELIVERY,
   ModelTransportError,
   normalizeModelError,
+  redactProviderText,
   type ModelRequest,
   type ModelToolName,
   type ProviderResponseMetadata,
@@ -1210,16 +1211,30 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               executionPolicy,
               shellExecutor: this.#shellExecutor,
             };
-            const output = agentToolSet?.definitions.some(
-              (definition) => definition.name === toolCall.name,
-            )
-              ? await promiseWithAbort(
-                  agentToolSet
-                    .invoke({ name: toolCall.name, input: toolCall.input }, abortController.signal)
-                    .then((result) => limitToolResult(toolContext, result)),
-                  abortController.signal,
-                )
-              : await executeTool(toolContext, toolCall.name, toolCall.input);
+            let output: unknown;
+            try {
+              output = agentToolSet?.definitions.some(
+                (definition) => definition.name === toolCall.name,
+              )
+                ? await promiseWithAbort(
+                    agentToolSet
+                      .invoke(
+                        { name: toolCall.name, input: toolCall.input },
+                        abortController.signal,
+                      )
+                      .then((result) => limitToolResult(toolContext, result)),
+                    abortController.signal,
+                  )
+                : await executeTool(toolContext, toolCall.name, toolCall.input);
+            } catch (error) {
+              if (abortController.signal.aborted) throw error;
+              output = {
+                status: "error",
+                summary: redactProviderText(
+                  error instanceof Error ? error.message : "Connected tool failed",
+                ),
+              };
+            }
             await revalidate(nextPrompt.actor, current.projectDirectory);
             yield {
               type: "entry_appended",

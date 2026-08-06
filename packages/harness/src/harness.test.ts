@@ -951,7 +951,10 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
           {
             id: "call-timeout",
             name: "shell",
-            input: { command: `node -e "setTimeout(() => {}, 5000)"`, timeout: 0.05 },
+            input: {
+              command: `nohup node -e "setTimeout(() => {}, 5000)" >/dev/null 2>&1 & wait`,
+              timeout: 0.05,
+            },
           },
         ],
       },
