@@ -47,7 +47,12 @@ import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 import { normalizeProjectPath } from "@/lib/path";
 import { defaultEnabledSkillNames, sessionSkillsKey } from "@/lib/session-skills";
 import { findModel } from "@/lib/utils";
-import { makeProjectKey, shouldAutoNameSession } from "@/hooks/agent-session-utils";
+import {
+  createSessionProjectDetachMeta,
+  createSessionProjectMoveMeta,
+  makeProjectKey,
+  shouldAutoNameSession,
+} from "@/hooks/agent-session-utils";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { connectionsToModelProviders } from "@/lib/models-dev";
@@ -1121,8 +1126,26 @@ function HostProviderBody({
           return next;
         });
       },
-      moveSessionToProject: async () => {},
-      removeSessionFromProject: async () => {},
+      moveSessionToProject: async (sessionId, directory) => {
+        const session = sessions.find((item) => item.id === sessionId);
+        setSessionMeta((current) => {
+          const meta = createSessionProjectMoveMeta(session, current[sessionId], directory);
+          if (!meta) return current;
+          const next = { ...current, [sessionId]: { ...current[sessionId], ...meta } };
+          persistSessionMetaMap(next);
+          return next;
+        });
+      },
+      removeSessionFromProject: async (sessionId) => {
+        const session = sessions.find((item) => item.id === sessionId);
+        setSessionMeta((current) => {
+          const meta = createSessionProjectDetachMeta(session, current[sessionId]);
+          if (!meta) return current;
+          const next = { ...current, [sessionId]: { ...current[sessionId], ...meta } };
+          persistSessionMetaMap(next);
+          return next;
+        });
+      },
       setProjectPinned: (directory, pinned) => {
         const projectKey = makeProjectKey(activeWorkspaceId, directory);
         setProjectMeta((current) => {
