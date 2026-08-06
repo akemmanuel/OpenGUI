@@ -125,4 +125,59 @@ describe("AgentToolSet", () => {
       await harness.close();
     }
   });
+
+  test("returns connected tool failures to the model instead of failing the run", async () => {
+    const dataDirectory = await mkdtemp(join(tmpdir(), "opengui-agent-tool-failure-"));
+    temporaryDirectories.push(dataDirectory);
+    const model = new FakeModel([
+      { toolCalls: [{ id: "stale-call", name: "mcp_call_tool", input: {} }] },
+      { text: "Continued without the unavailable tool" },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      agentTools: {
+        async resolve() {
+          return {
+            generation: "catalog-generation",
+            definitions: [
+              {
+                name: "mcp_call_tool",
+                description: "Call a connected tool.",
+                parameters: { type: "object", properties: {} },
+              },
+            ],
+            async invoke() {
+              throw new Error("Unknown MCP connection: exa");
+            },
+          };
+        },
+      },
+    });
+
+    try {
+      const session = await harness.createSession({
+        projectDirectory: dataDirectory,
+        model: { connectionId: "fake", modelId: "fake-model" },
+        reasoning: "none",
+      });
+      for await (const _event of session.run({ text: "Use the stale tool" })) {
+        // Drain the Run.
+      }
+
+      const snapshot = await session.read();
+      expect(snapshot.entries.find((entry) => entry.kind === "tool_result")?.payload).toMatchObject(
+        {
+          output: { status: "error", summary: "Unknown MCP connection: exa" },
+        },
+      );
+      expect(snapshot.entries.some((entry) => entry.kind === "run_failed")).toBe(false);
+      expect(snapshot.entries.at(-2)).toMatchObject({
+        kind: "assistant_message",
+        payload: { text: "Continued without the unavailable tool" },
+      });
+    } finally {
+      await harness.close();
+    }
+  });
 });

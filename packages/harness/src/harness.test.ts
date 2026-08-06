@@ -832,6 +832,8 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     });
     await session.reorderFollowUp(third.id, 0);
     await session.removeFollowUp(fourth.id);
+    // Removal can race with dispatch in the UI and must therefore be safe to retry.
+    await session.removeFollowUp(fourth.id);
 
     expect((await session.read()).followUps.map((item) => item.prompt.text)).toEqual([
       "Third edited",
@@ -949,7 +951,10 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
           {
             id: "call-timeout",
             name: "shell",
-            input: { command: `node -e "setTimeout(() => {}, 5000)"`, timeout: 0.05 },
+            input: {
+              command: `nohup node -e "setTimeout(() => {}, 5000)" >/dev/null 2>&1 & wait`,
+              timeout: 0.05,
+            },
           },
         ],
       },

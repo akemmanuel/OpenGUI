@@ -110,7 +110,6 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
     terminateProcessTree(child, force);
     if (!force && !forceKillTimer) {
       forceKillTimer = setTimeout(() => terminateProcessTree(child, true), FORCE_KILL_DELAY_MS);
-      forceKillTimer.unref();
     }
   };
   const onAbort = () => {
@@ -122,7 +121,6 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
     timedOut = true;
     stop();
   }, timeoutMs);
-  timeout.unref();
 
   const result = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
