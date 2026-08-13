@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vite-plus/test";
-import { HARNESS_DATABASE_FILENAME, createOpenGuiHarness, type SessionEntry } from "./index.ts";
+import {
+  HARNESS_DATABASE_FILENAME,
+  createOpenGuiHarness,
+  type ModelTransport,
+  type SessionEntry,
+} from "./index.ts";
 import { FakeClock, FakeModel, SequenceIdGenerator } from "./test/index.ts";
 
 async function temporaryDirectory() {
@@ -20,6 +25,55 @@ function semanticTranscript(entries: SessionEntry[]) {
 }
 
 describe("OpenGuiHarness", () => {
+  test("persists redacted provider detail when a model request fails", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const secret = "sk-private-123456";
+    const model: ModelTransport = {
+      stream() {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                throw Object.assign(new Error(`invalid x-api-key ${secret}; request id req_123`), {
+                  status: 401,
+                });
+              },
+            };
+          },
+        };
+      },
+    };
+    const harness = createOpenGuiHarness({ dataDirectory, model });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    try {
+      for await (const _event of session.run({ text: "Trigger provider failure" })) {
+        // drain
+      }
+    } catch {
+      // Model failures are rethrown after their durable run_failed entry is appended.
+    }
+
+    const failed = (await session.read()).entries.find((entry) => entry.kind === "run_failed");
+    expect(failed?.payload).toMatchObject({
+      error: "invalid x-api-key [REDACTED]; request id req_123",
+      normalizedError: {
+        code: "authentication",
+        message: "Model provider authentication failed",
+        detail: "invalid x-api-key [REDACTED]; request id req_123",
+        status: 401,
+      },
+    });
+    expect(JSON.stringify(failed)).not.toContain(secret);
+    await harness.close();
+  });
+
   test("advertises project skills in the system prompt and loads them with read", async () => {
     const dataDirectory = await temporaryDirectory();
     const homeDirectory = join(dataDirectory, "home");

@@ -550,4 +550,38 @@ describe("Host transcript streaming", () => {
       },
     });
   });
+
+  test("projects the normalized summary and real provider detail for a failed Run", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "failed-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "run_failed",
+        payload: {
+          runId: "run-1",
+          error: "invalid x-api-key; request id req_123",
+          normalizedError: {
+            code: "authentication",
+            message: "Model provider authentication failed",
+            detail: "invalid x-api-key; request id req_123",
+            retryable: false,
+            status: 401,
+          },
+        },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+    ];
+
+    expect(projectHostTranscriptStream(createHostTranscriptStream(input))[0]).toMatchObject({
+      info: {
+        error: {
+          data: {
+            message: "Model provider authentication failed: invalid x-api-key; request id req_123",
+          },
+        },
+      },
+    });
+  });
 });

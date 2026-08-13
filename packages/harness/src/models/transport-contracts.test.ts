@@ -149,6 +149,21 @@ describe("durable transport cache contract", () => {
     });
   });
 
+  test("preserves redacted provider detail alongside a normalized authentication summary", () => {
+    const secret = "sk-private-123456";
+    const error = Object.assign(new Error(`invalid x-api-key ${secret}; request id req_123`), {
+      status: 401,
+    });
+
+    expect(normalizeModelError(error)).toEqual({
+      code: "authentication",
+      message: "Model provider authentication failed",
+      detail: "invalid x-api-key [REDACTED]; request id req_123",
+      retryable: false,
+      status: 401,
+    });
+  });
+
   test.each([
     ["You have hit your ChatGPT usage limit (pro plan).", "rate_limit"],
     ["WebSocket connection closed unexpectedly", "provider_unavailable"],

@@ -215,6 +215,8 @@ export interface NormalizedModelError {
     | "protocol"
     | "unknown";
   message: string;
+  /** Redacted, bounded provider text suitable for Session readers and error details UI. */
+  detail?: string;
   retryable: boolean;
   status?: number;
 }
@@ -332,6 +334,22 @@ export function redactProviderText(value: string, secrets: readonly string[] = [
   return result.slice(0, 2_000);
 }
 
+function normalizedModelError(
+  code: NormalizedModelError["code"],
+  normalizedMessage: string,
+  retryable: boolean,
+  providerDetail: string,
+  status?: number,
+): NormalizedModelError {
+  return {
+    code,
+    message: normalizedMessage,
+    ...(providerDetail && providerDetail !== normalizedMessage ? { detail: providerDetail } : {}),
+    retryable,
+    ...(status === undefined ? {} : { status }),
+  };
+}
+
 export function normalizeModelError(error: unknown, signal?: AbortSignal): NormalizedModelError {
   if (error instanceof ModelTransportError) return error.normalized;
   const raw = error instanceof Error ? error.message : String(error);
@@ -343,77 +361,80 @@ export function normalizeModelError(error: unknown, signal?: AbortSignal): Norma
   if (signal?.aborted || (error instanceof Error && error.name === "AbortError"))
     return { code: "aborted", message: "Model request was aborted", retryable: false };
   if (/timed? ?out|timeout/i.test(message))
-    return {
-      code: "timeout",
-      message: "Model provider request timed out",
-      retryable: true,
+    return normalizedModelError(
+      "timeout",
+      "Model provider request timed out",
+      true,
+      message,
       status,
-    };
+    );
   if (status === 401)
-    return {
-      code: "authentication",
-      message: "Model provider authentication failed",
-      retryable: false,
+    return normalizedModelError(
+      "authentication",
+      "Model provider authentication failed",
+      false,
+      message,
       status,
-    };
+    );
   if (status === 403)
-    return {
-      code: "permission",
-      message: "Model provider denied the request because of entitlement and organization policy",
-      retryable: false,
+    return normalizedModelError(
+      "permission",
+      "Model provider denied the request because of entitlement and organization policy",
+      false,
+      message,
       status,
-    };
+    );
   if (
     status === 429 ||
     /usage limit|usage_limit|rate limit|rate_limit|insufficient[_ -]?quota|quota exceeded/i.test(
       message,
     )
   )
-    return {
-      code: "rate_limit",
-      message: "Model provider rate limit reached",
-      retryable: true,
+    return normalizedModelError(
+      "rate_limit",
+      "Model provider rate limit reached",
+      true,
+      message,
       status,
-    };
+    );
   if (
     /context[_ -]?length[_ -]?exceeded|input is too long|too many (?:input )?tokens/i.test(message)
   )
-    return {
-      code: "invalid_request",
-      message: "Model request exceeds the provider context limit",
-      retryable: false,
+    return normalizedModelError(
+      "invalid_request",
+      "Model request exceeds the provider context limit",
+      false,
+      message,
       status,
-    };
+    );
   if (status === 400 || status === 404 || status === 422)
-    return {
-      code: "invalid_request",
-      message: "Model provider rejected the request",
-      retryable: false,
+    return normalizedModelError(
+      "invalid_request",
+      "Model provider rejected the request",
+      false,
+      message,
       status,
-    };
+    );
   if (
     (status !== undefined && status >= 500) ||
     /overloaded|unavailable|fetch failed|network error|econn\w*|socket|websocket|connection (?:closed|failed|lost|reset|refused)/i.test(
       message,
     )
   )
-    return {
-      code: "provider_unavailable",
-      message: "Model provider is unavailable",
-      retryable: true,
+    return normalizedModelError(
+      "provider_unavailable",
+      "Model provider is unavailable",
+      true,
+      message,
       status,
-    };
+    );
   if (/malformed|stream ended|protocol/i.test(message))
-    return {
-      code: "protocol",
-      message: "Model provider returned an invalid stream",
-      retryable: false,
+    return normalizedModelError(
+      "protocol",
+      "Model provider returned an invalid stream",
+      false,
+      message,
       status,
-    };
-  return {
-    code: "unknown",
-    message: "Model provider request failed",
-    retryable: false,
-    status,
-  };
+    );
+  return normalizedModelError("unknown", "Model provider request failed", false, message, status);
 }

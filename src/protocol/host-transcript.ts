@@ -402,9 +402,20 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
           parts: [],
         };
       }
+      const providerDetail = text(entry.payload.error);
+      const normalizedError =
+        entry.payload.normalizedError && typeof entry.payload.normalizedError === "object"
+          ? (entry.payload.normalizedError as Record<string, unknown>)
+          : undefined;
+      const summary = text(normalizedError?.message);
+      const detail = text(normalizedError?.detail, providerDetail);
+      const message =
+        summary && detail && summary !== detail
+          ? `${summary}: ${detail}`
+          : summary || detail || "Model request failed";
       pendingAssistant.info.error = {
         name: "Model request failed",
-        data: { message: text(entry.payload.error, "Model request failed") },
+        data: { message },
       };
       pendingAssistant.info.time.completed = createdMs(entry.createdAt);
     }

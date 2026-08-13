@@ -1275,7 +1275,9 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         {
           ...(typeof activeRunId === "string" ? { runId: activeRunId } : {}),
           error:
-            authorizationFailed && error instanceof Error ? error.message : normalizedError.message,
+            authorizationFailed && error instanceof Error
+              ? error.message
+              : (normalizedError.detail ?? normalizedError.message),
           normalizedError,
         },
         this.#clock.now().toISOString(),
