@@ -136,7 +136,9 @@ export function buildCustomModelConnection(draft: CustomBackendDraft): HostModel
           displayName: model.displayName.trim() || undefined,
           context: model.context ? Number(model.context) : undefined,
           reasoning: model.reasoning,
-          reasoningEfforts: model.reasoning ? model.reasoningEfforts : undefined,
+          ...(model.reasoning && model.reasoningEfforts.length
+            ? { reasoningEfforts: model.reasoningEfforts }
+            : {}),
         },
       ]),
     ),

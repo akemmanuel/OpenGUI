@@ -311,7 +311,12 @@ export function registerHostProductRoutes(
               return [
                 [
                   modelId,
-                  { displayName, context, reasoning: raw.reasoning === true, reasoningEfforts },
+                  {
+                    displayName,
+                    context,
+                    reasoning: raw.reasoning === true,
+                    ...(reasoningEfforts?.length ? { reasoningEfforts } : {}),
+                  },
                 ],
               ];
             }),

@@ -34,7 +34,9 @@ import {
 } from "@opengui/harness";
 import {
   CHATGPT_CODEX_PRESET,
+  type FlatModelCatalog,
   OPENCODE_GO_PRESET,
+  selectCatalogModel,
   SUPERGROK_PRESET,
   XAI_API_PRESET,
   supportedOpenCodeGoModelIds,
@@ -68,6 +70,7 @@ import {
   type SkillSourceDescriptor,
   type SkillSourceResolver,
 } from "./skills-management.ts";
+import { loadModelsDevCatalog, resolveConnectionReasoningEfforts } from "./model-capabilities.ts";
 import {
   createMcpAgentToolSource,
   createMcpBroker,
@@ -231,6 +234,12 @@ const CODEX_CONNECTION = connectionFromPreset(CHATGPT_CODEX_PRESET);
 const XAI_CONNECTION = connectionFromPreset(SUPERGROK_PRESET);
 const XAI_API_CONNECTION = connectionFromPreset(XAI_API_PRESET);
 const OPENCODE_ZEN_CONNECTION_ID = "opencode-zen";
+const BUILT_IN_CONNECTION_IDS = new Set<string>([
+  CHATGPT_CODEX_PRESET.id,
+  SUPERGROK_PRESET.id,
+  XAI_API_PRESET.id,
+  OPENCODE_GO_PRESET.id,
+]);
 const TEXT_ONLY_MODELS = new Set([`${OPENCODE_ZEN_CONNECTION_ID}/deepseek-v4-flash-free`]);
 const XAI_OAUTH = {
   clientId: "b1a00492-073a-47ea-816f-4c329264a828",
@@ -351,6 +360,7 @@ export class OpenGuiHost {
     | undefined;
   #starting: Promise<void> | null = null;
   #closing: Promise<void> | null = null;
+  #modelsDevCatalog: Promise<FlatModelCatalog | null> | null = null;
 
   constructor(
     dataDirectory: string,
@@ -614,6 +624,50 @@ export class OpenGuiHost {
     return this.#harness;
   }
 
+  async #assertReasoningSupported(
+    selection: ModelSelection,
+    reasoning: string,
+    actor?: DurableActor,
+  ) {
+    if (reasoning === "none") return;
+    const routedSelection =
+      selection.connectionId === MODEL_OFFERING_CONNECTION_ID
+        ? await this.#resolveModelOffering?.(selection.modelId, actor)
+        : selection;
+    if (!routedSelection) throw new Error("Model offerings are not available");
+    const connection = this.listModelConnections().find(
+      (item) => item.id === routedSelection.connectionId,
+    );
+    if (!connection) throw new Error(`Unknown model connection: ${routedSelection.connectionId}`);
+    const configured = connection.modelCapabilities?.[routedSelection.modelId];
+    const hasExplicitEfforts = Boolean(configured?.reasoningEfforts?.length);
+    if (
+      BUILT_IN_CONNECTION_IDS.has(connection.id) &&
+      !hasExplicitEfforts &&
+      configured?.reasoning !== false
+    )
+      return;
+    const catalog = hasExplicitEfforts
+      ? null
+      : await (this.#modelsDevCatalog ??= loadModelsDevCatalog(this.#fetch));
+    const catalogModel = selectCatalogModel(catalog, routedSelection.modelId, {
+      baseUrl: connection.baseUrl,
+    });
+    // Catalog inference is advisory. If it is unavailable or the model is unknown,
+    // preserve existing custom/private model behavior instead of rejecting valid calls.
+    if (!hasExplicitEfforts && configured?.reasoning !== false && !catalogModel) return;
+    const supported = resolveConnectionReasoningEfforts(
+      connection,
+      routedSelection.modelId,
+      catalog,
+    );
+    if (!supported.includes(reasoning as (typeof supported)[number])) {
+      throw new Error(
+        `Model ${routedSelection.modelId} does not support reasoning effort ${reasoning}`,
+      );
+    }
+  }
+
   async *#streamModel(request: ModelRequest, signal: AbortSignal) {
     const started = Date.now();
     const timeoutSignal = request.delivery?.timeoutMs
@@ -644,6 +698,9 @@ export class OpenGuiHost {
       (item) => item.type === "user_message",
     )?.model;
     const modelId = routedSelection?.modelId ?? "unknown";
+    if (selected?.type === "user_message" && routedSelection) {
+      await this.#assertReasoningSupported(routedSelection, selected.reasoning, request.actor);
+    }
     if (TEXT_ONLY_MODELS.has(`${connectionId}/${modelId}`)) {
       effectiveRequest = {
         ...effectiveRequest,
@@ -1685,6 +1742,7 @@ export class OpenGuiHost {
         },
       };
     }
+    await this.#assertReasoningSupported(input.model, input.reasoning, actor);
     await this.registerProject(input.projectDirectory, actor);
     const session = await this.#requireHarness().createSession(input);
     const snapshot = await session.read();
@@ -1735,7 +1793,8 @@ export class OpenGuiHost {
   }
 
   async setReasoning(sessionId: string, reasoning: ReasoningLevel, actor?: DurableActor) {
-    const { session } = await this.#authorizedSession(sessionId, actor, "run");
+    const { session, snapshot } = await this.#authorizedSession(sessionId, actor, "run");
+    if (snapshot.model) await this.#assertReasoningSupported(snapshot.model, reasoning, actor);
     await session.setReasoning(reasoning);
     return publicSessionSnapshot(await session.read());
   }

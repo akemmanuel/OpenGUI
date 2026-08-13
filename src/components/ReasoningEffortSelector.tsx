@@ -12,18 +12,8 @@ import { Button } from "@/components/ui/button";
 import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { findModel } from "@/lib/utils";
 import { notifyUnknownError } from "@/lib/notify";
+import { REASONING_EFFORTS } from "@opengui/protocol";
 import type { ReasoningEffort } from "@/protocol/host-types";
-
-const EFFORTS: ReasoningEffort[] = [
-  "none",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-];
 
 export function ReasoningEffortSelector() {
   const { t } = useTranslation();
@@ -32,11 +22,8 @@ export function ReasoningEffortSelector() {
   if (!selectedModel || !setReasoningEffort || !reasoningEffort) return null;
 
   const model = findModel(providers, selectedModel.providerID, selectedModel.modelID);
-  // Keep reasoning available for custom models and sessions whose model is not
-  // in the current catalog. Only hide it when metadata explicitly says the
-  // model cannot reason.
-  if (model?.capabilities.reasoning === false) return null;
-  const efforts = model?.reasoningEfforts?.length ? model.reasoningEfforts : [...EFFORTS];
+  if (model?.capabilities.reasoning === false || !model?.reasoningEfforts?.length) return null;
+  const efforts = model.reasoningEfforts;
 
   return (
     <DropdownMenu>
@@ -61,7 +48,7 @@ export function ReasoningEffortSelector() {
         <DropdownMenuRadioGroup
           value={reasoningEffort}
           onValueChange={(value) => {
-            if (!EFFORTS.includes(value as ReasoningEffort)) return;
+            if (!REASONING_EFFORTS.includes(value as ReasoningEffort)) return;
             void setReasoningEffort(value as ReasoningEffort).catch(notifyUnknownError);
           }}
         >

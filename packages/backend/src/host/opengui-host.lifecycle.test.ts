@@ -55,6 +55,44 @@ describe("OpenGuiHost lifecycle", () => {
     await host.close();
   });
 
+  test("rejects reasoning efforts unsupported by the selected model connection", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opengui-host-reasoning-effort-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "project");
+    await mkdir(project);
+    const host = new OpenGuiHost(root);
+    await host.start();
+    await host.upsertModelConnection({
+      id: "deepseek",
+      label: "DeepSeek",
+      baseUrl: "https://api.deepseek.com",
+      modelIds: ["deepseek-v4-pro"],
+      modelCapabilities: {
+        "deepseek-v4-pro": { reasoning: true, reasoningEfforts: ["none", "high", "max"] },
+      },
+    });
+    await expect(
+      host.createSession({
+        projectDirectory: project,
+        model: { connectionId: "deepseek", modelId: "deepseek-v4-pro" },
+        reasoning: "ultra",
+      }),
+    ).rejects.toThrow("does not support reasoning effort ultra");
+    const session = await host.createSession({
+      projectDirectory: project,
+      model: { connectionId: "deepseek", modelId: "deepseek-v4-pro" },
+      reasoning: "high",
+    });
+
+    await expect(host.setReasoning(session.id, "ultra")).rejects.toThrow(
+      "does not support reasoning effort ultra",
+    );
+    await expect(host.setReasoning(session.id, "max")).resolves.toMatchObject({
+      reasoning: "max",
+    });
+    await host.close();
+  });
+
   test("hides crash-created orphan Sessions without deleting their durable transcript", async () => {
     const root = await mkdtemp(join(tmpdir(), "opengui-host-acl-restart-"));
     temporaryDirectories.push(root);

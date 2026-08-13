@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vite-plus/test";
-import { reasoningMetadataForModel } from "../models-dev";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { connectionsToModelProviders, reasoningMetadataForModel } from "../models-dev";
 
 describe("reasoningMetadataForModel", () => {
   it("uses published effort levels supported by the Host", () => {
@@ -32,33 +32,70 @@ describe("reasoningMetadataForModel", () => {
     expect(metadata.reasoningEfforts).toBeUndefined();
   });
 
-  it("includes off for models that publish a reasoning toggle", () => {
+  it("uses the canonical vendor entry instead of unioning reseller capabilities", () => {
     const metadata = reasoningMetadataForModel(
       {
-        "opencode/deepseek-v4-flash-free": {
+        "deepseek/deepseek-v4-pro": {
           reasoning: true,
           reasoning_options: [{ type: "toggle" }, { type: "effort", values: ["high", "max"] }],
         },
+        "reseller/deepseek-v4-pro": {
+          reasoning: true,
+          reasoning_options: [
+            { type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] },
+          ],
+        },
       },
-      "deepseek-v4-flash-free",
+      "deepseek-v4-pro",
+      { baseUrl: "https://api.deepseek.com" },
     );
 
     expect(metadata.reasoningEfforts).toEqual(["none", "high", "max"]);
   });
 
-  it("keeps unknown custom models configurable", () => {
+  it("uses a conservative toggle-shaped default for unknown custom models", () => {
     const metadata = reasoningMetadataForModel({}, "private-model");
 
     expect(metadata.capabilities.reasoning).toBe(true);
-    expect(metadata.reasoningEfforts).toEqual([
-      "none",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "ultra",
+    expect(metadata.reasoningEfforts).toEqual(["none", "high"]);
+  });
+});
+
+describe("connectionsToModelProviders", () => {
+  it("keeps catalog reasoning efforts when a custom connection has no explicit override", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          deepseek: {
+            models: {
+              "deepseek-v4-pro": {
+                reasoning: true,
+                reasoning_options: [
+                  { type: "toggle" },
+                  { type: "effort", values: ["high", "max"] },
+                ],
+              },
+            },
+          },
+        }),
+      }),
+    );
+
+    const [provider] = await connectionsToModelProviders([
+      {
+        id: "deepseek-custom",
+        label: "DeepSeek",
+        baseUrl: "https://api.deepseek.com",
+        modelIds: ["deepseek-v4-pro"],
+        modelCapabilities: {
+          "deepseek-v4-pro": { reasoning: true, reasoningEfforts: [] },
+        },
+      },
     ]);
+
+    expect(provider?.models["deepseek-v4-pro"]?.reasoningEfforts).toEqual(["none", "high", "max"]);
+    vi.unstubAllGlobals();
   });
 });

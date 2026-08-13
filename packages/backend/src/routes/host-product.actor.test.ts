@@ -67,7 +67,12 @@ describe("Host product actor attribution", () => {
         defaultModelId: "beta",
         modelRoutes: { alpha: "responses", beta: "anthropic-messages" },
         modelCapabilities: {
-          alpha: { displayName: "Alpha", context: 128000, reasoning: true },
+          alpha: {
+            displayName: "Alpha",
+            context: 128000,
+            reasoning: true,
+            reasoningEfforts: [],
+          },
           beta: { reasoning: false },
         },
       }),
@@ -88,6 +93,9 @@ describe("Host product actor attribution", () => {
           beta: expect.objectContaining({ reasoning: false }),
         },
       }),
+    );
+    expect(upsertModelConnection.mock.calls[0]?.[0].modelCapabilities.alpha).not.toHaveProperty(
+      "reasoningEfforts",
     );
   });
 

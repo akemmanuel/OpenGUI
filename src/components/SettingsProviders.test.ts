@@ -51,6 +51,20 @@ describe("buildCustomModelConnection", () => {
       modelRoutes: { "gpt-test": "responses" },
       modelCapabilities: { "gpt-test": { reasoning: true } },
     });
+
+    const connection = buildCustomModelConnection({
+      ...createCustomBackendDraft("user"),
+      label: "Test backend",
+      models: [
+        {
+          ...createCustomBackendDraft("user").models[0]!,
+          id: "gpt-test",
+          reasoning: true,
+          reasoningEfforts: [],
+        },
+      ],
+    });
+    expect(connection?.modelCapabilities?.["gpt-test"]).not.toHaveProperty("reasoningEfforts");
   });
 
   test("reports duplicate upstream IDs before save", () => {

@@ -1,87 +1,50 @@
-import type { HostModelConnection } from "@/protocol/host-types";
-import type { ReasoningEffort } from "@/protocol/host-types";
+import {
+  REASONING_EFFORTS,
+  reasoningEffortsFromCatalogModel,
+  selectCatalogModel,
+  type FlatModelCatalog,
+  type ModelCatalogHints,
+} from "@opengui/protocol";
 import type { Model } from "@/protocol/agent-types";
+import type { HostModelConnection, ReasoningEffort } from "@/protocol/host-types";
 
-interface ModelsDevModel {
-  name?: string;
-  release_date?: string;
-  reasoning?: boolean;
-  reasoning_options?: Array<{ type?: string; values?: unknown[] }>;
-  limit?: { context?: number };
-}
+type ModelsDevProviderCatalog = Record<
+  string,
+  { models?: Record<string, FlatModelCatalog[string]> }
+>;
 
-type ModelsDevCatalog = Record<string, ModelsDevModel>;
-type ModelsDevProviderCatalog = Record<string, { models?: Record<string, ModelsDevModel> }>;
-
-const SUPPORTED_EFFORTS: ReasoningEffort[] = [
-  "none",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-];
-let catalogRequest: Promise<ModelsDevCatalog | null> | null = null;
+let catalogRequest: Promise<FlatModelCatalog | null> | null = null;
 
 export function reasoningMetadataForModel(
-  catalog: ModelsDevCatalog | null,
+  catalog: FlatModelCatalog | null,
   modelId: string,
+  hints: ModelCatalogHints = {},
 ): Pick<Model, "name" | "release_date" | "capabilities" | "reasoningEfforts" | "limit"> {
-  // models.json is keyed as provider/model. A connection can use any label or URL,
-  // so match its API model id rather than guessing its provider.
-  const matches = catalog
-    ? Object.entries(catalog)
-        .filter(([key]) => key === modelId || key.endsWith(`/${modelId}`))
-        .map(([, model]) => model)
-    : [];
-  const reasoningMatches = matches.filter((model) => model.reasoning === true);
+  const metadata = selectCatalogModel(catalog, modelId, hints);
 
-  // Unknown/custom models remain configurable: models.dev is advisory and an
-  // unavailable catalog must not remove functionality from self-hosted models.
-  if (matches.length === 0) {
+  // Unknown/custom models remain configurable, but use a conservative toggle-shaped
+  // default rather than claiming every effort accepted by the Host is accepted upstream.
+  if (!metadata) {
     return {
       name: modelId,
       release_date: "",
       capabilities: { reasoning: true },
-      reasoningEfforts: [...SUPPORTED_EFFORTS],
+      reasoningEfforts: ["none", "high"],
     };
   }
 
-  const efforts = new Set<ReasoningEffort>();
-  for (const model of reasoningMatches) {
-    for (const option of model.reasoning_options ?? []) {
-      if (option.type === "toggle") efforts.add("none");
-      if (option.type !== "effort") continue;
-      for (const value of option.values ?? []) {
-        if (SUPPORTED_EFFORTS.includes(value as ReasoningEffort)) {
-          efforts.add(value as ReasoningEffort);
-        }
-      }
-    }
-  }
-  // Toggle/budget based reasoning models do not publish effort values. The Host
-  // currently exposes those through its normalized off/high setting.
-  const reasoningEfforts =
-    efforts.size > 0
-      ? SUPPORTED_EFFORTS.filter((effort) => efforts.has(effort))
-      : reasoningMatches.length > 0
-        ? (["none", "high"] as ReasoningEffort[])
-        : undefined;
-  const metadata = reasoningMatches[0] ?? matches[0];
   return {
-    name: metadata?.name || modelId,
-    release_date: metadata?.release_date || "",
-    capabilities: { reasoning: reasoningMatches.length > 0 },
-    reasoningEfforts,
-    ...(typeof metadata?.limit?.context === "number" && metadata.limit.context > 0
+    name: metadata.name || modelId,
+    release_date: metadata.release_date || "",
+    capabilities: { reasoning: metadata.reasoning === true },
+    reasoningEfforts: reasoningEffortsFromCatalogModel(metadata) as ReasoningEffort[] | undefined,
+    ...(typeof metadata.limit?.context === "number" && metadata.limit.context > 0
       ? { limit: { context: metadata.limit.context } }
       : {}),
   };
 }
 
-async function loadModelsDevCatalog(): Promise<ModelsDevCatalog | null> {
+async function loadModelsDevCatalog(): Promise<FlatModelCatalog | null> {
   catalogRequest ??= fetch("https://models.dev/api.json")
     .then((response) => {
       if (!response.ok) throw new Error(`models.dev returned ${response.status}`);
@@ -108,25 +71,31 @@ export async function connectionsToModelProviders(connections: HostModelConnecti
     name: connection.label,
     source: "custom",
     models: Object.fromEntries(
-      connection.modelIds.map((modelId) => [
-        modelId,
-        {
-          id: modelId,
-          ...reasoningMetadataForModel(catalog, modelId),
-          ...(connection.modelCapabilities?.[modelId]
-            ? {
-                name: connection.modelCapabilities[modelId].displayName || modelId,
-                capabilities: {
-                  reasoning: connection.modelCapabilities[modelId].reasoning,
-                },
-                reasoningEfforts: connection.modelCapabilities[modelId].reasoningEfforts,
-                ...(connection.modelCapabilities[modelId].context
-                  ? { limit: { context: connection.modelCapabilities[modelId].context } }
-                  : {}),
-              }
-            : {}),
-        },
-      ]),
+      connection.modelIds.map((modelId) => {
+        const configured = connection.modelCapabilities?.[modelId];
+        const inferred = reasoningMetadataForModel(catalog, modelId, {
+          baseUrl: connection.baseUrl,
+        });
+        const reasoning = configured?.reasoning ?? inferred.capabilities.reasoning;
+        const explicitEfforts = configured?.reasoningEfforts?.length
+          ? configured.reasoningEfforts.filter((effort) => REASONING_EFFORTS.includes(effort))
+          : undefined;
+        return [
+          modelId,
+          {
+            id: modelId,
+            ...inferred,
+            name: configured?.displayName || inferred.name,
+            capabilities: { reasoning },
+            reasoningEfforts:
+              reasoning === false
+                ? undefined
+                : (explicitEfforts ??
+                  (inferred.capabilities.reasoning ? inferred.reasoningEfforts : ["none", "high"])),
+            ...(configured?.context ? { limit: { context: configured.context } } : {}),
+          },
+        ];
+      }),
     ),
   }));
 }

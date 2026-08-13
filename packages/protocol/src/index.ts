@@ -1,4 +1,13 @@
 export type { QueueMode } from "./queue.ts";
+export {
+  REASONING_EFFORTS,
+  reasoningEffortsFromCatalogModel,
+  selectCatalogModel,
+  type CatalogModelMetadata,
+  type FlatModelCatalog,
+  type ModelCatalogHints,
+  type ModelReasoningEffort,
+} from "./model-capabilities.ts";
 export type { SelectedModel } from "./selected-model.ts";
 export {
   CHATGPT_CODEX_PRESET,
