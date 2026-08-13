@@ -132,6 +132,52 @@ describe("HostProvider render integration", () => {
   });
   afterEach(cleanup);
 
+  test("reconciles a model switch into both live selection and session state", async () => {
+    const lunaSnapshot: HostSessionSnapshot = {
+      ...snapshot,
+      model: { connectionId: "provider-1", modelId: "gpt-5.6-luna" },
+      updatedAt: "2026-01-01T00:00:02.000Z",
+    };
+    host.listModelConnections.mockResolvedValue([
+      {
+        id: "provider-1",
+        label: "Provider",
+        modelIds: ["gpt-5.6-sol", "gpt-5.6-luna"],
+        defaultModelId: "gpt-5.6-sol",
+      },
+    ]);
+    host.setModel.mockResolvedValue(lunaSnapshot);
+
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession("session-1"));
+    await waitFor(() => expect(host.readSession).toHaveBeenCalledWith("session-1"));
+
+    await act(() => actions.setModel({ providerID: "provider-1", modelID: "gpt-5.6-luna" }));
+
+    expect(host.setModel).toHaveBeenCalledWith("session-1", {
+      connectionId: "provider-1",
+      modelId: "gpt-5.6-luna",
+    });
+    expect(models.selectedModel).toEqual({
+      providerID: "provider-1",
+      modelID: "gpt-5.6-luna",
+    });
+    expect(state.sessions.find((session) => session.id === "session-1")?.model).toEqual({
+      providerID: "provider-1",
+      id: "gpt-5.6-luna",
+    });
+  });
+
   test("bootstraps, hydrates, orchestrates Host mutations, persists UI state, and cleans up", async () => {
     const unsubscribe = vi.fn();
     host.subscribe.mockImplementation((_event, _session, connected) => {

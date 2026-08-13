@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { SelectedModel } from "@opengui/protocol";
 import {
   ActionsContext,
   ModelContext,
@@ -58,7 +59,10 @@ import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { connectionsToModelProviders } from "@/lib/models-dev";
 import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { getDesktopShellClient } from "@/runtime/clients";
-import { selectedModelFromHostSnapshot } from "@/features/host-provider/host-session-selection";
+import {
+  applyHostModelSnapshot,
+  selectedModelFromHostSnapshot,
+} from "@/features/host-provider/host-session-selection";
 import { persistHostModelSelection } from "@/features/host-provider/host-model-selection";
 import { loadHostSessionSummaries } from "@/features/host-provider/host-session-list";
 import { createOptimisticUserMessage } from "@/features/host-provider/host-optimistic-message";
@@ -252,6 +256,8 @@ function HostProviderBody({
   const activeStreamRef = useRef<HostTranscriptStream | null>(null);
   const hydratingSessionIdsRef = useRef(new Set<string>());
   const activeSessionIdRef = useRef(activeSessionId);
+  const modelSelectionRevisionRef = useRef(0);
+  const modelSelectionMutationRef = useRef<Promise<void>>(Promise.resolve());
   const queuedPromptsRef = useRef(queuedPrompts);
   /** Steer (after-part) Follow-ups waiting for the current model part to end. */
   const afterPartFollowUpsRef = useRef<Record<string, string[]>>({});
@@ -413,6 +419,7 @@ function HostProviderBody({
         if (snapshotScope.directory !== scope.directory) transcriptStore.select(snapshotScope);
         activeSnapshotRef.current = snapshot;
         activeStreamRef.current = createHostTranscriptStream(snapshot);
+        modelSelectionRevisionRef.current += 1;
         setSelectedModel(selectedModelFromHostSnapshot(snapshot));
         if (snapshot.reasoning) setReasoningEffortState(snapshot.reasoning);
         const messages = projectHostSnapshotToMessages(snapshot);
@@ -684,6 +691,41 @@ function HostProviderBody({
       activeWorkspaceId,
       policy,
     ],
+  );
+
+  const persistSelectedModel = useCallback(
+    (model: SelectedModel | null) => {
+      const previous = selectedModel;
+      const sessionId = activeSessionId;
+      const revision = ++modelSelectionRevisionRef.current;
+      setSelectedModel(model);
+      if (!model) return Promise.resolve();
+
+      const mutation = modelSelectionMutationRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const snapshot = await persistHostModelSelection(requireHost(), sessionId, model);
+            if (!snapshot) return;
+            setSessions((current) => applyHostModelSnapshot(current, snapshot));
+            if (activeSessionIdRef.current === snapshot.id) {
+              activeSnapshotRef.current = snapshot;
+            }
+            if (
+              revision === modelSelectionRevisionRef.current &&
+              activeSessionIdRef.current === snapshot.id
+            ) {
+              setSelectedModel(selectedModelFromHostSnapshot(snapshot));
+            }
+          } catch (error) {
+            if (revision === modelSelectionRevisionRef.current) setSelectedModel(previous);
+            notifyUnknownError(error);
+          }
+        });
+      modelSelectionMutationRef.current = mutation;
+      return mutation;
+    },
+    [activeSessionId, requireHost, selectedModel],
   );
 
   const actions = useHostActions(() => {
@@ -990,30 +1032,8 @@ function HostProviderBody({
       respondPermission: async () => {},
       replyQuestion: async () => {},
       rejectQuestion: async () => {},
-      setModel: async (model) => {
-        const previous = selectedModel;
-        setSelectedModel(model);
-        if (!model) return;
-        try {
-          const snapshot = await persistHostModelSelection(requireHost(), activeSessionId, model);
-          if (snapshot) activeSnapshotRef.current = snapshot;
-        } catch (error) {
-          setSelectedModel(previous);
-          notifyUnknownError(error);
-        }
-      },
-      setPromptBoxSelection: async ({ model }) => {
-        const previous = selectedModel;
-        setSelectedModel(model);
-        if (!model) return;
-        try {
-          const snapshot = await persistHostModelSelection(requireHost(), activeSessionId, model);
-          if (snapshot) activeSnapshotRef.current = snapshot;
-        } catch (error) {
-          setSelectedModel(previous);
-          notifyUnknownError(error);
-        }
-      },
+      setModel: persistSelectedModel,
+      setPromptBoxSelection: ({ model }) => persistSelectedModel(model),
       setAgent: () => {},
       cycleVariant: () => {},
       revertVariant: () => {},
@@ -1246,6 +1266,7 @@ function HostProviderBody({
     effectiveReasoningEffort,
     reasoningEffort,
     selectedModel,
+    persistSelectedModel,
     sessions,
     projects,
     workspaces,
