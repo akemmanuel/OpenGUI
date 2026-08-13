@@ -197,6 +197,12 @@
     "removeFromProject": "Quitar de {{project}}",
     "deleteSession": "Eliminar sesión",
     "deleteSessionConfirm": "¿Eliminar \"{{title}}\"?\n\nEsta sesión se eliminará permanentemente y no se puede deshacer.",
+    "selectedCount": "{{count}} seleccionadas",
+    "bulkActions": "Acciones para sesiones seleccionadas",
+    "deleteSelected": "Eliminar sesiones seleccionadas",
+    "clearSelection": "Borrar selección",
+    "addTagPrompt": "Etiqueta para añadir a las sesiones seleccionadas",
+    "deleteSessionsConfirm": "¿Eliminar {{count}} sesiones seleccionadas?\n\nSe eliminarán permanentemente y no se puede deshacer.",
     "colors": {
       "none": "Ninguno",
       "red": "Rojo",

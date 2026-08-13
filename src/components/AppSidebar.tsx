@@ -14,6 +14,15 @@ import { CollapsedProjectPopover } from "./sidebar/CollapsedProjectPopover";
 import { SidebarContentSections } from "./sidebar/SidebarContentSections";
 import { SidebarFooterContent } from "./sidebar/SidebarFooterContent";
 import { SidebarHeaderContent } from "./sidebar/SidebarHeaderContent";
+import { SessionBulkActionBar } from "./sidebar/SessionBulkActionBar";
+import {
+  EMPTY_SESSION_MULTI_SELECT,
+  pruneSessionSelection,
+  selectSessionRange,
+  toggleSessionSelection,
+} from "./sidebar/session-multi-select";
+import { isSidebarProjectCollapsed } from "@/lib/persistence/sidebar";
+import { sessionUiPermissions } from "./sidebar/SessionRow";
 import { useSidebarCollapsedProjects } from "./sidebar/use-sidebar-collapsed-projects";
 import { useSidebarRename } from "./sidebar/use-sidebar-rename";
 import { useSidebarRenderers } from "./sidebar/use-sidebar-renderers";
@@ -154,6 +163,8 @@ export function AppSidebar({
   });
   const [visibleByProject, setVisibleByProject] = useState<Record<string, number>>({});
   const [visibleChatCount, setVisibleChatCount] = useState(SESSION_PAGE_SIZE);
+  const [multiSelect, setMultiSelect] = useState(EMPTY_SESSION_MULTI_SELECT);
+  const selectionAreaRef = useRef<HTMLDivElement | null>(null);
   const [projectPopover, setProjectPopover] = useState<{
     directory: string;
     top: number;
@@ -173,6 +184,71 @@ export function AppSidebar({
     ? (projectSessionsByDirectory[projectPopover.directory] ?? [])
     : [];
   const visibleChatSessions = filteredChatSessions.slice(0, visibleChatCount);
+  const visibleSessionIds = useMemo(() => {
+    const ids: string[] = [];
+    const add = (id: string) => {
+      if (!ids.includes(id)) ids.push(id);
+    };
+    for (const entry of pinnedEntries) {
+      if (entry.kind === "session") add(entry.session.id);
+      else if (hasActiveSearch || !isSidebarProjectCollapsed(collapsed, entry.directory)) {
+        for (const session of entry.sessions.slice(
+          0,
+          visibleByProject[entry.directory] ?? SESSION_PAGE_SIZE,
+        ))
+          add(session.id);
+      }
+    }
+    for (const session of visibleChatSessions) add(session.id);
+    for (const [directory, projectSessions] of filteredProjectEntries) {
+      if (!hasActiveSearch && isSidebarProjectCollapsed(collapsed, directory)) continue;
+      for (const session of projectSessions.slice(
+        0,
+        visibleByProject[directory] ?? SESSION_PAGE_SIZE,
+      ))
+        add(session.id);
+    }
+    return ids;
+  }, [
+    collapsed,
+    filteredProjectEntries,
+    hasActiveSearch,
+    pinnedEntries,
+    visibleByProject,
+    visibleChatSessions,
+  ]);
+  const clearSessionSelection = useCallback(() => setMultiSelect(EMPTY_SESSION_MULTI_SELECT), []);
+  const onPlainSessionClick = useCallback(
+    (sessionId: string) => setMultiSelect({ selectedIds: new Set(), anchorId: sessionId }),
+    [],
+  );
+  useEffect(
+    () => setMultiSelect((state) => pruneSessionSelection(state, visibleSessionIds)),
+    [visibleSessionIds],
+  );
+  useOutsideClick(
+    selectionAreaRef,
+    clearSessionSelection,
+    multiSelect.selectedIds.size > 0,
+    "[data-session-selection-ui]",
+  );
+  const onSessionSelectionClick = useCallback(
+    (sessionId: string, event: React.MouseEvent<HTMLButtonElement>) => {
+      setMultiSelect((state) =>
+        event.shiftKey
+          ? selectSessionRange(state, sessionId, visibleSessionIds)
+          : toggleSessionSelection(state, sessionId),
+      );
+    },
+    [visibleSessionIds],
+  );
+  const selectedSessions = sessions.filter((session) => multiSelect.selectedIds.has(session.id));
+  const manageableSessions = selectedSessions.filter(
+    (session) => sessionUiPermissions(session._accessRole).manage,
+  );
+  const deletableSessions = selectedSessions.filter(
+    (session) => sessionUiPermissions(session._accessRole).delete,
+  );
   const hasMoreChats = filteredChatSessions.length > visibleChatCount;
   const canShowLessChats = visibleChatCount > SESSION_PAGE_SIZE;
   const projectLabel = t("sidebar.projects");
@@ -270,6 +346,9 @@ export function AppSidebar({
     editingSessionId,
     hasActiveSearch,
     hasUnsentDraft,
+    selectedSessionIds: multiSelect.selectedIds,
+    onSessionSelectionClick,
+    onPlainSessionClick,
     isLocalWorkspace,
     moveSessionToProject,
     namingSessionIds,
@@ -301,89 +380,143 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon" className="select-none relative">
-      <SidebarHeaderContent
-        searchInputRef={searchInputRef}
-        searchQuery={searchQuery}
-        hasActiveSearch={searchQuery.trim().length > 0}
-        detachedProject={detachedProject}
-        showChatsSection={showChatsSection}
-        labels={{
-          searchPlaceholder: t("sidebar.searchPlaceholder"),
-          clearSearch: t("sidebar.clearSearch"),
-          newChat: t("sidebar.newChat"),
-        }}
-        setSearchQuery={setSearchQuery}
-        onOpenChat={onOpenChat}
-        startNewChat={startNewChat}
-        closeMobileSidebar={closeMobileSidebar}
-      />
-
-      <SidebarContent className="overflow-x-hidden" onClickCapture={onOpenChat}>
-        <SidebarContentSections
-          pinnedEntries={pinnedEntries}
-          filteredChatSessions={filteredChatSessions}
-          visibleChatSessions={visibleChatSessions}
-          filteredProjectEntries={filteredProjectEntries}
-          hasActiveSearch={hasActiveSearch}
-          isMessageSearchPending={isMessageSearchPending}
+      <div ref={selectionAreaRef} className="flex min-h-0 flex-1 flex-col">
+        <SidebarHeaderContent
+          searchInputRef={searchInputRef}
+          searchQuery={searchQuery}
+          hasActiveSearch={searchQuery.trim().length > 0}
           detachedProject={detachedProject}
           showChatsSection={showChatsSection}
-          visibleChatCount={visibleChatCount}
-          hasMoreChats={hasMoreChats}
-          canShowLessChats={canShowLessChats}
           labels={{
-            pinned: t("sidebar.pinned"),
-            chats: t("sidebar.chats"),
-            projects: projectLabel,
+            searchPlaceholder: t("sidebar.searchPlaceholder"),
+            clearSearch: t("sidebar.clearSearch"),
             newChat: t("sidebar.newChat"),
-            addProject: t("sidebar.addProject"),
-            noMatches: t("sidebar.noMatches", { query: searchQuery.trim() }),
-            noChats: t("sidebar.noChats"),
-            loadMore: (count) => t("sidebar.loadMore", { count }),
-            showLess: t("sidebar.showLess"),
-            allProjectsPinned: t("sidebar.allProjectsPinned"),
-            noProjectsYet: t("sidebar.noProjectsYet"),
-            needWorkspaceBeforeProjects: t("sidebar.needWorkspaceBeforeProjects"),
-            addWorkspace: t("workspace.addWorkspace"),
           }}
-          canManageProjects={canManageProjects}
-          onAddWorkspace={openAddWorkspaceDialog}
-          renderProjectEntry={renderProjectEntry}
-          renderSessionRow={renderSessionRow}
+          setSearchQuery={setSearchQuery}
+          onOpenChat={onOpenChat}
           startNewChat={startNewChat}
           closeMobileSidebar={closeMobileSidebar}
-          setVisibleChatCount={setVisibleChatCount}
-          handleAddProject={handleAddProject}
-          reorderVisibleProjects={reorderVisibleProjects}
-          sidebarCollapsed={sidebarState === "collapsed"}
+          selectionActions={
+            multiSelect.selectedIds.size > 0 && sidebarState !== "collapsed" ? (
+              <SessionBulkActionBar
+                count={multiSelect.selectedIds.size}
+                canManage={manageableSessions.length > 0}
+                canDelete={deletableSessions.length > 0}
+                allPinned={
+                  manageableSessions.length > 0 &&
+                  manageableSessions.every((session) => !!sessionMeta[session.id]?.pinnedAt)
+                }
+                projects={availableProjectDirectories}
+                onTogglePin={() => {
+                  const unpin =
+                    manageableSessions.length > 0 &&
+                    manageableSessions.every((session) => !!sessionMeta[session.id]?.pinnedAt);
+                  for (const session of manageableSessions) setSessionPinned(session.id, !unpin);
+                }}
+                onSetColor={(color) => {
+                  for (const session of manageableSessions) setSessionColor(session.id, color);
+                }}
+                onAddTag={() => {
+                  const tag = window.prompt(t("sessionMenu.addTagPrompt"))?.trim();
+                  if (!tag) return;
+                  for (const session of manageableSessions)
+                    setSessionTags(session.id, [
+                      ...new Set([...(sessionMeta[session.id]?.tags ?? []), tag]),
+                    ]);
+                }}
+                onMove={(directory) => {
+                  revealSessionInProject(directory);
+                  for (const session of manageableSessions)
+                    void moveSessionToProject(session.id, directory);
+                }}
+                onDelete={() => {
+                  if (
+                    deletableSessions.length === 0 ||
+                    !window.confirm(
+                      t("sessionMenu.deleteSessionsConfirm", {
+                        count: deletableSessions.length,
+                      }),
+                    )
+                  )
+                    return;
+                  void Promise.allSettled(
+                    deletableSessions.map((session) => deleteSession(session.id)),
+                  );
+                  clearSessionSelection();
+                }}
+                onClear={clearSessionSelection}
+              />
+            ) : undefined
+          }
         />
 
-        {projectPopover && sidebarState === "collapsed" && (
-          <CollapsedProjectPopover
-            popoverRef={popoverRef}
-            directory={projectPopover.directory}
-            top={projectPopover.top}
-            sessions={popoverSessions}
-            activeSessionId={visibleActiveSessionId}
-            busySessionIds={busySessionIds}
-            unreadSessionIds={unreadSessionIds}
-            queuedPrompts={queuedPrompts}
-            pendingQuestions={pendingQuestions}
-            pendingPermissions={pendingPermissions}
-            namingSessionIds={namingSessionIds}
-            untitledLabel={t("sidebar.untitled")}
+        <SidebarContent className="overflow-x-hidden" onClickCapture={onOpenChat}>
+          <SidebarContentSections
+            pinnedEntries={pinnedEntries}
+            filteredChatSessions={filteredChatSessions}
+            visibleChatSessions={visibleChatSessions}
+            filteredProjectEntries={filteredProjectEntries}
+            hasActiveSearch={hasActiveSearch}
+            isMessageSearchPending={isMessageSearchPending}
+            detachedProject={detachedProject}
+            showChatsSection={showChatsSection}
+            visibleChatCount={visibleChatCount}
+            hasMoreChats={hasMoreChats}
+            canShowLessChats={canShowLessChats}
             labels={{
-              newSession: t("sidebar.newSession"),
-              noSessionsYet: t("sidebar.noSessionsYet"),
+              pinned: t("sidebar.pinned"),
+              chats: t("sidebar.chats"),
+              projects: projectLabel,
+              newChat: t("sidebar.newChat"),
+              addProject: t("sidebar.addProject"),
+              noMatches: t("sidebar.noMatches", { query: searchQuery.trim() }),
+              noChats: t("sidebar.noChats"),
+              loadMore: (count) => t("sidebar.loadMore", { count }),
+              showLess: t("sidebar.showLess"),
+              allProjectsPinned: t("sidebar.allProjectsPinned"),
+              noProjectsYet: t("sidebar.noProjectsYet"),
+              needWorkspaceBeforeProjects: t("sidebar.needWorkspaceBeforeProjects"),
+              addWorkspace: t("workspace.addWorkspace"),
             }}
-            hasUnsentDraft={hasUnsentDraft}
-            setActiveTarget={setActiveTarget}
-            selectSession={selectSession}
-            closePopover={closeProjectPopover}
+            canManageProjects={canManageProjects}
+            onAddWorkspace={openAddWorkspaceDialog}
+            renderProjectEntry={renderProjectEntry}
+            renderSessionRow={renderSessionRow}
+            startNewChat={startNewChat}
             closeMobileSidebar={closeMobileSidebar}
+            setVisibleChatCount={setVisibleChatCount}
+            handleAddProject={handleAddProject}
+            reorderVisibleProjects={reorderVisibleProjects}
+            sidebarCollapsed={sidebarState === "collapsed"}
           />
-        )}
-      </SidebarContent>
+
+          {projectPopover && sidebarState === "collapsed" && (
+            <CollapsedProjectPopover
+              popoverRef={popoverRef}
+              directory={projectPopover.directory}
+              top={projectPopover.top}
+              sessions={popoverSessions}
+              activeSessionId={visibleActiveSessionId}
+              busySessionIds={busySessionIds}
+              unreadSessionIds={unreadSessionIds}
+              queuedPrompts={queuedPrompts}
+              pendingQuestions={pendingQuestions}
+              pendingPermissions={pendingPermissions}
+              namingSessionIds={namingSessionIds}
+              untitledLabel={t("sidebar.untitled")}
+              labels={{
+                newSession: t("sidebar.newSession"),
+                noSessionsYet: t("sidebar.noSessionsYet"),
+              }}
+              hasUnsentDraft={hasUnsentDraft}
+              setActiveTarget={setActiveTarget}
+              selectSession={selectSession}
+              closePopover={closeProjectPopover}
+              closeMobileSidebar={closeMobileSidebar}
+            />
+          )}
+        </SidebarContent>
+      </div>
 
       {!detachedProject && (
         <SidebarFooterContent

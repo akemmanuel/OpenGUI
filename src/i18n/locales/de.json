@@ -197,6 +197,12 @@
     "removeFromProject": "Aus {{project}} entfernen",
     "deleteSession": "Sitzung löschen",
     "deleteSessionConfirm": "\"{{title}}\" löschen?\n\nDiese Sitzung wird dauerhaft gelöscht und kann nicht wiederhergestellt werden.",
+    "selectedCount": "{{count}} ausgewählt",
+    "bulkActions": "Aktionen für ausgewählte Sitzungen",
+    "deleteSelected": "Ausgewählte Sitzungen löschen",
+    "clearSelection": "Auswahl aufheben",
+    "addTagPrompt": "Tag für ausgewählte Sitzungen hinzufügen",
+    "deleteSessionsConfirm": "{{count}} ausgewählte Sitzungen löschen?\n\nSie werden dauerhaft gelöscht und können nicht wiederhergestellt werden.",
     "colors": {
       "none": "Keine",
       "red": "Rot",

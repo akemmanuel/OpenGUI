@@ -22,6 +22,9 @@ interface UseSidebarRenderersArgs {
   editingSessionId: string | null;
   hasActiveSearch: boolean;
   hasUnsentDraft: (sessionId: string) => boolean;
+  selectedSessionIds: ReadonlySet<string>;
+  onSessionSelectionClick: (sessionId: string, event: React.MouseEvent<HTMLButtonElement>) => void;
+  onPlainSessionClick: (sessionId: string) => void;
   isLocalWorkspace: boolean;
   moveSessionToProject: (sessionId: string, projectDirectory: string) => void | Promise<void>;
   namingSessionIds: Set<string>;
@@ -71,6 +74,9 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
     editingSessionId,
     hasActiveSearch,
     hasUnsentDraft,
+    selectedSessionIds,
+    onSessionSelectionClick,
+    onPlainSessionClick,
     isLocalWorkspace,
     moveSessionToProject,
     namingSessionIds,
@@ -126,6 +132,9 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       editInputRef={editInputRef}
       untitledLabel={t("sidebar.untitled")}
       hasUnsentDraft={hasUnsentDraft}
+      selected={selectedSessionIds.has(session.id)}
+      onSelectionClick={onSessionSelectionClick}
+      onPlainSessionClick={onPlainSessionClick}
       selectSession={selectSession}
       closeMobileSidebar={closeMobileSidebar}
       setEditValue={setEditValue}

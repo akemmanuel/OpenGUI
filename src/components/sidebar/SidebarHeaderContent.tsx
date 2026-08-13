@@ -1,5 +1,5 @@
 import { Search, SquarePen, X } from "lucide-react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { SidebarHeader } from "@/components/ui/sidebar";
 import appIcon from "../../../assets/mobile-icon.svg";
@@ -17,6 +17,7 @@ export function SidebarHeaderContent({
   onOpenChat,
   startNewChat,
   closeMobileSidebar,
+  selectionActions,
 }: {
   searchInputRef: RefObject<HTMLInputElement | null>;
   searchQuery: string;
@@ -32,66 +33,71 @@ export function SidebarHeaderContent({
   onOpenChat: () => void;
   startNewChat: () => void | Promise<void>;
   closeMobileSidebar: () => void;
+  selectionActions?: ReactNode;
 }) {
   return (
     <SidebarHeader className="border-b border-sidebar-border p-0 gap-0 group-data-[collapsible=icon]:p-2">
-      <div
-        className="flex items-center justify-center gap-2 h-9 shrink-0 border-b border-sidebar-border group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:border-b-0"
-        style={
-          {
-            WebkitAppRegion: "drag",
-            userSelect: "none",
-            WebkitUserSelect: "none",
-          } as React.CSSProperties
-        }
-      >
-        <img
-          src={appIcon}
-          alt="OpenGUI"
-          className="size-6 shrink-0 hidden group-data-[collapsible=icon]:dark:block"
-        />
-        <img
-          src={appIcon}
-          alt="OpenGUI"
-          className="size-6 shrink-0 hidden group-data-[collapsible=icon]:block group-data-[collapsible=icon]:dark:hidden"
-        />
-        <img
-          src={openguiLogoDark}
-          alt="OpenGUI"
-          className="h-5 hidden dark:block group-data-[collapsible=icon]:!hidden"
-        />
-        <img
-          src={openguiLogoLight}
-          alt="OpenGUI"
-          className="h-5 block dark:hidden group-data-[collapsible=icon]:!hidden"
-        />
-      </div>
-      <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border/60 bg-sidebar/40">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" />
-          <Input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder={labels.searchPlaceholder}
-            className="h-8 pl-8 pr-8 text-sm rounded-none border-0 focus:ring-0 focus-visible:ring-0"
-          />
-          {hasActiveSearch && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                searchInputRef.current?.focus({ preventScroll: true });
-              }}
-              className="absolute right-2 top-1/2 flex size-4.5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
-              aria-label={labels.clearSearch}
-            >
-              <X className="size-3" />
-            </button>
-          )}
-        </div>
-      </div>
+      {selectionActions ?? (
+        <>
+          <div
+            className="flex items-center justify-center gap-2 h-9 shrink-0 border-b border-sidebar-border group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:border-b-0"
+            style={
+              {
+                WebkitAppRegion: "drag",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+              } as React.CSSProperties
+            }
+          >
+            <img
+              src={appIcon}
+              alt="OpenGUI"
+              className="size-6 shrink-0 hidden group-data-[collapsible=icon]:dark:block"
+            />
+            <img
+              src={appIcon}
+              alt="OpenGUI"
+              className="size-6 shrink-0 hidden group-data-[collapsible=icon]:block group-data-[collapsible=icon]:dark:hidden"
+            />
+            <img
+              src={openguiLogoDark}
+              alt="OpenGUI"
+              className="h-5 hidden dark:block group-data-[collapsible=icon]:!hidden"
+            />
+            <img
+              src={openguiLogoLight}
+              alt="OpenGUI"
+              className="h-5 block dark:hidden group-data-[collapsible=icon]:!hidden"
+            />
+          </div>
+          <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border/60 bg-sidebar/40">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" />
+              <Input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={labels.searchPlaceholder}
+                className="h-8 pl-8 pr-8 text-sm rounded-none border-0 focus:ring-0 focus-visible:ring-0"
+              />
+              {hasActiveSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus({ preventScroll: true });
+                  }}
+                  className="absolute right-2 top-1/2 flex size-4.5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+                  aria-label={labels.clearSearch}
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
       {!detachedProject && showChatsSection && (
         <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border">
           <button

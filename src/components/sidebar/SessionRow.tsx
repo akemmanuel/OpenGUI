@@ -59,6 +59,9 @@ export function SessionRow({
   editInputRef,
   untitledLabel,
   hasUnsentDraft,
+  selected,
+  onSelectionClick,
+  onPlainSessionClick,
   selectSession,
   closeMobileSidebar,
   setEditValue,
@@ -89,6 +92,9 @@ export function SessionRow({
   editInputRef: React.RefObject<HTMLInputElement | null>;
   untitledLabel: string;
   hasUnsentDraft: (sessionId: string) => boolean;
+  selected: boolean;
+  onSelectionClick: (sessionId: string, event: React.MouseEvent<HTMLButtonElement>) => void;
+  onPlainSessionClick: (sessionId: string) => void;
   selectSession: (sessionId: string) => void | Promise<void>;
   closeMobileSidebar: () => void;
   setEditValue: (value: string) => void;
@@ -175,9 +181,15 @@ export function SessionRow({
         <SidebarRow
           label={displayTitle}
           active={isActive}
+          selected={selected}
           editing={editingSessionId === session.id}
           className={`group/session text-muted-foreground ${isActive ? "text-sidebar-accent-foreground" : ""}`}
-          onActivate={() => {
+          onActivate={(event) => {
+            if (event.shiftKey || event.ctrlKey || event.metaKey) {
+              onSelectionClick(session.id, event);
+              return;
+            }
+            onPlainSessionClick(session.id);
             void selectSession(session.id);
             closeMobileSidebar();
           }}

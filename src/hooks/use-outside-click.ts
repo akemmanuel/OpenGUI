@@ -11,6 +11,7 @@ export function useOutsideClick(
   ref: RefObject<HTMLElement | null>,
   onClose: () => void,
   active: boolean,
+  ignoredSelector?: string,
 ): void {
   useEffect(() => {
     if (!active) return;
@@ -18,6 +19,7 @@ export function useOutsideClick(
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       if (ref.current?.contains(target)) return;
+      if (target instanceof Element && ignoredSelector && target.closest(ignoredSelector)) return;
       onClose();
     };
 
@@ -31,5 +33,5 @@ export function useOutsideClick(
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onEscape);
     };
-  }, [ref, onClose, active]);
+  }, [ref, onClose, active, ignoredSelector]);
 }

@@ -197,6 +197,12 @@
     "removeFromProject": "Remove from {{project}}",
     "deleteSession": "Delete session",
     "deleteSessionConfirm": "Delete \"{{title}}\"?\n\nThis permanently deletes the session and cannot be undone.",
+    "selectedCount": "{{count}} selected",
+    "bulkActions": "Selected session actions",
+    "deleteSelected": "Delete selected sessions",
+    "clearSelection": "Clear selection",
+    "addTagPrompt": "Tag to add to selected sessions",
+    "deleteSessionsConfirm": "Delete {{count}} selected sessions?\n\nThis permanently deletes them and cannot be undone.",
     "colors": {
       "none": "None",
       "red": "Red",

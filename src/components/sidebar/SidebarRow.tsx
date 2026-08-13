@@ -8,6 +8,7 @@ export function SidebarRow({
   actions,
   leadingAction,
   active = false,
+  selected = false,
   editing = false,
   className,
 }: {
@@ -17,6 +18,7 @@ export function SidebarRow({
   actions?: ReactNode;
   leadingAction?: ReactNode;
   active?: boolean;
+  selected?: boolean;
   editing?: boolean;
   className?: string;
 }) {
@@ -24,6 +26,8 @@ export function SidebarRow({
     "flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden transition-[background-color,color,box-shadow] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:p-2!",
     active &&
       "bg-sidebar-accent font-medium text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_var(--sidebar-border)]",
+    selected &&
+      "bg-primary/15 text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_45%,transparent)]",
   );
 
   return (
@@ -37,7 +41,13 @@ export function SidebarRow({
       {editing ? (
         <div className={contentClassName}>{children}</div>
       ) : (
-        <button type="button" aria-label={label} className={contentClassName} onClick={onActivate}>
+        <button
+          type="button"
+          aria-label={label}
+          aria-selected={selected}
+          className={contentClassName}
+          onClick={onActivate}
+        >
           {children}
         </button>
       )}
