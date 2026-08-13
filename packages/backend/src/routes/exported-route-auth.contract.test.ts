@@ -59,6 +59,8 @@ const protectedRoutes: Array<[method: string, path: string]> = [
   ["DELETE", "/api/host/models/model"],
   ["GET", "/api/host/mcp-connections"],
   ["POST", "/api/host/mcp-connections"],
+  ["GET", "/api/host/custom-instructions"],
+  ["PUT", "/api/host/custom-instructions"],
   ["POST", "/api/host/mcp-connections/connection/inspect"],
   ["DELETE", "/api/host/mcp-connections/connection"],
   ["GET", "/api/host/auth/codex"],

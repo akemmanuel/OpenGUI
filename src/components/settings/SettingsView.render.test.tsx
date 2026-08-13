@@ -20,6 +20,9 @@ vi.mock("@/features/identity/TeamSettings", () => ({
 vi.mock("@/features/skills/SkillsSettings", () => ({
   SkillsSettings: () => <p>skills-library</p>,
 }));
+vi.mock("@/features/instructions/InstructionsSettings", () => ({
+  InstructionsSettings: () => <p>instructions-panel</p>,
+}));
 vi.mock("@/features/mcp/McpSettings", () => ({
   McpSettings: () => <p>mcp-connections</p>,
 }));
@@ -57,6 +60,9 @@ describe("SettingsView responsive navigation", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "settings.tabs.skills" }));
     expect(screen.getByText("skills-library")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.instructions" }));
+    expect(screen.getByText("instructions-panel")).toBeTruthy();
   });
 
   test("keeps the side navigation from the medium breakpoint upward", () => {

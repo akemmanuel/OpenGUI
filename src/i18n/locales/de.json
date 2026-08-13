@@ -75,6 +75,7 @@
       "users": "Benutzer & Zugriff",
       "paths": "Pfade & Shell",
       "host": "Host & Verwaltung",
+      "instructions": "Anweisungen",
       "skills": "Skills",
       "team": "Team",
       "plugins": "Plugins",
@@ -87,12 +88,23 @@
       "users": "Mitglieder, Einladungen, Rollen und Kontozugriff verwalten.",
       "paths": "OpenGUI-Pfadzugriff und die getrennte Berechtigung von Shell-Befehlen.",
       "host": "Registrierung, Richtlinien für persönliche Zugangsdaten und Automatisierungsschlüssel.",
+      "instructions": "Hostweite eigene Anweisungen, die jedem Systemprompt einer Session hinzugefügt werden.",
       "skills": "Wiederverwendbare Anweisungen für den Agenten."
     },
     "paths": {
       "boundaryTitle": "Pfadfreigaben sind keine Sandbox",
       "boundaryDescription": "Lese- und Schreibfreigaben steuern Projekt- und Dateioperationen von OpenGUI. Sie beschränken keine Befehle einer uneingeschränkten Shell; diese hat die Rechte des Betriebssystembenutzers des Hosts.",
       "desktopOnly": "Standardverzeichnisse, Dateimanager und Terminalbefehle werden in der Desktop-App konfiguriert."
+    },
+    "instructions": {
+      "label": "Eigene Anweisungen",
+      "help": "Diese Hausregeln gelten für jedes Projekt und jede Session auf diesem Host. Sie werden beim nächsten Zug zum Systemprompt des Agenten hinzugefügt.",
+      "readOnly": "Diese Hausregeln gelten für jede Session auf diesem Host. Nur eine Host-Administration kann sie ändern.",
+      "placeholder": "Beispiel: Bevorzuge britische Rechtschreibung. Frage nach, bevor veröffentlichte Dateien geändert werden.",
+      "save": "Anweisungen speichern",
+      "saved": "Eigene Anweisungen gespeichert",
+      "loadFailed": "Eigene Anweisungen konnten nicht geladen werden.",
+      "characterCount": "{{count}} / {{max}} Zeichen"
     },
     "plugins": {
       "title": "Plugins",

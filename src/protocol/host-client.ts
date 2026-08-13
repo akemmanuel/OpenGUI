@@ -130,6 +130,15 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         method: "DELETE",
       });
     },
+    getCustomInstructions: async () =>
+      ((await request("/api/host/custom-instructions")) as { text: string }).text,
+    setCustomInstructions: async (text) =>
+      (
+        (await request("/api/host/custom-instructions", {
+          method: "PUT",
+          body: JSON.stringify({ text }),
+        })) as { text: string }
+      ).text,
     listMcpConnections: async () =>
       (await request("/api/host/mcp-connections")) as HostMcpConnection[],
     upsertMcpConnection: async (connection) =>

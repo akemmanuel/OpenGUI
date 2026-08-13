@@ -208,6 +208,35 @@ describe("Host client HTTP contract", () => {
       },
     ]);
   });
+
+  test("reads and writes Host-wide custom instructions", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createHostClient({
+      baseUrl: "https://host.example",
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url,
+          method: init?.method ?? "GET",
+          ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+        });
+        return Response.json({ ok: true, value: { text: "Always reply in Spanish." } });
+      },
+    });
+
+    await expect(client.getCustomInstructions()).resolves.toBe("Always reply in Spanish.");
+    await expect(client.setCustomInstructions(" Prefer British spelling. ")).resolves.toBe(
+      "Always reply in Spanish.",
+    );
+
+    expect(requests).toEqual([
+      { url: "https://host.example/api/host/custom-instructions", method: "GET" },
+      {
+        url: "https://host.example/api/host/custom-instructions",
+        method: "PUT",
+        body: { text: " Prefer British spelling. " },
+      },
+    ]);
+  });
 });
 
 describe("Host client SSE contract", () => {

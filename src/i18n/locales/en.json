@@ -75,6 +75,7 @@
       "users": "Users & access",
       "paths": "Paths & Shell",
       "host": "Host & admin",
+      "instructions": "Instructions",
       "skills": "Skills",
       "team": "Team",
       "plugins": "Plugins",
@@ -87,12 +88,23 @@
       "users": "Manage members, invitations, roles, and account access.",
       "paths": "Control OpenGUI path access and understand the separate authority of Shell commands.",
       "host": "Registration policy, personal credential policy, and automation keys.",
+      "instructions": "Host-wide custom instructions added to every Session's system prompt.",
       "skills": "Reusable instructions available to the agent."
     },
     "paths": {
       "boundaryTitle": "Path grants are not a sandbox",
       "boundaryDescription": "Read and write grants control OpenGUI's project and file operations. They do not confine commands run by an unrestricted Shell, which has the Host operating-system user's authority.",
       "desktopOnly": "Default directories, file manager, and terminal commands are configured in the Desktop app."
+    },
+    "instructions": {
+      "label": "Custom instructions",
+      "help": "These house rules apply to every Project and Session on this Host. They are added to the agent's system prompt on the next turn.",
+      "readOnly": "These house rules apply to every Session on this Host. Only a Host administrator can change them.",
+      "placeholder": "Example: Prefer British spelling. Ask before changing published files.",
+      "save": "Save instructions",
+      "saved": "Custom instructions saved",
+      "loadFailed": "Could not load custom instructions.",
+      "characterCount": "{{count}} / {{max}} characters"
     },
     "plugins": {
       "title": "Plugins",

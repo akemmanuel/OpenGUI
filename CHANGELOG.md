@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+- Added multi-select actions for moving and deleting Sessions from the sidebar.
+- Added Host-wide custom instructions that are applied to every new model turn.
+- Fixed model switching so canonical reasoning efforts and durable Session state stay in sync.
+- Improved Harness recovery from provider failures, tool failures, unresponsive tools, and background shell processes.
+- Restored moving Sessions between Projects and made queued follow-up removal idempotent.
+
 ## 0.6.0
 
 OpenGUI 0.6.0 introduces the first-party Host and Harness, durable Host-owned Sessions, multi-user

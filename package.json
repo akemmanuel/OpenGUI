@@ -1,6 +1,6 @@
 {
   "name": "opengui",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": false,
   "description": "OpenGUI - first-party coding agent for desktop and web",
   "homepage": "https://github.com/akemmanuel/OpenGUI",
@@ -21,6 +21,7 @@
     "dev": "node --experimental-strip-types scripts/dev-desktop.ts",
     "dev:web": "HOST=0.0.0.0 vp dev --host 0.0.0.0",
     "prototype:oauth-auth": "HOST=0.0.0.0 vp dev --host 0.0.0.0 --open /prototype-oauth-auth.html?variant=A",
+    "prototype:session-multi-select": "HOST=0.0.0.0 vp dev --host 0.0.0.0 --open /prototype-session-multi-select.html?variant=A",
     "build": "vp build",
     "check": "vp check",
     "check:fix": "vp check --fix",

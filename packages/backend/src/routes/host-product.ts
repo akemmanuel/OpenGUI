@@ -395,6 +395,25 @@ export function registerHostProductRoutes(
     }
   });
 
+  app.get("/api/host/custom-instructions", async () => {
+    const host = await input.getHost();
+    return Response.json({ ok: true, value: { text: host.getCustomInstructions() } });
+  });
+
+  app.put("/api/host/custom-instructions", async (c) => {
+    try {
+      skillManagementActor(c.get("actor") as Actor);
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body) || typeof body.text !== "string") {
+        throw new Error("text is required");
+      }
+      const text = await (await input.getHost()).setCustomInstructions(body.text);
+      return Response.json({ ok: true, value: { text } });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
   app.get("/api/host/mcp-connections", async () => {
     const host = await input.getHost();
     return Response.json({ ok: true, value: await host.listMcpConnections() });

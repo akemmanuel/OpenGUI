@@ -281,4 +281,69 @@ describe("Host product actor attribution", () => {
       actor: { type: "user", id: "editor", displayName: "Editor" },
     });
   });
+
+  test.each([
+    { type: "user", id: "member", displayName: "Member", role: "member" },
+    { type: "user", id: "viewer", displayName: "Viewer", role: "viewer" },
+    { type: "api_key", id: "key", displayName: "API key", role: "admin" },
+  ] as Actor[])("denies custom instruction edits to $type/$role actors", async (actor) => {
+    const setCustomInstructions = vi.fn();
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", actor);
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () => ({ setCustomInstructions }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+
+    const response = await app.request("http://localhost/api/host/custom-instructions", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Always reply in Spanish." }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(setCustomInstructions).not.toHaveBeenCalled();
+  });
+
+  test("lets a Host administrator read and save custom instructions", async () => {
+    const getCustomInstructions = vi.fn(() => "Always reply in Spanish.");
+    const setCustomInstructions = vi.fn(async (text: string) => text.trim());
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", {
+        type: "user",
+        id: "owner",
+        displayName: "Owner",
+        role: "owner",
+      });
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () =>
+        ({ getCustomInstructions, setCustomInstructions }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+
+    const read = await app.request("http://localhost/api/host/custom-instructions");
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual({
+      ok: true,
+      value: { text: "Always reply in Spanish." },
+    });
+
+    const write = await app.request("http://localhost/api/host/custom-instructions", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: " Prefer British spelling. " }),
+    });
+    expect(write.status).toBe(200);
+    expect(setCustomInstructions).toHaveBeenCalledWith(" Prefer British spelling. ");
+    expect(await write.json()).toEqual({
+      ok: true,
+      value: { text: "Prefer British spelling." },
+    });
+  });
 });

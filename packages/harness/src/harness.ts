@@ -162,6 +162,8 @@ export interface OpenGuiHarnessOptions {
   ids?: IdGenerator;
   /** Resolve current Host-owned execution capabilities for each durable actor. */
   resolveExecutionPolicy?: ExecutionPolicyResolver;
+  /** Resolve live Host-wide custom instructions for the next model turn. */
+  resolveCustomInstructions?: () => Promise<string | undefined> | string | undefined;
   /** Executes restricted shell calls outside the Host process in an embedding-owned sandbox. */
   shellExecutor?: ShellToolExecutor;
 }

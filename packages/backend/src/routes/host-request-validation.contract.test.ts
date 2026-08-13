@@ -72,6 +72,7 @@ describe("Host request validation contracts", () => {
 
   test.each([
     ["POST", "/api/host/models", "{"],
+    ["PUT", "/api/host/custom-instructions", "null"],
     ["POST", "/api/host/projects", "null"],
     ["DELETE", "/api/host/projects", "[]"],
     ["POST", "/api/host/sessions", "null"],

@@ -223,6 +223,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #homeDirectory: string | undefined;
   readonly #shell: ResolvedShell;
   readonly #resolveExecutionPolicy: OpenGuiHarnessOptions["resolveExecutionPolicy"];
+  readonly #resolveCustomInstructions: OpenGuiHarnessOptions["resolveCustomInstructions"];
   readonly #shellExecutor: OpenGuiHarnessOptions["shellExecutor"];
   readonly #compaction: Required<NonNullable<OpenGuiHarnessOptions["compaction"]>>;
   readonly #runningSessions = new Set<string>();
@@ -244,6 +245,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     this.#homeDirectory = options.homeDirectory;
     this.#shell = resolveNativeShell({ configuredExecutable: options.shell?.executable });
     this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
+    this.#resolveCustomInstructions = options.resolveCustomInstructions;
     this.#shellExecutor = options.shellExecutor;
     this.#compaction = {
       enabled: options.compaction?.enabled ?? true,
@@ -819,6 +821,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         ...(shellAvailable ? { shell: this.#shell } : {}),
         tools,
         skills,
+        customInstructions: await this.#resolveCustomInstructions?.(),
         now: this.#clock.now(),
       });
       if (!existingPins) {
@@ -1021,6 +1024,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             ...(shellAvailable ? { shell: this.#shell } : {}),
             tools: modelToolNames,
             skills,
+            customInstructions: await this.#resolveCustomInstructions?.(),
             now: this.#clock.now(),
           });
           const modelContext = buildModelContext(current.entries);

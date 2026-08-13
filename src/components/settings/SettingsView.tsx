@@ -3,6 +3,7 @@ import {
   Bot,
   FolderKey,
   Plug,
+  ScrollText,
   Settings2,
   SlidersHorizontal,
   Sparkles,
@@ -15,6 +16,7 @@ import { GeneralSettings, PathsAndShellSettings } from "@/components/settings/Ge
 import { Button } from "@/components/ui/button";
 import { TeamSettings } from "@/features/identity/TeamSettings";
 import { SkillsSettings } from "@/features/skills/SkillsSettings";
+import { InstructionsSettings } from "@/features/instructions/InstructionsSettings";
 import { McpSettings } from "@/features/mcp/McpSettings";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { ownerSettingsVisibility } from "@/features/identity/identity-state";
@@ -42,6 +44,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
     { id: "users", icon: Users, visible: showTeam },
     { id: "paths", icon: FolderKey, visible: showTeam || localBypass },
     { id: "host", icon: Settings2, visible: showHostAdmin },
+    { id: "instructions", icon: ScrollText, visible: true },
     { id: "skills", icon: Sparkles, visible: true },
   ].filter((item) => item.visible);
 
@@ -108,6 +111,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
               </div>
             )}
             {activeTab === "host" && <TeamSettings view="host" />}
+            {activeTab === "instructions" && <InstructionsSettings />}
             {activeTab === "skills" && <SkillsSettings />}
           </main>
         </div>

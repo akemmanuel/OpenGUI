@@ -226,6 +226,8 @@ export interface OpenGuiHostClient {
   listModelOfferings(): Promise<HostModelOffering[]>;
   upsertModelConnection(connection: HostModelConnection): Promise<HostModelConnection>;
   removeModelConnection(connectionId: string): Promise<void>;
+  getCustomInstructions(): Promise<string>;
+  setCustomInstructions(text: string): Promise<string>;
   listMcpConnections(): Promise<HostMcpConnection[]>;
   upsertMcpConnection(connection: HostMcpConnectionMutation): Promise<HostMcpConnection>;
   inspectMcpConnection(connectionId: string): Promise<HostMcpToolInfo[]>;

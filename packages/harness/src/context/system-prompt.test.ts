@@ -48,4 +48,40 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toMatch(/\b(?:write|edit)\b/iu);
     expect(prompt).toContain("project-skill");
   });
+
+  test("appends host-wide custom instructions after the skills catalog", () => {
+    const prompt = buildSystemPrompt({
+      projectDirectory: "/tmp/proj",
+      shell: { executable: "/bin/bash", family: "posix" },
+      skills: [],
+      customInstructions: "Always reply in Spanish.\nNever commit without asking.",
+      now: new Date("2026-07-24T12:00:00.000Z"),
+      platform: "linux",
+    });
+
+    expect(prompt).toBe(
+      [
+        "You are OpenGUI's local general-purpose agent.",
+        "Current date: 2026-07-24",
+        "Project directory: /tmp/proj",
+        "Operating system: linux",
+        "Shell: /bin/bash (posix)",
+        "Skills: no skills are enabled for this Session. Do not discover, load, or follow any SKILL.md files.",
+        "Custom instructions:",
+        "Always reply in Spanish.\nNever commit without asking.",
+      ].join("\n"),
+    );
+  });
+
+  test("omits the custom instructions section when the text is blank", () => {
+    const prompt = buildSystemPrompt({
+      projectDirectory: "/tmp/proj",
+      skills: [],
+      customInstructions: "   \n\t  ",
+      now: new Date("2026-07-24T12:00:00.000Z"),
+      platform: "linux",
+    });
+
+    expect(prompt).not.toContain("Custom instructions:");
+  });
 });

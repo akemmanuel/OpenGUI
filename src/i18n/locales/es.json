@@ -75,6 +75,7 @@
       "users": "Usuarios y acceso",
       "paths": "Rutas y Shell",
       "host": "Host y administración",
+      "instructions": "Instrucciones",
       "skills": "Skills",
       "team": "Equipo",
       "plugins": "Plugins",
@@ -87,12 +88,23 @@
       "users": "Gestiona miembros, invitaciones, roles y acceso a cuentas.",
       "paths": "Controla el acceso de OpenGUI a rutas y comprende la autoridad separada de Shell.",
       "host": "Política de registro, credenciales personales y claves de automatización.",
+      "instructions": "Instrucciones personalizadas del Host que se añaden al system prompt de cada Sesión.",
       "skills": "Instrucciones reutilizables disponibles para el agente."
     },
     "paths": {
       "boundaryTitle": "Los permisos de ruta no son un sandbox",
       "boundaryDescription": "Los permisos de lectura y escritura controlan las operaciones de proyecto y archivos de OpenGUI. No confinan los comandos de una Shell sin restricciones, que tiene la autoridad del usuario del sistema operativo del Host.",
       "desktopOnly": "Los directorios predeterminados, el gestor de archivos y los comandos de terminal se configuran en la aplicación de escritorio."
+    },
+    "instructions": {
+      "label": "Instrucciones personalizadas",
+      "help": "Estas normas de la casa se aplican a cada Proyecto y Sesión de este Host. Se añaden al system prompt del agente en el siguiente turno.",
+      "readOnly": "Estas normas de la casa se aplican a cada Sesión de este Host. Solo una administración del Host puede cambiarlas.",
+      "placeholder": "Ejemplo: Prefiere la ortografía británica. Pregunta antes de cambiar archivos publicados.",
+      "save": "Guardar instrucciones",
+      "saved": "Instrucciones personalizadas guardadas",
+      "loadFailed": "No se pudieron cargar las instrucciones personalizadas.",
+      "characterCount": "{{count}} / {{max}} caracteres"
     },
     "plugins": {
       "title": "Plugins",

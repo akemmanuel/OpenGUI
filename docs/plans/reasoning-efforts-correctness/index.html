@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reasoning Efforts — Correct Ownership</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <p class="eyebrow">OpenGUI · Model access</p>
+        <h1>Reasoning efforts need an owner</h1>
+        <p class="lede">
+          The empty-array guard in <code>connectionsToModelProviders</code> stops one overwrite. It
+          does not make the menu correct for custom DeepSeek backends. The real bug is split
+          ownership: the editor cannot express intent, the catalog matcher unions reseller noise,
+          and the selector falls back to a fantasy scale.
+        </p>
+        <div class="hero-meta">
+          <span class="pill pill-warn">Partial fix is insufficient</span>
+          <span class="pill">Plan only · no implementation</span>
+          <span class="pill">Repro: deepseek-v4-pro</span>
+        </div>
+      </header>
+
+      <nav class="toc" aria-label="Plan sections">
+        <a href="#symptom">Symptom</a>
+        <a href="#why-partial">Why partial fails</a>
+        <a href="#ownership">Ownership model</a>
+        <a href="#catalog">Catalog policy</a>
+        <a href="#design">Correct design</a>
+        <a href="#phases">Phases</a>
+        <a href="#acceptance">Acceptance</a>
+        <a href="#non-goals">Non-goals</a>
+      </nav>
+
+      <main>
+        <section id="symptom">
+          <h2>1. Symptom</h2>
+          <div class="grid-2">
+            <article class="card bad">
+              <h3>Actual</h3>
+              <p class="muted">Custom backend → reasoning ON → effort menu</p>
+              <ul class="scale">
+                <li>Off</li>
+                <li class="noise">Minimal</li>
+                <li class="noise">Low</li>
+                <li class="noise">Medium</li>
+                <li>High</li>
+                <li class="noise">Extra high</li>
+                <li>Maximum</li>
+                <li class="noise">Ultra</li>
+              </ul>
+              <p class="note">
+                Picking a noise value sends that literal <code>reasoning_effort</code> to
+                <code>https://api.deepseek.com</code>.
+              </p>
+            </article>
+            <article class="card good">
+              <h3>Expected</h3>
+              <p class="muted">Canonical models.dev · deepseek/deepseek-v4-pro</p>
+              <ul class="scale">
+                <li>Off <span class="tag">toggle → none</span></li>
+                <li>High <span class="tag">effort</span></li>
+                <li>Maximum <span class="tag">effort · max</span></li>
+              </ul>
+              <p class="note">
+                Catalog publishes <code>toggle + effort [high, max]</code>. Nothing else is
+                advertised for the first-party DeepSeek entry.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="why-partial">
+          <h2>2. Why the partial fix is not enough</h2>
+          <p>
+            The patch only changes merge order when connection capabilities carry an empty list:
+          </p>
+          <pre class="code"><code>// current band-aid
+...(caps.reasoningEfforts?.length
+  ? { reasoningEfforts: caps.reasoningEfforts }
+  : {}),</code></pre>
+          <p>
+            That unblocks catalog-derived values for the common “editor saved
+            <code>[]</code>” path. Three independent defects remain, any one of which still yields a
+            wrong menu.
+          </p>
+
+          <div class="stack">
+            <article class="defect">
+              <div class="defect-num">A</div>
+              <div>
+                <h3>Catalog matcher unions every reseller</h3>
+                <p>
+                  <code>reasoningMetadataForModel</code> matches
+                  <code>key.endsWith("/" + modelId)</code> and folds <em>all</em> hits into one
+                  <code>Set</code>. Live models.dev currently has <strong>51</strong> entries ending
+                  in <code>deepseek-v4-pro</code>. Effort signatures diverge wildly:
+                </p>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Count</th>
+                        <th>Published options</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>10</td>
+                        <td><code>[]</code> / bare reasoning</td>
+                      </tr>
+                      <tr>
+                        <td>8</td>
+                        <td><code>toggle + [high, max]</code> ← canonical shape</td>
+                      </tr>
+                      <tr>
+                        <td>6</td>
+                        <td><code>toggle</code> only</td>
+                      </tr>
+                      <tr>
+                        <td>3+</td>
+                        <td>includes <code>low/medium/xhigh</code>, full OpenAI-ish ladders</td>
+                      </tr>
+                      <tr class="danger-row">
+                        <td>union</td>
+                        <td>
+                          almost the entire Host scale — including values no DeepSeek first-party
+                          entry publishes
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="callout">
+                  After the empty-array guard, the menu can still show Minimal / Low / Medium /
+                  Extra high because those values appear on <em>some</em> reseller row. Ultra may
+                  disappear (not in the union today) while the ladder remains wrong.
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">B</div>
+              <div>
+                <h3>Empty means “unset”, but the product cannot say that</h3>
+                <p>
+                  <code>CustomBackendEditor</code> has a Reasoning toggle and no efforts control.
+                  <code>buildCustomModelConnection</code> always writes
+                  <code>reasoningEfforts: []</code> when reasoning is on. Downstream code cannot
+                  distinguish:
+                </p>
+                <ul>
+                  <li><strong>Unset / auto</strong> — please infer from catalog</li>
+                  <li>
+                    <strong>Explicit empty</strong> — reasoning on, no selectable efforts (toggle
+                    only)
+                  </li>
+                  <li><strong>Explicit list</strong> — user or preset chose these levels</li>
+                </ul>
+                <p>
+                  First-party presets (Codex) correctly persist non-empty lists. Custom backends
+                  never can, so they always depend on inference — and inference is broken (A).
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">C</div>
+              <div>
+                <h3>Selector fallback is a second fantasy catalog</h3>
+                <p>
+                  <code>ReasoningEffortSelector</code> treats missing/empty efforts as “show the
+                  full Host enum”:
+                </p>
+                <pre class="code"><code>const efforts = model?.reasoningEfforts?.length
+  ? model.reasoningEfforts
+  : [...EFFORTS]; // none…ultra</code></pre>
+                <p>
+                  That is how the original screenshot got <strong>Ultra</strong> even though no
+                  models.dev entry for this model publishes it. Fallback must be conservative, not
+                  maximal — or the menu must refuse to open without resolved metadata.
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">D</div>
+              <div>
+                <h3>UI catalog ≠ Host transport truth</h3>
+                <p>
+                  Enrichment lives only in the Frontend (<code>connectionsToModelProviders</code>).
+                  Host resolve still forwards
+                  <code>connection.modelCapabilities[modelId].reasoningEfforts</code> as stored —
+                  often <code>[]</code> / omitted. The wire payload uses the
+                  <em>selected</em> effort from the Session/PromptBox, not a Host-side clamp against
+                  catalog. So a polluted UI can ship unsupported literals even when transport never
+                  saw models.dev.
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="ownership">
+          <h2>3. Ownership model</h2>
+          <p>
+            Pick one source of truth per field, with a single merge function and no silent maximal
+            fallbacks.
+          </p>
+
+          <div class="owner-grid">
+            <article class="owner">
+              <h3>Connection capability</h3>
+              <p class="owner-role">Durable user / preset intent</p>
+              <ul>
+                <li><code>reasoning: boolean</code> — user said this model reasons</li>
+                <li>
+                  <code>reasoningEfforts?: ReasoningEffort[]</code> —
+                  <strong>only when explicit</strong>
+                </li>
+                <li>
+                  Omit the field for auto; never persist <code>[]</code> as a fake explicit list
+                </li>
+              </ul>
+            </article>
+            <article class="owner">
+              <h3>Catalog resolver</h3>
+              <p class="owner-role">Advisory inference</p>
+              <ul>
+                <li>Input: model id + optional base URL / provider hint</li>
+                <li>Output: display name, context, reasoning flag, effort list</li>
+                <li>Policy: prefer canonical vendor entry, not reseller union</li>
+                <li>Unknown model: conservative default, not full enum</li>
+              </ul>
+            </article>
+            <article class="owner">
+              <h3>Resolved model view</h3>
+              <p class="owner-role">What UI and clamp both read</p>
+              <ul>
+                <li>
+                  One pure function:
+                  <code>resolveModelCapabilities(connection, modelId, catalog)</code>
+                </li>
+                <li>Used by Frontend providers list <em>and</em> Host selection clamp</li>
+                <li>Selector only renders <code>resolved.reasoningEfforts</code></li>
+              </ul>
+            </article>
+          </div>
+
+          <figure class="flow">
+            <figcaption>Resolution order</figcaption>
+            <ol>
+              <li>
+                <strong>Explicit connection list</strong> wins when present and non-empty (presets,
+                power-user override).
+              </li>
+              <li>Else if <code>reasoning === false</code> → no selector; no efforts.</li>
+              <li>Else <strong>catalog inference</strong> with canonical provider preference.</li>
+              <li>
+                Else <strong>conservative unknown default</strong>
+                <code>["none","high"]</code> (toggle-shaped), never the full Host scale.
+              </li>
+            </ol>
+          </figure>
+        </section>
+
+        <section id="catalog">
+          <h2>4. Catalog resolution policy</h2>
+          <p>models.dev is useful and noisy. Treat it as a ranked lookup, not a bag union.</p>
+
+          <div class="grid-2">
+            <article class="card">
+              <h3>Prefer</h3>
+              <ol class="rank">
+                <li>
+                  <strong>Exact vendor key</strong> when base URL maps cleanly
+                  <span class="muted">e.g. api.deepseek.com → deepseek/deepseek-v4-pro</span>
+                </li>
+                <li>
+                  <strong>Same-name provider id</strong>
+                  <span class="muted"
+                    >provider segment equals a known vendor id in the model key</span
+                  >
+                </li>
+                <li>
+                  <strong>Richest first-party-shaped entry</strong>
+                  <span class="muted"
+                    >has toggle + effort values; prefer over bare reasoning:true</span
+                  >
+                </li>
+                <li>
+                  <strong>Single best match</strong>
+                  <span class="muted">if still tied, stable sort by provider id and take one</span>
+                </li>
+              </ol>
+            </article>
+            <article class="card">
+              <h3>Reject</h3>
+              <ul class="reject">
+                <li>Unioning every <code>*/modelId</code> reseller row</li>
+                <li>Letting OpenRouter / Groq / free-tier ladders redefine DeepSeek first-party</li>
+                <li>Assuming Host enum ⊆ every vendor’s API</li>
+                <li>Client-only enrichment that Host never re-validates</li>
+              </ul>
+            </article>
+          </div>
+
+          <pre class="code"><code>// target shape (illustrative)
+function pickCatalogModel(catalog, modelId, hints?: { baseUrl?: string; providerHint?: string }) {
+  const candidates = entriesEndingWith(catalog, modelId);
+  if (candidates.length === 0) return null;
+  const ranked = rankCandidates(candidates, hints); // vendor URL, provider id, option richness
+  return ranked[0]; // ONE entry — do not fold options across the set
+}
+
+function effortsFromEntry(entry): ReasoningEffort[] | undefined {
+  // toggle → include "none"; effort.values filtered to SUPPORTED_EFFORTS
+  // no effort values but reasoning → ["none","high"]
+  // reasoning false → undefined
+}</code></pre>
+        </section>
+
+        <section id="design">
+          <h2>5. Correct design (end-to-end)</h2>
+
+          <h3>5.1 Persistence semantics</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Stored</th>
+                  <th>Meaning</th>
+                  <th>Resolved efforts</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>reasoning: false</code></td>
+                  <td>Not a reasoning model</td>
+                  <td>hidden / none</td>
+                </tr>
+                <tr>
+                  <td><code>reasoning: true</code>, field omitted</td>
+                  <td>Auto</td>
+                  <td>catalog → conservative default</td>
+                </tr>
+                <tr>
+                  <td><code>reasoning: true</code>, <code>["high","max"]</code></td>
+                  <td>Explicit override / preset</td>
+                  <td>exactly that list (+ none if product wants Off)</td>
+                </tr>
+                <tr>
+                  <td><code>reasoningEfforts: []</code></td>
+                  <td colspan="2">
+                    <strong>Illegal on write.</strong> Normalize away in
+                    <code>buildCustomModelConnection</code> and Host ingest.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>5.2 Shared resolver module</h3>
+          <p>
+            Move pure resolution out of “frontend fetch helper” identity. Suggested home:
+            <code>packages/protocol</code> or a small shared lib both Frontend and Host import.
+          </p>
+          <ul>
+            <li>
+              <code>loadModelsDevCatalog()</code> may stay environment-specific (fetch vs cache
+              file), but <code>resolveModelCapabilities</code> must be pure and unit-tested without
+              network.
+            </li>
+            <li>
+              Frontend <code>connectionsToModelProviders</code> becomes a thin adapter over the
+              shared resolver.
+            </li>
+            <li>
+              Host, when accepting a run / setting reasoning, clamps the selected effort to
+              <code>resolved.reasoningEfforts</code>. Unknown effort → nearest supported or reject.
+            </li>
+          </ul>
+
+          <h3>5.3 Custom backend editor</h3>
+          <div class="grid-2">
+            <article class="card">
+              <h3>Minimum viable (recommended first)</h3>
+              <ul>
+                <li>Keep Reasoning toggle only</li>
+                <li>Persist <strong>omitted</strong> efforts when auto</li>
+                <li>
+                  Show read-only hint: “Efforts: Auto (catalog)” or resolved preview when model id
+                  matches
+                </li>
+                <li>No multi-select yet</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Follow-up power user</h3>
+              <ul>
+                <li>Mode: Auto | Custom</li>
+                <li>Custom: checklist of Host-supported efforts</li>
+                <li>Only Custom writes an array</li>
+                <li>Still never write <code>[]</code></li>
+              </ul>
+            </article>
+          </div>
+
+          <h3>5.4 Selector contract</h3>
+          <pre class="code"><code>// stop inventing a menu
+if (model.capabilities.reasoning === false) return null;
+const efforts = model.reasoningEfforts; // already resolved
+if (!efforts?.length) return null; // or show Off-only — never full EFFORTS</code></pre>
+          <p>
+            The full <code>EFFORTS</code> constant remains the <em>allow-list for parsing</em>, not
+            the default menu.
+          </p>
+
+          <h3>5.5 Base URL → vendor hints</h3>
+          <p>Small static map is enough for v1; do not scrape HTML.</p>
+          <pre class="code"><code>const VENDOR_HOST_HINTS: Record&lt;string, string&gt; = {
+  "api.deepseek.com": "deepseek",
+  "api.openai.com": "openai",
+  "api.anthropic.com": "anthropic",
+  "api.x.ai": "xai",
+  // ...
+};</code></pre>
+          <p class="muted">
+            Custom OpenAI-compatible proxies that re-host DeepSeek still get model-id matching; the
+            hint only breaks ties toward the vendor when the URL is first-party.
+          </p>
+        </section>
+
+        <section id="phases">
+          <h2>6. Phased delivery</h2>
+          <div class="phases">
+            <article class="phase">
+              <header>
+                <span class="phase-id">P0</span>
+                <h3>Make Auto correct</h3>
+              </header>
+              <ul>
+                <li>Stop writing <code>reasoningEfforts: []</code> from custom backend builder</li>
+                <li>Normalize empty arrays to omitted on Host ingest</li>
+                <li>Replace reseller union with single-entry pick + base URL hint</li>
+                <li>Conservative unknown default: <code>["none","high"]</code></li>
+                <li>Selector: no full-scale fallback</li>
+                <li>Keep empty-array merge guard as defense in depth until writers are clean</li>
+              </ul>
+              <p class="phase-out">
+                <strong>Exit:</strong> DeepSeek custom backend menu is Off / High / Maximum against
+                live or fixture catalog.
+              </p>
+            </article>
+
+            <article class="phase">
+              <header>
+                <span class="phase-id">P1</span>
+                <h3>One resolver, two consumers</h3>
+              </header>
+              <ul>
+                <li>Extract pure <code>resolveModelCapabilities</code> to shared package</li>
+                <li>Frontend providers list uses it</li>
+                <li>Host clamps selected reasoning on set/send</li>
+                <li>Fixture catalog tests for deepseek, openai, unknown, reseller-only</li>
+              </ul>
+              <p class="phase-out">
+                <strong>Exit:</strong> UI cannot select an effort Host would not accept; transport
+                never sees unsupported literals from PromptBox.
+              </p>
+            </article>
+
+            <article class="phase">
+              <header>
+                <span class="phase-id">P2</span>
+                <h3>Editor honesty (optional)</h3>
+              </header>
+              <ul>
+                <li>Read-only “resolved efforts” preview in CustomBackendEditor</li>
+                <li>Optional Auto | Custom multi-select</li>
+                <li>i18n for new strings</li>
+              </ul>
+              <p class="phase-out">
+                <strong>Exit:</strong> Power users can pin an explicit ladder; Auto remains default
+                and correct.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="acceptance">
+          <h2>7. Acceptance criteria</h2>
+          <div class="checks">
+            <label
+              ><input type="checkbox" disabled /> Custom DeepSeek backend, model
+              <code>deepseek-v4-pro</code>, reasoning ON → menu is exactly Off, High, Maximum</label
+            >
+            <label
+              ><input type="checkbox" disabled /> No Minimal / Low / Medium / Extra high / Ultra for
+              that model</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Saved connection does not contain
+              <code>reasoningEfforts: []</code></label
+            >
+            <label
+              ><input type="checkbox" disabled /> Codex / other presets with explicit lists are
+              unchanged</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Unknown private model with reasoning ON gets
+              conservative Off/High (or documented default), not full enum</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Catalog fixture with 3 divergent resellers + 1
+              canonical deepseek entry resolves to canonical only</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Selecting High sends
+              <code>reasoning_effort: "high"</code>; Off omits or sends none per existing wire
+              rules</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Host rejects or clamps an out-of-list effort if a
+              client sends one</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Unit tests cover resolver pure function without
+              network</label
+            >
+          </div>
+        </section>
+
+        <section id="non-goals">
+          <h2>8. Non-goals (this plan)</h2>
+          <ul class="reject">
+            <li>Building a full models.dev mirror service</li>
+            <li>
+              Per-reseller effort accuracy when user points at OpenRouter etc. (later: provider hint
+              from base URL of that reseller)
+            </li>
+            <li>Budget-token UIs (<code>budget_tokens</code> options in catalog)</li>
+            <li>Changing DeepSeek wire format beyond effort allow-listing</li>
+            <li>Requiring users to hand-edit effort lists for the default path</li>
+          </ul>
+        </section>
+
+        <section id="files">
+          <h2>9. Likely touch points</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Area</th>
+                  <th>Files</th>
+                  <th>Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Catalog resolve</td>
+                  <td><code>src/lib/models-dev.ts</code> → shared module</td>
+                  <td>Single-entry pick, hints, no union</td>
+                </tr>
+                <tr>
+                  <td>Custom backend write</td>
+                  <td><code>src/features/model-access/custom-backend.ts</code></td>
+                  <td>Omit empty efforts; optional mode later</td>
+                </tr>
+                <tr>
+                  <td>Selector</td>
+                  <td><code>src/components/ReasoningEffortSelector.tsx</code></td>
+                  <td>No maximal fallback</td>
+                </tr>
+                <tr>
+                  <td>Host ingest</td>
+                  <td><code>packages/backend/src/routes/host-product.ts</code></td>
+                  <td>Normalize empty → omit</td>
+                </tr>
+                <tr>
+                  <td>Host clamp</td>
+                  <td><code>packages/backend/src/host/opengui-host.ts</code></td>
+                  <td>Resolve + clamp on set/send (P1)</td>
+                </tr>
+                <tr>
+                  <td>Tests</td>
+                  <td><code>src/lib/__tests__/models-dev.test.ts</code> + shared package tests</td>
+                  <td>Reseller pollution, deepseek, omit-empty, presets</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="verdict">
+          <h2>Verdict</h2>
+          <p>
+            Do <strong>not</strong> ship “empty array no longer overwrites” as the fix. Ship
+            <strong>Auto that picks one catalog entry</strong>,
+            <strong>never persist empty lists</strong>, and
+            <strong>never invent the full effort ladder in the selector</strong>. Host clamp is the
+            hardening layer so UI bugs cannot poison the wire.
+          </p>
+          <p class="muted">
+            The DeepSeek repro is the acceptance needle: Off · High · Maximum — nothing else.
+          </p>
+        </section>
+      </main>
+
+      <footer>
+        <p>OpenGUI plan · reasoning efforts ownership · no code changes in this revision</p>
+      </footer>
+    </div>
+  </body>
+</html>

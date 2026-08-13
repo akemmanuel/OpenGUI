@@ -184,12 +184,29 @@ export class HostSessionNotFoundError extends Error {
   }
 }
 
+const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 32_000;
+
+function normalizeCustomInstructions(value: unknown, options: { rejectOverLimit?: boolean } = {}) {
+  if (typeof value !== "string") return "";
+  const customInstructions = value.trim();
+  if (customInstructions.length > MAX_CUSTOM_INSTRUCTIONS_LENGTH) {
+    if (options.rejectOverLimit) {
+      throw new Error(
+        `Custom instructions must be at most ${MAX_CUSTOM_INSTRUCTIONS_LENGTH} characters`,
+      );
+    }
+    return "";
+  }
+  return customInstructions;
+}
+
 interface HostSettingsFile {
   hostId: string;
   modelConnections: HostModelConnection[];
   defaultConnectionId: string | null;
   projects: string[];
   mcpConnections: HostMcpConnection[];
+  customInstructions: string;
 }
 
 type HostSecretsFile = {
@@ -325,6 +342,7 @@ export class OpenGuiHost {
     defaultConnectionId: null,
     projects: [],
     mcpConnections: [],
+    customInstructions: "",
   };
   #apiKeys: Record<string, string> = {};
   #codexTokens: CodexTokens | null = null;
@@ -549,6 +567,7 @@ export class OpenGuiHost {
         stream: (request, signal) => this.#streamModel(request, signal),
       } satisfies ModelTransport,
       resolveExecutionPolicy: this.#resolveExecutionPolicy,
+      resolveCustomInstructions: () => this.#settings.customInstructions,
       shellExecutor: this.#shellExecutor,
       agentTools: createMcpAgentToolSource(this.#mcpBroker, {
         authorize: async (scope) => {
@@ -927,6 +946,7 @@ export class OpenGuiHost {
           ? parsed.projects.filter((item): item is string => typeof item === "string")
           : [],
         mcpConnections: [],
+        customInstructions: normalizeCustomInstructions(parsed.customInstructions),
       };
     } catch {
       return {
@@ -935,6 +955,7 @@ export class OpenGuiHost {
         defaultConnectionId: null,
         projects: [],
         mcpConnections: [],
+        customInstructions: "",
       };
     }
   }
@@ -992,6 +1013,7 @@ export class OpenGuiHost {
         mcpConnections: Array.isArray(state.settings.mcpConnections)
           ? (state.settings.mcpConnections as HostMcpConnection[])
           : [],
+        customInstructions: normalizeCustomInstructions(state.settings.customInstructions),
       },
       secrets: {
         apiKeys:
@@ -1138,6 +1160,20 @@ export class OpenGuiHost {
       version: process.env.OPENGUI_VERSION || process.env.npm_package_version || "0.0.0",
       shell: process.env.SHELL || (process.platform === "win32" ? "powershell" : "/bin/sh"),
     };
+  }
+
+  getCustomInstructions() {
+    return this.#settings.customInstructions;
+  }
+
+  async setCustomInstructions(value: string) {
+    const customInstructions = normalizeCustomInstructions(value, { rejectOverLimit: true });
+    if (this.#settings.customInstructions === customInstructions) return customInstructions;
+    await this.#updateState((state) => ({
+      ...state,
+      settings: { ...state.settings, customInstructions },
+    }));
+    return customInstructions;
   }
 
   async listMcpConnections(): Promise<HostMcpConnection[]> {

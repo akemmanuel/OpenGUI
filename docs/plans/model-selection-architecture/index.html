@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model selection — one owner</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <p class="eyebrow">OpenGUI · Model selection architecture</p>
+        <h1>Model switching has two owners</h1>
+        <p class="lede">
+          Picking a model in the dialog works, yet switching from
+          <code>gpt-5.6-sol</code> to <code>gpt-5.6-luna</code> can leave the persisted slug
+          untouched. The picker is not the problem. The problem is that “the model” is written by
+          four uncoordinated call sites and read back from two disagreeing authorities — a
+          frontend-optimistic <code>selectedModel</code> and the host session snapshot.
+        </p>
+        <div class="hero-meta">
+          <span class="pill pill-warn">Four writers, two authorities</span>
+          <span class="pill">Plan only · no implementation</span>
+          <span class="pill">Repro: gpt-5.6-sol → gpt-5.6-luna</span>
+        </div>
+      </header>
+
+      <nav class="toc" aria-label="Plan sections">
+        <a href="#symptom">Symptom</a>
+        <a href="#conflation">Two mental models</a>
+        <a href="#root-causes">Root causes</a>
+        <a href="#repro">Repro flow</a>
+        <a href="#target">Target</a>
+        <a href="#contracts">Contracts</a>
+        <a href="#phases">Phases</a>
+        <a href="#acceptance">Acceptance</a>
+        <a href="#verdict">Verdict</a>
+      </nav>
+
+      <main>
+        <section id="symptom">
+          <h2>1. Symptom</h2>
+          <div class="grid-2">
+            <article class="card bad">
+              <h3>What you see</h3>
+              <p class="muted">
+                Open the picker, choose <code>gpt-5.6-luna</code>, continue chatting.
+              </p>
+              <ul class="scale">
+                <li><span>Picker highlight</span><span class="tag">luna</span></li>
+                <li class="noise">
+                  <span>Persisted session slug</span><span class="tag">sol</span>
+                </li>
+                <li class="noise">
+                  <span>Sidebar / session row model</span><span class="tag">sol</span>
+                </li>
+              </ul>
+              <p class="note">
+                The optimistic picker state says <code>luna</code>. The host session — and every
+                surface that reads the session — still says <code>sol</code>.
+              </p>
+            </article>
+            <article class="card good">
+              <h3>What “works”</h3>
+              <p class="muted">A brand-new session created after the pick.</p>
+              <ul class="scale">
+                <li><span>New-session model</span><span class="tag">luna</span></li>
+                <li><span>Prompt-time context</span><span class="tag">luna</span></li>
+                <li><span>Transcript footer</span><span class="tag">luna</span></li>
+              </ul>
+              <p class="note">
+                Creation paths read the live <code>selectedModel</code>. Everything that reads the
+                stored session — or gets re-synced by <code>refreshModels</code> — can disagree.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="conflation">
+          <h2>2. Two mental models never merged</h2>
+          <p>
+            The codebase carries two incompatible definitions of “a model”, and the switch between
+            them is only half-finished. The legacy model — a base model plus <em>variants</em>,
+            agents, and provider defaults — came from the pre-Host harness bridge. The current model
+            — <em>offerings</em> that route to a backend + upstream id — came from
+            <a href="../adr/0014-flexible-users-access-and-model-offerings.md">ADR 0014</a>. The
+            frontend keeps the legacy <em>shape</em> while the Host speaks the new one.
+          </p>
+
+          <div class="owner-grid">
+            <div class="owner">
+              <p class="owner-role">Legacy shape (kept, stubbed)</p>
+              <ul>
+                <li><code>SelectedModel { providerID, modelID }</code></li>
+                <li><code>variantSelections</code> keyed per model</li>
+                <li><code>cycleVariant()</code> / <code>revertVariant()</code></li>
+                <li><code>agents</code>, <code>providerDefaults</code></li>
+              </ul>
+            </div>
+            <div class="owner">
+              <p class="owner-role">Host truth (ADR 0014)</p>
+              <ul>
+                <li>Offering slug <code>gpt-5.6-luna</code> selected by user</li>
+                <li>Route <code>backendId + upstreamModelId</code> resolved on Host</li>
+                <li>Session stores <code>{ connectionId, modelId }</code></li>
+                <li>Entitlements attach to the slug</li>
+              </ul>
+            </div>
+            <div class="owner">
+              <p class="owner-role">Frontend reality</p>
+              <ul>
+                <li>Fabricates <code>opengui-offering</code> provider from offerings list</li>
+                <li>Maps offering slug → model option in the picker</li>
+                <li>Writes <code>selectedModel</code> from four places</li>
+                <li>Never joins it back with the stored session</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="callout">
+            <code>Cmd+T</code> is the tell. The shortcut the UI wires to
+            <code>cycleVariant()</code> is a <code>() =&gt; &#123;&#125;</code> no-op in
+            <code>HostProvider</code>, while <code>variantSelections</code> and
+            <code>currentVariant</code> are read by no live component. A user who “switches model”
+            with the shortcut that used to cycle variants now gets silence.
+          </div>
+        </section>
+
+        <section id="root-causes">
+          <h2>3. Root causes</h2>
+          <div class="stack">
+            <article class="defect">
+              <div class="defect-num">1</div>
+              <div>
+                <h3>The offering provider is fabricated client-side</h3>
+                <p>
+                  <code>refreshModels</code> in <code>HostProvider</code> folds
+                  <code>listModelOfferings()</code> into a synthetic
+                  <code>opengui-offering</code> host connection: <code>modelIds</code> = offering
+                  slugs, <code>modelCapabilities</code> = display names. Selection identity is
+                  therefore <em>derived twice</em>: the slug the user picked and the
+                  backend/upstream route the Host resolves live on opposite sides of the wire with
+                  no shared contract.
+                </p>
+                <p class="muted">
+                  If the offerings list is empty, unauthorized, or not yet loaded, the offering
+                  provider disappears entirely and any slug selection fails the “still visible”
+                  check.
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">2</div>
+              <div>
+                <h3>refreshModels rewrites the selection asynchronously</h3>
+                <p>
+                  Every boot and <code>refreshProviders()</code> call runs
+                  <code>setSelectedModel</code> with a fallback that snaps to
+                  <code>connections[0].defaultModelId</code> when the current selection is “not
+                  visible” in the freshly built provider list. Combined with cause 1, a slug whose
+                  offering list shifted disappears and the picker snaps back — the user’s pick is
+                  silently undone, which reads as “the slug did not update”.
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">3</div>
+              <div>
+                <h3>Two storage authorities are never joined</h3>
+                <p>
+                  The live <code>selectedModel</code> (frontend-optimistic) and the stored session
+                  model (<code>session.model</code> / <code>activeSnapshotRef</code>) are written
+                  and read independently. <code>setModel</code> updates the optimistic state and the
+                  snapshot ref, but never refreshes the <code>sessions</code> list. Any surface
+                  rendered from <code>sessions</code> — sidebar rows, session list — keeps the old
+                  slug indefinitely.
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">4</div>
+              <div>
+                <h3>Four writers, no reducer, no race handling</h3>
+                <p>
+                  <code>setSelectedModel</code> is called from <code>refreshModels</code> fallback,
+                  <code>hydrateTranscript</code>, the optimistic <code>setModel</code>, and
+                  <code>setPromptBoxSelection</code>. In-flight <code>host.setModel</code> calls can
+                  interleave with <code>refreshModels</code>; whichever runs last wins, and the two
+                  authorities can end up holding different slugs with no reconciliation.
+                </p>
+              </div>
+            </article>
+
+            <article class="defect">
+              <div class="defect-num">5</div>
+              <div>
+                <h3>setModel never re-hydrates the session</h3>
+                <p>
+                  After a successful switch the action sets <code>activeSnapshotRef</code> and
+                  returns. It does not call <code>refreshSessions()</code> or
+                  <code>hydrateTranscript()</code>, so the canonical stored slug and the surfaces
+                  that display it are never reconciled with the optimistic pick.
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="repro">
+          <h2>4. Repro flow</h2>
+          <div class="grid-2">
+            <figure class="flow">
+              <figcaption>What the code does today</figcaption>
+              <ol>
+                <li>User picks <code>gpt-5.6-luna</code> in the dialog.</li>
+                <li>
+                  <code>selectModel</code> → <code>setModel(&#123;providerID, modelID&#125;)</code>.
+                </li>
+                <li>Action optimistically sets <code>selectedModel = luna</code>.</li>
+                <li><code>host.setModel</code> persists <code>luna</code> into the session.</li>
+                <li>Returned snapshot lands in <code>activeSnapshotRef</code> — <em>only</em>.</li>
+                <li><code>sessions</code> list, sidebar rows keep <code>sol</code>.</li>
+                <li>
+                  Next <code>refreshModels</code> re-derives providers and may re-snap selection.
+                </li>
+              </ol>
+            </figure>
+            <figure class="flow">
+              <figcaption>Where it diverges</figcaption>
+              <ol>
+                <li>Picker reads <code>selectedModel</code> → shows <code>luna</code>.</li>
+                <li>
+                  Session surfaces read <code>sessions</code> / snapshot → show <code>sol</code>.
+                </li>
+                <li>
+                  If offerings reload is empty, <code>refreshModels</code> snaps to default
+                  <code>sol</code>.
+                </li>
+                <li>Result: the slug that “sticks” depends on which writer ran last.</li>
+              </ol>
+            </figure>
+          </div>
+          <div class="callout">
+            The bug is not “the picker forgets the model”. It is that the <em>persisted</em> model
+            slug and the <em>displayed</em> model slug are produced by different state, and nothing
+            reconciles them after the optimistic write.
+          </div>
+        </section>
+
+        <section id="target">
+          <h2>5. Target: one selection store, host-resolved</h2>
+          <p>
+            Make the Host the single authority for the model catalog <em>and</em> the resolved
+            selection. The frontend keeps exactly one <code>SelectedModel</code> and derives all
+            display from it — never from a re-derived provider join.
+          </p>
+          <div class="owner-grid">
+            <div class="owner">
+              <p class="owner-role">Single source</p>
+              <ul>
+                <li>One <code>selectedModel</code> in one reducer</li>
+                <li>Written by one action: <code>setModel</code></li>
+                <li>Read by picker, prompt box, context info</li>
+                <li>Reconciled after every host round-trip</li>
+              </ul>
+            </div>
+            <div class="owner">
+              <p class="owner-role">Host owns catalog</p>
+              <ul>
+                <li>Offerings + entitled connections returned as one list</li>
+                <li>Display name, slug, capabilities all from Host</li>
+                <li>No client-side <code>opengui-offering</code> fabrication</li>
+              </ul>
+            </div>
+            <div class="owner">
+              <p class="owner-role">Host returns resolution</p>
+              <ul>
+                <li><code>setModel</code> response carries the canonical slug</li>
+                <li>Frontend writes it back into the single store</li>
+                <li>Sessions refresh after every switch</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="contracts">
+          <h2>6. Contracts</h2>
+          <p>Make the model identity explicit instead of two-string guessing:</p>
+          <div class="code">
+            <pre><code>// frontend + protocol
+type SelectedModel =
+  | { kind: "offering"; offeringId: string }        // slug: gpt-5.6-luna
+  | { kind: "connection"; providerID: string; modelID: string };
+
+// host setModel response (authoritative)
+type SetModelResult = {
+  canonical: SelectedModel;       // what to persist + display
+  resolved?: { connectionId: string; modelId: string } | null; // owner/debug only
+};</code></pre>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rule</th>
+                  <th>Today</th>
+                  <th>Target</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Catalog authority</td>
+                  <td>Frontend folds offerings + connections</td>
+                  <td>Host returns one catalog RPC</td>
+                </tr>
+                <tr>
+                  <td>Selection state</td>
+                  <td>4 writers to <code>selectedModel</code></td>
+                  <td>1 action, 1 store</td>
+                </tr>
+                <tr>
+                  <td>Stored session slug</td>
+                  <td>Optimistic + snapshot, never joined</td>
+                  <td>Host response → store → refresh sessions</td>
+                </tr>
+                <tr class="danger-row">
+                  <td>Variant layer</td>
+                  <td>Dead stub, Cmd+T no-op</td>
+                  <td>Removed or re-implemented on offerings</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="phases">
+          <h2>7. Phases</h2>
+          <div class="phases">
+            <article class="phase">
+              <header>
+                <span class="phase-id">1</span>
+                <h3>Single selection store</h3>
+              </header>
+              <ul>
+                <li>
+                  Introduce a <code>useModelSelection</code> reducer with one
+                  <code>setModel</code> action.
+                </li>
+                <li>
+                  Route all four writers through it; delete direct
+                  <code>setSelectedModel</code> call sites.
+                </li>
+                <li>
+                  Remove the <code>opengui-offering</code> fabrication; catalog comes from Host.
+                </li>
+              </ul>
+              <p class="phase-out">
+                Exit: one writer, one reader; the picker and session surfaces can no longer
+                disagree.
+              </p>
+            </article>
+            <article class="phase">
+              <header>
+                <span class="phase-id">2</span>
+                <h3>Host-returned resolution</h3>
+              </header>
+              <ul>
+                <li>
+                  Extend <code>host.setModel</code> response with canonical
+                  <code>SelectedModel</code>.
+                </li>
+                <li>
+                  Frontend writes the canonical value back and refreshes sessions after each switch.
+                </li>
+                <li>Hydration and refreshModels stop rewriting selection independently.</li>
+              </ul>
+              <p class="phase-out">
+                Exit: switching <code>sol → luna</code> persists <code>luna</code> and every surface
+                shows <code>luna</code>.
+              </p>
+            </article>
+            <article class="phase">
+              <header>
+                <span class="phase-id">3</span>
+                <h3>Kill the legacy layer</h3>
+              </header>
+              <ul>
+                <li>
+                  Delete <code>variantSelections</code> / <code>currentVariant</code> /
+                  <code>cycleVariant</code> stubs.
+                </li>
+                <li>Decide Cmd+T’s future: cycle entitled offerings, or remove the shortcut.</li>
+                <li>
+                  Remove unused <code>agents</code> / <code>providerDefaults</code> from the model
+                  context.
+                </li>
+              </ul>
+              <p class="phase-out">
+                Exit: the model context exposes exactly the fields live components read.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="acceptance">
+          <h2>8. Acceptance</h2>
+          <div class="checks">
+            <label
+              ><input type="checkbox" disabled /> Switching
+              <code>gpt-5.6-sol → gpt-5.6-luna</code> updates the persisted slug in the session
+              snapshot.</label
+            >
+            <label
+              ><input type="checkbox" disabled /> Sidebar rows, session list, and picker all show
+              <code>luna</code> after the switch.</label
+            >
+            <label
+              ><input type="checkbox" disabled /> A reload of the session restores
+              <code>luna</code>, not the default.</label
+            >
+            <label
+              ><input type="checkbox" disabled /> <code>refreshModels</code> never re-snaps a valid
+              selection to <code>connections[0]</code>.</label
+            >
+            <label
+              ><input type="checkbox" disabled /> No dead variant/agent/providerDefault fields
+              remain in <code>ModelContext</code>.</label
+            >
+          </div>
+        </section>
+
+        <section id="verdict">
+          <article class="card verdict">
+            <h2>Verdict</h2>
+            <p>
+              The fix is not another guard in the selector. It is consolidating model selection to
+              one store, making the Host return the canonical resolution, and deleting the
+              half-migrated legacy layer. That is the difference between a picker that works and a
+              model system that can be reasoned about.
+            </p>
+          </article>
+        </section>
+      </main>
+
+      <footer>
+        OpenGUI · Model selection architecture plan · companion to
+        <a href="../adr/0014-flexible-users-access-and-model-offerings.md">ADR 0014</a>
+      </footer>
+    </div>
+  </body>
+</html>

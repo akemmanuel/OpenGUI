@@ -8,6 +8,8 @@ export interface SystemPromptInput {
   shell?: ResolvedShell;
   tools?: readonly ModelToolName[];
   skills: Skill[];
+  /** Host-wide house rules appended after the product prompt. */
+  customInstructions?: string;
   now?: Date;
   platform?: NodeJS.Platform;
 }
@@ -32,6 +34,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   const skillsSection = formatSkillsForPrompt(input.skills);
   if (skillsSection) sections.push(skillsSection);
+
+  const customInstructions = input.customInstructions?.trim();
+  if (customInstructions) {
+    sections.push(`Custom instructions:\n${customInstructions}`);
+  }
 
   return sections.join("\n");
 }

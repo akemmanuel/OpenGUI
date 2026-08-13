@@ -389,6 +389,39 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     await harness.close();
   });
 
+  test("includes live Host custom instructions on each model turn", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    let instructions = "Always reply in Spanish.";
+    const model = new FakeModel([{ text: "Hola." }, { text: "Done." }]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock: new FakeClock("2026-07-10T10:00:00.000Z"),
+      ids: new SequenceIdGenerator(),
+      resolveCustomInstructions: async () => instructions,
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    for await (const _event of session.run({ text: "Hello" })) {
+      // drain
+    }
+    expect(model.requests[0]?.systemPrompt).toContain("Always reply in Spanish.");
+
+    instructions = "Prefer British spelling.";
+    for await (const _event of session.run({ text: "Again" })) {
+      // drain
+    }
+    expect(model.requests[1]?.systemPrompt).toContain("Prefer British spelling.");
+    expect(model.requests[1]?.systemPrompt).not.toContain("Always reply in Spanish.");
+    await harness.close();
+  });
+
   test("streams and persists model reasoning summaries", async () => {
     const dataDirectory = await temporaryDirectory();
     const projectDirectory = join(dataDirectory, "project");
