@@ -65,7 +65,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "shell",
     description:
-      "Run one non-interactive command in the Project directory; process state does not carry across calls. Commands time out after 30 seconds by default.",
+      "Run one non-interactive command in the Project directory. Shell-local state does not carry across calls, but background processes may continue running. When starting background work, print and retain its PID or process-group ID, then use only that exact identifier to stop it later. Never use broad process matching such as `pkill -f` or `killall`, because task text may also appear in agent or harness parent command lines. Commands time out after 30 seconds by default.",
     parameters: {
       type: "object",
       properties: {

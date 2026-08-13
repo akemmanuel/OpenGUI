@@ -10,9 +10,12 @@ const cleanup: string[] = [];
 afterEach(async () => Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true }))));
 
 describe("seeded tool argument validation", () => {
-  test("describes the optional shell timeout in seconds with its default and maximum", () => {
+  test("describes shell timeout and safe background-process handling", () => {
     const shell = TOOL_DEFINITIONS.find((tool) => tool.name === "shell");
 
+    expect(shell?.description).toContain("background processes may continue running");
+    expect(shell?.description).toContain("print and retain its PID or process-group ID");
+    expect(shell?.description).toContain("Never use broad process matching");
     expect(shell?.parameters.properties.timeout).toEqual({
       type: "number",
       description: "Timeout in seconds (default 30, maximum 5000).",
