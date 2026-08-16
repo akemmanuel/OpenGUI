@@ -328,7 +328,7 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
         OPENGUI_AUTH_TOKEN: token,
         OPENGUI_ALLOWED_ROOTS: process.env.OPENGUI_ALLOWED_ROOTS || dependencies.homedir(),
         OPENGUI_DATA_DIR: dataDir,
-        OPENGUI_CORS_ORIGIN: process.env.OPENGUI_CORS_ORIGIN || "*",
+        OPENGUI_CORS_ORIGIN: process.env.OPENGUI_CORS_ORIGIN || "http://localhost:3000",
         OPENGUI_MODE: "desktop-sidecar",
         OPENGUI_SERVER_MODE: "desktop-sidecar",
       },
