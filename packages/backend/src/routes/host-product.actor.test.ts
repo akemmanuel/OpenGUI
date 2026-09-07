@@ -197,7 +197,7 @@ describe("Host product actor attribution", () => {
     },
   );
 
-  test("requires restricted SSE subscriptions to name one authorized Session", async () => {
+  test("allows ACL-filtered global SSE while rejecting unauthorized scoped Sessions", async () => {
     const actor: Actor = {
       type: "user",
       id: "member-1",
@@ -209,7 +209,7 @@ describe("Host product actor attribution", () => {
       return { id: sessionId };
     });
     const subscribe = vi.fn(async (_actor: unknown, sessionId: string | undefined) => {
-      await authorizeSession(sessionId ?? "");
+      if (sessionId) await authorizeSession(sessionId);
       return () => undefined;
     });
     const app = new Hono<BackendRequestEnv>();
@@ -227,7 +227,13 @@ describe("Host product actor attribution", () => {
       resolveSafeDirectory: async (path) => path ?? "/tmp",
     });
 
-    expect((await app.request("http://localhost/api/host/events")).status).toBe(403);
+    const globalController = new AbortController();
+    const globalResponse = await app.request("http://localhost/api/host/events", {
+      signal: globalController.signal,
+    });
+    expect(globalResponse.status).toBe(200);
+    globalController.abort();
+
     expect((await app.request("http://localhost/api/host/events?sessionId=denied")).status).toBe(
       404,
     );

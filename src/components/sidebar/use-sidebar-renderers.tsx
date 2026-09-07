@@ -4,6 +4,7 @@ import type { Session } from "@/hooks/agent-state-types";
 import type { ProjectMetaMap, SessionMetaMap, SessionColor } from "@/lib/persistence";
 import type { ConnectionStatus } from "@/types/connection";
 import type { SidebarCollapsedProjects } from "@/lib/persistence/sidebar";
+import { getProjectName } from "@/lib/path";
 
 interface UseSidebarRenderersArgs {
   activeSessionId: string | null;
@@ -109,11 +110,11 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
   const renderSessionRow: (
     session: Session,
     _directory?: string,
-    options?: { currentProjectDir?: string | null },
+    options?: { currentProjectDir?: string | null; showProjectLabel?: boolean },
   ) => React.ReactNode = (
     session: Session,
     _directory?: string,
-    options?: { currentProjectDir?: string | null },
+    options?: { currentProjectDir?: string | null; showProjectLabel?: boolean },
   ) => (
     <SessionRow
       key={session.id}
@@ -148,6 +149,9 @@ export function useSidebarRenderers(args: UseSidebarRenderersArgs) {
       moveSessionToProject={moveSessionToProject}
       removeSessionFromProject={removeSessionFromProject}
       currentProjectDir={options?.currentProjectDir ?? null}
+      projectLabel={
+        options?.showProjectLabel && _directory ? getProjectName(_directory) : undefined
+      }
       deleteSession={deleteSession}
     />
   );

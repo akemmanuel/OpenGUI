@@ -150,7 +150,8 @@ describe("OpenGuiHost concurrent arbitration", () => {
         yield { type: "completed" };
       },
     };
-    const host = new OpenGuiHost(root, { model });
+    const fetchImpl = async () => Response.json({ data: [{ id: "deepseek-v4-flash-free" }] });
+    const host = new OpenGuiHost(root, { model, fetchImpl: fetchImpl as typeof fetch });
     await host.start();
     await host.upsertModelConnection({
       id: "opencode-zen",

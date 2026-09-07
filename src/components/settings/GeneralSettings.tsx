@@ -5,6 +5,7 @@ import {
   FolderOpen,
   Globe,
   Layers,
+  LayoutList,
   LogOut,
   RotateCcw,
   Terminal,
@@ -48,6 +49,7 @@ import {
 } from "@/lib/new-chat-model-behavior";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { storageGet, storageRemove, storageSet } from "@/lib/persistence/storage";
+import { isRespondingSidebarEnabled, setRespondingSidebarEnabled } from "@/lib/responding-sidebar";
 import packageJson from "../../../package.json";
 import {
   getIdentityWorkspace,
@@ -81,6 +83,7 @@ export function GeneralSettings() {
       <AppearanceSetting />
       <LanguageSetting />
       <NewChatModelBehaviorSetting />
+      <RespondingSidebarSetting />
       <ModelAgeFilterSetting />
       <NotificationsToggle />
       <IdentitySessionSetting />
@@ -349,6 +352,36 @@ function NewChatModelBehaviorSetting() {
           </SelectItem>
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+function RespondingSidebarSetting() {
+  const { t } = useTranslation();
+  const [enabled, setEnabled] = useState(isRespondingSidebarEnabled);
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-t pt-3">
+      <div className="min-w-0 space-y-1">
+        <div className="flex items-center gap-2">
+          <LayoutList className="size-4 text-muted-foreground" />
+          <Label htmlFor="responding-sidebar-toggle" className="text-sm font-normal">
+            {t("settings.general.respondingSidebar")}
+          </Label>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {t("settings.general.respondingSidebarHelp")}
+        </p>
+      </div>
+      <Switch
+        id="responding-sidebar-toggle"
+        size="sm"
+        checked={enabled}
+        onCheckedChange={(checked) => {
+          setEnabled(checked);
+          setRespondingSidebarEnabled(checked);
+        }}
+      />
     </div>
   );
 }

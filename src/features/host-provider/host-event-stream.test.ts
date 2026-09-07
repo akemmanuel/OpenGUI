@@ -53,6 +53,28 @@ describe("Host event dispatch", () => {
     expect(refreshSessions).toHaveBeenCalledOnce();
   });
 
+  it("announces unread work only after the complete turn finishes", () => {
+    const onTurnFinished = vi.fn();
+    const dispatch = createHostEventDispatcher({
+      activeStreamRef: { current: null },
+      setActiveSnapshot: vi.fn(),
+      setBusySessionIds: vi.fn(),
+      transcriptStore: { dispatch: vi.fn() } as never,
+      refreshSessions: vi.fn(async () => {}),
+      onTurnFinished,
+    });
+
+    dispatch({
+      sessionId: "session-1",
+      event: { type: "assistant_delta", runId: "run-1", delta: "partial" },
+    });
+    dispatch(entryEvent("assistant_message"));
+    expect(onTurnFinished).not.toHaveBeenCalled();
+
+    dispatch(entryEvent("run_completed"));
+    expect(onTurnFinished).toHaveBeenCalledOnce();
+  });
+
   it("marks assistant deltas busy without touching an inactive transcript", () => {
     let busy = new Set<string>();
     const transcriptStore = { dispatch: vi.fn() };

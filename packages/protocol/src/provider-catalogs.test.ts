@@ -4,22 +4,15 @@ import {
   OPENCODE_GO_PRESET,
   SUPERGROK_PRESET,
   XAI_API_PRESET,
-  supportedOpenCodeGoModelIds,
 } from "./provider-catalogs.ts";
 
 describe("first-party provider catalogs", () => {
-  test("uses the documented ChatGPT Codex subscription catalog and default", () => {
-    expect(CHATGPT_CODEX_PRESET.defaultModelId).toBe("gpt-5.6-sol");
-    expect(CHATGPT_CODEX_PRESET.modelIds).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "gpt-5.4",
-      "gpt-5.4-mini",
-      "gpt-5.3-codex-spark",
-    ]);
-    expect(CHATGPT_CODEX_PRESET.modelIds).not.toContain("gpt-5.2-codex");
+  test("leaves the ChatGPT Codex model catalog to pi-ai", () => {
+    expect(CHATGPT_CODEX_PRESET).toMatchObject({
+      id: "chatgpt-codex",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      modelIds: [],
+    });
   });
 
   test("keeps the SuperGrok OAuth alias separate from API-key model IDs", () => {
@@ -38,11 +31,11 @@ describe("first-party provider catalogs", () => {
     expect(XAI_API_PRESET.modelCapabilities["grok-build-0.1"]?.context).toBe(256_000);
   });
 
-  test("only offers discovered OpenCode Go models with documented transports", () => {
-    expect(
-      supportedOpenCodeGoModelIds([...OPENCODE_GO_PRESET.modelIds, "glm-5", "hy3-preview"]),
-    ).toEqual(OPENCODE_GO_PRESET.modelIds);
-    expect(OPENCODE_GO_PRESET.modelRoutes["qwen3.7-max"]).toBe("anthropic-messages");
-    expect(OPENCODE_GO_PRESET.modelRoutes["glm-5.2"]).toBe("openai-chat");
+  test("leaves OpenCode Go model metadata to pi-ai", () => {
+    expect(OPENCODE_GO_PRESET).toMatchObject({
+      id: "opencode-go",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      modelIds: [],
+    });
   });
 });

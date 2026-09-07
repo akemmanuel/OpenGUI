@@ -49,6 +49,8 @@ export interface HostEventDispatcherDependencies {
   transcriptStore: ActiveSessionTranscriptStore;
   refreshSessions: () => Promise<void>;
   onFollowUpDispatched?: (sessionId: string, followUpId: string) => void;
+  /** Fires once, when the whole assistant turn reaches a terminal entry. */
+  onTurnFinished?: (sessionId: string) => void;
   /** Fires when the live model part ends (text committed or tool calls begin). */
   onModelPartEnded?: (sessionId: string) => void;
 }
@@ -69,6 +71,7 @@ export function createHostEventDispatcher({
   transcriptStore,
   refreshSessions,
   onFollowUpDispatched,
+  onTurnFinished,
   onModelPartEnded,
 }: HostEventDispatcherDependencies): (hostEvent: HostEvent) => void {
   return (hostEvent) => {
@@ -101,7 +104,10 @@ export function createHostEventDispatcher({
     }
 
     if (isModelPartEndEvent(hostEvent)) onModelPartEnded?.(hostEvent.sessionId);
-    if (terminal) void refreshSessions().catch(notifyUnknownError);
+    if (terminal) {
+      onTurnFinished?.(hostEvent.sessionId);
+      void refreshSessions().catch(notifyUnknownError);
+    }
   };
 }
 
@@ -112,8 +118,9 @@ interface UseHostEventStreamOptions extends HostEventDispatcherDependencies {
   hydrateTranscript: (sessionId: string) => Promise<void>;
 }
 
-export function hostEventSubscriptionSession(activeSessionId: string | null) {
-  return activeSessionId ?? undefined;
+export function hostEventSubscriptionSession(_activeSessionId: string | null) {
+  // The sidebar must observe background Runs as they start and finish.
+  return undefined;
 }
 
 export function createHostReconnectHandler({
@@ -139,6 +146,9 @@ export function useHostEventStream(options: UseHostEventStreamOptions): void {
   const onModelPartEndedRef = useRef(options.onModelPartEnded);
   onModelPartEndedRef.current = options.onModelPartEnded;
 
+  const onTurnFinishedRef = useRef(options.onTurnFinished);
+  onTurnFinishedRef.current = options.onTurnFinished;
+
   useEffect(() => {
     if (!options.host) return;
     const dispatchEvent = createHostEventDispatcher({
@@ -146,15 +156,15 @@ export function useHostEventStream(options: UseHostEventStreamOptions): void {
       onFollowUpDispatched: (sessionId, followUpId) =>
         onFollowUpDispatchedRef.current?.(sessionId, followUpId),
       onModelPartEnded: (sessionId) => onModelPartEndedRef.current?.(sessionId),
+      onTurnFinished: (sessionId) => onTurnFinishedRef.current?.(sessionId),
     });
     return options.host.subscribe(
       dispatchEvent,
-      hostEventSubscriptionSession(options.activeSessionId),
+      hostEventSubscriptionSession(null),
       createHostReconnectHandler(options),
     );
   }, [
     options.host,
-    options.activeSessionId,
     options.hydrateTranscript,
     options.refreshSessions,
     options.transcriptStore,

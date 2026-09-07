@@ -207,15 +207,24 @@ function HostProviderBody({
     sessions: [],
     activeSessionId: null,
     busySessionIds: new Set(),
+    unreadSessionIds: new Set(),
     queuedPrompts: {},
     sessionDrafts: {},
     sessionMeta: getSessionMetaMap(),
   }));
-  const { sessions, activeSessionId, busySessionIds, queuedPrompts, sessionDrafts, sessionMeta } =
-    sessionSlice.state;
+  const {
+    sessions,
+    activeSessionId,
+    busySessionIds,
+    unreadSessionIds,
+    queuedPrompts,
+    sessionDrafts,
+    sessionMeta,
+  } = sessionSlice.state;
   const setSessions = sessionSlice.setter("sessions");
   const setActiveSessionId = sessionSlice.setter("activeSessionId");
   const setBusySessionIds = sessionSlice.setter("busySessionIds");
+  const setUnreadSessionIds = sessionSlice.setter("unreadSessionIds");
   const setQueuedPrompts = sessionSlice.setter("queuedPrompts");
   const setSessionDrafts = sessionSlice.setter("sessionDrafts");
   const setSessionMeta = sessionSlice.setter("sessionMeta");
@@ -552,6 +561,12 @@ function HostProviderBody({
       queueController?.recordDispatched(sessionId, followUpId);
     },
     onModelPartEnded: (sessionId) => dispatchAfterPartSteer(sessionId),
+    onTurnFinished: (sessionId) => {
+      // Do not promote partial assistant messages. A row becomes unread only
+      // after the Host commits the terminal entry for the complete turn.
+      if (activeSessionIdRef.current === sessionId) return;
+      setUnreadSessionIds((current) => new Set(current).add(sessionId));
+    },
   });
 
   const activeTranscript = useActiveTranscriptSnapshot();
@@ -589,7 +604,7 @@ function HostProviderBody({
       pendingQuestions: {},
       activeTargetDirectory,
       namingSessionIds: new Set(),
-      unreadSessionIds: new Set(),
+      unreadSessionIds,
       sessionDrafts,
       sessionMeta,
       sessionErrors: {},
@@ -606,6 +621,7 @@ function HostProviderBody({
       sessionMeta,
       sessions,
       skillsLocked,
+      unreadSessionIds,
     ],
   );
 
@@ -772,6 +788,14 @@ function HostProviderBody({
       selectSession: async (id) => {
         activeSessionIdRef.current = id;
         setActiveSessionId(id);
+        if (id) {
+          setUnreadSessionIds((current) => {
+            if (!current.has(id)) return current;
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+        }
         rememberActiveSession(id);
         if (id) {
           const session = sessions.find((item) => item.id === id);

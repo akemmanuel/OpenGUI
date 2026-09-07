@@ -17,6 +17,11 @@ export interface CatalogModelMetadata {
   reasoning?: boolean;
   reasoning_options?: Array<{ type?: string; values?: unknown[] }>;
   limit?: { context?: number };
+  cost?: { input?: number; output?: number };
+  attachment?: boolean;
+  tool_call?: boolean;
+  provider?: { npm?: string };
+  status?: string;
 }
 
 export type FlatModelCatalog = Record<string, CatalogModelMetadata>;

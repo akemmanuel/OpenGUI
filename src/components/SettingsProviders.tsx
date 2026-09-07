@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { OPENCODE_GO_PRESET, XAI_API_PRESET } from "@opengui/protocol";
+import { OPENCODE_GO_PRESET, OPENCODE_ZEN_PRESET, XAI_API_PRESET } from "@opengui/protocol";
 import { DeviceAuthDialog } from "@/components/DeviceAuthDialog";
 import { Button } from "@/components/ui/button";
 import { createHostClient } from "@/protocol/host-client";
@@ -47,19 +47,6 @@ import {
   editCustomBackendDraft,
   type CustomBackendDraft,
 } from "@/features/model-access/custom-backend";
-
-const OPENCODE_ZEN = {
-  id: "opencode-zen",
-  label: "OpenCode Zen",
-  baseUrl: "https://opencode.ai/zen/v1",
-  modelIds: [
-    "big-pickle",
-    "mimo-v2.5-free",
-    "north-mini-code-free",
-    "nemotron-3-ultra-free",
-    "deepseek-v4-flash-free",
-  ],
-} as const;
 
 export function SettingsProviders() {
   const { t } = useTranslation();
@@ -247,8 +234,8 @@ export function SettingsProviders() {
   async function enableZen() {
     try {
       await host.upsertModelConnection({
-        ...OPENCODE_ZEN,
-        modelIds: [...OPENCODE_ZEN.modelIds],
+        ...OPENCODE_ZEN_PRESET,
+        modelIds: [],
         apiKey: zenApiKey.trim() || undefined,
       });
       setZenApiKey("");
@@ -265,9 +252,7 @@ export function SettingsProviders() {
         id: OPENCODE_GO_PRESET.id,
         label: OPENCODE_GO_PRESET.label,
         baseUrl: OPENCODE_GO_PRESET.baseUrl,
-        defaultModelId: OPENCODE_GO_PRESET.defaultModelId,
-        modelIds: [...OPENCODE_GO_PRESET.modelIds],
-        modelRoutes: { ...OPENCODE_GO_PRESET.modelRoutes },
+        modelIds: [],
         apiKey: goApiKey.trim(),
       });
       setGoApiKey("");
@@ -295,12 +280,12 @@ export function SettingsProviders() {
     }
   }
 
-  const zenEnabled = connections.some((connection) => connection.id === OPENCODE_ZEN.id);
+  const zenEnabled = connections.some((connection) => connection.id === OPENCODE_ZEN_PRESET.id);
   const goEnabled = connections.some((connection) => connection.id === OPENCODE_GO_PRESET.id);
   const xaiApiEnabled = connections.some((connection) => connection.id === XAI_API_PRESET.id);
   const customConnections = connections.filter(
     (connection) =>
-      !["chatgpt-codex", "supergrok", "opencode-go", "xai-api", OPENCODE_ZEN.id].includes(
+      !["chatgpt-codex", "supergrok", "opencode-go", "xai-api", OPENCODE_ZEN_PRESET.id].includes(
         connection.id,
       ) &&
       (canManageShared || connection.plane === "user"),
@@ -556,7 +541,7 @@ export function SettingsProviders() {
                 variant="outline"
                 onClick={() =>
                   void host
-                    .removeModelConnection(OPENCODE_ZEN.id)
+                    .removeModelConnection(OPENCODE_ZEN_PRESET.id)
                     .then(reload)
                     .then(refreshProviders)
                     .catch(notifyUnknownError)

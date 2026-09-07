@@ -75,6 +75,7 @@ export function SessionRow({
   moveSessionToProject,
   removeSessionFromProject,
   currentProjectDir,
+  projectLabel,
   deleteSession,
 }: {
   session: Session;
@@ -108,6 +109,7 @@ export function SessionRow({
   moveSessionToProject: (sessionId: string, projectDirectory: string) => void | Promise<void>;
   removeSessionFromProject: (sessionId: string) => void | Promise<void>;
   currentProjectDir: string | null;
+  projectLabel?: string;
   deleteSession: (sessionId: string) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -266,6 +268,14 @@ export function SessionRow({
                   startEditing(session.id, session.title || "");
                 }}
               />
+            )}
+            {projectLabel && editingSessionId !== session.id && !isNaming && (
+              <span
+                className="max-w-[5rem] shrink-0 truncate text-[10px] text-muted-foreground/70"
+                title={projectLabel}
+              >
+                {projectLabel}
+              </span>
             )}
             {identityActor?.type === "user" && (
               <span

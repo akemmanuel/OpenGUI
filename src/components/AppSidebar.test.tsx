@@ -38,6 +38,7 @@ vi.mock("@/components/ui/sidebar", () => ({
   }),
 }));
 vi.mock("@/hooks/use-home-dir", () => ({ useHomeDir: () => "/home/test" }));
+vi.mock("@/lib/responding-sidebar", () => ({ useRespondingSidebarEnabled: () => false }));
 vi.mock("@/hooks/use-outside-click", () => ({ useOutsideClick: vi.fn() }));
 vi.mock("@/hooks/workspace-guards", () => ({ openAddWorkspaceDialog: fixture.addWorkspace }));
 vi.mock("@/lib/notify", () => ({
@@ -67,10 +68,12 @@ vi.mock("./sidebar/use-sidebar-rename", () => ({
   }),
 }));
 vi.mock("./sidebar/use-sidebar-model", () => ({
+  sortSessionsByResponseState: (sessions: unknown[]) => sessions,
   useSidebarModel: () => ({
     hasActiveSearch: false,
     availableProjectDirectories: [],
     filteredChatSessions: [],
+    flatSessions: [],
     pinnedEntries: [],
     projectEntries: [],
     projectSessionsByDirectory: {},

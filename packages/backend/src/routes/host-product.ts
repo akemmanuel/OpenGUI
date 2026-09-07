@@ -4,6 +4,7 @@ import {
   type OpenGuiHost,
 } from "../host/opengui-host.ts";
 import { resolve } from "node:path";
+import { OPENCODE_GO_PRESET, OPENCODE_ZEN_PRESET } from "@opengui/protocol";
 import type { BackendApp } from "../http/request-context.ts";
 import { isPlainObject, jsonError } from "../http/json.ts";
 import { durableActor, type Actor, type IdentityState } from "../identity/types.ts";
@@ -243,7 +244,8 @@ export function registerHostProductRoutes(
             .filter(Boolean)
         : [];
       if (!baseUrl) throw new Error("baseUrl is required");
-      if (modelIds.length === 0) throw new Error("modelIds must include at least one model");
+      if (modelIds.length === 0 && id !== OPENCODE_ZEN_PRESET.id && id !== OPENCODE_GO_PRESET.id)
+        throw new Error("modelIds must include at least one model");
       let parsedBaseUrl: URL;
       try {
         parsedBaseUrl = new URL(baseUrl);
@@ -1070,13 +1072,6 @@ export function registerHostProductRoutes(
     const host = await input.getHost();
     const actor = durableActor(c.get("actor"));
     const sessionId = c.req.query("sessionId")?.trim();
-    const restricted = await host.requiresScopedEvents(actor);
-    if (restricted && !sessionId) {
-      return Response.json(
-        { ok: false, error: "sessionId is required", code: "PATH_NOT_AUTHORIZED" },
-        { status: 403 },
-      );
-    }
     let unsubscribe: () => void;
     const pendingEvents: unknown[] = [];
     let sendEvent: (event: unknown) => void = (event) => {

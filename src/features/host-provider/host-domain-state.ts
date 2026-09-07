@@ -29,6 +29,7 @@ export interface SessionSlice {
   sessions: Session[];
   activeSessionId: string | null;
   busySessionIds: Set<string>;
+  unreadSessionIds: Set<string>;
   queuedPrompts: Record<string, HostQueuedPrompt[]>;
   sessionDrafts: Record<string, string>;
   sessionMeta: SessionMetaMap;

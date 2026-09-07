@@ -467,7 +467,42 @@ describe("OpenGuiHost authentication persistence", () => {
     const authorizations: string[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url === "https://opencode.ai/zen/v1/models") {
+          return Response.json({
+            data: [
+              { id: "big-pickle" },
+              { id: "hy3-free" },
+              { id: "deepseek-v4-flash-free" },
+              { id: "deepseek-v4-pro" },
+            ],
+          });
+        }
+        if (url === "https://models.dev/api.json") {
+          return Response.json({
+            opencode: {
+              models: {
+                "deepseek-v4-flash-free": {
+                  reasoning: true,
+                  tool_call: true,
+                  attachment: false,
+                  cost: { input: 0, output: 0 },
+                  status: "deprecated",
+                },
+                "hy3-free": {
+                  name: "Hy3 Free",
+                  reasoning: true,
+                  tool_call: true,
+                  attachment: false,
+                  limit: { context: 190_000 },
+                  cost: { input: 0, output: 0 },
+                },
+              },
+            },
+          });
+        }
         const authorization = new Headers(init?.headers).get("authorization") ?? "";
         authorizations.push(authorization);
         if (authorization) {
@@ -490,11 +525,12 @@ describe("OpenGuiHost authentication persistence", () => {
       id: "opencode-zen",
       label: "OpenCode Zen",
       baseUrl: "https://opencode.ai/zen/v1",
-      modelIds: ["deepseek-v4-flash-free"],
+      modelIds: [],
     });
+    expect(host.listModelConnections()[0]?.modelIds).toEqual(["big-pickle", "hy3-free"]);
     const session = await host.createSession({
       projectDirectory: dataDirectory,
-      model: { connectionId: "opencode-zen", modelId: "deepseek-v4-flash-free" },
+      model: { connectionId: "opencode-zen", modelId: "big-pickle" },
       reasoning: "none",
     });
     await host.prompt(session.id, { text: "hello" });

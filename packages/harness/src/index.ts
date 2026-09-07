@@ -4,6 +4,12 @@ export type { ShellToolExecutor, ToolExecutionContext } from "./tools/execute-to
 export * from "./models/transport.ts";
 export { OpenAiChatTransport, type OpenAiCompatibleConnection } from "./models/openai-chat.ts";
 export {
+  piAiCatalogConnection,
+  piAiFreeModelIds,
+  piAiTextOnlyModelIds,
+  type PiAiCatalogProviderId,
+} from "./models/pi-ai-catalog.ts";
+export {
   PiAiTransport,
   benchmarkPiSerialization,
   toPiContext,

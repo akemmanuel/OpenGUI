@@ -4,6 +4,7 @@ import {
   shouldKeepSessionOutOfProjectGroups,
   shouldShowSessionInChatList,
   sessionMatchesSidebarSearch,
+  sortSessionsByResponseState,
   sortSessionsForSidebar,
 } from "./use-sidebar-model";
 
@@ -52,6 +53,20 @@ describe("sortSessionsForSidebar", () => {
     const sorted = sortSessionsForSidebar([withoutTime, session("with-time", 20)], {});
 
     expect(sorted.map((item) => item.id)).toEqual(["with-time", "no-time"]);
+  });
+});
+
+describe("sortSessionsByResponseState", () => {
+  test("keeps completed responses above working and idle chats", () => {
+    const items = [session("idle", 30), session("working", 20), session("response", 10)];
+    const sorted = sortSessionsByResponseState(
+      items,
+      {},
+      new Set(["response"]),
+      new Set(["working"]),
+    );
+
+    expect(sorted.map((item) => item.id)).toEqual(["response", "working", "idle"]);
   });
 });
 

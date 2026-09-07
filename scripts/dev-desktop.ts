@@ -4,9 +4,12 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { setTimeout as sleep } from "node:timers/promises";
 import { waitForDevelopmentServers } from "./dev-desktop-helpers.ts";
 
+const require = createRequire(import.meta.url);
+const electronBinary = require("electron") as string;
 const host = "127.0.0.1";
 const port = Number(process.env.OPENGUI_VITE_PORT || 5173);
 const backendPort = Number(process.env.OPENGUI_WEB_BACKEND_PORT || 3001);
@@ -24,7 +27,7 @@ const build = spawnSync(
 
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-const server = spawn("vp", ["dev", "--host", host, "--port", String(port)], {
+const server = spawn("vp", ["dev", "--host", host, "--port", String(port), "--strictPort"], {
   stdio: "inherit",
   env: {
     ...process.env,
@@ -35,16 +38,29 @@ const server = spawn("vp", ["dev", "--host", host, "--port", String(port)], {
   },
 });
 
+const serverFailure = new Promise<never>((_, reject) => {
+  server.once("error", reject);
+  server.once("exit", (code, signal) => {
+    reject(
+      new Error(
+        `Development server exited before becoming healthy (${signal ?? `code ${code ?? 1}`})`,
+      ),
+    );
+  });
+});
 const maxAttempts = 60;
 
 try {
-  await waitForDevelopmentServers({
-    frontendUrl: url,
-    backendUrl,
-    attempts: maxAttempts,
-    fetch,
-    sleep,
-  });
+  await Promise.race([
+    waitForDevelopmentServers({
+      frontendUrl: url,
+      backendUrl,
+      attempts: maxAttempts,
+      fetch,
+      sleep,
+    }),
+    serverFailure,
+  ]);
 } catch (error) {
   console.error(error);
   server.kill();
@@ -54,12 +70,12 @@ try {
 const electronEnv = { ...process.env };
 delete electronEnv.ELECTRON_RUN_AS_NODE;
 
-const electronArgs = ["exec", "electron", "."];
+const electronArgs = ["."];
 if (process.env.OPENGUI_REMOTE_DEBUGGING_PORT) {
   electronArgs.push(`--remote-debugging-port=${process.env.OPENGUI_REMOTE_DEBUGGING_PORT}`);
 }
 
-const electron = spawn("pnpm", electronArgs, {
+const electron = spawn(electronBinary, electronArgs, {
   stdio: "inherit",
   env: {
     ...electronEnv,

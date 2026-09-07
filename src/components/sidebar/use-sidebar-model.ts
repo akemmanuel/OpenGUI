@@ -58,6 +58,23 @@ export function sortSessionsForSidebar(items: Session[], sessionMeta: SessionMet
   });
 }
 
+/** Keeps rows stable while streaming: only completed/unread turns outrank running turns. */
+export function sortSessionsByResponseState(
+  items: Session[],
+  sessionMeta: SessionMetaMap,
+  unreadSessionIds: ReadonlySet<string>,
+  busySessionIds: ReadonlySet<string>,
+) {
+  const rank = (id: string) => (unreadSessionIds.has(id) ? 0 : busySessionIds.has(id) ? 1 : 2);
+  return [...items].sort((a, b) => {
+    const byState = rank(a.id) - rank(b.id);
+    if (byState !== 0) return byState;
+    const byUpdated =
+      getSidebarSessionSortTime(b, sessionMeta) - getSidebarSessionSortTime(a, sessionMeta);
+    return byUpdated || b.id.localeCompare(a.id);
+  });
+}
+
 export function sessionMatchesSidebarSearch({
   session,
   sessionMeta,
@@ -279,6 +296,15 @@ export function useSidebarModel({
     untitledLabel,
   ]);
 
+  const flatSessions = useMemo(() => {
+    const unique = new Map<string, Session>();
+    for (const session of filteredChatSessions) unique.set(session.id, session);
+    for (const [, projectSessions] of searchFilteredProjectEntries) {
+      for (const session of projectSessions) unique.set(session.id, session);
+    }
+    return Array.from(unique.values());
+  }, [filteredChatSessions, searchFilteredProjectEntries]);
+
   const pinnedModel = useMemo(
     () =>
       partitionSidebarPins({
@@ -296,6 +322,7 @@ export function useSidebarModel({
     availableProjectDirectories,
     projectGroups,
     filteredChatSessions,
+    flatSessions,
     showChatsSection,
     ...pinnedModel,
   };

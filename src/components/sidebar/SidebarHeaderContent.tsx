@@ -17,6 +17,7 @@ export function SidebarHeaderContent({
   onOpenChat,
   startNewChat,
   closeMobileSidebar,
+  projectSelector,
   selectionActions,
 }: {
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -33,6 +34,7 @@ export function SidebarHeaderContent({
   onOpenChat: () => void;
   startNewChat: () => void | Promise<void>;
   closeMobileSidebar: () => void;
+  projectSelector?: ReactNode;
   selectionActions?: ReactNode;
 }) {
   return (
@@ -70,6 +72,7 @@ export function SidebarHeaderContent({
               className="h-5 block dark:hidden group-data-[collapsible=icon]:!hidden"
             />
           </div>
+          {projectSelector}
           <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border/60 bg-sidebar/40">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" />

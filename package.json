@@ -13,6 +13,9 @@
     "type": "git",
     "url": "https://github.com/akemmanuel/OpenGUI.git"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -122,6 +125,11 @@
     "vitest": "4.1.9",
     "which": "^7.0.0"
   },
+  "overrides": {
+    "@vitest/browser": "4.1.9",
+    "@vitest/browser-preview": "4.1.9",
+    "vitest": "4.1.9"
+  },
   "engines": {
     "node": ">=22.19.0"
   },
@@ -216,5 +224,8 @@
     "nodeGypRebuild": false,
     "npmRebuild": false
   },
-  "desktopName": "OpenGUI"
+  "desktopName": "OpenGUI",
+  "patchedDependencies": {
+    "@earendil-works/pi-ai@0.82.1": "patches/@earendil-works__pi-ai@0.82.1.patch"
+  }
 }

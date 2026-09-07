@@ -44,6 +44,7 @@ export const STORAGE_KEYS = {
   ACCENT_COLOR: key("accentColor"),
   DISMISSED_UPDATE_VERSION: key("dismissedUpdateVersion"),
   SIDEBAR_PROJECT_COLLAPSED: key("sidebarProjectCollapsed"),
+  RESPONDING_SIDEBAR: key("respondingSidebar"),
   FILE_MANAGER: key("fileManager"),
   TERMINAL: key("terminal"),
   SETUP_COMPLETE: key("setupComplete"),

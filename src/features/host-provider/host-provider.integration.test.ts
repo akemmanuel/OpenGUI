@@ -25,9 +25,9 @@ function runningSnapshot(): HostSessionSnapshot {
 }
 
 describe("HostProvider public event pipeline", () => {
-  test("scopes live events to the selected Session for restricted remote actors", () => {
+  test("subscribes to every Session so background Runs can finish", () => {
     expect(hostEventSubscriptionSession(null)).toBeUndefined();
-    expect(hostEventSubscriptionSession("shared-session")).toBe("shared-session");
+    expect(hostEventSubscriptionSession("shared-session")).toBeUndefined();
   });
 
   test("restores the saved active Session only when the Host still lists it", () => {
