@@ -32,6 +32,12 @@ export interface OpenAiCompatibleConnection {
       context?: number;
       reasoning: boolean;
       reasoningEfforts?: string[];
+      maxTokens?: number;
+      input?: ("text" | "image")[];
+      thinkingLevelMap?: Partial<
+        Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>
+      >;
+      compat?: Record<string, unknown>;
     }
   >;
 }

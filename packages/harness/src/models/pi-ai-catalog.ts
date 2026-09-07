@@ -20,12 +20,13 @@ function routeFor(model: Model<any>): "openai-chat" | "anthropic-messages" | "re
   return null;
 }
 
-/** Canonical built-in metadata shipped by pi-ai's generated models.dev catalogs. */
+/** Project pi metadata into the Host's connection format. */
 export function piAiCatalogConnection(
   providerId: PiAiCatalogProviderId,
   input: Pick<OpenAiCompatibleConnection, "id" | "label" | "baseUrl" | "defaultModelId">,
+  catalog: readonly Model<any>[] = providers[providerId].getModels(),
 ): OpenAiCompatibleConnection {
-  const models = providers[providerId].getModels().flatMap((model) => {
+  const models = catalog.flatMap((model) => {
     const route = routeFor(model);
     return route ? [{ model, route }] : [];
   });
@@ -43,6 +44,10 @@ export function piAiCatalogConnection(
         {
           displayName: model.name,
           context: model.contextWindow,
+          maxTokens: model.maxTokens,
+          input: model.input,
+          thinkingLevelMap: model.thinkingLevelMap,
+          compat: model.compat ? { ...model.compat } : undefined,
           reasoning: model.reasoning,
           reasoningEfforts: model.reasoning
             ? getSupportedThinkingLevels(model).map((level) => (level === "off" ? "none" : level))

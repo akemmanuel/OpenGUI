@@ -1,4 +1,58 @@
 {
+  "access": {
+    "inspect": "Ver acceso",
+    "personTitle": "Acceso de {{name}}",
+    "direct": "Acceso directo",
+    "noAccess": "Sin acceso",
+    "personHelp": "Cambia el acceso directo en Modelos. Gestiona los miembros y el acceso compartido en Equipos.",
+    "search": "Buscar personas y equipos",
+    "searchPeople": "Buscar personas",
+    "everyone": "Todos",
+    "adminAccess": "Los administradores del Host siempre tienen acceso",
+    "inherited": "Permitido por {{teams}}",
+    "directHelp": "Los controles de personas conceden acceso directo. Desactivarlos no elimina el acceso por un equipo.",
+    "saveError": "No se guardó el acceso. Tus cambios siguen aquí. Inténtalo de nuevo.",
+    "saving": "Guardando…",
+    "save": "Guardar cambios",
+    "unsaved": "Cambios sin guardar",
+    "saved": "Cambios guardados",
+    "manage": "Gestionar acceso",
+    "catalog": "Modelos",
+    "connections": "Conexiones de proveedores",
+    "adminOnly": "Solo administradores",
+    "discardTitle": "¿Descartar los cambios sin guardar?",
+    "discardHelp": "Tus cambios aún no se han guardado.",
+    "keepEditing": "Seguir editando",
+    "discard": "Descartar cambios"
+  },
+  "teams": {
+    "search": "Buscar equipos",
+    "create": "Crear equipo",
+    "edit": "Editar equipo",
+    "name": "Nombre del equipo",
+    "delete": "Eliminar equipo",
+    "deleteHelp": "Se eliminarán el equipo y sus permisos de modelos y sesiones. Se conservarán las personas y sus sesiones privadas.",
+    "summary": "{{members}} · {{models}}",
+    "noResults": "No se encontraron equipos.",
+    "everyoneHelp": "Todos incluye a los miembros actuales y futuros del Host.",
+    "noModels": "Añade primero un modelo compartido en Modelos y luego concédelo a este equipo.",
+    "saveError": "No se guardó el equipo. Comprueba que el nombre sea único e inténtalo de nuevo. Tus cambios siguen aquí.",
+    "allowByok": "Claves API personales",
+    "allowByos": "Suscripciones personales",
+    "allowByokHelp": "Los miembros pueden conectar modelos con sus propias claves API.",
+    "allowByosHelp": "Los miembros pueden conectar una suscripción de proveedor compatible.",
+    "blocked": "Bloqueado por Sistema o Todos",
+    "policyHelp": "Una restricción en Sistema, Todos o cualquier equipo de la persona tiene prioridad. Las credenciales personales siguen siendo privadas.",
+    "tabs": {
+      "members": "Miembros",
+      "models": "Modelos",
+      "personal": "Conexiones personales"
+    },
+    "peopleCount_one": "{{count}} persona",
+    "peopleCount_other": "{{count}} personas",
+    "modelCount_one": "{{count}} modelo",
+    "modelCount_other": "{{count}} modelos"
+  },
   "mobile": {
     "backAgainToExit": "Pulsa atrás otra vez para salir"
   },
@@ -70,26 +124,28 @@
     "tabs": {
       "general": "General",
       "providers": "Modelos y proveedores",
-      "models": "Modelos y proveedores",
+      "models": "Modelos",
       "integrations": "Integraciones",
-      "users": "Usuarios y acceso",
+      "users": "Personas",
       "paths": "Rutas y Shell",
-      "host": "Host y administración",
+      "host": "Sistema",
       "instructions": "Instrucciones",
       "skills": "Skills",
       "team": "Equipo",
       "plugins": "Plugins",
-      "tools": "Herramientas"
+      "tools": "Herramientas",
+      "teams": "Equipos"
     },
     "sectionDescriptions": {
       "general": "Apariencia, idioma, notificaciones y preferencias habituales de modelos.",
-      "models": "Conecta backends, publica ofertas de modelos y controla quién puede usarlas.",
+      "models": "Elige modelos y quién puede usarlos.",
       "integrations": "Conecta servidores MCP de confianza que proporcionan herramientas adicionales al agente.",
-      "users": "Gestiona miembros, invitaciones, roles y acceso a cuentas.",
+      "users": "Invita a personas y gestiona sus roles del Host.",
       "paths": "Controla el acceso de OpenGUI a rutas y comprende la autoridad separada de Shell.",
-      "host": "Política de registro, credenciales personales y claves de automatización.",
+      "host": "Restricciones del Host, registro y claves de automatización.",
       "instructions": "Instrucciones personalizadas del Host que se añaden al system prompt de cada Sesión.",
-      "skills": "Instrucciones reutilizables disponibles para el agente."
+      "skills": "Instrucciones reutilizables disponibles para el agente.",
+      "teams": "Agrupa personas y gestiona su acceso."
     },
     "paths": {
       "boundaryTitle": "Los permisos de ruta no son un sandbox",
@@ -263,7 +319,6 @@
     "uploadingFiles": "Subiendo archivos…",
     "add": "Añadir",
     "addFile": "Añadir archivo",
-
     "mcps": "MCPs",
     "newWorktree": "Nuevo worktree",
     "currentRootWorktree": "Rama actual del worktree raíz.",
@@ -498,12 +553,12 @@
     "invitePathsHelp": "Solo se muestran las carpetas a las que tienes acceso. La invitación no puede conceder más acceso del que tienes.",
     "modelPolicy": {
       "allowByok": "Permitir claves API personales",
-      "allowByokHelp": "BYOK significa «trae tu propia clave». Cada persona aporta una clave API para una conexión privada. El Host la guarda, pero no la muestra a administradores. La denegación del Host prevalece.",
+      "allowByokHelp": "Permite conectar modelos con claves API propias.",
       "allowByos": "Permitir suscripciones personales",
-      "allowByosHelp": "BYOS significa «trae tu propia suscripción». Cada persona inicia sesión en un proveedor compatible. Los tokens quedan bajo custodia del Host y no se comparten con colaboradores. La denegación del Host prevalece.",
+      "allowByosHelp": "Permite conectar suscripciones de proveedores compatibles.",
       "host": {
-        "allowByok": "Host: permitir BYOK",
-        "allowByos": "Host: permitir BYOS"
+        "allowByok": "Permitir claves API personales",
+        "allowByos": "Permitir suscripciones personales"
       },
       "team": {
         "allowByok": "Equipo: permitir BYOK",
@@ -753,8 +808,8 @@
     "offeringSlugPlaceholder": "slug, p. ej. modelo-empresa",
     "chooseBackend": "Elegir backend",
     "upstreamModelPlaceholder": "ID del modelo de origen, p. ej. gpt-4.1",
-    "addOffering": "Añadir oferta",
-    "saveOffering": "Guardar oferta",
+    "addOffering": "Añadir modelo",
+    "saveOffering": "Guardar modelo",
     "editOffering": "Editar {{name}}",
     "removeOffering": "Eliminar {{name}}",
     "everyone": "Todos en este Host",
@@ -800,7 +855,11 @@
     "searchLabel": "Buscar Skills instaladas",
     "searchPlaceholder": "Buscar por nombre, descripción, fuente o revisión…",
     "scopeFilterLabel": "Filtrar por ámbito",
-    "scope": { "all": "Todos los ámbitos", "host": "Host", "project": "Proyecto" },
+    "scope": {
+      "all": "Todos los ámbitos",
+      "host": "Host",
+      "project": "Proyecto"
+    },
     "refresh": "Actualizar",
     "loadFailed": "No se pudo cargar la biblioteca de Skills",
     "retry": "Intentar de nuevo",

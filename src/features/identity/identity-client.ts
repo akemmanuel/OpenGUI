@@ -35,7 +35,17 @@ export type ModelOfferingEntitlement = {
   subjectId: string;
 };
 
+export type HostTeam = {
+  id: string;
+  name: string;
+  memberIds: string[];
+  modelOfferingIds: string[];
+  allowByok: boolean;
+  allowByos: boolean;
+};
+
 export type ModelPolicy = {
+  effective?: { allowByok: boolean; allowByos: boolean };
   host: { allowByok: boolean; allowByos: boolean };
   team: { allowByok: boolean; allowByos: boolean };
 };
@@ -213,6 +223,18 @@ export function createIdentityClient({
         users: Array<{ id: string; name: string }>;
         teams: Array<{ id: string; name: string }>;
       }>("/api/identity/share-principals"),
+    modelOfferings: () => request<ModelOffering[]>("/api/host/model-offerings"),
+    teams: () => request<HostTeam[]>("/api/identity/teams"),
+    saveTeam: (input: Omit<HostTeam, "id">, id?: string) =>
+      request<HostTeam>(
+        id ? `/api/identity/teams/${encodeURIComponent(id)}` : "/api/identity/teams",
+        {
+          method: id ? "PUT" : "POST",
+          body: JSON.stringify(input),
+        },
+      ),
+    removeTeam: (id: string) =>
+      request<void>(`/api/identity/teams/${encodeURIComponent(id)}`, { method: "DELETE" }),
     members: () => request<TeamMember[]>("/api/identity/members"),
     removeMember: (id: string) =>
       request<void>(`/api/identity/members/${encodeURIComponent(id)}`, { method: "DELETE" }),

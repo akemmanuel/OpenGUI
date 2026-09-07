@@ -62,6 +62,7 @@ export interface PiAiRoute {
   reasoning?: boolean;
   reasoningEfforts?: readonly string[];
   contextWindow?: number;
+  thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
   maxTokens?: number;
   compat?: Record<string, unknown>;
   /** pi-ai transport selection. Codex defaults to safe cached WebSocket with SSE fallback. */
@@ -489,6 +490,7 @@ export class PiAiTransport implements ModelTransport {
         ),
       ),
       compat: route.compat,
+      thinkingLevelMap: route.thinkingLevelMap,
     } as Model<Api>;
     const key = deriveModelCacheKey(request, {
       backendId: route.backendId,

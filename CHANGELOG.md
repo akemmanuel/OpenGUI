@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+
+- Routed codex and opencode built-ins through pi-ai catalog metadata with OpenCode Zen support.
+- Added responding sidebar sections with enable/disable setting.
+- Added named Teams with per-person access summaries and a model access editor.
+- Centralized the model catalog and provider catalogs with canonical capabilities.
+
 ## 0.6.1
 
 - Added multi-select actions for moving and deleting Sessions from the sidebar.

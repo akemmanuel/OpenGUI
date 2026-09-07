@@ -18,6 +18,71 @@ async function directory() {
 }
 
 describe("OpenGuiHost authentication persistence", () => {
+  test("offers and runs a newly published Codex model, including after an offline restart", async () => {
+    const dataDirectory = await directory();
+    await writeFile(
+      join(dataDirectory, "opengui-host-secrets.json"),
+      JSON.stringify({
+        codex: {
+          accessToken: "access",
+          refreshToken: "refresh",
+          accountId: "account",
+          expiresAt: Date.now() + 3600000,
+        },
+      }),
+    );
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        "gpt-6-astra": {
+          id: "gpt-6-astra",
+          name: "GPT-6 Astra",
+          api: "openai-codex-responses",
+          reasoning: true,
+          input: ["text", "image"],
+          contextWindow: 272000,
+          maxTokens: 128000,
+          cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 0 },
+          thinkingLevelMap: { off: null, max: "max", xhigh: "xhigh" },
+        },
+      }),
+    );
+    const host = new OpenGuiHost(dataDirectory, {
+      fetchImpl: fetchImpl as typeof fetch,
+      model: {
+        async *stream(request) {
+          expect(
+            request.context.findLast((item) => item.type === "user_message")?.model.modelId,
+          ).toBe("gpt-6-astra");
+          yield { type: "text_delta", delta: "hello" };
+          yield { type: "completed" };
+        },
+      },
+    });
+    await host.start();
+    try {
+      expect(host.listModelConnections()[0]?.modelIds).toContain("gpt-6-astra");
+      const session = await host.createSession({
+        projectDirectory: dataDirectory,
+        model: { connectionId: "chatgpt-codex", modelId: "gpt-6-astra" },
+        reasoning: "max",
+      });
+      await host.prompt(session.id, { text: "hello" });
+      await host.waitForIdle(session.id);
+      expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      await host.close();
+    }
+    const offline = vi.fn().mockRejectedValue(new Error("offline"));
+    const restarted = new OpenGuiHost(dataDirectory, { fetchImpl: offline });
+    await restarted.start();
+    try {
+      await restarted.refreshModelCatalogs(true);
+      expect(restarted.listModelConnections()[0]?.modelIds).toContain("gpt-6-astra");
+    } finally {
+      await restarted.close();
+    }
+  });
   test("keeps durable provider continuation state out of snapshots and events", async () => {
     const dataDirectory = await directory();
     const host = new OpenGuiHost(dataDirectory, {
@@ -423,9 +488,18 @@ describe("OpenGuiHost authentication persistence", () => {
   test("persists an OpenCode Go API key separately and never returns it", async () => {
     const dataDirectory = await directory();
     const catalogFetch = vi.fn(async () =>
-      Response.json({
-        data: [{ id: "glm-5.2" }, { id: "qwen3.7-max" }, { id: "hy3-preview" }],
-      }),
+      Response.json([
+        {
+          id: "future-go-model",
+          name: "Future Go Model",
+          api: "openai-completions",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 128000,
+          maxTokens: 16000,
+          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        },
+      ]),
     );
     const host = new OpenGuiHost(dataDirectory, { fetchImpl: catalogFetch as typeof fetch });
     await host.start();
@@ -444,7 +518,7 @@ describe("OpenGuiHost authentication persistence", () => {
         label: "OpenCode Go",
         baseUrl: "https://opencode.ai/zen/go/v1",
         defaultModelId: "glm-5.2",
-        modelIds: ["glm-5.2", "qwen3.7-max"],
+        modelIds: expect.arrayContaining(["glm-5.2", "qwen3.7-max", "future-go-model"]),
       }),
     ]);
     await host.close();
@@ -470,38 +544,20 @@ describe("OpenGuiHost authentication persistence", () => {
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        if (url === "https://opencode.ai/zen/v1/models") {
-          return Response.json({
-            data: [
-              { id: "big-pickle" },
-              { id: "hy3-free" },
-              { id: "deepseek-v4-flash-free" },
-              { id: "deepseek-v4-pro" },
-            ],
-          });
-        }
-        if (url === "https://models.dev/api.json") {
-          return Response.json({
-            opencode: {
-              models: {
-                "deepseek-v4-flash-free": {
-                  reasoning: true,
-                  tool_call: true,
-                  attachment: false,
-                  cost: { input: 0, output: 0 },
-                  status: "deprecated",
-                },
-                "hy3-free": {
-                  name: "Hy3 Free",
-                  reasoning: true,
-                  tool_call: true,
-                  attachment: false,
-                  limit: { context: 190_000 },
-                  cost: { input: 0, output: 0 },
-                },
-              },
+        if (url === "https://pi.dev/api/models/providers/opencode") {
+          expect(new Headers(init?.headers).has("authorization")).toBe(false);
+          return Response.json([
+            {
+              id: "hy3-free",
+              name: "Hy3 Free",
+              api: "openai-completions",
+              reasoning: true,
+              input: ["text"],
+              contextWindow: 190000,
+              maxTokens: 16000,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
-          });
+          ]);
         }
         const authorization = new Headers(init?.headers).get("authorization") ?? "";
         authorizations.push(authorization);
@@ -527,7 +583,10 @@ describe("OpenGuiHost authentication persistence", () => {
       baseUrl: "https://opencode.ai/zen/v1",
       modelIds: [],
     });
-    expect(host.listModelConnections()[0]?.modelIds).toEqual(["big-pickle", "hy3-free"]);
+    expect(host.listModelConnections()[0]?.modelIds).toEqual(
+      expect.arrayContaining(["big-pickle", "hy3-free"]),
+    );
+    expect(host.listModelConnections()[0]?.modelIds).not.toContain("deepseek-v4-pro");
     const session = await host.createSession({
       projectDirectory: dataDirectory,
       model: { connectionId: "opencode-zen", modelId: "big-pickle" },

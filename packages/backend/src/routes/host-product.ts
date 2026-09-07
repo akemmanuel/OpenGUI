@@ -108,6 +108,7 @@ export function registerHostProductRoutes(
 
   app.get("/api/host/models", async (c) => {
     const host = await input.getHost();
+    await host.refreshModelCatalogs();
     const all = host.listModelConnections();
     if (!input.identity) {
       return Response.json({
@@ -162,6 +163,7 @@ export function registerHostProductRoutes(
   app.get("/api/host/model-offerings", async (c) => {
     if (!input.identity) return Response.json({ ok: true, value: [] });
     const host = await input.getHost();
+    await host.refreshModelCatalogs();
     await input.identity.migrateLegacyModelOfferings(host.listModelConnections());
     return Response.json({
       ok: true,

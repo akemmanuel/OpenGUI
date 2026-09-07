@@ -1,13 +1,4 @@
-import {
-  ArrowRight,
-  Database,
-  KeyRound,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Share2,
-  Trash2,
-} from "lucide-react";
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OPENCODE_GO_PRESET, OPENCODE_ZEN_PRESET, XAI_API_PRESET } from "@opengui/protocol";
@@ -34,11 +25,12 @@ import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import {
   createIdentityClient,
   type ModelOfferingEntitlement,
+  type HostTeam,
   type ModelPolicy,
   type TeamMember,
 } from "@/features/identity/identity-client";
 import { getIdentityWorkspace } from "@/features/identity/workspace-identity";
-import { Switch } from "@/components/ui/switch";
+import { ModelAccessEditor } from "@/features/model-access/ModelAccessEditor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CustomBackendEditor } from "@/features/model-access/CustomBackendEditor";
 import {
@@ -48,7 +40,9 @@ import {
   type CustomBackendDraft,
 } from "@/features/model-access/custom-backend";
 
-export function SettingsProviders() {
+export function SettingsProviders({
+  onDirtyChange,
+}: { onDirtyChange?: (dirty: boolean) => void } = {}) {
   const { t } = useTranslation();
   const { refreshProviders } = useActions();
   const actor = useIdentityActor();
@@ -73,6 +67,16 @@ export function SettingsProviders() {
     Record<string, ModelOfferingEntitlement[]>
   >({});
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [teams, setTeams] = useState<HostTeam[]>([]);
+  const [accessId, setAccessId] = useState<string | null>(null);
+  const [accessDirty, setAccessDirty] = useState(false);
+  useEffect(() => {
+    onDirtyChange?.(accessDirty);
+    return () => onDirtyChange?.(false);
+  }, [accessDirty, onDirtyChange]);
+  const [showConnections, setShowConnections] = useState(false);
+  const [showOfferingForm, setShowOfferingForm] = useState(false);
+  const [savingOffering, setSavingOffering] = useState(false);
   const [zenApiKey, setZenApiKey] = useState("");
   const [goApiKey, setGoApiKey] = useState("");
   const [xaiApiKey, setXaiApiKey] = useState("");
@@ -103,7 +107,10 @@ export function SettingsProviders() {
   const personalByokAllowed =
     !identity ||
     canManageShared ||
-    Boolean(modelPolicy?.host.allowByok && modelPolicy.team.allowByok);
+    Boolean(
+      modelPolicy?.effective?.allowByok ??
+      (modelPolicy?.host.allowByok && modelPolicy.team.allowByok),
+    );
   const activeDevicePending =
     activeDeviceAuth?.kind === "codex"
       ? codex.pending
@@ -130,7 +137,7 @@ export function SettingsProviders() {
         actor?.type === "user" &&
         (actor.role === "owner" || actor.role === "admin")
       ) {
-        const [principals, offeringRows] = await Promise.all([
+        const [principals, offeringRows, nextTeams] = await Promise.all([
           identity.members(),
           Promise.all(
             nextOfferings.map(
@@ -138,7 +145,9 @@ export function SettingsProviders() {
                 [offering.id, await identity.modelOfferingEntitlements(offering.id)] as const,
             ),
           ),
+          identity.teams(),
         ]);
+        setTeams(nextTeams);
         setMembers(principals);
         setOfferingEntitlements(Object.fromEntries(offeringRows));
       }
@@ -189,7 +198,8 @@ export function SettingsProviders() {
   }
 
   async function saveOffering() {
-    if (!identity) return;
+    if (!identity || savingOffering) return;
+    setSavingOffering(true);
     try {
       const input = {
         displayName: offeringName,
@@ -203,31 +213,13 @@ export function SettingsProviders() {
       setOfferingModelId("");
       setOfferingBackendId("");
       setEditingOfferingId(null);
+      setShowOfferingForm(false);
       await reload();
       await refreshProviders();
     } catch (error) {
       notifyUnknownError(error);
-    }
-  }
-
-  async function toggleOfferingAccess(
-    offeringId: string,
-    subjectType: "user" | "team",
-    subjectId: string,
-    enabled: boolean,
-  ) {
-    if (!identity) return;
-    const current = offeringEntitlements[offeringId] ?? [];
-    const without = current.filter(
-      (item) => !(item.subjectType === subjectType && item.subjectId === subjectId),
-    );
-    const next = enabled ? [...without, { offeringId, subjectType, subjectId }] : without;
-    try {
-      const saved = await identity.replaceModelOfferingEntitlements(offeringId, next);
-      setOfferingEntitlements((rows) => ({ ...rows, [offeringId]: saved }));
-      await refreshProviders();
-    } catch (error) {
-      notifyUnknownError(error);
+    } finally {
+      setSavingOffering(false);
     }
   }
 
@@ -315,369 +307,316 @@ export function SettingsProviders() {
 
   return (
     <div className="min-w-0 space-y-5 [overflow-wrap:anywhere]">
-      <div className="space-y-1">
-        <h2 className="font-medium">{t("settings.tabs.providers")}</h2>
-        <p className="text-sm text-muted-foreground">{t("providers.description")}</p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1 border-b pb-3 sm:border-b-0 sm:border-r sm:pr-3">
-          <Database className="size-4 text-muted-foreground" />
-          <p className="text-sm font-medium">{t("providers.backendConcept")}</p>
-          <p className="text-xs leading-5 text-muted-foreground">
-            {t("providers.backendConceptHelp")}
-          </p>
+      {identity && canManageShared && (
+        <div className="flex gap-2" role="group" aria-label={t("settings.tabs.models")}>
+          <Button
+            variant={showConnections ? "ghost" : "secondary"}
+            aria-pressed={!showConnections}
+            onClick={() => setShowConnections(false)}
+          >
+            {t("access.catalog")}
+          </Button>
+          <Button
+            variant={showConnections ? "secondary" : "ghost"}
+            disabled={accessDirty}
+            aria-pressed={showConnections}
+            onClick={() => setShowConnections(true)}
+          >
+            {t("access.connections")}
+          </Button>
         </div>
-        <div className="space-y-1 border-b pb-3 sm:border-b-0 sm:border-r sm:pr-3">
-          <Share2 className="size-4 text-muted-foreground" />
-          <p className="text-sm font-medium">{t("providers.offeringConcept")}</p>
-          <p className="text-xs leading-5 text-muted-foreground">
-            {t("providers.offeringConceptHelp")}
-          </p>
-        </div>
-        <div className="space-y-1">
-          <KeyRound className="size-4 text-muted-foreground" />
-          <p className="text-sm font-medium">{t("providers.credentialsConcept")}</p>
-          <p className="text-xs leading-5 text-muted-foreground">
-            {t("providers.credentialsConceptHelp")}
-          </p>
-        </div>
-      </div>
-      {identity && actor?.type === "user" && (actor.role === "owner" || actor.role === "admin") && (
-        <section className="space-y-3 border-t pt-5">
-          <div>
-            <h3 className="font-medium">{t("providers.offeringsTitle")}</h3>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {t("providers.offeringsHelp")}
-            </p>
-          </div>
-          <div className="divide-y rounded-lg border">
-            {offerings.length === 0 && (
-              <p className="px-3 py-4 text-sm text-muted-foreground">
-                {t("providers.noOfferings")}
-              </p>
-            )}
-            {offerings.map((offering) => {
-              const grants = offeringEntitlements[offering.id] ?? [];
-              const teamEnabled = grants.some(
-                (grant) => grant.subjectType === "team" && grant.subjectId === "host_default",
-              );
-              return (
-                <div key={offering.id} className="space-y-3 px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="break-words text-sm font-medium">{offering.displayName}</p>
-                      <p className="flex min-w-0 flex-wrap items-center gap-1 break-all text-xs text-muted-foreground">
-                        <code>{offering.id}</code>
-                        <ArrowRight className="size-3" />
-                        <span>
-                          {connections.find((item) => item.id === offering.backendId)?.label}
-                        </span>
-                        <span aria-hidden="true">/</span>
-                        <code>{offering.upstreamModelId}</code>
-                      </p>
+      )}
+      {!showConnections &&
+        identity &&
+        actor?.type === "user" &&
+        (actor.role === "owner" || actor.role === "admin") && (
+          <section className="space-y-3 border-t pt-5">
+            <div className="divide-y">
+              {offerings.length === 0 && (
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  {t("providers.noOfferings")}
+                </p>
+              )}
+              {offerings.map((offering) => {
+                const grants = offeringEntitlements[offering.id] ?? [];
+                return (
+                  <div key={offering.id} className="space-y-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-medium">{offering.displayName}</p>
+                        <p className="break-words text-xs text-muted-foreground">
+                          {grants.length
+                            ? grants
+                                .map((grant) =>
+                                  grant.subjectType === "team"
+                                    ? grant.subjectId === "host_default"
+                                      ? t("access.everyone")
+                                      : teams.find((team) => team.id === grant.subjectId)?.name
+                                    : members.find((member) => member.id === grant.subjectId)
+                                        ?.username,
+                                )
+                                .filter(Boolean)
+                                .join(" · ")
+                            : t("access.adminOnly")}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={accessDirty}
+                        aria-label={t("providers.editOffering", { name: offering.displayName })}
+                        onClick={() => {
+                          setShowOfferingForm(true);
+                          setEditingOfferingId(offering.id);
+                          setOfferingName(offering.displayName);
+                          setOfferingSlug(offering.id);
+                          setOfferingBackendId(offering.backendId ?? "");
+                          setOfferingModelId(offering.upstreamModelId ?? "");
+                        }}
+                      >
+                        <Pencil />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={accessDirty}
+                        aria-label={t("providers.removeOffering", { name: offering.displayName })}
+                        onClick={() =>
+                          void identity
+                            .removeModelOffering(offering.id)
+                            .then(reload)
+                            .then(refreshProviders)
+                            .catch(notifyUnknownError)
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
                     <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={t("providers.editOffering", { name: offering.displayName })}
-                      onClick={() => {
-                        setEditingOfferingId(offering.id);
-                        setOfferingName(offering.displayName);
-                        setOfferingSlug(offering.id);
-                        setOfferingBackendId(offering.backendId ?? "");
-                        setOfferingModelId(offering.upstreamModelId ?? "");
-                      }}
-                    >
-                      <Pencil />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={t("providers.removeOffering", { name: offering.displayName })}
+                      variant="outline"
+                      size="sm"
+                      disabled={accessDirty}
+                      aria-expanded={accessId === offering.id}
                       onClick={() =>
-                        void identity
-                          .removeModelOffering(offering.id)
-                          .then(reload)
-                          .then(refreshProviders)
-                          .catch(notifyUnknownError)
+                        setAccessId((current) => (current === offering.id ? null : offering.id))
                       }
                     >
-                      <Trash2 />
+                      {t("access.manage")}
                     </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-2">
-                    <label className="flex items-center gap-2 text-xs">
-                      <Switch
-                        checked={teamEnabled}
-                        onCheckedChange={(checked) =>
-                          void toggleOfferingAccess(offering.id, "team", "host_default", checked)
+                    {accessId === offering.id && (
+                      <ModelAccessEditor
+                        key={offering.id}
+                        grants={grants}
+                        onDirtyChange={setAccessDirty}
+                        teams={teams}
+                        members={members}
+                        save={(next) =>
+                          identity.replaceModelOfferingEntitlements(offering.id, next)
                         }
+                        onSaved={(next) => {
+                          setOfferingEntitlements((rows) => ({
+                            ...rows,
+                            [offering.id]: next.map((grant) => ({
+                              ...grant,
+                              offeringId: offering.id,
+                            })),
+                          }));
+                          void refreshProviders().catch(notifyUnknownError);
+                        }}
                       />
-                      {t("providers.everyone")}
-                    </label>
-                    {!teamEnabled &&
-                      members
-                        .filter((member) => member.role !== "owner")
-                        .map((member) => (
-                          <label key={member.id} className="flex items-center gap-2 text-xs">
-                            <Switch
-                              checked={grants.some(
-                                (grant) =>
-                                  grant.subjectType === "user" && grant.subjectId === member.id,
-                              )}
-                              onCheckedChange={(checked) =>
-                                void toggleOfferingAccess(offering.id, "user", member.id, checked)
-                              }
-                            />
-                            {member.username}
-                          </label>
-                        ))}
+                    )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="grid min-w-0 gap-2 rounded-lg bg-muted/40 p-3 sm:grid-cols-2 [&>*]:min-w-0">
-            <input
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              value={offeringName}
-              onChange={(event) => {
-                setOfferingName(event.target.value);
-                if (!offeringSlug)
-                  setOfferingSlug(
-                    event.target.value
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]+/gu, "-")
-                      .replace(/^-+|-+$/gu, ""),
-                  );
-              }}
-              placeholder={t("providers.offeringNamePlaceholder")}
-            />
-            <input
-              className="rounded-md border bg-background px-3 py-2 font-mono text-sm"
-              value={offeringSlug}
-              onChange={(event) => setOfferingSlug(event.target.value)}
-              disabled={!!editingOfferingId}
-              placeholder={t("providers.offeringSlugPlaceholder")}
-            />
-            <Select value={offeringBackendId} onValueChange={setOfferingBackendId}>
-              <SelectTrigger className="w-full min-w-0">
-                <SelectValue
-                  placeholder={t("providers.chooseBackend")}
-                  data-responsive-allow="text-clip"
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {connections
-                  .filter((connection) => connection.plane !== "user")
-                  .map((connection) => (
-                    <SelectItem key={connection.id} value={connection.id}>
-                      {connection.label}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <input
-              className="rounded-md border bg-background px-3 py-2 font-mono text-sm"
-              value={offeringModelId}
-              onChange={(event) => setOfferingModelId(event.target.value)}
-              placeholder={t("providers.upstreamModelPlaceholder")}
-            />
-            <Button
-              type="button"
-              className="sm:col-span-2 sm:w-fit"
-              disabled={
-                !offeringName.trim() ||
-                !offeringSlug.trim() ||
-                !offeringBackendId ||
-                !offeringModelId.trim()
-              }
-              onClick={() => void saveOffering()}
-            >
-              <Plus />
-              {t(editingOfferingId ? "providers.saveOffering" : "providers.addOffering")}
-            </Button>
-            {editingOfferingId && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="sm:w-fit"
-                onClick={() => {
-                  setEditingOfferingId(null);
-                  setOfferingName("");
-                  setOfferingSlug("");
-                  setOfferingBackendId("");
-                  setOfferingModelId("");
-                }}
-              >
-                {t("common.cancel")}
-              </Button>
-            )}
-          </div>
-        </section>
-      )}
-      <div className="space-y-2">
-        <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-          <div>
-            <div className="text-sm font-medium">{t("providers.zen.title")}</div>
-            <div className="text-xs text-muted-foreground">{t("providers.zen.description")}</div>
-          </div>
-          <input
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={zenApiKey}
-            onChange={(event) => setZenApiKey(event.target.value)}
-            type="password"
-            placeholder={t("providers.zen.apiKeyPlaceholder")}
-          />
-          <div className="flex gap-2">
-            <Button type="button" onClick={() => void enableZen()}>
-              {zenEnabled ? t("providers.zen.saveKey") : t("providers.zen.enable")}
-            </Button>
-            {zenEnabled && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  void host
-                    .removeModelConnection(OPENCODE_ZEN_PRESET.id)
-                    .then(reload)
-                    .then(refreshProviders)
-                    .catch(notifyUnknownError)
-                }
-              >
-                {t("providers.disconnect")}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-          <div>
-            <div className="text-sm font-medium">{t("providers.xaiApi.title")}</div>
-            <div className="text-xs text-muted-foreground">{t("providers.xaiApi.description")}</div>
-          </div>
-          <input
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={xaiApiKey}
-            onChange={(event) => setXaiApiKey(event.target.value)}
-            type="password"
-            placeholder={t("providers.xaiApi.apiKeyPlaceholder")}
-          />
-          <div className="flex gap-2">
-            <Button type="button" disabled={!xaiApiKey.trim()} onClick={() => void enableXaiApi()}>
-              {xaiApiEnabled ? t("providers.xaiApi.saveKey") : t("providers.xaiApi.enable")}
-            </Button>
-            {xaiApiEnabled && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  void host
-                    .removeModelConnection(XAI_API_PRESET.id)
-                    .then(reload)
-                    .then(refreshProviders)
-                    .catch(notifyUnknownError)
-                }
-              >
-                {t("providers.disconnect")}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-          <div>
-            <div className="text-sm font-medium">{t("providers.codex.title")}</div>
-            <div className="text-xs text-muted-foreground">{t("providers.codex.description")}</div>
-          </div>
-          {codex.connected ? (
-            <Button
-              variant="outline"
-              onClick={() =>
-                void host
-                  .disconnectCodex()
-                  .then(() => setCodex({ connected: false, pending: null }))
-                  .then(reload)
-                  .then(refreshProviders)
-                  .catch(notifyUnknownError)
-              }
-            >
-              {t("providers.codex.signOut")}
-            </Button>
-          ) : (
-            <Button
-              onClick={() =>
-                void host
-                  .beginCodexAuth()
-                  .then((status) => {
-                    setCodex(status);
-                    setActiveDeviceAuth({ kind: "codex" });
-                  })
-                  .catch(notifyUnknownError)
-              }
-            >
-              {t("providers.codex.signIn")}
-            </Button>
-          )}
-        </div>
-        <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-          <div>
-            <div className="text-sm font-medium">{t("providers.opencode.title")}</div>
-            <div className="text-xs text-muted-foreground">
-              {t("providers.opencode.description")}
+                );
+              })}
             </div>
-          </div>
-          <input
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={goApiKey}
-            onChange={(event) => setGoApiKey(event.target.value)}
-            type="password"
-            placeholder={t("providers.opencode.apiKeyPlaceholder")}
-          />
-          <div className="flex gap-2">
-            <Button type="button" disabled={!goApiKey.trim()} onClick={() => void enableGo()}>
-              {goEnabled ? t("providers.opencode.saveKey") : t("providers.opencode.enable")}
-            </Button>
-            {goEnabled && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  void host
-                    .removeModelConnection(OPENCODE_GO_PRESET.id)
-                    .then(reload)
-                    .then(refreshProviders)
-                    .catch(notifyUnknownError)
-                }
-              >
-                {t("providers.disconnect")}
+            {!showOfferingForm && (
+              <Button onClick={() => setShowOfferingForm(true)}>
+                <Plus />
+                {t("providers.addOffering")}
               </Button>
             )}
-          </div>
-        </div>
-        {(["xai"] as const).map((provider) => {
-          if (!canManageShared) return null;
-          const status = subscriptions[provider];
-          return (
-            <div key={provider} className="space-y-3 rounded-lg border p-3">
+            {showOfferingForm && (
+              <div className="grid min-w-0 gap-3 border-t pt-4 sm:grid-cols-2 [&>*]:min-w-0">
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  value={offeringName}
+                  onChange={(event) => {
+                    setOfferingName(event.target.value);
+                    if (!offeringSlug)
+                      setOfferingSlug(
+                        event.target.value
+                          .toLowerCase()
+                          .replace(/[^a-z0-9]+/gu, "-")
+                          .replace(/^-+|-+$/gu, ""),
+                      );
+                  }}
+                  aria-label={t("providers.offeringNamePlaceholder")}
+                  placeholder={t("providers.offeringNamePlaceholder")}
+                />
+                <input
+                  className="rounded-md border bg-background px-3 py-2 font-mono text-sm"
+                  value={offeringSlug}
+                  onChange={(event) => setOfferingSlug(event.target.value)}
+                  disabled={!!editingOfferingId}
+                  aria-label={t("providers.offeringSlugPlaceholder")}
+                  placeholder={t("providers.offeringSlugPlaceholder")}
+                />
+                <Select value={offeringBackendId} onValueChange={setOfferingBackendId}>
+                  <SelectTrigger
+                    className="w-full min-w-0"
+                    aria-label={t("providers.chooseBackend")}
+                  >
+                    <SelectValue
+                      placeholder={t("providers.chooseBackend")}
+                      data-responsive-allow="text-clip"
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {connections
+                      .filter((connection) => connection.plane !== "user")
+                      .map((connection) => (
+                        <SelectItem key={connection.id} value={connection.id}>
+                          {connection.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 font-mono text-sm"
+                  value={offeringModelId}
+                  onChange={(event) => setOfferingModelId(event.target.value)}
+                  aria-label={t("providers.upstreamModelPlaceholder")}
+                  placeholder={t("providers.upstreamModelPlaceholder")}
+                />
+                <Button
+                  type="button"
+                  className="sm:col-span-2 sm:w-fit"
+                  disabled={
+                    savingOffering ||
+                    !offeringName.trim() ||
+                    !offeringSlug.trim() ||
+                    !offeringBackendId ||
+                    !offeringModelId.trim()
+                  }
+                  onClick={() => void saveOffering()}
+                >
+                  <Plus />
+                  {t(editingOfferingId ? "providers.saveOffering" : "providers.addOffering")}
+                </Button>
+                {
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="sm:w-fit"
+                    onClick={() => {
+                      setShowOfferingForm(false);
+                      setEditingOfferingId(null);
+                      setOfferingName("");
+                      setOfferingSlug("");
+                      setOfferingBackendId("");
+                      setOfferingModelId("");
+                    }}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                }
+              </div>
+            )}
+          </section>
+        )}
+      {(!identity || !canManageShared || showConnections) && (
+        <>
+          <div className="space-y-2">
+            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
               <div>
-                <div className="text-sm font-medium">{t(`providers.${provider}.title`)}</div>
+                <div className="text-sm font-medium">{t("providers.zen.title")}</div>
                 <div className="text-xs text-muted-foreground">
-                  {t(`providers.${provider}.description`)}
+                  {t("providers.zen.description")}
                 </div>
               </div>
-              {status.connected ? (
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={zenApiKey}
+                onChange={(event) => setZenApiKey(event.target.value)}
+                type="password"
+                placeholder={t("providers.zen.apiKeyPlaceholder")}
+              />
+              <div className="flex gap-2">
+                <Button type="button" onClick={() => void enableZen()}>
+                  {zenEnabled ? t("providers.zen.saveKey") : t("providers.zen.enable")}
+                </Button>
+                {zenEnabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      void host
+                        .removeModelConnection(OPENCODE_ZEN_PRESET.id)
+                        .then(reload)
+                        .then(refreshProviders)
+                        .catch(notifyUnknownError)
+                    }
+                  >
+                    {t("providers.disconnect")}
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">{t("providers.xaiApi.title")}</div>
+                <div className="text-xs text-muted-foreground">
+                  {t("providers.xaiApi.description")}
+                </div>
+              </div>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={xaiApiKey}
+                onChange={(event) => setXaiApiKey(event.target.value)}
+                type="password"
+                placeholder={t("providers.xaiApi.apiKeyPlaceholder")}
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  disabled={!xaiApiKey.trim()}
+                  onClick={() => void enableXaiApi()}
+                >
+                  {xaiApiEnabled ? t("providers.xaiApi.saveKey") : t("providers.xaiApi.enable")}
+                </Button>
+                {xaiApiEnabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      void host
+                        .removeModelConnection(XAI_API_PRESET.id)
+                        .then(reload)
+                        .then(refreshProviders)
+                        .catch(notifyUnknownError)
+                    }
+                  >
+                    {t("providers.disconnect")}
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">{t("providers.codex.title")}</div>
+                <div className="text-xs text-muted-foreground">
+                  {t("providers.codex.description")}
+                </div>
+              </div>
+              {codex.connected ? (
                 <Button
                   variant="outline"
                   onClick={() =>
                     void host
-                      .disconnectSubscription(provider)
-                      .then(() =>
-                        setSubscriptions((current) => ({
-                          ...current,
-                          [provider]: { connected: false, pending: null },
-                        })),
-                      )
+                      .disconnectCodex()
+                      .then(() => setCodex({ connected: false, pending: null }))
                       .then(reload)
                       .then(refreshProviders)
                       .catch(notifyUnknownError)
@@ -689,116 +628,202 @@ export function SettingsProviders() {
                 <Button
                   onClick={() =>
                     void host
-                      .beginSubscriptionAuth(provider)
-                      .then((next) => {
-                        setSubscriptions((current) => ({ ...current, [provider]: next }));
-                        setActiveDeviceAuth({ kind: "subscription", provider });
+                      .beginCodexAuth()
+                      .then((status) => {
+                        setCodex(status);
+                        setActiveDeviceAuth({ kind: "codex" });
                       })
                       .catch(notifyUnknownError)
                   }
                 >
-                  {t(`providers.${provider}.signIn`)}
+                  {t("providers.codex.signIn")}
                 </Button>
               )}
             </div>
-          );
-        })}
-        {customConnections.map((connection) => (
-          <div key={connection.id} className="flex items-center gap-3 rounded-lg border px-3 py-2">
-            <div className="min-w-0 flex-1 overflow-hidden" data-responsive-allow="text-clip">
-              <div
-                className="flex min-w-0 items-center gap-2 overflow-hidden"
-                data-responsive-allow="text-clip"
-              >
-                <div
-                  className="truncate text-sm font-medium"
-                  title={connection.label}
-                  data-responsive-allow="text-clip"
-                >
-                  {connection.label}
+            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">{t("providers.opencode.title")}</div>
+                <div className="text-xs text-muted-foreground">
+                  {t("providers.opencode.description")}
                 </div>
-                {connection.plane && (
-                  <Badge variant="outline">{t(`providers.planes.${connection.plane}`)}</Badge>
+              </div>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={goApiKey}
+                onChange={(event) => setGoApiKey(event.target.value)}
+                type="password"
+                placeholder={t("providers.opencode.apiKeyPlaceholder")}
+              />
+              <div className="flex gap-2">
+                <Button type="button" disabled={!goApiKey.trim()} onClick={() => void enableGo()}>
+                  {goEnabled ? t("providers.opencode.saveKey") : t("providers.opencode.enable")}
+                </Button>
+                {goEnabled && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      void host
+                        .removeModelConnection(OPENCODE_GO_PRESET.id)
+                        .then(reload)
+                        .then(refreshProviders)
+                        .catch(notifyUnknownError)
+                    }
+                  >
+                    {t("providers.disconnect")}
+                  </Button>
                 )}
               </div>
-              <div
-                className="truncate text-xs text-muted-foreground"
-                title={`${connection.baseUrl} · ${connection.modelIds.join(", ")}`}
-                data-responsive-allow="text-clip"
-              >
-                {connection.baseUrl} · {connection.modelIds.join(", ")}
-              </div>
             </div>
-            {(actor?.type !== "user" ||
-              actor.role === "owner" ||
-              actor.role === "admin" ||
-              (connection.plane === "user" && connection.ownerId === actor.id)) && (
-              <div className="flex shrink-0 gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t("providers.editConnection", { name: connection.label })}
-                  onClick={() => {
-                    setPlane(connection.plane ?? "host");
-                    setBackendDraft(editCustomBackendDraft(connection));
-                  }}
-                >
-                  <Pencil />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t("providers.removeConnection", { name: connection.label })}
-                  onClick={() => {
-                    void host
-                      .removeModelConnection(connection.id)
-                      .then(reload)
-                      .then(refreshProviders)
-                      .catch(notifyUnknownError);
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+            {(["xai"] as const).map((provider) => {
+              if (!canManageShared) return null;
+              const status = subscriptions[provider];
+              return (
+                <div key={provider} className="space-y-3 rounded-lg border p-3">
+                  <div>
+                    <div className="text-sm font-medium">{t(`providers.${provider}.title`)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t(`providers.${provider}.description`)}
+                    </div>
+                  </div>
+                  {status.connected ? (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        void host
+                          .disconnectSubscription(provider)
+                          .then(() =>
+                            setSubscriptions((current) => ({
+                              ...current,
+                              [provider]: { connected: false, pending: null },
+                            })),
+                          )
+                          .then(reload)
+                          .then(refreshProviders)
+                          .catch(notifyUnknownError)
+                      }
+                    >
+                      {t("providers.codex.signOut")}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() =>
+                        void host
+                          .beginSubscriptionAuth(provider)
+                          .then((next) => {
+                            setSubscriptions((current) => ({ ...current, [provider]: next }));
+                            setActiveDeviceAuth({ kind: "subscription", provider });
+                          })
+                          .catch(notifyUnknownError)
+                      }
+                    >
+                      {t(`providers.${provider}.signIn`)}
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+            {customConnections.map((connection) => (
+              <div
+                key={connection.id}
+                className="flex items-center gap-3 rounded-lg border px-3 py-2"
+              >
+                <div className="min-w-0 flex-1 overflow-hidden" data-responsive-allow="text-clip">
+                  <div
+                    className="flex min-w-0 items-center gap-2 overflow-hidden"
+                    data-responsive-allow="text-clip"
+                  >
+                    <div
+                      className="truncate text-sm font-medium"
+                      title={connection.label}
+                      data-responsive-allow="text-clip"
+                    >
+                      {connection.label}
+                    </div>
+                    {connection.plane && (
+                      <Badge variant="outline">{t(`providers.planes.${connection.plane}`)}</Badge>
+                    )}
+                  </div>
+                  <div
+                    className="truncate text-xs text-muted-foreground"
+                    title={`${connection.baseUrl} · ${connection.modelIds.join(", ")}`}
+                    data-responsive-allow="text-clip"
+                  >
+                    {connection.baseUrl} · {connection.modelIds.join(", ")}
+                  </div>
+                </div>
+                {(actor?.type !== "user" ||
+                  actor.role === "owner" ||
+                  actor.role === "admin" ||
+                  (connection.plane === "user" && connection.ownerId === actor.id)) && (
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t("providers.editConnection", { name: connection.label })}
+                      onClick={() => {
+                        setPlane(connection.plane ?? "host");
+                        setBackendDraft(editCustomBackendDraft(connection));
+                      }}
+                    >
+                      <Pencil />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t("providers.removeConnection", { name: connection.label })}
+                      onClick={() => {
+                        void host
+                          .removeModelConnection(connection.id)
+                          .then(reload)
+                          .then(refreshProviders)
+                          .catch(notifyUnknownError);
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
+            ))}
+            {customConnections.length === 0 && (
+              <p className="rounded-lg bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
+                {t("providers.noCustomBackends")}
+              </p>
             )}
           </div>
-        ))}
-        {customConnections.length === 0 && (
-          <p className="rounded-lg bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
-            {t("providers.noCustomBackends")}
-          </p>
-        )}
-      </div>
-      {personalByokAllowed && (
-        <div className="space-y-3 border-t pt-5">
-          <div>
-            <h3 className="font-medium">{t("providers.customBackendTitle")}</h3>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {t("providers.customBackendHelp")}
-            </p>
-          </div>
-          {backendDraft ? (
-            <CustomBackendEditor
-              draft={backendDraft}
-              actor={actor}
-              saving={savingBackend}
-              onChange={setBackendDraft}
-              onCancel={() => setBackendDraft(null)}
-              onSave={() => void saveConnection()}
-            />
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setBackendDraft(createCustomBackendDraft(plane))}
-            >
-              <Plus />
-              {t("providers.addBackend")}
-            </Button>
+          {personalByokAllowed && (
+            <div className="space-y-3 border-t pt-5">
+              <div>
+                <h3 className="font-medium">{t("providers.customBackendTitle")}</h3>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t("providers.customBackendHelp")}
+                </p>
+              </div>
+              {backendDraft ? (
+                <CustomBackendEditor
+                  draft={backendDraft}
+                  actor={actor}
+                  saving={savingBackend}
+                  onChange={setBackendDraft}
+                  onCancel={() => setBackendDraft(null)}
+                  onSave={() => void saveConnection()}
+                />
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setBackendDraft(createCustomBackendDraft(plane))}
+                >
+                  <Plus />
+                  {t("providers.addBackend")}
+                </Button>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
       <DeviceAuthDialog
         open={activeDeviceAuth != null}

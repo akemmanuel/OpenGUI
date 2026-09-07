@@ -259,6 +259,48 @@ export function registerIdentityRoutes(app: BackendApp, deps: IdentityRouteDeps)
     return await identityOperation(() => deps.identity!.listSharePrincipals(actor));
   });
 
+  app.get("/api/identity/teams", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    return identityOperation(() => deps.identity!.listTeams(actor));
+  });
+
+  const saveTeam = async (request: Request, id?: string) => {
+    const actor = await deps.getActor(request);
+    if (!actor) return authRequired();
+    const body = await requestBody(request);
+    if (
+      !body ||
+      typeof body.name !== "string" ||
+      !Array.isArray(body.memberIds) ||
+      !body.memberIds.every((value) => typeof value === "string" && value.length > 0) ||
+      typeof body.allowByok !== "boolean" ||
+      typeof body.allowByos !== "boolean"
+    )
+      return invalidRequest("name, memberIds and BYOK/BYOS booleans are required");
+    if (
+      body.modelOfferingIds !== undefined &&
+      (!Array.isArray(body.modelOfferingIds) ||
+        !body.modelOfferingIds.every((id) => typeof id === "string" && id.length > 0))
+    )
+      return invalidRequest("modelOfferingIds must be an array of model ids");
+    const input = {
+      name: body.name,
+      memberIds: body.memberIds as string[],
+      allowByok: body.allowByok,
+      allowByos: body.allowByos,
+      modelOfferingIds: body.modelOfferingIds as string[] | undefined,
+    };
+    return identityOperation(() => deps.identity!.saveTeam(actor, input, id));
+  };
+  app.post("/api/identity/teams", (c) => saveTeam(c.req.raw));
+  app.put("/api/identity/teams/:id", (c) => saveTeam(c.req.raw, c.req.param("id")));
+  app.delete("/api/identity/teams/:id", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    return identityOperation(() => deps.identity!.removeTeam(actor, c.req.param("id")));
+  });
+
   app.get("/api/identity/members", async (c) => {
     const actor = await deps.getActor(c.req.raw);
     if (!actor) return authRequired();

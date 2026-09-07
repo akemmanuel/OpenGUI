@@ -108,6 +108,36 @@ function fakeStream(events: AssistantMessageEvent[]): AssistantMessageEventStrea
 }
 
 describe("PiAiTransport", () => {
+  test("passes catalog limits, thinking mappings and compatibility flags to pi-ai", async () => {
+    const configured: PiAiRoute = {
+      ...route,
+      modelId: "gpt-6-astra",
+      contextWindow: 272000,
+      maxTokens: 128000,
+      thinkingLevelMap: { off: null, minimal: "low", max: "max" },
+      compat: { supportsOpenAIGrammarTools: true },
+    };
+    const stream = vi.fn((model: Model<any>) => {
+      expect(model).toMatchObject({
+        id: "gpt-6-astra",
+        contextWindow: 272000,
+        maxTokens: 128000,
+        thinkingLevelMap: configured.thinkingLevelMap,
+        compat: configured.compat,
+      });
+      return fakeStream([
+        { type: "done", reason: "stop", message: message({ stopReason: "stop" }) },
+      ]);
+    });
+    const transport = new PiAiTransport({
+      resolve: () => configured,
+      streams: { "openai-responses": stream },
+    });
+    for await (const _event of transport.stream(request(), new AbortController().signal)) {
+      /* drain */
+    }
+    expect(stream).toHaveBeenCalledTimes(1);
+  });
   test("maps durable context, images, tool history, and opaque replay without pi state", () => {
     const model = {
       id: route.modelId,

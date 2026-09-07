@@ -45,6 +45,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyTextToClipboard } from "@/lib/browser";
 import { notifySuccess } from "@/lib/notify";
+import { PersonAccessSummary } from "./PersonAccessSummary";
 import { buildInviteLink } from "./invite-url";
 import {
   createIdentityClient,
@@ -120,6 +121,7 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
     [workspace],
   );
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [accessMember, setAccessMember] = useState<TeamMember | null>(null);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [apiKeys, setApiKeys] = useState<HostApiKey[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -267,6 +269,7 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
         [scope]: { ...modelPolicy[scope], [kind]: allowed },
       });
       setModelPolicy(next);
+      notifySuccess(t("access.saved"));
     } catch {
       setError(t("identity.actionError"));
     } finally {
@@ -432,7 +435,7 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
           </div>
           {modelPolicy && (
             <div className="divide-y rounded-lg border">
-              {(["host", "team"] as const).flatMap((scope) =>
+              {(["host"] as const).flatMap((scope) =>
                 (["allowByok", "allowByos"] as const).map((kind) => (
                   <label
                     key={`${scope}:${kind}`}
@@ -448,7 +451,7 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
                     </span>
                     <Switch
                       checked={modelPolicy[scope][kind]}
-                      disabled={busy === `model-policy:${scope}:${kind}`}
+                      disabled={busy !== null}
                       onCheckedChange={(checked) => void updateModelPolicy(scope, kind, checked)}
                     />
                   </label>
@@ -497,6 +500,11 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
                     </p>
                   </div>
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    {view === "people" && (
+                      <Button variant="outline" size="sm" onClick={() => setAccessMember(member)}>
+                        {t("access.inspect")}
+                      </Button>
+                    )}
                     {member.role !== "owner" && (
                       <>
                         {view === "people" && currentRole === "owner" && (
@@ -801,6 +809,13 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
         </SettingsSection>
       )}
 
+      {accessMember && (
+        <PersonAccessSummary
+          member={accessMember}
+          client={client}
+          onClose={() => setAccessMember(null)}
+        />
+      )}
       {grantSubject && (
         <PathGrantEditor
           subject={grantSubject}

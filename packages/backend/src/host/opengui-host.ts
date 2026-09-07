@@ -18,9 +18,7 @@ import {
   type ModelTransport,
   deriveModelCacheKey,
   normalizeModelError,
-  piAiCatalogConnection,
-  piAiFreeModelIds,
-  piAiTextOnlyModelIds,
+  ModelCatalog,
   withoutModelContextImages,
   type ModelProtocol,
   type ProviderResponseMetadata,
@@ -37,11 +35,8 @@ import {
 } from "@opengui/harness";
 import {
   CHATGPT_CODEX_PRESET,
-  type FlatModelCatalog,
   OPENCODE_GO_PRESET,
   OPENCODE_ZEN_PRESET,
-  reasoningEffortsFromCatalogModel,
-  selectCatalogModel,
   SUPERGROK_PRESET,
   XAI_API_PRESET,
   type ProviderConnectionPreset,
@@ -74,7 +69,6 @@ import {
   type SkillSourceDescriptor,
   type SkillSourceResolver,
 } from "./skills-management.ts";
-import { loadModelsDevCatalog, resolveConnectionReasoningEfforts } from "./model-capabilities.ts";
 import {
   createMcpAgentToolSource,
   createMcpBroker,
@@ -251,57 +245,10 @@ function connectionFromPreset(preset: ProviderConnectionPreset): HostModelConnec
   };
 }
 
-function routeForCatalogMetadata(
-  metadata: FlatModelCatalog[string],
-): "openai-chat" | "anthropic-messages" | "responses" | null {
-  const providerPackage = metadata.provider?.npm ?? "";
-  if (providerPackage.includes("google")) return null;
-  if (providerPackage.includes("anthropic")) return "anthropic-messages";
-  if (providerPackage === "@ai-sdk/openai") return "responses";
-  return "openai-chat";
-}
-
-function connectionWithModels(
-  catalog: HostModelConnection,
-  modelIds: readonly string[],
-): HostModelConnection {
-  const included = new Set(modelIds);
-  return {
-    ...catalog,
-    modelIds: [...modelIds],
-    defaultModelId: modelIds.includes(catalog.defaultModelId ?? "")
-      ? catalog.defaultModelId
-      : modelIds[0],
-    modelRoutes: catalog.modelRoutes
-      ? Object.fromEntries(
-          Object.entries(catalog.modelRoutes).filter(([modelId]) => included.has(modelId)),
-        )
-      : undefined,
-    modelCapabilities: catalog.modelCapabilities
-      ? Object.fromEntries(
-          Object.entries(catalog.modelCapabilities).filter(([modelId]) => included.has(modelId)),
-        )
-      : undefined,
-  };
-}
-
-const CODEX_CONNECTION = piAiCatalogConnection("openai-codex", CHATGPT_CODEX_PRESET);
-const OPENCODE_GO_CATALOG = piAiCatalogConnection("opencode-go", OPENCODE_GO_PRESET);
-const OPENCODE_ZEN_CATALOG = piAiCatalogConnection("opencode", OPENCODE_ZEN_PRESET);
+const CODEX_CONNECTION = CHATGPT_CODEX_PRESET;
 const XAI_CONNECTION = connectionFromPreset(SUPERGROK_PRESET);
 const XAI_API_CONNECTION = connectionFromPreset(XAI_API_PRESET);
 const OPENCODE_ZEN_CONNECTION_ID = OPENCODE_ZEN_PRESET.id;
-const BUILT_IN_CONNECTION_IDS = new Set<string>([
-  CHATGPT_CODEX_PRESET.id,
-  SUPERGROK_PRESET.id,
-  XAI_API_PRESET.id,
-  OPENCODE_GO_PRESET.id,
-]);
-const TEXT_ONLY_MODELS = new Set([
-  ...piAiTextOnlyModelIds("openai-codex").map((modelId) => `${CHATGPT_CODEX_PRESET.id}/${modelId}`),
-  ...piAiTextOnlyModelIds("opencode").map((modelId) => `${OPENCODE_ZEN_CONNECTION_ID}/${modelId}`),
-  ...piAiTextOnlyModelIds("opencode-go").map((modelId) => `${OPENCODE_GO_PRESET.id}/${modelId}`),
-]);
 const XAI_OAUTH = {
   clientId: "b1a00492-073a-47ea-816f-4c329264a828",
   deviceEndpoint: "https://auth.x.ai/oauth2/device/code",
@@ -422,8 +369,7 @@ export class OpenGuiHost {
     | undefined;
   #starting: Promise<void> | null = null;
   #closing: Promise<void> | null = null;
-  #modelsDevCatalog: Promise<FlatModelCatalog | null> | null = null;
-  readonly #textOnlyModels = new Set(TEXT_ONLY_MODELS);
+  readonly #catalog: ModelCatalog;
 
   constructor(
     dataDirectory: string,
@@ -454,6 +400,7 @@ export class OpenGuiHost {
     this.#secretsPath = join(dataDirectory, SECRETS_FILENAME);
     this.#statePath = join(dataDirectory, HOST_STATE_FILENAME);
     this.#fetch = options.fetchImpl ?? fetch;
+    this.#catalog = new ModelCatalog(join(dataDirectory, "model-catalog"), this.#fetch);
     this.#usePiAiTransport = options.usePiAiTransport ?? true;
     this.#usePiAiCodexTransport = options.usePiAiCodexTransport ?? true;
     this.#codexPiTransport = options.codexPiTransport ?? "auto";
@@ -468,10 +415,9 @@ export class OpenGuiHost {
       resolve: async (request) => {
         const selection = request.context.findLast((item) => item.type === "user_message")?.model;
         if (!selection) throw new Error("Model request has no selected model");
-        const connection =
-          selection.connectionId === CODEX_CONNECTION.id
-            ? CODEX_CONNECTION
-            : this.#settings.modelConnections.find((item) => item.id === selection.connectionId);
+        const connection = this.listModelConnections().find(
+          (item) => item.id === selection.connectionId,
+        );
         if (!connection) throw new Error(`Unknown model connection: ${selection.connectionId}`);
         if (!connection.modelIds.includes(selection.modelId)) {
           throw new Error(`Unknown model ${selection.modelId} for ${connection.id}`);
@@ -496,6 +442,9 @@ export class OpenGuiHost {
             reasoning: capabilities?.reasoning,
             reasoningEfforts: capabilities?.reasoningEfforts,
             contextWindow: capabilities?.context,
+            maxTokens: capabilities?.maxTokens,
+            thinkingLevelMap: capabilities?.thinkingLevelMap,
+            compat: capabilities?.compat,
             transport: this.#codexPiTransport,
             websocketConnectTimeoutMs: 15_000,
           };
@@ -517,6 +466,9 @@ export class OpenGuiHost {
           reasoning: capabilities?.reasoning,
           reasoningEfforts: capabilities?.reasoningEfforts,
           contextWindow: capabilities?.context,
+          maxTokens: capabilities?.maxTokens,
+          thinkingLevelMap: capabilities?.thinkingLevelMap,
+          compat: capabilities?.compat,
         };
       },
     });
@@ -602,8 +554,7 @@ export class OpenGuiHost {
       // write-lazy so start() does not create product state until first use.
       if (durableStateAlreadyExists) await this.#saveSettings();
     }
-    await this.#refreshOpenCodeGoCatalog();
-    await this.#refreshOpenCodeZenCatalog();
+    await this.refreshModelCatalogs();
     this.#refreshTransport();
     await this.#refreshMcpBroker();
     const harness = createOpenGuiHarness({
@@ -705,27 +656,9 @@ export class OpenGuiHost {
     );
     if (!connection) throw new Error(`Unknown model connection: ${routedSelection.connectionId}`);
     const configured = connection.modelCapabilities?.[routedSelection.modelId];
-    const hasExplicitEfforts = Boolean(configured?.reasoningEfforts?.length);
-    if (
-      BUILT_IN_CONNECTION_IDS.has(connection.id) &&
-      !hasExplicitEfforts &&
-      configured?.reasoning !== false
-    )
-      return;
-    const catalog = hasExplicitEfforts
-      ? null
-      : await (this.#modelsDevCatalog ??= loadModelsDevCatalog(this.#fetch));
-    const catalogModel = selectCatalogModel(catalog, routedSelection.modelId, {
-      baseUrl: connection.baseUrl,
-    });
-    // Catalog inference is advisory. If it is unavailable or the model is unknown,
-    // preserve existing custom/private model behavior instead of rejecting valid calls.
-    if (!hasExplicitEfforts && configured?.reasoning !== false && !catalogModel) return;
-    const supported = resolveConnectionReasoningEfforts(
-      connection,
-      routedSelection.modelId,
-      catalog,
-    );
+    // Custom models without explicit metadata remain configurable.
+    if (!configured || (configured.reasoning && !configured.reasoningEfforts?.length)) return;
+    const supported = configured.reasoning ? (configured.reasoningEfforts ?? []) : [];
     if (!supported.includes(reasoning as (typeof supported)[number])) {
       throw new Error(
         `Model ${routedSelection.modelId} does not support reasoning effort ${reasoning}`,
@@ -766,13 +699,14 @@ export class OpenGuiHost {
     if (selected?.type === "user_message" && routedSelection) {
       await this.#assertReasoningSupported(routedSelection, selected.reasoning, request.actor);
     }
-    if (this.#textOnlyModels.has(`${connectionId}/${modelId}`)) {
+    const connection = this.listModelConnections().find((item) => item.id === connectionId);
+    const input = connection?.modelCapabilities?.[modelId]?.input;
+    if (input && !input.includes("image")) {
       effectiveRequest = {
         ...effectiveRequest,
         context: withoutModelContextImages(effectiveRequest.context),
       };
     }
-    const connection = this.#settings.modelConnections.find((item) => item.id === connectionId);
     const protocol: ModelProtocol =
       connectionId === CODEX_CONNECTION.id ||
       connectionId === XAI_CONNECTION.id ||
@@ -1120,7 +1054,7 @@ export class OpenGuiHost {
 
   #refreshTransport() {
     this.#transport.setConnections(
-      this.#settings.modelConnections.map((connection) => ({
+      this.listModelConnections().map((connection) => ({
         ...connection,
         apiKey: this.#apiKeys[connection.id],
       })),
@@ -1167,142 +1101,28 @@ export class OpenGuiHost {
       .catch(() => undefined);
   }
 
-  async #openCodeGoConnection(apiKey?: string): Promise<HostModelConnection> {
-    let modelIds = [...OPENCODE_GO_CATALOG.modelIds];
-    let dynamicMetadata = new Map<string, FlatModelCatalog[string]>();
-    try {
-      const response = await this.#fetch(`${OPENCODE_GO_PRESET.baseUrl}/models`, {
-        headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
-      });
-      if (!response.ok) throw new Error(`OpenCode Go model catalog returned ${response.status}`);
-      const body = (await response.json()) as { data?: Array<{ id?: unknown }> };
-      const availableIds = (body.data ?? []).flatMap((model) =>
-        typeof model.id === "string" ? [model.id] : [],
-      );
-      const metadataCatalog = await (this.#modelsDevCatalog ??= loadModelsDevCatalog(this.#fetch));
-      const canonical = new Set(OPENCODE_GO_CATALOG.modelIds);
-      dynamicMetadata = new Map(
-        availableIds.flatMap((modelId) => {
-          if (canonical.has(modelId)) return [];
-          const metadata = metadataCatalog?.[`opencode-go/${modelId}`];
-          return metadata && metadata.tool_call !== false && routeForCatalogMetadata(metadata)
-            ? [[modelId, metadata] as const]
-            : [];
-        }),
-      );
-      const discovered = availableIds.filter(
-        (modelId) => canonical.has(modelId) || dynamicMetadata.has(modelId),
-      );
-      if (discovered.length > 0) modelIds = discovered;
-    } catch {
-      // pi-ai's generated catalog is the verified offline fallback.
-    }
-    const connection = connectionWithModels(OPENCODE_GO_CATALOG, modelIds);
-    connection.modelRoutes ??= {};
-    connection.modelCapabilities ??= {};
-    for (const [modelId, metadata] of dynamicMetadata) {
-      connection.modelRoutes[modelId] = routeForCatalogMetadata(metadata)!;
-      connection.modelCapabilities[modelId] = {
-        displayName: metadata.name || modelId,
-        context: metadata.limit?.context,
-        reasoning: metadata.reasoning === true,
-        reasoningEfforts: metadata.reasoning
-          ? (reasoningEffortsFromCatalogModel(metadata) ?? ["none", "high"])
-          : undefined,
-      };
-      if (metadata.attachment !== true)
-        this.#textOnlyModels.add(`${OPENCODE_GO_PRESET.id}/${modelId}`);
-      else this.#textOnlyModels.delete(`${OPENCODE_GO_PRESET.id}/${modelId}`);
-    }
-    return connection;
+  async refreshModelCatalogs(force = false) {
+    await Promise.all([
+      ...(this.#codexTokens ? [this.#catalog.refresh("openai-codex", force)] : []),
+      ...this.#settings.modelConnections.flatMap((connection) =>
+        connection.id === OPENCODE_GO_PRESET.id
+          ? [this.#catalog.refresh("opencode-go", force)]
+          : connection.id === OPENCODE_ZEN_PRESET.id
+            ? [this.#catalog.refresh("opencode", force)]
+            : [],
+      ),
+    ]);
+    this.#refreshTransport();
   }
 
-  async #refreshOpenCodeGoCatalog() {
-    const index = this.#settings.modelConnections.findIndex(
-      (connection) => connection.id === OPENCODE_GO_PRESET.id,
-    );
-    if (index < 0) return;
-    const connection = await this.#openCodeGoConnection(this.#apiKeys[OPENCODE_GO_PRESET.id]);
-    this.#settings.modelConnections[index] = connection;
-    await this.#saveSettings();
+  async #openCodeGoConnection(_apiKey?: string): Promise<HostModelConnection> {
+    await this.#catalog.refresh("opencode-go");
+    return this.#catalog.connection("opencode-go", OPENCODE_GO_PRESET);
   }
 
   async #openCodeZenConnection(apiKey?: string): Promise<HostModelConnection> {
-    const response = await this.#fetch(`${OPENCODE_ZEN_PRESET.baseUrl}/models`, {
-      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
-    });
-    if (!response.ok) throw new Error(`OpenCode Zen model catalog returned ${response.status}`);
-    const body = (await response.json()) as { data?: Array<{ id?: unknown }> };
-    const availableIds = [
-      ...new Set(
-        (body.data ?? []).flatMap((model) =>
-          typeof model.id === "string" && model.id.trim() ? [model.id.trim()] : [],
-        ),
-      ),
-    ];
-    if (availableIds.length === 0) throw new Error("OpenCode Zen returned an empty model catalog");
-
-    const metadataCatalog = await (this.#modelsDevCatalog ??= loadModelsDevCatalog(this.#fetch));
-    const canonical = new Set(OPENCODE_ZEN_CATALOG.modelIds);
-    const freeCanonical = new Set(piAiFreeModelIds("opencode"));
-    const dynamicMetadata = new Map(
-      availableIds.flatMap((modelId) => {
-        const metadata = metadataCatalog?.[`opencode/${modelId}`];
-        return metadata && metadata.tool_call !== false && routeForCatalogMetadata(metadata)
-          ? [[modelId, metadata] as const]
-          : [];
-      }),
-    );
-    const modelIds = availableIds.filter((modelId) => {
-      const metadata = dynamicMetadata.get(modelId);
-      if (metadata?.status === "deprecated") return false;
-      if (apiKey) return canonical.has(modelId) || Boolean(metadata);
-      if (freeCanonical.has(modelId)) return true;
-      const cost = metadata?.cost;
-      return cost?.input === 0 && cost.output === 0;
-    });
-    if (modelIds.length === 0)
-      throw new Error(
-        apiKey
-          ? "OpenCode Zen did not report any supported models"
-          : "OpenCode Zen did not report any currently available free models",
-      );
-
-    const connection = connectionWithModels(OPENCODE_ZEN_CATALOG, modelIds);
-    connection.modelRoutes ??= {};
-    connection.modelCapabilities ??= {};
-    for (const modelId of modelIds) {
-      if (canonical.has(modelId)) continue;
-      const metadata = dynamicMetadata.get(modelId)!;
-      connection.modelRoutes[modelId] = routeForCatalogMetadata(metadata)!;
-      connection.modelCapabilities[modelId] = {
-        displayName: metadata.name || modelId,
-        context: metadata.limit?.context,
-        reasoning: metadata.reasoning === true,
-        reasoningEfforts: metadata.reasoning
-          ? (reasoningEffortsFromCatalogModel(metadata) ?? ["none", "high"])
-          : undefined,
-      };
-      if (metadata.attachment !== true)
-        this.#textOnlyModels.add(`${OPENCODE_ZEN_CONNECTION_ID}/${modelId}`);
-      else this.#textOnlyModels.delete(`${OPENCODE_ZEN_CONNECTION_ID}/${modelId}`);
-    }
-    return connection;
-  }
-
-  async #refreshOpenCodeZenCatalog() {
-    const index = this.#settings.modelConnections.findIndex(
-      (connection) => connection.id === OPENCODE_ZEN_PRESET.id,
-    );
-    if (index < 0) return;
-    try {
-      this.#settings.modelConnections[index] = await this.#openCodeZenConnection(
-        this.#apiKeys[OPENCODE_ZEN_PRESET.id],
-      );
-      await this.#saveSettings();
-    } catch {
-      // Keep the last successfully discovered catalog when Zen is temporarily unavailable.
-    }
+    await this.#catalog.refresh("opencode");
+    return this.#catalog.connection("opencode", OPENCODE_ZEN_PRESET, !apiKey);
   }
 
   health(): HostHealth {
@@ -1516,14 +1336,25 @@ export class OpenGuiHost {
 
   listModelConnections() {
     return [
-      ...(this.#codexTokens ? [CODEX_CONNECTION] : []),
+      ...(this.#codexTokens
+        ? [this.#catalog.connection("openai-codex", CHATGPT_CODEX_PRESET)]
+        : []),
       ...(this.#subscriptionTokens.xai ? [XAI_CONNECTION] : []),
       ...this.#settings.modelConnections
         .filter(
           (connection) =>
             connection.id !== XAI_API_PRESET.id || Boolean(this.#apiKeys[XAI_API_PRESET.id]),
         )
-        .map(({ apiKey: _apiKey, ...connection }) => connection),
+        .map(({ apiKey: _apiKey, ...connection }) => {
+          if (connection.id === OPENCODE_GO_PRESET.id)
+            return this.#catalog.connection("opencode-go", {
+              ...OPENCODE_GO_PRESET,
+              defaultModelId: connection.defaultModelId,
+            });
+          if (connection.id === OPENCODE_ZEN_PRESET.id)
+            return this.#catalog.connection("opencode", connection, !this.#apiKeys[connection.id]);
+          return connection;
+        }),
     ];
   }
 
@@ -1555,6 +1386,7 @@ export class OpenGuiHost {
       this.#codexTokens = result;
       this.#deviceAuth = null;
       await this.#saveSecrets();
+      await this.refreshModelCatalogs();
     }
     return this.codexAuthStatus();
   }

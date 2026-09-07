@@ -1,4 +1,58 @@
 {
+  "access": {
+    "inspect": "View access",
+    "personTitle": "Access for {{name}}",
+    "direct": "Direct access",
+    "noAccess": "No access",
+    "personHelp": "Change direct model access in Models. Change team membership and shared access in Teams.",
+    "search": "Search people and teams",
+    "searchPeople": "Search people",
+    "everyone": "Everyone",
+    "adminAccess": "Host administrators always have access",
+    "inherited": "Allowed through {{teams}}",
+    "directHelp": "People switches grant direct access. Turning one off does not remove access through a team.",
+    "saveError": "Access was not saved. Your changes are still here. Try again.",
+    "saving": "Saving…",
+    "save": "Save changes",
+    "unsaved": "Unsaved changes",
+    "saved": "Changes saved",
+    "manage": "Manage access",
+    "catalog": "Models",
+    "connections": "Provider connections",
+    "adminOnly": "Administrators only",
+    "discardTitle": "Discard unsaved changes?",
+    "discardHelp": "Your changes have not been saved.",
+    "keepEditing": "Keep editing",
+    "discard": "Discard changes"
+  },
+  "teams": {
+    "search": "Search teams",
+    "create": "Create team",
+    "edit": "Edit team",
+    "name": "Team name",
+    "delete": "Delete team",
+    "deleteHelp": "This removes the team and its model and session grants. People and their private sessions are kept.",
+    "summary": "{{members}} · {{models}}",
+    "noResults": "No teams found.",
+    "everyoneHelp": "Everyone includes all current and future Host members.",
+    "noModels": "Add a shared model in Models first, then grant it to this team.",
+    "saveError": "Team not saved. Check that its name is unique and try again. Your changes are still here.",
+    "allowByok": "Personal API keys",
+    "allowByos": "Personal subscriptions",
+    "allowByokHelp": "Members can connect models using their own API keys.",
+    "allowByosHelp": "Members can connect a supported provider subscription.",
+    "blocked": "Blocked by System or Everyone settings",
+    "policyHelp": "A restriction in System, Everyone, or any team the person belongs to takes priority. Personal credentials stay private.",
+    "tabs": {
+      "members": "Members",
+      "models": "Models",
+      "personal": "Personal connections"
+    },
+    "peopleCount_one": "{{count}} person",
+    "peopleCount_other": "{{count}} people",
+    "modelCount_one": "{{count}} model",
+    "modelCount_other": "{{count}} models"
+  },
   "mobile": {
     "backAgainToExit": "Press back again to exit"
   },
@@ -70,26 +124,28 @@
     "tabs": {
       "general": "General",
       "providers": "Models & providers",
-      "models": "Models & providers",
+      "models": "Models",
       "integrations": "Integrations",
-      "users": "Users & access",
+      "users": "People",
       "paths": "Paths & Shell",
-      "host": "Host & admin",
+      "host": "System",
       "instructions": "Instructions",
       "skills": "Skills",
       "team": "Team",
       "plugins": "Plugins",
-      "tools": "Tools"
+      "tools": "Tools",
+      "teams": "Teams"
     },
     "sectionDescriptions": {
       "general": "Appearance, language, notifications, and everyday model preferences.",
-      "models": "Connect provider backends, publish model offerings, and control who can use them.",
+      "models": "Choose models and who can use them.",
       "integrations": "Connect trusted MCP servers that provide additional tools to the agent.",
-      "users": "Manage members, invitations, roles, and account access.",
+      "users": "Invite people and manage their Host roles.",
       "paths": "Control OpenGUI path access and understand the separate authority of Shell commands.",
-      "host": "Registration policy, personal credential policy, and automation keys.",
+      "host": "Host-wide restrictions, registration, and automation keys.",
       "instructions": "Host-wide custom instructions added to every Session's system prompt.",
-      "skills": "Reusable instructions available to the agent."
+      "skills": "Reusable instructions available to the agent.",
+      "teams": "Group people and manage their access together."
     },
     "paths": {
       "boundaryTitle": "Path grants are not a sandbox",
@@ -263,7 +319,6 @@
     "uploadingFiles": "Uploading files…",
     "add": "Add",
     "addFile": "Add file",
-
     "mcps": "MCPs",
     "newWorktree": "New worktree",
     "currentRootWorktree": "Current branch of the root worktree.",
@@ -498,12 +553,12 @@
     "invitePathsHelp": "Only folders you can access are shown. The invite cannot grant more access than you have.",
     "modelPolicy": {
       "allowByok": "Allow personal API keys",
-      "allowByokHelp": "BYOK means “bring your own key.” A person supplies an API key for a private model connection. The Host stores it but does not reveal it to administrators. Host denial overrides Team settings.",
+      "allowByokHelp": "Allow people to connect models with their own API keys.",
       "allowByos": "Allow personal subscriptions",
-      "allowByosHelp": "BYOS means “bring your own subscription.” A person signs in to an eligible provider subscription. Tokens stay in Host custody and are not shared with collaborators. Host denial overrides Team settings.",
+      "allowByosHelp": "Allow people to connect supported provider subscriptions.",
       "host": {
-        "allowByok": "Host: allow BYOK",
-        "allowByos": "Host: allow BYOS"
+        "allowByok": "Allow personal API keys",
+        "allowByos": "Allow personal subscriptions"
       },
       "team": {
         "allowByok": "Team: allow BYOK",
@@ -568,7 +623,6 @@
     "noManagement": "Current backend has no MCP management.",
     "noneConfigured": "No MCP servers configured.",
     "connected": "Connected",
-    "disabled": "Disabled",
     "failed": "Failed",
     "needsAuth": "Needs auth",
     "needsRegistration": "Needs registration",
@@ -754,8 +808,8 @@
     "offeringSlugPlaceholder": "slug, e.g. company-model",
     "chooseBackend": "Choose backend",
     "upstreamModelPlaceholder": "Upstream model ID, e.g. gpt-4.1",
-    "addOffering": "Add offering",
-    "saveOffering": "Save offering",
+    "addOffering": "Add model",
+    "saveOffering": "Save model",
     "editOffering": "Edit {{name}}",
     "removeOffering": "Remove {{name}}",
     "everyone": "Everyone on this Host",
@@ -801,7 +855,11 @@
     "searchLabel": "Search installed Skills",
     "searchPlaceholder": "Search by name, description, source, or revision…",
     "scopeFilterLabel": "Filter by scope",
-    "scope": { "all": "All scopes", "host": "Host", "project": "Project" },
+    "scope": {
+      "all": "All scopes",
+      "host": "Host",
+      "project": "Project"
+    },
     "refresh": "Refresh",
     "loadFailed": "The Skills library could not be loaded",
     "retry": "Try again",

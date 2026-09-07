@@ -56,7 +56,7 @@ import {
 } from "@/hooks/agent-session-utils";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
-import { connectionsToModelProviders } from "@/lib/models-dev";
+import { connectionsToModelProviders } from "@/lib/model-providers";
 import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { getDesktopShellClient } from "@/runtime/clients";
 import {
@@ -345,7 +345,7 @@ function HostProviderBody({
       offeringConnection.length > 0
         ? [...offeringConnection, ...personalConnections]
         : listedConnections;
-    const nextProviders = await connectionsToModelProviders(connections);
+    const nextProviders = connectionsToModelProviders(connections);
     setProviders(nextProviders);
     const defaultModelId = connections[0]?.defaultModelId ?? connections[0]?.modelIds[0];
     setSelectedModel((current) => {

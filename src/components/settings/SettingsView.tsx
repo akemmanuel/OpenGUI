@@ -9,11 +9,22 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsProviders } from "@/components/SettingsProviders";
 import { GeneralSettings, PathsAndShellSettings } from "@/components/settings/GeneralSettings";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { NamedTeamsSettings } from "@/features/identity/NamedTeamsSettings";
 import { TeamSettings } from "@/features/identity/TeamSettings";
 import { SkillsSettings } from "@/features/skills/SkillsSettings";
 import { InstructionsSettings } from "@/features/instructions/InstructionsSettings";
@@ -28,6 +39,26 @@ import {
 export function SettingsView({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("general");
+  const [dirty, setDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
+  function navigate(tab: string) {
+    if (tab === activeTab) return;
+    if (dirty) {
+      setPendingTab(tab);
+      return;
+    }
+    if (tab === "back") onBack();
+    else setActiveTab(tab);
+  }
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const workspace = getIdentityWorkspace();
   const actor = useIdentityActor();
   const localBypass = !!workspace && identityWorkspaceIsLocalBypass(workspace);
@@ -42,6 +73,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
     { id: "models", icon: Bot, visible: showOwnerTabs },
     { id: "integrations", icon: Plug, visible: showMcp },
     { id: "users", icon: Users, visible: showTeam },
+    { id: "teams", icon: Users, visible: showTeam },
     { id: "paths", icon: FolderKey, visible: showTeam || localBypass },
     { id: "host", icon: Settings2, visible: showHostAdmin },
     { id: "instructions", icon: ScrollText, visible: true },
@@ -50,9 +82,41 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="h-full overflow-y-auto">
+      <AlertDialog
+        open={pendingTab !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingTab(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("access.discardTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("access.discardHelp")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("access.keepEditing")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setDirty(false);
+                if (pendingTab === "back") onBack();
+                else if (pendingTab) setActiveTab(pendingTab);
+                setPendingTab(null);
+              }}
+            >
+              {t("access.discard")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-4 sm:px-6 sm:py-6">
         <div className="space-y-3">
-          <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={onBack}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-fit"
+            onClick={() => navigate("back")}
+          >
             <ArrowLeft className="size-4" />
             {t("common.back")}
           </Button>
@@ -70,7 +134,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
               id="settings-section"
               className="h-11 w-full rounded-md border bg-background px-3 text-sm md:hidden"
               value={activeTab}
-              onChange={(event) => setActiveTab(event.target.value)}
+              onChange={(event) => navigate(event.target.value)}
             >
               {sections.map((section) => (
                 <option key={section.id} value={section.id}>
@@ -85,7 +149,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
                   type="button"
                   aria-current={activeTab === section.id ? "page" : undefined}
                   className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeTab === section.id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
-                  onClick={() => setActiveTab(section.id)}
+                  onClick={() => navigate(section.id)}
                 >
                   <section.icon className="size-4" />
                   {t(`settings.tabs.${section.id}`)}
@@ -101,9 +165,10 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
               </p>
             </div>
             {activeTab === "general" && <GeneralSettings />}
-            {activeTab === "models" && <SettingsProviders />}
+            {activeTab === "models" && <SettingsProviders onDirtyChange={setDirty} />}
             {activeTab === "integrations" && <McpSettings />}
             {activeTab === "users" && <TeamSettings view="people" />}
+            {activeTab === "teams" && <NamedTeamsSettings onDirtyChange={setDirty} />}
             {activeTab === "paths" && (
               <div className="space-y-6">
                 <PathsAndShellSettings />

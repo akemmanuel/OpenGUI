@@ -8,7 +8,9 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock("@/components/SettingsProviders", () => ({
-  SettingsProviders: () => <p>models-panel</p>,
+  SettingsProviders: ({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) => (
+    <button onClick={() => onDirtyChange(true)}>models-panel</button>
+  ),
 }));
 vi.mock("@/components/settings/GeneralSettings", () => ({
   GeneralSettings: () => <p>general-panel</p>,
@@ -63,6 +65,19 @@ describe("SettingsView responsive navigation", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "settings.tabs.instructions" }));
     expect(screen.getByText("instructions-panel")).toBeTruthy();
+  });
+
+  test("asks before discarding access changes when switching settings", async () => {
+    render(<SettingsView onBack={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.models" }));
+    await userEvent.click(screen.getByRole("button", { name: "models-panel" }));
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.host" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "access.keepEditing" }));
+    expect(screen.getByText("models-panel")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.host" }));
+    await userEvent.click(screen.getByRole("button", { name: "access.discard" }));
+    expect(screen.getByText("team-host")).toBeTruthy();
   });
 
   test("keeps the side navigation from the medium breakpoint upward", () => {

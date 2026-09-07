@@ -18,7 +18,10 @@ import type { Actor, HostRole } from "./types.ts";
 import type { DurableActor } from "@opengui/harness";
 import { IdentityAuditLog, identityAuditEventTypes } from "./audit.ts";
 
-const TEAM_ID = "host_default";
+import { IdentityError } from "./errors.ts";
+import { TeamDirectory, EVERYONE_TEAM_ID, type TeamInput } from "./teams.ts";
+export { IdentityError } from "./errors.ts";
+const TEAM_ID = EVERYONE_TEAM_ID;
 const API_KEY_PREFIX = "ogui_";
 
 type MembershipRow = {
@@ -79,17 +82,6 @@ type InviteRow = {
   accepted_at: number | null;
   revoked_at: number | null;
 };
-
-export class IdentityError extends Error {
-  readonly code: string;
-  readonly status: number;
-
-  constructor(code: string, status: number, message: string) {
-    super(message);
-    this.code = code;
-    this.status = status;
-  }
-}
 
 export type IdentityDatabase = DatabaseSync;
 
@@ -347,6 +339,7 @@ export class IdentityService {
       INSERT OR IGNORE INTO host_identity_config (key, value) VALUES ('allow_byok', '1');
       INSERT OR IGNORE INTO host_identity_config (key, value) VALUES ('allow_byos', '1');
     `);
+    this.teams.initialize();
     this.ensureMembershipCanInviteColumn();
     this.audit.initialize();
     if (this.pathGrantsMode === "enforced") await this.getAllowedRoots();
@@ -1106,7 +1099,32 @@ export class IdentityService {
        ORDER BY name`,
       )
       .all();
-    return { users, teams: [{ id: TEAM_ID, name: "Team" }] };
+    return { users, teams: this.teams.principals() };
+  }
+
+  private get teams() {
+    return new TeamDirectory(this.database);
+  }
+
+  async listTeams(actor: Actor) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    return this.teams.list();
+  }
+
+  async saveTeam(actor: Actor, input: TeamInput, id?: string) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    if (id && !this.teams.exists(id))
+      throw new IdentityError("TEAM_NOT_FOUND", 404, "Team not found");
+    return this.teams.save(input, actor.id, id);
+  }
+
+  async removeTeam(actor: Actor, id: string) {
+    await this.ready;
+    this.requireModelAdmin(actor);
+    this.teams.remove(id);
+    return { removed: true };
   }
 
   async setMemberCanInvite(actor: Actor, userId: string, canInvite: boolean) {
@@ -1365,7 +1383,7 @@ export class IdentityService {
   ) {
     await this.ready;
     await this.authorizeSessionAction(sessionId, actor, "admin");
-    if (input.granteeType === "team" && input.granteeId !== TEAM_ID) {
+    if (input.granteeType === "team" && !this.teams.exists(input.granteeId)) {
       throw new IdentityError("INVALID_GRANTEE", 400, "Unknown Team");
     }
     if (input.granteeType === "user") {
@@ -1510,14 +1528,18 @@ export class IdentityService {
            WHERE session_id = ? AND grantee_type = 'user' AND grantee_id = ?`,
         )
         .get(sessionId, actor.id) as { role: "view" | "run" | "admin" } | undefined;
-      if (userShare) return userShare.role;
+
       const teamShare = this.database
         .prepare(
           `SELECT role FROM host_session_share
-           WHERE session_id = ? AND grantee_type = 'team' AND grantee_id = ?`,
+           WHERE session_id = ? AND grantee_type = 'team' AND grantee_id IN (SELECT value FROM json_each(?))
+           ORDER BY CASE role WHEN 'admin' THEN 3 WHEN 'run' THEN 2 ELSE 1 END DESC LIMIT 1`,
         )
-        .get(sessionId, TEAM_ID) as { role: "view" | "run" | "admin" } | undefined;
-      if (teamShare) return teamShare.role;
+        .get(sessionId, JSON.stringify(this.teams.ids(actor))) as
+        | { role: "view" | "run" | "admin" }
+        | undefined;
+      const roles = [userShare?.role, teamShare?.role];
+      for (const role of ["admin", "run", "view"] as const) if (roles.includes(role)) return role;
     }
     return null;
   }
@@ -1709,13 +1731,17 @@ export class IdentityService {
              SELECT 1 FROM host_model_offering_entitlement e
              WHERE e.offering_id = o.id
                AND ((? = 'user' AND e.subject_type = 'user' AND e.subject_id = ?)
-                 OR (e.subject_type = 'team' AND e.subject_id = ?))
+                 OR (e.subject_type = 'team' AND e.subject_id IN (SELECT value FROM json_each(?))))
            )
          )`,
       )
-      .get(offeringId, privilegedUser ? 1 : 0, actor.type, actor.id, TEAM_ID) as
-      | { connectionId: string; modelId: string }
-      | undefined;
+      .get(
+        offeringId,
+        privilegedUser ? 1 : 0,
+        actor.type,
+        actor.id,
+        JSON.stringify(this.teams.ids(actor)),
+      ) as { connectionId: string; modelId: string } | undefined;
     if (!offering) {
       throw new IdentityError(
         "MODEL_NOT_ENTITLED",
@@ -1856,7 +1882,7 @@ export class IdentityService {
     if (!this.modelOffering(offeringId))
       throw new IdentityError("MODEL_OFFERING_NOT_FOUND", 404, "Model offering not found");
     for (const item of entitlements) {
-      if (item.subjectType === "team" && item.subjectId !== TEAM_ID)
+      if (item.subjectType === "team" && !this.teams.exists(item.subjectId))
         throw new IdentityError("INVALID_GRANTEE", 400, "Unknown Team");
       if (item.subjectType === "user") this.requireGrantSubject("user", item.subjectId);
     }
@@ -1905,9 +1931,9 @@ export class IdentityService {
         .prepare(
           `SELECT 1 FROM host_model_offering_entitlement
            WHERE offering_id = ? AND ((? = 'user' AND subject_type = 'user' AND subject_id = ?)
-             OR (subject_type = 'team' AND subject_id = ?)) LIMIT 1`,
+             OR (subject_type = 'team' AND subject_id IN (SELECT value FROM json_each(?)))) LIMIT 1`,
         )
-        .get(offeringId, actor.type, actor.id, TEAM_ID),
+        .get(offeringId, actor.type, actor.id, JSON.stringify(this.teams.ids(actor))),
     );
   }
 
@@ -1956,9 +1982,11 @@ export class IdentityService {
       .prepare(
         `SELECT model_id AS modelId FROM host_model_entitlement
          WHERE connection_id = ? AND ((? = 'user' AND subject_type = 'user' AND subject_id = ?)
-           OR (subject_type = 'team' AND subject_id = ?))`,
+           OR (subject_type = 'team' AND subject_id IN (SELECT value FROM json_each(?))))`,
       )
-      .all(connectionId, actor.type, actor.id, TEAM_ID) as Array<{ modelId: string }>;
+      .all(connectionId, actor.type, actor.id, JSON.stringify(this.teams.ids(actor))) as Array<{
+      modelId: string;
+    }>;
     if (rows.some((row) => row.modelId === "*")) return [...modelIds];
     const entitled = new Set(rows.map((row) => row.modelId));
     return modelIds.filter((modelId) => entitled.has(modelId));
@@ -1973,7 +2001,7 @@ export class IdentityService {
     const ownerType = input.plane === "host" ? "host" : input.plane;
     const ownerId = input.plane === "host" || input.plane === "team" ? TEAM_ID : actor.id;
     if (input.plane !== "user") this.requireModelAdmin(actor);
-    if (input.plane !== "host" && !this.modelCredentialAllowed(input.credentialKind)) {
+    if (input.plane !== "host" && !this.modelCredentialAllowed(actor, input.credentialKind)) {
       throw new IdentityError(
         "MODEL_CREDENTIAL_POLICY_DENIED",
         403,
@@ -2061,7 +2089,7 @@ export class IdentityService {
       throw new IdentityError("FORBIDDEN", 403, "Model connection access denied");
     }
     for (const item of entitlements) {
-      if (item.subjectType === "team" && item.subjectId !== TEAM_ID) {
+      if (item.subjectType === "team" && !this.teams.exists(item.subjectId)) {
         throw new IdentityError("INVALID_GRANTEE", 400, "Unknown Team");
       }
       if (item.subjectType === "user") this.requireGrantSubject("user", item.subjectId);
@@ -2107,6 +2135,10 @@ export class IdentityService {
     return {
       host: { allowByok: this.configFlag("allow_byok"), allowByos: this.configFlag("allow_byos") },
       team: { allowByok: team.allowByok === 1, allowByos: team.allowByos === 1 },
+      effective: {
+        allowByok: this.modelCredentialAllowed(actor, "byok"),
+        allowByos: this.modelCredentialAllowed(actor, "byos"),
+      },
     };
   }
 
@@ -2203,7 +2235,11 @@ export class IdentityService {
     if (!connection) return false;
     if (actor.type === "local") return true;
     if (connection.plane === "user") {
-      return actor.type === "user" && connection.ownerId === actor.id;
+      return (
+        actor.type === "user" &&
+        connection.ownerId === actor.id &&
+        this.modelCredentialAllowed(actor, connection.credentialKind)
+      );
     }
     if (actor.role === "owner" || actor.role === "admin") return true;
     return Boolean(
@@ -2212,19 +2248,23 @@ export class IdentityService {
           `SELECT 1 FROM host_model_entitlement
        WHERE connection_id = ? AND (? = '*' OR model_id = '*' OR model_id = ?)
          AND ((? = 'user' AND subject_type = 'user' AND subject_id = ?)
-           OR (subject_type = 'team' AND subject_id = ?)) LIMIT 1`,
+           OR (subject_type = 'team' AND subject_id IN (SELECT value FROM json_each(?)))) LIMIT 1`,
         )
-        .get(connectionId, modelId, modelId, actor.type, actor.id, TEAM_ID),
+        .get(
+          connectionId,
+          modelId,
+          modelId,
+          actor.type,
+          actor.id,
+          JSON.stringify(this.teams.ids(actor)),
+        ),
     );
   }
 
-  private modelCredentialAllowed(kind: ModelCredentialKind) {
+  private modelCredentialAllowed(actor: Actor, kind: ModelCredentialKind) {
     if (!this.configFlag(kind === "byok" ? "allow_byok" : "allow_byos")) return false;
-    const column = kind === "byok" ? "allow_byok" : "allow_byos";
-    const row = this.database
-      .prepare(`SELECT ${column} AS allowed FROM host_team_model_policy WHERE team_id = ?`)
-      .get(TEAM_ID) as { allowed: number } | undefined;
-    return row?.allowed !== 0;
+    const policy = this.teams.policy(actor);
+    return kind === "byok" ? policy.allowByok : policy.allowByos;
   }
 
   private configFlag(key: "allow_byok" | "allow_byos") {

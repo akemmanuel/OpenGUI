@@ -22,7 +22,7 @@ export const CHATGPT_CODEX_PRESET = {
   label: "ChatGPT (Codex)",
   baseUrl: "https://chatgpt.com/backend-api/codex",
   defaultModelId: "gpt-5.6-sol",
-  // Model metadata comes from pi-ai's generated OpenAI Codex catalog.
+  // The Host overlays pi's remote catalog on bundled pi-ai metadata.
   modelIds: [],
 } as const satisfies ProviderConnectionPreset;
 
@@ -73,7 +73,7 @@ export const OPENCODE_ZEN_PRESET = {
   id: "opencode-zen",
   label: "OpenCode Zen",
   baseUrl: "https://opencode.ai/zen/v1",
-  // Zen's free catalog changes frequently and is discovered by the Host.
+  // The Host filters pi's catalog to free models when no API key is configured.
   modelIds: [],
 } as const satisfies ProviderConnectionPreset;
 
@@ -82,6 +82,6 @@ export const OPENCODE_GO_PRESET = {
   label: "OpenCode Go",
   baseUrl: "https://opencode.ai/zen/go/v1",
   defaultModelId: "glm-5.2",
-  // Model metadata comes from pi-ai and is intersected with Go's live catalog.
+  // The Host overlays pi's remote catalog on bundled pi-ai metadata.
   modelIds: [],
 } as const satisfies ProviderConnectionPreset;

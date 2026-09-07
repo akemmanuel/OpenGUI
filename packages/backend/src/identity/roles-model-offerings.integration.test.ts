@@ -104,6 +104,121 @@ async function register(backend: BackendHost, ownerToken: string, username: stri
 }
 
 describe("roles, capabilities, and model offerings", () => {
+  test("named teams persist membership, enforce model grants and deny personal credentials", async () => {
+    const { backend } = await fixture();
+    const owner = await setupOwner(backend);
+    const alice = await register(backend, owner.token, "alice");
+    const bob = await register(backend, owner.token, "bob");
+    const identity = backend.identity!;
+    const input = {
+      name: "Design",
+      memberIds: [alice.actor.id],
+      allowByok: false,
+      allowByos: true,
+    };
+    const request = (path: string, token: string, method = "GET", body?: unknown) =>
+      backend.app.request(`http://localhost/api/identity/${path}`, {
+        method,
+        headers: headers(token, true),
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    expect((await request("teams", bob.token, "POST", input)).status).toBe(403);
+    const created = await request("teams", owner.token, "POST", input);
+    expect(created.status).toBe(200);
+    const team = await value<{ id: string }>(created);
+    expect(await value(await request("teams", owner.token))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ ...input, id: team.id })]),
+    );
+    expect((await request("teams", owner.token, "POST", input)).status).toBe(409);
+    await identity.recordModelConnection(owner.actor, {
+      id: "shared",
+      plane: "host",
+      credentialKind: "byok",
+    });
+    await identity.createModelOffering(owner.actor, {
+      id: "design-model",
+      displayName: "Design model",
+      backendId: "shared",
+      upstreamModelId: "upstream",
+    });
+    await identity.saveTeam(owner.actor, { ...input, modelOfferingIds: ["design-model"] }, team.id);
+    await expect(
+      identity.saveTeam(
+        owner.actor,
+        { ...input, memberIds: [bob.actor.id], modelOfferingIds: ["missing-model"] },
+        team.id,
+      ),
+    ).rejects.toMatchObject({ code: "MODEL_OFFERING_NOT_FOUND" });
+    expect((await identity.listTeams(owner.actor)).find((row) => row.id === team.id)).toMatchObject(
+      { memberIds: [alice.actor.id], modelOfferingIds: ["design-model"] },
+    );
+    await identity.recordSessionOwner("team-session", owner.actor);
+    await identity.shareSession(owner.actor, "team-session", {
+      granteeType: "team",
+      granteeId: team.id,
+      role: "view",
+    });
+    await expect(
+      identity.authorizeSessionAction("team-session", alice.actor, "view"),
+    ).resolves.toBeUndefined();
+    await expect(
+      identity.authorizeSessionAction("team-session", bob.actor, "view"),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(identity.resolveModelOfferingForUse(alice.actor, "design-model")).resolves.toEqual(
+      { connectionId: "shared", modelId: "upstream" },
+    );
+    await expect(
+      identity.resolveModelOfferingForUse(bob.actor, "design-model"),
+    ).rejects.toMatchObject({ code: "MODEL_NOT_ENTITLED" });
+    expect((await identity.listModelOfferings(alice.actor)).map((row) => row.id)).toContain(
+      "design-model",
+    );
+    expect((await identity.getModelPolicy(alice.actor)).effective).toEqual({
+      allowByok: false,
+      allowByos: true,
+    });
+    await expect(
+      identity.recordModelConnection(alice.actor, {
+        id: "private",
+        plane: "user",
+        credentialKind: "byok",
+      }),
+    ).rejects.toMatchObject({ code: "MODEL_CREDENTIAL_POLICY_DENIED" });
+    await identity.recordModelConnection(bob.actor, {
+      id: "bob-private",
+      plane: "user",
+      credentialKind: "byok",
+    });
+    expect(
+      (
+        await request(`teams/${team.id}`, owner.token, "PUT", {
+          ...input,
+          memberIds: [bob.actor.id],
+        })
+      ).status,
+    ).toBe(200);
+    await expect(
+      identity.authorizeModelSelection(bob.actor, "bob-private", "model"),
+    ).rejects.toMatchObject({ code: "MODEL_NOT_ENTITLED" });
+    await expect(
+      identity.resolveModelOfferingForUse(alice.actor, "design-model"),
+    ).rejects.toMatchObject({ code: "MODEL_NOT_ENTITLED" });
+    await expect(
+      identity.authorizeSessionAction("team-session", alice.actor, "view"),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      identity.authorizeSessionAction("team-session", bob.actor, "view"),
+    ).resolves.toBeUndefined();
+    await expect(
+      identity.resolveModelOfferingForUse(bob.actor, "design-model"),
+    ).resolves.toBeDefined();
+    expect((await request("teams/host_default", owner.token, "DELETE")).status).toBe(409);
+    expect((await request(`teams/${team.id}`, owner.token, "DELETE")).status).toBe(200);
+    await expect(
+      identity.resolveModelOfferingForUse(bob.actor, "design-model"),
+    ).rejects.toMatchObject({ code: "MODEL_NOT_ENTITLED" });
+    expect(await identity.listModelOfferingEntitlements(owner.actor, "design-model")).toEqual([]);
+  });
   test("keeps administration human-only and gives admin/viewer no ambient filesystem or shell", async () => {
     const { backend, root } = await fixture();
     const owner = await setupOwner(backend);
