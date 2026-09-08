@@ -83,6 +83,42 @@ describe("OpenGuiHost authentication persistence", () => {
       await restarted.close();
     }
   });
+  test("refreshes the Codex catalog when only personal subscriptions exist", async () => {
+    const dataDirectory = await directory();
+    const initial = new OpenGuiHost(dataDirectory, {
+      fetchImpl: vi.fn().mockRejectedValue("offline"),
+    });
+    await initial.start();
+    await initial.setCustomInstructions("initialize state");
+    await initial.close();
+    const statePath = join(dataDirectory, HOST_STATE_FILENAME);
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.secrets.personalCodexTokens = {
+      "member-1": {
+        connectionId: "personal-opaque",
+        tokens: {
+          accessToken: "access",
+          refreshToken: "refresh",
+          accountId: "account",
+          expiresAt: Date.now() + 3_600_000,
+        },
+      },
+    };
+    await writeFile(statePath, JSON.stringify(state));
+    const fetchImpl = vi.fn(async () => Response.json({}));
+    const host = new OpenGuiHost(dataDirectory, { fetchImpl: fetchImpl as typeof fetch });
+
+    await host.start();
+    try {
+      expect(fetchImpl).toHaveBeenCalledWith(
+        "https://pi.dev/api/models/providers/openai-codex",
+        expect.any(Object),
+      );
+    } finally {
+      await host.close();
+    }
+  });
+
   test("keeps durable provider continuation state out of snapshots and events", async () => {
     const dataDirectory = await directory();
     const host = new OpenGuiHost(dataDirectory, {

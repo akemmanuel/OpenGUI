@@ -2261,6 +2261,18 @@ export class IdentityService {
     );
   }
 
+  async authorizePersonalSubscription(actor: Actor) {
+    await this.ready;
+    if (actor.type !== "user") return;
+    if (!this.modelCredentialAllowed(actor, "byos")) {
+      throw new IdentityError(
+        "MODEL_CREDENTIAL_POLICY_DENIED",
+        403,
+        "Personal subscriptions are disabled by Host policy",
+      );
+    }
+  }
+
   private modelCredentialAllowed(actor: Actor, kind: ModelCredentialKind) {
     if (!this.configFlag(kind === "byok" ? "allow_byok" : "allow_byos")) return false;
     const policy = this.teams.policy(actor);

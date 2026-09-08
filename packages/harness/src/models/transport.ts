@@ -126,6 +126,8 @@ export interface ModelRequest {
   projectDirectory: string;
   /** Actor whose current authorization must be used for Host-side model resolution. */
   actor?: import("../harness.ts").DurableActor;
+  /** Credential namespace selected after authorization. Shared offerings execute as the Host. */
+  executionScope?: "actor" | "host";
   context: ModelContextItem[];
   /** Full system prompt for this turn (identity, env, skills catalog). */
   systemPrompt: string;

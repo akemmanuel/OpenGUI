@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 const fixture = vi.hoisted(() => ({
   actor: { type: "user", id: "member-1", role: "member" } as any,
   connections: [] as any[],
+  identityEnabled: true,
+  allowByos: false,
+  modelPolicy: vi.fn(),
   refresh: vi.fn().mockResolvedValue(undefined),
   list: vi.fn(),
   upsert: vi.fn().mockResolvedValue(undefined),
@@ -32,8 +35,13 @@ vi.mock("@/hooks/use-agent-state", () => ({
 vi.mock("@/features/identity/identity-actor-context", () => ({
   useIdentityActor: () => fixture.actor,
 }));
-vi.mock("@/features/identity/workspace-identity", () => ({ getIdentityWorkspace: () => null }));
-vi.mock("@/features/identity/identity-client", () => ({ createIdentityClient: vi.fn() }));
+vi.mock("@/features/identity/workspace-identity", () => ({
+  getIdentityWorkspace: () =>
+    fixture.identityEnabled ? { serverUrl: "https://host.example", authToken: "token" } : null,
+}));
+vi.mock("@/features/identity/identity-client", () => ({
+  createIdentityClient: () => ({ modelPolicy: fixture.modelPolicy }),
+}));
 vi.mock("@/protocol/host-client", () => ({
   createHostClient: () => ({
     listModelConnections: fixture.list,
@@ -59,6 +67,13 @@ describe("SettingsProviders", () => {
     vi.clearAllMocks();
     fixture.actor = { type: "user", id: "member-1", role: "member" };
     fixture.connections = [];
+    fixture.identityEnabled = true;
+    fixture.allowByos = false;
+    fixture.modelPolicy.mockImplementation(async () => ({
+      host: { allowByok: true, allowByos: true },
+      team: { allowByok: true, allowByos: fixture.allowByos },
+      effective: { allowByok: true, allowByos: fixture.allowByos },
+    }));
     fixture.list.mockImplementation(async () => fixture.connections);
     fixture.beginCodex.mockResolvedValue({
       connected: false,
@@ -91,7 +106,17 @@ describe("SettingsProviders", () => {
     expect(fixture.refresh).toHaveBeenCalled();
   });
 
-  test("does not expose raw shared connections or Host OAuth to a member", async () => {
+  test("shows personal subscription sign-in to a member allowed by BYOS policy", async () => {
+    fixture.allowByos = true;
+    render(<SettingsProviders />);
+
+    expect(await screen.findByRole("button", { name: "providers.codex.signIn" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "providers.xai.signIn" })).toBeTruthy();
+    await waitFor(() => expect(fixture.codexStatus).toHaveBeenCalledTimes(1));
+    expect(fixture.subscriptionStatus).toHaveBeenCalledWith("xai");
+  });
+
+  test("does not expose raw shared connections or subscriptions to a member denied by BYOS policy", async () => {
     fixture.connections = [
       {
         id: "host-model",
@@ -106,10 +131,12 @@ describe("SettingsProviders", () => {
     expect(screen.queryByText("Shared model")).toBeNull();
     expect(screen.queryByRole("button", { name: "providers.codex.signIn" })).toBeNull();
     expect(fixture.codexStatus).not.toHaveBeenCalled();
+    expect(fixture.subscriptionStatus).not.toHaveBeenCalled();
   });
 
   test("opens the device authorization dialog returned by the Host", async () => {
     fixture.actor = { type: "user", id: "owner-1", role: "owner" };
+    fixture.identityEnabled = false;
     fixture.beginCodex.mockResolvedValue({
       connected: false,
       pending: {
