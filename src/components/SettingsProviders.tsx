@@ -111,6 +111,13 @@ export function SettingsProviders({
       modelPolicy?.effective?.allowByok ??
       (modelPolicy?.host.allowByok && modelPolicy.team.allowByok),
     );
+  const personalByosAllowed =
+    !identity ||
+    canManageShared ||
+    Boolean(
+      modelPolicy?.effective?.allowByos ??
+      (modelPolicy?.host.allowByos && modelPolicy.team.allowByos),
+    );
   const activeDevicePending =
     activeDeviceAuth?.kind === "codex"
       ? codex.pending
@@ -160,25 +167,26 @@ export function SettingsProviders({
   };
   useEffect(() => {
     void reload().catch(notifyUnknownError);
-    if (canManageShared) {
+  }, []);
+  useEffect(() => {
+    if (!personalByosAllowed) return;
+    void host
+      .codexAuthStatus()
+      .then((status) => {
+        setCodex(status);
+        if (status.pending) setActiveDeviceAuth({ kind: "codex" });
+      })
+      .catch(notifyUnknownError);
+    for (const provider of ["xai"] as const) {
       void host
-        .codexAuthStatus()
+        .subscriptionAuthStatus(provider)
         .then((status) => {
-          setCodex(status);
-          if (status.pending) setActiveDeviceAuth({ kind: "codex" });
+          setSubscriptions((current) => ({ ...current, [provider]: status }));
+          if (status.pending) setActiveDeviceAuth({ kind: "subscription", provider });
         })
         .catch(notifyUnknownError);
-      for (const provider of ["xai"] as const) {
-        void host
-          .subscriptionAuthStatus(provider)
-          .then((status) => {
-            setSubscriptions((current) => ({ ...current, [provider]: status }));
-            if (status.pending) setActiveDeviceAuth({ kind: "subscription", provider });
-          })
-          .catch(notifyUnknownError);
-      }
     }
-  }, []);
+  }, [personalByosAllowed]);
 
   async function saveConnection() {
     if (!backendDraft) return;
@@ -603,7 +611,7 @@ export function SettingsProviders({
                 )}
               </div>
             </div>
-            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
+            <div hidden={!personalByosAllowed} className="space-y-3 rounded-lg border p-3">
               <div>
                 <div className="text-sm font-medium">{t("providers.codex.title")}</div>
                 <div className="text-xs text-muted-foreground">
@@ -676,7 +684,7 @@ export function SettingsProviders({
               </div>
             </div>
             {(["xai"] as const).map((provider) => {
-              if (!canManageShared) return null;
+              if (!personalByosAllowed) return null;
               const status = subscriptions[provider];
               return (
                 <div key={provider} className="space-y-3 rounded-lg border p-3">

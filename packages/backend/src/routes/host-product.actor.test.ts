@@ -5,6 +5,7 @@ import type { OpenGuiHost } from "../host/opengui-host.ts";
 import { HostSessionNotFoundError } from "../host/opengui-host.ts";
 import type { BackendRequestEnv } from "../http/request-context.ts";
 import type { Actor } from "../identity/types.ts";
+import { IdentityError, type IdentityService } from "../identity/identity.ts";
 import { registerHostProductRoutes } from "./host-product.ts";
 
 describe("Host product actor attribution", () => {
@@ -351,5 +352,187 @@ describe("Host product actor attribution", () => {
       ok: true,
       value: { text: "Prefer British spelling." },
     });
+  });
+});
+
+describe("personal subscription authorization", () => {
+  const member: Actor = {
+    type: "user",
+    id: "member-1",
+    displayName: "Member",
+    role: "member",
+  };
+
+  function subscriptionApp(input: {
+    actor?: Actor;
+    authorize?: () => Promise<void>;
+    status?: ReturnType<typeof vi.fn>;
+    begin?: ReturnType<typeof vi.fn>;
+    disconnect?: ReturnType<typeof vi.fn>;
+    poll?: ReturnType<typeof vi.fn>;
+    personalConnection?: ReturnType<typeof vi.fn>;
+    resolveActor?: ReturnType<typeof vi.fn>;
+    recordConnection?: ReturnType<typeof vi.fn>;
+    subscriptionBegin?: ReturnType<typeof vi.fn>;
+    subscriptionPoll?: ReturnType<typeof vi.fn>;
+  }) {
+    const actor = input.actor ?? member;
+    const status = input.status ?? vi.fn(() => ({ connected: false, pending: null }));
+    const begin = input.begin ?? vi.fn(async () => ({ connected: false, pending: null }));
+    const disconnect = input.disconnect ?? vi.fn(async () => undefined);
+    const poll = input.poll ?? vi.fn(async () => ({ connected: false, pending: null }));
+    const personalConnection = input.personalConnection ?? vi.fn(() => undefined);
+    const resolveActor = input.resolveActor ?? vi.fn(async () => ({ id: actor.id }));
+    const recordConnection = input.recordConnection ?? vi.fn(async () => undefined);
+    const subscriptionBegin =
+      input.subscriptionBegin ?? vi.fn(async () => ({ connected: false, pending: null }));
+    const subscriptionPoll =
+      input.subscriptionPoll ?? vi.fn(async () => ({ connected: false, pending: null }));
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", actor);
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () =>
+        ({
+          codexAuthStatus: status,
+          beginCodexAuth: begin,
+          pollCodexAuth: poll,
+          disconnectCodex: disconnect,
+          personalSubscriptionConnection: personalConnection,
+          beginSubscriptionAuth: subscriptionBegin,
+          pollSubscriptionAuth: subscriptionPoll,
+        }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+      identity: {
+        authorizePersonalSubscription: input.authorize ?? vi.fn(async () => undefined),
+        resolveDurableActor: resolveActor,
+        recordModelConnection: recordConnection,
+      } as unknown as IdentityService,
+    });
+    return {
+      app,
+      status,
+      begin,
+      poll,
+      disconnect,
+      personalConnection,
+      recordConnection,
+      subscriptionBegin,
+      subscriptionPoll,
+    };
+  }
+
+  test("an allowed member reads and starts only their own subscription sign-in", async () => {
+    const authorize = vi.fn(async () => undefined);
+    const { app, status, begin } = subscriptionApp({ authorize });
+
+    expect((await app.request("http://localhost/api/host/auth/codex")).status).toBe(200);
+    expect(
+      (
+        await app.request("http://localhost/api/host/auth/codex", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(200);
+
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(authorize).toHaveBeenCalledWith(member);
+    expect(status).toHaveBeenCalledWith({ type: "user", id: "member-1", displayName: "Member" });
+    expect(begin).toHaveBeenCalledWith({ type: "user", id: "member-1", displayName: "Member" });
+  });
+
+  test("rolls back a newly connected personal subscription when metadata persistence fails", async () => {
+    const disconnect = vi.fn(async () => undefined);
+    const connection = { id: "personal-opaque", modelIds: ["gpt-5"] };
+    const { app } = subscriptionApp({
+      poll: vi.fn(async () => ({ connected: true, pending: null })),
+      personalConnection: vi.fn(() => connection),
+      recordConnection: vi.fn(async () => {
+        throw new Error("metadata unavailable");
+      }),
+      disconnect,
+    });
+
+    const response = await app.request("http://localhost/api/host/auth/codex/poll", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(400);
+    expect(disconnect).toHaveBeenCalledWith({
+      type: "user",
+      id: "member-1",
+      displayName: "Member",
+    });
+  });
+
+  test("a member denied by BYOS policy receives 403 from xAI start and poll", async () => {
+    const { app, subscriptionBegin, subscriptionPoll } = subscriptionApp({
+      authorize: async () => {
+        throw new IdentityError(
+          "MODEL_CREDENTIAL_POLICY_DENIED",
+          403,
+          "This credential type is disabled by Host policy",
+        );
+      },
+    });
+
+    expect(
+      (await app.request("http://localhost/api/host/auth/xai", { method: "POST" })).status,
+    ).toBe(403);
+    expect(
+      (await app.request("http://localhost/api/host/auth/xai/poll", { method: "POST" })).status,
+    ).toBe(403);
+    expect(subscriptionBegin).not.toHaveBeenCalled();
+    expect(subscriptionPoll).not.toHaveBeenCalled();
+  });
+
+  test("a member denied by BYOS policy receives JSON 403 from disconnect", async () => {
+    const { app, disconnect } = subscriptionApp({
+      authorize: async () => {
+        throw new IdentityError(
+          "MODEL_CREDENTIAL_POLICY_DENIED",
+          403,
+          "This credential type is disabled by Host policy",
+        );
+      },
+    });
+
+    const response = await app.request("http://localhost/api/host/auth/codex", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toMatchObject({ ok: false });
+    expect(disconnect).not.toHaveBeenCalled();
+  });
+
+  test("a member denied by BYOS policy receives 403 without touching Host auth", async () => {
+    const { app, status, begin } = subscriptionApp({
+      authorize: async () => {
+        throw new IdentityError(
+          "MODEL_CREDENTIAL_POLICY_DENIED",
+          403,
+          "This credential type is disabled by Host policy",
+        );
+      },
+    });
+
+    expect((await app.request("http://localhost/api/host/auth/codex")).status).toBe(403);
+    expect(
+      (
+        await app.request("http://localhost/api/host/auth/codex", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(403);
+    expect(status).not.toHaveBeenCalled();
+    expect(begin).not.toHaveBeenCalled();
   });
 });

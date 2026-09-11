@@ -5,7 +5,9 @@ import {
 } from "../host/opengui-host.ts";
 import { resolve } from "node:path";
 import { OPENCODE_GO_PRESET, OPENCODE_ZEN_PRESET } from "@opengui/protocol";
-import type { BackendApp } from "../http/request-context.ts";
+import type { DurableActor } from "@opengui/harness";
+import type { Context } from "hono";
+import type { BackendApp, BackendRequestEnv } from "../http/request-context.ts";
 import { isPlainObject, jsonError } from "../http/json.ts";
 import { durableActor, type Actor, type IdentityState } from "../identity/types.ts";
 import {
@@ -109,15 +111,20 @@ export function registerHostProductRoutes(
   app.get("/api/host/models", async (c) => {
     const host = await input.getHost();
     await host.refreshModelCatalogs();
-    const all = host.listModelConnections();
+    const actor = c.get("actor") as Actor;
+    const durable =
+      actor.type === "user" && actor.role !== "owner" && actor.role !== "admin"
+        ? durableActor(actor)
+        : undefined;
+    const globalConnections = host.listModelConnections();
+    const all = host.listModelConnections(durable);
     if (!input.identity) {
       return Response.json({
         ok: true,
         value: all.map((connection) => ({ ...connection, plane: "host" as const })),
       });
     }
-    await input.identity.migrateLegacyModelOfferings(all);
-    const actor = c.get("actor") as Actor;
+    await input.identity.migrateLegacyModelOfferings(globalConnections);
     const access = await input.identity.listModelConnectionAccess(actor);
     const byId = new Map(access.map((item) => [item.id, item]));
     const visible = await Promise.all(
@@ -144,7 +151,8 @@ export function registerHostProductRoutes(
           actor.type === "user" &&
           (actor.role === "owner" || actor.role === "admin" || metadata.plane === "user")
         ) {
-          return { ...connection, ...metadata, modelIds, defaultModelId, modelCapabilities };
+          const { ownerId: _ownerId, ...publicMetadata } = metadata;
+          return { ...connection, ...publicMetadata, modelIds, defaultModelId, modelCapabilities };
         }
         return {
           ...metadata,
@@ -170,63 +178,161 @@ export function registerHostProductRoutes(
       value: await input.identity.listModelOfferings(c.get("actor") as Actor),
     });
   });
-  app.get("/api/host/auth/codex", async () =>
-    Response.json({ ok: true, value: (await input.getHost()).codexAuthStatus() }),
-  );
-  app.post("/api/host/auth/codex", async () => {
+  async function subscriptionActor(c: Context<BackendRequestEnv>) {
+    const actor = c.get("actor") as Actor;
+    await input.identity?.authorizePersonalSubscription(actor);
+    return actor.type === "user" && actor.role !== "owner" && actor.role !== "admin"
+      ? durableActor(actor)
+      : undefined;
+  }
+
+  async function personalSubscriptionMetadata(
+    actor: DurableActor | undefined,
+    provider: "codex" | "xai",
+  ) {
+    if (!actor || actor.type !== "user" || !input.identity) return undefined;
+    const resolved = await input.identity.resolveDurableActor(actor);
+    if (!resolved) throw new IdentityError("FORBIDDEN", 403, "User access required");
+    const connection = (await input.getHost()).personalSubscriptionConnection(provider, actor);
+    return connection ? { resolved, connection } : undefined;
+  }
+
+  async function recordPersonalSubscription(
+    actor: DurableActor | undefined,
+    provider: "codex" | "xai",
+  ) {
+    const metadata = await personalSubscriptionMetadata(actor, provider);
+    if (!metadata || !input.identity) return;
     try {
-      return Response.json({ ok: true, value: await (await input.getHost()).beginCodexAuth() });
+      await input.identity.recordModelConnection(metadata.resolved, {
+        id: metadata.connection.id,
+        plane: "user",
+        credentialKind: "byos",
+      });
+    } catch (error) {
+      const host = await input.getHost();
+      if (provider === "codex") await host.disconnectCodex(actor);
+      else await host.disconnectSubscription(provider, actor);
+      throw error;
+    }
+  }
+
+  app.get("/api/host/auth/codex", async (c) => {
+    try {
+      const actor = await subscriptionActor(c);
+      return Response.json({ ok: true, value: (await input.getHost()).codexAuthStatus(actor) });
     } catch (error) {
       return sessionError(error);
     }
   });
-  app.post("/api/host/auth/codex/poll", async () => {
+  app.post("/api/host/auth/codex", async (c) => {
     try {
-      return Response.json({ ok: true, value: await (await input.getHost()).pollCodexAuth() });
+      const actor = await subscriptionActor(c);
+      return Response.json({
+        ok: true,
+        value: await (await input.getHost()).beginCodexAuth(actor),
+      });
     } catch (error) {
       return sessionError(error);
     }
   });
-  app.post("/api/host/auth/codex/cancel", async () =>
-    Response.json({ ok: true, value: await (await input.getHost()).cancelCodexAuth() }),
-  );
-  app.delete("/api/host/auth/codex", async () => {
-    await (await input.getHost()).disconnectCodex();
-    return Response.json({ ok: true, value: true });
+  app.post("/api/host/auth/codex/poll", async (c) => {
+    try {
+      const actor = await subscriptionActor(c);
+      const value = await (await input.getHost()).pollCodexAuth(actor);
+      if (value.connected) await recordPersonalSubscription(actor, "codex");
+      return Response.json({
+        ok: true,
+        value,
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+  app.post("/api/host/auth/codex/cancel", async (c) => {
+    try {
+      return Response.json({
+        ok: true,
+        value: await (await input.getHost()).cancelCodexAuth(await subscriptionActor(c)),
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+  app.delete("/api/host/auth/codex", async (c) => {
+    try {
+      const actor = await subscriptionActor(c);
+      const metadata = await personalSubscriptionMetadata(actor, "codex");
+      await (await input.getHost()).disconnectCodex(actor);
+      if (metadata && input.identity)
+        await input.identity.removeModelConnection(metadata.resolved, metadata.connection.id);
+      return Response.json({ ok: true, value: true });
+    } catch (error) {
+      return sessionError(error);
+    }
   });
   for (const provider of ["xai"] as const) {
-    app.get(`/api/host/auth/${provider}`, async () =>
-      Response.json({ ok: true, value: (await input.getHost()).subscriptionAuthStatus(provider) }),
-    );
-    app.post(`/api/host/auth/${provider}`, async () => {
+    app.get(`/api/host/auth/${provider}`, async (c) => {
       try {
         return Response.json({
           ok: true,
-          value: await (await input.getHost()).beginSubscriptionAuth(provider),
+          value: (await input.getHost()).subscriptionAuthStatus(
+            provider,
+            await subscriptionActor(c),
+          ),
         });
       } catch (error) {
-        return jsonError(error, 400);
+        return sessionError(error);
       }
     });
-    app.post(`/api/host/auth/${provider}/poll`, async () => {
+    app.post(`/api/host/auth/${provider}`, async (c) => {
       try {
         return Response.json({
           ok: true,
-          value: await (await input.getHost()).pollSubscriptionAuth(provider),
+          value: await (
+            await input.getHost()
+          ).beginSubscriptionAuth(provider, await subscriptionActor(c)),
         });
       } catch (error) {
-        return jsonError(error, 400);
+        return sessionError(error);
       }
     });
-    app.post(`/api/host/auth/${provider}/cancel`, async () =>
-      Response.json({
-        ok: true,
-        value: await (await input.getHost()).cancelSubscriptionAuth(provider),
-      }),
-    );
-    app.delete(`/api/host/auth/${provider}`, async () => {
-      await (await input.getHost()).disconnectSubscription(provider);
-      return Response.json({ ok: true, value: true });
+    app.post(`/api/host/auth/${provider}/poll`, async (c) => {
+      try {
+        const actor = await subscriptionActor(c);
+        const value = await (await input.getHost()).pollSubscriptionAuth(provider, actor);
+        if (value.connected) await recordPersonalSubscription(actor, provider);
+        return Response.json({
+          ok: true,
+          value,
+        });
+      } catch (error) {
+        return sessionError(error);
+      }
+    });
+    app.post(`/api/host/auth/${provider}/cancel`, async (c) => {
+      try {
+        return Response.json({
+          ok: true,
+          value: await (
+            await input.getHost()
+          ).cancelSubscriptionAuth(provider, await subscriptionActor(c)),
+        });
+      } catch (error) {
+        return sessionError(error);
+      }
+    });
+    app.delete(`/api/host/auth/${provider}`, async (c) => {
+      try {
+        const actor = await subscriptionActor(c);
+        const metadata = await personalSubscriptionMetadata(actor, provider);
+        await (await input.getHost()).disconnectSubscription(provider, actor);
+        if (metadata && input.identity)
+          await input.identity.removeModelConnection(metadata.resolved, metadata.connection.id);
+        return Response.json({ ok: true, value: true });
+      } catch (error) {
+        return sessionError(error);
+      }
     });
   }
 
