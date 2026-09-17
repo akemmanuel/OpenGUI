@@ -1675,13 +1675,13 @@ export class IdentityService {
             for (let suffix = 2; slugTaken.get(id); suffix += 1) id = `${base}-${suffix}`;
             insertOffering.run(id, modelId, connection.id, modelId, owner.id, now, now);
             offering = { id };
-          }
-          const grants = oldGrants.all(connection.id, modelId) as Array<{
-            subjectType: "user" | "team";
-            subjectId: string;
-          }>;
-          for (const grant of grants) {
-            copyGrant.run(offering.id, grant.subjectType, grant.subjectId, owner.id, now);
+            const grants = oldGrants.all(connection.id, modelId) as Array<{
+              subjectType: "user" | "team";
+              subjectId: string;
+            }>;
+            for (const grant of grants) {
+              copyGrant.run(offering.id, grant.subjectType, grant.subjectId, owner.id, now);
+            }
           }
         }
       }
