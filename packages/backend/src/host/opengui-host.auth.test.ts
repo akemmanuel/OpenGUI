@@ -199,6 +199,20 @@ describe("OpenGuiHost authentication persistence", () => {
     let refreshes = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+      if (url === "https://pi.dev/api/models/providers/openai-codex") {
+        return Response.json([
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            api: "openai-codex-responses",
+            reasoning: true,
+            input: ["text", "image"],
+            contextWindow: 272000,
+            maxTokens: 128000,
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ]);
+      }
       if (url === "https://auth.openai.com/oauth/token") {
         refreshes += 1;
         return Response.json({
@@ -553,8 +567,8 @@ describe("OpenGuiHost authentication persistence", () => {
         id: "opencode-go",
         label: "OpenCode Go",
         baseUrl: "https://opencode.ai/zen/go/v1",
-        defaultModelId: "glm-5.2",
-        modelIds: expect.arrayContaining(["glm-5.2", "qwen3.7-max", "future-go-model"]),
+        defaultModelId: "future-go-model",
+        modelIds: ["future-go-model"],
       }),
     ]);
     await host.close();
@@ -619,13 +633,11 @@ describe("OpenGuiHost authentication persistence", () => {
       baseUrl: "https://opencode.ai/zen/v1",
       modelIds: [],
     });
-    expect(host.listModelConnections()[0]?.modelIds).toEqual(
-      expect.arrayContaining(["big-pickle", "hy3-free"]),
-    );
+    expect(host.listModelConnections()[0]?.modelIds).toEqual(["hy3-free"]);
     expect(host.listModelConnections()[0]?.modelIds).not.toContain("deepseek-v4-pro");
     const session = await host.createSession({
       projectDirectory: dataDirectory,
-      model: { connectionId: "opencode-zen", modelId: "big-pickle" },
+      model: { connectionId: "opencode-zen", modelId: "hy3-free" },
       reasoning: "none",
     });
     await host.prompt(session.id, { text: "hello" });

@@ -6,11 +6,12 @@ The Host loads Codex, OpenCode Zen, and OpenCode Go metadata from
 `https://pi.dev/api/models/providers/{provider}`. It checks configured providers at startup,
 after Codex sign-in, and when clients request models. Successful results are cached under
 `model-catalog/` in the Host data directory and revalidated with ETags after four hours.
-Requests time out after four seconds. Failed refreshes keep cached or bundled models and
-back off for four hours. Concurrent requests share one refresh per provider.
+Requests time out after four seconds. Failed refreshes keep the last cached online models and
+back off for four hours. Without a valid cache, no models are offered until the online catalog
+becomes available. Concurrent requests share one refresh per provider.
 
-Remote entries update bundled entries by model ID. Only supported model protocols are offered;
-keyless Zen lists only zero-input-cost, zero-output-cost models. The Host keeps control of
+Installed pi-ai model lists are not used for these connections. Only supported model protocols
+are offered; keyless Zen lists only zero-input-cost, zero-output-cost models. The Host keeps control of
 endpoint URLs and credentials. The Frontend displays Host metadata without fetching another
 catalog. Custom backends use explicitly configured metadata rather than vendor-name inference.
 New models using supported protocols do not require an OpenGUI release. New protocols may.

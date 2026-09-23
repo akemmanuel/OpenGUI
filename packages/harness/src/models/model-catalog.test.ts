@@ -54,8 +54,8 @@ describe("Host model catalog", () => {
     await Promise.all([catalog.refresh("openai-codex"), catalog.refresh("openai-codex")]);
     const connection = catalog.connection("openai-codex", preset);
     expect(connection.baseUrl).toBe(preset.baseUrl);
-    expect(connection.defaultModelId).toBe("gpt-5.4");
-    expect(connection.modelIds).toContain(astra.id);
+    expect(connection.defaultModelId).toBe(astra.id);
+    expect(connection.modelIds).toEqual([astra.id]);
     expect(connection.modelIds).not.toContain("unsupported");
     expect(connection.modelRoutes?.[astra.id]).toBe("responses");
     expect(connection.modelCapabilities?.[astra.id]).toMatchObject({
@@ -107,13 +107,35 @@ describe("Host model catalog", () => {
     expect(catalog.connection("openai-codex", preset).modelIds).toContain(astra.id);
   });
 
-  test("uses bundled models when the cache is corrupt and the network is unavailable", async () => {
-    const path = await directory();
-    await writeFile(join(path, "openai-codex.json"), "broken json");
-    const catalog = new ModelCatalog(path, vi.fn().mockRejectedValue(new Error("offline")));
-    await catalog.refresh("openai-codex");
-    expect(catalog.connection("openai-codex", preset).modelIds).toContain("gpt-5.4");
-  });
+  test.each(["openai-codex", "opencode", "opencode-go"] as const)(
+    "%s never offers installed models when the online catalog is unavailable",
+    async (provider) => {
+      const path = await directory();
+      await writeFile(join(path, `${provider}.json`), "broken json");
+      const catalog = new ModelCatalog(path, vi.fn().mockRejectedValue(new Error("offline")));
+      await catalog.refresh(provider);
+      expect(catalog.connection(provider, preset).modelIds).toEqual([]);
+    },
+  );
+
+  test.each(["openai-codex", "opencode", "opencode-go"] as const)(
+    "%s offers only online models after a successful fetch",
+    async (provider) => {
+      const catalog = new ModelCatalog(
+        await directory(),
+        vi.fn(async () =>
+          Response.json([
+            {
+              ...astra,
+              api: provider === "openai-codex" ? "openai-codex-responses" : "openai-responses",
+            },
+          ]),
+        ) as typeof fetch,
+      );
+      await catalog.refresh(provider);
+      expect(catalog.connection(provider, preset).modelIds).toEqual([astra.id]);
+    },
+  );
 
   test("does not offer paid Zen models without a key", async () => {
     const catalog = new ModelCatalog(

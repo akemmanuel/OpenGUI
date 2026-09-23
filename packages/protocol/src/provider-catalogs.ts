@@ -22,7 +22,7 @@ export const CHATGPT_CODEX_PRESET = {
   label: "ChatGPT (Codex)",
   baseUrl: "https://chatgpt.com/backend-api/codex",
   defaultModelId: "gpt-5.6-sol",
-  // The Host overlays pi's remote catalog on bundled pi-ai metadata.
+  // The Host loads model metadata from pi's online catalog (or its offline cache).
   modelIds: [],
 } as const satisfies ProviderConnectionPreset;
 
@@ -82,6 +82,6 @@ export const OPENCODE_GO_PRESET = {
   label: "OpenCode Go",
   baseUrl: "https://opencode.ai/zen/go/v1",
   defaultModelId: "glm-5.2",
-  // The Host overlays pi's remote catalog on bundled pi-ai metadata.
+  // The Host loads model metadata from pi's online catalog (or its offline cache).
   modelIds: [],
 } as const satisfies ProviderConnectionPreset;
