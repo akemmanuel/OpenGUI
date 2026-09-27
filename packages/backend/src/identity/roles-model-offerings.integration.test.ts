@@ -397,6 +397,26 @@ describe("roles, capabilities, and model offerings", () => {
     expect(company).not.toHaveProperty("backendId");
     expect(company).not.toHaveProperty("upstreamModelId");
 
+    expect(offerings).toContainEqual(expect.objectContaining({ id: "allowed-model" }));
+    expect(
+      (
+        await backend.app.request(
+          "http://localhost/api/identity/model-offerings/allowed-model/entitlements",
+          {
+            method: "PUT",
+            headers: headers(owner.token, true),
+            body: JSON.stringify({ entitlements: [] }),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    const afterRevocation = await value<Array<{ id: string }>>(
+      await backend.app.request("http://localhost/api/host/model-offerings", {
+        headers: headers(member.token),
+      }),
+    );
+    expect(afterRevocation.map((offering) => offering.id)).not.toContain("allowed-model");
+
     // Re-running migration is idempotent and cannot widen the exact legacy grant.
     await backend.app.request("http://localhost/api/host/models", {
       headers: headers(member.token),
