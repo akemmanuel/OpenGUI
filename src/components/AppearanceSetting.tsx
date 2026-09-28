@@ -13,6 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ThemeMode } from "@/hooks/use-theme";
 import { useTheme } from "@/hooks/use-theme";
+import { useChatWidth, type ChatWidth } from "@/hooks/use-chat-width";
 import { cn } from "@/lib/utils";
 
 /** Preset accent colors: "default" = neutral (no custom accent). */
@@ -31,6 +32,7 @@ const ACCENT_PRESET_COLORS: Record<(typeof ACCENT_PRESET_IDS)[number], string | 
 export function AppearanceSetting() {
   const { t } = useTranslation();
   const { mode, theme, setTheme, contrast, setContrast, accentColor, setAccentColor } = useTheme();
+  const [chatWidth, setChatWidth] = useChatWidth();
 
   return (
     <div className="space-y-3">
@@ -70,6 +72,27 @@ export function AppearanceSetting() {
           >
             <Monitor className="size-3.5" />
             {t("settings.general.themeSystem")}
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
+      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <Label className="text-sm font-normal shrink-0">{t("settings.general.chatWidth")}</Label>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={0}
+          value={chatWidth}
+          onValueChange={(value) => {
+            if (value) setChatWidth(value as ChatWidth);
+          }}
+          className="h-auto w-full sm:w-auto"
+        >
+          <ToggleGroupItem value="standard" className="h-8 px-2.5 text-xs">
+            {t("settings.general.chatWidthStandard")}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="full" className="h-8 px-2.5 text-xs">
+            {t("settings.general.chatWidthFull")}
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
