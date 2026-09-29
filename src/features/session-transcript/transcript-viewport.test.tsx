@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -11,6 +11,8 @@ const resize = vi.hoisted(() => ({
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import { TranscriptViewport } from "./transcript-viewport";
+import { STORAGE_KEYS } from "@/lib/constants";
+import { storageSet } from "@/lib/persistence/storage";
 
 function setGeometry(
   element: HTMLElement,
@@ -51,7 +53,28 @@ describe("TranscriptViewport scroll anchoring", () => {
   });
   afterEach(() => {
     cleanup();
+    storageSet(STORAGE_KEYS.CHAT_WIDTH, "standard");
     vi.unstubAllGlobals();
+  });
+
+  test("widens the transcript when full width is selected", () => {
+    const view = render(
+      <TranscriptViewport
+        sessionId="s1"
+        contentKey="1"
+        pinWhenNearBottom
+        isLoadingOlder={false}
+        onLoadOlder={async () => true}
+        showLoadOlderRow={false}
+      >
+        <div>message</div>
+      </TranscriptViewport>,
+    );
+    const content = screen.getByText("message").parentElement!;
+    expect(content.classList.contains("max-w-2xl")).toBe(true);
+    act(() => storageSet(STORAGE_KEYS.CHAT_WIDTH, "full"));
+    expect(content.classList.contains("max-w-none")).toBe(true);
+    view.unmount();
   });
 
   test("paints its own theme background instead of exposing a compositor backing layer", () => {

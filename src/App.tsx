@@ -28,6 +28,7 @@ import {
 } from "@/hooks/use-agent-state";
 import { useUpdateCheck } from "@/hooks/use-update-check";
 import { useContextInfo } from "@/hooks/use-context-info";
+import { useChatWidth } from "@/hooks/use-chat-width";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { getDesktopShellClient } from "@/runtime/clients";
@@ -64,6 +65,7 @@ export function AppContent({
   onDismissSetup?: () => void;
 }) {
   const { t } = useTranslation();
+  const [chatWidth] = useChatWidth();
   const identityActor = useIdentityActor();
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const leftSidebar = useSidebar();
@@ -261,7 +263,9 @@ export function AppContent({
 
                 {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
                   <div className="relative z-[1] shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
-                    <div className="w-full md:max-w-2xl md:mx-auto">
+                    <div
+                      className={`w-full md:mx-auto ${chatWidth === "full" ? "md:max-w-none" : "md:max-w-2xl"}`}
+                    >
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">
                           <QueueList

@@ -40,6 +40,7 @@ export const STORAGE_KEYS = {
   NEW_CHAT_MODEL_BEHAVIOR: key("newChatModelBehavior"),
   LANGUAGE: key("language"),
   THEME: "theme",
+  CHAT_WIDTH: key("chatWidth"),
   CONTRAST: key("contrast"),
   ACCENT_COLOR: key("accentColor"),
   DISMISSED_UPDATE_VERSION: key("dismissedUpdateVersion"),
