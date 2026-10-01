@@ -536,3 +536,57 @@ describe("personal subscription authorization", () => {
     expect(begin).not.toHaveBeenCalled();
   });
 });
+
+test("projects upstream reasoning capabilities onto member offerings without route secrets", async () => {
+  const actor: Actor = { type: "user", id: "member", displayName: "Member", role: "member" };
+  const efforts = ["minimal", "low", "medium", "high", "xhigh", "max"];
+  const offering = { id: "sol", displayName: "Sol", description: null, createdAt: 1, updatedAt: 1 };
+  const identity = {
+    migrateLegacyModelOfferings: vi.fn(async () => {}),
+    listModelOfferings: vi.fn(async () => [offering]),
+    resolveModelOfferingForUse: vi.fn(async () => ({
+      connectionId: "codex",
+      modelId: "gpt-6.1-sol",
+    })),
+  } as unknown as IdentityService;
+  const host = {
+    refreshModelCatalogs: vi.fn(async () => {}),
+    listModelConnections: () => [
+      {
+        id: "codex",
+        baseUrl: "private-endpoint",
+        apiKey: "secret",
+        modelIds: ["gpt-6.1-sol"],
+        modelCapabilities: {
+          "gpt-6.1-sol": {
+            reasoning: true,
+            reasoningEfforts: efforts,
+            context: 272000,
+            compat: { private: true },
+          },
+        },
+      },
+    ],
+  } as unknown as OpenGuiHost;
+  const app = new Hono<BackendRequestEnv>();
+  app.use("/api/host/*", async (c, next) => {
+    c.set("actor", actor);
+    await next();
+  });
+  registerHostProductRoutes(app, {
+    getHost: async () => host,
+    identity,
+    resolveSafeDirectory: async (path) => path ?? "/tmp",
+  });
+  const response = await app.request("http://localhost/api/host/model-offerings");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    ok: true,
+    value: [
+      {
+        ...offering,
+        modelCapabilities: { reasoning: true, reasoningEfforts: efforts, context: 272000 },
+      },
+    ],
+  });
+});
