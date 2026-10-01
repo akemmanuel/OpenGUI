@@ -584,4 +584,107 @@ describe("Host transcript streaming", () => {
       },
     });
   });
+
+  test("assistant turn shows the Model that produced its Run, not the Session current Model", () => {
+    const input = snapshot();
+    input.model = { connectionId: "opencode-zen", modelId: "ling-3.0-flash-fin-free" };
+    input.entries = [
+      {
+        id: "model-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "model_changed",
+        payload: { model: { connectionId: "opencode-zen", modelId: "mimo-v2.5-free" } },
+        createdAt: "2026-09-09T17:00:00.000Z",
+      },
+      {
+        id: "model-2",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "model_changed",
+        payload: {
+          model: { connectionId: "opencode-zen", modelId: "muse-spark-1.3-contributor-free" },
+        },
+        createdAt: "2026-09-09T17:00:01.000Z",
+      },
+      {
+        id: "user-1",
+        sessionId: input.id,
+        sequence: 3,
+        kind: "user_message",
+        payload: { text: "Hi", runId: "run-1" },
+        createdAt: "2026-09-09T17:00:02.000Z",
+      },
+      {
+        id: "provider-1",
+        sessionId: input.id,
+        sequence: 4,
+        kind: "provider_response",
+        payload: {
+          runId: "run-1",
+          response: {
+            provider: "opencode-zen",
+            model: "muse-spark-1.3-contributor-free",
+            protocol: "openai-responses",
+          },
+        },
+        createdAt: "2026-09-09T17:00:03.000Z",
+      },
+      {
+        id: "answer-1",
+        sessionId: input.id,
+        sequence: 5,
+        kind: "assistant_message",
+        payload: { runId: "run-1", text: "Hi there! I'm Muse Spark" },
+        createdAt: "2026-09-09T17:00:04.000Z",
+      },
+      {
+        id: "completed-1",
+        sessionId: input.id,
+        sequence: 6,
+        kind: "run_completed",
+        payload: { runId: "run-1" },
+        createdAt: "2026-09-09T17:00:05.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    const assistant = messages.find((message) => message.info.role === "assistant");
+    expect(assistant?.info.providerID).toBe("opencode-zen");
+    expect(assistant?.info.modelID).toBe("muse-spark-1.3-contributor-free");
+  });
+
+  test("live Session stream updates its Model when the Session Model changes", () => {
+    const input = snapshot();
+    input.model = { connectionId: "opencode-zen", modelId: "mimo-v2.5-free" };
+    let stream = createHostTranscriptStream(input);
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "entry_appended",
+        entry: {
+          id: "model-2",
+          sessionId: "session-1",
+          sequence: 1,
+          kind: "model_changed",
+          payload: {
+            model: { connectionId: "opencode-zen", modelId: "muse-spark-1.3-contributor-free" },
+          },
+          createdAt: "2026-09-09T17:00:01.000Z",
+        },
+      },
+    });
+    expect(stream.snapshot.model).toEqual({
+      connectionId: "opencode-zen",
+      modelId: "muse-spark-1.3-contributor-free",
+    });
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "assistant_delta", runId: "run-1", delta: "Hi" },
+    });
+    const streamed = projectHostTranscriptStream(stream).find(
+      (message) => message.info.id === "stream:run-1",
+    );
+    expect(streamed?.info.modelID).toBe("muse-spark-1.3-contributor-free");
+  });
 });

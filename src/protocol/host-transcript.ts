@@ -36,6 +36,22 @@ export function applyHostTranscriptEvent(
     };
   }
   if (stream.snapshot.entries.some((entry) => entry.id === event.entry.id)) return stream;
+  let nextModel = stream.snapshot.model;
+  if (event.entry.kind === "model_changed") {
+    const model = event.entry.payload.model as
+      | { connectionId?: unknown; modelId?: unknown }
+      | undefined;
+    if (typeof model?.connectionId === "string" && typeof model?.modelId === "string") {
+      nextModel = { connectionId: model.connectionId, modelId: model.modelId };
+    }
+  }
+  let nextReasoning = stream.snapshot.reasoning;
+  if (event.entry.kind === "reasoning_changed") {
+    const reasoning = event.entry.payload.reasoning;
+    if (typeof reasoning === "string") {
+      nextReasoning = reasoning as typeof nextReasoning;
+    }
+  }
   const assistantTextByRun = { ...stream.assistantTextByRun };
   const reasoningTextByRun = { ...stream.reasoningTextByRun };
   if (event.entry.kind === "assistant_message") {
@@ -63,6 +79,8 @@ export function applyHostTranscriptEvent(
   return {
     snapshot: {
       ...stream.snapshot,
+      model: nextModel,
+      reasoning: nextReasoning,
       updatedAt: event.entry.createdAt,
       entries: [...stream.snapshot.entries, event.entry].sort(
         (left, right) => left.sequence - right.sequence,
@@ -138,6 +156,28 @@ function text(value: unknown, fallback = "") {
 export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): MessageEntry[] {
   const messages: MessageEntry[] = [];
   let pendingAssistant: MessageEntry | null = null;
+
+  const responseByRun = new Map<string, { providerID: string; modelID: string }>();
+  for (const entry of snapshot.entries) {
+    if (entry.kind !== "provider_response") continue;
+    const runId = typeof entry.payload.runId === "string" ? entry.payload.runId : "";
+    const response =
+      entry.payload.response && typeof entry.payload.response === "object"
+        ? (entry.payload.response as { provider?: unknown; model?: unknown })
+        : null;
+    const providerID = typeof response?.provider === "string" ? response.provider : "";
+    const modelID = typeof response?.model === "string" ? response.model : "";
+    if (runId && (providerID || modelID)) responseByRun.set(runId, { providerID, modelID });
+  }
+
+  const assistantAttribution = (runId: string) => {
+    const attributed = responseByRun.get(runId);
+    if (attributed) return attributed;
+    return {
+      providerID: snapshot.model?.connectionId ?? "",
+      modelID: snapshot.model?.modelId ?? "",
+    };
+  };
 
   const flushAssistant = () => {
     if (pendingAssistant) {
@@ -215,13 +255,14 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
       const messageId = `run:${runId}`;
       if (!pendingAssistant || pendingAssistant.info.id !== messageId) {
         flushAssistant();
+        const attribution = assistantAttribution(runId);
         pendingAssistant = {
           info: {
             id: messageId,
             sessionID: snapshot.id,
             role: "assistant",
-            providerID: snapshot.model?.connectionId ?? "",
-            modelID: snapshot.model?.modelId ?? "",
+            providerID: attribution.providerID,
+            modelID: attribution.modelID,
             time: { created: createdMs(entry.createdAt) },
           },
           parts: [],
@@ -247,13 +288,14 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
       const messageId = `run:${runId}`;
       if (!pendingAssistant || pendingAssistant.info.id !== messageId) {
         flushAssistant();
+        const attribution = assistantAttribution(runId);
         pendingAssistant = {
           info: {
             id: messageId,
             sessionID: snapshot.id,
             role: "assistant",
-            providerID: snapshot.model?.connectionId ?? "",
-            modelID: snapshot.model?.modelId ?? "",
+            providerID: attribution.providerID,
+            modelID: attribution.modelID,
             time: { created: createdMs(entry.createdAt) },
           },
           parts: [],
@@ -284,16 +326,18 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
     }
 
     if (entry.kind === "tool_call") {
-      const messageId = `run:${text(entry.payload.runId, entry.id)}`;
+      const runId = text(entry.payload.runId, entry.id);
+      const messageId = `run:${runId}`;
       if (!pendingAssistant || pendingAssistant.info.id !== messageId) {
         flushAssistant();
+        const attribution = assistantAttribution(runId);
         pendingAssistant = {
           info: {
             id: messageId,
             sessionID: snapshot.id,
             role: "assistant",
-            providerID: snapshot.model?.connectionId ?? "",
-            modelID: snapshot.model?.modelId ?? "",
+            providerID: attribution.providerID,
+            modelID: attribution.modelID,
             time: { created: createdMs(entry.createdAt) },
           },
           parts: [],
@@ -390,13 +434,14 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
       const messageId = `run:${runId}`;
       if (!pendingAssistant || pendingAssistant.info.id !== messageId) {
         flushAssistant();
+        const attribution = assistantAttribution(runId);
         pendingAssistant = {
           info: {
             id: messageId,
             sessionID: snapshot.id,
             role: "assistant",
-            providerID: snapshot.model?.connectionId ?? "",
-            modelID: snapshot.model?.modelId ?? "",
+            providerID: attribution.providerID,
+            modelID: attribution.modelID,
             time: { created: createdMs(entry.createdAt) },
           },
           parts: [],

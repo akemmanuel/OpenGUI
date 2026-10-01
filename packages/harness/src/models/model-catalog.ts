@@ -118,12 +118,9 @@ export class ModelCatalog {
     preset: Pick<OpenAiCompatibleConnection, "id" | "label" | "baseUrl" | "defaultModelId">,
     freeOnly = false,
   ) {
-    const models = new Map(
-      factories[provider]()
-        .getModels()
-        .map((model) => [model.id, model]),
-    );
-    for (const model of this.#entries.get(provider)?.models ?? []) models.set(model.id, model);
+    const overlay = this.#entries.get(provider)?.models;
+    const source = overlay && overlay.length > 0 ? overlay : factories[provider]().getModels();
+    const models = new Map(source.map((model) => [model.id, model]));
     return piAiCatalogConnection(
       provider,
       preset,

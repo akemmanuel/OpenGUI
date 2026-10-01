@@ -490,6 +490,26 @@ describe("OpenGuiHost authentication persistence", () => {
     const catalogFetch = vi.fn(async () =>
       Response.json([
         {
+          id: "glm-5.2",
+          name: "GLM 5.2",
+          api: "openai-completions",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 128000,
+          maxTokens: 16000,
+          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        },
+        {
+          id: "qwen3.7-max",
+          name: "Qwen 3.7 Max",
+          api: "anthropic-messages",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 128000,
+          maxTokens: 16000,
+          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        },
+        {
           id: "future-go-model",
           name: "Future Go Model",
           api: "openai-completions",
@@ -547,6 +567,16 @@ describe("OpenGuiHost authentication persistence", () => {
         if (url === "https://pi.dev/api/models/providers/opencode") {
           expect(new Headers(init?.headers).has("authorization")).toBe(false);
           return Response.json([
+            {
+              id: "big-pickle",
+              name: "Big Pickle",
+              api: "openai-completions",
+              reasoning: false,
+              input: ["text"],
+              contextWindow: 128000,
+              maxTokens: 16000,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
             {
               id: "hy3-free",
               name: "Hy3 Free",

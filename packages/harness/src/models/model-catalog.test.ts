@@ -36,10 +36,20 @@ afterEach(async () => {
 });
 
 describe("Host model catalog", () => {
+  test("drops bundled Models retired upstream once a fresh overlay arrives", async () => {
+    const fetchImpl = vi.fn(async () => Response.json([astra], { headers: { etag: '"v2"' } }));
+    const catalog = new ModelCatalog(await directory(), fetchImpl as typeof fetch);
+    await catalog.refresh("openai-codex");
+    const connection = catalog.connection("openai-codex", preset);
+    expect(connection.modelIds).toContain(astra.id);
+    expect(connection.modelIds).not.toContain("gpt-5.4");
+  });
+
   test("adds a released model without a package update, preserving routing and defaults", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json(
         {
+          "gpt-5.4": { ...astra, id: "gpt-5.4", name: "GPT-5.4" },
           [astra.id]: {
             ...astra,
             baseUrl: "https://untrusted.invalid",
