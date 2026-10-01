@@ -586,9 +586,9 @@ describe("OpenGuiHost authentication persistence", () => {
     await restarted.close();
   });
 
-  test("omits authorization for keyless OpenCode Zen free models", async () => {
+  test("sends OpenCode client headers without authorization for keyless Zen free models", async () => {
     const dataDirectory = await directory();
-    const authorizations: string[] = [];
+    const requestHeaders: Headers[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -609,12 +609,27 @@ describe("OpenGuiHost authentication persistence", () => {
             },
           ]);
         }
-        const authorization = new Headers(init?.headers).get("authorization") ?? "";
-        authorizations.push(authorization);
-        if (authorization) {
+        const headers = new Headers(init?.headers);
+        requestHeaders.push(headers);
+        if (headers.has("authorization")) {
           return Response.json(
             { type: "error", error: { type: "AuthError", message: "Invalid API key." } },
             { status: 401 },
+          );
+        }
+        if (
+          headers.get("user-agent") !== "opencode/1.18.30" ||
+          headers.get("x-opencode-client") !== "cli" ||
+          headers.get("x-opencode-project") !== "global" ||
+          !/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(headers.get("x-opencode-session") ?? "") ||
+          !/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(headers.get("x-opencode-request") ?? "")
+        ) {
+          return Response.json(
+            {
+              type: "FreeTierError",
+              message: "OpenCode's free tier can only be used from within OpenCode",
+            },
+            { status: 403 },
           );
         }
         return new Response(
@@ -643,8 +658,18 @@ describe("OpenGuiHost authentication persistence", () => {
     await host.prompt(session.id, { text: "hello" });
     await host.waitForIdle(session.id);
 
-    expect(authorizations).toEqual([""]);
     expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
+    await host.prompt(session.id, { text: "continue" });
+    await host.waitForIdle(session.id);
+    expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
+    expect(requestHeaders).toHaveLength(2);
+    expect(requestHeaders.every((headers) => !headers.has("authorization"))).toBe(true);
+    expect(requestHeaders[1]?.get("x-opencode-session")).toBe(
+      requestHeaders[0]?.get("x-opencode-session"),
+    );
+    expect(requestHeaders[1]?.get("x-opencode-request")).not.toBe(
+      requestHeaders[0]?.get("x-opencode-request"),
+    );
     await host.close();
   });
 

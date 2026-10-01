@@ -64,6 +64,73 @@ async function setupOwner(backend: BackendHost) {
 }
 
 describe("Host identity", () => {
+  test("self-service profile is name-only and password change rotates and revokes sessions", async () => {
+    const backend = host();
+    const token = await setupOwner(backend);
+    const call = (path: string, body?: object, auth = token, method = "POST") =>
+      backend.app.request(`http://localhost/api/identity/${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${auth}`,
+          "content-type": "application/json",
+          origin: "https://client.example",
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const otherLogin = await call("login", {
+      username: "owner_user",
+      password: "correct horse battery staple",
+    });
+    const otherToken = ((await otherLogin.json()) as { value: { token: string } }).value.token;
+    expect(
+      (await call("profile", { displayName: "Alex", username: "changed" }, token, "PUT")).status,
+    ).toBe(400);
+    expect((await call("profile", { displayName: "  " }, token, "PUT")).status).toBe(400);
+    expect((await call("profile", { displayName: "Alex" }, token, "PUT")).status).toBe(200);
+    const me = (
+      (await (await call("me", undefined, token, "GET")).json()) as {
+        value: {
+          user: { name: string; username: string; email: string };
+          actor: { displayName: string };
+        };
+      }
+    ).value;
+    expect(me.user.name).toBe("Alex");
+    expect(me.actor.displayName).toBe("Alex");
+    expect(me.user.username).toBe("owner_user");
+    expect(me.user.email).toBe("owner@example.com");
+    const wrong = await call("change-password", {
+      currentPassword: "wrong-password",
+      newPassword: "new secure password",
+    });
+    expect(wrong.status).toBe(400);
+    expect(((await wrong.json()) as { code: string }).code).toBe("INVALID_PASSWORD");
+    expect(
+      (
+        await call("change-password", {
+          currentPassword: "correct horse battery staple",
+          newPassword: "short",
+        })
+      ).status,
+    ).toBe(400);
+    const changed = await call("change-password", {
+      currentPassword: "correct horse battery staple",
+      newPassword: "new secure password",
+    });
+    expect(changed.status).toBe(200);
+    const replacement = ((await changed.json()) as { value: { token: string } }).value.token;
+    expect(replacement).toBeTruthy();
+    expect((await call("me", undefined, replacement, "GET")).status).toBe(200);
+    expect((await call("me", undefined, token, "GET")).status).toBe(401);
+    expect((await call("me", undefined, otherToken, "GET")).status).toBe(401);
+    expect(
+      (await call("login", { username: "owner_user", password: "correct horse battery staple" }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await call("login", { username: "owner_user", password: "new secure password" })).status,
+    ).toBe(200);
+  });
   test("accepts exactly one concurrent owner setup", async () => {
     const backend = host();
     const setup = (username: string, email: string) =>

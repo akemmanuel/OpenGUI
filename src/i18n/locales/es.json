@@ -1,4 +1,24 @@
 {
+  "account": {
+    "openProfile": "Abrir menú de perfil",
+    "connectedHost": "Conectado a: {{host}}",
+    "editProfile": "Editar perfil",
+    "changePassword": "Cambiar contraseña",
+    "displayName": "Nombre visible",
+    "profileDescription": "Actualiza tu nombre visible. El nombre de usuario y el correo no se pueden cambiar.",
+    "passwordDescription": "Al cambiar la contraseña se cerrarán tus otras sesiones en este Host.",
+    "currentPassword": "Contraseña actual",
+    "newPassword": "Nueva contraseña",
+    "showPasswords": "Mostrar contraseñas",
+    "hidePasswords": "Ocultar contraseñas",
+    "saving": "Guardando…",
+    "profileSaved": "Perfil actualizado",
+    "passwordSaved": "Contraseña cambiada. Se han cerrado tus otras sesiones.",
+    "wrongPassword": "La contraseña actual es incorrecta. Inténtalo de nuevo.",
+    "saveFailed": "No se pudieron guardar los cambios. Comprueba tu conexión e inténtalo de nuevo.",
+    "logoutFailed": "Se cerró la sesión en este dispositivo, pero no se pudo confirmar el cierre con el Host.",
+    "retryProfile": "No se pudo cargar el perfil. Reintentar"
+  },
   "access": {
     "inspect": "Ver acceso",
     "personTitle": "Acceso de {{name}}",
@@ -143,7 +163,7 @@
       "users": "Invita a personas y gestiona sus roles del Host.",
       "paths": "Controla el acceso de OpenGUI a rutas y comprende la autoridad separada de Shell.",
       "host": "Restricciones del Host, registro y claves de automatización.",
-      "instructions": "Instrucciones personalizadas del Host que se añaden al system prompt de cada Sesión.",
+      "instructions": "Instrucciones del Host, instrucciones compartidas del proyecto y preferencias personales privadas.",
       "skills": "Instrucciones reutilizables disponibles para el agente.",
       "teams": "Agrupa personas y gestiona su acceso."
     },
@@ -153,6 +173,19 @@
       "desktopOnly": "Los directorios predeterminados, el gestor de archivos y los comandos de terminal se configuran en la aplicación de escritorio."
     },
     "instructions": {
+      "scopeLabel": "Ámbito de las instrucciones",
+      "scope": { "host": "Host", "project": "Proyecto", "personal": "Personal" },
+      "hierarchy": "Las instrucciones del Host se aplican siempre. Las del proyecto se comparten con todos sus participantes. Las preferencias personales solo se aplican a tus turnos. En caso de conflicto, tiene prioridad el Host, después el Proyecto y después Personal.",
+      "helpScope": {
+        "host": "Visibles para todos en este Host. Solo los propietarios y administradores pueden editarlas.",
+        "project": "Compartidas con todos los que tienen acceso a este proyecto. Los cambios se aplican en el siguiente turno.",
+        "personal": "Privadas para tu cuenta en este Host. Se aplican cuando envías una solicitud, también en Sesiones compartidas. No incluyas secretos."
+      },
+      "discard": "¿Descartar las instrucciones sin guardar?",
+      "noProjects": "Añade un proyecto para definir sus instrucciones compartidas.",
+      "projectReadOnly": "Puedes leer estas instrucciones compartidas. Un administrador debe permitir que uno de tus equipos las edite.",
+      "editors": "Equipos que pueden editar las instrucciones de este proyecto",
+      "editorsHelp": "Los miembros de los equipos seleccionados pueden editar. Basta con pertenecer a uno de ellos. Los lectores no pueden editar; los propietarios y administradores siempre pueden hacerlo. Estos permisos no conceden acceso al proyecto.",
       "label": "Instrucciones personalizadas",
       "help": "Estas normas de la casa se aplican a cada Proyecto y Sesión de este Host. Se añaden al system prompt del agente en el siguiente turno.",
       "readOnly": "Estas normas de la casa se aplican a cada Sesión de este Host. Solo una administración del Host puede cambiarlas.",

@@ -209,6 +209,56 @@ describe("Host client HTTP contract", () => {
     ]);
   });
 
+  test("routes personal and shared project instructions without sending actor identities", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createHostClient({
+      baseUrl: "https://host.example",
+      fetchImpl: async (url, init) => {
+        requests.push({
+          url,
+          method: init?.method ?? "GET",
+          ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+        });
+        return Response.json({
+          ok: true,
+          value: { text: "Rules", canEdit: true, canManage: false, teams: [] },
+        });
+      },
+    });
+    await expect(client.getPersonalInstructions()).resolves.toBe("Rules");
+    await expect(client.setPersonalInstructions("My preferences")).resolves.toBe("Rules");
+    await expect(client.getProjectInstructions("/repo & notes")).resolves.toMatchObject({
+      text: "Rules",
+      canEdit: true,
+    });
+    await expect(
+      client.setProjectInstructions("/repo & notes", "Shared conventions"),
+    ).resolves.toBe("Rules");
+    await client.setProjectInstructionEditor("/repo & notes", "frontend", true);
+    expect(requests).toEqual([
+      { url: "https://host.example/api/host/personal-instructions", method: "GET" },
+      {
+        url: "https://host.example/api/host/personal-instructions",
+        method: "PUT",
+        body: { text: "My preferences" },
+      },
+      {
+        url: "https://host.example/api/host/project-instructions?directory=%2Frepo%20%26%20notes",
+        method: "GET",
+      },
+      {
+        url: "https://host.example/api/host/project-instructions",
+        method: "PUT",
+        body: { directory: "/repo & notes", text: "Shared conventions" },
+      },
+      {
+        url: "https://host.example/api/host/project-instructions/editors",
+        method: "PUT",
+        body: { directory: "/repo & notes", teamId: "frontend", allowed: true },
+      },
+    ]);
+  });
+
   test("reads and writes Host-wide custom instructions", async () => {
     const requests: Array<{ url: string; method: string; body?: unknown }> = [];
     const client = createHostClient({

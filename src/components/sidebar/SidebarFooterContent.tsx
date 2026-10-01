@@ -1,4 +1,5 @@
 import { FolderOpen } from "lucide-react";
+import { ProfileMenu } from "@/features/identity/ProfileMenu";
 import { ConnectionPanel } from "@/components/ConnectionPanel";
 import { SidebarFooter } from "@/components/ui/sidebar";
 import { abbreviatePath } from "@/lib/path";
@@ -30,6 +31,7 @@ export function SidebarFooterContent({
           </span>
         </div>
       )}
+      <ProfileMenu />
       <div className="flex justify-center p-1 group-data-[collapsible=icon]:px-0">
         <ConnectionPanel onOpenSettings={onOpenSettings} isActive={settingsActive} />
       </div>

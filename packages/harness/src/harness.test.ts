@@ -254,13 +254,20 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       clock: new FakeClock("2026-07-10T10:00:00.000Z"),
       ids: new SequenceIdGenerator(),
       compaction: { contextWindowTokens: 10_000, tempDirectory: handoffRoot },
+      resolveCustomInstructions: ({ actor, projectDirectory: directory }) => {
+        expect(directory).toBe(projectDirectory);
+        return `Preferences for ${actor?.id}`;
+      },
     });
     const session = await harness.createSession({
       projectDirectory,
       model: { connectionId: "fake", modelId: "fake-model" },
       reasoning: "none",
     });
-    for await (const _event of session.run({ text: "Do some work" })) {
+    for await (const _event of session.run({
+      text: "Do some work",
+      actor: { type: "user", id: "alice", displayName: "Alice" },
+    })) {
       // drain
     }
 
@@ -269,9 +276,13 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       "---\nname: stable\ndescription: Mutated instructions.\n---\n# Mutated\n",
     );
 
-    for await (const _event of session.compact()) {
+    for await (const _event of session.compact({ type: "user", id: "bob", displayName: "Bob" })) {
       // drain
     }
+    expect(model.requests[0]?.systemPrompt).toContain("Preferences for alice");
+    expect(model.requests[1]?.systemPrompt).toContain("Preferences for bob");
+    expect(model.requests[2]?.systemPrompt).toContain("Preferences for bob");
+    expect(model.requests[1]?.systemPrompt).not.toContain("Preferences for alice");
     expect(model.requests).toHaveLength(3);
     expect(model.requests[1]?.systemPrompt).toContain("Original stable instructions.");
     expect(model.requests[1]?.systemPrompt).not.toContain("Mutated instructions.");

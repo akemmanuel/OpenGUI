@@ -210,6 +210,14 @@ export interface HostEvent {
     | { type: "entry_appended"; entry: HostSessionEntry };
 }
 
+export interface ProjectInstructions {
+  directory: string;
+  text: string;
+  canEdit: boolean;
+  canManage: boolean;
+  teams: Array<{ id: string; name: string; allowed: boolean }>;
+}
+
 export interface OpenGuiHostClient {
   codexAuthStatus(): Promise<CodexAuthStatus>;
   beginCodexAuth(): Promise<CodexAuthStatus>;
@@ -228,6 +236,11 @@ export interface OpenGuiHostClient {
   removeModelConnection(connectionId: string): Promise<void>;
   getCustomInstructions(): Promise<string>;
   setCustomInstructions(text: string): Promise<string>;
+  getPersonalInstructions(): Promise<string>;
+  setPersonalInstructions(text: string): Promise<string>;
+  getProjectInstructions(directory: string): Promise<ProjectInstructions>;
+  setProjectInstructions(directory: string, text: string): Promise<string>;
+  setProjectInstructionEditor(directory: string, teamId: string, allowed: boolean): Promise<void>;
   listMcpConnections(): Promise<HostMcpConnection[]>;
   upsertMcpConnection(connection: HostMcpConnectionMutation): Promise<HostMcpConnection>;
   inspectMcpConnection(connectionId: string): Promise<HostMcpToolInfo[]>;

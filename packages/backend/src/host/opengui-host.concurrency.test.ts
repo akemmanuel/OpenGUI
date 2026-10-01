@@ -127,7 +127,7 @@ describe("OpenGuiHost concurrent arbitration", () => {
     await host.close();
   });
 
-  test("never sends image bytes to the text-only DeepSeek Zen model", async () => {
+  test("never sends image bytes to a text-only OpenCode Zen model", async () => {
     const root = await mkdtemp(join(tmpdir(), "opengui-host-text-only-image-"));
     temporaryDirectories.push(root);
     const project = join(root, "project");
@@ -150,19 +150,31 @@ describe("OpenGuiHost concurrent arbitration", () => {
         yield { type: "completed" };
       },
     };
-    const fetchImpl = async () => Response.json({ data: [{ id: "deepseek-v4-flash-free" }] });
+    const fetchImpl = async () =>
+      Response.json([
+        {
+          id: "big-pickle",
+          name: "Big Pickle",
+          api: "openai-completions",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 128_000,
+          maxTokens: 16_384,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      ]);
     const host = new OpenGuiHost(root, { model, fetchImpl: fetchImpl as typeof fetch });
     await host.start();
     await host.upsertModelConnection({
       id: "opencode-zen",
       label: "OpenCode Zen",
       baseUrl: "https://opencode.ai/zen/v1",
-      modelIds: ["deepseek-v4-flash-free"],
+      modelIds: ["big-pickle"],
     });
     const session = await host.createSession({
       projectDirectory: project,
-      model: { connectionId: "opencode-zen", modelId: "deepseek-v4-flash-free" },
-      reasoning: "max",
+      model: { connectionId: "opencode-zen", modelId: "big-pickle" },
+      reasoning: "none",
     });
 
     await host.prompt(session.id, { text: "read the image" });

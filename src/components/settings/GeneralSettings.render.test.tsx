@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 const fixture = vi.hoisted(() => ({
@@ -66,14 +65,10 @@ describe("GeneralSettings persistence", () => {
     window.removeEventListener("model-max-age-months-changed", changed);
   });
 
-  test("shows the active remote account and delegates sign out", async () => {
+  test("keeps account actions out of app settings", () => {
     render(<GeneralSettings />);
-    expect(screen.getByText("Shared Host")).toBeTruthy();
-    const account = screen
-      .getByText("identity.accountSession")
-      .closest("div.flex.items-center.justify-between");
-    await userEvent.click(account!.querySelector("button")!);
-    expect(fixture.logout).toHaveBeenCalledOnce();
+    expect(screen.queryByText("identity.signOut")).toBeNull();
+    expect(screen.queryByText("identity.accountSession")).toBeNull();
   });
 
   test("does not offer a notification switch when browser permission is denied", () => {

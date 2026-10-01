@@ -1,4 +1,24 @@
 {
+  "account": {
+    "openProfile": "Profilmenü öffnen",
+    "connectedHost": "Verbunden mit: {{host}}",
+    "editProfile": "Profil bearbeiten",
+    "changePassword": "Passwort ändern",
+    "displayName": "Anzeigename",
+    "profileDescription": "Ändere deinen Anzeigenamen. Benutzername und E-Mail können nicht geändert werden.",
+    "passwordDescription": "Wenn du dein Passwort änderst, werden deine anderen Sitzungen auf diesem Host abgemeldet.",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort",
+    "showPasswords": "Passwörter anzeigen",
+    "hidePasswords": "Passwörter verbergen",
+    "saving": "Wird gespeichert…",
+    "profileSaved": "Profil aktualisiert",
+    "passwordSaved": "Passwort geändert. Deine anderen Sitzungen wurden abgemeldet.",
+    "wrongPassword": "Das aktuelle Passwort ist falsch. Versuche es erneut.",
+    "saveFailed": "Änderungen konnten nicht gespeichert werden. Prüfe deine Verbindung und versuche es erneut.",
+    "logoutFailed": "Auf diesem Gerät abgemeldet, aber die Abmeldung beim Host konnte nicht bestätigt werden.",
+    "retryProfile": "Profil konnte nicht geladen werden. Erneut versuchen"
+  },
   "access": {
     "inspect": "Zugriff ansehen",
     "personTitle": "Zugriff für {{name}}",
@@ -143,7 +163,7 @@
       "users": "Personen einladen und ihre Host-Rollen verwalten.",
       "paths": "OpenGUI-Pfadzugriff und die getrennte Berechtigung von Shell-Befehlen.",
       "host": "Host-weite Sperren, Registrierung und Automatisierungsschlüssel.",
-      "instructions": "Hostweite eigene Anweisungen, die jedem Systemprompt einer Session hinzugefügt werden.",
+      "instructions": "Hostweite Anweisungen, gemeinsame Projektanweisungen und private persönliche Einstellungen.",
       "skills": "Wiederverwendbare Anweisungen für den Agenten.",
       "teams": "Personen gruppieren und ihren Zugriff gemeinsam verwalten."
     },
@@ -153,6 +173,19 @@
       "desktopOnly": "Standardverzeichnisse, Dateimanager und Terminalbefehle werden in der Desktop-App konfiguriert."
     },
     "instructions": {
+      "scopeLabel": "Geltungsbereich der Anweisungen",
+      "scope": { "host": "Host", "project": "Projekt", "personal": "Persönlich" },
+      "hierarchy": "Host-Anweisungen gelten überall. Gemeinsame Projektanweisungen gelten für alle im Projekt. Persönliche Einstellungen gelten nur für deine Anfragen. Bei Widersprüchen hat der Host Vorrang, danach das Projekt, dann deine persönlichen Einstellungen.",
+      "helpScope": {
+        "host": "Für alle auf diesem Host sichtbar. Nur Eigentümer und Administratoren können sie bearbeiten.",
+        "project": "Für alle mit Zugriff auf dieses Projekt sichtbar. Änderungen gelten ab der nächsten Anfrage.",
+        "personal": "Privat für dein Konto auf diesem Host. Gelten bei deinen Anfragen, auch in geteilten Sessions. Keine Geheimnisse eintragen."
+      },
+      "discard": "Nicht gespeicherte Anweisungen verwerfen?",
+      "noProjects": "Füge zuerst ein Projekt hinzu, um gemeinsame Anweisungen festzulegen.",
+      "projectReadOnly": "Du kannst diese gemeinsamen Anweisungen lesen. Ein Administrator muss einem deiner Teams die Bearbeitung erlauben.",
+      "editors": "Teams, die die Anweisungen dieses Projekts bearbeiten dürfen",
+      "editorsHelp": "Mitglieder der ausgewählten Teams dürfen bearbeiten. Die Mitgliedschaft in einem erlaubten Team genügt. Betrachter können nur lesen; Eigentümer und Administratoren dürfen immer bearbeiten. Diese Rechte gewähren keinen Projektzugriff.",
       "label": "Eigene Anweisungen",
       "help": "Diese Hausregeln gelten für jedes Projekt und jede Session auf diesem Host. Sie werden beim nächsten Zug zum Systemprompt des Agenten hinzugefügt.",
       "readOnly": "Diese Hausregeln gelten für jede Session auf diesem Host. Nur eine Host-Administration kann sie ändern.",

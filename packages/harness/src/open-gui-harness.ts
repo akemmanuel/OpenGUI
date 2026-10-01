@@ -821,7 +821,10 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         ...(shellAvailable ? { shell: this.#shell } : {}),
         tools,
         skills,
-        customInstructions: await this.#resolveCustomInstructions?.(),
+        customInstructions: await this.#resolveCustomInstructions?.({
+          actor,
+          projectDirectory: snapshot.projectDirectory,
+        }),
         now: this.#clock.now(),
       });
       if (!existingPins) {
@@ -1024,7 +1027,10 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             ...(shellAvailable ? { shell: this.#shell } : {}),
             tools: modelToolNames,
             skills,
-            customInstructions: await this.#resolveCustomInstructions?.(),
+            customInstructions: await this.#resolveCustomInstructions?.({
+              actor: nextPrompt.actor,
+              projectDirectory: current.projectDirectory,
+            }),
             now: this.#clock.now(),
           });
           const modelContext = buildModelContext(current.entries);

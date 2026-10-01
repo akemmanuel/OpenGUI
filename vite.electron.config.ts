@@ -81,7 +81,9 @@ export default defineConfig({
           target: "node22",
           sourcemap: true,
           minify: true,
-          external: ["electron"],
+          // Keep Zod's cyclic v4 classic/core modules intact at runtime. Bundling
+          // them into the sidecar breaks custom schema construction with esbuild.
+          external: ["electron", "zod", "zod/*"],
           banner: {
             js: nodeEsmCompatBanner,
           },

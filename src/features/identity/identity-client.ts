@@ -63,6 +63,7 @@ export type IdentityActor = ActorSnapshot & {
 };
 
 export type IdentityUser = {
+  name?: string;
   id: string;
   username: string;
   email: string;
@@ -147,6 +148,7 @@ export class IdentityRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "IdentityRequestError";
@@ -155,7 +157,7 @@ export class IdentityRequestError extends Error {
 
 async function readEnvelope<T>(response: Response): Promise<T> {
   const text = await response.text();
-  type Envelope = { ok?: boolean; value?: T; error?: string };
+  type Envelope = { ok?: boolean; value?: T; error?: string; code?: string };
   let body: Envelope | null = null;
   try {
     body = text ? (JSON.parse(text) as Envelope) : null;
@@ -166,6 +168,7 @@ async function readEnvelope<T>(response: Response): Promise<T> {
     throw new IdentityRequestError(
       body?.error || `Host request failed (${response.status})`,
       response.status,
+      body?.code,
     );
   }
   return body.value as T;
@@ -211,6 +214,16 @@ export function createIdentityClient({
       }),
     logout: () => request<void>("/api/identity/logout", { method: "POST", body: "{}" }),
     me: () => request<IdentityMe>("/api/identity/me"),
+    updateProfile: (displayName: string) =>
+      request<void>("/api/identity/profile", {
+        method: "PUT",
+        body: JSON.stringify({ displayName }),
+      }),
+    changePassword: (input: { currentPassword: string; newPassword: string }) =>
+      request<{ token: string }>("/api/identity/change-password", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
     hostPolicy: () => request<HostAdminPolicy>("/api/identity/host-policy"),
     setHostPolicy: (input: { registrationMode: HostRegistrationMode }) =>
       request<HostAdminPolicy>("/api/identity/host-policy", {

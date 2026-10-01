@@ -279,7 +279,18 @@ describe("personal provider subscriptions", () => {
         const url =
           input instanceof Request ? input.url : input instanceof URL ? input.href : input;
         if (url.startsWith("https://pi.dev/api/models/providers/")) {
-          return new Response("not modified", { status: 304 });
+          return Response.json([
+            {
+              id: "gpt-5.5",
+              name: "GPT-5.5",
+              api: "openai-codex-responses",
+              reasoning: true,
+              input: ["text", "image"],
+              contextWindow: 272_000,
+              maxTokens: 128_000,
+              cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 },
+            },
+          ]);
         }
         if (url === "https://auth.openai.com/api/accounts/deviceauth/usercode") {
           return Response.json({
@@ -382,13 +393,13 @@ describe("personal provider subscriptions", () => {
       method: "POST",
       headers: headers(owner.token, true),
       body: JSON.stringify({
-        id: "gpt-5-4",
-        displayName: "gpt-5.4",
+        id: "gpt-5-5",
+        displayName: "gpt-5.5",
         backendId: "chatgpt-codex",
-        upstreamModelId: "gpt-5.4",
+        upstreamModelId: "gpt-5.5",
       }),
     });
-    await backend.app.request("/api/identity/model-offerings/gpt-5-4/entitlements", {
+    await backend.app.request("/api/identity/model-offerings/gpt-5-5/entitlements", {
       method: "PUT",
       headers: headers(owner.token, true),
       body: JSON.stringify({ entitlements: [{ subjectType: "user", subjectId: member.actor.id }] }),
@@ -418,8 +429,8 @@ describe("personal provider subscriptions", () => {
       await (await backend.hostReady).waitForIdle(session.id, member.actor);
     };
 
-    await run("opengui-offering", "gpt-5-4", "use the shared offering");
-    await run(personalConnectionId, "gpt-5.4", "use my personal connection");
+    await run("opengui-offering", "gpt-5-5", "use the shared offering");
+    await run(personalConnectionId, "gpt-5.5", "use my personal connection");
     expect(providerCredentials).toEqual([
       { authorization: `Bearer ${jwt("host-account", "host-access")}`, accountId: "host-account" },
       {

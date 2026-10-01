@@ -21,23 +21,20 @@ describe("seeded transcript ordering and deduplication properties", () => {
     for (let seed = 1; seed <= 120; seed += 1) {
       const random = seeded(seed);
       const count = random.int(1, 80);
-      const canonical = Array.from(
-        { length: count },
-        (_, index): HostEvent => ({
-          sessionId: snapshot.id,
-          event: {
-            type: "entry_appended",
-            entry: {
-              id: `entry-${index + 1}`,
-              sessionId: snapshot.id,
-              sequence: index + 1,
-              kind: "user_message",
-              payload: { text: `message-${index + 1}` },
-              createdAt: `2026-01-01T00:00:${String(index % 60).padStart(2, "0")}.000Z`,
-            },
+      const canonical = Array.from({ length: count }, (_, index): HostEvent => ({
+        sessionId: snapshot.id,
+        event: {
+          type: "entry_appended",
+          entry: {
+            id: `entry-${index + 1}`,
+            sessionId: snapshot.id,
+            sequence: index + 1,
+            kind: "user_message",
+            payload: { text: `message-${index + 1}` },
+            createdAt: `2026-01-01T00:00:${String(index % 60).padStart(2, "0")}.000Z`,
           },
-        }),
-      );
+        },
+      }));
       const delivery = random.shuffle([
         ...canonical,
         ...canonical.filter(() => random.int(0, 2) === 0),

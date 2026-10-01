@@ -159,6 +159,39 @@ export function registerIdentityRoutes(app: BackendApp, deps: IdentityRouteDeps)
   app.get("/api/identity/me", (c) => me(c.req.raw));
   app.get("/api/auth/me", (c) => me(c.req.raw));
 
+  app.put("/api/identity/profile", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (deps.mode !== "remote" || !deps.identity || actor?.type !== "user") return authRequired();
+    const body = await requestBody(c.req.raw);
+    const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
+    if (!displayName || displayName.length > 100)
+      return invalidRequest("Display name must be between 1 and 100 characters");
+    if (Object.keys(body!).some((key) => key !== "displayName"))
+      return invalidRequest("Only display name can be changed");
+    return identityOperation(() => deps.identity!.updateProfile(c.req.raw.headers, displayName));
+  });
+
+  app.post("/api/identity/change-password", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (deps.mode !== "remote" || !deps.identity || actor?.type !== "user") return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (
+      typeof body?.currentPassword !== "string" ||
+      typeof body.newPassword !== "string" ||
+      !body.currentPassword
+    )
+      return invalidRequest("Current and new passwords are required");
+    if (body.newPassword.length < 8 || body.newPassword.length > 128)
+      return invalidRequest("Password must be between 8 and 128 characters");
+    return identityOperation(() =>
+      deps.identity!.changePassword(
+        c.req.raw.headers,
+        body.currentPassword as string,
+        body.newPassword as string,
+      ),
+    );
+  });
+
   // Desktop Local exposes only the local identity status endpoints above.
   // Remote administration routes require a durable identity service.
   if (!deps.identity) return;

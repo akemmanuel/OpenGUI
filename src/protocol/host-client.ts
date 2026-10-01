@@ -11,6 +11,7 @@ import type {
   HostSkillInstallation,
   HostSkillSourceDescriptor,
   OpenGuiHostClient,
+  ProjectInstructions,
 } from "@/protocol/host-types";
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -139,6 +140,32 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
           body: JSON.stringify({ text }),
         })) as { text: string }
       ).text,
+    getPersonalInstructions: async () =>
+      ((await request("/api/host/personal-instructions")) as { text: string }).text,
+    setPersonalInstructions: async (text) =>
+      (
+        (await request("/api/host/personal-instructions", {
+          method: "PUT",
+          body: JSON.stringify({ text }),
+        })) as { text: string }
+      ).text,
+    getProjectInstructions: async (directory) =>
+      (await request(
+        `/api/host/project-instructions?directory=${encodeURIComponent(directory)}`,
+      )) as ProjectInstructions,
+    setProjectInstructions: async (directory, text) =>
+      (
+        (await request("/api/host/project-instructions", {
+          method: "PUT",
+          body: JSON.stringify({ directory, text }),
+        })) as { text: string }
+      ).text,
+    setProjectInstructionEditor: async (directory, teamId, allowed) => {
+      await request("/api/host/project-instructions/editors", {
+        method: "PUT",
+        body: JSON.stringify({ directory, teamId, allowed }),
+      });
+    },
     listMcpConnections: async () =>
       (await request("/api/host/mcp-connections")) as HostMcpConnection[],
     upsertMcpConnection: async (connection) =>

@@ -79,11 +79,11 @@ Finish [loc-reduction Tranche 2](./loc-reduction-highest-impact.md#tranche-2--sp
 
 ### Phase C — Reducer split (2–3 PRs) → **~600–1,000 LOC**
 
-| ID  | Task                                                                                                        |
+| ID | Task |
 | --- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| C1  | `workspaceReducer`: workspaces, projects, connection, hydration, resources cache, meta, worktrees           | **done** — `agent-reducer-workspace-slice.ts`        |
-| C2  | `sessionActivityReducer`: `MERGE_PROJECT_SESSIONS`, selection, busy/status, queue, permissions, `SESSION_*` | **done** — `agent-reducer-session-activity-slice.ts` |
-| C3  | Compose in provider; keep `BIND_ASSISTANT_TURN_FROM_TRANSCRIPT` minimal                                     | **done** — queue → workspace → session → `state`     |
+| C1 | `workspaceReducer`: workspaces, projects, connection, hydration, resources cache, meta, worktrees | **done** — `agent-reducer-workspace-slice.ts` |
+| C2 | `sessionActivityReducer`: `MERGE_PROJECT_SESSIONS`, selection, busy/status, queue, permissions, `SESSION_*` | **done** — `agent-reducer-session-activity-slice.ts` |
+| C3 | Compose in provider; keep `BIND_ASSISTANT_TURN_FROM_TRANSCRIPT` minimal | **done** — queue → workspace → session → `state` |
 
 **Do not** reintroduce `SET_MESSAGES`, `_sessionBuffers`, or `TRANSCRIPT_*` in reducer (`slop-check`).
 

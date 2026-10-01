@@ -524,6 +524,137 @@ export function registerHostProductRoutes(
     }
   });
 
+  const instructionAdmin = (actor: Actor) =>
+    actor.type === "local" ||
+    (actor.type === "user" && (actor.role === "owner" || actor.role === "admin"));
+
+  function personalInstructionActor(actor: Actor) {
+    if (actor.type !== "local" && actor.type !== "user") {
+      throw new IdentityError("FORBIDDEN", 403, "Personal instructions require a human account");
+    }
+  }
+
+  async function projectInstructionContext(actor: Actor, requested: string) {
+    if (!requested) throw new Error("directory is required");
+    const directory = await resolveRequestDirectory(durableActor(actor), requested);
+    const host = await input.getHost();
+    const project = await host.getProjectInstructions(directory, durableActor(actor));
+    const teams = (await input.identity?.instructionTeams(actor)) ?? [];
+    const canManage = instructionAdmin(actor);
+    const canEdit =
+      canManage ||
+      (actor.type === "user" &&
+        actor.role === "member" &&
+        teams.some((team) => team.member && project.teamEditors[team.id] === true));
+    return { host, project, canEdit, canManage, teams };
+  }
+
+  app.get("/api/host/personal-instructions", async (c) => {
+    try {
+      const actor = c.get("actor") as Actor;
+      personalInstructionActor(actor);
+      return Response.json({
+        ok: true,
+        value: { text: (await input.getHost()).getPersonalInstructions(durableActor(actor)) },
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.put("/api/host/personal-instructions", async (c) => {
+    try {
+      const actor = c.get("actor") as Actor;
+      personalInstructionActor(actor);
+      const body = await c.req.json();
+      if (!isPlainObject(body) || typeof body.text !== "string")
+        throw new Error("text is required");
+      const text = await (
+        await input.getHost()
+      ).setPersonalInstructions(body.text, durableActor(actor));
+      return Response.json({ ok: true, value: { text } });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.get("/api/host/project-instructions", async (c) => {
+    try {
+      const context = await projectInstructionContext(
+        c.get("actor") as Actor,
+        c.req.query("directory") ?? "",
+      );
+      return Response.json({
+        ok: true,
+        value: {
+          directory: context.project.directory,
+          text: context.project.text,
+          canEdit: context.canEdit,
+          canManage: context.canManage,
+          teams: context.canManage
+            ? context.teams.map((team) => ({
+                id: team.id,
+                name: team.name,
+                allowed: context.project.teamEditors[team.id] === true,
+              }))
+            : [],
+        },
+      });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.put("/api/host/project-instructions", async (c) => {
+    try {
+      const actor = c.get("actor") as Actor;
+      const body = await c.req.json();
+      if (
+        !isPlainObject(body) ||
+        typeof body.text !== "string" ||
+        typeof body.directory !== "string"
+      )
+        throw new Error("directory and text are required");
+      const context = await projectInstructionContext(actor, body.directory);
+      if (!context.canEdit)
+        throw new IdentityError("FORBIDDEN", 403, "Project instruction editing is not allowed");
+      const text = await context.host.setProjectInstructions(
+        context.project.directory,
+        body.text,
+        durableActor(actor),
+      );
+      return Response.json({ ok: true, value: { text } });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
+  app.put("/api/host/project-instructions/editors", async (c) => {
+    try {
+      const actor = c.get("actor") as Actor;
+      skillManagementActor(actor);
+      const body = await c.req.json();
+      if (
+        !isPlainObject(body) ||
+        typeof body.directory !== "string" ||
+        typeof body.teamId !== "string" ||
+        typeof body.allowed !== "boolean"
+      )
+        throw new Error("directory, teamId and allowed are required");
+      const context = await projectInstructionContext(actor, body.directory);
+      if (!context.teams.some((team) => team.id === body.teamId)) throw new Error("Unknown team");
+      await context.host.setProjectInstructionEditor(
+        context.project.directory,
+        body.teamId,
+        body.allowed,
+        durableActor(actor),
+      );
+      return Response.json({ ok: true, value: true });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
   app.get("/api/host/mcp-connections", async () => {
     const host = await input.getHost();
     return Response.json({ ok: true, value: await host.listMcpConnections() });

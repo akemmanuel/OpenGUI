@@ -1,3 +1,4 @@
+import { normalizeContext } from "@earendil-works/pi-ai";
 import type {
   Api,
   AssistantMessage,
@@ -9,6 +10,7 @@ import type {
   SimpleStreamOptions,
   Tool,
   Transport,
+  TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { streamSimple as streamOpenAiCompletions } from "@earendil-works/pi-ai/api/openai-completions";
@@ -18,6 +20,7 @@ import {
   streamSimple as streamOpenAiCodexResponses,
 } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
+import { OpenCodeRequestHeaders } from "./opencode-headers.ts";
 import {
   OpenAiResponsesWebSocketTransport,
   type OpenAiResponsesTransportMode,
@@ -72,7 +75,7 @@ export interface PiAiRoute {
 
 type PiStream = (
   model: Model<any>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
 
@@ -285,6 +288,20 @@ function replayFrom(message: AssistantMessage): ProviderReplayState | undefined 
   return items.length > 0 ? { items } : undefined;
 }
 
+function normalizedStopReason(
+  message: AssistantMessage,
+): "stop" | "length" | "tool_use" | "error" | "aborted" {
+  if (message.content.some((block) => block.type === "toolCall")) return "tool_use";
+  if (
+    message.stopReason === "length" ||
+    message.stopReason === "error" ||
+    message.stopReason === "aborted"
+  ) {
+    return message.stopReason;
+  }
+  return "stop";
+}
+
 function responseMetadata(input: {
   request: ModelRequest;
   route: PiAiRoute;
@@ -302,7 +319,7 @@ function responseMetadata(input: {
     responseModel: input.message.responseModel,
     protocol: protocolFor(input.route),
     usage,
-    stopReason: input.message.stopReason === "toolUse" ? "tool_use" : input.message.stopReason,
+    stopReason: normalizedStopReason(input.message),
     replay: replayFrom(input.message),
     cache: {
       key: input.request.cache?.key,
@@ -394,6 +411,7 @@ function applyCurrentOpenAiCacheFields(payload: unknown, request: ModelRequest, 
 
 export class PiAiTransport implements ModelTransport {
   readonly #options: PiAiTransportOptions;
+  readonly #openCodeHeaders = new OpenCodeRequestHeaders();
   readonly #codexConnections = new Map<string, { generation: string; active: number }>();
   readonly #openAiResponses: OpenAiResponsesWebSocketTransport;
 
@@ -409,6 +427,7 @@ export class PiAiTransport implements ModelTransport {
   }
 
   close() {
+    this.#openCodeHeaders.clear();
     this.#openAiResponses.close();
     for (const key of this.#codexConnections.keys()) closeOpenAICodexWebSocketSessions(key);
     this.#codexConnections.clear();
@@ -464,7 +483,10 @@ export class PiAiTransport implements ModelTransport {
     }
     const codexConnection = this.#acquireCodexConnection(request, route);
     const api = apiFor(route.protocol);
-    const headers: ProviderHeaders = { ...route.headers };
+    const headers: ProviderHeaders = {
+      ...route.headers,
+      ...this.#openCodeHeaders.forRequest(route.baseUrl, request),
+    };
     if (route.authHeader === false) headers.authorization = null;
     if (
       route.authHeader &&
@@ -500,7 +522,7 @@ export class PiAiTransport implements ModelTransport {
     const effectiveRequest = request.cache
       ? { ...request, cache: { ...request.cache, key } }
       : request;
-    const context = toPiContext(effectiveRequest, model);
+    const context = normalizeContext(toPiContext(effectiveRequest, model));
     const streams = this.#options.streams;
     const streamImpl = (streams?.[route.protocol] ??
       (route.protocol === "openai-chat"

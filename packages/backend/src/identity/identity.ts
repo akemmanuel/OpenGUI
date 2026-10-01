@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { NodeSqliteDialect } from "@better-auth/kysely-adapter/node-sqlite-dialect";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, bearer, username } from "better-auth/plugins";
@@ -169,7 +170,14 @@ export class IdentityService {
       "http://localhost"
     ).replace(/\/+$/, "");
     this.auth = betterAuth({
-      database: this.database,
+      // Better Auth's DatabaseSync adapter wraps each auth request in BEGIN/COMMIT.
+      // The Host owner-setup flow already owns an outer SQLite transaction, so use
+      // the same dialect with transaction wrapping disabled to avoid nested BEGINs.
+      database: {
+        dialect: new NodeSqliteDialect({ database: this.database }),
+        type: "sqlite",
+        transaction: false,
+      },
       secret,
       baseURL: this.authBaseURL,
       basePath: "/api/auth",
@@ -518,7 +526,7 @@ export class IdentityService {
           actor: {
             type: "user",
             id: user.id,
-            displayName: user.username || user.name || user.email || usernameValue,
+            displayName: user.name || user.username || user.email || usernameValue,
             role: membership.role,
           },
           user,
@@ -554,7 +562,7 @@ export class IdentityService {
     return {
       type: "user",
       id: user.id,
-      displayName: user.username || user.name || user.email,
+      displayName: user.name || user.username || user.email,
       role: membership.role,
     };
   }
@@ -569,6 +577,41 @@ export class IdentityService {
       user: session?.user ?? null,
       pathPolicy: await this.pathPolicyStatus(actor),
     };
+  }
+
+  async updateProfile(headers: Headers, displayName: string) {
+    return this.accountOperation(headers, "update-user", { name: displayName });
+  }
+
+  async changePassword(headers: Headers, currentPassword: string, newPassword: string) {
+    return this.accountOperation(headers, "change-password", {
+      currentPassword,
+      newPassword,
+      revokeOtherSessions: true,
+    });
+  }
+
+  private async accountOperation(headers: Headers, endpoint: string, body: object) {
+    await this.ready;
+    const authHeaders = new Headers(headers);
+    authHeaders.set("content-type", "application/json");
+    const response = await this.auth.handler(
+      new Request(`${this.authBaseURL}/api/auth/${endpoint}`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify(body),
+      }),
+    );
+    const value = (await response.json()) as { code?: string; message?: string; token?: string };
+    if (!response.ok) {
+      return Response.json(
+        { ok: false, error: value.message, code: value.code },
+        { status: response.status },
+      );
+    }
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete("content-length");
+    return Response.json({ ok: true, value }, { headers: responseHeaders });
   }
 
   async pathPolicyStatus(actor?: Actor | null) {
@@ -610,7 +653,7 @@ export class IdentityService {
         ? {
             type: "user",
             id: row.id,
-            displayName: row.username || row.name || row.email,
+            displayName: row.name || row.username || row.email,
             role: row.role,
           }
         : null;
@@ -1094,7 +1137,7 @@ export class IdentityService {
     if (actor.type !== "user") throw new IdentityError("FORBIDDEN", 403, "User access required");
     const users = this.database
       .prepare(
-        `SELECT u.id, COALESCE(u.username, u.name, u.email) AS name
+        `SELECT u.id, COALESCE(u.name, u.username, u.email) AS name
        FROM host_membership m JOIN user u ON u.id = m.user_id
        ORDER BY name`,
       )
@@ -1104,6 +1147,18 @@ export class IdentityService {
 
   private get teams() {
     return new TeamDirectory(this.database);
+  }
+
+  async instructionTeams(actor: Actor) {
+    await this.ready;
+    const teams = this.teams.principals();
+    const ids = new Set(this.teams.ids(actor));
+    const admin =
+      actor.type === "local" ||
+      (actor.type === "user" && (actor.role === "owner" || actor.role === "admin"));
+    return teams
+      .filter((team) => admin || ids.has(team.id))
+      .map((team) => ({ ...team, member: ids.has(team.id) }));
   }
 
   async listTeams(actor: Actor) {

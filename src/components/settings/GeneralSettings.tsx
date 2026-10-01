@@ -6,7 +6,6 @@ import {
   Globe,
   Layers,
   LayoutList,
-  LogOut,
   RotateCcw,
   Terminal,
 } from "lucide-react";
@@ -51,11 +50,6 @@ import { getDesktopShellClient } from "@/runtime/clients";
 import { storageGet, storageRemove, storageSet } from "@/lib/persistence/storage";
 import { isRespondingSidebarEnabled, setRespondingSidebarEnabled } from "@/lib/responding-sidebar";
 import packageJson from "../../../package.json";
-import {
-  getIdentityWorkspace,
-  identityWorkspaceIsLocalBypass,
-  logoutActiveWorkspaceIdentity,
-} from "@/features/identity/workspace-identity";
 
 // ---------------------------------------------------------------------------
 // General settings (wraps all general tab items)
@@ -86,7 +80,6 @@ export function GeneralSettings() {
       <RespondingSidebarSetting />
       <ModelAgeFilterSetting />
       <NotificationsToggle />
-      <IdentitySessionSetting />
       {isDesktop && shell.backend && (
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -140,36 +133,6 @@ export function PathsAndShellSettings() {
       ) : (
         <p className="text-sm text-muted-foreground">{t("settings.paths.desktopOnly")}</p>
       )}
-    </div>
-  );
-}
-
-function IdentitySessionSetting() {
-  const { t } = useTranslation();
-  const workspace = getIdentityWorkspace();
-  const [signingOut, setSigningOut] = useState(false);
-  if (!workspace?.authToken || identityWorkspaceIsLocalBypass(workspace)) return null;
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-      <div className="min-w-0 space-y-1">
-        <div className="flex items-center gap-2">
-          <LogOut className="size-4 text-muted-foreground" />
-          <span className="text-sm">{t("identity.accountSession")}</span>
-        </div>
-        <p className="break-words text-[11px] text-muted-foreground">{workspace.name}</p>
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={signingOut}
-        onClick={() => {
-          setSigningOut(true);
-          void logoutActiveWorkspaceIdentity().catch(() => setSigningOut(false));
-        }}
-      >
-        {signingOut ? t("identity.signingOut") : t("identity.signOut")}
-      </Button>
     </div>
   );
 }

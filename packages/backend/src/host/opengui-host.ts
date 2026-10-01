@@ -56,6 +56,12 @@ import {
   type DeviceOAuthPending,
   type OAuthTokens,
 } from "./device-oauth.ts";
+import {
+  composeInstructions,
+  normalizeScopedInstructions,
+  personalInstructionKey,
+  type ScopedInstructions,
+} from "./scoped-instructions.ts";
 import { HostPathAuthorizer } from "../path-policy/enforcement.ts";
 import type { SessionAccessAction } from "../identity/identity.ts";
 import {
@@ -205,6 +211,7 @@ interface HostSettingsFile {
   projects: string[];
   mcpConnections: HostMcpConnection[];
   customInstructions: string;
+  scopedInstructions: ScopedInstructions;
 }
 
 type PersonalCredential<T> = { connectionId: string; tokens: T };
@@ -341,6 +348,7 @@ export class OpenGuiHost {
     projects: [],
     mcpConnections: [],
     customInstructions: "",
+    scopedInstructions: { personal: {}, projects: {} },
   };
   #apiKeys: Record<string, string> = {};
   #codexTokens: CodexTokens | null = null;
@@ -576,7 +584,14 @@ export class OpenGuiHost {
         stream: (request, signal) => this.#streamModel(request, signal),
       } satisfies ModelTransport,
       resolveExecutionPolicy: this.#resolveExecutionPolicy,
-      resolveCustomInstructions: () => this.#settings.customInstructions,
+      resolveCustomInstructions: async ({ actor, projectDirectory }) => {
+        const directory = await this.#pathAuthorizer.authorizePath(actor, projectDirectory, "read");
+        return composeInstructions(
+          this.#settings.customInstructions,
+          this.#settings.scopedInstructions.projects[directory]?.text ?? "",
+          actor?.type === "api_key" ? "" : this.getPersonalInstructions(actor),
+        );
+      },
       shellExecutor: this.#shellExecutor,
       agentTools: createMcpAgentToolSource(this.#mcpBroker, {
         authorize: async (scope) => {
@@ -982,6 +997,7 @@ export class OpenGuiHost {
           : [],
         mcpConnections: [],
         customInstructions: normalizeCustomInstructions(parsed.customInstructions),
+        scopedInstructions: normalizeScopedInstructions(parsed.scopedInstructions),
       };
     } catch {
       return {
@@ -991,6 +1007,7 @@ export class OpenGuiHost {
         projects: [],
         mcpConnections: [],
         customInstructions: "",
+        scopedInstructions: { personal: {}, projects: {} },
       };
     }
   }
@@ -1063,6 +1080,7 @@ export class OpenGuiHost {
           ? (state.settings.mcpConnections as HostMcpConnection[])
           : [],
         customInstructions: normalizeCustomInstructions(state.settings.customInstructions),
+        scopedInstructions: normalizeScopedInstructions(state.settings.scopedInstructions),
       },
       secrets: {
         apiKeys:
@@ -1251,6 +1269,94 @@ export class OpenGuiHost {
       settings: { ...state.settings, customInstructions },
     }));
     return customInstructions;
+  }
+
+  getPersonalInstructions(actor?: DurableActor) {
+    return this.#settings.scopedInstructions.personal[personalInstructionKey(actor)] ?? "";
+  }
+
+  async setPersonalInstructions(value: string, actor?: DurableActor) {
+    const text = normalizeCustomInstructions(value, { rejectOverLimit: true });
+    await this.#updateState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        scopedInstructions: {
+          ...state.settings.scopedInstructions,
+          personal: {
+            ...state.settings.scopedInstructions.personal,
+            [personalInstructionKey(actor)]: text,
+          },
+        },
+      },
+    }));
+    return text;
+  }
+
+  async getProjectInstructions(directory: string, actor?: DurableActor) {
+    directory = await this.#pathAuthorizer.authorizePath(actor, directory, "read");
+    if (!this.#settings.projects.includes(directory)) throw new Error("Project is not registered");
+    return {
+      directory,
+      ...structuredClone(
+        this.#settings.scopedInstructions.projects[directory] ?? { text: "", teamEditors: {} },
+      ),
+    };
+  }
+
+  async setProjectInstructions(directory: string, value: string, actor?: DurableActor) {
+    const project = await this.getProjectInstructions(directory, actor);
+    const text = normalizeCustomInstructions(value, { rejectOverLimit: true });
+    await this.#updateState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        scopedInstructions: {
+          ...state.settings.scopedInstructions,
+          projects: {
+            ...state.settings.scopedInstructions.projects,
+            [project.directory]: {
+              ...state.settings.scopedInstructions.projects[project.directory],
+              text,
+              teamEditors:
+                state.settings.scopedInstructions.projects[project.directory]?.teamEditors ?? {},
+            },
+          },
+        },
+      },
+    }));
+    return text;
+  }
+
+  async setProjectInstructionEditor(
+    directory: string,
+    teamId: string,
+    allowed: boolean,
+    actor?: DurableActor,
+  ) {
+    const project = await this.getProjectInstructions(directory, actor);
+    await this.#updateState((state) => {
+      const current = state.settings.scopedInstructions.projects[project.directory] ?? {
+        text: "",
+        teamEditors: {},
+      };
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          scopedInstructions: {
+            ...state.settings.scopedInstructions,
+            projects: {
+              ...state.settings.scopedInstructions.projects,
+              [project.directory]: {
+                ...current,
+                teamEditors: { ...current.teamEditors, [teamId]: allowed },
+              },
+            },
+          },
+        },
+      };
+    });
   }
 
   async listMcpConnections(): Promise<HostMcpConnection[]> {

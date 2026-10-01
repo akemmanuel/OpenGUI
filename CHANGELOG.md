@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3
+
+- Added scoped custom instructions with host, personal, and per-project scopes plus team-based project editors.
+- Added profile menu with account switching in the sidebar footer.
+- Added OpenCode request headers support and upgraded pi-ai to 0.99.1 with refreshed model catalogs.
+- Refreshed dependencies including Vite Plus 1.0, Electron 44, React 19.3, and Vitest 5.
+
 ## 0.6.2
 
 - Routed codex and opencode built-ins through pi-ai catalog metadata with OpenCode Zen support.

@@ -22,7 +22,7 @@ export function bytePartitions(value: string, seed: number): Uint8Array[] {
   const random = seeded(seed);
   const bytes = new TextEncoder().encode(value);
   const result: Uint8Array[] = [];
-  for (let offset = 0; offset < bytes.length; ) {
+  for (let offset = 0; offset < bytes.length;) {
     const length = Math.min(bytes.length - offset, random.int(1, 11));
     result.push(bytes.slice(offset, offset + length));
     offset += length;

@@ -1,4 +1,24 @@
 {
+  "account": {
+    "openProfile": "Open profile menu",
+    "connectedHost": "Connected to: {{host}}",
+    "editProfile": "Edit profile",
+    "changePassword": "Change password",
+    "displayName": "Display name",
+    "profileDescription": "Update your display name. Username and email cannot be changed.",
+    "passwordDescription": "Changing your password signs out your other sessions on this Host.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "showPasswords": "Show passwords",
+    "hidePasswords": "Hide passwords",
+    "saving": "Saving…",
+    "profileSaved": "Profile updated",
+    "passwordSaved": "Password changed. Your other sessions have been signed out.",
+    "wrongPassword": "Current password is incorrect. Try again.",
+    "saveFailed": "Could not save changes. Check your connection and try again.",
+    "logoutFailed": "Signed out on this device, but could not confirm sign-out with the Host.",
+    "retryProfile": "Could not load profile. Retry"
+  },
   "access": {
     "inspect": "View access",
     "personTitle": "Access for {{name}}",
@@ -143,7 +163,7 @@
       "users": "Invite people and manage their Host roles.",
       "paths": "Control OpenGUI path access and understand the separate authority of Shell commands.",
       "host": "Host-wide restrictions, registration, and automation keys.",
-      "instructions": "Host-wide custom instructions added to every Session's system prompt.",
+      "instructions": "Host-wide instructions, shared project instructions, and private personal preferences.",
       "skills": "Reusable instructions available to the agent.",
       "teams": "Group people and manage their access together."
     },
@@ -153,6 +173,19 @@
       "desktopOnly": "Default directories, file manager, and terminal commands are configured in the Desktop app."
     },
     "instructions": {
+      "scopeLabel": "Instruction scope",
+      "scope": { "host": "Host", "project": "Project", "personal": "Personal" },
+      "hierarchy": "Host instructions apply everywhere. Shared project instructions apply to everyone working in that project. Personal preferences apply to your turns only. When instructions conflict, Host takes priority, then Project, then Personal.",
+      "helpScope": {
+        "host": "Shared with everyone on this Host. Only owners and admins can edit.",
+        "project": "Shared with everyone who has access to this project. Changes apply on the next turn.",
+        "personal": "Private to your account on this Host. Applied when you send a prompt, including in shared Sessions. Do not include secrets."
+      },
+      "discard": "Discard your unsaved instructions?",
+      "noProjects": "Add a project first to set its shared instructions.",
+      "projectReadOnly": "You can read these shared instructions. An administrator must allow one of your teams to edit them.",
+      "editors": "Teams allowed to edit this project's instructions",
+      "editorsHelp": "Allow members of the selected teams to edit. Membership in any allowed team is enough. Viewers remain read-only; owners and admins can always edit. These permissions do not grant project access.",
       "label": "Custom instructions",
       "help": "These house rules apply to every Project and Session on this Host. They are added to the agent's system prompt on the next turn.",
       "readOnly": "These house rules apply to every Session on this Host. Only a Host administrator can change them.",
