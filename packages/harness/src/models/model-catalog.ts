@@ -2,18 +2,10 @@ import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Model } from "@earendil-works/pi-ai";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
-import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { piAiCatalogConnection, type PiAiCatalogProviderId } from "./pi-ai-catalog.ts";
 import type { OpenAiCompatibleConnection } from "./openai-chat.ts";
 
 const FRESH_MS = 4 * 60 * 60 * 1000;
-const factories = {
-  "openai-codex": openaiCodexProvider,
-  opencode: opencodeProvider,
-  "opencode-go": opencodeGoProvider,
-};
 type Entry = { models: Model<any>[]; checkedAt: number; etag?: string };
 
 // Only model metadata crosses this boundary. Endpoint URLs, headers and credentials
@@ -102,7 +94,7 @@ function parseModels(value: unknown, provider: PiAiCatalogProviderId): Model<any
   });
 }
 
-/** Host-local catalog: bundled models, a persisted pi.dev overlay, and no auth. */
+/** Host-local catalog: online pi.dev models with a persisted offline cache, and no auth. */
 export class ModelCatalog {
   readonly #entries = new Map<PiAiCatalogProviderId, Entry>();
   readonly #pending = new Map<PiAiCatalogProviderId, Promise<void>>();
@@ -118,13 +110,10 @@ export class ModelCatalog {
     preset: Pick<OpenAiCompatibleConnection, "id" | "label" | "baseUrl" | "defaultModelId">,
     freeOnly = false,
   ) {
-    const overlay = this.#entries.get(provider)?.models;
-    const source = overlay && overlay.length > 0 ? overlay : factories[provider]().getModels();
-    const models = new Map(source.map((model) => [model.id, model]));
     return piAiCatalogConnection(
       provider,
       preset,
-      [...models.values()].filter(
+      (this.#entries.get(provider)?.models ?? []).filter(
         (model) => !freeOnly || (model.cost.input === 0 && model.cost.output === 0),
       ),
     );
@@ -149,7 +138,7 @@ export class ModelCatalog {
           etag: typeof stored.etag === "string" ? stored.etag : undefined,
         });
       } catch {
-        /* Missing or invalid cache: use bundled models. */
+        /* Missing or invalid cache: fetch online; no installed-model fallback. */
       }
     }
     const stored = this.#entries.get(provider);
@@ -178,7 +167,7 @@ export class ModelCatalog {
       await writeFile(temporary, JSON.stringify(entry));
       await rename(temporary, path);
     } catch {
-      // Back off failed refreshes too, without replacing the persisted catalog.
+      // Back off failed refreshes too, retaining only cached online models.
       this.#entries.set(provider, {
         models: [],
         ...this.#entries.get(provider),

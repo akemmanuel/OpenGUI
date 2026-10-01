@@ -1675,13 +1675,13 @@ export class IdentityService {
             for (let suffix = 2; slugTaken.get(id); suffix += 1) id = `${base}-${suffix}`;
             insertOffering.run(id, modelId, connection.id, modelId, owner.id, now, now);
             offering = { id };
-          }
-          const grants = oldGrants.all(connection.id, modelId) as Array<{
-            subjectType: "user" | "team";
-            subjectId: string;
-          }>;
-          for (const grant of grants) {
-            copyGrant.run(offering.id, grant.subjectType, grant.subjectId, owner.id, now);
+            const grants = oldGrants.all(connection.id, modelId) as Array<{
+              subjectType: "user" | "team";
+              subjectId: string;
+            }>;
+            for (const grant of grants) {
+              copyGrant.run(offering.id, grant.subjectType, grant.subjectId, owner.id, now);
+            }
           }
         }
       }
@@ -2259,6 +2259,18 @@ export class IdentityService {
           JSON.stringify(this.teams.ids(actor)),
         ),
     );
+  }
+
+  async authorizePersonalSubscription(actor: Actor) {
+    await this.ready;
+    if (actor.type !== "user") return;
+    if (!this.modelCredentialAllowed(actor, "byos")) {
+      throw new IdentityError(
+        "MODEL_CREDENTIAL_POLICY_DENIED",
+        403,
+        "Personal subscriptions are disabled by Host policy",
+      );
+    }
   }
 
   private modelCredentialAllowed(actor: Actor, kind: ModelCredentialKind) {

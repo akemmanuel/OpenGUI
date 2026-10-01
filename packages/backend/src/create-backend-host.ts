@@ -152,7 +152,10 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
           if (!durableActor) throw new Error("Model offering actor is required");
           const actor = await identity.resolveDurableActor(durableActor);
           if (!actor) throw new Error("Model offering is not available");
-          return identity.resolveModelOfferingForUse(actor, offeringId);
+          return {
+            ...(await identity.resolveModelOfferingForUse(actor, offeringId)),
+            executionScope: "host" as const,
+          };
         }
       : undefined,
     authorizeSkillManagement: identity
@@ -215,7 +218,6 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     }
     c.set("actor", actor);
     const humanAdminOnly =
-      c.req.path.startsWith("/api/host/auth/") ||
       c.req.path.startsWith("/api/host/mcp-connections") ||
       (c.req.path === "/api/host/custom-instructions" && c.req.method !== "GET") ||
       (c.req.path.startsWith("/api/host/skills") &&

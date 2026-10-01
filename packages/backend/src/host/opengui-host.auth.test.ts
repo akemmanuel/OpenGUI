@@ -83,6 +83,42 @@ describe("OpenGuiHost authentication persistence", () => {
       await restarted.close();
     }
   });
+  test("refreshes the Codex catalog when only personal subscriptions exist", async () => {
+    const dataDirectory = await directory();
+    const initial = new OpenGuiHost(dataDirectory, {
+      fetchImpl: vi.fn().mockRejectedValue("offline"),
+    });
+    await initial.start();
+    await initial.setCustomInstructions("initialize state");
+    await initial.close();
+    const statePath = join(dataDirectory, HOST_STATE_FILENAME);
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.secrets.personalCodexTokens = {
+      "member-1": {
+        connectionId: "personal-opaque",
+        tokens: {
+          accessToken: "access",
+          refreshToken: "refresh",
+          accountId: "account",
+          expiresAt: Date.now() + 3_600_000,
+        },
+      },
+    };
+    await writeFile(statePath, JSON.stringify(state));
+    const fetchImpl = vi.fn(async () => Response.json({}));
+    const host = new OpenGuiHost(dataDirectory, { fetchImpl: fetchImpl as typeof fetch });
+
+    await host.start();
+    try {
+      expect(fetchImpl).toHaveBeenCalledWith(
+        "https://pi.dev/api/models/providers/openai-codex",
+        expect.any(Object),
+      );
+    } finally {
+      await host.close();
+    }
+  });
+
   test("keeps durable provider continuation state out of snapshots and events", async () => {
     const dataDirectory = await directory();
     const host = new OpenGuiHost(dataDirectory, {
@@ -163,6 +199,20 @@ describe("OpenGuiHost authentication persistence", () => {
     let refreshes = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+      if (url === "https://pi.dev/api/models/providers/openai-codex") {
+        return Response.json([
+          {
+            id: "gpt-5.4",
+            name: "GPT-5.4",
+            api: "openai-codex-responses",
+            reasoning: true,
+            input: ["text", "image"],
+            contextWindow: 272000,
+            maxTokens: 128000,
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ]);
+      }
       if (url === "https://auth.openai.com/oauth/token") {
         refreshes += 1;
         return Response.json({
@@ -490,26 +540,6 @@ describe("OpenGuiHost authentication persistence", () => {
     const catalogFetch = vi.fn(async () =>
       Response.json([
         {
-          id: "glm-5.2",
-          name: "GLM 5.2",
-          api: "openai-completions",
-          reasoning: false,
-          input: ["text"],
-          contextWindow: 128000,
-          maxTokens: 16000,
-          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
-        },
-        {
-          id: "qwen3.7-max",
-          name: "Qwen 3.7 Max",
-          api: "anthropic-messages",
-          reasoning: true,
-          input: ["text"],
-          contextWindow: 128000,
-          maxTokens: 16000,
-          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
-        },
-        {
           id: "future-go-model",
           name: "Future Go Model",
           api: "openai-completions",
@@ -537,8 +567,8 @@ describe("OpenGuiHost authentication persistence", () => {
         id: "opencode-go",
         label: "OpenCode Go",
         baseUrl: "https://opencode.ai/zen/go/v1",
-        defaultModelId: "glm-5.2",
-        modelIds: expect.arrayContaining(["glm-5.2", "qwen3.7-max", "future-go-model"]),
+        defaultModelId: "future-go-model",
+        modelIds: ["future-go-model"],
       }),
     ]);
     await host.close();
@@ -567,16 +597,6 @@ describe("OpenGuiHost authentication persistence", () => {
         if (url === "https://pi.dev/api/models/providers/opencode") {
           expect(new Headers(init?.headers).has("authorization")).toBe(false);
           return Response.json([
-            {
-              id: "big-pickle",
-              name: "Big Pickle",
-              api: "openai-completions",
-              reasoning: false,
-              input: ["text"],
-              contextWindow: 128000,
-              maxTokens: 16000,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            },
             {
               id: "hy3-free",
               name: "Hy3 Free",
@@ -613,13 +633,11 @@ describe("OpenGuiHost authentication persistence", () => {
       baseUrl: "https://opencode.ai/zen/v1",
       modelIds: [],
     });
-    expect(host.listModelConnections()[0]?.modelIds).toEqual(
-      expect.arrayContaining(["big-pickle", "hy3-free"]),
-    );
+    expect(host.listModelConnections()[0]?.modelIds).toEqual(["hy3-free"]);
     expect(host.listModelConnections()[0]?.modelIds).not.toContain("deepseek-v4-pro");
     const session = await host.createSession({
       projectDirectory: dataDirectory,
-      model: { connectionId: "opencode-zen", modelId: "big-pickle" },
+      model: { connectionId: "opencode-zen", modelId: "hy3-free" },
       reasoning: "none",
     });
     await host.prompt(session.id, { text: "hello" });

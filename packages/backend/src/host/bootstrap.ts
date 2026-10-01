@@ -49,7 +49,7 @@ export async function createHostContext(
     resolveModelOffering?: (
       offeringId: string,
       actor?: DurableActor,
-    ) => Promise<{ connectionId: string; modelId: string }>;
+    ) => Promise<{ connectionId: string; modelId: string; executionScope: "host" }>;
     homeDirectory?: string;
     skillSourceResolver?: SkillSourceResolver;
     authorizeSkillManagement?: (actor: DurableActor | undefined) => Promise<void>;
