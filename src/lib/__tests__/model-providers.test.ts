@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vite-plus/test";
-import { connectionsToModelProviders } from "../model-providers";
+import { offeringsToModelConnections, connectionsToModelProviders } from "../model-providers";
 
 test("renders Host metadata without fetching a second catalog", () => {
   const fetchImpl = vi.fn();
@@ -33,4 +33,27 @@ test("renders Host metadata without fetching a second catalog", () => {
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+test("preserves supported reasoning levels through the offering picker projection", () => {
+  const reasoningEfforts = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+  const [provider] = connectionsToModelProviders(
+    offeringsToModelConnections([
+      {
+        id: "sol",
+        displayName: "Sol",
+        description: null,
+        createdAt: 1,
+        updatedAt: 1,
+        modelCapabilities: {
+          reasoning: true,
+          reasoningEfforts: [...reasoningEfforts],
+          context: 272000,
+        },
+      },
+    ]),
+  );
+  expect(provider?.models.sol?.reasoningEfforts).toEqual(reasoningEfforts);
+  expect(provider?.models.sol?.limit).toEqual({ context: 272000 });
+  expect(offeringsToModelConnections([])).toEqual([]);
 });
