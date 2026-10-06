@@ -6,10 +6,26 @@ function text(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+/**
+ * Durable handoff text for resume. New completed entries carry validated
+ * rendered markdown; older entries already stored prose in the same field.
+ * Neither form requires reading any filesystem location.
+ */
+function resumeHandoffText(entry: SessionEntry): string | null {
+  const handoff = entry.payload.handoff;
+  if (typeof handoff === "string" && handoff.trim()) return handoff;
+  return null;
+}
+
 export function buildModelContext(entries: SessionEntry[]): ModelContextItem[] {
   const context: ModelContextItem[] = [];
-  const compaction = latestCompletedCompaction(entries);
-  const visibleEntries = compaction ? entries.slice(compaction.index + 1) : entries;
+  const completed = latestCompletedCompaction(entries);
+  const handoff = completed ? resumeHandoffText(completed.entry) : null;
+  // A corrupt/missing summary cannot authorize dropping any earlier context.
+  const compaction = handoff === null ? null : completed;
+  const visibleEntries = (compaction ? entries.slice(compaction.index + 1) : entries).filter(
+    (entry) => entry.payload.purpose !== "compaction",
+  );
   const responsesByRun = new Map<
     string,
     import("../models/transport.ts").ProviderResponseMetadata
@@ -24,10 +40,10 @@ export function buildModelContext(entries: SessionEntry[]): ModelContextItem[] {
       );
     }
   }
-  if (compaction) {
+  if (compaction && handoff !== null) {
     context.push({
       type: "user_message",
-      text: buildResumePrompt(text(compaction.entry.payload.handoffDirectory)),
+      text: buildResumePrompt(handoff),
       model: compaction.entry.payload.model as { connectionId: string; modelId: string },
       reasoning: text(compaction.entry.payload.reasoning, "none"),
     });
