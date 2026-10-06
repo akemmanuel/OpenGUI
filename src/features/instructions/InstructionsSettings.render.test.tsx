@@ -182,6 +182,24 @@ describe("InstructionsSettings", () => {
     ).toBe(false);
   });
 
+  test("failed personal saves preserve the draft", async () => {
+    fixture.host.setPersonalInstructions.mockRejectedValueOnce(new Error("Host unreachable"));
+    render(<InstructionsSettings />);
+    await screen.findByLabelText("settings.instructions.label");
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.instructions.scope.personal" }),
+    );
+    const editor = await screen.findByLabelText("settings.instructions.label");
+    await userEvent.type(editor, " unsaved");
+    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.save" }));
+    await waitFor(() => expect(fixture.notifyUnknownError).toHaveBeenCalled());
+    expect((editor as HTMLTextAreaElement).value).toContain("unsaved");
+    expect(
+      (screen.getByRole("button", { name: "settings.instructions.save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   test("lets members read instructions but not edit them", async () => {
     fixture.actor = { type: "user", id: "member", role: "member" };
     fixture.host.getCustomInstructions.mockResolvedValue("Always reply in Spanish.");
