@@ -146,6 +146,143 @@ Immutable image IDs/digests do not prevent image deletion; restore and verify th
 before retrying deployment or rolling back. Do not use broad image/container/system pruning as
 a readiness test.
 
+## Shell image lifecycle automation
+
+`scripts/sandbox-shell-lifecycle.ts` provides the regular repository automation for the
+deployment lifecycle. It never mutates a Docker daemon in dry-run mode, never
+emits global prune verbs, and never restarts services. Every command runs with:
+
+```bash
+node --experimental-strip-types scripts/sandbox-shell-lifecycle.ts <command> [--apply] [--lock <path>]
+```
+
+| Command          | Purpose                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `check`          | Verify configured image, `runsc` runtime, keeper container, and config consistency.        |
+| `probe`          | Authenticated restricted-grant execution probe (write, read-only, out-of-grant, identity). |
+| `retain`         | Preview (or with `--apply`, create) the unstarted keeper; `--keeper` for new-name moves.   |
+| `cleanup`        | Plan (or with `--apply`, execute) label-scoped removal of disposable images only.          |
+| `upgrade-plan`   | Print the ordered operator-driven upgrade sequence with current blockers.                  |
+| `restore-verify` | Verify an offline archive checksum plus the loaded image digest as separate facts.         |
+| `notify-test`    | Test the configured alert webhook, or confirm it stays OFF when unconfigured.              |
+
+Run the existing `sandbox-doctor` isolation preflight first: rootless Docker remains
+required. Lifecycle inspection and direct broker probes do not replace that preflight
+or a controlled restricted Account-to-Harness acceptance check.
+
+Configuration uses the existing broker variables plus a small lifecycle set:
+
+- `OPENGUI_SHELL_IMAGE`: shell image reference. Until a separately versioned shell image is
+  validated, pin this to the same tested release reference as the App image (`OPENGUI_IMAGE`);
+  do not invent an untested minimal toolchain for production.
+- `OPENGUI_SHELL_KNOWN_GOOD_IMAGE` / `OPENGUI_SHELL_PREVIOUS_KNOWN_GOOD_IMAGE`: last verified
+  images. Cleanup always preserves them; rollback never targets an absent image.
+- `OPENGUI_SHELL_KEEPER_CONTAINER` (default `opengui-shell-image-keepalive`): the single
+  operator-owned keeper name this tooling manages.
+- `OPENGUI_SHELL_PROBE_FIXTURE_ROOT`: disposable directory for `probe`. Create it with
+  `probe --init-fixture`, which exclusively creates a fresh root (private `project`,
+  `readonly`, `outside` dirs plus an identity marker) or verifies a pre-existing root is
+  provably our fixture (exact marker content, no foreign entries, no symlinks) before
+  touching anything. A foreign or symlinked directory is refused with zero changes, and
+  existing paths are never chmodded — never point this at a customer project. The probe
+  fails as `probe_not_configured` when the endpoint or an initialized fixture is absent;
+  image inspection alone is never reported as shell readiness. Probes are direct broker
+  checks only and do not verify the Host/Account-to-Harness path.
+- `OPENGUI_SHELL_BROKER_IMAGE` (optional): the broker's configured image reference, used only
+  to consistency-check keeper/broker/shell configuration. Unset means broker consistency is
+  reported as unchecked, not as passing.
+- `OPENGUI_SHELL_LIFECYCLE_WEBHOOK_URL`: generic HTTPS webhook for failure alerts. Unset means
+  alerts stay OFF. `check`/`probe` send only with `--alert-on-failure`. Loopback `http://` is
+  accepted for local fake-server tests only.
+- `OPENGUI_SHELL_LIFECYCLE_LOCK` (default `$XDG_RUNTIME_DIR/opengui-shell-lifecycle.lock`):
+  lock file serializing `retain --apply` and `cleanup --apply`. `--apply` opens the lock file
+  itself (`O_NOFOLLOW`, created `0600` when absent), acquires a nonblocking kernel lock on
+  that open file description via `flock -n`, holds its own fd for the entire mutation, then
+  closes it. There is no relay process, no environment flag, and no internal entry point
+  (the removed `__apply` route always refuses). The path must live in a private
+  owner-controlled directory (no symlinks, parent owned by the operator and not
+  group/world-writable). Contention fails fast before any Docker call; there are no
+  unbounded waits.
+- Restore expectations: `OPENGUI_SHELL_RESTORE_ARCHIVE`,
+  `OPENGUI_SHELL_RESTORE_ARCHIVE_SHA256`, `OPENGUI_SHELL_RESTORE_IMAGE`, and
+  `OPENGUI_SHELL_RESTORE_IMAGE_DIGEST`. The archive hash is streamed, never fully buffered.
+
+### Keeper lifecycle and pruning scope
+
+The keeper is an unstarted `docker create` container labeled `opengui.shell.keeper=true` that
+pins one image ID. `retain --apply` uses the inspected immutable ID with `--pull=never`:
+changing a tag cannot change the pinned image, and retention never initiates restoration.
+It only helps against label-scoped image cleanup; it does **not** protect
+against `docker rm -f`, `image rm --force`, `container prune`, or `system prune`, and it must
+never be started for shell execution (a running keeper fails `check`). A foreign container that
+collides with the keeper name is reported as `keeper_collision` and is never deleted or reused.
+
+A keeper that collides with a foreign container, mismatches the configured image, or is
+running is refused outright: `retain` never updates a keeper in place, never adopts an
+unlabeled pre-existing container, and never deletes anything. Migrate explicitly with
+`retain --keeper <new-name>`, verify with `check`, then remove the old container yourself
+with `docker rm` only after the new keeper probes green.
+
+Supported cleanup lists with `docker images --no-trunc`, inspects every candidate's real
+`Config.Labels` and immutable ID, and resolves the configured, known-good, and keeper
+references to immutable IDs first. Any protected reference that cannot be resolved fails the
+run closed with zero removals. Unverifiable candidates, including truncated IDs, are excluded
+and reported; they are never removed.
+Only `opengui.shell.disposable=true` images survive to explicit `docker image rm -- <id>`,
+re-verified immediately before each removal; every foreign image is excluded.
+`image prune -a`, `container prune`, and `system prune` remain unsupported on shell hosts.
+Re-run `check` and `probe` after any cleanup or upgrade.
+
+### Upgrade, rollback, and recovery
+
+1. Verify the new image (`check` with the new `OPENGUI_SHELL_IMAGE`).
+2. Create a new-name keeper (`retain --keeper <new-name> --apply`); keepers are never
+   updated in place.
+3. Update the broker configuration to the new image consistently.
+4. Restart the broker via explicit operator action; automation never restarts services and
+   upgrade application is intentionally not automated.
+5. Run `probe` against the restarted broker.
+6. Mark the image known-good only after the isolation preflight, broker probe, and controlled
+   restricted Account-to-Harness acceptance pass; keep the previous known-good as
+   the rollback target, then `docker rm` the old keeper yourself. Rollback to an absent
+   image is refused.
+
+Pin deployments by immutable digest (`image@sha256:…`) and record the source revision label
+(`org.opencontainers.image.revision`) at build time; `check` reports provenance guidance when
+either is missing. Restore offline archives only through `restore-verify`: the archive file
+is stream-hashed and compared to its expected checksum, then the already-loaded image is
+inspected for the expected digest. Both are reported as separate facts; the explicit operator
+`docker load` between them is not attested, and this tool never loads images itself.
+Recurring `check`/`probe --alert-on-failure` runs notify through the configured webhook with
+a fixed fault summary (no tokens, commands, or customer content); the systemd journal or a
+unit state alone is not notification. A versioned scheduling example (operator-run
+documentation, not installed automation):
+
+```ini
+# /etc/systemd/system/opengui-shell-lifecycle-check.service
+[Unit]
+Description=OpenGUI shell image lifecycle check
+[Service]
+Type=oneshot
+EnvironmentFile=/path/to/deployment/opengui-shell-lifecycle.env
+ExecStart=/usr/bin/node --experimental-strip-types /path/to/OpenGUI/scripts/sandbox-shell-lifecycle.ts check --alert-on-failure
+```
+
+```ini
+# /etc/systemd/system/opengui-shell-lifecycle-check.timer
+[Unit]
+Description=Hourly OpenGUI shell lifecycle check
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+[Install]
+WantedBy=timers.target
+```
+
+Diagnostics across all commands use fixed public-safe summaries; raw Docker stderr,
+operator-configured references, endpoints, tokens, paths, and customer content never appear
+in normal output. Only daemon-provided full image IDs appear in removal plans.
+
 The Host re-resolves the actor's policy immediately before every tool effect. Restricted shell is
 enabled only when the actor has grants and the broker is configured. Every invocation gets a new
 gVisor container with only those canonical grant roots mounted; `read` grants are mounted read-only
