@@ -3,6 +3,7 @@ import type { HostSessionSnapshot } from "./host-types";
 import {
   applyHostTranscriptEvent,
   createHostTranscriptStream,
+  projectHostSnapshotToMessages,
   projectHostTranscriptStream,
 } from "./host-transcript";
 
@@ -686,5 +687,87 @@ describe("Host transcript streaming", () => {
       (message) => message.info.id === "stream:run-1",
     );
     expect(streamed?.info.modelID).toBe("muse-spark-1.3-contributor-free");
+  });
+});
+
+describe("Host transcript shell failure reasons", () => {
+  test("carries the recorded machine reason into shell metadata for the tool view", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "call-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "tool_call",
+        payload: { runId: "run-1", toolCallId: "tool-1", name: "shell", input: {} },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "result-1",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "tool_result",
+        payload: {
+          runId: "run-1",
+          toolCallId: "tool-1",
+          output: {
+            status: "error",
+            reason: "broker_unreachable",
+            summary: "Sandbox shell broker is unreachable. The command did not run.",
+          },
+        },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+    ];
+
+    const parts = projectHostSnapshotToMessages(input).flatMap((message) => message.parts);
+    const tool = parts.find((part) => part.type === "tool");
+    expect(tool).toMatchObject({
+      type: "tool",
+      state: {
+        status: "error",
+        metadata: expect.objectContaining({ reason: "broker_unreachable" }),
+      },
+    });
+  });
+
+  test("carries policy denial reasons into shell metadata as well", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "call-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "tool_call",
+        payload: { runId: "run-1", toolCallId: "tool-1", name: "shell", input: {} },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "result-1",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "tool_result",
+        payload: {
+          runId: "run-1",
+          toolCallId: "tool-1",
+          output: {
+            denied: true,
+            error: "Execution policy denied shell",
+            reason: "sandbox_not_configured",
+          },
+        },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+    ];
+
+    const parts = projectHostSnapshotToMessages(input).flatMap((message) => message.parts);
+    const tool = parts.find((part) => part.type === "tool");
+    expect(tool).toMatchObject({
+      type: "tool",
+      state: {
+        status: "error",
+        metadata: expect.objectContaining({ reason: "sandbox_not_configured" }),
+      },
+    });
   });
 });

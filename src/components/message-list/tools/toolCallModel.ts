@@ -49,6 +49,35 @@ export interface ToolCallViewModel {
   expandable: boolean;
 }
 
+/**
+ * Classified shell failure reasons recorded by the Host (policy denials
+ * and sandbox broker faults). The transcript projection carries `reason`
+ * into shell metadata; known reasons render a localized message instead of
+ * raw backend text. Unknown reasons fall through to existing behavior so a
+ * backend string can never become a translation key.
+ */
+export const SANDBOX_SHELL_FAILURE_REASONS = new Set([
+  "broker_unreachable",
+  "broker_timeout",
+  "broker_unauthorized",
+  "broker_rejected",
+  "shell_not_allowed",
+  "sandbox_not_configured",
+]);
+
+function sandboxFailureLabel(
+  kind: ToolCallKind,
+  status: ToolCallStatus,
+  state: ToolCallState,
+  t?: TFunction,
+): string | null {
+  if (kind !== "bash" || status !== "error" || !("metadata" in state)) return null;
+  const metadata = state.metadata;
+  if (!isRecord(metadata) || typeof metadata.reason !== "string") return null;
+  if (!SANDBOX_SHELL_FAILURE_REASONS.has(metadata.reason)) return null;
+  return t?.(`sandboxShell.${metadata.reason}`) ?? metadata.reason;
+}
+
 const KNOWN_TOOLS: Record<string, ToolCallKind> = {
   read: "read",
   bash: "bash",
@@ -226,12 +255,13 @@ export function getToolCallViewModel(
   const images = extractImageAttachments(state, serverUrl);
   const resultLabel =
     kind === "bash" && status !== "running" && "metadata" in state && isRecord(state.metadata)
-      ? typeof state.metadata.exitCode === "number"
-        ? (t?.("toolLabels.bash.exitCode", { code: state.metadata.exitCode }) ??
-          `Exit ${state.metadata.exitCode}`)
-        : typeof state.metadata.signal === "string"
-          ? state.metadata.signal
-          : null
+      ? (sandboxFailureLabel(kind, status, state, t) ??
+        (typeof state.metadata.exitCode === "number"
+          ? (t?.("toolLabels.bash.exitCode", { code: state.metadata.exitCode }) ??
+            `Exit ${state.metadata.exitCode}`)
+          : typeof state.metadata.signal === "string"
+            ? state.metadata.signal
+            : null))
       : null;
   const output: ToolOutputBlock[] = [];
   const rawContent = meaningfulText(rawCandidate);

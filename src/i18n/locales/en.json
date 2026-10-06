@@ -434,6 +434,14 @@
     "rawDescription": "Original textual output returned by the tool.",
     "copyRaw": "Copy raw"
   },
+  "sandboxShell": {
+    "broker_unreachable": "Sandbox unreachable — check project first",
+    "broker_timeout": "Sandbox timed out — check project first",
+    "broker_unauthorized": "Sandbox access refused, contact your admin",
+    "broker_rejected": "Sandbox rejected the request",
+    "shell_not_allowed": "Shell is not permitted for this account",
+    "sandbox_not_configured": "Shell is not configured, contact your admin"
+  },
   "workspace": {
     "addTitle": "Add workspace",
     "editTitle": "Edit workspace",

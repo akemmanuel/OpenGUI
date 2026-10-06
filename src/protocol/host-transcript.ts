@@ -409,6 +409,10 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
                       truncated: (structuredOutput as { truncated?: unknown }).truncated,
                       timedOut: (structuredOutput as { timedOut?: unknown }).timedOut,
                       aborted: (structuredOutput as { aborted?: unknown }).aborted,
+                      // Machine reason for classified shell failures
+                      // (policy denials and sandbox broker faults). The tool
+                      // view maps known reasons to localized messages.
+                      reason: (structuredOutput as { reason?: unknown }).reason,
                     }
                   : undefined;
         return {

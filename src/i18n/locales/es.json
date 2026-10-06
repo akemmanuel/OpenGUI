@@ -434,6 +434,14 @@
     "rawDescription": "Salida textual original devuelta por la herramienta.",
     "copyRaw": "Copiar sin procesar"
   },
+  "sandboxShell": {
+    "broker_unreachable": "Sandbox no disponible — revisa el proyecto",
+    "broker_timeout": "Sandbox sin respuesta — revisa el proyecto",
+    "broker_unauthorized": "Acceso a la sandbox denegado, contacta a tu admin",
+    "broker_rejected": "La sandbox rechazó la solicitud",
+    "shell_not_allowed": "Shell no está permitido para esta cuenta",
+    "sandbox_not_configured": "Shell no está configurado, contacta a tu admin"
+  },
   "workspace": {
     "addTitle": "Añadir espacio de trabajo",
     "editTitle": "Editar espacio de trabajo",
