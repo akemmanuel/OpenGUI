@@ -5,6 +5,7 @@ import {
   buildHandoffPrompt,
   buildResumePrompt,
   estimateContextTokens,
+  findUnresolvedCompactionFailure,
   MAX_HANDOFF_BYTES,
   parseCompactionHandoff,
 } from "./compaction.ts";
@@ -148,6 +149,84 @@ describe("compaction context safety", () => {
     expect(context).toHaveLength(1);
     expect(JSON.stringify(context)).toContain("Task intent");
     expect(JSON.stringify(context)).not.toContain("legacy");
+  });
+});
+
+describe("findUnresolvedCompactionFailure", () => {
+  let sequence = 0;
+  const entry = (kind: SessionEntry["kind"], payload: Record<string, unknown>): SessionEntry => {
+    sequence += 1;
+    return {
+      id: `entry-${sequence}`,
+      sessionId: "session",
+      sequence,
+      kind,
+      payload,
+      createdAt: "2026-10-06T00:00:00.000Z",
+    };
+  };
+
+  test("no compaction entries means no block", () => {
+    expect(findUnresolvedCompactionFailure([entry("user_message", { text: "hi" })])).toBeNull();
+  });
+
+  test("a failed outcome blocks until a later completion", () => {
+    const entries = [
+      entry("compaction", { status: "started", runId: "run-1" }),
+      entry("compaction", {
+        status: "failed",
+        runId: "run-1",
+        failureSource: "summary",
+        error: "Compaction summary was invalid",
+      }),
+    ];
+    expect(findUnresolvedCompactionFailure(entries)).toMatchObject({
+      entry: expect.objectContaining({
+        kind: "compaction",
+        payload: expect.objectContaining({ status: "failed", runId: "run-1" }),
+      }),
+    });
+    expect(
+      findUnresolvedCompactionFailure([
+        ...entries,
+        entry("compaction", { status: "completed", runId: "run-2", handoff: "# Handoff" }),
+      ]),
+    ).toBeNull();
+  });
+
+  test("a started entry with a later same-run run_failed blocks without a failed entry", () => {
+    expect(
+      findUnresolvedCompactionFailure([
+        entry("compaction", { status: "started", runId: "run-9" }),
+        entry("run_failed", { runId: "run-9", error: "disk full" }),
+      ]),
+    ).toMatchObject({
+      entry: expect.objectContaining({
+        kind: "compaction",
+        payload: expect.objectContaining({ status: "started", runId: "run-9" }),
+      }),
+    });
+  });
+
+  test("a bare started entry and aborted runs do not block", () => {
+    expect(
+      findUnresolvedCompactionFailure([entry("compaction", { status: "started", runId: "run-1" })]),
+    ).toBeNull();
+    expect(
+      findUnresolvedCompactionFailure([
+        entry("compaction", { status: "started", runId: "run-1" }),
+        entry("run_aborted", { runId: "run-1" }),
+      ]),
+    ).toBeNull();
+  });
+
+  test("a run_failed for another run does not implicate the started entry", () => {
+    expect(
+      findUnresolvedCompactionFailure([
+        entry("compaction", { status: "started", runId: "run-1" }),
+        entry("run_failed", { runId: "run-2", error: "task failure" }),
+      ]),
+    ).toBeNull();
   });
 });
 
