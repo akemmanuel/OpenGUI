@@ -12,6 +12,7 @@ const runId = `${process.pid}-${Date.now()}`;
 const browserSession = `opengui-acceptance-${runId}`;
 const temporaryRoot = await mkdtemp(join(tmpdir(), "opengui-browser-acceptance-"));
 const dataDirectory = join(temporaryRoot, "host-data");
+const homeDirectory = join(temporaryRoot, "home");
 const projectDirectory = join(temporaryRoot, "project");
 const logs: string[] = [];
 const providerRequests: string[] = [];
@@ -54,6 +55,15 @@ async function streamFakeCompletion(response: ServerResponse, request: Record<st
     [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
   const lastMessage = messages.at(-1);
   const toolResult = lastMessage?.role === "tool" ? lastMessage.content : undefined;
+  // These requests contain only the isolated acceptance fixture's prompts.
+  logs.push(
+    `[fixture-provider] prompt=${JSON.stringify(String(lastUser).slice(0, 200))} toolResult=${Boolean(toolResult)}\n`,
+  );
+  response.once("close", () => {
+    logs.push(
+      `[fixture-provider] closed prompt=${JSON.stringify(String(lastUser).slice(0, 200))}\n`,
+    );
+  });
   const sendDelta = (delta: Record<string, unknown>) =>
     writeSse(response, { choices: [{ delta }] });
 
@@ -127,6 +137,8 @@ function startDevelopmentStack(frontendPort: number, backendPort: number) {
       detached: process.platform !== "win32",
       env: {
         ...process.env,
+        HOME: homeDirectory,
+        XDG_CONFIG_HOME: join(homeDirectory, ".config"),
         HOST: "127.0.0.1",
         OPENGUI_WEB_BACKEND_HOST: "127.0.0.1",
         OPENGUI_WEB_BACKEND_PORT: String(backendPort),
@@ -149,7 +161,7 @@ function startDevelopmentStack(frontendPort: number, backendPort: number) {
   children.push(child);
 }
 
-async function waitForUrl(url: string, timeoutMilliseconds = 20_000) {
+async function waitForUrl(url: string, timeoutMilliseconds = 45_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
     try {
@@ -245,7 +257,7 @@ async function auditAccessibleResponsiveSurface(width: number, height: number) {
 }
 
 async function finishSetup(modelPort: number) {
-  await waitForText("Set up this Host");
+  await waitForText("Set up this Host", 45_000);
   await fillLabel("Username", "acceptance_owner");
   await fillLabel("Email", "acceptance-owner@example.com");
   await fillLabel("Password", "acceptance-password");
@@ -289,7 +301,7 @@ async function connectProject() {
   await clickButton("Open project");
   await browser("wait", "--fn", "!document.querySelector('[data-slot=dialog-content]')");
   await waitForText("project");
-  await clickButton("New session");
+  await clickButton("New Chat");
   const content = await body();
   if (!content.includes("fixture-model")) {
     await clickButton("Choose model");
@@ -302,6 +314,17 @@ async function sendAndWait(prompt: string, expected: string) {
   await fillPrompt(prompt);
   await clickButton("Send message");
   await waitForText(expected, 20_000);
+}
+
+async function reloadAndReopenSession() {
+  await browser("reload");
+  // Reopen the persisted Session through the sidebar, independently of the
+  // transient selection on the landing page. Desktop exposes the same public
+  // control in all tested languages; responsive audits set their own viewport.
+  await browser("set", "viewport", "1440", "900");
+  await waitForText("Acceptance Session", 45_000);
+  await find("text", "Acceptance Session", "click", undefined);
+  await waitForText("Tool result observed:", 20_000);
 }
 
 async function runJourneys(frontendUrl: string, modelPort: number) {
@@ -370,15 +393,13 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await delay(500);
   await expectText("queued prompt edited");
 
-  log("refresh/reconnect and Host persistence");
-  await browser("reload");
-  await waitForText("Acceptance Session", 20_000);
-  await waitForText("Tool result observed:", 20_000);
+  log("refresh/reopen and Host persistence");
+  await reloadAndReopenSession();
 
   log("settings/provider persistence and keyboard focus");
   await clickButton("Settings");
   await waitForText("Preferences, models, people, and Host administration in one place.");
-  await clickButton("Models & providers");
+  await clickButton("Models");
   await expectText("fixture-model");
   await browser("press", "Tab");
 
@@ -484,8 +505,7 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
       "eval",
       `localStorage.setItem('opengui:web:settings:opengui:language', '${language}')`,
     );
-    await browser("reload");
-    await waitForText("Tool result observed:", 20_000);
+    await reloadAndReopenSession();
     await expectBrowserInvariant(
       `${language} document language`,
       `document.documentElement.lang === '${language}'`,
@@ -493,8 +513,7 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
     await auditAccessibleResponsiveSurface(390, 844);
   }
   await browser("eval", "localStorage.setItem('opengui:web:settings:opengui:language', 'en')");
-  await browser("reload");
-  await waitForText("Tool result observed:", 20_000);
+  await reloadAndReopenSession();
 
   const errors = await browser("errors");
   if (errors && !/No page errors/i.test(errors)) throw new Error(`Browser errors:\n${errors}`);
@@ -519,7 +538,7 @@ async function cleanup() {
 }
 
 try {
-  await Promise.all([mkdir(dataDirectory), mkdir(projectDirectory)]);
+  await Promise.all([mkdir(dataDirectory), mkdir(projectDirectory), mkdir(homeDirectory)]);
   await writeFile(
     join(projectDirectory, "notes.txt"),
     "fixture content from the isolated project\n",
@@ -533,6 +552,9 @@ try {
   startDevelopmentStack(frontendPort, backendPort);
   const frontendUrl = `http://127.0.0.1:${frontendPort}`;
   await waitForUrl(frontendUrl);
+  // Do not let the initial identity request race a cold Host startup and leave
+  // the browser on the connection-error gate before the test journey begins.
+  await waitForUrl(`${frontendUrl}/api/identity/policy`);
   await runJourneys(frontendUrl, modelPort);
   log("PASS: deterministic full-stack browser acceptance completed");
 } catch (error) {
