@@ -8,6 +8,9 @@ const fixture = vi.hoisted(() => ({
   me: vi.fn(),
   updateProfile: vi.fn(),
   changePassword: vi.fn(),
+  requestEmailChange: vi.fn(),
+  emailChangeStatus: vi.fn(),
+  cancelEmailChange: vi.fn(),
   logout: vi.fn(),
   persist: vi.fn(),
   announce: vi.fn(),
@@ -27,6 +30,9 @@ vi.mock("./identity-client", async (original) => ({
     me: fixture.me,
     updateProfile: fixture.updateProfile,
     changePassword: fixture.changePassword,
+    requestEmailChange: fixture.requestEmailChange,
+    emailChangeStatus: fixture.emailChangeStatus,
+    cancelEmailChange: fixture.cancelEmailChange,
   }),
 }));
 import { ProfileMenu } from "./ProfileMenu";
@@ -41,6 +47,8 @@ beforeEach(() => {
   });
   fixture.updateProfile.mockResolvedValue(undefined);
   fixture.changePassword.mockResolvedValue({ token: "new-token" });
+  fixture.emailChangeStatus.mockResolvedValue({ pending: null });
+  fixture.cancelEmailChange.mockResolvedValue({ cancelled: true });
 });
 async function openMenu() {
   render(<ProfileMenu />);
@@ -88,4 +96,53 @@ test("offers logout directly from the menu", async () => {
   await openMenu();
   await userEvent.click(screen.getByRole("menuitem", { name: "identity.signOut" }));
   expect(fixture.logout).toHaveBeenCalledOnce();
+});
+test("requests email change with reauthentication and preserves the draft on failure", async () => {
+  await openMenu();
+  await userEvent.click(screen.getByRole("menuitem", { name: "account.changeEmail" }));
+  expect((screen.getByLabelText("account.currentEmail") as HTMLInputElement).readOnly).toBe(true);
+  expect((screen.getByLabelText("account.currentEmail") as HTMLInputElement).value).toBe(
+    "alex@example.com",
+  );
+  await userEvent.type(screen.getByLabelText("account.newEmail"), "new-address@example.com");
+  await userEvent.type(screen.getByLabelText("account.currentPassword"), "wrong password");
+  fixture.requestEmailChange.mockRejectedValueOnce(
+    new IdentityRequestError("Invalid password", 400, "INVALID_PASSWORD"),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "common.save" }));
+  expect(fixture.requestEmailChange).toHaveBeenCalledWith(
+    {
+      newEmail: "new-address@example.com",
+      currentPassword: "wrong password",
+    },
+    expect.any(String),
+  );
+  expect(screen.getByRole("alert").textContent).toBe("account.wrongPassword");
+  // The draft address survives the failure for retry.
+  expect((screen.getByLabelText("account.newEmail") as HTMLInputElement).value).toBe(
+    "new-address@example.com",
+  );
+});
+test("shows the pending change and cancels it", async () => {
+  fixture.emailChangeStatus.mockResolvedValueOnce({
+    pending: { email: "new-address@example.com", expiresAt: Date.now() + 1000 },
+  });
+  fixture.requestEmailChange.mockResolvedValueOnce({ sent: true, expiresAt: Date.now() + 1000 });
+  await openMenu();
+  await userEvent.click(screen.getByRole("menuitem", { name: "account.changeEmail" }));
+  await waitFor(() =>
+    expect(screen.getByText("account.emailPendingNotice", { exact: false })).toBeTruthy(),
+  );
+  await userEvent.type(screen.getByLabelText("account.newEmail"), "new-address@example.com");
+  await userEvent.type(screen.getByLabelText("account.currentPassword"), "correct password");
+  await userEvent.click(screen.getByRole("button", { name: "common.save" }));
+  expect(fixture.requestEmailChange).toHaveBeenCalledWith(
+    {
+      newEmail: "new-address@example.com",
+      currentPassword: "correct password",
+    },
+    expect.any(String),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "account.emailCancelChange" }));
+  expect(fixture.cancelEmailChange).toHaveBeenCalledOnce();
 });

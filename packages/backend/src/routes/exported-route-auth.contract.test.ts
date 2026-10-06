@@ -117,6 +117,12 @@ const protectedRoutes: Array<[method: string, path: string]> = [
   ["GET", "/api/identity/members"],
   ["DELETE", "/api/identity/members/member"],
   ["POST", "/api/identity/members/member/reset-password"],
+  ["GET", "/api/identity/mail-config"],
+  ["PUT", "/api/identity/mail-config"],
+  ["POST", "/api/identity/mail-test"],
+  ["POST", "/api/identity/email-change/request"],
+  ["GET", "/api/identity/email-change/status"],
+  ["POST", "/api/identity/email-change/cancel"],
   ["PUT", "/api/identity/members/member/can-invite"],
   ["PUT", "/api/identity/members/member/role"],
   ["GET", "/api/identity/sessions/session/shares"],
@@ -159,6 +165,7 @@ describe("exported Remote Host route authentication inventory", () => {
     ["GET", "/api/identity/policy"],
     ["POST", "/api/identity/register"],
     ["POST", "/api/identity/invites/accept"],
+    ["POST", "/api/identity/email-change/confirm"],
     ["GET", "/api/identity/session-view-links/resolve"],
   ])("%s %s remains an anonymous entry point", async (method, path) => {
     expect((await backend.app.request(`http://localhost${path}`, { method })).status).not.toBe(401);

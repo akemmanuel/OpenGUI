@@ -16,7 +16,11 @@
     "@opengui/harness": "workspace:*",
     "@opengui/protocol": "workspace:*",
     "better-auth": "1.7.6",
-    "hono": "^4.13.12"
+    "hono": "^4.13.12",
+    "nodemailer": "^10.0.15"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.2"
   },
   "engines": {
     "node": ">=22.5"

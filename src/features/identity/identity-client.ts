@@ -69,6 +69,34 @@ export type IdentityUser = {
   email: string;
 };
 
+export type MailConfig = {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  hasPassword: boolean;
+  fromAddress: string;
+  fromName: string;
+  useStarttls: boolean;
+  publicOrigin: string;
+};
+
+export type MailConfigInput = {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  fromAddress: string;
+  fromName: string;
+  useStarttls: boolean;
+  publicOrigin: string;
+};
+
+export type EmailChangeStatus = {
+  pending: { email: string; expiresAt: number } | null;
+};
+
 export type IdentitySession = {
   token: string;
   actor: IdentityActor;
@@ -224,6 +252,32 @@ export function createIdentityClient({
         method: "POST",
         body: JSON.stringify(input),
       }),
+    mailConfig: () => request<MailConfig>("/api/identity/mail-config"),
+    setMailConfig: (input: MailConfigInput) =>
+      request<MailConfig>("/api/identity/mail-config", {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    sendTestMail: (to: string, language?: string) =>
+      request<{ sent: boolean }>("/api/identity/mail-test", {
+        method: "POST",
+        headers: language ? { "accept-language": language } : undefined,
+        body: JSON.stringify({ to }),
+      }),
+    requestEmailChange: (input: { newEmail: string; currentPassword: string }, language?: string) =>
+      request<{ sent: boolean; expiresAt: number }>("/api/identity/email-change/request", {
+        method: "POST",
+        headers: language ? { "accept-language": language } : undefined,
+        body: JSON.stringify(input),
+      }),
+    confirmEmailChange: (token: string) =>
+      request<{ changed: boolean }>("/api/identity/email-change/confirm", {
+        method: "POST",
+        body: JSON.stringify({ token }),
+      }),
+    emailChangeStatus: () => request<EmailChangeStatus>("/api/identity/email-change/status"),
+    cancelEmailChange: () =>
+      request<{ cancelled: boolean }>("/api/identity/email-change/cancel", { method: "POST" }),
     hostPolicy: () => request<HostAdminPolicy>("/api/identity/host-policy"),
     setHostPolicy: (input: { registrationMode: HostRegistrationMode }) =>
       request<HostAdminPolicy>("/api/identity/host-policy", {

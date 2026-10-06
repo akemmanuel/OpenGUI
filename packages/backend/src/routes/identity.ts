@@ -367,6 +367,102 @@ export function registerIdentityRoutes(app: BackendApp, deps: IdentityRouteDeps)
     });
   });
 
+  app.get("/api/identity/mail-config", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    return await identityOperation(() => deps.identity!.getMailConfig(actor));
+  });
+
+  app.put("/api/identity/mail-config", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (
+      !body ||
+      typeof body.host !== "string" ||
+      typeof body.port !== "number" ||
+      typeof body.username !== "string" ||
+      (body.password !== undefined && typeof body.password !== "string") ||
+      typeof body.fromAddress !== "string" ||
+      typeof body.fromName !== "string" ||
+      typeof body.useStarttls !== "boolean" ||
+      typeof body.publicOrigin !== "string" ||
+      typeof body.enabled !== "boolean"
+    ) {
+      return invalidRequest(
+        "enabled, host, port, username, fromAddress, fromName, useStarttls and publicOrigin are required",
+      );
+    }
+    return await identityOperation(() =>
+      deps.identity!.setMailConfig(actor, {
+        enabled: body.enabled as boolean,
+        host: body.host as string,
+        port: body.port as number,
+        username: body.username as string,
+        password: body.password as string | undefined,
+        fromAddress: body.fromAddress as string,
+        fromName: body.fromName as string,
+        useStarttls: body.useStarttls as boolean,
+        publicOrigin: body.publicOrigin as string,
+      }),
+    );
+  });
+
+  app.post("/api/identity/mail-test", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (!actor) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body || typeof body.to !== "string" || !body.to.trim()) {
+      return invalidRequest("to is required");
+    }
+    return await identityOperation(() =>
+      deps.identity!.sendTestMail(actor, body.to as string, c.req.raw.headers),
+    );
+  });
+
+  app.post("/api/identity/email-change/request", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (deps.mode !== "remote" || !deps.identity || actor?.type !== "user") return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body || typeof body.newEmail !== "string" || typeof body.currentPassword !== "string") {
+      return invalidRequest("newEmail and currentPassword are required");
+    }
+    return await identityOperation(() =>
+      deps.identity!.requestEmailChange(
+        actor,
+        {
+          newEmail: body.newEmail as string,
+          currentPassword: body.currentPassword as string,
+        },
+        c.req.raw.headers,
+      ),
+    );
+  });
+
+  // Public token confirmation: the link arrives through the new inbox, which is
+  // the proof. It can only ever affect its bound account. This is not a
+  // password-recovery endpoint: no credential is issued or changed here.
+  app.post("/api/identity/email-change/confirm", async (c) => {
+    if (deps.mode !== "remote" || !deps.identity) return authRequired();
+    const body = await requestBody(c.req.raw);
+    if (!body || typeof body.token !== "string" || !body.token.trim()) {
+      return invalidRequest("token is required");
+    }
+    return await identityOperation(() => deps.identity!.confirmEmailChange(body.token as string));
+  });
+
+  app.get("/api/identity/email-change/status", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (deps.mode !== "remote" || !deps.identity || actor?.type !== "user") return authRequired();
+    return await identityOperation(() => deps.identity!.getEmailChangeStatus(actor));
+  });
+
+  app.post("/api/identity/email-change/cancel", async (c) => {
+    const actor = await deps.getActor(c.req.raw);
+    if (deps.mode !== "remote" || !deps.identity || actor?.type !== "user") return authRequired();
+    return await identityOperation(() => deps.identity!.cancelEmailChange(actor));
+  });
+
   app.put("/api/identity/members/:id/can-invite", async (c) => {
     const actor = await deps.getActor(c.req.raw);
     if (!actor) return authRequired();

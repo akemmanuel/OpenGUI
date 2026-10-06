@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Eye, EyeOff, KeyRound, LogOut, UserRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, LogOut, Mail, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,13 +63,18 @@ function AccountMenu({
   const [user, setUser] = useState<IdentityUser | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [retry, setRetry] = useState(0);
-  const [dialog, setDialog] = useState<"profile" | "password" | null>(null);
-  const [lastDialog, setLastDialog] = useState<"profile" | "password">("profile");
+  const [dialog, setDialog] = useState<"profile" | "password" | "email" | null>(null);
+  const [lastDialog, setLastDialog] = useState<"profile" | "password" | "email">("profile");
   const visibleDialog = dialog ?? lastDialog;
   const [displayName, setDisplayName] = useState(actorName);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [pendingEmail, setPendingEmail] = useState<{ email: string; expiresAt: number } | null>(
+    null,
+  );
   const [showPasswords, setShowPasswords] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +97,7 @@ function AccountMenu({
     };
   }, [client, retry]);
 
-  function open(kind: "profile" | "password") {
+  function open(kind: "profile" | "password" | "email") {
     setError(null);
     setCurrentPassword("");
     setNewPassword("");
@@ -101,6 +106,45 @@ function AccountMenu({
     setDisplayName(user?.name || actorName);
     setLastDialog(kind);
     setDialog(kind);
+    if (kind === "email") {
+      setEmailPassword("");
+      void client
+        .me()
+        .then((me) => {
+          setUser(me.user);
+        })
+        .catch(() => {});
+      void client
+        .emailChangeStatus()
+        .then((status) => setPendingEmail(status.pending))
+        .catch(() => setPendingEmail(null));
+    }
+  }
+  function emailErrorMessage(failure: unknown) {
+    if (!(failure instanceof IdentityRequestError)) return t("account.saveFailed");
+    switch (failure.code) {
+      case "INVALID_PASSWORD":
+        return t("account.wrongPassword");
+      case "MAIL_NOT_CONFIGURED":
+        return t("account.emailMailNotConfigured");
+      case "MAIL_SEND_FAILED":
+        return t("account.emailSendFailed");
+      case "EMAIL_UNAVAILABLE":
+        return t("account.emailUnavailable");
+      case "INVALID_EMAIL":
+        return t("account.emailInvalid");
+      case "RATE_LIMITED":
+        return t("account.emailRateLimited");
+      case "EMAIL_CHANGE_SUPERSEDED":
+        return t("account.emailSuperseded");
+      default:
+        return t("account.saveFailed");
+    }
+  }
+  function browserLanguage(): string | undefined {
+    return typeof navigator === "undefined" || !navigator.language
+      ? undefined
+      : navigator.language.slice(0, 35);
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -118,6 +162,18 @@ function AccountMenu({
         toast.success(t("account.profileSaved"));
         setDialog(null);
         announceIdentityWorkspaceChange();
+      } else if (dialog === "email") {
+        const result = await client.requestEmailChange(
+          {
+            newEmail: newEmail.trim(),
+            currentPassword: emailPassword,
+          },
+          browserLanguage(),
+        );
+        toast.success(t("account.emailChangeRequested"));
+        setEmailPassword("");
+        // The draft address is preserved as the visible pending change.
+        setPendingEmail({ email: newEmail.trim(), expiresAt: result.expiresAt });
       } else {
         const result = await client.changePassword({ currentPassword, newPassword });
         toast.success(t("account.passwordSaved"));
@@ -129,12 +185,28 @@ function AccountMenu({
       }
     } catch (failure) {
       setError(
-        t(
-          failure instanceof IdentityRequestError && failure.code === "INVALID_PASSWORD"
-            ? "account.wrongPassword"
-            : "account.saveFailed",
-        ),
+        dialog === "email"
+          ? emailErrorMessage(failure)
+          : t(
+              failure instanceof IdentityRequestError && failure.code === "INVALID_PASSWORD"
+                ? "account.wrongPassword"
+                : "account.saveFailed",
+            ),
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function cancelPendingEmail() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await client.cancelEmailChange();
+      setPendingEmail(null);
+      toast.success(t("account.emailChangeCancelled"));
+    } catch {
+      setError(t("account.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -197,6 +269,10 @@ function AccountMenu({
             <KeyRound />
             {t("account.changePassword")}
           </DropdownMenuItem>
+          <DropdownMenuItem disabled={!user} onClick={() => open("email")}>
+            <Mail />
+            {t("account.changeEmail")}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => void logout()}>
             <LogOut />
@@ -212,25 +288,86 @@ function AccountMenu({
             setCurrentPassword("");
             setNewPassword("");
             setConfirmation("");
+            setEmailPassword("");
           }
         }}
       >
         <DialogContent showCloseButton={!busy}>
           <DialogHeader>
             <DialogTitle>
-              {t(visibleDialog === "password" ? "account.changePassword" : "account.editProfile")}
+              {t(
+                visibleDialog === "password"
+                  ? "account.changePassword"
+                  : visibleDialog === "email"
+                    ? "account.changeEmail"
+                    : "account.editProfile",
+              )}
             </DialogTitle>
             <DialogDescription>
               {t(
                 visibleDialog === "password"
                   ? "account.passwordDescription"
-                  : "account.profileDescription",
+                  : visibleDialog === "email"
+                    ? "account.emailDescription"
+                    : "account.profileDescription",
               )}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(event) => void submit(event)} className="space-y-4">
             <fieldset disabled={busy} className="space-y-4">
-              {visibleDialog === "profile" ? (
+              {visibleDialog === "email" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="account-current-email">{t("account.currentEmail")}</Label>
+                    <Input
+                      id="account-current-email"
+                      type="email"
+                      autoComplete="email"
+                      readOnly
+                      value={user?.email || ""}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="account-new-email">{t("account.newEmail")}</Label>
+                    <Input
+                      id="account-new-email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      maxLength={254}
+                      value={newEmail}
+                      onChange={(event) => setNewEmail(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="account-email-password">{t("account.currentPassword")}</Label>
+                    <Input
+                      id="account-email-password"
+                      type={showPasswords ? "text" : "password"}
+                      autoComplete="current-password"
+                      required
+                      value={emailPassword}
+                      onChange={(event) => setEmailPassword(event.target.value)}
+                    />
+                  </div>
+                  {pendingEmail && (
+                    <div className="space-y-2 rounded-md border border-dashed p-3 text-sm">
+                      <p className="text-muted-foreground">
+                        {t("account.emailPendingNotice", { email: pendingEmail.email })}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void cancelPendingEmail()}
+                      >
+                        {t("account.emailCancelChange")}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : visibleDialog === "profile" ? (
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="account-name">{t("account.displayName")}</Label>
@@ -342,6 +479,7 @@ function AccountMenu({
                   setCurrentPassword("");
                   setNewPassword("");
                   setConfirmation("");
+                  setEmailPassword("");
                 }}
               >
                 {t("common.cancel")}

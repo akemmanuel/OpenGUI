@@ -30,6 +30,14 @@ export type CreateBackendHostOptions = {
   identityDatabasePath?: string;
   identitySecret?: string;
   identityBaseURL?: string;
+  /**
+   * SMTP credential callbacks for identity mail. Tests inject an in-memory
+   * pair; production defaults to a bridge over Host secret storage.
+   */
+  identityMailSecrets?: {
+    readSmtpPassword: () => Promise<string | null>;
+    writeSmtpPassword: (password: string | null) => Promise<void>;
+  };
   model?: ModelTransport;
   /** Canary switch; OPENGUI_MODEL_TRANSPORT=native is the process-level equivalent. */
   usePiAiTransport?: boolean;
@@ -57,6 +65,27 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     authToken: env.authToken,
     allowedCorsOrigin: env.allowedCorsOrigin,
   });
+  // Bridge from identity mail to Host secret storage. The Host starts
+  // asynchronously after the identity service exists, so the callbacks await
+  // startup (bounded); tests inject an in-memory pair instead.
+  let resolveMailHost: ((host: OpenGuiHost) => void) | null = null;
+  const mailHostPromise = new Promise<OpenGuiHost>((resolve) => {
+    resolveMailHost = resolve;
+  });
+  async function mailHost(): Promise<OpenGuiHost> {
+    let timeout!: NodeJS.Timeout;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(
+        () => reject(new IdentityError("MAIL_SECRETS_UNAVAILABLE", 503, "Host is starting")),
+        15_000,
+      );
+    });
+    try {
+      return await Promise.race([mailHostPromise, deadline]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   const identity =
     env.identityMode === "remote"
       ? new IdentityService({
@@ -67,6 +96,12 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
           trustedOrigins: [env.allowedCorsOrigin],
           pathGrantsMode: env.pathGrantsMode,
           allowedRoots: env.allowedRoots,
+          mailSecrets: options.identityMailSecrets ?? {
+            readSmtpPassword: async () => (await mailHost()).getMailSmtpPassword(),
+            writeSmtpPassword: async (password: string | null) => {
+              await (await mailHost()).setMailSmtpPassword(password);
+            },
+          },
         })
       : undefined;
   const authorizer = createAuthorizer({
@@ -183,6 +218,10 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
         }
       : undefined,
   }).then((context) => context.host);
+  hostReady.then(
+    (host) => resolveMailHost?.(host),
+    () => {},
+  );
   const ready = Promise.all([hostReady, identity?.ready]).then(() => undefined);
 
   const app = new Hono<BackendRequestEnv>();
@@ -205,6 +244,7 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
       c.req.path === "/api/identity/register" ||
       c.req.path === "/api/identity/policy" ||
       (c.req.path === "/api/identity/invites/accept" && c.req.method === "POST") ||
+      (c.req.path === "/api/identity/email-change/confirm" && c.req.method === "POST") ||
       (c.req.path === "/api/identity/session-view-links/resolve" && c.req.method === "GET") ||
       c.req.path === "/api/auth/login"
     ) {
