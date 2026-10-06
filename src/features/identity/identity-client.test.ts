@@ -161,4 +161,20 @@ describe("identity client", () => {
     );
     expect(result.grants).toEqual([{ root: "/srv/canonical", access: "write" }]);
   });
+
+  it("forwards an explicit mail language for localized confirmation mail", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true, value: { sent: true, expiresAt: 1 } }), {
+          status: 200,
+        }),
+    );
+    const client = createIdentityClient({ baseUrl: "https://host.example", fetchImpl });
+    await client.requestEmailChange(
+      { newEmail: "neu@example.com", currentPassword: "secret" },
+      "de-AT",
+    );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("accept-language")).toBe("de-AT");
+  });
 });
