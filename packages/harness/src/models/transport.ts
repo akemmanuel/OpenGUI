@@ -215,6 +215,7 @@ export interface NormalizedModelError {
     | "invalid_request"
     | "provider_unavailable"
     | "protocol"
+    | "compaction"
     | "unknown";
   message: string;
   /** Redacted, bounded provider text suitable for Session readers and error details UI. */

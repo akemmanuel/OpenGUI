@@ -102,7 +102,9 @@
   "messageError": {
     "showDetails": "Show details",
     "hideDetails": "Hide details",
-    "copy": "Copy"
+    "copy": "Copy",
+    "compactionRecoveryTitle": "Compaction needs attention before continuing.",
+    "compactionRecoveryDetail": "Automatic compaction is paused after a failure — nothing was lost. Retry with /compact, then continue in this session."
   },
   "markdown": {
     "copy": "Copy",
@@ -419,7 +421,9 @@
     "completedManual": "Context compacted. Your next message will continue from the handoff.",
     "selectSession": "Select a session before compacting context.",
     "noArguments": "/compact does not accept arguments.",
-    "unsupportedCommand": "Unsupported slash command: /{{command}}"
+    "unsupportedCommand": "Unsupported slash command: /{{command}}",
+    "failed": "Context compaction failed.",
+    "failedHint": "Your history is preserved. Retry with /compact, then continue here."
   },
   "messageActions": {
     "contextCompacted": "Context compacted",
