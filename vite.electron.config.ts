@@ -1,6 +1,6 @@
 import "./build/suppress-node-deprecations.ts";
 
-import { copyFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, realpath, writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { build as buildWithEsbuild } from "esbuild";
@@ -27,6 +27,7 @@ const externals = new Set([
 ]);
 
 const bundledPackagePrefixes: string[] = [];
+const sidecarRuntimePackages = ["zod"];
 
 function isBundledPackage(id: string) {
   return bundledPackagePrefixes.some((prefix) => id === prefix || id.startsWith(`${prefix}/`));
@@ -60,6 +61,15 @@ export default defineConfig({
           "dist-electron/package.json",
           `${JSON.stringify(runtimePackage, null, 2)}\n`,
         );
+        await mkdir("dist-electron/node_modules", { recursive: true });
+        for (const packageName of sidecarRuntimePackages) {
+          const packageDirectory = await realpath(
+            dirname(require.resolve(`${packageName}/package.json`)),
+          );
+          await cp(packageDirectory, join("dist-electron/node_modules", packageName), {
+            recursive: true,
+          });
+        }
         await buildWithEsbuild({
           entryPoints: ["preload.ts"],
           outfile: "dist-electron/preload.cjs",
