@@ -434,6 +434,14 @@
     "rawDescription": "Ursprüngliche Textausgabe des Werkzeugs.",
     "copyRaw": "Rohdaten kopieren"
   },
+  "sandboxShell": {
+    "broker_unreachable": "Sandbox unerreichbar — zuerst Projekt prüfen",
+    "broker_timeout": "Sandbox-Timeout — zuerst Projekt prüfen",
+    "broker_unauthorized": "Sandbox-Zugriff verweigert, kontaktiere deinen Admin",
+    "broker_rejected": "Sandbox hat die Anfrage abgelehnt",
+    "shell_not_allowed": "Shell ist für dieses Konto nicht zulässig",
+    "sandbox_not_configured": "Shell ist nicht konfiguriert, kontaktiere deinen Admin"
+  },
   "workspace": {
     "addTitle": "Workspace hinzufügen",
     "editTitle": "Workspace bearbeiten",
