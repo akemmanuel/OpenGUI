@@ -136,29 +136,25 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     await harness.close();
   });
 
-  test("compacts through a hidden warm-context handoff and resumes from its temp folder", async () => {
+  test("compacts through an injected handoff summary and resumes from durable history", async () => {
     const dataDirectory = await temporaryDirectory();
-    const handoffRoot = join(dataDirectory, "tmp");
+    // Points at a directory that does not exist: handoff storage must not
+    // touch the filesystem.
+    const missingRoot = join(dataDirectory, "missing-tmp");
     const projectDirectory = join(dataDirectory, "project");
     await mkdir(projectDirectory);
-    const handoffDirectory = join(handoffRoot, "opengui", "handoffs", "session-1", "run-10");
-    const handoffPath = join(handoffDirectory, "HANDOFF.md");
+    const summary = {
+      goal: "Continue the task.",
+      currentState: "Initial work is done.",
+      constraints: "Stay inside the fixture project.",
+      decisions: "Single summary response.",
+      blockers: "None.",
+      relevantFiles: ["README.md"],
+      nextSteps: ["Continue."],
+    };
     const model = new FakeModel([
       { text: `Long work state ${"x".repeat(1_000)}` },
-      {
-        toolCalls: [
-          {
-            id: "write-handoff",
-            name: "write",
-            input: {
-              path: handoffPath,
-              content:
-                "# Handoff\n\n## Goal\nContinue the task.\n\n## Current state\nInitial work is done.\n\n## Relevant files\n- README.md\n\n## Next steps\n1. Continue.\n",
-            },
-          },
-        ],
-      },
-      { text: "Handoff ready." },
+      { text: JSON.stringify(summary) },
       { text: "Continued from the handoff." },
     ]);
     const harness = createOpenGuiHarness({
@@ -169,7 +165,7 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       compaction: {
         contextWindowTokens: 300,
         thresholdRatio: 0.7,
-        tempDirectory: handoffRoot,
+        tempDirectory: missingRoot,
       },
     });
     const session = await harness.createSession({
@@ -184,32 +180,38 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     const events = [];
     for await (const event of session.run({ text: "Continue" })) events.push(event);
 
-    expect(model.requests[1]?.systemPrompt).toBe(model.requests[0]?.systemPrompt);
-    expect(model.requests[1]?.tools).toEqual(model.requests[0]?.tools);
+    // The compaction turn offers no normal tools.
+    expect(model.requests[1]?.tools).toEqual([]);
     expect(model.requests[1]?.context.at(-1)).toMatchObject({
       type: "user_message",
-      text: expect.stringContaining(handoffPath),
+      text: expect.stringContaining("CONTEXT HANDOFF MODE"),
     });
-    expect(model.requests[1]?.context.at(-1)).toMatchObject({
-      text: expect.stringContaining("STOP working on the task"),
+    expect(model.requests[1]?.context.at(-1)).not.toMatchObject({
+      text: expect.stringContaining("HANDOFF.md"),
     });
-    expect(model.requests[3]?.context).toEqual([
+    // Resume injects the durable summary as historical context without any
+    // filesystem path or normal Tool read.
+    expect(model.requests[2]?.context).toEqual([
       expect.objectContaining({
         type: "user_message",
-        text: expect.stringContaining(`Read and inspect the handoff folder at ${handoffDirectory}`),
+        text: expect.stringContaining("HISTORICAL CONTEXT"),
       }),
     ]);
-    expect(await readFile(handoffPath, "utf8")).toContain("## Next steps");
+    expect(model.requests[2]?.context[0]).toMatchObject({
+      text: expect.stringContaining("Continue the task."),
+    });
 
     const snapshot = await session.read();
     const compactions = snapshot.entries.filter((entry) => entry.kind === "compaction");
     expect(compactions.map((entry) => entry.payload.status)).toEqual(["started", "completed"]);
     expect(compactions.at(-1)?.payload).toMatchObject({
-      handoffDirectory,
-      handoffPath,
+      handoff: expect.stringContaining("## Next steps"),
       thresholdRatio: 0.7,
     });
+    expect(compactions.at(-1)?.payload).not.toHaveProperty("handoffDirectory");
+    expect(compactions.at(-1)?.payload).not.toHaveProperty("handoffPath");
     expect(JSON.stringify(snapshot.entries)).not.toContain("STOP working on the task");
+    expect(JSON.stringify(snapshot.entries)).not.toContain("CONTEXT HANDOFF MODE");
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "entry_appended",
@@ -232,20 +234,18 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
       skillPath,
       "---\nname: stable\ndescription: Original stable instructions.\n---\n# Original\n",
     );
-    const handoffDirectory = join(handoffRoot, "opengui", "handoffs", "session-1", "run-10");
-    const handoffPath = join(handoffDirectory, "HANDOFF.md");
+    const summary = {
+      goal: "Resume later.",
+      currentState: "Initial work is done.",
+      constraints: "None.",
+      decisions: "None.",
+      blockers: "None.",
+      relevantFiles: [],
+      nextSteps: ["Resume later."],
+    };
     const model = new FakeModel([
       { text: "Initial work." },
-      {
-        toolCalls: [
-          {
-            id: "manual-handoff",
-            name: "write",
-            input: { path: handoffPath, content: "# Handoff\n\n## Next steps\n1. Resume later.\n" },
-          },
-        ],
-      },
-      { text: "Handoff ready." },
+      { text: JSON.stringify(summary) },
       { text: "Resumed on the next user turn." },
     ]);
     const harness = createOpenGuiHarness({
@@ -281,24 +281,28 @@ description: Review code changes and pull requests. Use when reviewing diffs or 
     }
     expect(model.requests[0]?.systemPrompt).toContain("Preferences for alice");
     expect(model.requests[1]?.systemPrompt).toContain("Preferences for bob");
-    expect(model.requests[2]?.systemPrompt).toContain("Preferences for bob");
     expect(model.requests[1]?.systemPrompt).not.toContain("Preferences for alice");
-    expect(model.requests).toHaveLength(3);
+    // Single tool-free summary response: no second compaction turn.
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]?.tools).toEqual([]);
     expect(model.requests[1]?.systemPrompt).toContain("Original stable instructions.");
     expect(model.requests[1]?.systemPrompt).not.toContain("Mutated instructions.");
-    expect(model.requests[2]?.systemPrompt).toContain("Original stable instructions.");
     expect((await session.read()).status).toBe("idle");
 
     for await (const _event of session.run({ text: "Now continue" })) {
       // drain
     }
-    expect(model.requests[3]?.context).toMatchObject([
+    expect(model.requests[2]?.systemPrompt).toContain("Original stable instructions.");
+    expect(model.requests[2]?.context).toMatchObject([
       {
         type: "user_message",
-        text: expect.stringContaining(`Read and inspect the handoff folder at ${handoffDirectory}`),
+        text: expect.stringContaining("HISTORICAL CONTEXT"),
       },
       { type: "user_message", text: "Now continue" },
     ]);
+    expect(model.requests[2]?.context[0]).toMatchObject({
+      text: expect.stringContaining("Resume later."),
+    });
     await harness.close();
   });
 
