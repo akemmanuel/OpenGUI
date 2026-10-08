@@ -34,4 +34,11 @@ describe("Electron package metadata", () => {
   test("unpacks sidecar WebAssembly assets beside the backend bundle", () => {
     expect(packageJson.build.asarUnpack).toContain("dist-electron/*.wasm");
   });
+
+  test("copies sidecar runtime packages beside the unpacked backend bundle", () => {
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "dist-electron/node_modules/zod",
+      to: "app.asar.unpacked/dist-electron/node_modules/zod",
+    });
+  });
 });

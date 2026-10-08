@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -30,6 +30,7 @@ async function checkArtifacts() {
     "dist-electron/preload.cjs",
     "dist-electron/backend.js",
     "dist-electron/package.json",
+    "dist-electron/node_modules/zod/package.json",
   ]) {
     await assertFile(file);
   }
@@ -42,6 +43,11 @@ async function checkArtifacts() {
   );
   if (referencedAssets.length === 0) throw new Error("dist/index.html has no built assets");
   await Promise.all(referencedAssets.map((asset) => assertFile(`dist/${asset}`)));
+
+  const zodDirectory = await lstat(path.join(root, "dist-electron/node_modules/zod"));
+  if (!zodDirectory.isDirectory() || zodDirectory.isSymbolicLink()) {
+    throw new Error("dist-electron/node_modules/zod must be a materialized directory");
+  }
 
   const runtimePackage = JSON.parse(
     await readFile(path.join(root, "dist-electron/package.json"), "utf8"),

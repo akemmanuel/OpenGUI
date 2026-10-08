@@ -148,6 +148,12 @@
       "dist-electron/package.json",
       "dist-electron/*.wasm"
     ],
+    "extraResources": [
+      {
+        "from": "dist-electron/node_modules/zod",
+        "to": "app.asar.unpacked/dist-electron/node_modules/zod"
+      }
+    ],
     "linux": {
       "target": [
         "deb",
@@ -193,7 +199,6 @@
       "dist-electron/**/*",
       "package.json",
       "node_modules/typebox/**/*",
-      "node_modules/zod/**/*",
       "node_modules/@silvia-odwyer/photon-node/**/*",
       "node_modules/chalk/**/*",
       "node_modules/cli-highlight/**/*",
