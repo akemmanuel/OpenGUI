@@ -11,6 +11,7 @@ const root = process.cwd();
 const runId = `${process.pid}-${Date.now()}`;
 const temporaryRoot = await mkdtemp(join(tmpdir(), "opengui-multi-user-acceptance-"));
 const dataDirectory = join(temporaryRoot, "host-data");
+const homeDirectory = join(temporaryRoot, "home");
 const projectDirectory = join(temporaryRoot, "project");
 const writableDirectory = join(projectDirectory, "writable");
 const logs: string[] = [];
@@ -95,6 +96,8 @@ function startDevelopmentStack(frontendPort: number, backendPort: number) {
       detached: process.platform !== "win32",
       env: {
         ...process.env,
+        HOME: homeDirectory,
+        XDG_CONFIG_HOME: join(homeDirectory, ".config"),
         HOST: "127.0.0.1",
         OPENGUI_WEB_BACKEND_HOST: "127.0.0.1",
         OPENGUI_WEB_BACKEND_PORT: String(backendPort),
@@ -117,7 +120,7 @@ function startDevelopmentStack(frontendPort: number, backendPort: number) {
   children.push(child);
 }
 
-async function waitForUrl(url: string, timeoutMilliseconds = 25_000) {
+async function waitForUrl(url: string, timeoutMilliseconds = 45_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
     try {
@@ -231,7 +234,7 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   log("owner bootstrap uses the product setup gate on a fresh isolated Host");
   await browser(ownerBrowser!, "open", frontendUrl);
   await browser(ownerBrowser!, "set", "viewport", "1440", "900");
-  await waitForText(ownerBrowser!, "Set up this Host");
+  await waitForText(ownerBrowser!, "Set up this Host", 45_000);
   await fillLabel(ownerBrowser!, "Username", "acceptance_owner");
   await fillLabel(ownerBrowser!, "Email", "owner@example.test");
   await fillLabel(ownerBrowser!, "Password", "acceptance-password");
@@ -241,9 +244,8 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   const owner = await login(backendUrl, "acceptance_owner", "acceptance-password");
 
   log("logout invalidates the old session and username/password login restores the account");
-  await clickButton(ownerBrowser!, "Settings");
-  await waitForText(ownerBrowser!, "Host account");
-  await clickButton(ownerBrowser!, "Sign out");
+  await clickButton(ownerBrowser!, "Open profile menu");
+  await find(ownerBrowser!, "role", "menuitem", "click", "Sign out");
   await waitForText(ownerBrowser!, "Sign in to OpenGUI");
   await fillLabel(ownerBrowser!, "Username", "acceptance_owner");
   await fillLabel(ownerBrowser!, "Password", "acceptance-password");
@@ -265,9 +267,9 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
     },
   });
   assert(closedRegistration.status === 403, "Invite-only Host accepted open registration");
-  await clickButton(ownerBrowser!, "Users & access");
+  await clickButton(ownerBrowser!, "People");
   await waitForText(ownerBrowser!, "Members");
-  await clickButton(ownerBrowser!, "Host & admin");
+  await clickButton(ownerBrowser!, "System");
   await expectText(ownerBrowser!, "Invite only");
 
   log("an invite with initial read access is accepted in a second isolated browser");
@@ -605,9 +607,9 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
 
   log("UI boundary: members cannot see owner Team controls; canInvite remains API-only today");
   await clickButton(invitedBrowser!, "Settings");
-  await waitForText(invitedBrowser!, "Models & providers");
-  await expectNoText(invitedBrowser!, "Users & access");
-  await expectText(invitedBrowser!, "Models & providers");
+  await waitForText(invitedBrowser!, "Models");
+  await expectNoText(invitedBrowser!, "People");
+  await expectText(invitedBrowser!, "Models");
 
   for (const sessionName of browserSessions) {
     const errors = await browser(sessionName, "errors");
@@ -637,7 +639,11 @@ async function cleanup() {
 }
 
 try {
-  await Promise.all([mkdir(dataDirectory), mkdir(writableDirectory, { recursive: true })]);
+  await Promise.all([
+    mkdir(dataDirectory),
+    mkdir(homeDirectory),
+    mkdir(writableDirectory, { recursive: true }),
+  ]);
   await writeFile(join(projectDirectory, "read-only.txt"), "owner fixture");
   const [modelPort, backendPort, frontendPort] = await Promise.all([
     freePort(),
@@ -648,6 +654,7 @@ try {
   startDevelopmentStack(frontendPort, backendPort);
   const frontendUrl = `http://127.0.0.1:${frontendPort}`;
   await waitForUrl(frontendUrl);
+  await waitForUrl(`${frontendUrl}/api/identity/policy`);
   await runScenarios(frontendUrl, `http://127.0.0.1:${backendPort}`, modelPort);
   log("PASS: deterministic remote multi-user identity and sharing acceptance completed");
 } catch (error) {
