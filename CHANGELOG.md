@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.7.0
+
+OpenGUI 0.7.0 brings the release in line with what has been running on managed Hosts, and
+focuses on reliability: long chats, flaky providers, restricted shells, and account recovery.
+
+### Reliability
+
+- Automatically retry temporary model provider failures (overloaded, connection drops, generic
+  "please retry" errors) up to three times with backoff, before any output is shown, and show
+  the retry in the chat. Context compaction retries the same way instead of pausing the Session.
+- Clearer failed-run messages: usage limits show when the model is available again and suggest
+  switching models; outages and expired credentials explain what to do next.
+- Compaction handoffs no longer need project filesystem access, so restricted Accounts can
+  compact; failed compactions are labelled correctly and pause until an explicit `/compact`.
+- The Host shuts down gracefully on `SIGTERM`: active runs are stopped cleanly and the durable
+  state lock is released, so restarts no longer leave a stale lock behind. Locks left by an
+  earlier run of the same container are recovered automatically.
+- `/api/health` reports low disk space, and the app warns when the Host is almost full.
+
+### Accounts
+
+- Admins can now reset passwords for members and viewers; only the owner resets admins.
+- Locked-out owners can be recovered from the Host shell with `scripts/reset-password.ts`.
+- Optional owner-configured mail confirms contact email changes.
+
+### Sandboxed shells and previews
+
+- Production shell broker: 16 bounded parallel commands, a pre-execution "busy" response that
+  the Host retries briefly, output tail and request limits, cleanup of exactly the cancelled
+  container, optional cgroup slice, and a 900 s command cap.
+- Shell image with Chromium and Playwright (`docker/sandbox/Shell.Dockerfile`), isolated
+  development previews (`docker/sandbox/preview-compose.yml`), and an Astro preview runner.
+- Shell image lifecycle tooling (`scripts/sandbox-shell-lifecycle.ts`): keeper-based retention,
+  label-scoped cleanup, restricted-grant probes, restore verification, and alerts.
+- Broker faults are classified (unreachable, timeout, unauthorized, busy, rejected) instead of
+  surfacing as generic tool errors; the preflight checks the configured shell image.
+
+### Chat
+
+- Sticky date and time while scrolling through a conversation.
+- Fixed file uploads to Remote Hosts failing with 401.
+- Offerings keep the upstream model's reasoning capabilities.
+
 ## 0.6.3
 
 - Added scoped custom instructions with host, personal, and per-project scopes plus team-based project editors.
