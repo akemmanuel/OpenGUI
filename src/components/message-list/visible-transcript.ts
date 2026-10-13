@@ -7,7 +7,7 @@ import {
   isBeforeRevertPoint,
 } from "@/components/message-list/message-revert";
 
-const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file"]);
+const RENDERABLE_TYPES = new Set(["text", "reasoning", "tool", "file", "retry"]);
 
 function isRenderablePart(part: TranscriptPart): boolean {
   if (!RENDERABLE_TYPES.has(part.type)) return false;

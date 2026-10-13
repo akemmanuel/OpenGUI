@@ -422,6 +422,11 @@ export function normalizeModelError(error: unknown, signal?: AbortSignal): Norma
     (status !== undefined && status >= 500) ||
     /overloaded|unavailable|fetch failed|network error|econn\w*|socket|websocket|connection (?:closed|failed|lost|reset|refused)/i.test(
       message,
+    ) ||
+    // Providers' generic transient failures, e.g. Codex: "An error occurred while
+    // processing your request. You can retry your request, ...".
+    /error occurred while processing your request|you can retry your request|server[_ ]error|internal server error|try again later/i.test(
+      message,
     )
   )
     return normalizedModelError(

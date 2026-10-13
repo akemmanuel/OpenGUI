@@ -103,6 +103,15 @@ export interface PromptInput {
 export type SessionEvent =
   | { type: "assistant_delta"; runId: string; delta: string }
   | { type: "reasoning_delta"; runId: string; delta: string }
+  /** Transient: a model request failed before any output and will be retried. */
+  | {
+      type: "model_retry";
+      runId: string;
+      attempt: number;
+      maxAttempts: number;
+      delayMs: number;
+      code: string;
+    }
   | { type: "entry_appended"; entry: SessionEntry };
 
 export interface HarnessSession {
@@ -169,4 +178,9 @@ export interface OpenGuiHarnessOptions {
   }) => Promise<string | undefined> | string | undefined;
   /** Executes restricted shell calls outside the Host process in an embedding-owned sandbox. */
   shellExecutor?: ShellToolExecutor;
+  /**
+   * Backoff before each automatic retry of a model request that failed transiently
+   * before producing any output. An empty list disables automatic retries.
+   */
+  modelRetryDelaysMs?: readonly number[];
 }

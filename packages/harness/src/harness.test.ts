@@ -74,6 +74,173 @@ describe("OpenGuiHarness", () => {
     await harness.close();
   });
 
+  function flakyModel(
+    failures: Array<Error>,
+    output = "recovered",
+  ): ModelTransport & {
+    calls: number;
+  } {
+    const model = {
+      calls: 0,
+      async *stream() {
+        model.calls += 1;
+        const failure = failures.shift();
+        if (failure) throw failure;
+        yield { type: "text_delta" as const, delta: output };
+      },
+    };
+    return model;
+  }
+
+  async function runToEnd(session: { run(input: { text: string }): AsyncIterable<unknown> }) {
+    const events: Array<{ type?: string }> = [];
+    try {
+      for await (const event of session.run({ text: "Hello" })) events.push(event as never);
+    } catch {
+      // Failures are rethrown after the durable run_failed entry.
+    }
+    return events;
+  }
+
+  test("retries transient provider failures before any output and then completes", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const model = flakyModel([
+      new Error("Codex error: Our servers are currently overloaded. Please try again later."),
+      new Error("WebSocket closed 1000"),
+    ]);
+    const harness = createOpenGuiHarness({ dataDirectory, model, modelRetryDelaysMs: [1, 1, 1] });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    const events = await runToEnd(session);
+
+    expect(model.calls).toBe(3);
+    expect(events.filter((event) => event.type === "model_retry")).toMatchObject([
+      { attempt: 1, maxAttempts: 3, code: "provider_unavailable" },
+      { attempt: 2, maxAttempts: 3, code: "provider_unavailable" },
+    ]);
+    const kinds = (await session.read()).entries.map((entry) => entry.kind);
+    expect(kinds).toContain("run_completed");
+    expect(kinds).not.toContain("run_failed");
+    await harness.close();
+  });
+
+  test("gives up after the retry budget and records the provider failure", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const model = flakyModel(Array.from({ length: 5 }, () => new Error("fetch failed")));
+    const harness = createOpenGuiHarness({ dataDirectory, model, modelRetryDelaysMs: [1, 1] });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    await runToEnd(session);
+
+    expect(model.calls).toBe(3);
+    const failed = (await session.read()).entries.find((entry) => entry.kind === "run_failed");
+    expect(failed?.payload).toMatchObject({ normalizedError: { code: "provider_unavailable" } });
+    await harness.close();
+  });
+
+  test("never retries quota exhaustion", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const model = flakyModel([new Error("You have hit your ChatGPT usage limit (plus plan).")]);
+    const harness = createOpenGuiHarness({ dataDirectory, model, modelRetryDelaysMs: [1, 1, 1] });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    const events = await runToEnd(session);
+
+    expect(model.calls).toBe(1);
+    expect(events.some((event) => event.type === "model_retry")).toBe(false);
+    await harness.close();
+  });
+
+  test("compaction retries a transient provider failure instead of pausing the Session", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const summary = {
+      goal: "Resume later.",
+      currentState: "Done.",
+      constraints: "None.",
+      decisions: "None.",
+      blockers: "None.",
+      relevantFiles: [],
+      nextSteps: ["Resume later."],
+    };
+    const responses: Array<Error | string> = [
+      "Initial work.",
+      new Error("Codex error: Our servers are currently overloaded."),
+      JSON.stringify(summary),
+    ];
+    const model: ModelTransport = {
+      async *stream() {
+        const next = responses.shift();
+        if (next instanceof Error) throw next;
+        yield { type: "text_delta", delta: next ?? "" };
+        yield { type: "completed" };
+      },
+    };
+    const harness = createOpenGuiHarness({ dataDirectory, model, modelRetryDelaysMs: [1, 1] });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+    await runToEnd(session);
+
+    const events: Array<{ type?: string }> = [];
+    for await (const event of session.compact()) events.push(event as never);
+
+    expect(events.some((event) => event.type === "model_retry")).toBe(true);
+    const compactions = (await session.read()).entries.filter(
+      (entry) => entry.kind === "compaction",
+    );
+    expect(compactions.at(-1)?.payload).toMatchObject({ status: "completed" });
+    await harness.close();
+  });
+
+  test("never retries after output has streamed", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    let calls = 0;
+    const model: ModelTransport = {
+      async *stream() {
+        calls += 1;
+        yield { type: "text_delta", delta: "partial" };
+        throw new Error("WebSocket closed 1006");
+      },
+    };
+    const harness = createOpenGuiHarness({ dataDirectory, model, modelRetryDelaysMs: [1, 1, 1] });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    await runToEnd(session);
+
+    expect(calls).toBe(1);
+    const kinds = (await session.read()).entries.map((entry) => entry.kind);
+    expect(kinds).toContain("run_failed");
+    await harness.close();
+  });
+
   test("advertises project skills in the system prompt and loads them with read", async () => {
     const dataDirectory = await temporaryDirectory();
     const homeDirectory = join(dataDirectory, "home");

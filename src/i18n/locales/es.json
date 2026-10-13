@@ -157,7 +157,14 @@
     "hideDetails": "Ocultar detalles",
     "copy": "Copiar",
     "compactionRecoveryTitle": "La compactación necesita atención antes de continuar.",
-    "compactionRecoveryDetail": "La compactación automática está en pausa tras un error; no se perdió nada. Reintenta con /compact y continúa en esta sesión."
+    "compactionRecoveryDetail": "La compactación automática está en pausa tras un error; no se perdió nada. Reintenta con /compact y continúa en esta sesión.",
+    "rateLimitTitle": "Se alcanzó el límite de uso de este modelo.",
+    "rateLimitRetryAt": "Debería volver a estar disponible hacia las {{time}}.",
+    "switchModelHint": "Elige otro modelo en el selector de modelos para continuar ahora.",
+    "unavailableTitle": "El proveedor del modelo no está disponible ahora mismo.",
+    "unavailableDetail": "OpenGUI ya lo reintentó automáticamente. Vuelve a enviar tu mensaje en un momento o cambia de modelo.",
+    "authenticationTitle": "El proveedor del modelo rechazó las credenciales.",
+    "authenticationDetail": "Vuelve a conectar este proveedor en Ajustes → Modelos y proveedores e inténtalo de nuevo."
   },
   "settings": {
     "subtitle": "Preferencias, modelos, personas y administración del Host en un solo lugar.",
@@ -449,6 +456,11 @@
     "unsupportedCommand": "Comando de barra no compatible: /{{command}}",
     "failed": "La compactación del contexto falló.",
     "failedHint": "Tu historial se conserva. Reintenta con /compact y continúa aquí."
+  },
+  "modelRetry": {
+    "generic": "El proveedor del modelo tuvo un problema temporal. Reintentando…",
+    "attempt": "El proveedor del modelo tuvo un problema temporal. Reintentando ({{attempt}}/{{maxAttempts}})…",
+    "timeout": "El proveedor del modelo no respondió a tiempo. Reintentando ({{attempt}}/{{maxAttempts}})…"
   },
   "messageActions": {
     "contextCompacted": "Contexto compactado",
@@ -1346,5 +1358,8 @@
     "user": "Usuario",
     "assistant": "OpenGUI",
     "footer": "Compartido desde OpenGUI · Solo lectura"
+  },
+  "host": {
+    "lowDiskSpace": "Este Host casi no tiene espacio en disco. Es posible que los chats no se guarden hasta que se libere espacio."
   }
 }

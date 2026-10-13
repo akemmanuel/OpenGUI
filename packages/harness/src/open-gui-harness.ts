@@ -81,6 +81,30 @@ async function promiseWithAbort<T>(pending: Promise<T>, signal: AbortSignal) {
   });
 }
 
+const DEFAULT_MODEL_RETRY_DELAYS_MS = [2_000, 6_000, 15_000] as const;
+
+/** Transient provider outages, not quota exhaustion or request faults. */
+function isAutomaticallyRetryable(failure: { code: string; retryable: boolean }) {
+  return (
+    failure.retryable && (failure.code === "provider_unavailable" || failure.code === "timeout")
+  );
+}
+
+async function abortableDelay(ms: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 async function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal) {
   return await promiseWithAbort(iterator.next(), signal);
 }
@@ -239,6 +263,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
   readonly #resolveCustomInstructions: OpenGuiHarnessOptions["resolveCustomInstructions"];
   readonly #shellExecutor: OpenGuiHarnessOptions["shellExecutor"];
   readonly #compaction: Required<NonNullable<OpenGuiHarnessOptions["compaction"]>>;
+  readonly #modelRetryDelaysMs: readonly number[];
   readonly #runningSessions = new Set<string>();
   readonly #abortControllers = new Map<string, AbortController>();
   readonly #runCompletions = new Map<string, Promise<void>>();
@@ -248,6 +273,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
 
   constructor(options: OpenGuiHarnessOptions) {
     this.#clock = options.clock ?? new SystemClock();
+    this.#modelRetryDelaysMs = options.modelRetryDelaysMs ?? DEFAULT_MODEL_RETRY_DELAYS_MS;
     this.#ids = options.ids ?? new RandomIdGenerator();
     this.#model = options.model;
     this.#agentTools = options.agentTools;
@@ -682,43 +708,67 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         }),
         delivery: { ...DEFAULT_MODEL_DELIVERY },
       };
-      try {
-        for await (const event of this.#model.stream(modelRequest, input.signal)) {
-          await authorize();
-          input.signal.throwIfAborted();
-          if (event.type === "text_delta") {
-            summaryBytes += Buffer.byteLength(event.delta, "utf8");
-            if (summaryBytes > MAX_HANDOFF_BYTES + 1024) {
-              throw new CompactionError("summary", "Compaction summary exceeds the size limit");
+      // Summary text is never shown live, so a transient provider failure can be
+      // retried from scratch at any point instead of pausing the Session.
+      for (let compactionRetries = 0; ; compactionRetries += 1) {
+        summaryText = "";
+        summaryBytes = 0;
+        completed = false;
+        providerResponse = undefined;
+        let retryDelayMs: number | undefined;
+        try {
+          for await (const event of this.#model.stream(modelRequest, input.signal)) {
+            await authorize();
+            input.signal.throwIfAborted();
+            if (event.type === "text_delta") {
+              summaryBytes += Buffer.byteLength(event.delta, "utf8");
+              if (summaryBytes > MAX_HANDOFF_BYTES + 1024) {
+                throw new CompactionError("summary", "Compaction summary exceeds the size limit");
+              }
+              summaryText += event.delta;
+            } else if (event.type === "tool_call" || event.type === "tool_call_delta") {
+              throw new CompactionError("summary", "Compaction response must not call tools");
+            } else if (event.type === "completed") {
+              completed = true;
+              providerResponse = event.response;
             }
-            summaryText += event.delta;
-          } else if (event.type === "tool_call" || event.type === "tool_call_delta") {
-            throw new CompactionError("summary", "Compaction response must not call tools");
-          } else if (event.type === "completed") {
-            completed = true;
-            providerResponse = event.response;
+          }
+        } catch (error) {
+          if (error instanceof CompactionError) throw error;
+          if (input.signal.aborted) throw error;
+          const failure = normalizeModelError(error, input.signal);
+          if (
+            isAutomaticallyRetryable(failure) &&
+            compactionRetries < this.#modelRetryDelaysMs.length
+          ) {
+            retryDelayMs = this.#modelRetryDelaysMs[compactionRetries] ?? 0;
+            yield {
+              type: "model_retry",
+              runId: input.runId,
+              attempt: compactionRetries + 1,
+              maxAttempts: this.#modelRetryDelaysMs.length,
+              delayMs: retryDelayMs,
+              code: failure.code,
+            };
+          } else if (error instanceof ModelTransportError) {
+            // Keep the failed provider usage visible for diagnostics without
+            // mixing it into task history; the outer run catch skips wrapped
+            // errors, so this persists exactly once per compaction attempt.
+            yield {
+              type: "entry_appended",
+              entry: await appendDurable("provider_response", {
+                runId: input.runId,
+                response: error.response,
+                purpose: "compaction",
+              }),
+            };
+            throw new CompactionError("provider", error.normalized.message, { cause: error });
+          } else {
+            throw new CompactionError("provider", failure.message, { cause: error });
           }
         }
-      } catch (error) {
-        if (error instanceof CompactionError) throw error;
-        if (input.signal.aborted) throw error;
-        if (error instanceof ModelTransportError) {
-          // Keep the failed provider usage visible for diagnostics without
-          // mixing it into task history; the outer run catch skips wrapped
-          // errors, so this persists exactly once per compaction attempt.
-          yield {
-            type: "entry_appended",
-            entry: await appendDurable("provider_response", {
-              runId: input.runId,
-              response: error.response,
-              purpose: "compaction",
-            }),
-          };
-          throw new CompactionError("provider", error.normalized.message, { cause: error });
-        }
-        throw new CompactionError("provider", normalizeModelError(error).message, {
-          cause: error,
-        });
+        if (retryDelayMs === undefined) break;
+        await abortableDelay(retryDelayMs, input.signal);
       }
 
       // Re-resolve authorization and cancellation immediately before publishing.
@@ -1002,6 +1052,8 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           return;
         }
         let runAgentToolSet: AgentToolSet | undefined;
+        // Consecutive transient model failures in the current model turn.
+        let modelRetries = 0;
 
         while (true) {
           const current = await this.readSession(sessionId);
@@ -1133,6 +1185,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             .stream(request, abortController.signal)
             [Symbol.asyncIterator]();
           let providerResponse: ProviderResponseMetadata | undefined;
+          let retryDelayMs: number | undefined;
           try {
             while (true) {
               const nextModelEvent = await nextWithAbort(modelIterator, abortController.signal);
@@ -1155,9 +1208,37 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
                 providerResponse = event.response;
               }
             }
+          } catch (error) {
+            // Retry only before anything was shown or recorded for this turn, so a
+            // retry can never duplicate streamed text, reasoning, or tool effects.
+            const streamed =
+              assistantText || reasoningText || toolCalls.length > 0 || providerResponse;
+            const failure = normalizeModelError(error, abortController.signal);
+            if (
+              streamed ||
+              abortController.signal.aborted ||
+              !isAutomaticallyRetryable(failure) ||
+              modelRetries >= this.#modelRetryDelaysMs.length
+            )
+              throw error;
+            retryDelayMs = this.#modelRetryDelaysMs[modelRetries];
+            modelRetries += 1;
+            yield {
+              type: "model_retry",
+              runId,
+              attempt: modelRetries,
+              maxAttempts: this.#modelRetryDelaysMs.length,
+              delayMs: retryDelayMs ?? 0,
+              code: failure.code,
+            };
           } finally {
             await modelIterator.return?.();
           }
+          if (retryDelayMs !== undefined) {
+            await abortableDelay(retryDelayMs, abortController.signal);
+            continue;
+          }
+          modelRetries = 0;
 
           if (providerResponse) {
             await revalidate(nextPrompt.actor, current.projectDirectory);

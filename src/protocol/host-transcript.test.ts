@@ -22,6 +22,75 @@ function snapshot(): HostSessionSnapshot {
   };
 }
 
+describe("automatic model retries", () => {
+  test("shows a pending retry until output streams for the run", () => {
+    let stream = createHostTranscriptStream(snapshot());
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "model_retry",
+        runId: "run-1",
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2000,
+        code: "provider_unavailable",
+      },
+    });
+    const pending = projectHostTranscriptStream(stream);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.parts[0]).toMatchObject({
+      type: "retry",
+      metadata: { attempt: 1, maxAttempts: 3, code: "provider_unavailable" },
+    });
+
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "assistant_delta", runId: "run-1", delta: "Hi" },
+    });
+    const streaming = projectHostTranscriptStream(stream);
+    expect(streaming[0]?.parts.map((part) => part.type)).toEqual(["text"]);
+  });
+
+  test("terminal entries clear a pending retry", () => {
+    let stream = createHostTranscriptStream(snapshot());
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "model_retry",
+        runId: "run-1",
+        attempt: 3,
+        maxAttempts: 3,
+        delayMs: 15000,
+        code: "timeout",
+      },
+    });
+    stream = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: {
+        type: "entry_appended",
+        entry: {
+          id: "failed-1",
+          sessionId: "session-1",
+          sequence: 1,
+          kind: "run_failed",
+          payload: { runId: "run-1", error: "Model provider is unavailable" },
+          createdAt: "2026-07-10T00:00:01.000Z",
+        },
+      },
+    });
+    expect(stream.retryByRun?.["run-1"]).toBeUndefined();
+  });
+
+  test("ignores event types from a newer Host", () => {
+    const stream = createHostTranscriptStream(snapshot());
+    const next = applyHostTranscriptEvent(stream, {
+      sessionId: "session-1",
+      event: { type: "future_event" } as never,
+    });
+    expect(next).toBe(stream);
+  });
+});
+
 describe("Host transcript streaming", () => {
   test("projects persisted user-message actors and leaves legacy messages actorless", () => {
     const input = snapshot();

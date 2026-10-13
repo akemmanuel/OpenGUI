@@ -1,14 +1,28 @@
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import type { HostEvent, HostSessionSnapshot } from "@/protocol/host-types";
 
+export interface HostModelRetry {
+  attempt: number;
+  maxAttempts: number;
+  code: string;
+}
+
 export interface HostTranscriptStream {
   snapshot: HostSessionSnapshot;
   assistantTextByRun: Readonly<Record<string, string>>;
   reasoningTextByRun: Readonly<Record<string, string>>;
+  /** Pending automatic model retry per run; cleared by the next output or entry. */
+  retryByRun?: Readonly<Record<string, HostModelRetry>>;
 }
 
 export function createHostTranscriptStream(snapshot: HostSessionSnapshot): HostTranscriptStream {
   return { snapshot, assistantTextByRun: {}, reasoningTextByRun: {} };
+}
+
+function withoutRetry(stream: HostTranscriptStream, runId: string | undefined) {
+  if (!runId || !stream.retryByRun?.[runId]) return stream.retryByRun;
+  const { [runId]: _cleared, ...rest } = stream.retryByRun;
+  return rest;
 }
 
 export function applyHostTranscriptEvent(
@@ -17,9 +31,23 @@ export function applyHostTranscriptEvent(
 ): HostTranscriptStream {
   if (hostEvent.sessionId !== stream.snapshot.id) return stream;
   const event = hostEvent.event;
+  if (event.type === "model_retry") {
+    return {
+      ...stream,
+      retryByRun: {
+        ...stream.retryByRun,
+        [event.runId]: {
+          attempt: event.attempt,
+          maxAttempts: event.maxAttempts,
+          code: event.code,
+        },
+      },
+    };
+  }
   if (event.type === "assistant_delta") {
     return {
       ...stream,
+      retryByRun: withoutRetry(stream, event.runId),
       assistantTextByRun: {
         ...stream.assistantTextByRun,
         [event.runId]: `${stream.assistantTextByRun[event.runId] ?? ""}${event.delta}`,
@@ -29,12 +57,15 @@ export function applyHostTranscriptEvent(
   if (event.type === "reasoning_delta") {
     return {
       ...stream,
+      retryByRun: withoutRetry(stream, event.runId),
       reasoningTextByRun: {
         ...stream.reasoningTextByRun,
         [event.runId]: `${stream.reasoningTextByRun[event.runId] ?? ""}${event.delta}`,
       },
     };
   }
+  // Ignore event types from a newer Host instead of failing the whole stream.
+  if (event.type !== "entry_appended" || !event.entry) return stream;
   if (stream.snapshot.entries.some((entry) => entry.id === event.entry.id)) return stream;
   let nextModel = stream.snapshot.model;
   if (event.entry.kind === "model_changed") {
@@ -88,6 +119,7 @@ export function applyHostTranscriptEvent(
     },
     assistantTextByRun,
     reasoningTextByRun,
+    retryByRun: withoutRetry(stream, text(event.entry.payload.runId) || undefined),
   };
 }
 
@@ -96,11 +128,13 @@ export function projectHostTranscriptStream(stream: HostTranscriptStream): Messa
   const runIds = new Set([
     ...Object.keys(stream.reasoningTextByRun),
     ...Object.keys(stream.assistantTextByRun),
+    ...Object.keys(stream.retryByRun ?? {}),
   ]);
   for (const runId of runIds) {
     const streamedText = stream.assistantTextByRun[runId] ?? "";
     const streamedReasoning = stream.reasoningTextByRun[runId] ?? "";
-    if (!streamedText && !streamedReasoning) continue;
+    const retry = stream.retryByRun?.[runId];
+    if (!streamedText && !streamedReasoning && !retry) continue;
     const messageId = `stream:${runId}`;
     const now = Date.now();
     messages.push({
@@ -113,6 +147,18 @@ export function projectHostTranscriptStream(stream: HostTranscriptStream): Messa
         time: { created: now },
       },
       parts: [
+        ...(retry
+          ? [
+              {
+                id: `${messageId}:retry`,
+                type: "retry" as const,
+                sessionID: stream.snapshot.id,
+                messageID: messageId,
+                tokens: {},
+                metadata: { ...retry },
+              },
+            ]
+          : []),
         ...(streamedReasoning
           ? [
               {
@@ -491,6 +537,8 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
           ...(entry.payload.recoveryRequired === true
             ? { code: "compactionRecoveryRequired" }
             : {}),
+          ...(text(normalizedError?.code) ? { providerCode: text(normalizedError?.code) } : {}),
+          failedAt: createdMs(entry.createdAt),
         },
       };
       pendingAssistant.info.time.completed = createdMs(entry.createdAt);

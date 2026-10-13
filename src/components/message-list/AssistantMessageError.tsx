@@ -9,7 +9,7 @@ export function AssistantMessageError({
 }: {
   error: TranscriptMessageEntry["info"]["error"];
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (!error) return null;
   const data =
@@ -18,6 +18,8 @@ export function AssistantMessageError({
       : undefined;
   const recoveryRequired = data?.code === "compactionRecoveryRequired";
   const message = data && "message" in data ? String(data.message) : error.name;
+  const providerCode = typeof data?.providerCode === "string" ? data.providerCode : undefined;
+  const failedAt = typeof data?.failedAt === "number" ? data.failedAt : undefined;
 
   // Computed directly (no memo): splitting one short message is trivial, and
   // every hook must run unconditionally so null/error transitions stay valid.
@@ -26,7 +28,29 @@ export function AssistantMessageError({
         summary: t("messageError.compactionRecoveryTitle"),
         detail: t("messageError.compactionRecoveryDetail"),
       }
-    : summarizeErrorMessage(message);
+    : providerCode === "rate_limit"
+      ? {
+          summary: t("messageError.rateLimitTitle"),
+          detail: [
+            resetAtLabel(message, failedAt, i18n.language, (time) =>
+              t("messageError.rateLimitRetryAt", { time }),
+            ),
+            t("messageError.switchModelHint"),
+          ]
+            .filter(Boolean)
+            .join(" "),
+        }
+      : providerCode === "provider_unavailable" || providerCode === "timeout"
+        ? {
+            summary: t("messageError.unavailableTitle"),
+            detail: t("messageError.unavailableDetail"),
+          }
+        : providerCode === "authentication"
+          ? {
+              summary: t("messageError.authenticationTitle"),
+              detail: t("messageError.authenticationDetail"),
+            }
+          : summarizeErrorMessage(message);
 
   return (
     <div className="my-2 max-w-full overflow-hidden rounded-xl border border-destructive/25 bg-destructive/10 text-destructive shadow-sm">
@@ -77,6 +101,34 @@ export function AssistantMessageError({
       </div>
     </div>
   );
+}
+
+function resetAtLabel(
+  message: string,
+  failedAt: number | undefined,
+  locale: string | undefined,
+  format: (time: string) => string,
+) {
+  const resetAt = parseRetryAfter(message, failedAt);
+  if (!resetAt) return "";
+  return format(
+    new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(resetAt),
+  );
+}
+
+/** Reads provider hints such as "Try again in ~148 min" relative to the failure time. */
+export function parseRetryAfter(message: string, from: number | undefined): Date | undefined {
+  if (from === undefined) return undefined;
+  const match =
+    /try again in\s*~?\s*(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b/i.exec(
+      message,
+    );
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  const unit = match[2]!.toLowerCase();
+  const multiplier = unit.startsWith("h") ? 3_600_000 : unit.startsWith("m") ? 60_000 : 1_000;
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return new Date(from + value * multiplier);
 }
 
 function summarizeErrorMessage(message: string): { summary: string; detail: string } {

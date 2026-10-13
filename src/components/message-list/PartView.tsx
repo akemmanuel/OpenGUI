@@ -5,6 +5,7 @@ import { ToolCallPartView } from "@/components/message-list/tools/ToolCallPartVi
 import type { TranscriptPart } from "@/protocol/session-transcript";
 import { FilePartView } from "./FilePartView";
 import { ReasoningPartView } from "./ReasoningPartView";
+import { RetryPartView } from "./RetryPartView";
 import { TextPartView } from "./TextPartView";
 
 export const PartView = memo(function PartView({
@@ -54,11 +55,12 @@ export const PartView = memo(function PartView({
       );
     case "compaction":
       return <CompactionPartView part={part} />;
+    case "retry":
+      return <RetryPartView part={part} />;
     case "step-start":
     case "step-finish":
     case "snapshot":
     case "patch":
-    case "retry":
     case "subtask":
     case "agent":
       return null;

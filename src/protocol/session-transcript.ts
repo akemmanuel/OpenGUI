@@ -117,7 +117,10 @@ export type NonRenderableTranscriptPart =
       type: "compaction";
       metadata?: { status?: string; reason?: string; handoffDirectory?: string };
     } & BaseTranscriptPart)
-  | ({ type: "retry" } & BaseTranscriptPart)
+  | ({
+      type: "retry";
+      metadata?: { attempt?: number; maxAttempts?: number; code?: string };
+    } & BaseTranscriptPart)
   | ({ type: "subtask" } & BaseTranscriptPart)
   | ({ type: "agent" } & BaseTranscriptPart);
 

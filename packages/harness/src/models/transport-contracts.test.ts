@@ -168,6 +168,15 @@ describe("durable transport cache contract", () => {
     ["You have hit your ChatGPT usage limit (pro plan).", "rate_limit"],
     ["WebSocket connection closed unexpectedly", "provider_unavailable"],
     ["TypeError: fetch failed", "provider_unavailable"],
+    ["WebSocket closed 1000", "provider_unavailable"],
+    [
+      "Codex error: Our servers are currently overloaded. Please try again later.",
+      "provider_unavailable",
+    ],
+    [
+      "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.",
+      "provider_unavailable",
+    ],
   ])("normalizes transient provider failure: %s", (message, code) => {
     expect(normalizeModelError(new Error(message))).toMatchObject({ code, retryable: true });
   });

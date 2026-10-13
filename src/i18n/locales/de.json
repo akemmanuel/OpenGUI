@@ -157,7 +157,14 @@
     "hideDetails": "Details ausblenden",
     "copy": "Kopieren",
     "compactionRecoveryTitle": "Die Verdichtung braucht Aufmerksamkeit, bevor es weitergeht.",
-    "compactionRecoveryDetail": "Die automatische Verdichtung ist nach einem Fehler pausiert – es ging nichts verloren. Wiederhole den Vorgang mit /compact und fahre dann in dieser Sitzung fort."
+    "compactionRecoveryDetail": "Die automatische Verdichtung ist nach einem Fehler pausiert – es ging nichts verloren. Wiederhole den Vorgang mit /compact und fahre dann in dieser Sitzung fort.",
+    "rateLimitTitle": "Nutzungslimit für dieses Modell erreicht.",
+    "rateLimitRetryAt": "Es sollte gegen {{time}} wieder verfügbar sein.",
+    "switchModelHint": "Wähle in der Modellauswahl ein anderes Modell, um sofort weiterzumachen.",
+    "unavailableTitle": "Der Modellanbieter ist gerade nicht erreichbar.",
+    "unavailableDetail": "OpenGUI hat es bereits automatisch erneut versucht. Sende deine Nachricht gleich noch einmal oder wechsle das Modell.",
+    "authenticationTitle": "Der Modellanbieter hat die Zugangsdaten abgelehnt.",
+    "authenticationDetail": "Verbinde diesen Anbieter unter Einstellungen → Modelle & Anbieter neu und versuche es dann erneut."
   },
   "settings": {
     "subtitle": "Einstellungen, Modelle, Personen und Host-Verwaltung an einem Ort.",
@@ -449,6 +456,11 @@
     "unsupportedCommand": "Nicht unterstützter Slash-Befehl: /{{command}}",
     "failed": "Die Kontextverdichtung ist fehlgeschlagen.",
     "failedHint": "Dein Verlauf bleibt erhalten. Wiederhole den Vorgang mit /compact und fahre dann hier fort."
+  },
+  "modelRetry": {
+    "generic": "Der Modellanbieter hatte ein vorübergehendes Problem. Neuer Versuch…",
+    "attempt": "Der Modellanbieter hatte ein vorübergehendes Problem. Neuer Versuch ({{attempt}}/{{maxAttempts}})…",
+    "timeout": "Der Modellanbieter hat nicht rechtzeitig geantwortet. Neuer Versuch ({{attempt}}/{{maxAttempts}})…"
   },
   "messageActions": {
     "contextCompacted": "Kontext komprimiert",
@@ -1346,5 +1358,8 @@
     "user": "Benutzer",
     "assistant": "OpenGUI",
     "footer": "Aus OpenGUI geteilt · Schreibgeschützt"
+  },
+  "host": {
+    "lowDiskSpace": "Auf diesem Host ist fast kein Speicherplatz mehr frei. Chats werden eventuell nicht gespeichert, bis Platz geschaffen wird."
   }
 }

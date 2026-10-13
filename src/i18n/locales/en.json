@@ -125,7 +125,14 @@
     "hideDetails": "Hide details",
     "copy": "Copy",
     "compactionRecoveryTitle": "Compaction needs attention before continuing.",
-    "compactionRecoveryDetail": "Automatic compaction is paused after a failure — nothing was lost. Retry with /compact, then continue in this session."
+    "compactionRecoveryDetail": "Automatic compaction is paused after a failure — nothing was lost. Retry with /compact, then continue in this session.",
+    "rateLimitTitle": "Usage limit reached for this model.",
+    "rateLimitRetryAt": "It should be available again around {{time}}.",
+    "switchModelHint": "Pick another model in the model selector to continue now.",
+    "unavailableTitle": "The model provider is unavailable right now.",
+    "unavailableDetail": "OpenGUI already retried automatically. Send your message again in a moment, or switch to another model.",
+    "authenticationTitle": "The model provider rejected the credentials.",
+    "authenticationDetail": "Reconnect this provider in Settings → Models & providers, then try again."
   },
   "markdown": {
     "copy": "Copy",
@@ -449,6 +456,11 @@
     "unsupportedCommand": "Unsupported slash command: /{{command}}",
     "failed": "Context compaction failed.",
     "failedHint": "Your history is preserved. Retry with /compact, then continue here."
+  },
+  "modelRetry": {
+    "generic": "The model provider had a temporary problem. Retrying…",
+    "attempt": "The model provider had a temporary problem. Retrying ({{attempt}}/{{maxAttempts}})…",
+    "timeout": "The model provider did not respond in time. Retrying ({{attempt}}/{{maxAttempts}})…"
   },
   "messageActions": {
     "contextCompacted": "Context compacted",
@@ -1346,5 +1358,8 @@
     "user": "User",
     "assistant": "OpenGUI",
     "footer": "Shared from OpenGUI · Read-only"
+  },
+  "host": {
+    "lowDiskSpace": "This Host is almost out of disk space. Saving chats may fail until space is freed."
   }
 }
