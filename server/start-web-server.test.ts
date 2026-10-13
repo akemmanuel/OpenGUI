@@ -2,12 +2,15 @@ import { EventEmitter } from "node:events";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { startWebServer } from "./start-web-server";
 
-function host(servesFrontend = false) {
+function host(servesFrontend = false, close = vi.fn(async () => {})) {
   return {
     env: { hostname: "127.0.0.1", port: 41234, servesFrontend },
     app: { fetch: vi.fn() },
+    hostReady: Promise.resolve({ close }),
   };
 }
+
+const noSignals = { onSignal: () => {} };
 
 describe("standalone Host server startup", () => {
   test("propagates Host bootstrap errors to the process entrypoint", () => {
@@ -27,6 +30,7 @@ describe("standalone Host server startup", () => {
         serve: (() => {
           throw new Error("listen failed");
         }) as never,
+        ...noSignals,
       }),
     ).toThrow("listen failed");
   });
@@ -45,6 +49,7 @@ describe("standalone Host server startup", () => {
       createBackendHost: () => host(servesFrontend) as never,
       serve: serve as never,
       info,
+      ...noSignals,
     });
 
     expect(serve).toHaveBeenCalledWith(
@@ -65,6 +70,7 @@ describe("standalone Host server startup", () => {
       createBackendHost: () => host() as never,
       serve: (() => server) as never,
       startupError,
+      ...noSignals,
     });
     const error = new Error("EADDRINUSE");
     server.emit("error", error);
@@ -81,9 +87,30 @@ describe("standalone Host server startup", () => {
         return server;
       }) as never,
       startupError,
+      ...noSignals,
     });
     const error = new Error("runtime failure");
     server.emit("error", error);
     expect(startupError).toHaveBeenCalledWith(error);
+  });
+
+  test("SIGTERM stops accepting requests, closes the Host, then exits cleanly", async () => {
+    const server = Object.assign(new EventEmitter(), { close: vi.fn() });
+    const close = vi.fn(async () => {});
+    const handlers = new Map<string, () => void>();
+    const exit = vi.fn();
+    startWebServer({
+      createBackendHost: () => host(false, close) as never,
+      serve: (() => server) as never,
+      info: vi.fn(),
+      onSignal: (signal, handler) => handlers.set(signal, handler),
+      exit,
+    });
+
+    handlers.get("SIGTERM")?.();
+    handlers.get("SIGTERM")?.();
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
+    expect(server.close).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
   });
 });

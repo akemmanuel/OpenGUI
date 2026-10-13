@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname } from "node:path";
 
 export type DurableJsonFileSystem = {
@@ -83,6 +84,30 @@ async function processIsAlive(pid: number) {
   }
 }
 
+/** Lock paths held by this process. Two transactions in one process still conflict. */
+const heldLocks = new Set<string>();
+
+type LockRecord = { pid?: number; owner?: string; hostname?: string };
+
+/**
+ * A lock is stale when its process is gone, or when it names this very process
+ * on this very machine/container without being held here: containers reuse small
+ * PIDs, so after an unclean stop the next start sees "its own" PID in the lock.
+ * Locks from another hostname (another container sharing the data directory)
+ * are only stale when their PID is not alive here; never steal a live one.
+ */
+async function lockIsStale(path: string, lock: LockRecord) {
+  const pid = lock.pid ?? 0;
+  if (
+    pid === process.pid &&
+    lock.hostname !== undefined &&
+    lock.hostname === hostname() &&
+    !heldLocks.has(path)
+  )
+    return true;
+  return !(await processIsAlive(pid));
+}
+
 async function acquireLock(path: string, owner: string) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -92,28 +117,44 @@ async function acquireLock(path: string, owner: string) {
         0o600,
       );
       try {
-        await lock.writeFile(JSON.stringify({ pid: process.pid, owner }), "utf8");
+        await lock.writeFile(
+          JSON.stringify({ pid: process.pid, owner, hostname: hostname() }),
+          "utf8",
+        );
         await lock.sync();
       } finally {
         await lock.close();
       }
+      heldLocks.add(path);
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       let stale = false;
+      let holder: LockRecord = {};
       try {
-        const lock = JSON.parse(await readFile(path, "utf8")) as { pid?: number };
-        stale = !(await processIsAlive(lock.pid ?? 0));
+        holder = JSON.parse(await readFile(path, "utf8")) as LockRecord;
+        stale = await lockIsStale(path, holder);
       } catch {
         // A malformed lock is not stolen: another process may still be creating it.
       }
-      if (!stale) throw new Error(`Durable state is already in use: ${path}`);
+      if (!stale) throw lockInUseError(path, holder);
       await unlink(path).catch((unlinkError) => {
         if ((unlinkError as NodeJS.ErrnoException).code !== "ENOENT") throw unlinkError;
       });
     }
   }
-  throw new Error(`Durable state is already in use: ${path}`);
+  throw lockInUseError(path, {});
+}
+
+function lockInUseError(path: string, holder: LockRecord) {
+  const by =
+    typeof holder.pid === "number"
+      ? ` by pid ${holder.pid}${holder.hostname ? ` on ${holder.hostname}` : ""}`
+      : "";
+  return new Error(
+    `Durable state is already in use${by}: ${path}. If that process or container is ` +
+      "stopped, move the .lock file aside and start again.",
+  );
 }
 
 export async function openDurableJsonTransaction<T>(
@@ -141,6 +182,7 @@ export async function openDurableJsonTransaction<T>(
     const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
     if (options.failOnInvalid && !missing) {
       await unlink(lockPath).catch(() => undefined);
+      heldLocks.delete(lockPath);
       throw new Error(`Durable JSON state is malformed: ${path}`, { cause: error });
     }
     state = structuredClone(options.fallback);
@@ -203,6 +245,8 @@ export async function openDurableJsonTransaction<T>(
         if (lock.owner === owner) await unlink(lockPath);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      } finally {
+        heldLocks.delete(lockPath);
       }
     },
   };

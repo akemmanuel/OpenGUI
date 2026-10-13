@@ -1,5 +1,5 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import {
@@ -149,5 +149,31 @@ describe("durable JSON transaction", () => {
       }),
     ).rejects.toThrow("already in use");
     await first.close();
+  });
+
+  test("recovers a lock left by an earlier run of this container (reused pid)", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    await writeFile(
+      `${path}.lock`,
+      JSON.stringify({ pid: process.pid, owner: "previous-run", hostname: hostname() }),
+    );
+    const transaction = await openDurableJsonTransaction(path, {
+      fallback: {},
+      validate: (value) => value as object,
+    });
+    await transaction.close();
+  });
+
+  test("never steals a live lock from another container sharing the data", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    await writeFile(
+      `${path}.lock`,
+      JSON.stringify({ pid: process.pid, owner: "other", hostname: "other-container" }),
+    );
+    await expect(
+      openDurableJsonTransaction(path, { fallback: {}, validate: (value) => value as object }),
+    ).rejects.toThrow(/in use by pid \d+ on other-container/);
   });
 });
