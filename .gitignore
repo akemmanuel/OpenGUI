@@ -57,3 +57,6 @@ changes.patch
 
 # Local build/debug artifacts
 build/
+
+# Local QA artifacts
+dogfood-output/
