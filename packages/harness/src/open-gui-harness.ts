@@ -5,9 +5,13 @@ import { dirname, join, resolve } from "node:path";
 import { buildModelContext } from "./context/build-context.ts";
 import {
   buildHandoffPrompt,
+  COMPACTION_RECOVERY_MESSAGE,
+  COMPACTION_STORAGE_MESSAGE,
+  CompactionError,
   DEFAULT_COMPACTION_THRESHOLD_RATIO,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimateContextTokens,
+  findUnresolvedCompactionFailure,
   latestCompletedCompaction,
   MAX_HANDOFF_BYTES,
   parseCompactionHandoff,
@@ -35,6 +39,7 @@ import {
   redactProviderText,
   type ModelRequest,
   type ModelToolName,
+  type NormalizedModelError,
   type ProviderResponseMetadata,
 } from "./models/transport.ts";
 import { discoverSkills, loadSkillsFromDir } from "./skills/discover.ts";
@@ -86,6 +91,13 @@ function selectedModel(entries: SessionSnapshot["entries"]): ModelSelection | nu
     if (entry?.kind === "model_changed") return entry.payload.model as ModelSelection;
   }
   return null;
+}
+
+function normalizeCompactionFailure(failure: CompactionError): NormalizedModelError {
+  if (failure.source === "authorization") {
+    return { code: "permission", message: failure.message, retryable: false };
+  }
+  return { code: "compaction", message: failure.message, retryable: false };
 }
 
 function normalizePromptInput(prompt: PromptInput): PromptInput {
@@ -565,106 +577,181 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     // The handoff lives only in this response and the completed compaction
     // entry. No filesystem directory is created and no normal Tools are
     // offered, so restricted policies cannot deny compaction storage.
-    yield {
-      type: "entry_appended",
-      entry: await this.#store.appendEntry(
-        input.sessionId,
-        "compaction",
-        {
+    // Durable appends convert storage faults to typed failures at this seam;
+    // authorization denials are typed by the authorize wrapper below.
+    const appendDurable = async (
+      kind: "compaction" | "provider_response",
+      payload: Record<string, unknown>,
+    ) => {
+      try {
+        return await this.#store.appendEntry(
+          input.sessionId,
+          kind,
+          payload,
+          this.#clock.now().toISOString(),
+        );
+      } catch (error) {
+        if (input.signal.aborted) throw error;
+        throw new CompactionError("storage", COMPACTION_STORAGE_MESSAGE, { cause: error });
+      }
+    };
+    const authorize = async () => {
+      try {
+        return await input.revalidate();
+      } catch (error) {
+        if (error instanceof CompactionError) throw error;
+        throw new CompactionError(
+          "authorization",
+          error instanceof Error ? error.message : String(error),
+          { cause: error },
+        );
+      }
+    };
+    // Returns the recorded failed entry so callers can yield it to live
+    // subscribers, or null when recording itself was impossible (the started
+    // entry plus the outer run_failed for this run still identify the
+    // failure on later prompts).
+    const recordCompactionFailure = async (failure: CompactionError) => {
+      try {
+        return await appendDurable("compaction", {
+          runId: input.runId,
+          status: "failed",
+          reason: input.reason,
+          failureSource: failure.source,
+          error: failure.message,
+          tokensBefore: input.tokensBefore,
+          thresholdRatio: this.#compaction.thresholdRatio,
+          model: input.snapshot.model,
+          reasoning: input.snapshot.reasoning,
+        });
+      } catch {
+        return null;
+      }
+    };
+
+    try {
+      yield {
+        type: "entry_appended",
+        entry: await appendDurable("compaction", {
           runId: input.runId,
           status: "started",
           tokensBefore: input.tokensBefore,
           thresholdRatio: this.#compaction.thresholdRatio,
           reason: input.reason,
+        }),
+      };
+
+      const context = [
+        ...buildModelContext(input.snapshot.entries),
+        {
+          type: "user_message" as const,
+          text: buildHandoffPrompt(),
+          model: input.snapshot.model!,
+          reasoning: input.snapshot.reasoning!,
         },
-        this.#clock.now().toISOString(),
-      ),
-    };
+      ];
 
-    const context = [
-      ...buildModelContext(input.snapshot.entries),
-      {
-        type: "user_message" as const,
-        text: buildHandoffPrompt(),
-        model: input.snapshot.model!,
-        reasoning: input.snapshot.reasoning!,
-      },
-    ];
-
-    // Single tool-free model response. Internal summary text is never yielded
-    // as live task deltas and never persisted as task entries; unexpected
-    // tool calls are refused without execution, so there is no tool-call loop.
-    let summaryText = "";
-    let summaryBytes = 0;
-    let completed = false;
-    let providerResponse: ProviderResponseMetadata | undefined;
-    const modelRequest: ModelRequest = {
-      identity: {
-        hostId: this.#hostId,
-        sessionId: input.sessionId,
-        runId: input.runId,
-        principalId: input.actor ? `${input.actor.type}:${input.actor.id}` : "local:legacy",
-      },
-      projectDirectory: input.snapshot.projectDirectory,
-      actor: input.actor,
-      context,
-      tools: [],
-      toolDefinitions: [],
-      systemPrompt: input.systemPrompt,
-      cache: createModelCachePolicy({
-        systemPrompt: input.systemPrompt,
+      // Single tool-free model response. Internal summary text is never yielded
+      // as live task deltas and never persisted as task entries; unexpected
+      // tool calls are refused without execution, so there is no tool-call loop.
+      let summaryText = "";
+      let summaryBytes = 0;
+      let completed = false;
+      let providerResponse: ProviderResponseMetadata | undefined;
+      const modelRequest: ModelRequest = {
+        identity: {
+          hostId: this.#hostId,
+          sessionId: input.sessionId,
+          runId: input.runId,
+          principalId: input.actor ? `${input.actor.type}:${input.actor.id}` : "local:legacy",
+        },
+        projectDirectory: input.snapshot.projectDirectory,
+        actor: input.actor,
+        context,
         tools: [],
-        toolSchemas: [],
-        permissionScope: { tools: [], project: input.snapshot.projectDirectory },
-        skillRevisions:
-          lockedSkillPinsFromEntries(input.snapshot.entries)?.map((pin) => pin.revision) ?? [],
-        compactionId: latestCompletedCompaction(input.snapshot.entries)?.entry.id,
-      }),
-      delivery: { ...DEFAULT_MODEL_DELIVERY },
-    };
-    for await (const event of this.#model.stream(modelRequest, input.signal)) {
-      await input.revalidate();
-      input.signal.throwIfAborted();
-      if (event.type === "text_delta") {
-        summaryBytes += Buffer.byteLength(event.delta, "utf8");
-        if (summaryBytes > MAX_HANDOFF_BYTES + 1024) {
-          throw new Error("Compaction summary exceeds the size limit");
+        toolDefinitions: [],
+        systemPrompt: input.systemPrompt,
+        cache: createModelCachePolicy({
+          systemPrompt: input.systemPrompt,
+          tools: [],
+          toolSchemas: [],
+          permissionScope: { tools: [], project: input.snapshot.projectDirectory },
+          skillRevisions:
+            lockedSkillPinsFromEntries(input.snapshot.entries)?.map((pin) => pin.revision) ?? [],
+          compactionId: latestCompletedCompaction(input.snapshot.entries)?.entry.id,
+        }),
+        delivery: { ...DEFAULT_MODEL_DELIVERY },
+      };
+      try {
+        for await (const event of this.#model.stream(modelRequest, input.signal)) {
+          await authorize();
+          input.signal.throwIfAborted();
+          if (event.type === "text_delta") {
+            summaryBytes += Buffer.byteLength(event.delta, "utf8");
+            if (summaryBytes > MAX_HANDOFF_BYTES + 1024) {
+              throw new CompactionError("summary", "Compaction summary exceeds the size limit");
+            }
+            summaryText += event.delta;
+          } else if (event.type === "tool_call" || event.type === "tool_call_delta") {
+            throw new CompactionError("summary", "Compaction response must not call tools");
+          } else if (event.type === "completed") {
+            completed = true;
+            providerResponse = event.response;
+          }
         }
-        summaryText += event.delta;
-      } else if (event.type === "tool_call" || event.type === "tool_call_delta") {
-        throw new Error("Compaction response must not call tools");
-      } else if (event.type === "completed") {
-        completed = true;
-        providerResponse = event.response;
+      } catch (error) {
+        if (error instanceof CompactionError) throw error;
+        if (input.signal.aborted) throw error;
+        if (error instanceof ModelTransportError) {
+          // Keep the failed provider usage visible for diagnostics without
+          // mixing it into task history; the outer run catch skips wrapped
+          // errors, so this persists exactly once per compaction attempt.
+          yield {
+            type: "entry_appended",
+            entry: await appendDurable("provider_response", {
+              runId: input.runId,
+              response: error.response,
+              purpose: "compaction",
+            }),
+          };
+          throw new CompactionError("provider", error.normalized.message, { cause: error });
+        }
+        throw new CompactionError("provider", normalizeModelError(error).message, {
+          cause: error,
+        });
       }
-    }
 
-    // Re-resolve authorization and cancellation immediately before publishing.
-    await input.revalidate();
-    input.signal.throwIfAborted();
-    if (providerResponse) {
+      // Re-resolve authorization and cancellation immediately before publishing.
+      await authorize();
+      input.signal.throwIfAborted();
+      if (providerResponse) {
+        yield {
+          type: "entry_appended",
+          entry: await appendDurable("provider_response", {
+            runId: input.runId,
+            response: providerResponse,
+            purpose: "compaction",
+          }),
+        };
+      }
+      if (!completed || (providerResponse && providerResponse.stopReason !== "stop")) {
+        throw new CompactionError("summary", "Compaction summary response was incomplete");
+      }
+      let handoff: string;
+      try {
+        handoff = parseCompactionHandoff(summaryText);
+      } catch (error) {
+        throw new CompactionError(
+          "summary",
+          error instanceof Error ? error.message : "Compaction summary was invalid",
+          { cause: error },
+        );
+      }
+      input.signal.throwIfAborted();
+
       yield {
         type: "entry_appended",
-        entry: await this.#store.appendEntry(
-          input.sessionId,
-          "provider_response",
-          { runId: input.runId, response: providerResponse, purpose: "compaction" },
-          this.#clock.now().toISOString(),
-        ),
-      };
-    }
-    if (!completed || (providerResponse && providerResponse.stopReason !== "stop")) {
-      throw new Error("Compaction summary response was incomplete");
-    }
-    const handoff = parseCompactionHandoff(summaryText);
-    input.signal.throwIfAborted();
-
-    yield {
-      type: "entry_appended",
-      entry: await this.#store.appendEntry(
-        input.sessionId,
-        "compaction",
-        {
+        entry: await appendDurable("compaction", {
           runId: input.runId,
           status: "completed",
           handoff,
@@ -673,10 +760,15 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           model: input.snapshot.model,
           reasoning: input.snapshot.reasoning,
           reason: input.reason,
-        },
-        this.#clock.now().toISOString(),
-      ),
-    };
+        }),
+      };
+    } catch (error) {
+      if (error instanceof CompactionError) {
+        const failedEntry = await recordCompactionFailure(error);
+        if (failedEntry) yield { type: "entry_appended", entry: failedEntry };
+      }
+      throw error;
+    }
   }
 
   async *compact(sessionId: string, actor?: PromptInput["actor"]): AsyncIterable<SessionEvent> {
@@ -879,6 +971,36 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           now: this.#clock.now().toISOString(),
         });
         for (const entry of startedEntries) yield { type: "entry_appended", entry };
+        // A durably failed compaction stops automatic attempts until an
+        // explicit compact retry succeeds. The prompt above is already
+        // preserved, so report recovery-required state without invoking the
+        // model, Tools, or compaction; queued follow-ups stay queued.
+        const blockedCompaction = this.#compaction.enabled
+          ? findUnresolvedCompactionFailure(snapshot.entries)
+          : null;
+        if (blockedCompaction) {
+          const failureSource = blockedCompaction.entry.payload.failureSource;
+          yield {
+            type: "entry_appended",
+            entry: await this.#store.appendEntry(
+              sessionId,
+              "run_failed",
+              {
+                runId,
+                error: COMPACTION_RECOVERY_MESSAGE,
+                normalizedError: {
+                  code: "compaction",
+                  message: COMPACTION_RECOVERY_MESSAGE,
+                  retryable: false,
+                } satisfies NormalizedModelError,
+                recoveryRequired: true,
+                ...(typeof failureSource === "string" ? { failureSource } : {}),
+              },
+              this.#clock.now().toISOString(),
+            ),
+          };
+          return;
+        }
         let runAgentToolSet: AgentToolSet | undefined;
 
         while (true) {
@@ -1184,10 +1306,13 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         followUpId = followUp.id;
       }
     } catch (error) {
-      const normalizedError = normalizeModelError(
-        error,
-        authorizationFailed ? undefined : abortController.signal,
-      );
+      const normalizedError =
+        error instanceof CompactionError && error.source !== "provider"
+          ? normalizeCompactionFailure(error)
+          : normalizeModelError(
+              error instanceof CompactionError && error.cause !== undefined ? error.cause : error,
+              authorizationFailed ? undefined : abortController.signal,
+            );
       if (error instanceof ModelTransportError && typeof activeRunId === "string") {
         yield {
           type: "entry_appended",

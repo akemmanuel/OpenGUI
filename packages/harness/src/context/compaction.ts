@@ -7,6 +7,34 @@ export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
 /** Maximum accepted UTF-8 bytes for one compaction summary response. No silent truncation. */
 export const MAX_HANDOFF_BYTES = 64 * 1024;
 
+/** Fixed user-facing message when the validated summary cannot be persisted. */
+export const COMPACTION_STORAGE_MESSAGE = "Compaction summary could not be saved";
+
+/** Stable user-facing marker reported when a prompt is blocked on a failed compaction. */
+export const COMPACTION_RECOVERY_MESSAGE = "Compaction needs attention before continuing";
+
+/**
+ * Where a compaction attempt failed. Classified at the throwing seam (no
+ * message-substring heuristics): summary validation, durable persistence,
+ * the model/provider transport, or current actor authorization.
+ */
+export type CompactionFailureSource = "summary" | "storage" | "provider" | "authorization";
+
+/**
+ * Typed compaction failure. The message is always sanitized, bounded, and
+ * free of filesystem paths, customer content, and provider tokens; any raw
+ * diagnostic stays on `cause` in memory and is never serialized into entries.
+ */
+export class CompactionError extends Error {
+  readonly source: CompactionFailureSource;
+
+  constructor(source: CompactionFailureSource, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "CompactionError";
+    this.source = source;
+  }
+}
+
 export interface CompactionSummary {
   goal: string;
   currentState: string;
@@ -194,6 +222,37 @@ export function latestCompletedCompaction(entries: readonly SessionEntry[]) {
     const entry = entries[index];
     if (entry?.kind === "compaction" && entry.payload.status === "completed") {
       return { entry, index };
+    }
+  }
+  return null;
+}
+
+/**
+ * Latest terminal compaction outcome wins: a later `completed` clears the
+ * block, a later `failed` keeps it. A `started` entry with a later same-run
+ * `run_failed` (and no terminal outcome) means recording the failure itself
+ * was impossible; it also blocks. Anything else — including a bare `started`
+ * or an aborted run — does not block: aborts stay user-intentional.
+ */
+export function findUnresolvedCompactionFailure(
+  entries: readonly SessionEntry[],
+): { entry: SessionEntry; index: number } | null {
+  const failedRunIds = new Set<string>();
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    if (entry.kind === "compaction") {
+      const status = entry.payload.status;
+      if (status === "completed") return null;
+      if (status === "failed") return { entry, index };
+      if (status === "started") {
+        const runId = entry.payload.runId;
+        if (typeof runId === "string" && failedRunIds.has(runId)) return { entry, index };
+      }
+      continue;
+    }
+    if (entry.kind === "run_failed" && typeof entry.payload.runId === "string") {
+      failedRunIds.add(entry.payload.runId);
     }
   }
   return null;

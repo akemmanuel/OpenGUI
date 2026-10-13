@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, Copy } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/browser";
@@ -12,12 +12,21 @@ export function AssistantMessageError({
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (!error) return null;
-  const message =
-    "data" in error && error.data && typeof error.data === "object" && "message" in error.data
-      ? String(error.data.message)
-      : error.name;
+  const data =
+    "data" in error && error.data && typeof error.data === "object"
+      ? (error.data as Record<string, unknown>)
+      : undefined;
+  const recoveryRequired = data?.code === "compactionRecoveryRequired";
+  const message = data && "message" in data ? String(data.message) : error.name;
 
-  const { summary, detail } = useMemo(() => summarizeErrorMessage(message), [message]);
+  // Computed directly (no memo): splitting one short message is trivial, and
+  // every hook must run unconditionally so null/error transitions stay valid.
+  const { summary, detail } = recoveryRequired
+    ? {
+        summary: t("messageError.compactionRecoveryTitle"),
+        detail: t("messageError.compactionRecoveryDetail"),
+      }
+    : summarizeErrorMessage(message);
 
   return (
     <div className="my-2 max-w-full overflow-hidden rounded-xl border border-destructive/25 bg-destructive/10 text-destructive shadow-sm">

@@ -134,7 +134,9 @@
   "messageError": {
     "showDetails": "Details anzeigen",
     "hideDetails": "Details ausblenden",
-    "copy": "Kopieren"
+    "copy": "Kopieren",
+    "compactionRecoveryTitle": "Die Verdichtung braucht Aufmerksamkeit, bevor es weitergeht.",
+    "compactionRecoveryDetail": "Die automatische Verdichtung ist nach einem Fehler pausiert – es ging nichts verloren. Wiederhole den Vorgang mit /compact und fahre dann in dieser Sitzung fort."
   },
   "settings": {
     "subtitle": "Einstellungen, Modelle, Personen und Host-Verwaltung an einem Ort.",
@@ -419,7 +421,9 @@
     "completedManual": "Kontext komprimiert. Deine nächste Nachricht wird anhand der Übergabe fortgesetzt.",
     "selectSession": "Wähle eine Sitzung aus, bevor du den Kontext komprimierst.",
     "noArguments": "/compact akzeptiert keine Argumente.",
-    "unsupportedCommand": "Nicht unterstützter Slash-Befehl: /{{command}}"
+    "unsupportedCommand": "Nicht unterstützter Slash-Befehl: /{{command}}",
+    "failed": "Die Kontextverdichtung ist fehlgeschlagen.",
+    "failedHint": "Dein Verlauf bleibt erhalten. Wiederhole den Vorgang mit /compact und fahre dann hier fort."
   },
   "messageActions": {
     "contextCompacted": "Kontext komprimiert",

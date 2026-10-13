@@ -84,6 +84,170 @@ describe("Host transcript streaming", () => {
     expect(JSON.stringify(messages)).not.toContain("CONTEXT HANDOFF MODE");
   });
 
+  test("settles one compaction row per run instead of leaving started rows behind", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "compact-start-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "compaction",
+        payload: { status: "started", runId: "run-1", reason: "threshold" },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "compact-failed-1",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "compaction",
+        payload: { status: "failed", runId: "run-1", reason: "threshold" },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+      {
+        id: "compact-start-2",
+        sessionId: input.id,
+        sequence: 3,
+        kind: "compaction",
+        payload: { status: "started", runId: "run-2", reason: "manual" },
+        createdAt: "2026-07-10T00:00:03.000Z",
+      },
+      {
+        id: "compact-done-2",
+        sessionId: input.id,
+        sequence: 4,
+        kind: "compaction",
+        payload: { status: "completed", runId: "run-2", reason: "manual" },
+        createdAt: "2026-07-10T00:00:04.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    const parts = messages.map((message) => message.parts[0]);
+    expect(parts).toHaveLength(2);
+    expect(parts).toMatchObject([
+      { type: "compaction", metadata: { status: "failed", reason: "threshold" } },
+      { type: "compaction", metadata: { status: "completed", reason: "manual" } },
+    ]);
+    expect(
+      parts.some((part) => part?.type === "compaction" && part.metadata?.status === "started"),
+    ).toBe(false);
+  });
+
+  test("keeps unsettled and legacy compaction rows independent", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "compact-start-1",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "compaction",
+        payload: { status: "started", runId: "run-1", reason: "threshold" },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+      {
+        id: "compact-legacy",
+        sessionId: input.id,
+        sequence: 2,
+        kind: "compaction",
+        payload: { status: "started" },
+        createdAt: "2026-07-10T00:00:02.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    expect(messages.map((message) => message.parts[0])).toMatchObject([
+      { type: "compaction", metadata: { status: "started" } },
+      { type: "compaction", metadata: { status: "started" } },
+    ]);
+  });
+
+  test("projects failed compaction outcomes without internal detail", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "compact-failed",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "compaction",
+        payload: {
+          status: "failed",
+          reason: "threshold",
+          failureSource: "summary",
+          error: "Compaction summary was invalid: expected a single JSON object",
+        },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    expect(messages.map((message) => message.parts[0])).toMatchObject([
+      { type: "compaction", metadata: { status: "failed", reason: "threshold" } },
+    ]);
+  });
+
+  test("marks recovery-required run failures for localized recovery UI", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "run-failed",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "run_failed",
+        payload: {
+          runId: "run-1",
+          error: "Compaction needs attention before continuing",
+          normalizedError: {
+            code: "compaction",
+            message: "Compaction needs attention before continuing",
+            retryable: false,
+          },
+          recoveryRequired: true,
+          failureSource: "summary",
+        },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    expect(messages[0]?.info.error).toMatchObject({
+      name: "Model request failed",
+      data: {
+        message: "Compaction needs attention before continuing",
+        code: "compactionRecoveryRequired",
+      },
+    });
+  });
+
+  test("leaves ordinary run failures without a recovery code", () => {
+    const input = snapshot();
+    input.entries = [
+      {
+        id: "run-failed",
+        sessionId: input.id,
+        sequence: 1,
+        kind: "run_failed",
+        payload: {
+          runId: "run-1",
+          error: "Model provider rate limit reached",
+          normalizedError: {
+            code: "rate_limit",
+            message: "Model provider rate limit reached",
+            retryable: true,
+          },
+        },
+        createdAt: "2026-07-10T00:00:01.000Z",
+      },
+    ];
+
+    const messages = projectHostTranscriptStream(createHostTranscriptStream(input));
+    expect(messages[0]?.info.error).toMatchObject({
+      data: { message: "Model provider rate limit reached" },
+    });
+    expect(messages[0]?.info.error?.data).not.toMatchObject({
+      code: expect.anything(),
+    });
+  });
+
   test("shows streamed reasoning and preserves it beside the durable answer", () => {
     let stream = createHostTranscriptStream(snapshot());
     stream = applyHostTranscriptEvent(stream, {

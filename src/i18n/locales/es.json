@@ -134,7 +134,9 @@
   "messageError": {
     "showDetails": "Mostrar detalles",
     "hideDetails": "Ocultar detalles",
-    "copy": "Copiar"
+    "copy": "Copiar",
+    "compactionRecoveryTitle": "La compactación necesita atención antes de continuar.",
+    "compactionRecoveryDetail": "La compactación automática está en pausa tras un error; no se perdió nada. Reintenta con /compact y continúa en esta sesión."
   },
   "settings": {
     "subtitle": "Preferencias, modelos, personas y administración del Host en un solo lugar.",
@@ -419,7 +421,9 @@
     "completedManual": "Contexto compactado. Tu próximo mensaje continuará desde la transferencia.",
     "selectSession": "Selecciona una sesión antes de compactar el contexto.",
     "noArguments": "/compact no acepta argumentos.",
-    "unsupportedCommand": "Comando de barra no compatible: /{{command}}"
+    "unsupportedCommand": "Comando de barra no compatible: /{{command}}",
+    "failed": "La compactación del contexto falló.",
+    "failedHint": "Tu historial se conserva. Reintenta con /compact y continúa aquí."
   },
   "messageActions": {
     "contextCompacted": "Contexto compactado",

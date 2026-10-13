@@ -369,7 +369,7 @@ describe("compaction handoff (issue #150, Harness seam)", () => {
         snapshot.entries
           .filter((entry) => entry.kind === "compaction")
           .map((entry) => entry.payload.status),
-      ).toEqual(["started"]);
+      ).toEqual(["started", "failed"]);
       expect(snapshot.entries.find((entry) => entry.kind === "run_failed")).toBeDefined();
     } finally {
       await harness.close();
@@ -388,7 +388,7 @@ describe("compaction handoff (issue #150, Harness seam)", () => {
         snapshot.entries
           .filter((entry) => entry.kind === "compaction")
           .map((entry) => entry.payload.status),
-      ).toEqual(["started"]);
+      ).toEqual(["started", "failed"]);
     } finally {
       await harness.close();
     }
@@ -409,7 +409,7 @@ describe("compaction handoff (issue #150, Harness seam)", () => {
         snapshot.entries
           .filter((entry) => entry.kind === "compaction")
           .map((entry) => entry.payload.status),
-      ).toEqual(["started"]);
+      ).toEqual(["started", "failed"]);
     } finally {
       await harness.close();
     }
@@ -435,7 +435,7 @@ describe("compaction handoff (issue #150, Harness seam)", () => {
         snapshot.entries
           .filter((entry) => entry.kind === "compaction")
           .map((entry) => entry.payload.status),
-      ).toEqual(["started"]);
+      ).toEqual(["started", "failed"]);
     } finally {
       await harness.close();
     }
@@ -463,13 +463,15 @@ describe("compaction handoff (issue #150, Harness seam)", () => {
       for await (const _event of session.run({ text: "Do work", actor: MEMBER, skills: [] })) {
         // drain
       }
-      await expect(drain(session.compact(MEMBER))).rejects.toThrow("injected storage failure");
+      await expect(drain(session.compact(MEMBER))).rejects.toThrow(
+        "Compaction summary could not be saved",
+      );
       const snapshot = await session.read();
       expect(
         snapshot.entries
           .filter((entry) => entry.kind === "compaction")
           .map((entry) => entry.payload.status),
-      ).toEqual(["started"]);
+      ).toEqual(["started", "failed"]);
       // Accepted user intent survives the failed publish.
       expect(
         snapshot.entries

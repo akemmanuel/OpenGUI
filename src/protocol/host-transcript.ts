@@ -186,6 +186,21 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
     }
   };
 
+  // A compaction run settles into one stable row: once a started entry has a
+  // later terminal (completed/failed) entry for the same run, only the
+  // terminal projects. Distinct runs and legacy entries without a runId stay
+  // independent rows.
+  const compactionTerminalByRun = new Map<string, (typeof snapshot.entries)[number]>();
+  for (const entry of snapshot.entries) {
+    if (
+      entry.kind === "compaction" &&
+      (entry.payload.status === "completed" || entry.payload.status === "failed") &&
+      typeof entry.payload.runId === "string"
+    ) {
+      compactionTerminalByRun.set(entry.payload.runId, entry);
+    }
+  }
+
   for (const entry of snapshot.entries) {
     if (entry.kind === "user_message") {
       flushAssistant();
@@ -219,6 +234,11 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
     if (entry.kind === "compaction") {
       flushAssistant();
       const id = entry.id;
+      const runId = typeof entry.payload.runId === "string" ? entry.payload.runId : undefined;
+      const terminal = runId ? compactionTerminalByRun.get(runId) : undefined;
+      if (entry.payload.status === "started" && terminal && terminal.id !== entry.id) {
+        continue;
+      }
       messages.push({
         info: {
           id,
@@ -229,7 +249,9 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
           time: {
             created: createdMs(entry.createdAt),
             completed:
-              entry.payload.status === "completed" ? createdMs(entry.createdAt) : undefined,
+              entry.payload.status === "completed" || entry.payload.status === "failed"
+                ? createdMs(entry.createdAt)
+                : undefined,
           },
         },
         parts: [
@@ -460,7 +482,12 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
           : summary || detail || "Model request failed";
       pendingAssistant.info.error = {
         name: "Model request failed",
-        data: { message },
+        data: {
+          message,
+          ...(entry.payload.recoveryRequired === true
+            ? { code: "compactionRecoveryRequired" }
+            : {}),
+        },
       };
       pendingAssistant.info.time.completed = createdMs(entry.createdAt);
     }
