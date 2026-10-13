@@ -496,8 +496,9 @@ function HostProviderBody({
       }
       try {
         setBootState("checking-server");
-        await host.health();
+        const health = await host.health();
         if (cancelled) return;
+        if (health.lowDiskSpace) notifyError(t("host.lowDiskSpace"), { duration: 15_000 });
         await refreshModels();
         const directories = await refreshProjects();
         await refreshSessions(directories);
@@ -514,7 +515,7 @@ function HostProviderBody({
     return () => {
       cancelled = true;
     };
-  }, [host, refreshModels, refreshProjects, refreshSessions, replaceProjects]);
+  }, [host, refreshModels, refreshProjects, refreshSessions, replaceProjects, t]);
 
   useEffect(() => {
     if (!host) return;

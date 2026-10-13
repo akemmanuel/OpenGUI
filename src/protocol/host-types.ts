@@ -212,6 +212,14 @@ export interface HostEvent {
   event:
     | { type: "assistant_delta"; runId: string; delta: string }
     | { type: "reasoning_delta"; runId: string; delta: string }
+    | {
+        type: "model_retry";
+        runId: string;
+        attempt: number;
+        maxAttempts: number;
+        delayMs: number;
+        code: string;
+      }
     | { type: "entry_appended"; entry: HostSessionEntry };
 }
 
@@ -234,7 +242,7 @@ export interface OpenGuiHostClient {
   pollSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
   cancelSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
   disconnectSubscription(provider: SubscriptionProvider): Promise<void>;
-  health(): Promise<{ ok: true; version: string; shell: string }>;
+  health(): Promise<{ ok: true; version: string; shell: string; lowDiskSpace?: boolean }>;
   listModelConnections(): Promise<HostModelConnection[]>;
   listModelOfferings(): Promise<HostModelOffering[]>;
   upsertModelConnection(connection: HostModelConnection): Promise<HostModelConnection>;

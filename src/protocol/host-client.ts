@@ -117,7 +117,12 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
       await request(`/api/host/auth/${provider}`, { method: "DELETE" });
     },
     health: async () =>
-      (await request("/api/host/health")) as { ok: true; version: string; shell: string },
+      (await request("/api/host/health")) as {
+        ok: true;
+        version: string;
+        shell: string;
+        lowDiskSpace?: boolean;
+      },
     listModelConnections: async () => (await request("/api/host/models")) as HostModelConnection[],
     listModelOfferings: async () =>
       (await request("/api/host/model-offerings")) as HostModelOffering[],

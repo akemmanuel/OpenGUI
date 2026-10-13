@@ -92,7 +92,7 @@ export function registerHostProductRoutes(
       ok: true,
       authRequired,
       identity,
-      value: { ...host.health(), authRequired, identity },
+      value: { ...(await host.healthWithStorage()), authRequired, identity },
     });
   });
 
@@ -104,7 +104,7 @@ export function registerHostProductRoutes(
       ok: true,
       authRequired,
       identity,
-      value: { ...host.health(), authRequired, identity },
+      value: { ...(await host.healthWithStorage()), authRequired, identity },
     });
   });
 

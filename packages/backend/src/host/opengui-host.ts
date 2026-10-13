@@ -1,4 +1,14 @@
-import { chmod, lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  statfs,
+  writeFile,
+} from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -98,6 +108,19 @@ export interface HostHealth {
   ok: true;
   version: string;
   shell: string;
+  /** True when the data directory's filesystem is nearly full; SQLite writes then fail. */
+  lowDiskSpace?: boolean;
+}
+
+/** Below this, warn: either under 1 GiB or under 5 % of the filesystem free. */
+const LOW_DISK_FREE_BYTES = 1024 ** 3;
+const LOW_DISK_FREE_RATIO = 0.05;
+
+export function isLowDiskSpace(freeBytes: number, totalBytes: number) {
+  return (
+    freeBytes < LOW_DISK_FREE_BYTES ||
+    (totalBytes > 0 && freeBytes / totalBytes < LOW_DISK_FREE_RATIO)
+  );
 }
 
 export interface HostModelConnection extends OpenAiCompatibleConnection {}
@@ -343,6 +366,7 @@ function publicSessionEvent(event: SessionEvent): SessionEvent {
 
 export class OpenGuiHost {
   readonly #dataDirectory: string;
+  #lowDiskWarned = false;
   readonly #settingsPath: string;
   readonly #secretsPath: string;
   readonly #statePath: string;
@@ -1272,6 +1296,22 @@ export class OpenGuiHost {
       version: process.env.OPENGUI_VERSION || process.env.npm_package_version || "0.0.0",
       shell: process.env.SHELL || (process.platform === "win32" ? "powershell" : "/bin/sh"),
     };
+  }
+
+  /** Health plus storage pressure. Never fails: an unreadable filesystem reports no warning. */
+  async healthWithStorage(): Promise<HostHealth> {
+    const health = this.health();
+    try {
+      const stats = await statfs(this.#dataDirectory);
+      const lowDiskSpace = isLowDiskSpace(stats.bavail * stats.bsize, stats.blocks * stats.bsize);
+      if (lowDiskSpace && !this.#lowDiskWarned) {
+        console.warn(`OpenGUI data directory is low on disk space: ${this.#dataDirectory}`);
+      }
+      this.#lowDiskWarned = lowDiskSpace;
+      return { ...health, lowDiskSpace };
+    } catch {
+      return health;
+    }
   }
 
   /**
