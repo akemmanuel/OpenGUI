@@ -867,6 +867,15 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
                         </Button>
                       ))}
                     {view === "people" &&
+                      currentRole === "admin" &&
+                      member.role !== "owner" &&
+                      member.role !== "admin" &&
+                      member.id !== currentUserId && (
+                        <Button variant="ghost" size="sm" onClick={() => setResetMember(member)}>
+                          {t("identity.resetPassword")}
+                        </Button>
+                      )}
+                    {view === "people" &&
                       currentRole === "owner" &&
                       member.role !== "owner" &&
                       member.id !== currentUserId && (

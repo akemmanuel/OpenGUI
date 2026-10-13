@@ -141,6 +141,72 @@ describe("password recovery state (#154)", () => {
     );
   });
 
+  test("operator recovery resets a locked-out owner and signs out every session", async () => {
+    const backend = host();
+    const owner = await setupOwner(backend);
+    const { resetPassword } = await import("../../../../scripts/reset-password.ts");
+
+    const temporary = await resetPassword(backend.identity!, "owner_user");
+    expect(temporary.length).toBeGreaterThanOrEqual(16);
+
+    const stale = await backend.app.request("http://localhost/api/capabilities", {
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(stale.status).toBe(401);
+    const login = await backend.app.request("http://localhost/api/identity/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "owner_user", password: temporary }),
+    });
+    expect(login.status).toBe(200);
+    await expect(
+      backend.identity!.operatorResetPassword("nobody", "long enough password"),
+    ).rejects.toMatchObject({ code: "MEMBER_NOT_FOUND" });
+    await expect(
+      backend.identity!.operatorResetPassword("owner_user", "short"),
+    ).rejects.toMatchObject({ code: "INVALID_PASSWORD" });
+  });
+
+  test("admins reset members and viewers but never another admin", async () => {
+    const backend = host();
+    const owner = await setupOwner(backend);
+    const admin = await createMember(backend, owner.token, "team_admin", "admin@example.com");
+    const otherAdmin = await createMember(backend, owner.token, "other_admin", "o@example.com");
+    const member = await createMember(backend, owner.token, "plain_member", "m@example.com");
+    for (const id of [admin.value.actor.id, otherAdmin.value.actor.id]) {
+      const promoted = await backend.app.request(
+        `http://localhost/api/identity/members/${id}/role`,
+        {
+          method: "PUT",
+          headers: { authorization: `Bearer ${owner.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ role: "admin" }),
+        },
+      );
+      expect(promoted.status).toBe(200);
+    }
+    const reset = (id: string) =>
+      backend.app.request(`http://localhost/api/identity/members/${id}/reset-password`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${admin.value.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ password: "admin issued password" }),
+      });
+
+    expect((await reset(member.value.actor.id)).status).toBe(200);
+    expect((await reset(otherAdmin.value.actor.id)).status).toBe(403);
+    expect((await reset(owner.actor.id)).status).toBe(409);
+    expect((await reset(admin.value.actor.id)).status).toBe(403);
+
+    const login = await backend.app.request("http://localhost/api/identity/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "plain_member", password: "admin issued password" }),
+    });
+    expect(login.status).toBe(200);
+  });
+
   test("owner reset revokes member sessions, audit carries no credentials", async () => {
     const backend = host();
     const owner = await setupOwner(backend);

@@ -3288,7 +3288,7 @@ export class IdentityService {
 
   async resetMemberPassword(actor: Actor, userId: string, newPassword: string, headers: Headers) {
     await this.ready;
-    this.requireOwnerUser(actor);
+    this.requireHostAdmin(actor);
     const membership = this.membership(userId);
     if (!membership) throw new IdentityError("MEMBER_NOT_FOUND", 404, "Member not found");
     if (membership.role === "owner") {
@@ -3296,6 +3296,21 @@ export class IdentityService {
         "OWNER_PASSWORD_RESET_FORBIDDEN",
         409,
         "Use the signed-in password change flow for the Host owner",
+      );
+    }
+    // Admins may reset members and viewers; only the owner resets another admin.
+    if (actor.type === "user" && actor.role === "admin" && membership.role === "admin") {
+      throw new IdentityError(
+        "FORBIDDEN",
+        403,
+        "Only the Host owner can reset an administrator's password",
+      );
+    }
+    if (actor.type === "user" && actor.id === userId) {
+      throw new IdentityError(
+        "SELF_PASSWORD_RESET_FORBIDDEN",
+        409,
+        "Use the signed-in password change flow for your own password",
       );
     }
     try {
@@ -3323,6 +3338,35 @@ export class IdentityService {
       type: "user",
       id: userId,
     });
+  }
+
+  /**
+   * Server-side recovery for any Account, including a locked-out owner. Only
+   * callable by someone with shell access to the Host data directory (see
+   * scripts/reset-password.ts); never exposed over HTTP. Sets the password,
+   * revokes every session, and retires pending email-change challenges.
+   */
+  async operatorResetPassword(username: string, newPassword: string) {
+    await this.ready;
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      throw new IdentityError("INVALID_PASSWORD", 400, "Password must be 8 to 128 characters");
+    }
+    const user = this.database
+      .prepare("SELECT id FROM user WHERE username = ? OR lower(email) = lower(?)")
+      .get(username, username) as { id: string } | undefined;
+    if (!user || !this.membership(user.id)) {
+      throw new IdentityError("MEMBER_NOT_FOUND", 404, "No Host account with that username");
+    }
+    const context = await this.auth.$context;
+    await context.internalAdapter.updatePassword(user.id, await context.password.hash(newPassword));
+    this.bumpCredentialEpoch(user.id);
+    this.database.prepare("DELETE FROM session WHERE userId = ?").run(user.id);
+    this.audit.record(
+      identityAuditEventTypes.memberPasswordReset,
+      { type: "local", id: "operator", displayName: "Server operator", role: "owner" },
+      { type: "user", id: user.id },
+    );
+    return { userId: user.id };
   }
 
   async listAudit(actor: Actor, options: { limit?: number; beforeId?: number }) {

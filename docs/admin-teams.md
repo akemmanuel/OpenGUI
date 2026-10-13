@@ -30,8 +30,8 @@ address from the profile menu: the current password is rechecked, and the stored
 email is replaced only after a single-use confirmation link (30 minutes) is opened
 from the new inbox. Confirmation mail follows the reader's language (English,
 German, Spanish). Login stays username-based; sessions are not revoked by an
-email change. Mail is not a password-recovery mechanism: forgotten member passwords
-still use the existing owner-operated reset, regardless of mail settings.
+email change. Mail is not a password-recovery mechanism: forgotten passwords use the
+administrator reset described below, regardless of mail settings.
 
 SMTP needs a host, sender address, and public HTTPS origin. Port 465 uses implicit
 TLS; any other host outside a loopback relay must negotiate STARTTLS, which the
@@ -56,6 +56,27 @@ attempts share a separate 120/hour Host-wide budget; anonymous traffic can exhau
 and temporarily delay legitimate email changes. Username/password login is unaffected.
 Interrupted deliveries can leave pending reservations until their 30-minute expiry;
 a delivered but unusable link may require a fresh request.
+
+## Passwords
+
+Anyone signed in can change their own password from the profile menu; the current
+password is required and other sessions are signed out.
+
+Forgotten passwords are reset by an administrator in **Settings → People → Reset
+password**. Admins can reset members and viewers; only the owner can reset an admin.
+A reset signs the Account out everywhere. Share the new password privately and ask the
+person to change it after signing in.
+
+If the owner is locked out, reset it from a shell on the Host machine. The command uses
+the same data directory as the server, prints a one-time temporary password, signs the
+Account out everywhere, and records an audit event:
+
+```sh
+docker exec -it opengui node --experimental-strip-types scripts/reset-password.ts <username>
+```
+
+Set `OPENGUI_NEW_PASSWORD` to choose the password instead of generating one. Never edit
+the identity database by hand.
 
 ## Personal credentials
 
