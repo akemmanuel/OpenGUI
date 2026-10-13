@@ -217,4 +217,60 @@ describe("getToolCallViewModel", () => {
     ]);
     expect(vm.rawOutput).toBe(null);
   });
+
+  test("maps classified sandbox shell failures to localized labels", () => {
+    const t = ((key: string) => `t:${key}`) as unknown as Parameters<
+      typeof getToolCallViewModel
+    >[2];
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "shell",
+        state: {
+          status: "error",
+          error: "Sandbox shell broker is unreachable. The command may have run.",
+          metadata: { reason: "broker_unreachable" },
+        },
+      }),
+      null,
+      t,
+    );
+
+    expect(vm.status).toBe("error");
+    expect(vm.resultLabel).toBe("t:sandboxShell.broker_unreachable");
+  });
+
+  test("ignores unknown shell reasons instead of using them as translation keys", () => {
+    const seen: string[] = [];
+    const t = ((key: string) => {
+      seen.push(key);
+      return key;
+    }) as unknown as Parameters<typeof getToolCallViewModel>[2];
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "shell",
+        state: {
+          status: "error",
+          error: "Something novel broke",
+          metadata: { reason: "future_reason_from_newer_backend" },
+        },
+      }),
+      null,
+      t,
+    );
+
+    expect(vm.status).toBe("error");
+    expect(vm.resultLabel).toBe(null);
+    expect(seen.filter((key) => key.startsWith("sandboxShell."))).toEqual([]);
+  });
+
+  test("keeps exit codes for ordinary shell failures without a reason", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "shell",
+        state: { status: "completed", output: "nope", metadata: { exitCode: 125 } },
+      }),
+    );
+
+    expect(vm.resultLabel).toBe("Exit 125");
+  });
 });
