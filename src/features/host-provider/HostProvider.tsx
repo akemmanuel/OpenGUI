@@ -56,7 +56,7 @@ import {
 } from "@/hooks/agent-session-utils";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
-import { connectionsToModelProviders } from "@/lib/model-providers";
+import { connectionsToModelProviders, offeringsToModelConnections } from "@/lib/model-providers";
 import { notifyError, notifyUnknownError } from "@/lib/notify";
 import { getDesktopShellClient } from "@/runtime/clients";
 import {
@@ -323,24 +323,7 @@ function HostProviderBody({
     const personalConnections = listedConnections.filter(
       (connection) => connection.plane === "user",
     );
-    const offeringConnection =
-      offerings.length > 0
-        ? [
-            {
-              id: "opengui-offering",
-              label: "OpenGUI",
-              baseUrl: "",
-              modelIds: offerings.map((offering) => offering.id),
-              defaultModelId: offerings[0]?.id,
-              modelCapabilities: Object.fromEntries(
-                offerings.map((offering) => [
-                  offering.id,
-                  { displayName: offering.displayName, reasoning: true },
-                ]),
-              ),
-            },
-          ]
-        : [];
+    const offeringConnection = offeringsToModelConnections(offerings);
     const connections =
       offeringConnection.length > 0
         ? [...offeringConnection, ...personalConnections]

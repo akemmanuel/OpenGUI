@@ -28,6 +28,11 @@ export interface HostModelConnection {
 }
 
 export interface HostModelOffering {
+  modelCapabilities?: {
+    reasoning: boolean;
+    reasoningEfforts?: ReasoningEffort[];
+    context?: number;
+  };
   id: string;
   displayName: string;
   description: string | null;

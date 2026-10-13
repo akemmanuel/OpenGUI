@@ -173,10 +173,27 @@ export function registerHostProductRoutes(
     const host = await input.getHost();
     await host.refreshModelCatalogs();
     await input.identity.migrateLegacyModelOfferings(host.listModelConnections());
-    return Response.json({
-      ok: true,
-      value: await input.identity.listModelOfferings(c.get("actor") as Actor),
-    });
+    const identity = input.identity;
+    const actor = c.get("actor") as Actor;
+    const connections = host.listModelConnections();
+    const offerings = await identity.listModelOfferings(actor);
+    const value = await Promise.all(
+      offerings.map(async (offering) => {
+        const route = await identity.resolveModelOfferingForUse(actor, offering.id);
+        const metadata = connections.find((connection) => connection.id === route.connectionId)
+          ?.modelCapabilities?.[route.modelId];
+        if (!metadata) return offering;
+        return {
+          ...offering,
+          modelCapabilities: {
+            reasoning: metadata.reasoning,
+            reasoningEfforts: metadata.reasoningEfforts,
+            context: metadata.context,
+          },
+        };
+      }),
+    );
+    return Response.json({ ok: true, value });
   });
   async function subscriptionActor(c: Context<BackendRequestEnv>) {
     const actor = c.get("actor") as Actor;
