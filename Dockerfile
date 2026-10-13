@@ -36,5 +36,9 @@ ENV OPENGUI_ALLOWED_ROOTS=/workspace
 
 EXPOSE 3000
 
+ARG OPENGUI_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/akemmanuel/OpenGUI" \
+	org.opencontainers.image.revision="${OPENGUI_REVISION}"
+
 ENTRYPOINT ["/usr/local/bin/opengui-entrypoint"]
 CMD ["/usr/local/bin/node", "--experimental-strip-types", "server/web-server.ts"]

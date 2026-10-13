@@ -8,3 +8,8 @@ node_modules
 .env
 .env.*
 .DS_Store
+android
+dogfood-output
+dist-electron
+coverage
+*.gif
