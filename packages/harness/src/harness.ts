@@ -148,12 +148,12 @@ export interface OpenGuiHarnessOptions {
   /** Additional Host-owned tools resolved and authorized for each model turn. */
   agentTools?: AgentToolSource;
   shell?: { executable?: string };
-  /** In-band context handoff. The current model writes a checkpoint before context is reset. */
+  /** In-band context handoff. The model returns a structured summary the Harness persists. */
   compaction?: {
     enabled?: boolean;
     contextWindowTokens?: number;
     thresholdRatio?: number;
-    /** Root for opengui/handoffs. Defaults to the current user's OS temp directory. */
+    /** Ignored. Retained so existing embeddings still construct; no handoff files are written. */
     tempDirectory?: string;
   };
   /** Home directory used for `~/.agents/skills` discovery. Defaults to os.homedir(). */

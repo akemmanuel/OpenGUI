@@ -5,11 +5,12 @@ import { dirname, join, resolve } from "node:path";
 import { buildModelContext } from "./context/build-context.ts";
 import {
   buildHandoffPrompt,
-  compactionPaths,
   DEFAULT_COMPACTION_THRESHOLD_RATIO,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimateContextTokens,
   latestCompletedCompaction,
+  MAX_HANDOFF_BYTES,
+  parseCompactionHandoff,
 } from "./context/compaction.ts";
 import { buildSystemPrompt } from "./context/system-prompt.ts";
 import { type ExecutionPolicy, unrestrictedExecutionPolicy } from "./execution-policy.ts";
@@ -554,7 +555,6 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     sessionId: string;
     runId: string;
     snapshot: SessionSnapshot;
-    tools: ModelToolName[];
     systemPrompt: string;
     signal: AbortSignal;
     tokensBefore: number;
@@ -562,8 +562,9 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
     revalidate: () => Promise<{ policy: ExecutionPolicy; canonicalProjectRoot: string }>;
     actor?: PromptInput["actor"];
   }): AsyncIterable<SessionEvent> {
-    const paths = compactionPaths(this.#compaction.tempDirectory, input.sessionId, input.runId);
-    await mkdir(paths.directory, { recursive: true });
+    // The handoff lives only in this response and the completed compaction
+    // entry. No filesystem directory is created and no normal Tools are
+    // offered, so restricted policies cannot deny compaction storage.
     yield {
       type: "entry_appended",
       entry: await this.#store.appendEntry(
@@ -572,8 +573,6 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         {
           runId: input.runId,
           status: "started",
-          handoffDirectory: paths.directory,
-          handoffPath: paths.handoffPath,
           tokensBefore: input.tokensBefore,
           thresholdRatio: this.#compaction.thresholdRatio,
           reason: input.reason,
@@ -586,163 +585,79 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
       ...buildModelContext(input.snapshot.entries),
       {
         type: "user_message" as const,
-        text: buildHandoffPrompt(paths),
+        text: buildHandoffPrompt(),
         model: input.snapshot.model!,
         reasoning: input.snapshot.reasoning!,
       },
     ];
 
-    while (true) {
-      let assistantText = "";
-      let reasoningText = "";
-      const toolCalls: Array<{ id: string; name: string; input: unknown }> = [];
-      const modelRequest: ModelRequest = {
-        identity: {
-          hostId: this.#hostId,
-          sessionId: input.sessionId,
-          runId: input.runId,
-          principalId: input.actor ? `${input.actor.type}:${input.actor.id}` : "local:legacy",
-        },
-        projectDirectory: input.snapshot.projectDirectory,
-        actor: input.actor,
-        context,
-        tools: input.tools,
+    // Single tool-free model response. Internal summary text is never yielded
+    // as live task deltas and never persisted as task entries; unexpected
+    // tool calls are refused without execution, so there is no tool-call loop.
+    let summaryText = "";
+    let summaryBytes = 0;
+    let completed = false;
+    let providerResponse: ProviderResponseMetadata | undefined;
+    const modelRequest: ModelRequest = {
+      identity: {
+        hostId: this.#hostId,
+        sessionId: input.sessionId,
+        runId: input.runId,
+        principalId: input.actor ? `${input.actor.type}:${input.actor.id}` : "local:legacy",
+      },
+      projectDirectory: input.snapshot.projectDirectory,
+      actor: input.actor,
+      context,
+      tools: [],
+      toolDefinitions: [],
+      systemPrompt: input.systemPrompt,
+      cache: createModelCachePolicy({
         systemPrompt: input.systemPrompt,
-        cache: createModelCachePolicy({
-          systemPrompt: input.systemPrompt,
-          tools: input.tools,
-          toolSchemas: toolDefinitionsFor(input.tools),
-          permissionScope: { tools: input.tools, project: input.snapshot.projectDirectory },
-          skillRevisions:
-            lockedSkillPinsFromEntries(input.snapshot.entries)?.map((pin) => pin.revision) ?? [],
-          compactionId: latestCompletedCompaction(input.snapshot.entries)?.entry.id,
-        }),
-        delivery: { ...DEFAULT_MODEL_DELIVERY },
-      };
-      let providerResponse: ProviderResponseMetadata | undefined;
-      for await (const event of this.#model.stream(modelRequest, input.signal)) {
-        await input.revalidate();
-        input.signal.throwIfAborted();
-        if (event.type === "text_delta") {
-          assistantText += event.delta;
-          yield { type: "assistant_delta", runId: input.runId, delta: event.delta };
-        } else if (event.type === "reasoning_delta") {
-          reasoningText += event.delta;
-          yield { type: "reasoning_delta", runId: input.runId, delta: event.delta };
-        } else if (event.type === "tool_call") {
-          toolCalls.push({ id: event.id, name: event.name, input: event.input });
-        } else if (event.type === "completed") {
-          providerResponse = event.response;
+        tools: [],
+        toolSchemas: [],
+        permissionScope: { tools: [], project: input.snapshot.projectDirectory },
+        skillRevisions:
+          lockedSkillPinsFromEntries(input.snapshot.entries)?.map((pin) => pin.revision) ?? [],
+        compactionId: latestCompletedCompaction(input.snapshot.entries)?.entry.id,
+      }),
+      delivery: { ...DEFAULT_MODEL_DELIVERY },
+    };
+    for await (const event of this.#model.stream(modelRequest, input.signal)) {
+      await input.revalidate();
+      input.signal.throwIfAborted();
+      if (event.type === "text_delta") {
+        summaryBytes += Buffer.byteLength(event.delta, "utf8");
+        if (summaryBytes > MAX_HANDOFF_BYTES + 1024) {
+          throw new Error("Compaction summary exceeds the size limit");
         }
-      }
-
-      if (providerResponse) {
-        yield {
-          type: "entry_appended",
-          entry: await this.#store.appendEntry(
-            input.sessionId,
-            "provider_response",
-            { runId: input.runId, response: providerResponse, purpose: "compaction" },
-            this.#clock.now().toISOString(),
-          ),
-        };
-      }
-
-      if (reasoningText) {
-        yield {
-          type: "entry_appended",
-          entry: await this.#store.appendEntry(
-            input.sessionId,
-            "assistant_reasoning",
-            { runId: input.runId, text: reasoningText, purpose: "compaction" },
-            this.#clock.now().toISOString(),
-          ),
-        };
-      }
-      if (assistantText) {
-        context.push({ type: "assistant_message", text: assistantText });
-        yield {
-          type: "entry_appended",
-          entry: await this.#store.appendEntry(
-            input.sessionId,
-            "assistant_message",
-            { runId: input.runId, text: assistantText, purpose: "compaction" },
-            this.#clock.now().toISOString(),
-          ),
-        };
-      }
-      if (toolCalls.length === 0) break;
-
-      for (const toolCall of toolCalls) {
-        context.push({
-          type: "tool_call",
-          toolCallId: toolCall.id,
-          name: toolCall.name,
-          input: toolCall.input,
-        });
-        yield {
-          type: "entry_appended",
-          entry: await this.#store.appendEntry(
-            input.sessionId,
-            "tool_call",
-            {
-              runId: input.runId,
-              toolCallId: toolCall.id,
-              name: toolCall.name,
-              input: toolCall.input,
-              purpose: "compaction",
-            },
-            this.#clock.now().toISOString(),
-          ),
-        };
-      }
-      for (const toolCall of toolCalls) {
-        const { policy } = await input.revalidate();
-        input.signal.throwIfAborted();
-        const output = await executeTool(
-          {
-            projectDirectory: input.snapshot.projectDirectory,
-            dataDirectory: this.#dataDirectory,
-            sessionId: input.sessionId,
-            toolCallId: toolCall.id,
-            shell: this.#shell,
-            signal: input.signal,
-            executionPolicy: policy,
-          },
-          toolCall.name,
-          toolCall.input,
-        );
-        context.push({
-          type: "tool_result",
-          toolCallId: toolCall.id,
-          name: toolCall.name,
-          output,
-        });
-        yield {
-          type: "entry_appended",
-          entry: await this.#store.appendEntry(
-            input.sessionId,
-            "tool_result",
-            {
-              runId: input.runId,
-              toolCallId: toolCall.id,
-              name: toolCall.name,
-              output,
-              purpose: "compaction",
-            },
-            this.#clock.now().toISOString(),
-          ),
-        };
+        summaryText += event.delta;
+      } else if (event.type === "tool_call" || event.type === "tool_call_delta") {
+        throw new Error("Compaction response must not call tools");
+      } else if (event.type === "completed") {
+        completed = true;
+        providerResponse = event.response;
       }
     }
 
-    let handoff: string;
-    try {
-      handoff = await readFile(paths.handoffPath, "utf8");
-    } catch {
-      throw new Error(`Compaction did not create ${paths.handoffPath}`);
+    // Re-resolve authorization and cancellation immediately before publishing.
+    await input.revalidate();
+    input.signal.throwIfAborted();
+    if (providerResponse) {
+      yield {
+        type: "entry_appended",
+        entry: await this.#store.appendEntry(
+          input.sessionId,
+          "provider_response",
+          { runId: input.runId, response: providerResponse, purpose: "compaction" },
+          this.#clock.now().toISOString(),
+        ),
+      };
     }
-    if (!handoff.trim()) throw new Error(`Compaction created an empty ${paths.handoffPath}`);
+    if (!completed || (providerResponse && providerResponse.stopReason !== "stop")) {
+      throw new Error("Compaction summary response was incomplete");
+    }
+    const handoff = parseCompactionHandoff(summaryText);
+    input.signal.throwIfAborted();
 
     yield {
       type: "entry_appended",
@@ -752,8 +667,6 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         {
           runId: input.runId,
           status: "completed",
-          handoffDirectory: paths.directory,
-          handoffPath: paths.handoffPath,
           handoff,
           tokensBefore: input.tokensBefore,
           thresholdRatio: this.#compaction.thresholdRatio,
@@ -813,13 +726,12 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             ),
           );
       const skills = pinned.skills;
-      const modelAccess = await revalidate(snapshot.projectDirectory);
-      const tools = await this.#toolsForModel(modelAccess.policy, modelAccess.canonicalProjectRoot);
-      const shellAvailable = tools.includes("shell");
+      await revalidate(snapshot.projectDirectory);
+      // Compaction offers no normal Tools, so no shell is advertised; live
+      // actor-specific instructions are preserved for the summary turn.
       const systemPrompt = buildSystemPrompt({
         projectDirectory: snapshot.projectDirectory,
-        ...(shellAvailable ? { shell: this.#shell } : {}),
-        tools,
+        tools: [],
         skills,
         customInstructions: await this.#resolveCustomInstructions?.({
           actor,
@@ -847,7 +759,6 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         sessionId,
         runId,
         snapshot,
-        tools,
         systemPrompt,
         signal: abortController.signal,
         tokensBefore: contextTokens,
@@ -1022,15 +933,16 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           const toolDefinitions = [...builtInDefinitions, ...(agentToolSet?.definitions ?? [])];
           const modelToolNames = toolDefinitions.map((definition) => definition.name);
           const shellAvailable = modelToolNames.includes("shell");
+          const customInstructions = await this.#resolveCustomInstructions?.({
+            actor: nextPrompt.actor,
+            projectDirectory: current.projectDirectory,
+          });
           const systemPrompt = buildSystemPrompt({
             projectDirectory: current.projectDirectory,
             ...(shellAvailable ? { shell: this.#shell } : {}),
             tools: modelToolNames,
             skills,
-            customInstructions: await this.#resolveCustomInstructions?.({
-              actor: nextPrompt.actor,
-              projectDirectory: current.projectDirectory,
-            }),
+            customInstructions,
             now: this.#clock.now(),
           });
           const modelContext = buildModelContext(current.entries);
@@ -1041,12 +953,20 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               this.#compaction.contextWindowTokens * this.#compaction.thresholdRatio &&
             latestCompletedCompaction(current.entries)?.entry.id !== current.entries.at(-1)?.id;
           if (shouldCompact) {
+            // Compaction offers no normal Tools; live actor instructions and
+            // skills are preserved, but no shell is advertised.
+            const compactionSystemPrompt = buildSystemPrompt({
+              projectDirectory: current.projectDirectory,
+              tools: [],
+              skills,
+              customInstructions,
+              now: this.#clock.now(),
+            });
             for await (const event of this.#performCompaction({
               sessionId,
               runId,
               snapshot: current,
-              tools,
-              systemPrompt,
+              systemPrompt: compactionSystemPrompt,
               signal: abortController.signal,
               tokensBefore: contextTokens,
               reason: "threshold",
