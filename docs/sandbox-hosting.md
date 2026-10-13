@@ -131,6 +131,21 @@ container. Configure the Host with an authenticated `OPENGUI_SHELL_SANDBOX_ENDPO
 - `OPENGUI_SHELL_RESOLV_CONF`: trusted resolver configuration mounted read-only;
 - optional `OPENGUI_SHELL_DEPLOY_CREDENTIALS`: repository-root to deploy-key mappings.
 
+Run `sandbox-doctor.ts` with the broker's `OPENGUI_SHELL_IMAGE` configuration and the same
+rootless Docker context used by the broker before deployment, restart, upgrade, or rollback.
+The doctor inspects the configured image locally and fails if it is missing or Docker cannot
+inspect it; it never pulls or restores an image. Without `OPENGUI_SHELL_IMAGE`, the image check
+is skipped for deployments that do not use the separate broker. A broker on another machine
+must be checked on that machine, not against the web Host's Docker daemon.
+
+A successful preflight or web `/api/health` response does not establish shell readiness. Verify
+an actual authenticated restricted-Account shell call in a disposable granted Project, including
+a read-only grant and denied access outside the grant. Repeat after cleanup and upgrades. This
+doctor does not install image retention, recurring probes, alerts, or recovery automation.
+Immutable image IDs/digests do not prevent image deletion; restore and verify the required image
+before retrying deployment or rolling back. Do not use broad image/container/system pruning as
+a readiness test.
+
 The Host re-resolves the actor's policy immediately before every tool effect. Restricted shell is
 enabled only when the actor has grants and the broker is configured. Every invocation gets a new
 gVisor container with only those canonical grant roots mounted; `read` grants are mounted read-only
