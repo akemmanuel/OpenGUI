@@ -178,6 +178,50 @@ describe("sandbox shell client fault classification", () => {
     expect(result).toMatchObject({ status: "error", reason: "broker_unreachable" });
   });
 
+  test("busy broker (429) is retried until a slot frees up", async () => {
+    let hits = 0;
+    const endpoint = await startServer((_request, response) => {
+      hits += 1;
+      if (hits < 3) response.writeHead(429).end();
+      else
+        response
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ exitCode: 0, output: "ok" }));
+    });
+    const result = await createSandboxShellExecutor(endpoint)(context(), { command: "pwd" });
+    expect(result).toMatchObject({ exitCode: 0, output: "ok" });
+    expect(hits).toBe(3);
+  });
+
+  test("persistent 429 returns broker_busy once the wait budget is spent", async () => {
+    let hits = 0;
+    const endpoint = await startServer((_request, response) => {
+      hits += 1;
+      response.writeHead(429).end();
+    });
+    const executor = createSandboxShellExecutor(endpoint, undefined, { busyWaitMs: 300 });
+    const result = await executor(context(), { command: "pwd" });
+    expect(result).toMatchObject({ status: "error", reason: "broker_busy" });
+    expect(hits).toBeGreaterThan(1);
+  });
+
+  test("uncertain broker failures are never replayed", async () => {
+    let hits = 0;
+    const endpoint = await startServer((_request, response) => {
+      hits += 1;
+      response.writeHead(500).end();
+    });
+    await createSandboxShellExecutor(endpoint)(context(), { command: "pwd" });
+    expect(hits).toBe(1);
+  });
+
+  test("rejects busy wait budgets outside 0-20s", () => {
+    expect(() => createSandboxShellExecutor("http://x/", undefined, { busyWaitMs: -1 })).toThrow();
+    expect(() =>
+      createSandboxShellExecutor("http://x/", undefined, { busyWaitMs: 20_001 }),
+    ).toThrow();
+  });
+
   test("aborted context rejects so the Harness aborts the Run", async () => {
     const endpoint = await startServer(() => {
       // Never respond; the abort must win.

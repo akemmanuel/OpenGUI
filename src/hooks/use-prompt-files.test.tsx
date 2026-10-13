@@ -130,6 +130,53 @@ describe("uploaded prompt files", () => {
     expect(result.current.uploadProgress).toBeNull();
   });
 
+  test("remote uploads use the workspace account token, never the Desktop credential", async () => {
+    const { result } = renderHook(() =>
+      usePromptFiles({
+        disabled: false,
+        value: "",
+        setValue: vi.fn(),
+        serverUrl: "https://host.example/",
+        authToken: "account-token",
+        directory: "/project",
+        textareaRef: { current: null },
+      }),
+    );
+    await act(async () => result.current.appendFiles([new File(["x"], "a.txt")]));
+    expect(FakeXhr.last?.headers.authorization).toBe("Bearer account-token");
+  });
+
+  test("remote uploads without an account token send no authorization", async () => {
+    const { result } = renderHook(() =>
+      usePromptFiles({
+        disabled: false,
+        value: "",
+        setValue: vi.fn(),
+        serverUrl: "https://host.example/",
+        directory: "/project",
+        textareaRef: { current: null },
+      }),
+    );
+    await act(async () => result.current.appendFiles([new File(["x"], "a.txt")]));
+    expect(FakeXhr.last?.headers.authorization).toBeUndefined();
+  });
+
+  test("local Desktop uploads use the Desktop backend token", async () => {
+    const { result } = renderHook(() =>
+      usePromptFiles({
+        disabled: false,
+        value: "",
+        setValue: vi.fn(),
+        serverUrl: null,
+        authToken: "account-token",
+        directory: "/project",
+        textareaRef: { current: null },
+      }),
+    );
+    await act(async () => result.current.appendFiles([new File(["x"], "a.txt")]));
+    expect(FakeXhr.last?.headers.authorization).toBe("Bearer desktop-token");
+  });
+
   test("ignores paste and drop while the prompt is read-only", () => {
     const preventPaste = vi.fn();
     const preventDrop = vi.fn();

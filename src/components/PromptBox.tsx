@@ -112,6 +112,7 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
       value,
       setValue,
       serverUrl: promptImageServerUrl,
+      authToken: activeWorkspace?.authToken,
       directory:
         activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null,
       textareaRef: internalTextareaRef,

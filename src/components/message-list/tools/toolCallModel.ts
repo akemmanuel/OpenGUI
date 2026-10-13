@@ -60,6 +60,7 @@ export const SANDBOX_SHELL_FAILURE_REASONS = new Set([
   "broker_unreachable",
   "broker_timeout",
   "broker_unauthorized",
+  "broker_busy",
   "broker_rejected",
   "shell_not_allowed",
   "sandbox_not_configured",

@@ -197,7 +197,11 @@
     },
     "instructions": {
       "scopeLabel": "Geltungsbereich der Anweisungen",
-      "scope": { "host": "Host", "project": "Projekt", "personal": "Persönlich" },
+      "scope": {
+        "host": "Host",
+        "project": "Projekt",
+        "personal": "Persönlich"
+      },
       "hierarchy": "Host-Anweisungen gelten überall. Gemeinsame Projektanweisungen gelten für alle im Projekt. Persönliche Einstellungen gelten nur für deine Anfragen. Bei Widersprüchen hat der Host Vorrang, danach das Projekt, dann deine persönlichen Einstellungen.",
       "helpScope": {
         "host": "Für alle auf diesem Host sichtbar. Nur Eigentümer und Administratoren können sie bearbeiten.",
@@ -465,7 +469,8 @@
     "broker_unauthorized": "Sandbox-Zugriff verweigert, kontaktiere deinen Admin",
     "broker_rejected": "Sandbox hat die Anfrage abgelehnt",
     "shell_not_allowed": "Shell ist für dieses Konto nicht zulässig",
-    "sandbox_not_configured": "Shell ist nicht konfiguriert, kontaktiere deinen Admin"
+    "sandbox_not_configured": "Shell ist nicht konfiguriert, kontaktiere deinen Admin",
+    "broker_busy": "Sandbox durch andere Befehle belegt; gleich erneut versuchen"
   },
   "workspace": {
     "addTitle": "Workspace hinzufügen",

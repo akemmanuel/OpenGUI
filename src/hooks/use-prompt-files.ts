@@ -1,6 +1,5 @@
 import * as React from "react";
 import { notifyUnknownError } from "@/lib/notify";
-import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
 
 type UploadResponse = { ok?: boolean; value?: unknown; error?: string };
 
@@ -26,6 +25,7 @@ export function usePromptFiles({
   value,
   setValue,
   serverUrl,
+  authToken,
   directory,
   textareaRef,
 }: {
@@ -33,6 +33,7 @@ export function usePromptFiles({
   value: string;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   serverUrl?: string | null;
+  authToken?: string | null;
   directory?: string | null;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
@@ -62,10 +63,9 @@ export function usePromptFiles({
       if (directory) form.append("directory", directory);
 
       const headers = new Headers();
-      const token =
-        serverUrl?.trim() || !window.electronAPI?.backendToken
-          ? getShellWorkspacePolicy().configuredWebWorkspace?.authToken
-          : window.electronAPI.backendToken;
+      // Remote uploads use the same account as chat requests. Never send a
+      // Desktop Local credential to a different Host.
+      const token = serverUrl?.trim() ? authToken : (window.electronAPI?.backendToken ?? authToken);
       if (token) headers.set("authorization", `Bearer ${token}`);
 
       const base =
@@ -105,7 +105,7 @@ export function usePromptFiles({
       setUploadProgress(100);
       setIsUploading(false);
     },
-    [appendUploadedPaths, directory, serverUrl],
+    [appendUploadedPaths, authToken, directory, serverUrl],
   );
 
   const appendFiles = React.useCallback(

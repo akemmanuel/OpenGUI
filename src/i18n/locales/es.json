@@ -197,7 +197,11 @@
     },
     "instructions": {
       "scopeLabel": "Ámbito de las instrucciones",
-      "scope": { "host": "Host", "project": "Proyecto", "personal": "Personal" },
+      "scope": {
+        "host": "Host",
+        "project": "Proyecto",
+        "personal": "Personal"
+      },
       "hierarchy": "Las instrucciones del Host se aplican siempre. Las del proyecto se comparten con todos sus participantes. Las preferencias personales solo se aplican a tus turnos. En caso de conflicto, tiene prioridad el Host, después el Proyecto y después Personal.",
       "helpScope": {
         "host": "Visibles para todos en este Host. Solo los propietarios y administradores pueden editarlas.",
@@ -465,7 +469,8 @@
     "broker_unauthorized": "Acceso a la sandbox denegado, contacta a tu admin",
     "broker_rejected": "La sandbox rechazó la solicitud",
     "shell_not_allowed": "Shell no está permitido para esta cuenta",
-    "sandbox_not_configured": "Shell no está configurado, contacta a tu admin"
+    "sandbox_not_configured": "Shell no está configurado, contacta a tu admin",
+    "broker_busy": "Sandbox ocupada con otros comandos; vuelve a intentarlo en breve"
   },
   "workspace": {
     "addTitle": "Añadir espacio de trabajo",

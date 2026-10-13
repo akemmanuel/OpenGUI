@@ -1,6 +1,7 @@
 import { request as httpRequest, type ClientRequestArgs } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { ShellToolExecutor } from "@opengui/harness";
+import { setTimeout as delay } from "node:timers/promises";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const DEFAULT_BROKER_TIMEOUT_SECONDS = 30;
@@ -26,6 +27,7 @@ export type SandboxBrokerFailureReason =
   | "broker_unreachable"
   | "broker_timeout"
   | "broker_unauthorized"
+  | "broker_busy"
   | "broker_rejected";
 
 export interface SandboxBrokerFailure {
@@ -37,6 +39,8 @@ export interface SandboxBrokerFailure {
 const SUMMARY_UNAUTHORIZED =
   "Sandbox shell broker refused authentication. The command did not run.";
 const SUMMARY_REJECTED = "Sandbox shell broker rejected the request. The command did not run.";
+const SUMMARY_BUSY =
+  "Sandbox shell broker is busy with other commands. The command did not run. Retry shortly; reloading or starting a new chat will not free capacity.";
 const SUMMARY_NOT_DISPATCHED =
   "Sandbox shell broker request was rejected before dispatch. The command did not run.";
 const SUMMARY_UNREACHABLE =
@@ -183,11 +187,13 @@ function post(
         const status = response.statusCode ?? 500;
         if (status >= 400) {
           resolveOnce(
-            status === 401 || status === 403
-              ? failure("broker_unauthorized", SUMMARY_UNAUTHORIZED)
-              : status < 500
-                ? failure("broker_rejected", SUMMARY_REJECTED)
-                : failure("broker_unreachable", SUMMARY_UNREACHABLE),
+            status === 429
+              ? failure("broker_busy", SUMMARY_BUSY)
+              : status === 401 || status === 403
+                ? failure("broker_unauthorized", SUMMARY_UNAUTHORIZED)
+                : status < 500
+                  ? failure("broker_rejected", SUMMARY_REJECTED)
+                  : failure("broker_unreachable", SUMMARY_UNREACHABLE),
           );
           // The error body is deliberately unused. Do not drain an unbounded
           // stream after settling and clearing its wall-clock deadline.
@@ -250,20 +256,40 @@ function post(
   });
 }
 
-export function createSandboxShellExecutor(endpoint: string, token?: string): ShellToolExecutor {
+export function createSandboxShellExecutor(
+  endpoint: string,
+  token?: string,
+  options: { busyWaitMs?: number } = {},
+): ShellToolExecutor {
+  const busyWaitMs = options.busyWaitMs ?? 20_000;
+  if (!Number.isFinite(busyWaitMs) || busyWaitMs < 0 || busyWaitMs > 20_000)
+    throw new Error("Invalid broker busy wait");
   return async (context, input) => {
-    return await post(
-      endpoint,
-      token,
+    const body = JSON.stringify({
+      projectDirectory: context.projectDirectory,
+      grants: context.executionPolicy.grants ?? [],
       input,
-      JSON.stringify({
-        projectDirectory: context.projectDirectory,
-        grants: context.executionPolicy.grants ?? [],
-        input,
-        sessionId: context.sessionId,
-        toolCallId: context.toolCallId,
-      }),
-      context.signal,
-    );
+      sessionId: context.sessionId,
+      toolCallId: context.toolCallId,
+    });
+    const deadline = Date.now() + busyWaitMs;
+    let result: unknown;
+    do {
+      result = await post(endpoint, token, input, body, context.signal);
+      // Only a pre-execution 429 is safe to retry. Never replay a command after
+      // an uncertain transport failure or an ordinary nonzero command exit.
+      if (
+        !result ||
+        typeof result !== "object" ||
+        !("reason" in result) ||
+        result.reason !== "broker_busy" ||
+        Date.now() >= deadline
+      )
+        return result;
+      await delay(Math.min(250, Math.max(1, deadline - Date.now())), undefined, {
+        signal: context.signal,
+      });
+    } while (Date.now() < deadline);
+    return result;
   };
 }
