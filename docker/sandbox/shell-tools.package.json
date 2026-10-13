@@ -1,0 +1,7 @@
+{
+  "name": "opengui-sandbox-tools",
+  "private": true,
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

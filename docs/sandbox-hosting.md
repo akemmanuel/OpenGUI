@@ -129,7 +129,28 @@ container. Configure the Host with an authenticated `OPENGUI_SHELL_SANDBOX_ENDPO
 - `OPENGUI_SHELL_BROKER_HOST`, `OPENGUI_SHELL_BROKER_PORT`, and
   `OPENGUI_SHELL_BROKER_TOKEN`;
 - `OPENGUI_SHELL_RESOLV_CONF`: trusted resolver configuration mounted read-only;
-- optional `OPENGUI_SHELL_DEPLOY_CREDENTIALS`: repository-root to deploy-key mappings.
+- optional `OPENGUI_SHELL_DEPLOY_CREDENTIALS`: repository-root to deploy-key mappings;
+- optional `OPENGUI_SHELL_MAX_CONCURRENT`: admitted parallel commands (default and maximum 16);
+- optional `OPENGUI_SHELL_CGROUP_PARENT`: systemd slice (`*.slice`) that bounds all shells.
+
+Build the shell image independently of the application and pin its immutable ID:
+
+```sh
+docker build -f docker/sandbox/Shell.Dockerfile -t opengui-shell:local docker/sandbox
+```
+
+The image provides Node, pnpm, git, curl, Python, ripgrep, Chromium, and a pinned Playwright
+(`OPENGUI_PLAYWRIGHT_MODULE`, `CHROMIUM_PATH`), so agents do not download browsers into customer
+projects. Each invocation gets a disposable home and `/tmp`; persistent artifacts belong in the
+granted Project.
+
+The broker bounds request bodies (128 KiB) and retained output (a 64 KiB tail; `truncated` stays
+true after discarded bytes). Commands default to 30 seconds and are capped at 900 seconds.
+Timeout, abort, disconnect, and shutdown remove only the exact invocation container. When every
+slot is busy the broker answers `429` before execution; the Host retries only that response for up
+to twenty seconds and then reports `broker_busy`. Uncertain transport failures and nonzero exits
+are never replayed. Sixteen admitted commands do not imply sixteen independent memory budgets:
+put the application, previews, and shells under one bounded slice and monitor aggregate pressure.
 
 Run `sandbox-doctor.ts` with the broker's `OPENGUI_SHELL_IMAGE` configuration and the same
 rootless Docker context used by the broker before deployment, restart, upgrade, or rollback.
@@ -159,6 +180,22 @@ The customer can ask OpenGUI to edit, test, commit, and push, for example:
 The deploy key lets Git push only to the configured repository. Vercel remains responsible for its
 Git-triggered production deployment. OpenGUI does not need a Vercel token.
 
+## Development previews
+
+Use [`docker/sandbox/preview-compose.yml`](../docker/sandbox/preview-compose.yml) once per
+customer project. It runs the dev server under gVisor with a read-only root, no capabilities,
+bounded RAM/CPU/PIDs/logs, and exactly one project mount; it mounts neither the Docker socket,
+Host data, nor deploy credentials. Serve the project Accounts actually edit, not a second
+checkout. The published port stays on loopback; the reverse proxy supplies TLS and auth.
+
+gVisor does not forward inotify events for edits made outside the preview sandbox, so the
+template enables `CHOKIDAR_USEPOLLING`. For large Astro sites, bind-mount
+[`../scripts/sandbox-astro-preview.ts`](../scripts/sandbox-astro-preview.ts) read-only: it loads
+the project's Astro configuration while excluding static uploads and generated output from
+polling. Astro's `.astro` directory is container-local so PID-based locks are never shared with
+shell invocations. A successful TCP bind does not prove the page renders; verify freshness by
+changing a source module from outside the sandbox and fetching the same module URL again.
+
 ## Security and operations
 
 - A deploy key is readable from customer shell by design. Its safety comes from repository scope.
@@ -170,6 +207,12 @@ Git-triggered production deployment. OpenGUI does not need a Vercel token.
   OpenGUI upgrade.
 - Pin a release image; do not use `latest` for production.
 - Monitor disk, process, memory, and build-output growth. Resource limits protect availability but
-  do not replace host monitoring.
+  do not replace host monitoring. A full disk makes SQLite writes fail; `/api/health` reports
+  low free space in the Host data directory.
+- Back up SQLite with the online backup API (not a file copy while WAL is active), keep an
+  encrypted off-host copy, and export the pinned runtime images: a local image ID cannot be pulled
+  onto a replacement machine.
+- Let one supervisor own application restarts. Do not combine Docker restart policies with a
+  second restart mechanism.
 - gVisor is defense in depth, not a virtual machine. Operators with a stronger hostile-tenant
   threat model should use separate machines or VMs.

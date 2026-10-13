@@ -1,0 +1,78 @@
+# One isolated development preview per customer project.
+#
+# The project is mounted at its canonical path so the preview serves the exact
+# files Accounts edit. The container listens on 0.0.0.0:3000 inside the sandbox;
+# the published port stays on loopback and a reverse proxy supplies TLS/auth.
+# Pin OPENGUI_PREVIEW_IMAGE to an immutable image ID or digest.
+#
+# See docs/sandbox-hosting.md ("Preview boundary").
+name: "${OPENGUI_PREVIEW_NAME:?set OPENGUI_PREVIEW_NAME}"
+
+services:
+  preview:
+    image: "${OPENGUI_PREVIEW_IMAGE:?set OPENGUI_PREVIEW_IMAGE}"
+    pull_policy: never
+    container_name: "${OPENGUI_PREVIEW_NAME:?set OPENGUI_PREVIEW_NAME}"
+    runtime: "${OPENGUI_SANDBOX_RUNTIME:-runsc}"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: "${OPENGUI_PREVIEW_MEMORY:-1536m}"
+    memswap_limit: "${OPENGUI_PREVIEW_MEMORY:-1536m}"
+    cpus: "${OPENGUI_PREVIEW_CPUS:-0.75}"
+    shm_size: 128m
+    ports:
+      - "127.0.0.1:${OPENGUI_PREVIEW_PORT:?set OPENGUI_PREVIEW_PORT}:3000"
+    working_dir: "${OPENGUI_PREVIEW_PROJECT:?set OPENGUI_PREVIEW_PROJECT}"
+    entrypoint: ["/usr/local/bin/node"]
+    # Astro projects: the operator-owned runner polls source only. For other
+    # frameworks override the command with a dev server bound to 0.0.0.0:3000.
+    command: ["--experimental-strip-types", "/opt/opengui-preview/sandbox-astro-preview.ts"]
+    environment:
+      HOME: /home/opengui
+      NODE_ENV: development
+      ASTRO_TELEMETRY_DISABLED: "1"
+      NODE_OPTIONS: "--max-old-space-size=1024"
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "${OPENGUI_PREVIEW_HOSTNAME:?set OPENGUI_PREVIEW_HOSTNAME}"
+      # gVisor does not forward inotify events for edits made outside the sandbox.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "1000"
+    volumes:
+      - type: bind
+        source: "${OPENGUI_PREVIEW_PROJECT:?set OPENGUI_PREVIEW_PROJECT}"
+        target: "${OPENGUI_PREVIEW_PROJECT:?set OPENGUI_PREVIEW_PROJECT}"
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${OPENGUI_RESOLV_CONF:-/etc/resolv.conf}"
+        target: /etc/resolv.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${OPENGUI_PREVIEW_RUNNER:?set OPENGUI_PREVIEW_RUNNER to scripts/sandbox-astro-preview.ts}"
+        target: /opt/opengui-preview/sandbox-astro-preview.ts
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m
+      - /home/opengui:rw,nosuid,nodev,size=128m
+      # Astro's PID-based locks must not be shared with shell invocations.
+      - "${OPENGUI_PREVIEW_PROJECT:?set OPENGUI_PREVIEW_PROJECT}/.astro:rw,nosuid,nodev,size=64m"
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/@vite/client"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
