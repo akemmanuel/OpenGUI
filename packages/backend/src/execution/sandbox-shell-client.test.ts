@@ -111,7 +111,7 @@ describe("sandbox shell client fault classification", () => {
       const endpoint = await startServer(() => {
         // Never respond.
       });
-      const executor = createSandboxShellExecutor(endpoint);
+      const executor = createSandboxShellExecutor(endpoint, undefined, { timeoutGraceSeconds: 5 });
       const started = Date.now();
       const result = await executor(context(), { command: "sleep 60", timeout: 1 });
       expect(Date.now() - started).toBeLessThan(20_000);
@@ -287,10 +287,10 @@ describe("sandbox shell client stream and transport hardening", () => {
         }, 400);
         response.on("close", () => clearInterval(interval));
       });
-      const executor = createSandboxShellExecutor(endpoint);
+      const executor = createSandboxShellExecutor(endpoint, undefined, { timeoutGraceSeconds: 5 });
       const started = Date.now();
       const result = await executor(context(), { command: "slow", timeout: 1 });
-      // Wall-clock deadline (1s requested + 5s grace) bounds a stream that
+      // Wall-clock deadline (1s requested + 5s test grace) bounds a stream that
       // never goes idle long enough to matter: well under the ~35s a
       // drip-feed could otherwise consume, and far under broker maximums.
       expect(Date.now() - started).toBeLessThan(20_000);
@@ -307,7 +307,7 @@ describe("sandbox shell client stream and transport hardening", () => {
         response.writeHead(200, { "content-type": "application/json" });
         // No body, no end: the deadline must settle this.
       });
-      const executor = createSandboxShellExecutor(endpoint);
+      const executor = createSandboxShellExecutor(endpoint, undefined, { timeoutGraceSeconds: 1 });
       const result = await executor(context(), { command: "slow", timeout: 1 });
       expect(result).toMatchObject({ status: "error", reason: "broker_timeout" });
     },

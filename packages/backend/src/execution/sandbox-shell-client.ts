@@ -5,10 +5,11 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const DEFAULT_BROKER_TIMEOUT_SECONDS = 30;
-const MAX_BROKER_TIMEOUT_SECONDS = 5_000;
+const MAX_BROKER_TIMEOUT_SECONDS = 900;
 /** Grace above the broker-enforced command timeout so a healthy broker always
- * answers first; only a hung broker trips the client deadline. */
-const BROKER_TIMEOUT_GRACE_SECONDS = 5;
+ * answers first; only a hung broker trips the client deadline. Covers the
+ * broker's bounded (15s) container removal after a command timeout. */
+const BROKER_TIMEOUT_GRACE_SECONDS = 20;
 
 /**
  * Stable machine reasons for sandbox broker transport/auth failures. These
@@ -115,6 +116,7 @@ function post(
   input: unknown,
   body: string,
   signal: AbortSignal,
+  graceSeconds: number,
 ): Promise<unknown> {
   let transport: BrokerTransport;
   try {
@@ -123,7 +125,7 @@ function post(
     return Promise.resolve(failure("broker_rejected", SUMMARY_NOT_DISPATCHED));
   }
   return new Promise<unknown>((resolve, reject) => {
-    const deadlineMs = (effectiveTimeoutSeconds(input) + BROKER_TIMEOUT_GRACE_SECONDS) * 1000;
+    const deadlineMs = (effectiveTimeoutSeconds(input) + graceSeconds) * 1000;
     let req: ReturnType<typeof httpRequest>;
     let settled = false;
     let timedOut = false;
@@ -259,9 +261,10 @@ function post(
 export function createSandboxShellExecutor(
   endpoint: string,
   token?: string,
-  options: { busyWaitMs?: number } = {},
+  options: { busyWaitMs?: number; timeoutGraceSeconds?: number } = {},
 ): ShellToolExecutor {
   const busyWaitMs = options.busyWaitMs ?? 20_000;
+  const graceSeconds = options.timeoutGraceSeconds ?? BROKER_TIMEOUT_GRACE_SECONDS;
   if (!Number.isFinite(busyWaitMs) || busyWaitMs < 0 || busyWaitMs > 20_000)
     throw new Error("Invalid broker busy wait");
   return async (context, input) => {
@@ -275,7 +278,7 @@ export function createSandboxShellExecutor(
     const deadline = Date.now() + busyWaitMs;
     let result: unknown;
     do {
-      result = await post(endpoint, token, input, body, context.signal);
+      result = await post(endpoint, token, input, body, context.signal, graceSeconds);
       // Only a pre-execution 429 is safe to retry. Never replay a command after
       // an uncertain transport failure or an ordinary nonzero command exit.
       if (

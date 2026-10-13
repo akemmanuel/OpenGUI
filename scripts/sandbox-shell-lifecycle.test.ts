@@ -250,6 +250,27 @@ describe("keeper verification", () => {
     expect(verifyKeeperWithLabel(IMAGE_ID, probe, docker).fault).toBe("keeper_unverifiable");
   });
 
+  test("a label pin never substitutes for the keeper's real image", () => {
+    const docker = fakeDocker(() => ({
+      status: 0,
+      stdout: keeperInspectStdout({ Image: OTHER_ID }),
+      stderr: "",
+    }));
+    const probe = parseKeeperProbe(KEEPER_CONTAINER_DEFAULT, docker);
+    // The label resolves to the configured image, but the container retains OTHER_ID.
+    expect(verifyKeeper(IMAGE_ID, probe, [IMAGE_ID]).fault).toBe("keeper_mismatch");
+  });
+
+  test("keeper without an inspectable image id is unverifiable", () => {
+    const docker = fakeDocker(() => ({
+      status: 0,
+      stdout: keeperInspectStdout({ Image: "not-an-id" }),
+      stderr: "",
+    }));
+    const probe = parseKeeperProbe(KEEPER_CONTAINER_DEFAULT, docker);
+    expect(verifyKeeper(IMAGE_ID, probe, []).fault).toBe("keeper_unverifiable");
+  });
+
   test("keeper decisions: noop, create, and guided refusals", () => {
     expect(keeperApplyDecision({ ok: true }).action).toBe("noop");
     expect(keeperApplyDecision({ ok: false, fault: "keeper_missing" }).action).toBe("create");
@@ -336,7 +357,9 @@ const fixture = {
 function allowWriteDenyRestExecutor(): ProbeExecutor {
   return async (input) => {
     if (input.projectDirectory === fixture.outsideRoot) return { denied: true, error: "rejected" };
-    if (input.command.includes(fixture.identityPath)) return { denied: true, error: "rejected" };
+    if (input.command.includes(fixture.identityPath)) {
+      return { exitCode: 1, output: "cat: No such file or directory" };
+    }
     if (input.projectDirectory === fixture.readOnlyRoot && input.command.startsWith("touch ")) {
       return { exitCode: 1, output: "Read-only file system" };
     }
@@ -367,6 +390,57 @@ describe("restricted-grant execution probe", () => {
     expect(report.fault).toBe("probe_policy_breach");
   });
 
+  test("a readable identity file is a breach even when the command is not denied", async () => {
+    const leaky: ProbeExecutor = async (input) => {
+      if (input.projectDirectory === fixture.outsideRoot) return { denied: true, error: "x" };
+      if (input.projectDirectory === fixture.readOnlyRoot) return { exitCode: 1, output: "" };
+      return { exitCode: 0, output: "identity" };
+    };
+    const report = await runRestrictedProbe(leaky, fixture);
+    expect(report.fault).toBe("probe_policy_breach");
+    expect(report.checks.outOfGrantDenied).toBe(true);
+    expect(report.checks.identityDataDenied).toBe(false);
+  });
+
+  test.each([
+    [404, "broker_rejected"],
+    [413, "broker_rejected"],
+    [429, "broker_busy"],
+  ])("a %i rejection is never counted as an enforced grant boundary", async (status, fault) => {
+    const httpPost = async (_url: string, body: string) => {
+      const request = JSON.parse(body) as { projectDirectory: string };
+      if (request.projectDirectory === fixture.outsideRoot) {
+        return { status, body: JSON.stringify({ denied: true }) };
+      }
+      if (request.projectDirectory === fixture.readOnlyRoot) {
+        return { status: 200, body: JSON.stringify({ exitCode: 1, output: "" }) };
+      }
+      return { status: 200, body: JSON.stringify({ exitCode: 0, output: "probe-ok" }) };
+    };
+    const executor = createBrokerProbeExecutor("http://127.0.0.1:9", undefined, httpPost);
+    const report = await runRestrictedProbe(executor, fixture);
+    expect(report.ok).toBe(false);
+    expect(report.fault).toBe(fault);
+  });
+
+  test("a 400 denial from the broker is an enforced boundary", async () => {
+    const httpPost = async (_url: string, body: string) => {
+      const request = JSON.parse(body) as { projectDirectory: string };
+      if (request.projectDirectory === fixture.outsideRoot) {
+        return { status: 400, body: JSON.stringify({ denied: true }) };
+      }
+      if (request.projectDirectory === fixture.readOnlyRoot) {
+        return { status: 200, body: JSON.stringify({ exitCode: 1, output: "read-only" }) };
+      }
+      if (request.projectDirectory === fixture.projectRoot && body.includes("cat --")) {
+        return { status: 200, body: JSON.stringify({ exitCode: 1, output: "missing" }) };
+      }
+      return { status: 200, body: JSON.stringify({ exitCode: 0, output: "probe-ok" }) };
+    };
+    const executor = createBrokerProbeExecutor("http://127.0.0.1:9", undefined, httpPost);
+    expect((await runRestrictedProbe(executor, fixture)).ok).toBe(true);
+  });
+
   test("broker outage surfaces broker_unreachable", async () => {
     const down: ProbeExecutor = async () => {
       const error = new Error("unreachable") as Error & { code?: string };
@@ -395,6 +469,13 @@ describe("restricted-grant execution probe", () => {
 
   test("unsupported endpoint protocols are rejected", () => {
     expect(() => assertBrokerTarget("ftp://example.com/x")).toThrow();
+    // Same endpoint format as the Host: an explicit route is used as-is.
+    expect(assertBrokerTarget("http://192.0.2.1:4842/v1/execute").target).toBe(
+      "http://192.0.2.1:4842/v1/execute",
+    );
+    expect(assertBrokerTarget("http://192.0.2.1:4842/").target).toBe(
+      "http://192.0.2.1:4842/v1/execute",
+    );
     expect(assertBrokerTarget("/run/broker.sock")).toEqual({
       socket: true,
       target: "/run/broker.sock",

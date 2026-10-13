@@ -48,6 +48,7 @@ export type FaultCode =
   | "broker_unreachable"
   | "broker_unauthorized"
   | "broker_rejected"
+  | "broker_busy"
   | "probe_failed"
   | "probe_policy_breach"
   | "restore_checksum_mismatch"
@@ -74,6 +75,8 @@ const FAULT_SUMMARY: Record<FaultCode, string> = {
   broker_unreachable: "The shell broker could not be reached.",
   broker_unauthorized: "The shell broker rejected the probe credentials.",
   broker_rejected: "The shell broker rejected the probe request.",
+  broker_busy:
+    "The shell broker had no free execution slot; the probe was deferred, not failed or passed.",
   probe_failed: "The restricted-grant probe did not succeed.",
   probe_policy_breach: "The probe observed access beyond the fixture grants.",
   restore_checksum_mismatch: "The restore archive checksum does not match.",
@@ -427,16 +430,21 @@ export function verifyKeeper(
   if (probe.state === "absent") return { ok: false, fault: "keeper_missing" };
   if (probe.state === "error") return { ok: false, fault: "keeper_unverifiable" };
   if (probe.state === "collision") {
-    const recordId = probe.record?.imageId;
-    const sameImage = recordId === expectedImageId || resolvedLabelIds.includes(expectedImageId);
-    return { ok: false, fault: "keeper_collision", sameImage };
+    return {
+      ok: false,
+      fault: "keeper_collision",
+      sameImage: probe.record?.imageId === expectedImageId,
+    };
   }
   if (probe.record.running) return { ok: false, fault: "keeper_running" };
-  const knownIds = new Set(resolvedLabelIds);
-  if (probe.record.imageId && IMAGE_ID_PATTERN.test(probe.record.imageId)) {
-    knownIds.add(probe.record.imageId);
+  // A keeper retains the image its container was created from, not the image its
+  // label names. Never accept a label pin in place of the container's real image.
+  const actual = probe.record.imageId;
+  if (!actual || !IMAGE_ID_PATTERN.test(actual)) return { ok: false, fault: "keeper_unverifiable" };
+  if (resolvedLabelIds.length > 0 && !resolvedLabelIds.includes(actual)) {
+    return { ok: false, fault: "keeper_mismatch" };
   }
-  if (knownIds.has(expectedImageId)) return { ok: true };
+  if (actual === expectedImageId) return { ok: true };
   return { ok: false, fault: "keeper_mismatch" };
 }
 
@@ -577,10 +585,15 @@ function errorFault(error: unknown): FaultCode {
     "broker_unreachable",
     "broker_unauthorized",
     "broker_rejected",
+    "broker_busy",
     "probe_not_configured",
   ];
   if (typeof code === "string" && (known as string[]).includes(code)) return code as FaultCode;
   return "probe_failed";
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function isDenied(result: ProbeExecResult): boolean {
@@ -610,7 +623,7 @@ export async function runRestrictedProbe(
     const readOnly = await executor({
       projectDirectory: fixture.readOnlyRoot,
       grants,
-      command: `touch ${fixture.readOnlyRoot}/probe-write-test`,
+      command: `touch -- ${shellQuote(`${fixture.readOnlyRoot}/probe-write-test`)}`,
     });
     if (!isDenied(readOnly) && (readOnly as { exitCode: number | null }).exitCode === 0) {
       return {
@@ -634,9 +647,12 @@ export async function runRestrictedProbe(
     const identity = await executor({
       projectDirectory: fixture.projectRoot,
       grants: [{ root: fixture.projectRoot, access: "write" }],
-      command: `cat ${fixture.identityPath}`,
+      command: `cat -- ${shellQuote(fixture.identityPath)}`,
     });
-    if (!isDenied(identity)) {
+    // The broker never inspects command text: identity data outside the grants is
+    // simply not mounted, so the read fails inside the sandbox. Only a successful
+    // read is a breach; a broker-side denial is equally safe.
+    if (!isDenied(identity) && (identity as { exitCode: number | null }).exitCode === 0) {
       return {
         ok: false,
         fault: "probe_policy_breach",
@@ -684,7 +700,10 @@ export function assertBrokerTarget(endpoint: string): { socket: boolean; target:
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw codedError("probe_not_configured");
     }
-    return { socket: false, target: `${trimmed}/v1/execute` };
+    // Same endpoint format as the Host (OPENGUI_SHELL_SANDBOX_ENDPOINT): an explicit
+    // path is used as-is; only a bare origin gets the broker's default route.
+    if (url.pathname === "/" || url.pathname === "") url.pathname = "/v1/execute";
+    return { socket: false, target: url.toString() };
   } catch (error) {
     if ((error as { code?: unknown })?.code) throw error;
     throw codedError("probe_not_configured");
@@ -718,7 +737,13 @@ export function createBrokerProbeExecutor(
       }
       throw codedError("broker_unreachable");
     }
-    if (response.status === 401) throw codedError("broker_unauthorized");
+    if (response.status === 401 || response.status === 403) {
+      throw codedError("broker_unauthorized");
+    }
+    // The broker sends `denied: true` with every rejection status. Only a 400 is a
+    // policy denial of this request; busy, missing-route, and size rejections must
+    // never count as an enforced grant boundary.
+    if (response.status === 429) throw codedError("broker_busy");
     let parsed: unknown = null;
     try {
       parsed = JSON.parse(response.body) as unknown;
@@ -727,8 +752,9 @@ export function createBrokerProbeExecutor(
     }
     const denied =
       parsed && typeof parsed === "object" && (parsed as { denied?: unknown }).denied === true;
-    if (denied) return { denied: true, error: "broker denied execution" };
-    if (response.status >= 400) throw codedError("broker_rejected");
+    if (response.status === 400 && denied)
+      return { denied: true, error: "broker denied execution" };
+    if (response.status >= 400 || denied) throw codedError("broker_rejected");
     if (parsed && typeof parsed === "object" && "exitCode" in parsed) {
       const record = parsed as { exitCode: number | null; output?: unknown };
       return {
@@ -1450,28 +1476,26 @@ async function runCheck(alertOnFailure: boolean, webhookUrl: string | undefined)
   if (!image.available) failures.push("image_missing");
   if (!runtime.available) failures.push("runtime_unavailable");
   if (image.available && image.imageId) {
-    const keeper = verifyKeeperWithLabel(
-      image.imageId,
-      parseKeeperProbe(env.keeperContainer, runDocker),
-      runDocker,
-    );
+    const keeperProbe = parseKeeperProbe(env.keeperContainer, runDocker);
+    const keeper = verifyKeeperWithLabel(image.imageId, keeperProbe, runDocker);
     if (!keeper.ok && keeper.fault) failures.push(keeper.fault);
+    // Consistency is part of every check, not only of an already failing one.
+    if (env.brokerImage) {
+      const consistency = verifyConfigConsistency({
+        shellImage: image.imageId,
+        keeperImage: keeperProbe.state === "owned" ? keeperProbe.record.imageId : undefined,
+        brokerImage: resolveImageId(env.brokerImage, runDocker) ?? env.brokerImage,
+      });
+      if (!consistency.ok) failures.push("config_mismatch");
+    } else {
+      console.info("note: OPENGUI_SHELL_BROKER_IMAGE is unset; broker consistency unchecked");
+    }
   }
   for (const note of checkImageProvenance(image)) console.info(`provenance: ${note}`);
   if (failures.length > 0) {
     console.error(
       `Lifecycle check failed:\n- ${failures.map((fault) => faultLine(fault)).join("\n- ")}`,
     );
-    if (env.brokerImage && image.available) {
-      const consistency = verifyConfigConsistency({
-        shellImage: image.imageId,
-        keeperImage: image.imageId,
-        brokerImage: resolveImageId(env.brokerImage, runDocker),
-      });
-      if (!consistency.ok) console.error(`- ${faultLine("config_mismatch")}`);
-    } else if (image.available) {
-      console.info("note: OPENGUI_SHELL_BROKER_IMAGE is unset; broker consistency unchecked");
-    }
     await maybeAlert(alertOnFailure, webhookUrl, failures[0] ?? "image_missing");
     process.exit(1);
   }
@@ -1507,16 +1531,13 @@ async function createKeeper(keeperName: string, imageId: string): Promise<void> 
 
 type CleanupTargets = { plan: CleanupPlan; protectedIds: string[]; skipped: number };
 
-async function resolveCleanupTargets(includeKeeper: boolean): Promise<CleanupTargets> {
+async function resolveCleanupTargets(): Promise<CleanupTargets> {
   const env = readLifecycleEnv();
-  let keeperImageId: string | undefined;
-  if (includeKeeper) {
-    const keeperProbe = parseKeeperProbe(env.keeperContainer, runDocker);
-    keeperImageId =
-      keeperProbe.state === "owned" || keeperProbe.state === "collision"
-        ? keeperProbe.record?.imageId
-        : undefined;
-  }
+  const keeperProbe = parseKeeperProbe(env.keeperContainer, runDocker);
+  const keeperImageId =
+    keeperProbe.state === "owned" || keeperProbe.state === "collision"
+      ? keeperProbe.record?.imageId
+      : undefined;
   if (!env.shellImage?.trim()) {
     exitWith("cannot plan cleanup without OPENGUI_SHELL_IMAGE; refusing (fail closed)", 1);
   }
@@ -1545,7 +1566,7 @@ async function resolveCleanupTargets(includeKeeper: boolean): Promise<CleanupTar
 }
 
 async function runCleanupApply(): Promise<void> {
-  const { plan, protectedIds } = await resolveCleanupTargets(true);
+  const { plan, protectedIds } = await resolveCleanupTargets();
   for (const argv of plan.removeArgv) {
     const id = argv.at(-1) ?? "";
     if (!verifyEligibleBeforeRemove(id, protectedIds, runDocker)) {
@@ -1563,7 +1584,8 @@ async function runCleanupApply(): Promise<void> {
 }
 
 async function previewCleanup(): Promise<void> {
-  const { plan } = await resolveCleanupTargets(false);
+  // The preview must protect exactly what --apply protects, keeper image included.
+  const { plan } = await resolveCleanupTargets();
   for (const argv of plan.removeArgv) console.info(`would run: docker ${argv.join(" ")}`);
 }
 
