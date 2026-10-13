@@ -20,7 +20,11 @@ export const TranscriptMessageRow = memo(function TranscriptMessageRow({
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
 }) {
   return (
-    <div className={row.spacing} style={{ contentVisibility: "auto" }}>
+    <div
+      className={row.spacing}
+      style={{ contentVisibility: "auto" }}
+      data-created-at={row.entry.info.time.created || undefined}
+    >
       <MessageBubble
         entry={row.entry}
         imageBaseDirectory={imageBaseDirectory}

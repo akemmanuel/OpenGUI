@@ -2,6 +2,10 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
+import {
+  ScrollTimeIndicator,
+  useScrollTimeIndicator,
+} from "@/features/session-transcript/scroll-time-indicator";
 import { usePinnedScroll } from "@/features/session-transcript/use-pinned-scroll";
 import { useChatWidth } from "@/hooks/use-chat-width";
 
@@ -33,6 +37,7 @@ export function TranscriptViewport({
     contentKey,
     pinWhenNearBottom,
   });
+  const timeIndicator = useScrollTimeIndicator(scrollRef);
 
   const handleLoadOlder = () => {
     detachPin();
@@ -44,12 +49,16 @@ export function TranscriptViewport({
     <div
       key={sessionId}
       ref={scrollRef}
-      onScroll={onScroll}
+      onScroll={() => {
+        onScroll();
+        timeIndicator.onScroll();
+      }}
       onWheel={(event) => {
         if (event.deltaY < 0) detachPin();
       }}
       className="relative flex-1 overflow-y-auto overflow-x-hidden bg-background px-4 py-4 [overflow-anchor:none]"
     >
+      <ScrollTimeIndicator label={timeIndicator.label} visible={timeIndicator.visible} />
       <div
         className={`mx-auto flex min-w-0 w-full flex-col gap-0 ${chatWidth === "full" ? "max-w-none" : "max-w-2xl"}`}
       >
