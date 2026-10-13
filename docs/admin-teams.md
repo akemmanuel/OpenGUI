@@ -18,6 +18,45 @@ Account and Team grants are additive. Removing a direct grant does not remove ac
 
 Provider URLs, upstream model IDs, and credentials belong in **Provider connections**, separate from the shared model list.
 
+## Mail delivery (optional)
+
+Owners configure SMTP under **Settings → System → Mail delivery**. Mail is off until the owner
+enables it with a valid host, sender address, and public HTTPS origin; the SMTP
+password is stored Host-side and never displayed again. Members cannot see these
+settings. Use **Send test mail** to verify delivery before announcing the feature.
+
+When mail is enabled, any signed-in Account may move its own contact email to a new
+address from the profile menu: the current password is rechecked, and the stored
+email is replaced only after a single-use confirmation link (30 minutes) is opened
+from the new inbox. Confirmation mail follows the reader's language (English,
+German, Spanish). Login stays username-based; sessions are not revoked by an
+email change. Mail is not a password-recovery mechanism: forgotten member passwords
+still use the existing owner-operated reset, regardless of mail settings.
+
+SMTP needs a host, sender address, and public HTTPS origin. Port 465 uses implicit
+TLS; any other host outside a loopback relay must negotiate STARTTLS, which the
+Host enforces when saving. The SMTP password is kept in Host secret storage and
+is never displayed; leave the field untouched to keep it, or use **Remove saved
+password** to clear it. Disable mail before changing SMTP providers, then save and
+test the complete new configuration before enabling it. Metadata and secret storage
+are separate authorities; a failed or interrupted settings save may require resaving
+both before using mail.
+
+Known limitation: an authenticated member who guesses another member's address
+receives an "unavailable" response when requesting an email change to it. This matches
+the pre-existing invite behavior for known addresses and is accepted under the
+trusted-team Host model; it is not exposed to unauthenticated callers. Any Host
+role (including viewer) may change its own contact email; mail configuration stays
+owner-only.
+
+Failed password verifications during email change count toward rate limits (10 per
+account per hour, plus a Host-wide verification budget): repeated guessing locks
+the request path temporarily without disturbing valid challenges. Public confirmation
+attempts share a separate 120/hour Host-wide budget; anonymous traffic can exhaust it
+and temporarily delay legitimate email changes. Username/password login is unaffected.
+Interrupted deliveries can leave pending reservations until their 30-minute expiry;
+a delivered but unusable link may require a fresh request.
+
 ## Personal credentials
 
 Restrictions take priority. System, Everyone, or any named Team the Account belongs to can disable personal API keys or subscriptions. A Team cannot override a restriction from another scope. These settings govern supported credential types; they do not add new provider authentication integrations.

@@ -1,10 +1,11 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { NodeSqliteDialect } from "@better-auth/kysely-adapter/node-sqlite-dialect";
 import { betterAuth } from "better-auth";
+import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, bearer, username } from "better-auth/plugins";
 import { adminAc } from "better-auth/plugins/admin/access";
@@ -18,6 +19,31 @@ import {
 import type { Actor, HostRole } from "./types.ts";
 import type { DurableActor } from "@opengui/harness";
 import { IdentityAuditLog, identityAuditEventTypes } from "./audit.ts";
+import {
+  buildEmailChangeUrl,
+  createSmtpSender,
+  EMAIL_CHANGE_HISTORY_RETENTION_MS,
+  EMAIL_CHANGE_MAX_CONFIRM_ATTEMPTS,
+  EMAIL_CHANGE_MAX_CONFIRMS_PER_HOUR,
+  EMAIL_CHANGE_MAX_GLOBAL_REAUTH_PER_HOUR,
+  EMAIL_CHANGE_MAX_GLOBAL_REQUESTS_PER_HOUR,
+  EMAIL_CHANGE_MAX_OUTSTANDING,
+  EMAIL_CHANGE_MAX_REAUTH_PER_HOUR,
+  EMAIL_CHANGE_MAX_REQUESTS_PER_HOUR,
+  EMAIL_CHANGE_TOKEN_TTL_MS,
+  isLoopbackSmtpHost,
+  isSafeDisplayName,
+  isValidEmailAddress,
+  normalizePublicOrigin,
+  renderEmailChangeMail,
+  renderPreviousAddressNotice,
+  renderTestMail,
+  resolveMailLanguage,
+  type MailConfigInput,
+  type MailLanguage,
+  type MailSender,
+  type StoredMailConfig,
+} from "./mail.ts";
 
 import { IdentityError } from "./errors.ts";
 import { TeamDirectory, EVERYONE_TEAM_ID, type TeamInput } from "./teams.ts";
@@ -29,6 +55,7 @@ type MembershipRow = {
   user_id: string;
   role: HostRole;
   can_invite: number;
+  credential_epoch: number;
 };
 
 export type RegistrationMode = "invite_only" | "open";
@@ -94,6 +121,20 @@ export type IdentityServiceOptions = {
   trustedOrigins?: string[];
   pathGrantsMode?: "disabled" | "enforced";
   allowedRoots?: string[];
+  /** Injectable mail sender. Tests install a capture sender; production
+   * builds a generic SMTP sender from the owner-configured mail settings. */
+  mailSender?: MailSender;
+  /**
+   * SMTP credential callbacks owned by Host secret storage (wired by Host
+   * bootstrap). The secret never lives in the identity database. Tests inject
+   * an in-memory pair; production awaits Host start through the bridge.
+   */
+  mailSecrets?: MailSecrets;
+};
+
+export type MailSecrets = {
+  readSmtpPassword: () => Promise<string | null>;
+  writeSmtpPassword: (password: string | null) => Promise<void>;
 };
 
 function defaultDatabasePath() {
@@ -105,6 +146,12 @@ function defaultDatabasePath() {
 
 function hashSecret(secret: string) {
   return createHash("sha256").update(secret).digest("hex");
+}
+
+function timingSafeEqualHex(left: string, right: string) {
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
 function jsonRequest(url: string, body: unknown, headers?: Headers) {
@@ -128,6 +175,9 @@ export class IdentityService {
   private canonicalAllowedRoots?: Promise<string[]>;
   private setupQueue = Promise.resolve();
   private inviteAcceptQueue = Promise.resolve();
+  private emailChangeQueue = Promise.resolve();
+  private injectedMailSender?: MailSender;
+  private readonly mailSecrets?: MailSecrets;
 
   constructor(options: IdentityServiceOptions = {}) {
     const databasePath = options.databasePath ?? defaultDatabasePath();
@@ -191,6 +241,8 @@ export class IdentityService {
         admin({ adminRoles: ["user", "admin"], roles: { user: adminAc, admin: adminAc } }),
       ],
     });
+    this.injectedMailSender = options.mailSender;
+    this.mailSecrets = options.mailSecrets;
     this.ready = this.initialize();
 
     if (!options.database && databasePath !== ":memory:") {
@@ -211,6 +263,7 @@ export class IdentityService {
         team_id TEXT NOT NULL DEFAULT '${TEAM_ID}',
         role TEXT NOT NULL,
         can_invite INTEGER NOT NULL DEFAULT 0,
+        credential_epoch INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
       );
       CREATE UNIQUE INDEX IF NOT EXISTS host_single_owner
@@ -346,11 +399,115 @@ export class IdentityService {
         VALUES ('${TEAM_ID}', 1, 1, 0);
       INSERT OR IGNORE INTO host_identity_config (key, value) VALUES ('allow_byok', '1');
       INSERT OR IGNORE INTO host_identity_config (key, value) VALUES ('allow_byos', '1');
+      CREATE TABLE IF NOT EXISTS host_mail_config (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        enabled INTEGER NOT NULL DEFAULT 0,
+        host TEXT NOT NULL DEFAULT '',
+        port INTEGER NOT NULL DEFAULT 587,
+        username TEXT NOT NULL DEFAULT '',
+        from_address TEXT NOT NULL DEFAULT '',
+        from_name TEXT NOT NULL DEFAULT '',
+        use_starttls INTEGER NOT NULL DEFAULT 1,
+        public_origin TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT OR IGNORE INTO host_mail_config (id) VALUES (1);
+      -- Email-change lifecycle: a row is confirmable only while it is sent and
+      -- neither used nor retired. Replaced, cancelled, and delivery-failed rows
+      -- are retained for hourly rate accounting and pruned after 24 hours.
+      -- The SMTP secret is NOT stored here; see Host secret storage.
+      CREATE TABLE IF NOT EXISTS host_email_change (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        pending_email TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        send_state TEXT NOT NULL DEFAULT 'pending'
+          CHECK(send_state IN ('pending', 'sent', 'failed')),
+        used_at INTEGER,
+        unusable_at INTEGER,
+        unusable_reason TEXT,
+        credential_epoch INTEGER NOT NULL DEFAULT 0,
+        language TEXT NOT NULL DEFAULT 'en',
+        attempts INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS host_email_change_token_hash ON host_email_change(token_hash);
+      CREATE INDEX IF NOT EXISTS host_email_change_user ON host_email_change(user_id);
+      -- Bounded host-wide rate events (kind 'request' or 'confirm'), pruned hourly.
+      CREATE TABLE IF NOT EXISTS host_mail_ratelimit (
+        kind TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS host_mail_ratelimit_kind_at ON host_mail_ratelimit(kind, at);
     `);
     this.teams.initialize();
     this.ensureMembershipCanInviteColumn();
+    this.ensureCredentialEpochColumn();
+    this.ensureEmailChangeEpochColumn();
+    this.removeExperimentalMailSecretColumn();
     this.audit.initialize();
     if (this.pathGrantsMode === "enforced") await this.getAllowedRoots();
+  }
+
+  /**
+   * One-time cleanup of the unpublished experimental mail build: drops the
+   * plaintext SMTP secret column (raw credentials must not linger in the
+   * identity database; the secret now lives in Host secret storage only) and
+   * recreates the unpublished email-change table in its final lifecycle shape.
+   */
+  private removeExperimentalMailSecretColumn() {
+    const configColumns = this.database
+      .prepare("PRAGMA table_info(host_mail_config)")
+      .all() as Array<{ name: string }>;
+    if (configColumns.some((column) => column.name === "password_secret")) {
+      this.database.exec("ALTER TABLE host_mail_config DROP COLUMN password_secret");
+    }
+    const changeColumns = this.database
+      .prepare("PRAGMA table_info(host_email_change)")
+      .all() as Array<{ name: string }>;
+    if (changeColumns.some((column) => column.name === "send_state")) return;
+    this.database.exec("DROP TABLE IF EXISTS host_email_change");
+    this.database.exec(`
+      CREATE TABLE host_email_change (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        pending_email TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        send_state TEXT NOT NULL DEFAULT 'pending'
+          CHECK(send_state IN ('pending', 'sent', 'failed')),
+        used_at INTEGER,
+        unusable_at INTEGER,
+        unusable_reason TEXT,
+        credential_epoch INTEGER NOT NULL DEFAULT 0,
+        language TEXT NOT NULL DEFAULT 'en',
+        attempts INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS host_email_change_token_hash ON host_email_change(token_hash);
+      CREATE INDEX IF NOT EXISTS host_email_change_user ON host_email_change(user_id);
+    `);
+  }
+
+  private ensureCredentialEpochColumn() {
+    const columns = this.database.prepare("PRAGMA table_info(host_membership)").all() as Array<{
+      name: string;
+    }>;
+    if (columns.some((column) => column.name === "credential_epoch")) return;
+    this.database.exec(
+      "ALTER TABLE host_membership ADD COLUMN credential_epoch INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+
+  private ensureEmailChangeEpochColumn() {
+    const columns = this.database.prepare("PRAGMA table_info(host_email_change)").all() as Array<{
+      name: string;
+    }>;
+    if (columns.some((column) => column.name === "credential_epoch")) return;
+    this.database.exec(
+      "ALTER TABLE host_email_change ADD COLUMN credential_epoch INTEGER NOT NULL DEFAULT 0",
+    );
   }
 
   private ensureMembershipCanInviteColumn() {
@@ -584,11 +741,25 @@ export class IdentityService {
   }
 
   async changePassword(headers: Headers, currentPassword: string, newPassword: string) {
-    return this.accountOperation(headers, "change-password", {
+    // Resolve the acting user before the rotation: the response carries no id.
+    const session = await this.auth.api.getSession({ headers }).catch(() => null);
+    const sessionUser = session?.user as { id?: unknown } | null | undefined;
+    const userId = typeof sessionUser?.id === "string" ? sessionUser.id : null;
+    const response = await this.accountOperation(headers, "change-password", {
       currentPassword,
       newPassword,
       revokeOtherSessions: true,
     });
+    // A rotated credential retires outstanding email-change challenges: a token
+    // mailed before the change must not apply after it.
+    const payload = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { ok?: unknown } | null;
+    if (response.ok && payload?.ok === true && userId && this.membership(userId)) {
+      this.bumpCredentialEpoch(userId);
+    }
+    return response;
   }
 
   private async accountOperation(headers: Headers, endpoint: string, body: object) {
@@ -2357,6 +2528,7 @@ export class IdentityService {
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const removed = this.deleteSubjectGrants("user", userId);
+      this.retireEmailChanges(userId, "member_removed");
       this.database.prepare("DELETE FROM host_membership WHERE user_id = ?").run(userId);
       if (removed) this.incrementPathPolicyRevision();
       this.audit.record(identityAuditEventTypes.memberRemoved, actor, {
@@ -2368,6 +2540,750 @@ export class IdentityService {
       this.database.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  /**
+   * Owner-configured mail and email-change confirmation (revised #154 scope).
+   *
+   * This is deliberately NOT self-service password recovery: there is no
+   * forgot-password flow. A signed-in user may move their OWN contact email to
+   * a new address only after proving the current password AND confirming the
+   * new inbox through a single-use token link. The stored identity email is
+   * untouched until confirmation succeeds. Login stays username-based and
+   * sessions are NOT revoked by an email change (no credential changed).
+   */
+  setMailSender(sender: MailSender | undefined) {
+    this.injectedMailSender = sender;
+  }
+
+  async getMailConfig(actor: Actor): Promise<StoredMailConfig> {
+    await this.ready;
+    this.requireOwnerUser(actor);
+    return await this.maskedMailConfig();
+  }
+
+  async setMailConfig(actor: Actor, input: MailConfigInput): Promise<StoredMailConfig> {
+    await this.ready;
+    this.requireOwnerUser(actor);
+    const host = input.host.trim();
+    if (!host || host.length > 253) {
+      throw new IdentityError("INVALID_MAIL_CONFIG", 400, "SMTP host is required");
+    }
+    if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) {
+      throw new IdentityError("INVALID_MAIL_CONFIG", 400, "SMTP port must be 1-65535");
+    }
+    const fromAddress = input.fromAddress.trim().toLowerCase();
+    if (!isValidEmailAddress(fromAddress)) {
+      throw new IdentityError("INVALID_MAIL_CONFIG", 400, "Sender address is invalid");
+    }
+    const fromName = input.fromName.trim().slice(0, 100);
+    // Display names land in mail headers: reject line breaks and control
+    // characters at save time rather than silently munging owner input.
+    if (!isSafeDisplayName(fromName)) {
+      throw new IdentityError(
+        "INVALID_MAIL_CONFIG",
+        400,
+        "Sender name must not contain line breaks or control characters",
+      );
+    }
+    let publicOrigin: string;
+    try {
+      publicOrigin = normalizePublicOrigin(input.publicOrigin);
+    } catch {
+      throw new IdentityError(
+        "INVALID_MAIL_CONFIG",
+        400,
+        "Public origin must be a bare HTTPS origin (HTTP only for loopback)",
+      );
+    }
+    // Outside the approved loopback relay, unencrypted SMTP is a downgrade:
+    // port 465 carries implicit TLS, everything else must negotiate STARTTLS.
+    if (!input.useStarttls && input.port !== 465 && !isLoopbackSmtpHost(host)) {
+      throw new IdentityError(
+        "INVALID_MAIL_CONFIG",
+        400,
+        "STARTTLS is required for non-loopback SMTP hosts (port 465 uses implicit TLS)",
+      );
+    }
+    // Password semantics: undefined keeps the stored secret, "" clears it,
+    // anything else replaces it. The secret lives in Host secret storage and
+    // never touches the identity database.
+    if (input.password !== undefined) {
+      if (input.password.length > 1024) {
+        throw new IdentityError("INVALID_MAIL_CONFIG", 400, "SMTP password is too long");
+      }
+      await this.writeSmtpPassword(input.password === "" ? null : input.password);
+    }
+    this.database
+      .prepare(
+        `UPDATE host_mail_config SET enabled = ?, host = ?, port = ?, username = ?,
+         from_address = ?, from_name = ?, use_starttls = ?,
+         public_origin = ?, updated_at = ? WHERE id = 1`,
+      )
+      .run(
+        input.enabled ? 1 : 0,
+        host,
+        input.port,
+        input.username.trim().slice(0, 320),
+        fromAddress,
+        fromName,
+        input.useStarttls ? 1 : 0,
+        publicOrigin,
+        Date.now(),
+      );
+    return await this.maskedMailConfig();
+  }
+
+  async sendTestMail(actor: Actor, to: string, headers?: Headers): Promise<{ sent: true }> {
+    await this.ready;
+    this.requireOwnerUser(actor);
+    const address = to.trim().toLowerCase();
+    if (!isValidEmailAddress(address)) {
+      throw new IdentityError("INVALID_MAIL_CONFIG", 400, "Recipient address is invalid");
+    }
+    // Throws MAIL_NOT_CONFIGURED unless the owner has enabled and completed setup.
+    this.activeMailSettings();
+    const rendered = renderTestMail({
+      language: resolveMailLanguage(headers?.get("accept-language")),
+    });
+    try {
+      await (
+        await this.resolveMailSender()
+      )({ to: address, ...rendered });
+    } catch (error) {
+      if (error instanceof IdentityError) throw error;
+      throw new IdentityError("MAIL_SEND_FAILED", 502, "Test mail could not be delivered");
+    }
+    return { sent: true as const };
+  }
+
+  async requestEmailChange(
+    actor: Actor,
+    input: { newEmail: string; currentPassword: string },
+    headers?: Headers,
+  ): Promise<{ sent: true; expiresAt: number }> {
+    await this.ready;
+    if (actor.type !== "user") {
+      throw new IdentityError("FORBIDDEN", 403, "User access required");
+    }
+    const previous = this.emailChangeQueue;
+    let release!: () => void;
+    this.emailChangeQueue = new Promise<void>((resolveQueue) => {
+      release = resolveQueue;
+    });
+    await previous;
+    // Reserved under the lock with synchronous database work only; the network
+    // send below runs outside the lock so one slow SMTP server cannot stall
+    // other accounts.
+    let reservation: {
+      rowId: string;
+      userId: string;
+      token: string;
+      pendingEmail: string;
+      publicOrigin: string;
+      language: MailLanguage;
+    } | null = null;
+    try {
+      const user = this.database
+        .prepare("SELECT id, email FROM user WHERE id = ?")
+        .get(actor.id) as { id: string; email: string } | undefined;
+      if (!user || !this.membership(user.id)) {
+        throw new IdentityError("MEMBER_NOT_FOUND", 404, "Member not found");
+      }
+      // Throws MAIL_NOT_CONFIGURED unless the owner enabled mail. The draft
+      // stays client-side; nothing is stored or sent in that case.
+      const mail = this.activeMailSettings();
+      // Cheap budget checks run before the expensive password-hash verification.
+      // Cancelled, replaced, and delivery-failed rows are retained, so cycles
+      // of request/cancel cannot reset the hourly budget.
+      this.checkRequestBudgets(user.id);
+      const pendingEmail = input.newEmail.trim().toLowerCase();
+      if (!isValidEmailAddress(pendingEmail)) {
+        throw new IdentityError("INVALID_EMAIL", 400, "New email address is invalid");
+      }
+      if (pendingEmail === user.email.toLowerCase()) {
+        throw new IdentityError("INVALID_EMAIL", 400, "New email must differ from current");
+      }
+      if (this.emailTakenByOtherUser(pendingEmail, user.id)) {
+        throw new IdentityError("EMAIL_UNAVAILABLE", 409, "Email address is unavailable");
+      }
+      // Capture the credential epoch BEFORE the async verification: a
+      // rotation that lands during scrypt must invalidate this proof.
+      const preMembership = this.membership(user.id);
+      const preEpoch = preMembership?.credential_epoch ?? 0;
+      // Host-wide CPU bound for the expensive hash check.
+      if (this.recordRateEvent("reauth", Date.now()) >= EMAIL_CHANGE_MAX_GLOBAL_REAUTH_PER_HOUR) {
+        throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
+      }
+      const verified = await this.verifyAccountPassword(user.id, input.currentPassword);
+      // Recheck synchronously: no await runs between here and the reserve
+      // writes below, so a rotation in this gap is impossible.
+      const postMembership = this.membership(user.id);
+      if (!postMembership || postMembership.credential_epoch !== preEpoch) {
+        throw new IdentityError(
+          "EMAIL_CHANGE_SUPERSEDED",
+          409,
+          "Credentials changed during verification; request again",
+        );
+      }
+      if (!verified) {
+        // Failed reauthentication is retained in the existing rate authority:
+        // never confirmable, never listed, never revived or cancel-reset, and
+        // it never retires a prior valid challenge.
+        this.recordFailedReauth(user.id, pendingEmail, preEpoch);
+        throw new IdentityError("INVALID_PASSWORD", 400, "Current password is incorrect");
+      }
+      const now = Date.now();
+      // A new request retires any outstanding change for this user. Retired
+      // rows stay in history for rate accounting but can never be confirmed,
+      // listed, or revived.
+      this.retireEmailChanges(user.id, "replaced");
+      const token = randomBytes(32).toString("base64url");
+      const rowId = randomUUID();
+      // The challenge is bound to the epoch rechecked above (identical to the
+      // pre-verification epoch by construction); finalize and consume recheck
+      // it again against live membership.
+      this.database
+        .prepare(
+          `INSERT INTO host_email_change
+           (id, user_id, pending_email, token_hash, created_at, expires_at,
+            send_state, credential_epoch, language)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        )
+        .run(
+          rowId,
+          user.id,
+          pendingEmail,
+          hashSecret(token),
+          now,
+          now + EMAIL_CHANGE_TOKEN_TTL_MS,
+          preEpoch,
+          resolveMailLanguage(headers?.get("accept-language")),
+        );
+      this.pruneEmailChangeHistory(now);
+      reservation = {
+        rowId,
+        userId: user.id,
+        token,
+        pendingEmail,
+        publicOrigin: mail.publicOrigin,
+        language: resolveMailLanguage(headers?.get("accept-language")),
+      };
+    } catch (error) {
+      if (error instanceof IdentityError) throw error;
+      if (error instanceof Error && /busy|locked/i.test(error.message)) {
+        throw new IdentityError("RATE_LIMITED", 429, "Storage is busy, retry shortly");
+      }
+      throw error;
+    } finally {
+      release();
+    }
+    if (!reservation) throw new Error("Email change reservation failed");
+    const rendered = renderEmailChangeMail({
+      // Built only from the validated configured origin, never Host headers.
+      confirmUrl: buildEmailChangeUrl(reservation.publicOrigin, reservation.token),
+      expiresMinutes: Math.round(EMAIL_CHANGE_TOKEN_TTL_MS / 60_000),
+      language: reservation.language,
+    });
+    try {
+      await (
+        await this.resolveMailSender()
+      )({ to: reservation.pendingEmail, ...rendered });
+    } catch (error) {
+      // Delivery failure marks the reservation unusable: the token is never
+      // minted live, so there is no valid change and no false success. The
+      // row is retained so failed attempts still count toward the budget,
+      // even if the mail was delivered before the SMTP conversation stalled.
+      // A busy store here still leaves the row non-live (it expires), so mark
+      // failures degrade to expiry rather than usability.
+      try {
+        await this.runBusyRetried(() =>
+          this.markEmailChangeUnusable(reservation.rowId, "delivery_failed"),
+        );
+      } catch {
+        // Intentionally ignored: the pending row expires without ever going live.
+      }
+      if (error instanceof IdentityError) throw error;
+      throw new IdentityError("MAIL_SEND_FAILED", 502, "Confirmation mail could not be delivered");
+    }
+    const expiresAt = Date.now() + EMAIL_CHANGE_TOKEN_TTL_MS;
+    let finalized: { changes: number | bigint };
+    try {
+      finalized = await this.runBusyRetried(() =>
+        this.database
+          .prepare(
+            `UPDATE host_email_change SET send_state = 'sent', expires_at = ?
+             WHERE id = ? AND unusable_at IS NULL
+               AND credential_epoch = (
+                 SELECT credential_epoch FROM host_membership WHERE user_id = ?
+               )`,
+          )
+          .run(expiresAt, reservation.rowId, reservation.userId),
+      );
+    } catch (error) {
+      if (error instanceof Error && /busy|locked/i.test(error.message)) {
+        throw new IdentityError(
+          "RATE_LIMITED",
+          429,
+          "Confirmation state is busy, request again shortly",
+        );
+      }
+      throw error;
+    }
+    if (Number(finalized.changes) === 0) {
+      // The change was cancelled or replaced while the mail was in flight.
+      // The delivered link is dead; the user simply requests again.
+      throw new IdentityError(
+        "EMAIL_CHANGE_SUPERSEDED",
+        409,
+        "The email change was cancelled while sending",
+      );
+    }
+    this.audit.record(identityAuditEventTypes.emailChangeRequested, actor, {
+      type: "user",
+      id: actor.id,
+    });
+    return { sent: true as const, expiresAt };
+  }
+
+  /**
+   * Public token confirmation (same bar as invite acceptance: the token arrived
+   * through the new inbox, which is the proof). Requiring a signed-in session
+   * here would strand users confirming from a second device or browser, so the
+   * token itself — 256-bit random, hashed at rest, 30-minute, single-use,
+   * account+address bound — carries the authority. It can only ever affect its
+   * bound account, never the caller's.
+   */
+  async confirmEmailChange(tokenValue: string): Promise<{ changed: true }> {
+    await this.ready;
+    const presented = tokenValue.trim();
+    // Every attempt — valid or not — counts against the host-wide budget, so
+    // invalid-token probing cannot be used as an unbounded oracle.
+    try {
+      this.checkConfirmBudget();
+    } catch (error) {
+      if (error instanceof IdentityError) throw error;
+      if (error instanceof Error && /busy|locked/i.test(error.message)) {
+        throw new IdentityError("RATE_LIMITED", 429, "Storage is busy, retry shortly");
+      }
+      throw error;
+    }
+    if (!presented) throw new IdentityError("INVALID_TOKEN", 400, "Confirmation token is invalid");
+    const digest = hashSecret(presented);
+    const candidate = this.database
+      .prepare(
+        `SELECT id, user_id AS userId, pending_email AS pendingEmail, token_hash AS tokenHash,
+                expires_at AS expiresAt, send_state AS sendState, attempts, language,
+                credential_epoch AS credentialEpoch
+         FROM host_email_change
+         WHERE token_hash = ? AND used_at IS NULL AND unusable_at IS NULL`,
+      )
+      .get(digest) as
+      | {
+          id: string;
+          userId: string;
+          pendingEmail: string;
+          tokenHash: string;
+          expiresAt: number;
+          sendState: string;
+          attempts: number;
+          language: string;
+          credentialEpoch: number;
+        }
+      | undefined;
+    // Validate everything BEFORE consuming: a failed redeem must never burn a
+    // token that did not change the email.
+    if (
+      !candidate ||
+      !timingSafeEqualHex(candidate.tokenHash, digest) ||
+      candidate.sendState !== "sent" ||
+      candidate.attempts >= EMAIL_CHANGE_MAX_CONFIRM_ATTEMPTS ||
+      candidate.expiresAt <= Date.now()
+    ) {
+      throw new IdentityError("INVALID_TOKEN", 400, "Confirmation token is invalid");
+    }
+    const user = this.database
+      .prepare("SELECT id, email FROM user WHERE id = ?")
+      .get(candidate.userId) as { id: string; email: string } | undefined;
+    if (!user || !this.membership(user.id)) {
+      throw new IdentityError("INVALID_TOKEN", 400, "Confirmation token is invalid");
+    }
+    // Uniqueness is rechecked at redeem: an address taken after the request fails.
+    if (this.emailTakenByOtherUser(candidate.pendingEmail, user.id)) {
+      throw new IdentityError("EMAIL_UNAVAILABLE", 409, "Email address is unavailable");
+    }
+    // The challenge dies with the credential that authorized it: a rotation
+    // after issuance retires the row even if the token itself is intact.
+    const currentEpoch = this.membership(user.id)?.credential_epoch;
+    if (currentEpoch === undefined || currentEpoch !== candidate.credentialEpoch) {
+      throw new IdentityError("INVALID_TOKEN", 400, "Confirmation token is invalid");
+    }
+    // Consume, apply, and attribute atomically: either the email changes with
+    // its audit record, or nothing does. A concurrent cancel or second redeem
+    // loses the conditional consume and reports INVALID_TOKEN.
+    const now = Date.now();
+    let transactionOpen = false;
+    try {
+      try {
+        this.database.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+      } catch (error) {
+        if (error instanceof Error && /busy|locked/i.test(error.message)) {
+          throw new IdentityError("RATE_LIMITED", 429, "Confirmation is busy, retry shortly");
+        }
+        throw error;
+      }
+      const consumed = this.database
+        .prepare(
+          `UPDATE host_email_change SET used_at = ?, attempts = attempts + 1
+           WHERE id = ? AND used_at IS NULL AND unusable_at IS NULL
+             AND credential_epoch = (
+               SELECT credential_epoch FROM host_membership WHERE user_id = ?
+             )`,
+        )
+        .run(now, candidate.id, candidate.userId);
+      if (consumed.changes === 0) {
+        throw new IdentityError("INVALID_TOKEN", 400, "Confirmation token is invalid");
+      }
+      this.database
+        .prepare("UPDATE user SET email = ?, emailVerified = 1 WHERE id = ?")
+        .run(candidate.pendingEmail, user.id);
+      this.audit.record(identityAuditEventTypes.emailChangeConfirmed, null, {
+        type: "user",
+        id: user.id,
+      });
+      this.database.exec("COMMIT");
+      transactionOpen = false;
+    } catch (error) {
+      if (transactionOpen) {
+        try {
+          this.database.exec("ROLLBACK");
+        } catch {
+          // The transaction is already gone; report the original failure.
+        }
+      }
+      if (error instanceof IdentityError) throw error;
+      if (error instanceof Error && /busy|locked/i.test(error.message)) {
+        throw new IdentityError("RATE_LIMITED", 429, "Confirmation is busy, retry shortly");
+      }
+      throw error;
+    }
+    // Best-effort notice to the previous address, strictly after the commit;
+    // a failed notice never rolls back the confirmed change.
+    try {
+      const rendered = renderPreviousAddressNotice({
+        newEmail: candidate.pendingEmail,
+        language: resolveMailLanguage(candidate.language),
+      });
+      await (
+        await this.resolveMailSender()
+      )({ to: user.email, ...rendered });
+    } catch {
+      // Intentionally ignored.
+    }
+    return { changed: true as const };
+  }
+
+  async getEmailChangeStatus(actor: Actor): Promise<{
+    pending: { email: string; expiresAt: number } | null;
+  }> {
+    await this.ready;
+    if (actor.type !== "user") {
+      throw new IdentityError("FORBIDDEN", 403, "User access required");
+    }
+    const row = this.database
+      .prepare(
+        `SELECT pending_email AS email, expires_at AS expiresAt FROM host_email_change
+         WHERE user_id = ? AND send_state = 'sent'
+           AND used_at IS NULL AND unusable_at IS NULL AND expires_at > ?
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(actor.id, Date.now()) as { email: string; expiresAt: number } | undefined;
+    // List responses carry the pending address and expiry only, never tokens.
+    return { pending: row ?? null };
+  }
+
+  async cancelEmailChange(actor: Actor): Promise<{ cancelled: true }> {
+    await this.ready;
+    if (actor.type !== "user") {
+      throw new IdentityError("FORBIDDEN", 403, "User access required");
+    }
+    // Soft-cancel: retired rows stay in history for hourly rate accounting but
+    // can never be confirmed, listed, or revived.
+    try {
+      await this.runBusyRetried(() => this.retireEmailChanges(actor.id, "cancelled"));
+    } catch (error) {
+      if (error instanceof Error && /busy|locked/i.test(error.message)) {
+        throw new IdentityError("RATE_LIMITED", 429, "Storage is busy, retry shortly");
+      }
+      throw error;
+    }
+    return { cancelled: true as const };
+  }
+
+  private mailConfigRow() {
+    return this.database
+      .prepare(
+        `SELECT enabled, host, port, username, from_address, from_name,
+              use_starttls, public_origin FROM host_mail_config WHERE id = 1`,
+      )
+      .get() as {
+      enabled: number;
+      host: string;
+      port: number;
+      username: string;
+      from_address: string;
+      from_name: string;
+      use_starttls: number;
+      public_origin: string;
+    };
+  }
+
+  private async maskedMailConfig(): Promise<StoredMailConfig> {
+    const row = this.mailConfigRow();
+    return {
+      enabled: row.enabled === 1,
+      host: row.host,
+      port: row.port,
+      username: row.username,
+      // The secret lives in Host secret storage and is never returned here.
+      hasPassword: (await this.readSmtpPassword()) !== null,
+      fromAddress: row.from_address,
+      fromName: row.from_name,
+      useStarttls: row.use_starttls === 1,
+      publicOrigin: row.public_origin,
+    };
+  }
+
+  private activeMailSettings(): {
+    sender: {
+      host: string;
+      port: number;
+      username: string;
+      fromAddress: string;
+      fromName: string;
+      useStarttls: boolean;
+    };
+    publicOrigin: string;
+  } {
+    const row = this.mailConfigRow();
+    if (
+      row.enabled !== 1 ||
+      !row.host.trim() ||
+      !row.from_address.trim() ||
+      !row.public_origin.trim()
+    ) {
+      throw new IdentityError(
+        "MAIL_NOT_CONFIGURED",
+        400,
+        "Mail delivery is not configured on this Host",
+      );
+    }
+    return {
+      sender: {
+        host: row.host,
+        port: row.port,
+        username: row.username,
+        fromAddress: row.from_address,
+        fromName: row.from_name,
+        useStarttls: row.use_starttls === 1,
+      },
+      publicOrigin: row.public_origin,
+    };
+  }
+
+  private async resolveMailSender(): Promise<MailSender> {
+    if (this.injectedMailSender) return this.injectedMailSender;
+    const active = this.activeMailSettings();
+    return createSmtpSender({
+      host: active.sender.host,
+      port: active.sender.port,
+      username: active.sender.username,
+      password: await this.smtpPasswordForSending(),
+      fromAddress: active.sender.fromAddress,
+      fromName: active.sender.fromName,
+      useStarttls: active.sender.useStarttls,
+    });
+  }
+
+  private async smtpPasswordForSending(): Promise<string> {
+    // Resolved per mail so rotations and clears take effect immediately.
+    return (await this.readSmtpPassword()) ?? "";
+  }
+
+  private async readSmtpPassword(): Promise<string | null> {
+    if (!this.mailSecrets) {
+      throw new IdentityError(
+        "MAIL_SECRETS_UNAVAILABLE",
+        500,
+        "Mail secret storage is not wired on this Host",
+      );
+    }
+    return this.mailSecrets.readSmtpPassword();
+  }
+
+  private async writeSmtpPassword(password: string | null): Promise<void> {
+    if (!this.mailSecrets) {
+      throw new IdentityError(
+        "MAIL_SECRETS_UNAVAILABLE",
+        500,
+        "Mail secret storage is not wired on this Host",
+      );
+    }
+    await this.mailSecrets.writeSmtpPassword(password);
+  }
+
+  /** Per-user request budgets: outstanding live rows plus hourly history. */
+  private checkRequestBudgets(userId: string): void {
+    const now = Date.now();
+    const outstanding = (
+      this.database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM host_email_change
+           WHERE user_id = ? AND send_state IN ('pending', 'sent')
+             AND used_at IS NULL AND unusable_at IS NULL AND expires_at > ?`,
+        )
+        .get(userId, now) as { count: number }
+    ).count;
+    if (outstanding >= EMAIL_CHANGE_MAX_OUTSTANDING) {
+      throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
+    }
+    // History rows (sent, used, retired, failed) are all retained, so
+    // request/cancel and request/failure cycles cannot reset this budget.
+    // Failed password verifications carry their own cap below and do not
+    // consume issuance budget.
+    const recent = (
+      this.database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM host_email_change
+           WHERE user_id = ? AND created_at > ?
+             AND COALESCE(unusable_reason, '') != 'reauth_failed'`,
+        )
+        .get(userId, now - 3_600_000) as { count: number }
+    ).count;
+    if (recent >= EMAIL_CHANGE_MAX_REQUESTS_PER_HOUR) {
+      throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
+    }
+    // Per-account password-guessing budget, enforced before the hash check.
+    const reauthFailures = (
+      this.database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM host_email_change
+           WHERE user_id = ? AND created_at > ? AND unusable_reason = 'reauth_failed'`,
+        )
+        .get(userId, now - 3_600_000) as { count: number }
+    ).count;
+    if (reauthFailures >= EMAIL_CHANGE_MAX_REAUTH_PER_HOUR) {
+      throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
+    }
+    if (this.recordRateEvent("request", now) >= EMAIL_CHANGE_MAX_GLOBAL_REQUESTS_PER_HOUR) {
+      throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
+    }
+  }
+
+  /**
+   * Retains a failed password verification in the existing rate authority. The
+   * row is born unusable: never confirmable, listed, revived, or cancel-reset
+   * (cancel only touches live rows). It counts toward the per-account reauth
+   * budget above but never retires a prior valid challenge.
+   */
+  private recordFailedReauth(userId: string, pendingEmail: string, epoch: number): void {
+    const now = Date.now();
+    this.database
+      .prepare(
+        `INSERT INTO host_email_change
+         (id, user_id, pending_email, token_hash, created_at, expires_at,
+          send_state, unusable_at, unusable_reason, credential_epoch, language)
+         VALUES (?, ?, ?, ?, ?, ?, 'failed', ?, 'reauth_failed', ?, 'en')`,
+      )
+      .run(
+        randomUUID(),
+        userId,
+        pendingEmail,
+        hashSecret(randomBytes(32).toString("base64url")),
+        now,
+        now,
+        now,
+        epoch,
+      );
+  }
+
+  /** Host-wide confirm budget: bounds invalid-token probing on the public route. */
+  private checkConfirmBudget(): void {
+    if (this.recordRateEvent("confirm", Date.now()) >= EMAIL_CHANGE_MAX_CONFIRMS_PER_HOUR) {
+      throw new IdentityError("RATE_LIMITED", 429, "Too many confirmation attempts");
+    }
+  }
+
+  /** Records a rate event and returns the rolling-hour count for its kind. */
+  private recordRateEvent(kind: "request" | "confirm" | "reauth", now: number): number {
+    this.database.prepare("DELETE FROM host_mail_ratelimit WHERE at <= ?").run(now - 3_600_000);
+    this.database
+      .prepare("INSERT INTO host_mail_ratelimit (kind, at) VALUES (?, ?)")
+      .run(kind, now);
+    return (
+      this.database
+        .prepare("SELECT COUNT(*) AS count FROM host_mail_ratelimit WHERE kind = ?")
+        .get(kind) as { count: number }
+    ).count;
+  }
+
+  private pruneEmailChangeHistory(now: number): void {
+    this.database
+      .prepare("DELETE FROM host_email_change WHERE created_at <= ?")
+      .run(now - EMAIL_CHANGE_HISTORY_RETENTION_MS);
+  }
+
+  /**
+   * Runs a synchronous database write with bounded retries over transient
+   * lock contention (Better Auth shares this database with autocommit
+   * writes). Callers convert an exhausted retry into a retryable 429.
+   */
+  private async runBusyRetried<T>(operation: () => T): Promise<T> {
+    let delayMs = 25;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return operation();
+      } catch (error) {
+        const busy = error instanceof Error && /busy|locked/i.test(error.message);
+        if (!busy || attempt >= 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2;
+      }
+    }
+  }
+
+  private markEmailChangeUnusable(rowId: string, reason: string): void {
+    this.database
+      .prepare(
+        `UPDATE host_email_change SET send_state = 'failed',
+           unusable_at = COALESCE(unusable_at, ?), unusable_reason = COALESCE(unusable_reason, ?)
+         WHERE id = ?`,
+      )
+      .run(Date.now(), reason, rowId);
+  }
+
+  private async verifyAccountPassword(userId: string, currentPassword: string): Promise<boolean> {
+    if (!currentPassword) return false;
+    // Reauthentication against the Better Auth credential hash without minting
+    // a session: a failed check must not create sessions or audit noise.
+    const account = this.database
+      .prepare("SELECT password FROM account WHERE userId = ? AND providerId = 'credential'")
+      .get(userId) as { password: string | null } | undefined;
+    if (!account?.password) return false;
+    try {
+      return await verifyPassword({ hash: account.password, password: currentPassword });
+    } catch {
+      return false;
+    }
+  }
+
+  private emailTakenByOtherUser(pendingEmail: string, userId: string): boolean {
+    return Boolean(
+      this.database
+        .prepare("SELECT 1 AS found FROM user WHERE lower(email) = lower(?) AND id != ? LIMIT 1")
+        .get(pendingEmail, userId),
+    );
   }
 
   async resetMemberPassword(actor: Actor, userId: string, newPassword: string, headers: Headers) {
@@ -2394,6 +3310,9 @@ export class IdentityService {
       }
       throw new IdentityError("PASSWORD_RESET_FAILED", 500, "Password could not be reset");
     }
+    // A rotated credential retires outstanding email-change challenges: tokens
+    // mailed before the reset must not apply after it.
+    this.bumpCredentialEpoch(userId);
     try {
       await this.auth.api.revokeUserSessions({ body: { userId }, headers });
     } catch {
@@ -2414,8 +3333,36 @@ export class IdentityService {
 
   private membership(userId: string) {
     return this.database
-      .prepare("SELECT user_id, role, can_invite FROM host_membership WHERE user_id = ?")
+      .prepare(
+        "SELECT user_id, role, can_invite, credential_epoch FROM host_membership WHERE user_id = ?",
+      )
       .get(userId) as MembershipRow | undefined;
+  }
+
+  /**
+   * Binds outstanding email-change challenges to the current credential.
+   * Any password change, owner reset, or removal bumps the epoch and retires
+   * live rows, so a token mailed before the rotation can never apply after
+   * it — including a reservation whose confirmation mail is still in flight
+   * (finalize and consume both recheck the epoch). History rows are kept for
+   * rate-limit retention.
+   */
+  private bumpCredentialEpoch(userId: string): void {
+    this.database
+      .prepare(
+        "UPDATE host_membership SET credential_epoch = credential_epoch + 1 WHERE user_id = ?",
+      )
+      .run(userId);
+    this.retireEmailChanges(userId, "credential_changed");
+  }
+
+  private retireEmailChanges(userId: string, reason: string): void {
+    this.database
+      .prepare(
+        `UPDATE host_email_change SET unusable_at = ?, unusable_reason = COALESCE(unusable_reason, ?)
+         WHERE user_id = ? AND used_at IS NULL AND unusable_at IS NULL`,
+      )
+      .run(Date.now(), reason, userId);
   }
 
   private resolveApiKey(secret: string): Actor | null {

@@ -3,6 +3,7 @@ import {
   Copy,
   KeyRound,
   Link2,
+  Mail,
   RefreshCw,
   Settings2,
   Trash2,
@@ -49,10 +50,13 @@ import { PersonAccessSummary } from "./PersonAccessSummary";
 import { buildInviteLink } from "./invite-url";
 import {
   createIdentityClient,
+  IdentityRequestError,
   type CreatedTeamInvite,
   type CreatedHostApiKey,
   type HostApiKey,
   type HostRegistrationMode,
+  type MailConfig,
+  type MailConfigInput,
   type ModelPolicy,
   type PathGrant,
   type PathPolicyStatus,
@@ -92,6 +96,301 @@ function SettingsSection({
       </header>
       {children}
     </section>
+  );
+}
+
+type IdentityClient = ReturnType<typeof createIdentityClient>;
+
+const emptyMailDraft: MailConfigInput = {
+  enabled: false,
+  host: "",
+  port: 587,
+  username: "",
+  password: "",
+  fromAddress: "",
+  fromName: "",
+  useStarttls: true,
+  publicOrigin: "",
+};
+
+function MailDeliverySection({ client }: { client: IdentityClient }) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<MailConfigInput>(emptyMailDraft);
+  const [passwordChanged, setPasswordChanged] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [testTo, setTestTo] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState<"save" | "test" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void client
+      .mailConfig()
+      .then((config: MailConfig) => {
+        if (cancelled) return;
+        setDraft({
+          enabled: config.enabled,
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: "",
+          fromAddress: config.fromAddress,
+          fromName: config.fromName,
+          useStarttls: config.useStarttls,
+          publicOrigin: config.publicOrigin,
+        });
+        setHasPassword(config.hasPassword);
+        setPasswordChanged(false);
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  function set<K extends keyof MailConfigInput>(key: K, value: MailConfigInput[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy("save");
+    setError(null);
+    setNotice(null);
+    try {
+      const saved = await client.setMailConfig({
+        ...draft,
+        // An untouched password field keeps the stored secret.
+        password: passwordChanged ? draft.password : undefined,
+      });
+      setHasPassword(saved.hasPassword);
+      setDraft((current) => ({ ...current, password: "" }));
+      setPasswordChanged(false);
+      notifySuccess(t("identity.mailSaved"));
+    } catch (failure) {
+      // The draft is preserved for retry; nothing is applied on failure.
+      setError(
+        failure instanceof IdentityRequestError && failure.code === "INVALID_MAIL_CONFIG"
+          ? t("identity.mailInvalidConfig")
+          : t("identity.mailSaveError"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function browserLanguage(): string | undefined {
+    return typeof navigator === "undefined" || !navigator.language
+      ? undefined
+      : navigator.language.slice(0, 35);
+  }
+
+  async function sendTest(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !testTo.trim()) return;
+    setBusy("test");
+    setError(null);
+    setNotice(null);
+    try {
+      await client.sendTestMail(testTo.trim(), browserLanguage());
+      setNotice(t("identity.mailTestSent", { to: testTo.trim() }));
+    } catch (failure) {
+      setError(
+        failure instanceof IdentityRequestError && failure.code === "MAIL_NOT_CONFIGURED"
+          ? t("identity.mailNotConfigured")
+          : t("identity.mailTestError"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clearSavedPassword() {
+    if (busy) return;
+    setBusy("save");
+    setError(null);
+    setNotice(null);
+    try {
+      // An explicit empty password clears the stored secret; an untouched
+      // field (omitted password) would keep it.
+      const saved = await client.setMailConfig({ ...draft, password: "" });
+      setHasPassword(saved.hasPassword);
+      setDraft((current) => ({ ...current, password: "" }));
+      setPasswordChanged(false);
+      notifySuccess(t("identity.mailPasswordCleared"));
+    } catch {
+      setError(t("identity.mailSaveError"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <SettingsSection
+      icon={<Mail className="size-4" />}
+      title={t("identity.mailTitle")}
+      description={t("identity.mailDescription")}
+    >
+      {!loaded ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <form onSubmit={(event) => void save(event)} className="space-y-3">
+          <label className="flex min-w-0 items-center justify-between gap-4 rounded-lg border px-3 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{t("identity.mailEnabled")}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t("identity.mailEnabledHelp")}
+              </span>
+            </span>
+            <Switch
+              checked={draft.enabled}
+              disabled={busy !== null}
+              onCheckedChange={(checked) => set("enabled", checked)}
+            />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="mail-host">{t("identity.mailHost")}</Label>
+              <Input
+                id="mail-host"
+                autoComplete="off"
+                required={draft.enabled}
+                value={draft.host}
+                onChange={(event) => set("host", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mail-port">{t("identity.mailPort")}</Label>
+              <Input
+                id="mail-port"
+                type="number"
+                min={1}
+                max={65535}
+                required={draft.enabled}
+                value={draft.port}
+                onChange={(event) => set("port", Number(event.target.value))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mail-username">{t("identity.mailUsername")}</Label>
+              <Input
+                id="mail-username"
+                autoComplete="off"
+                value={draft.username}
+                onChange={(event) => set("username", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mail-password">{t("identity.mailPassword")}</Label>
+              <Input
+                id="mail-password"
+                type="password"
+                autoComplete="new-password"
+                placeholder={hasPassword ? t("identity.mailPasswordUnchanged") : undefined}
+                value={draft.password}
+                onChange={(event) => {
+                  set("password", event.target.value);
+                  setPasswordChanged(true);
+                }}
+              />
+              {hasPassword && !passwordChanged && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => void clearSavedPassword()}
+                >
+                  {t("identity.mailClearPassword")}
+                </Button>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mail-from">{t("identity.mailFrom")}</Label>
+              <Input
+                id="mail-from"
+                type="email"
+                autoComplete="off"
+                required={draft.enabled}
+                value={draft.fromAddress}
+                onChange={(event) => set("fromAddress", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mail-from-name">{t("identity.mailFromName")}</Label>
+              <Input
+                id="mail-from-name"
+                autoComplete="off"
+                value={draft.fromName}
+                onChange={(event) => set("fromName", event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="mail-origin">{t("identity.mailOrigin")}</Label>
+            <Input
+              id="mail-origin"
+              type="url"
+              autoComplete="off"
+              required={draft.enabled}
+              placeholder="https://host.example.com"
+              value={draft.publicOrigin}
+              onChange={(event) => set("publicOrigin", event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">{t("identity.mailOriginHelp")}</p>
+          </div>
+          <label className="flex min-w-0 items-center justify-between gap-4 rounded-lg border px-3 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{t("identity.mailStarttls")}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t("identity.mailStarttlsHelp")}
+              </span>
+            </span>
+            <Switch
+              checked={draft.useStarttls}
+              disabled={busy !== null}
+              onCheckedChange={(checked) => set("useStarttls", checked)}
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={busy !== null}>
+              {t(busy === "save" ? "account.saving" : "common.save")}
+            </Button>
+          </div>
+        </form>
+      )}
+      <form
+        onSubmit={(event) => void sendTest(event)}
+        className="flex flex-col gap-2 rounded-lg border px-3 py-3 sm:flex-row sm:items-end"
+      >
+        <div className="min-w-0 flex-1 space-y-2">
+          <Label htmlFor="mail-test-to">{t("identity.mailTestTo")}</Label>
+          <Input
+            id="mail-test-to"
+            type="email"
+            autoComplete="off"
+            required
+            value={testTo}
+            onChange={(event) => setTestTo(event.target.value)}
+          />
+        </div>
+        <Button type="submit" variant="outline" disabled={busy !== null || !testTo.trim()}>
+          {t(busy === "test" ? "identity.mailTesting" : "identity.mailSendTest")}
+        </Button>
+      </form>
+    </SettingsSection>
   );
 }
 
@@ -398,6 +697,10 @@ export function TeamSettings({ view = "people" }: { view?: "people" | "paths" | 
             {t("identity.retry")}
           </Button>
         </div>
+      )}
+
+      {view === "host" && currentRole === "owner" && client && (
+        <MailDeliverySection client={client} />
       )}
 
       {view === "host" && currentRole === "owner" && (

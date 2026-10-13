@@ -23,6 +23,9 @@ const fixture = vi.hoisted(() => ({
     revokeApiKey: vi.fn(),
     removeMember: vi.fn(),
     resetMemberPassword: vi.fn(),
+    mailConfig: vi.fn(),
+    setMailConfig: vi.fn(),
+    sendTestMail: vi.fn(),
   },
 }));
 
@@ -75,6 +78,23 @@ describe("TeamSettings render integration", () => {
       createdAt: Date.now(),
     });
     fixture.client.setMemberCanInvite.mockResolvedValue(undefined);
+    fixture.client.mailConfig.mockResolvedValue({
+      enabled: false,
+      host: "",
+      port: 587,
+      username: "",
+      hasPassword: false,
+      fromAddress: "",
+      fromName: "",
+      useStarttls: true,
+      publicOrigin: "",
+    });
+    fixture.client.setMailConfig.mockImplementation(async (input: unknown) => ({
+      ...((await fixture.client.mailConfig()) as Record<string, unknown>),
+      ...(input as Record<string, unknown>),
+      hasPassword: true,
+    }));
+    fixture.client.sendTestMail.mockResolvedValue({ sent: true });
   });
   afterEach(cleanup);
 
@@ -120,6 +140,55 @@ describe("TeamSettings render integration", () => {
     fireEvent.submit(label.closest("form")!);
     await waitFor(() => expect(fixture.client.createApiKey).toHaveBeenCalled());
     expect(await screen.findByDisplayValue("shown-once")).toBeTruthy();
+  });
+
+  test("configures owner mail delivery without ever displaying the secret", async () => {
+    render(<TeamSettings view="host" />);
+    const host = (await screen.findByLabelText("identity.mailHost")) as HTMLInputElement;
+    expect(fixture.client.mailConfig).toHaveBeenCalled();
+    fireEvent.change(host, { target: { value: "smtp.test" } });
+    fireEvent.change(document.querySelector("#mail-from") as HTMLInputElement, {
+      target: { value: "no-reply@test" },
+    });
+    fireEvent.change(document.querySelector("#mail-origin") as HTMLInputElement, {
+      target: { value: "https://host.test" },
+    });
+    const password = document.querySelector("#mail-password") as HTMLInputElement;
+    expect(password.value).toBe("");
+    fireEvent.change(password, { target: { value: "fresh-secret" } });
+    fireEvent.submit(host.closest("form")!);
+    await waitFor(() => expect(fixture.client.setMailConfig).toHaveBeenCalled());
+    const saved = fixture.client.setMailConfig.mock.calls[0]![0] as Record<string, unknown>;
+    expect(saved.host).toBe("smtp.test");
+    expect(saved.password).toBe("fresh-secret");
+    expect(document.body.textContent).not.toContain("fresh-secret");
+    const testTo = document.querySelector("#mail-test-to") as HTMLInputElement;
+    fireEvent.change(testTo, { target: { value: "owner@test" } });
+    fireEvent.submit(testTo.closest("form")!);
+    await waitFor(() =>
+      expect(fixture.client.sendTestMail).toHaveBeenCalledWith("owner@test", expect.any(String)),
+    );
+  });
+
+  test("clears the stored SMTP secret explicitly", async () => {
+    fixture.client.mailConfig.mockResolvedValueOnce({
+      enabled: true,
+      host: "smtp.test",
+      port: 587,
+      username: "mailer",
+      hasPassword: true,
+      fromAddress: "no-reply@test",
+      fromName: "",
+      useStarttls: true,
+      publicOrigin: "https://host.test",
+    });
+    render(<TeamSettings view="host" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "identity.mailClearPassword" }),
+    );
+    await waitFor(() => expect(fixture.client.setMailConfig).toHaveBeenCalled());
+    const saved = fixture.client.setMailConfig.mock.calls[0]![0] as Record<string, unknown>;
+    expect(saved.password).toBe("");
   });
 
   test("fails closed for non-owners", async () => {

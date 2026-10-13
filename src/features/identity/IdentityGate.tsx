@@ -13,6 +13,8 @@ import { createIdentityClient, IdentityRequestError } from "./identity-client";
 import type { IdentityActor } from "./identity-client";
 import { DESKTOP_LOCAL_ACTOR, IdentityActorProvider } from "./identity-actor-context";
 import { identityGateReducer, shouldBypassIdentity } from "./identity-state";
+import { EmailConfirmScreen } from "./EmailConfirmScreen";
+import { readEmailChangeToken } from "./email-confirm-url";
 import { InviteAcceptScreen } from "./InviteAcceptScreen";
 import { readViewLinkToken, ViewLinkScreen } from "./ViewLinkScreen";
 import { readInviteToken } from "./invite-url";
@@ -249,6 +251,12 @@ function IdentityGateContent({
   const [openRegistration, setOpenRegistration] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const inviteToken = typeof window === "undefined" ? null : readInviteToken(window.location.href);
+  // Latched on first read: the confirmation screen strips the token from the
+  // address bar on mount, and later re-renders must not drop the screen
+  // before the outcome lands.
+  const [emailChangeToken] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : readEmailChangeToken(window.location.href),
+  );
 
   useEffect(() => {
     const handleWorkspaceChange = () => setWorkspaceRevision((current) => current + 1);
@@ -318,6 +326,9 @@ function IdentityGateContent({
     };
   }, [bypass, onActorChange, retryKey, t, workspace]);
 
+  if (emailChangeToken && workspace && !bypass) {
+    return <EmailConfirmScreen token={emailChangeToken} workspace={workspace} />;
+  }
   if (inviteToken && workspace && !bypass) {
     return <InviteAcceptScreen token={inviteToken} workspace={workspace} />;
   }

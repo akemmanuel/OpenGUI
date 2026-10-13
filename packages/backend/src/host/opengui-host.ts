@@ -216,8 +216,19 @@ interface HostSettingsFile {
 
 type PersonalCredential<T> = { connectionId: string; tokens: T };
 
+type HostMailSecrets = {
+  smtpPassword: string;
+};
+
+function validMailSecrets(value: unknown): HostMailSecrets | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const smtpPassword = (value as Record<string, unknown>).smtpPassword;
+  return typeof smtpPassword === "string" && smtpPassword.length > 0 ? { smtpPassword } : null;
+}
+
 type HostSecretsFile = {
   apiKeys: Record<string, string>;
+  mail: HostMailSecrets | null;
   codexTokens: CodexTokens | null;
   subscriptionTokens: Partial<Record<"xai", OAuthTokens>>;
   personalCodexTokens: Record<string, PersonalCredential<CodexTokens>>;
@@ -358,6 +369,7 @@ export class OpenGuiHost {
   #personalDeviceAuth: Record<string, DeviceAuthorization> = {};
   #personalSubscriptionTokens: HostSecretsFile["personalSubscriptionTokens"] = {};
   #mcpSecrets: HostSecretsFile["mcp"] = {};
+  #mailSecrets: HostSecretsFile["mail"] = null;
   #subscriptionPending: Partial<Record<"xai", DeviceOAuthPending>> = {};
   #personalSubscriptionPending: Record<string, Partial<Record<"xai", DeviceOAuthPending>>> = {};
   readonly #codexRefreshes = new Map<string, Promise<CodexTokens>>();
@@ -1035,6 +1047,7 @@ export class OpenGuiHost {
         personalCodexTokens: {},
         personalSubscriptionTokens: {},
         mcp: {},
+        mail: null,
       };
     } catch {
       return {
@@ -1044,6 +1057,7 @@ export class OpenGuiHost {
         personalCodexTokens: {},
         personalSubscriptionTokens: {},
         mcp: {},
+        mail: null,
       };
     }
   }
@@ -1130,6 +1144,7 @@ export class OpenGuiHost {
           state.secrets.mcp && typeof state.secrets.mcp === "object"
             ? structuredClone(state.secrets.mcp)
             : {},
+        mail: validMailSecrets(state.secrets.mail),
       },
     };
   }
@@ -1142,6 +1157,7 @@ export class OpenGuiHost {
     this.#personalCodexTokens = structuredClone(state.secrets.personalCodexTokens);
     this.#personalSubscriptionTokens = structuredClone(state.secrets.personalSubscriptionTokens);
     this.#mcpSecrets = structuredClone(state.secrets.mcp);
+    this.#mailSecrets = validMailSecrets(state.secrets.mail);
     this.#refreshTransport();
   }
 
@@ -1170,6 +1186,7 @@ export class OpenGuiHost {
       personalCodexTokens: structuredClone(this.#personalCodexTokens),
       personalSubscriptionTokens: structuredClone(this.#personalSubscriptionTokens),
       mcp: structuredClone(this.#mcpSecrets),
+      mail: this.#mailSecrets ? { ...this.#mailSecrets } : null,
     };
     await this.#updateState((state) => ({ ...state, secrets }));
   }
@@ -1255,6 +1272,25 @@ export class OpenGuiHost {
       version: process.env.OPENGUI_VERSION || process.env.npm_package_version || "0.0.0",
       shell: process.env.SHELL || (process.platform === "win32" ? "powershell" : "/bin/sh"),
     };
+  }
+
+  /**
+   * Owner-configured SMTP password for Host mail delivery. The secret lives in
+   * Host secret storage alongside the other Host secrets; it is never exposed
+   * through settings reads, events, or diagnostics. `null` means no password.
+   */
+  getMailSmtpPassword(): string | null {
+    return this.#mailSecrets?.smtpPassword ?? null;
+  }
+
+  async setMailSmtpPassword(password: string | null): Promise<void> {
+    if (password !== null && (password.length < 1 || password.length > 1024)) {
+      throw new Error("SMTP password must be 1-1024 characters or cleared");
+    }
+    await this.#updateState((state) => ({
+      ...state,
+      secrets: { ...state.secrets, mail: password === null ? null : { smtpPassword: password } },
+    }));
   }
 
   getCustomInstructions() {

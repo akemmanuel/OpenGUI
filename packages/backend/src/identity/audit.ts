@@ -11,6 +11,8 @@ export const identityAuditEventTypes = {
   inviteAccepted: "invite.accepted",
   memberRemoved: "member.removed",
   memberPasswordReset: "member.password_reset",
+  emailChangeRequested: "email.change_requested",
+  emailChangeConfirmed: "email.change_confirmed",
   apiKeyMinted: "api_key.minted",
   apiKeyRevoked: "api_key.revoked",
 } as const;
