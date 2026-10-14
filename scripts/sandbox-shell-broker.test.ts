@@ -125,6 +125,14 @@ describe("sandbox shell broker", () => {
       }),
     );
     expect((await fetch(endpoint, { method: "POST", body: body(root) })).status).toBe(401);
+    for (const authorization of ["Bearer secre", "Bearer secret2", "bearer secret"]) {
+      const denied = await fetch(endpoint, {
+        method: "POST",
+        headers: { authorization },
+        body: body(root),
+      });
+      expect(denied.status).toBe(401);
+    }
     expect(
       (await fetch(endpoint.replace("/v1/execute", "/other"), { method: "POST" })).status,
     ).toBe(404);

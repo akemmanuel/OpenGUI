@@ -32,11 +32,17 @@ async function main() {
     console.error("Usage: reset-password.ts <username-or-email>");
     process.exit(2);
   }
-  const password = await resetPassword(
-    new IdentityService(),
-    username,
-    process.env.OPENGUI_NEW_PASSWORD || undefined,
-  );
+  const identity = new IdentityService();
+  let password: string;
+  try {
+    password = await resetPassword(
+      identity,
+      username,
+      process.env.OPENGUI_NEW_PASSWORD || undefined,
+    );
+  } finally {
+    await identity.close();
+  }
   console.info(`Password reset for ${username}. All sessions were signed out.`);
   if (!process.env.OPENGUI_NEW_PASSWORD) {
     console.info(`Temporary password: ${password}`);

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -29,6 +29,12 @@ export type SandboxExecution = (
   timeoutSeconds: number,
   signal: AbortSignal,
 ) => Promise<ShellResult>;
+
+/** Constant-time bearer check; hashing first equalizes lengths. */
+export function bearerMatches(header: string | undefined, token: string) {
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(header ?? ""), digest(`Bearer ${token}`));
+}
 
 function contains(root: string, path: string) {
   const value = relative(root, path);
@@ -274,7 +280,7 @@ export function createSandboxBroker(options: {
       reject(404);
       return;
     }
-    if (options.token && request.headers.authorization !== `Bearer ${options.token}`) {
+    if (options.token && !bearerMatches(request.headers.authorization, options.token)) {
       reject(401);
       return;
     }

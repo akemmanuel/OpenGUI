@@ -16,8 +16,8 @@ export interface WebServerDependencies {
   exit: (code: number) => void;
 }
 
-/** Upper bound for draining runs before the process exits anyway (Docker sends
- * SIGKILL after its own stop timeout, 10 s by default). */
+/** Upper bound for draining runs before the process exits anyway. Docker sends
+ * SIGKILL after its stop timeout: 10 s by default, 15 s in the shipped compose files. */
 const SHUTDOWN_TIMEOUT_MS = 8_000;
 
 export function startWebServer(dependencies: Partial<WebServerDependencies> = {}): Server {

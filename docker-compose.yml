@@ -3,6 +3,8 @@ services:
     image: "${OPENGUI_IMAGE:-ghcr.io/akemmanuel/opengui:latest}"
     container_name: opengui
     restart: unless-stopped
+    # The Host drains runs and releases its state lock for up to 8 s on SIGTERM.
+    stop_grace_period: 15s
     network_mode: host
     pid: host
     privileged: true

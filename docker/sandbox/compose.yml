@@ -6,6 +6,8 @@ services:
     container_name: "${OPENGUI_SANDBOX_NAME:-opengui-sandbox}"
     runtime: "${OPENGUI_SANDBOX_RUNTIME:-runsc}"
     restart: unless-stopped
+    # The Host drains runs and releases its state lock for up to 8 s on SIGTERM.
+    stop_grace_period: 15s
     init: true
     read_only: true
     ports:
