@@ -38,7 +38,7 @@ function getPinnedAt(meta?: SidebarPinMetaLike): string | null {
   return typeof meta?.pinnedAt === "string" && meta.pinnedAt ? meta.pinnedAt : null;
 }
 
-export function getSidebarSessionProjectDirectory<TSession extends SidebarPinSessionLike>(
+function getSidebarSessionProjectDirectory<TSession extends SidebarPinSessionLike>(
   session: TSession,
 ): string {
   return normalizeProjectPath(session._projectDir ?? session.directory ?? "");

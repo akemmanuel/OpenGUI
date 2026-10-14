@@ -1,11 +1,11 @@
 import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
 
-export const NEW_CHAT_MODEL_BEHAVIORS = ["ask", "last", "workspace-default"] as const;
+const NEW_CHAT_MODEL_BEHAVIORS = ["ask", "last", "workspace-default"] as const;
 
 export type NewChatModelBehavior = (typeof NEW_CHAT_MODEL_BEHAVIORS)[number];
 
-export const DEFAULT_NEW_CHAT_MODEL_BEHAVIOR: NewChatModelBehavior = "last";
+const DEFAULT_NEW_CHAT_MODEL_BEHAVIOR: NewChatModelBehavior = "last";
 
 export function isNewChatModelBehavior(value: string | null): value is NewChatModelBehavior {
   return NEW_CHAT_MODEL_BEHAVIORS.includes(value as NewChatModelBehavior);

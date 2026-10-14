@@ -19,23 +19,15 @@ export const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 const key = (name: string) => `opengui:${name}`;
 
 export const STORAGE_KEYS = {
-  SERVER_URL: key("serverUrl"),
-  USERNAME: key("username"),
   WORKSPACES: key("workspaces"),
   ACTIVE_WORKSPACE_ID: key("activeWorkspaceId"),
-  SELECTED_MODEL: key("selectedModel"),
   REASONING_EFFORT: key("reasoningEffort"),
-  SELECTED_AGENT: key("selectedAgent"),
-  VARIANT_SELECTIONS: key("variantSelections"),
-  WORKSPACE_VARIANT_SELECTIONS: key("workspaceVariantSelections"),
-  UNREAD_SESSIONS: key("unreadSessionIds"),
   SESSION_DRAFTS: key("sessionDrafts"),
   NOTIFICATIONS_ENABLED: key("notificationsEnabled"),
   SESSION_META: key("sessionMeta"),
   PROJECT_META: key("projectMeta"),
   DEFAULT_CHAT_DIRECTORY: key("defaultChatDirectory"),
   RECENT_MODELS: key("recentModels"),
-  FAVORITE_MODELS: key("favoriteModels"),
   MODEL_MAX_AGE_MONTHS: key("modelMaxAgeMonths"),
   NEW_CHAT_MODEL_BEHAVIOR: key("newChatModelBehavior"),
   LANGUAGE: key("language"),

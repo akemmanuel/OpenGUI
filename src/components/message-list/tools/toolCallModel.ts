@@ -56,7 +56,7 @@ export interface ToolCallViewModel {
  * raw backend text. Unknown reasons fall through to existing behavior so a
  * backend string can never become a translation key.
  */
-export const SANDBOX_SHELL_FAILURE_REASONS = new Set([
+const SANDBOX_SHELL_FAILURE_REASONS = new Set([
   "broker_unreachable",
   "broker_timeout",
   "broker_unauthorized",

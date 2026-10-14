@@ -109,7 +109,7 @@ export function parseBackendProfile(raw: string | null): DesktopBackendProfile |
   }
 }
 
-export function defaultBackendProfile(): DesktopBackendProfile {
+function defaultBackendProfile(): DesktopBackendProfile {
   return {
     id: "local-managed",
     name: "Local Managed Backend",

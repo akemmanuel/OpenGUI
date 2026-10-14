@@ -64,11 +64,11 @@ export const EMAIL_CHANGE_MAX_GLOBAL_REQUESTS_PER_HOUR = 500;
 /** Superseded/cancelled/failed rows are pruned after this long. */
 export const EMAIL_CHANGE_HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-export const SMTP_CONNECTION_TIMEOUT_MS = 10_000;
-export const SMTP_GREETING_TIMEOUT_MS = 10_000;
-export const SMTP_SOCKET_TIMEOUT_MS = 20_000;
+const SMTP_CONNECTION_TIMEOUT_MS = 10_000;
+const SMTP_GREETING_TIMEOUT_MS = 10_000;
+const SMTP_SOCKET_TIMEOUT_MS = 20_000;
 /** Total delivery budget, independent of socket activity or SMTP phase. */
-export const SMTP_DELIVERY_TIMEOUT_MS = 40_000;
+const SMTP_DELIVERY_TIMEOUT_MS = 40_000;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -294,7 +294,7 @@ export function buildFromHeader(settings: SmtpMailSettings): string {
  * development and tests). Phase limits are supplemented by a total delivery
  * deadline in createSmtpSender, including peers that never become idle.
  */
-export function smtpTransportOptions(settings: SmtpMailSettings): {
+function smtpTransportOptions(settings: SmtpMailSettings): {
   host: string;
   port: number;
   secure: boolean;

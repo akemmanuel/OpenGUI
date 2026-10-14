@@ -136,7 +136,7 @@ function toSummary(value: Record<string, unknown>): CompactionSummary {
   };
 }
 
-export function renderHandoffMarkdown(summary: CompactionSummary): string {
+function renderHandoffMarkdown(summary: CompactionSummary): string {
   const files =
     summary.relevantFiles.length > 0
       ? summary.relevantFiles.map((file) => `- ${file}`).join("\n")

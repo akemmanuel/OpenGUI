@@ -26,7 +26,7 @@ function required(body: Record<string, unknown>, key: string) {
     throw new Error(`Invalid OAuth response: missing ${key}`);
   return value;
 }
-export function accountIdFromJwt(jwt: string) {
+function accountIdFromJwt(jwt: string) {
   const part = jwt.split(".")[1];
   if (!part) throw new Error("Invalid OAuth ID token");
   const claims = object(JSON.parse(Buffer.from(part, "base64url").toString("utf8")));

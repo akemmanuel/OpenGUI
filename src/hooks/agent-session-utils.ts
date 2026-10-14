@@ -19,7 +19,7 @@ export function parseProjectKey(projectKey: string) {
   };
 }
 
-export function getSessionDirectory(session: Session | undefined | null) {
+function getSessionDirectory(session: Session | undefined | null) {
   if (!session) return null;
   return session._projectDir ?? session.directory ?? null;
 }
@@ -62,7 +62,7 @@ export function createSessionProjectDetachMeta(
   };
 }
 
-export function getSessionWorkspaceId(session: Session | undefined | null) {
+function getSessionWorkspaceId(session: Session | undefined | null) {
   if (!session) return null;
   return session._workspaceId ?? null;
 }

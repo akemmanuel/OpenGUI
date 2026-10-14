@@ -20,13 +20,13 @@ const rawIconModules = import.meta.glob("./svgs/*.svg", {
 
 const iconNameFromPath = (path: string) => path.match(/\/([^/]+)\.svg$/)?.[1] ?? path;
 
-export const providerIconUrls = Object.fromEntries(
+const providerIconUrls = Object.fromEntries(
   Object.entries(iconModules)
     .map(([path, url]) => [iconNameFromPath(path), url] as const)
     .sort(([left], [right]) => left.localeCompare(right)),
 ) as Readonly<Record<string, string>>;
 
-export const providerIconSvgs = Object.fromEntries(
+const providerIconSvgs = Object.fromEntries(
   Object.entries(rawIconModules)
     .map(([path, svg]) => [iconNameFromPath(path), svg] as const)
     .sort(([left], [right]) => left.localeCompare(right)),

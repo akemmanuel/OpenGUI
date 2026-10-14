@@ -2,8 +2,6 @@ import { DEFAULT_SERVER_URL, STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageParsed, storageSet } from "./storage";
 import { normalizeProjectPath } from "@/lib/path";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
-import type { VariantSelections } from "@/hooks/use-agent-variant-core";
-import { persistJsonWhen } from "./json";
 import type { SelectedModel } from "@opengui/protocol";
 import type { Workspace } from "@/types/workspace";
 
@@ -26,30 +24,7 @@ interface WorkspaceSettingsRecord {
   order?: number;
 }
 
-export type WorkspaceVariantSelectionsMap = Record<string, VariantSelections>;
-
-export function getWorkspaceVariantSelectionsMap(): WorkspaceVariantSelectionsMap {
-  return (
-    storageParsed<WorkspaceVariantSelectionsMap>(STORAGE_KEYS.WORKSPACE_VARIANT_SELECTIONS) ?? {}
-  );
-}
-
-export function persistVariantSelectionsForWorkspace(
-  workspaceId: string,
-  selections: VariantSelections,
-) {
-  const next = {
-    ...getWorkspaceVariantSelectionsMap(),
-    [workspaceId]: selections,
-  };
-  persistJsonWhen(
-    STORAGE_KEYS.WORKSPACE_VARIANT_SELECTIONS,
-    next,
-    Object.values(next).some((value) => Object.keys(value).length > 0),
-  );
-}
-
-export function getLegacyStoredDefaultChatDirectory(): string | null {
+function getLegacyStoredDefaultChatDirectory(): string | null {
   const stored = storageGet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
   return stored ? normalizeProjectPath(stored) : null;
 }
@@ -240,12 +215,12 @@ function getInitialWorkspacesForShell(): Workspace[] {
   return policy.shellKind === "mobile" ? [] : [createLocalWorkspace()];
 }
 
-export async function loadBackendWorkspaces(): Promise<Workspace[]> {
+async function loadBackendWorkspaces(): Promise<Workspace[]> {
   const stored = getLegacyStoredWorkspaces();
   return sortLocalWorkspaces(stored.length > 0 ? stored : getInitialWorkspacesForShell());
 }
 
-export async function migrateLegacyWorkspaceState(): Promise<Workspace[]> {
+async function migrateLegacyWorkspaceState(): Promise<Workspace[]> {
   const workspaces = sortLocalWorkspaces(getLegacyStoredWorkspaces());
   persistWorkspaces(workspaces.length > 0 ? workspaces : getInitialWorkspacesForShell());
   storageSet(LEGACY_WORKSPACE_MIGRATION_KEY, "done");

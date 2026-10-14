@@ -36,7 +36,7 @@ export function isModelAvailable(providers: Provider[], model: SelectedModel | n
   return !!provider && model.modelID in provider.models;
 }
 
-export function isAgentAvailable(agents: Agent[], agent: string | null | undefined) {
+function isAgentAvailable(agents: Agent[], agent: string | null | undefined) {
   if (agent == null) return true;
   return agents.some((candidate) => candidate.name === agent);
 }

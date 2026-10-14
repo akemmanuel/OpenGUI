@@ -31,7 +31,7 @@ export type SandboxExecution = (
 ) => Promise<ShellResult>;
 
 /** Constant-time bearer check; hashing first equalizes lengths. */
-export function bearerMatches(header: string | undefined, token: string) {
+function bearerMatches(header: string | undefined, token: string) {
   const digest = (value: string) => createHash("sha256").update(value).digest();
   return timingSafeEqual(digest(header ?? ""), digest(`Bearer ${token}`));
 }

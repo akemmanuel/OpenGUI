@@ -20,7 +20,7 @@ export type ResponsiveAuditFinding = {
  * browser DOM, styles, accessibility attributes, and geometry are the seam.
  * Exemptions are deliberately local and reviewable through data-responsive-allow.
  */
-export function auditResponsiveDocument(options: ResponsiveAuditOptions) {
+function auditResponsiveDocument(options: ResponsiveAuditOptions) {
   const findings: ResponsiveAuditFinding[] = [];
   const viewport = { width: window.innerWidth, height: window.innerHeight };
   const usedExemptions = new Set<string>();

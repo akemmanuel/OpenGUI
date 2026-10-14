@@ -1,6 +1,6 @@
-export const IMAGE_MENTION_PATTERN = /@([^\s]+\.(?:png|jpe?g|webp|gif))(?=\s|$)/gi;
+const IMAGE_MENTION_PATTERN = /@([^\s]+\.(?:png|jpe?g|webp|gif))(?=\s|$)/gi;
 
-export function getImageMentionFilename(path: string): string {
+function getImageMentionFilename(path: string): string {
   return path.split(/[\\/]/).pop() || "Image";
 }
 

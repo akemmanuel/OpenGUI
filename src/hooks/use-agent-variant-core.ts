@@ -1,11 +1,6 @@
-import type { Agent, Model } from "@/protocol/agent-types";
-import type { SelectedModel } from "@opengui/protocol";
+import type { Model } from "@/protocol/agent-types";
 
 export type VariantSelections = Record<string, string | undefined>;
-
-export function variantKey(providerID: string, modelID: string): string {
-  return `${providerID}/${modelID}`;
-}
 
 /**
  * Immutably update a variant selections map: set or delete a key.
@@ -62,17 +57,4 @@ export function previousVariantSelection(
   const idx = keys.indexOf(current);
   if (idx < 0) return keys[keys.length - 1];
   return keys[(idx - 1 + keys.length) % keys.length];
-}
-
-export function resolveVariant(
-  selectedModel: SelectedModel | null,
-  variantSelections: VariantSelections,
-  _agents: Agent[],
-  _selectedAgent: string | null,
-): string | undefined {
-  if (!selectedModel) return undefined;
-  const key = variantKey(selectedModel.providerID, selectedModel.modelID);
-  const explicit = variantSelections[key];
-  if (explicit !== undefined) return explicit;
-  return undefined;
 }

@@ -36,7 +36,7 @@ function estimateTokens(messages: readonly MessageEntry[]) {
   return text ? Math.ceil(text.length / 4) : 0;
 }
 
-export function getContextUsage(messages: readonly MessageEntry[]) {
+function getContextUsage(messages: readonly MessageEntry[]) {
   let last: TokenUsage | null = null;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]?.info;

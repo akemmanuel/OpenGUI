@@ -3,7 +3,7 @@ import { notifyUnknownError } from "@/lib/notify";
 
 type UploadResponse = { ok?: boolean; value?: unknown; error?: string };
 
-export function getPromptFiles(files: FileList | File[]): File[] {
+function getPromptFiles(files: FileList | File[]): File[] {
   return Array.from(files);
 }
 

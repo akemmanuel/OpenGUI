@@ -9,7 +9,7 @@ class RetryableResult<T> extends Data.TaggedError("RetryableResult")<{ readonly 
  * Exponential backoff from 500 ms, capped at `maxRetryDelayMs`, for at most
  * `maxRetries` repeats: the uniform delivery contract every adapter shares.
  */
-export function providerRetrySchedule(delivery: ModelRequest["delivery"]) {
+function providerRetrySchedule(delivery: ModelRequest["delivery"]) {
   const { maxRetries, maxRetryDelayMs } = delivery ?? DEFAULT_MODEL_DELIVERY;
   return Schedule.max([
     Schedule.min([Schedule.exponential("500 millis"), Schedule.spaced(maxRetryDelayMs)]),

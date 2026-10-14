@@ -1,6 +1,6 @@
 import type { ElectronAPI } from "../src/types/preload-api";
 import type { SettingsBridgeChange } from "../src/types/settings";
-import type { AppUpdateState, DesktopBackendStatus } from "../src/types/shell";
+import type { DesktopBackendStatus } from "../src/types/shell";
 
 type Listener<T = unknown> = (data: T) => void;
 
@@ -15,27 +15,6 @@ type BackendConfigSync = Pick<
   ElectronAPI,
   "kind" | "backendUrl" | "backendToken" | "backendStatus"
 >;
-
-export function createDisabledUpdateState(currentVersion: string): AppUpdateState {
-  return {
-    status: "disabled",
-    platformSupported: false,
-    currentVersion,
-    latestVersion: null,
-    releaseDate: null,
-    releaseNotes: null,
-    releaseName: null,
-    releaseUrl: null,
-    progressPercent: null,
-    bytesPerSecond: null,
-    transferred: null,
-    total: null,
-    errorMessage: null,
-    downloaded: false,
-    autoDownload: false,
-    updateInfoFetched: false,
-  };
-}
 
 export function createElectronAPI(input: {
   ipc: PreloadIpc;

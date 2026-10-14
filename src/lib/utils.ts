@@ -39,7 +39,7 @@ export function findModel(
 // ---------------------------------------------------------------------------
 
 /** Default agent name used throughout the application. */
-export const DEFAULT_AGENT_NAME = "build";
+const DEFAULT_AGENT_NAME = "build";
 
 /** Check whether an agent is selectable (primary/all mode and not hidden). */
 function isSelectableAgent(agent: Agent): boolean {

@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { IdentityService } from "@opengui/backend";
 
-export function temporaryPassword() {
+function temporaryPassword() {
   return randomBytes(15).toString("base64url");
 }
 
