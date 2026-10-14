@@ -583,9 +583,10 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   const expiring = await api<{ token: string }>(
     backendUrl,
     `/api/identity/sessions/${session.id}/view-links`,
-    { token: owner.token, method: "POST", body: { expiresAt: Date.now() + 300 } },
+    // Leave room for a slow request to land before expiry, then let it lapse.
+    { token: owner.token, method: "POST", body: { expiresAt: Date.now() + 2_000 } },
   );
-  await delay(400);
+  await delay(2_500);
   assert(
     (
       await apiResponse(

@@ -664,6 +664,8 @@ try {
   startDevelopmentStack(frontendPort, backendPort);
   const frontendUrl = `http://127.0.0.1:${frontendPort}`;
   await waitForUrl(frontendUrl);
+  // The frontend proxy is up before the Host; opening early shows "Host unavailable".
+  await waitForUrl(`${frontendUrl}/api/identity/policy`, 90_000);
   await run(frontendUrl, `http://127.0.0.1:${backendPort}`, modelPort);
   log("PASS: all responsive states, locales, and viewports passed");
 } catch (error) {
