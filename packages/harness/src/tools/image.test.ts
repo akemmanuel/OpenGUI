@@ -1,13 +1,15 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PhotonImage } from "@silvia-odwyer/photon-node";
 import { describe, expect, test } from "vite-plus/test";
+import { useTemporaryDirectories } from "../test/temporary-directories.ts";
 import { processImageFile } from "./image.ts";
+
+const temporaryDirectory = useTemporaryDirectories("opengui-image-");
 
 describe("processImageFile", () => {
   test("downscales images beyond Pi's inline dimension limit", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "opengui-image-"));
+    const directory = await temporaryDirectory();
     const path = join(directory, "wide.png");
     const source = new PhotonImage(new Uint8Array(2_001 * 4).fill(255), 2_001, 1);
     try {

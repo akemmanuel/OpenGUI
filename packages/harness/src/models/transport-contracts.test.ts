@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
+import { useTemporaryDirectories } from "../test/temporary-directories.ts";
 import { createOpenGuiHarness } from "../open-gui-harness.ts";
 import { SequenceIdGenerator } from "../test/index.ts";
 import type { ModelRequest, ModelStreamEvent, ModelTransport } from "./transport.ts";
@@ -12,6 +12,8 @@ import {
   normalizeModelError,
   redactProviderText,
 } from "./transport.ts";
+
+const temporaryDirectory = useTemporaryDirectories("opengui-transport-durable-");
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
   return {
@@ -183,7 +185,7 @@ describe("durable transport cache contract", () => {
 });
 
 test("provider replay metadata survives restart and deltas remain ordered", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opengui-transport-durable-"));
+  const directory = await temporaryDirectory();
   const project = join(directory, "project");
   await mkdir(project);
   await writeFile(join(project, "README.md"), "fixture");

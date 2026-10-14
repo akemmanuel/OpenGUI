@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
+import { useTemporaryDirectories } from "../test/temporary-directories.ts";
 import { discoverSkills, loadSkillsFromDir } from "./discover.ts";
 import {
   formatSkillsForPrompt,
@@ -10,9 +10,7 @@ import {
 } from "./format-prompt.ts";
 import { parseFrontmatter } from "./parse.ts";
 
-async function temporaryDirectory() {
-  return mkdtemp(join(tmpdir(), "opengui-skills-"));
-}
+const temporaryDirectory = useTemporaryDirectories("opengui-skills-");
 
 async function writeSkill(
   root: string,

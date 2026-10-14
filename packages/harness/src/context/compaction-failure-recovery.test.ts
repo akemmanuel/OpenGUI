@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
+import { useTemporaryDirectories } from "../test/temporary-directories.ts";
 import {
   createOpenGuiHarness,
   type DurableActor,
@@ -17,9 +17,7 @@ import {
 import { SqliteSessionStore } from "../storage/sqlite-store.ts";
 import { FakeClock, SequenceIdGenerator } from "../test/index.ts";
 
-async function temporaryDirectory() {
-  return mkdtemp(join(tmpdir(), "opengui-compaction-recovery-"));
-}
+const temporaryDirectory = useTemporaryDirectories("opengui-compaction-recovery-");
 
 function containsPath(root: string, candidate: string) {
   const fromRoot = relative(root, candidate);

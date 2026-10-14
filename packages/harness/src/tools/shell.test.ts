@@ -1,11 +1,11 @@
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
+import { useTemporaryDirectories } from "../test/temporary-directories.ts";
 import { executeShellTool, type ShellToolContext } from "./shell.ts";
 
+const temporaryDirectory = useTemporaryDirectories("opengui-shell-");
+
 async function context(signal = new AbortController().signal): Promise<ShellToolContext> {
-  const directory = await mkdtemp(join(tmpdir(), "opengui-shell-"));
+  const directory = await temporaryDirectory();
   return {
     projectDirectory: directory,
     dataDirectory: directory,

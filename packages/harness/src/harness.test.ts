@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vite-plus/test";
+import { useTemporaryDirectories } from "./test/temporary-directories.ts";
 import {
   HARNESS_DATABASE_FILENAME,
   createOpenGuiHarness,
@@ -11,9 +11,7 @@ import {
 } from "./index.ts";
 import { FakeClock, FakeModel, SequenceIdGenerator } from "./test/index.ts";
 
-async function temporaryDirectory() {
-  return mkdtemp(join(tmpdir(), "opengui-harness-"));
-}
+const temporaryDirectory = useTemporaryDirectories("opengui-harness-");
 
 function semanticTranscript(entries: SessionEntry[]) {
   return entries.map(({ sequence, kind, payload, createdAt }) => ({
