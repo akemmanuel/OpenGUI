@@ -326,7 +326,13 @@ export class OpenAiResponsesWebSocketTransport {
         Effect.timeoutOrElse({
           duration: this.#options.connectTimeoutMs ?? 15_000,
           orElse: () =>
-            Effect.sync(() => socket.terminate?.()).pipe(
+            Effect.sync(() => {
+              // The interrupted wait already removed its listeners, and ws emits
+              // "error" when a handshake is aborted: without a listener that
+              // event is an uncaught exception that takes down the Host.
+              socket.on("error", () => {});
+              socket.terminate?.();
+            }).pipe(
               Effect.andThen(Effect.fail(new Error("OpenAI WebSocket connection timed out"))),
             ),
         }),

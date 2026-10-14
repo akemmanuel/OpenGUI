@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { createServer, type AddressInfo } from "node:net";
+import WebSocket from "ws";
 import {
   createAssistantMessageEventStream,
   type AssistantMessage,
@@ -253,6 +255,31 @@ describe("official OpenAI Responses WebSocket delivery", () => {
     });
     expect(JSON.stringify(result.events)).not.toContain(route.apiKey);
     transport.close();
+  });
+
+  test("falls back without crashing when the WebSocket handshake times out", async () => {
+    // A real ws client against a server that accepts TCP but never upgrades:
+    // aborting the handshake emits "error", which must not go unhandled.
+    const server = createServer(() => {});
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const uncaught = vi.fn();
+    process.on("uncaughtException", uncaught);
+    try {
+      const transport = new OpenAiResponsesWebSocketTransport({
+        connectTimeoutMs: 50,
+        websocketFactory: (_url, headers) =>
+          new WebSocket(`ws://127.0.0.1:${port}`, { headers }) as never,
+      });
+      const result = await drainDirect(transport, request());
+      expect(result).toEqual({ events: [], delivered: false });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(uncaught).not.toHaveBeenCalled();
+      transport.close();
+    } finally {
+      process.off("uncaughtException", uncaught);
+      server.close();
+    }
   });
 
   test("reuses one isolated Session socket and continues with only new inputs", async () => {
