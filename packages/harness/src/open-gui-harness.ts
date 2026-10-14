@@ -85,10 +85,22 @@ async function promiseWithAbort<T>(pending: Promise<T>, signal: AbortSignal) {
 
 const DEFAULT_MODEL_RETRY_DELAYS_MS = [2_000, 6_000, 15_000] as const;
 
-/** Transient provider outages, not quota exhaustion or request faults. */
-function isAutomaticallyRetryable(failure: { code: string; retryable: boolean }) {
+/**
+ * A failed attempt that already took this long is not retried: the transport
+ * has spent its own retries or a whole request timeout, and repeating it would
+ * keep the user waiting for many minutes before the failure is reported.
+ */
+const MAX_RETRYABLE_ATTEMPT_MS = 60_000;
+
+/** Transient provider outages that failed fast, not quota exhaustion or request faults. */
+function isAutomaticallyRetryable(
+  failure: { code: string; retryable: boolean },
+  attemptMs: number,
+) {
   return (
-    failure.retryable && (failure.code === "provider_unavailable" || failure.code === "timeout")
+    failure.retryable &&
+    (failure.code === "provider_unavailable" || failure.code === "timeout") &&
+    attemptMs < MAX_RETRYABLE_ATTEMPT_MS
   );
 }
 
@@ -707,6 +719,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
         completed = false;
         providerResponse = undefined;
         let retryDelayMs: number | undefined;
+        const attemptStartedAt = this.#clock.now().getTime();
         try {
           for await (const event of this.#model.stream(modelRequest, input.signal)) {
             await authorize();
@@ -729,7 +742,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
           if (input.signal.aborted) throw error;
           const failure = normalizeModelError(error, input.signal);
           if (
-            isAutomaticallyRetryable(failure) &&
+            isAutomaticallyRetryable(failure, this.#clock.now().getTime() - attemptStartedAt) &&
             compactionRetries < this.#modelRetryDelaysMs.length
           ) {
             retryDelayMs = this.#modelRetryDelaysMs[compactionRetries] ?? 0;
@@ -1172,6 +1185,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             }),
             delivery: { ...DEFAULT_MODEL_DELIVERY },
           };
+          const attemptStartedAt = this.#clock.now().getTime();
           const modelIterator = this.#model
             .stream(request, abortController.signal)
             [Symbol.asyncIterator]();
@@ -1208,7 +1222,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
             if (
               streamed ||
               abortController.signal.aborted ||
-              !isAutomaticallyRetryable(failure) ||
+              !isAutomaticallyRetryable(failure, this.#clock.now().getTime() - attemptStartedAt) ||
               modelRetries >= this.#modelRetryDelaysMs.length
             )
               throw error;

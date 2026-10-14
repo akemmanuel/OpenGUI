@@ -150,6 +150,35 @@ describe("OpenGuiHarness", () => {
     await harness.close();
   });
 
+  test("does not retry a transient failure that took over a minute", async () => {
+    const dataDirectory = await temporaryDirectory();
+    const projectDirectory = join(dataDirectory, "project");
+    await mkdir(projectDirectory);
+    const model = flakyModel([new Error("Model provider request timed out")]);
+    // Every clock read is 90 s later, so each attempt appears to take at least that long.
+    let now = Date.parse("2026-10-14T00:00:00Z");
+    const clock = { now: () => new Date((now += 90_000)) };
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      clock,
+      modelRetryDelaysMs: [1, 1, 1],
+    });
+    const session = await harness.createSession({
+      projectDirectory,
+      model: { connectionId: "fake", modelId: "fake-model" },
+      reasoning: "none",
+    });
+
+    const events = await runToEnd(session);
+
+    expect(model.calls).toBe(1);
+    expect(events.some((event) => event.type === "model_retry")).toBe(false);
+    const failed = (await session.read()).entries.find((entry) => entry.kind === "run_failed");
+    expect(failed?.payload).toMatchObject({ normalizedError: { code: "timeout" } });
+    await harness.close();
+  });
+
   test("never retries quota exhaustion", async () => {
     const dataDirectory = await temporaryDirectory();
     const projectDirectory = join(dataDirectory, "project");
