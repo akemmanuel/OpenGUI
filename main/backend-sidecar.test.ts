@@ -5,12 +5,15 @@ import { join } from "node:path";
 import { spawn as spawnProcess, type ChildProcess } from "node:child_process";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import type { App } from "electron";
+import { createServer as createHttpServer } from "node:http";
 import {
   createBackendSidecarController,
+  findAvailablePort,
   loadBackendProfile,
   parseBackendProfile,
   resolveManagedRuntime,
   selectBackendEntrypoint,
+  waitForHealth,
 } from "./backend-sidecar";
 
 const originalEnvironment = { ...process.env };
@@ -320,4 +323,58 @@ test("managed TypeScript runtime executes as a real Node child process", async (
   child.stdout?.on("data", (chunk) => (output += String(chunk)));
   const exitCode = await new Promise<number | null>((resolve) => child.once("exit", resolve));
   expect({ exitCode, output: output.trim() }).toEqual({ exitCode: 0, output: "sidecar-ok" });
+});
+
+describe("sidecar health and port helpers", () => {
+  async function healthServer(failures: number) {
+    let requests = 0;
+    const server = createHttpServer((request, response) => {
+      requests += 1;
+      response.statusCode = requests > failures ? 200 : 503;
+      response.end(request.headers.authorization ?? "");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    return {
+      url: `http://127.0.0.1:${port}`,
+      requests: () => requests,
+      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    };
+  }
+
+  test("allocates a free loopback port", async () => {
+    const port = await findAvailablePort();
+    expect(port).toBeGreaterThan(0);
+  });
+
+  test("polls until the backend reports healthy", async () => {
+    const server = await healthServer(2);
+    try {
+      await waitForHealth(server.url, "token", 5_000);
+      expect(server.requests()).toBe(3);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("times out when the backend never becomes healthy", async () => {
+    const server = await healthServer(Number.POSITIVE_INFINITY);
+    try {
+      await expect(waitForHealth(server.url, null, 600)).rejects.toThrow(/Timed out waiting/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("stops polling when aborted", async () => {
+    const server = await healthServer(Number.POSITIVE_INFINITY);
+    const controller = new AbortController();
+    try {
+      const pending = waitForHealth(server.url, null, 30_000, controller.signal);
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+    } finally {
+      await server.close();
+    }
+  });
 });

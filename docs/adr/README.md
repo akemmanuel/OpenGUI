@@ -19,6 +19,7 @@ Read these when code or docs disagree about **who owns what**.
 | [0013](./0013-multi-user-host-access-model.md)              | **Multi-user Host access**; user-default shares, session ACL, model planes, registration modes        |
 | [0014](./0014-flexible-users-access-and-model-offerings.md) | **Flexible users & model offerings** (accepted); backends, credentials, slugs, roles/UI               |
 | [0015](./0015-host-owned-mcp-tool-connections.md)           | **Host-owned MCP tools**; scoped runtimes, authorization, bounded discovery, progressive disclosure   |
+| [0016](./0016-effect-runtime.md)                            | **Effect 4 server runtime**; typed errors, schedules, scoped resources, layers, Promise boundaries    |
 
 Product glossary (no implementation detail): [`CONTEXT.md`](../../CONTEXT.md).
 

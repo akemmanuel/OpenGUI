@@ -16,6 +16,7 @@
     "@opengui/harness": "workspace:*",
     "@opengui/protocol": "workspace:*",
     "better-auth": "1.7.7",
+    "effect": "4.0.4",
     "hono": "^4.13.13",
     "nodemailer": "^10.1.0"
   },

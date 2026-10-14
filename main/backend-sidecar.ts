@@ -6,10 +6,8 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { setTimeout as delay } from "node:timers/promises";
 import type { App } from "electron";
-import { Effect } from "effect";
-import { runEffect, tryPromiseEffect } from "../lib/effect-runtime.ts";
+import { Effect, Schedule } from "effect";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_PROFILE_KEY = "desktop:backend-profile";
@@ -158,50 +156,52 @@ export function loadBackendProfile(
   return stored;
 }
 
-async function findAvailablePort() {
-  return await new Promise<number>((resolvePort, reject) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, SIDE_CAR_HOST, () => {
-      const address = server.address();
-      server.close(() => {
-        if (!address || typeof address === "string") {
-          reject(new Error("Failed to allocate backend port"));
-          return;
-        }
-        resolvePort(address.port);
-      });
-    });
+const allocatePort = Effect.callback<number, Error>((resume) => {
+  const server = createServer();
+  server.unref();
+  server.on("error", (error) => resume(Effect.fail(error)));
+  server.listen(0, SIDE_CAR_HOST, () => {
+    const address = server.address();
+    server.close(() =>
+      resume(
+        !address || typeof address === "string"
+          ? Effect.fail(new Error("Failed to allocate backend port"))
+          : Effect.succeed(address.port),
+      ),
+    );
   });
+  return Effect.sync(() => server.close());
+});
+
+export function findAvailablePort() {
+  return Effect.runPromise(allocatePort);
 }
 
-async function waitForHealth(
+/** Polls `/api/health` until it answers OK; fails after `timeoutMs`. */
+const healthy = (url: string, token: string | null, timeoutMs: number) => {
+  const headers = new Headers();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  const probe = Effect.tryPromise({
+    try: (signal) => fetch(`${url.replace(/\/+$/, "")}/api/health`, { headers, signal }),
+    catch: (error) => error,
+  }).pipe(Effect.filterOrFail((response) => response.ok));
+  return probe.pipe(
+    Effect.retry({ schedule: Schedule.spaced(HEALTH_POLL_INTERVAL_MS) }),
+    Effect.timeoutOrElse({
+      duration: timeoutMs,
+      orElse: () => Effect.fail(new Error(`Timed out waiting for backend health at ${url}`)),
+    }),
+    Effect.asVoid,
+  );
+};
+
+export function waitForHealth(
   url: string,
   token: string | null,
   timeoutMs = HEALTH_TIMEOUT_MS,
   signal?: AbortSignal,
 ) {
-  const deadline = Date.now() + timeoutMs;
-  const headers = new Headers();
-  if (token) headers.set("authorization", `Bearer ${token}`);
-  while (Date.now() < deadline) {
-    signal?.throwIfAborted();
-    try {
-      const response = await fetch(`${url.replace(/\/+$/, "")}/api/health`, {
-        headers,
-        signal,
-      });
-      if (response.ok) return;
-    } catch (error) {
-      if (signal?.aborted) throw error;
-    }
-    const remaining = deadline - Date.now();
-    if (remaining > 0) {
-      await delay(Math.min(HEALTH_POLL_INTERVAL_MS, remaining), undefined, { signal });
-    }
-  }
-  throw new Error(`Timed out waiting for backend health at ${url}`);
+  return Effect.runPromise(healthy(url, token, timeoutMs), { signal });
 }
 
 export function selectBackendEntrypoint(
@@ -249,31 +249,24 @@ function resolveBackendEntrypoint(app: App) {
   });
 }
 
-async function stopChild(childState: ManagedChildState | null) {
-  if (!childState?.child || childState.child.killed || childState.child.exitCode !== null) return;
-
+/** SIGTERM, then SIGKILL if the child has not exited within {@link STOP_TIMEOUT_MS}. */
+function stopChild(childState: ManagedChildState | null) {
+  if (!childState?.child || childState.child.killed || childState.child.exitCode !== null) {
+    return Promise.resolve();
+  }
   const child = childState.child;
   // Subscribe before sending the signal. Small children can exit before a lazy
   // Effect starts observing them, turning a clean stop into a false timeout.
   const exitPromise = once(child, "exit");
-  const waitForExit = tryPromiseEffect(() => exitPromise);
-
-  await runEffect(
-    Effect.gen(function* () {
-      child.kill("SIGTERM");
-      yield* waitForExit.pipe(
-        Effect.timeoutOrElse({
-          duration: STOP_TIMEOUT_MS,
-          orElse: () => Effect.fail(new Error("Timed out stopping backend child")),
-        }),
-        Effect.catch(() =>
-          Effect.gen(function* () {
-            child.kill("SIGKILL");
-            yield* waitForExit.pipe(Effect.catch(() => Effect.void));
-          }),
-        ),
-      );
-    }),
+  const exited = Effect.promise(() => exitPromise).pipe(Effect.ignore);
+  return Effect.runPromise(
+    Effect.sync(() => child.kill("SIGTERM")).pipe(
+      Effect.andThen(exited),
+      Effect.timeoutOrElse({
+        duration: STOP_TIMEOUT_MS,
+        orElse: () => Effect.sync(() => child.kill("SIGKILL")).pipe(Effect.andThen(exited)),
+      }),
+    ),
   );
 }
 
@@ -366,12 +359,20 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     childState = { child, config };
     healthController = new AbortController();
     try {
-      await Promise.race([
-        dependencies.waitForHealth(url, token, HEALTH_TIMEOUT_MS, healthController.signal),
-        once(child, "exit").then(([code, signal]) => {
-          throw new Error(`Backend sidecar exited before becoming healthy (${code ?? signal})`);
-        }),
-      ]);
+      const signal = healthController.signal;
+      // Whichever settles first wins; the loser is interrupted.
+      await Effect.runPromise(
+        Effect.raceFirst(
+          Effect.promise(() => dependencies.waitForHealth(url, token, HEALTH_TIMEOUT_MS, signal)),
+          Effect.promise(() => once(child, "exit")).pipe(
+            Effect.flatMap(([code, exitSignal]) =>
+              Effect.die(
+                new Error(`Backend sidecar exited before becoming healthy (${code ?? exitSignal})`),
+              ),
+            ),
+          ),
+        ),
+      );
       runtimeConfig = config;
       return config;
     } catch (error) {

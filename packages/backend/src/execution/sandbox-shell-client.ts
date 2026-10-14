@@ -1,7 +1,7 @@
 import { request as httpRequest, type ClientRequestArgs } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { ShellToolExecutor } from "@opengui/harness";
-import { setTimeout as delay } from "node:timers/promises";
+import { Duration, Effect, Schedule, Schema } from "effect";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const DEFAULT_BROKER_TIMEOUT_SECONDS = 30;
@@ -52,6 +52,24 @@ const SUMMARY_TIMEOUT =
 function failure(reason: SandboxBrokerFailureReason, summary: string): SandboxBrokerFailure {
   return { status: "error", reason, summary };
 }
+
+/** Typed broker fault; converted to a {@link SandboxBrokerFailure} tool output at the boundary. */
+export class SandboxBrokerError extends Schema.TaggedError<SandboxBrokerError>()(
+  "SandboxBrokerError",
+  {
+    reason: Schema.Literals([
+      "broker_unreachable",
+      "broker_timeout",
+      "broker_unauthorized",
+      "broker_busy",
+      "broker_rejected",
+    ]),
+    summary: Schema.String,
+  },
+) {}
+
+const brokerError = (reason: SandboxBrokerFailureReason, summary: string) =>
+  new SandboxBrokerError({ reason, summary });
 
 /** Internal: endpoint configuration faults never reach the network. */
 class BrokerConfigError extends Error {
@@ -110,77 +128,53 @@ function effectiveTimeoutSeconds(input: unknown): number {
   return Math.min(MAX_BROKER_TIMEOUT_SECONDS, timeout);
 }
 
-function post(
-  endpoint: string,
-  token: string | undefined,
-  input: unknown,
-  body: string,
-  signal: AbortSignal,
-  graceSeconds: number,
-): Promise<unknown> {
-  let transport: BrokerTransport;
-  try {
-    transport = parseBrokerEndpoint(endpoint);
-  } catch {
-    return Promise.resolve(failure("broker_rejected", SUMMARY_NOT_DISPATCHED));
-  }
-  return new Promise<unknown>((resolve, reject) => {
-    const deadlineMs = (effectiveTimeoutSeconds(input) + graceSeconds) * 1000;
-    let req: ReturnType<typeof httpRequest>;
+function statusError(status: number) {
+  return status === 429
+    ? brokerError("broker_busy", SUMMARY_BUSY)
+    : status === 401 || status === 403
+      ? brokerError("broker_unauthorized", SUMMARY_UNAUTHORIZED)
+      : status < 500
+        ? brokerError("broker_rejected", SUMMARY_REJECTED)
+        : brokerError("broker_unreachable", SUMMARY_UNREACHABLE);
+}
+
+/**
+ * One broker round trip. Interruption (cancellation or the wall-clock
+ * deadline) destroys the request, so no socket outlives the call.
+ */
+function sendRequest(transport: BrokerTransport, token: string | undefined, body: string) {
+  return Effect.callback<unknown, SandboxBrokerError>((resume) => {
     let settled = false;
-    let timedOut = false;
-    // Wall-clock deadline: socket inactivity timeouts alone let a drip-feed
-    // hang past the broker timeout. Cleared on every settlement path.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const resolveOnce = (value: unknown) => {
+    const succeed = (value: unknown) => {
       if (settled) return;
       settled = true;
-      if (timer !== undefined) clearTimeout(timer);
-      resolve(value);
+      resume(Effect.succeed(value));
     };
-    const rejectOnce = (error: unknown) => {
+    const fail = (error: SandboxBrokerError) => {
       if (settled) return;
       settled = true;
-      if (timer !== undefined) clearTimeout(timer);
-      reject(error);
+      resume(Effect.fail(error));
     };
+    const unreachable = () => fail(brokerError("broker_unreachable", SUMMARY_UNREACHABLE));
+    let req: ReturnType<typeof httpRequest>;
     try {
-      const headers: Record<string, string | number> = {
-        "content-type": "application/json",
-        "content-length": Buffer.byteLength(body),
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      };
       const options: ClientRequestArgs = {
         method: "POST",
-        headers,
-        signal,
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
         ...(transport.kind === "socket"
           ? { socketPath: transport.socketPath, path: transport.path }
-          : {
-              hostname: transport.hostname,
-              port: transport.port,
-              path: transport.path,
-            }),
+          : { hostname: transport.hostname, port: transport.port, path: transport.path }),
       };
       const impl = transport.kind !== "socket" && transport.secure ? httpsRequest : httpRequest;
       req = impl(options, (response) => {
         // Register stream handlers before every status/settlement branch.
-        response.on("error", () => {
-          if (signal.aborted || settled) return;
-          resolveOnce(
-            timedOut
-              ? failure("broker_timeout", SUMMARY_TIMEOUT)
-              : failure("broker_unreachable", SUMMARY_UNREACHABLE),
-          );
-        });
+        response.on("error", unreachable);
         response.on("close", () => {
-          if (!settled && !response.complete && !signal.aborted) {
-            resolveOnce(
-              timedOut
-                ? failure("broker_timeout", SUMMARY_TIMEOUT)
-                : failure("broker_unreachable", SUMMARY_UNREACHABLE),
-            );
-          }
+          if (!response.complete) unreachable();
         });
         if (settled) {
           response.destroy();
@@ -188,75 +182,70 @@ function post(
         }
         const status = response.statusCode ?? 500;
         if (status >= 400) {
-          resolveOnce(
-            status === 429
-              ? failure("broker_busy", SUMMARY_BUSY)
-              : status === 401 || status === 403
-                ? failure("broker_unauthorized", SUMMARY_UNAUTHORIZED)
-                : status < 500
-                  ? failure("broker_rejected", SUMMARY_REJECTED)
-                  : failure("broker_unreachable", SUMMARY_UNREACHABLE),
-          );
+          fail(statusError(status));
           // The error body is deliberately unused. Do not drain an unbounded
-          // stream after settling and clearing its wall-clock deadline.
+          // stream after settling.
           response.destroy();
           return;
         }
         const chunks: Buffer[] = [];
         let bytes = 0;
-        let oversized = false;
         response.on("data", (chunk: Buffer) => {
-          if (settled || oversized) return;
+          if (settled) return;
           bytes += chunk.length;
           if (bytes > MAX_RESPONSE_BYTES) {
-            oversized = true;
-            response.destroy();
             // The response is unusable and dispatch already happened, so
             // this is uncertainty, not a pre-execution rejection.
-            resolveOnce(failure("broker_unreachable", SUMMARY_UNREACHABLE));
+            unreachable();
+            response.destroy();
           } else chunks.push(chunk);
         });
         response.on("end", () => {
-          if (settled) return;
           try {
             // Ordinary 200 payloads (including nonzero command exits such as
             // docker exit 125) pass through untouched: only the broker may
             // classify execution faults, never this client.
-            resolveOnce(JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown);
+            succeed(JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown);
           } catch {
-            resolveOnce(failure("broker_unreachable", SUMMARY_UNREACHABLE));
+            unreachable();
           }
         });
       });
-    } catch {
-      resolveOnce(failure("broker_rejected", SUMMARY_NOT_DISPATCHED));
-      return;
-    }
-    timer = setTimeout(() => {
-      timedOut = true;
-      req.destroy();
-    }, deadlineMs);
-    req.on("error", (error) => {
-      // Cancellation keeps existing semantics: reject so the Harness aborts
-      // the Run instead of recording a failure output.
-      if (signal.aborted) {
-        rejectOnce(error);
-        return;
-      }
-      if (timedOut) {
-        resolveOnce(failure("broker_timeout", SUMMARY_TIMEOUT));
-        return;
-      }
-      resolveOnce(failure("broker_unreachable", SUMMARY_UNREACHABLE));
-    });
-    try {
+      req.on("error", unreachable);
       req.end(body);
     } catch {
-      resolveOnce(failure("broker_rejected", SUMMARY_NOT_DISPATCHED));
-      req.destroy();
+      fail(brokerError("broker_rejected", SUMMARY_NOT_DISPATCHED));
+      return;
     }
+    return Effect.sync(() => {
+      settled = true;
+      req.destroy();
+    });
   });
 }
+
+/**
+ * Executes one command. The wall-clock deadline also covers drip-fed
+ * responses that socket inactivity timeouts would let hang.
+ */
+const execute = Effect.fnUntraced(function* (
+  endpoint: string,
+  token: string | undefined,
+  input: unknown,
+  body: string,
+  graceSeconds: number,
+) {
+  const transport = yield* Effect.try({
+    try: () => parseBrokerEndpoint(endpoint),
+    catch: () => brokerError("broker_rejected", SUMMARY_NOT_DISPATCHED),
+  });
+  return yield* sendRequest(transport, token, body).pipe(
+    Effect.timeoutOrElse({
+      duration: Duration.seconds(effectiveTimeoutSeconds(input) + graceSeconds),
+      orElse: () => Effect.fail(brokerError("broker_timeout", SUMMARY_TIMEOUT)),
+    }),
+  );
+});
 
 export function createSandboxShellExecutor(
   endpoint: string,
@@ -267,7 +256,10 @@ export function createSandboxShellExecutor(
   const graceSeconds = options.timeoutGraceSeconds ?? BROKER_TIMEOUT_GRACE_SECONDS;
   if (!Number.isFinite(busyWaitMs) || busyWaitMs < 0 || busyWaitMs > 20_000)
     throw new Error("Invalid broker busy wait");
-  return async (context, input) => {
+  // Only a pre-execution 429 is safe to retry. Never replay a command after
+  // an uncertain transport failure or an ordinary nonzero command exit.
+  const busyRetry = Schedule.max([Schedule.spaced("250 millis"), Schedule.during(busyWaitMs)]);
+  return (context, input) => {
     const body = JSON.stringify({
       projectDirectory: context.projectDirectory,
       grants: context.executionPolicy.grants ?? [],
@@ -275,24 +267,16 @@ export function createSandboxShellExecutor(
       sessionId: context.sessionId,
       toolCallId: context.toolCallId,
     });
-    const deadline = Date.now() + busyWaitMs;
-    let result: unknown;
-    do {
-      result = await post(endpoint, token, input, body, context.signal, graceSeconds);
-      // Only a pre-execution 429 is safe to retry. Never replay a command after
-      // an uncertain transport failure or an ordinary nonzero command exit.
-      if (
-        !result ||
-        typeof result !== "object" ||
-        !("reason" in result) ||
-        result.reason !== "broker_busy" ||
-        Date.now() >= deadline
-      )
-        return result;
-      await delay(Math.min(250, Math.max(1, deadline - Date.now())), undefined, {
-        signal: context.signal,
-      });
-    } while (Date.now() < deadline);
-    return result;
+    // Failures become ordinary tool outputs; cancellation interrupts the
+    // request and rejects so the Harness aborts the Run.
+    return Effect.runPromise(
+      execute(endpoint, token, input, body, graceSeconds).pipe(
+        Effect.retry({ while: (error) => error.reason === "broker_busy", schedule: busyRetry }),
+        Effect.catchTag("SandboxBrokerError", (error) =>
+          Effect.succeed(failure(error.reason, error.summary)),
+        ),
+      ),
+      { signal: context.signal },
+    );
   };
 }

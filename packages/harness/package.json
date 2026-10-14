@@ -21,6 +21,7 @@
   "dependencies": {
     "@earendil-works/pi-ai": "1.2.0",
     "@silvia-odwyer/photon-node": "0.3.4",
+    "effect": "4.0.4",
     "kysely": "0.29.6",
     "kysely-node-native-sqlite": "1.1.0",
     "ws": "8.22.0"
