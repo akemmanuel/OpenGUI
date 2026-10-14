@@ -1,6 +1,6 @@
 # OpenGUI Context
 
-OpenGUI is a multi-platform chat interface for long-running, general-purpose agent work against concrete project directories. One first-party OpenGUI Harness performs the work; Desktop runs it locally, while Web and Mobile connect to an OpenGUI Host.
+OpenGUI is a multi-platform chat interface for long-running, general-purpose agent work against concrete project directories. One first-party OpenGUI Harness performs the work; Desktop runs it locally, while Web connects to an OpenGUI Host.
 
 The product architecture follows [ADR 0010](docs/adr/0010-first-party-opengui-harness.md). [`docs/architecture.md`](docs/architecture.md) maps the implementation; [`first-party-harness-replacement.md`](docs/plans/first-party-harness-replacement.md) records the replacement plan and remaining acceptance work.
 
@@ -31,7 +31,7 @@ The React application that presents Workspaces, Projects, Sessions, chat, tool c
 _Avoid_: Harness UI, stateless renderer
 
 **Shell**:
-The platform scaffold that runs the Frontend and supplies platform integration. Desktop, Web, and Mobile are Shells, not separate agent implementations.
+The platform scaffold that runs the Frontend and supplies platform integration. Desktop and Web are Shells, not separate agent implementations.
 _Avoid_: Harness, Host
 
 **Desktop Shell**:
@@ -42,16 +42,12 @@ _Avoid_: Desktop Harness, Electron agent
 The browser Shell. It connects to a Remote Host and never claims browser-local filesystem or shell execution.
 _Avoid_: Web Harness, browser agent runtime
 
-**Mobile Shell**:
-The iOS/Android Shell. It connects to a Remote Host and does not run a reduced phone-local Harness.
-_Avoid_: Mobile Harness, local mobile shell mode
-
 **Local Host**:
 The Host started directly on the user's computer by the Desktop Shell. Its Harness runs with that user's operating-system permissions and environment.
 _Avoid_: Local Workspace, localhost bridge, desktop CLI
 
 **Remote Host**:
-A self-hosted or OpenGUI-hosted Host reached over an authenticated connection by Desktop, Web, or Mobile Frontends.
+A self-hosted or OpenGUI-hosted Host reached over an authenticated connection by Desktop or Web Frontends.
 _Avoid_: Remote Harness, Additional Harness
 
 **OpenGUI-hosted Host**:

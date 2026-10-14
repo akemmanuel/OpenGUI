@@ -115,41 +115,6 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  build-android:
-    needs: preflight
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: 24
-          cache: pnpm
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
-        with:
-          distribution: temurin
-          java-version: 21
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: frontend-build
-      - run: pnpm exec cap sync android
-      - run: cd android && ./gradlew assembleRelease
-        env:
-          OPENGUI_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
-      - name: Collect APK
-        shell: bash
-        run: |
-          version='${{ github.event_name == 'push' && github.ref_name || inputs.version }}'
-          mkdir -p release-android
-          cp android/app/build/outputs/apk/release/*.apk "release-android/OpenGUI-${version#v}-android-release.apk"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: android
-          path: release-android/*.apk
-          retention-days: 30
-          if-no-files-found: error
-
   build-docker:
     needs: preflight
     strategy:
@@ -189,7 +154,7 @@ jobs:
           exit 1
 
   prepare-candidate:
-    needs: [build-desktop, build-android]
+    needs: [build-desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -203,10 +168,6 @@ jobs:
         with:
           pattern: desktop-*
           path: artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: android
-          path: artifacts/android
       - name: Merge macOS updater metadata
         run: |
           node scripts/merge-latest-mac.mjs \
@@ -231,7 +192,7 @@ jobs:
 
   publish-docker:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-desktop, build-android, build-docker, prepare-candidate]
+    needs: [build-desktop, build-docker, prepare-candidate]
     runs-on: ubuntu-latest
     environment: release
     permissions:

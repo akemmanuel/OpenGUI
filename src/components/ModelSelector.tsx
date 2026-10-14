@@ -22,8 +22,6 @@ import { useActions, useModelState } from "@/hooks/use-agent-state";
 import { MAX_RECENT_MODELS, STORAGE_KEYS } from "@/lib/constants";
 import { storageParsed, storageSetJSON } from "@/lib/persistence/storage";
 import { cn } from "@/lib/utils";
-import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
-import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 
 type ModelOption = {
   value: string;
@@ -227,15 +225,6 @@ export function ModelSelector() {
     });
     return () => cancelAnimationFrame(frame);
   }, [activeValue, open]);
-
-  useRegisterMobileBackHandler(
-    MOBILE_BACK_PRIORITY.MODEL_SELECTOR,
-    open,
-    useCallback(() => {
-      close();
-      return true;
-    }, [close]),
-  );
 
   const selectModel = useCallback(
     (model: ModelOption) => {

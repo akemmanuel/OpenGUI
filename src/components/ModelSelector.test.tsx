@@ -45,9 +45,6 @@ vi.mock("@/hooks/use-agent-state", () => ({
     selectedModel: fixture.selectedModel,
   }),
 }));
-vi.mock("@/shell/useRegisterMobileBackHandler", () => ({
-  useRegisterMobileBackHandler: vi.fn(),
-}));
 
 import { ModelSelector } from "./ModelSelector";
 

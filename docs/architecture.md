@@ -7,9 +7,8 @@ language is in [`CONTEXT.md`](../CONTEXT.md); accepted decisions are indexed in
 ## Runtime shape
 
 ```text
-Desktop Shell ─┐
-Web Shell ─────┼─ OpenGUI Frontend ── authenticated Host API/events ── OpenGUI Host
-Mobile Shell ──┘                                                   ├─ identity + authorization
+Desktop Shell ─┬─ OpenGUI Frontend ── authenticated Host API/events ── OpenGUI Host
+Web Shell ─────┘                                                   ├─ identity + authorization
                                                                    ├─ model/provider credentials
                                                                    ├─ MCP connections
                                                                    └─ first-party Harness
@@ -18,13 +17,13 @@ Mobile Shell ──┘                                                   ├─ 
                                                                       └─ built-in + MCP tools
 ```
 
-| Layer              | Owns                                                                                                                   | Main paths                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| **Shells**         | Electron lifecycle/native integration, browser hosting, and Capacitor packaging                                        | `main.ts`, `main/`, `preload.ts`, `server/`, `android/`, `src/shell/` |
-| **Frontend**       | Workspaces (Host connections), Projects in the sidebar, presentation state, PromptBox, transcript and settings UI      | `src/components/`, `src/features/`, `src/hooks/`, `src/lib/`          |
-| **Host**           | Product routes and events, Session lifecycle, queues, identity/authz, settings/secrets, model access, MCP, path policy | `packages/backend/src/`                                               |
-| **Harness**        | Agent loop, durable Session entries, context/compaction, Skills, model transports, and tool execution                  | `packages/harness/src/`                                               |
-| **Wire contracts** | Shared provider catalogs and protocol primitives; frontend Host contracts remain in the app until extracted            | `packages/protocol/src/`, `src/protocol/`                             |
+| Layer              | Owns                                                                                                                   | Main paths                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Shells**         | Electron lifecycle/native integration and browser hosting                                                              | `main.ts`, `main/`, `preload.ts`, `server/`, `src/shell/`    |
+| **Frontend**       | Workspaces (Host connections), Projects in the sidebar, presentation state, PromptBox, transcript and settings UI      | `src/components/`, `src/features/`, `src/hooks/`, `src/lib/` |
+| **Host**           | Product routes and events, Session lifecycle, queues, identity/authz, settings/secrets, model access, MCP, path policy | `packages/backend/src/`                                      |
+| **Harness**        | Agent loop, durable Session entries, context/compaction, Skills, model transports, and tool execution                  | `packages/harness/src/`                                      |
+| **Wire contracts** | Shared provider catalogs and protocol primitives; frontend Host contracts remain in the app until extracted            | `packages/protocol/src/`, `src/protocol/`                    |
 
 There is no active external-Harness Runtime, bridge registry, or coding-agent CLI adapter. The
 package name `@opengui/backend` remains for compatibility, but product and architecture language
@@ -37,8 +36,8 @@ migration states, not the current implementation ([ADR 0010](./adr/0010-first-pa
   execution; the Host owns access, orchestration, settings, and the client-facing API.
 - Frontend code talks through `OpenGuiHostClient` in `src/protocol/`. It does not import the Harness,
   MCP SDK, identity database, or model transport implementations.
-- Desktop starts a private loopback Host sidecar and uses Desktop Local identity bypass. Web and
-  Mobile connect to an authenticated Remote Host; Mobile never executes a phone-local Harness.
+- Desktop starts a private loopback Host sidecar and uses Desktop Local identity bypass. Web
+  connects to an authenticated Remote Host and never executes a browser-local Harness.
 - Remote Hosts are share-only by default. Identity, roles, Session ACLs, model entitlements, and
   path grants live under `packages/backend/src/identity/` and `path-policy/`. Path grants mediate
   product/file surfaces; they are not an operating-system shell sandbox.

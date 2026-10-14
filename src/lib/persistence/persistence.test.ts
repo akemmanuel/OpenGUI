@@ -5,11 +5,9 @@ import { getProjectMetaMap, persistProjectMetaMap } from "./project";
 import { getSessionMetaMap, persistSessionMetaMap } from "./session";
 import {
   getActiveWorkspace,
-  getStoredWorkspaces,
   initializeBackendWorkspaceState,
   LOCAL_WORKSPACE_ID,
   normalizeWorkspace,
-  persistWorkspaces,
 } from "./workspace";
 import type { Workspace } from "@/types/workspace";
 
@@ -19,13 +17,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function shell(kind: "desktop" | "mobile" | "web") {
+function shell(kind: "desktop" | "web") {
   vi.stubGlobal("navigator", {
     userAgent: kind === "desktop" ? "OpenGUI Electron/43.0" : "Mozilla/5.0",
   });
   vi.stubGlobal("window", {
     location: { origin: "https://host.example" },
-    Capacitor: { isNativePlatform: () => kind === "mobile" },
     __OPENGUI_CONFIG__: {},
     dispatchEvent: vi.fn(() => true),
   });
@@ -148,12 +145,5 @@ describe("active Workspace persistence", () => {
     expect(first).toEqual(concurrent);
     expect(first[0]?.settings?.defaultChatDirectory).toBe("/work/default");
     expect(localStorage.getItem("opengui:workspaceMigrationV1")).toBe("done");
-  });
-
-  test("persists only remote Workspaces on mobile", () => {
-    shell("mobile");
-    persistWorkspaces([workspace(LOCAL_WORKSPACE_ID), workspace("remote")]);
-
-    expect(getStoredWorkspaces().map(({ id }) => id)).toEqual(["remote"]);
   });
 });

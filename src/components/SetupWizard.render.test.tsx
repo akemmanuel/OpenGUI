@@ -12,7 +12,6 @@ const fixture = vi.hoisted(() => ({
   upsert: vi.fn().mockResolvedValue(undefined),
   refresh: vi.fn().mockResolvedValue(undefined),
   browse: vi.fn().mockResolvedValue("/srv/chosen"),
-  registerBack: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -30,9 +29,6 @@ vi.mock("@/shell/provider", () => ({
 }));
 vi.mock("@/components/ProjectPathDialog", () => ({
   requestProjectPath: fixture.browse,
-}));
-vi.mock("@/shell/useRegisterMobileBackHandler", () => ({
-  useRegisterMobileBackHandler: fixture.registerBack,
 }));
 
 import { SetupWizard } from "./SetupWizard";
@@ -77,15 +73,5 @@ describe("SetupWizard journey", () => {
     expect(continueButton.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("1 / 3")).toBeTruthy();
     expect(fixture.upsert).not.toHaveBeenCalled();
-  });
-
-  test("mobile back navigates steps before dismissing the wizard", async () => {
-    const onComplete = vi.fn();
-    render(<SetupWizard onComplete={onComplete} />);
-    await userEvent.click(screen.getByRole("button", { name: "setupWizard.skip" }));
-    const handler = fixture.registerBack.mock.calls.at(-1)?.[2] as () => boolean;
-    expect(handler()).toBe(true);
-    await waitFor(() => expect(screen.getByText("1 / 3")).toBeTruthy());
-    expect(onComplete).not.toHaveBeenCalled();
   });
 });

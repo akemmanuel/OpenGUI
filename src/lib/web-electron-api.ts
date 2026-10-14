@@ -83,16 +83,9 @@ function mergeSettingsSync(entries: Record<string, string>) {
   return true;
 }
 
-function isCapacitorNativeRuntime() {
-  const capacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })
-    .Capacitor;
-  return capacitor?.isNativePlatform?.() === true;
-}
-
 export function installWebElectronAPI() {
   if (window.electronAPI) return;
   if (location.protocol === "file:") return;
-  if (isCapacitorNativeRuntime()) return;
 
   const api = {
     kind: "web",

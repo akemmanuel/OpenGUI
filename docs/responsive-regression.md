@@ -34,4 +34,4 @@ Do not add a global `overflow-x: hidden` rule. Fix the component's sizing or wra
 
 The deterministic CI gate runs Chromium. `agent-browser` cannot independently override the CDP pointer media feature, so the test sets `data-responsive-coarse` as an explicit equivalent while production CSS also uses `(pointer: coarse)`. Root font scaling is used instead of browser chrome zoom. Screenshots are captured only on failure; pixel snapshots are intentionally omitted because font rasterization is not stable across CI images.
 
-Before release, test a real iPhone/Safari and Android/Chrome for WebKit layout, dynamic browser chrome, virtual keyboards, notches/home indicators, native Capacitor WebViews, OS font scaling, and real touch hit behavior. Those native-only behaviors cannot be certified by this Chromium DOM gate.
+Before release, test a real iPhone/Safari and Android/Chrome for WebKit layout, dynamic browser chrome, virtual keyboards, notches/home indicators, OS font scaling, and real touch hit behavior. Those native-only behaviors cannot be certified by this Chromium DOM gate.

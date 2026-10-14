@@ -9,7 +9,6 @@ const fixture = vi.hoisted(() => ({
   sendPrompt: vi.fn(),
   abortSession: vi.fn(),
   startNewChat: vi.fn(),
-  registerBack: vi.fn(),
   dismissSetup: vi.fn(),
 }));
 
@@ -107,9 +106,6 @@ vi.mock("@/features/session/useChatSessionSurface", () => ({
     showPromptBox: true,
   }),
 }));
-vi.mock("@/shell/useRegisterMobileBackHandler", () => ({
-  useRegisterMobileBackHandler: fixture.registerBack,
-}));
 
 import { AppContent } from "./App";
 
@@ -134,7 +130,7 @@ describe("App shell orchestration", () => {
     expect(promptFooter?.classList.contains("z-[1]")).toBe(true);
   });
 
-  test("switches settings through sidebar, browser event, back action, and mobile registration", async () => {
+  test("switches settings through sidebar, browser event, and back action", async () => {
     render(<AppContent onDismissSetup={fixture.dismissSetup} />);
     await userEvent.click(screen.getByText("open settings"));
     expect(await screen.findByText("settings view")).toBeTruthy();
@@ -143,7 +139,6 @@ describe("App shell orchestration", () => {
     expect(screen.getByText("transcript")).toBeTruthy();
     fireEvent(window, new Event("opengui:open-settings"));
     expect(screen.getByText("settings view")).toBeTruthy();
-    expect(fixture.registerBack).toHaveBeenCalled();
   });
 
   test("delegates prompt send and abort for runnable Sessions", async () => {

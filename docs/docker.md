@@ -95,5 +95,5 @@ The 0.6 migration does not import old external-Harness Sessions; see [`CHANGELOG
 OPENGUI_SERVER_MODE=api-only docker compose up -d
 ```
 
-Non-API routes return 404 while `/api/health` remains public. Connect a Desktop or Mobile
+Non-API routes return 404 while `/api/health` remains public. Connect a Desktop
 Workspace to the API origin and authenticate with a Host Account or named Host API key.

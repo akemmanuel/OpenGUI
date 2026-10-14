@@ -1,8 +1,6 @@
 import * as React from "react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
-import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
-import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { persistSidebarOpenState } from "./sidebar-persistence";
 
 export const SIDEBAR_KEYBOARD_SHORTCUT = "b";
@@ -11,18 +9,6 @@ export function isSidebarKeyboardShortcut(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">,
 ): boolean {
   return event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey);
-}
-
-function useSidebarMobileBackNavigation(
-  openMobile: boolean,
-  setOpenMobile: React.Dispatch<React.SetStateAction<boolean>>,
-) {
-  const closeMobileSidebar = React.useCallback(() => {
-    setOpenMobile(false);
-    return true;
-  }, [setOpenMobile]);
-
-  useRegisterMobileBackHandler(MOBILE_BACK_PRIORITY.SIDEBAR, openMobile, closeMobileSidebar);
 }
 
 export function useSidebarController({
@@ -63,8 +49,6 @@ export function useSidebarController({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSidebar]);
-
-  useSidebarMobileBackNavigation(openMobile, setOpenMobile);
 
   return {
     isMobile,

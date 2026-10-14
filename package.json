@@ -56,16 +56,10 @@
     "dist:mac": "vp build && electron-builder --mac dmg",
     "dist:mac:arm64": "vp build && electron-builder --mac dmg --arm64",
     "dist:win": "vp build && electron-builder --win nsis",
-    "dist:win:portable": "vp build && electron-builder --win portable",
-    "mobile:sync": "vp build && cap sync android",
-    "mobile:open": "cap open android",
-    "mobile:build:debug": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleDebug'",
-    "mobile:build:release": "vp build && cap sync android && bash -lc 'cd android && ./gradlew assembleRelease'"
+    "dist:win:portable": "vp build && electron-builder --win portable"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
-    "@capacitor/app": "^8.1.2",
-    "@capacitor/core": "^8.5.3",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -95,8 +89,6 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.5.3",
-    "@capacitor/cli": "^8.5.3",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",

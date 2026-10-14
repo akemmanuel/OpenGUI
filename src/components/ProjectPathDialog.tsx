@@ -1,7 +1,5 @@
 import { ChevronLeft, Folder, FolderOpen, Pencil, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
-import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { notifyUnknownError } from "@/lib/notify";
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
@@ -170,19 +168,6 @@ export function ProjectPathDialog() {
     setServerListing(null);
     setOpen(false);
   };
-
-  const handleMobileBackProjectPath = useCallback(() => {
-    resolverRef.current?.(null);
-    resolverRef.current = null;
-    setServerListing(null);
-    setOpen(false);
-    return true;
-  }, []);
-  useRegisterMobileBackHandler(
-    MOBILE_BACK_PRIORITY.PROJECT_PATH,
-    open,
-    handleMobileBackProjectPath,
-  );
 
   const selectServerDirectory = (path: string) => {
     setFolderSearch("");

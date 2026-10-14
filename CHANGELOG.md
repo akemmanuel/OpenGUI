@@ -66,6 +66,8 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 
 ### Housekeeping
 
+- Removed the Android app. It only wrapped the web app, which works in mobile browsers, so
+  phones should use the Web app instead. Releases no longer include an APK.
 - German and Spanish translations load on demand, cutting the initial download by about 110 KB.
 - Fresh Hosts no longer log a false "Database schema mismatch" error on first start.
 - Updated all dependencies to their latest releases, including pi-ai 1.2 (more provider errors

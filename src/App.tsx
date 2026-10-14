@@ -33,9 +33,6 @@ import { STORAGE_KEYS } from "@/lib/constants";
 import { storageGet, storageSet } from "@/lib/persistence/storage";
 import { getDesktopShellClient } from "@/runtime/clients";
 import { DesktopShellProvider } from "@/shell/provider";
-import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
-import { useMobileBackButton } from "@/shell/useMobileBackButton";
-import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
 import { notifyError, notifyErrorDeduped, resetNotifyErrorDedup } from "@/lib/notify";
 import { normalizeTerminalOutput } from "@/lib/terminal-output";
 import { useAppKeyboardShortcuts } from "@/features/app-shell/useAppKeyboardShortcuts";
@@ -182,16 +179,6 @@ export function AppContent({
 
   const updateCheck = useUpdateCheck();
 
-  const handleMobileBackFromSettings = useCallback(() => {
-    setActiveView("chat");
-    return true;
-  }, []);
-  useRegisterMobileBackHandler(
-    MOBILE_BACK_PRIORITY.SETTINGS_VIEW,
-    activeView === "settings",
-    handleMobileBackFromSettings,
-  );
-
   useEffect(() => {
     const openSettings = () => {
       onDismissSetup?.();
@@ -320,8 +307,6 @@ export function App() {
     storageSet(STORAGE_KEYS.SETUP_COMPLETE, "true");
     setShowWizard(false);
   }, []);
-
-  useMobileBackButton();
 
   return (
     <DesktopShellProvider>

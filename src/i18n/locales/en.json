@@ -93,9 +93,6 @@
     "modelCount_one": "{{count}} model",
     "modelCount_other": "{{count}} models"
   },
-  "mobile": {
-    "backAgainToExit": "Press back again to exit"
-  },
   "windowControls": {
     "minimize": "Minimize window",
     "maximize": "Maximize window",

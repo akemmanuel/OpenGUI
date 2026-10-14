@@ -14,7 +14,6 @@ beforeAll(polyfillLocalStorage);
 
 afterEach(() => {
   delete window.electronAPI;
-  delete window.Capacitor;
   localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -44,16 +43,11 @@ describe("installWebElectronAPI", () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
-  test("does not replace desktop, file, or native-mobile bridges", () => {
+  test("does not replace the desktop bridge", () => {
     const existing = { kind: "desktop" } as unknown as typeof window.electronAPI;
     window.electronAPI = existing;
     installWebElectronAPI();
     expect(window.electronAPI).toBe(existing);
-
-    delete window.electronAPI;
-    window.Capacitor = { isNativePlatform: () => true };
-    installWebElectronAPI();
-    expect(window.electronAPI).toBeUndefined();
   });
 
   test("surfaces rejected RPC responses through the public method", async () => {

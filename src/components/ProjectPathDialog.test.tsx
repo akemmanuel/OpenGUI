@@ -40,9 +40,6 @@ vi.mock("@/lib/notify", () => ({
 vi.mock("@/shell/provider", () => ({
   useDesktopShell: () => ({ dialog: { openDirectory: fixture.openDirectory } }),
 }));
-vi.mock("@/shell/useRegisterMobileBackHandler", () => ({
-  useRegisterMobileBackHandler: vi.fn(),
-}));
 vi.mock("@/hooks/use-agent-state", () => ({
   useWorkspaceState: () => ({
     activeWorkspace: fixture.workspace,

@@ -13,7 +13,6 @@ afterEach(() => {
 function browser(options: {
   userAgent?: string;
   origin?: string;
-  nativeMobile?: boolean;
   config?: Record<string, string>;
 }) {
   vi.stubGlobal("navigator", {
@@ -22,9 +21,6 @@ function browser(options: {
   });
   vi.stubGlobal("window", {
     location: { origin: options.origin ?? "https://app.example" },
-    Capacitor: options.nativeMobile
-      ? { isNativePlatform: () => true }
-      : { isNativePlatform: () => false },
     __OPENGUI_CONFIG__: options.config,
   });
 }
@@ -37,17 +33,6 @@ describe("Shell workspace policy", () => {
       shellKind: "desktop",
       supportsMultipleWorkspaces: true,
       localWorkspaceMode: "desktop-local",
-      configuredWebWorkspace: null,
-    });
-  });
-
-  test("does not claim a device-local Host on native mobile", () => {
-    browser({ nativeMobile: true });
-
-    expect(getShellWorkspacePolicy()).toEqual({
-      shellKind: "mobile",
-      supportsMultipleWorkspaces: true,
-      localWorkspaceMode: "none",
       configuredWebWorkspace: null,
     });
   });

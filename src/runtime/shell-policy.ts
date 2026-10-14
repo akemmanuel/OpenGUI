@@ -1,11 +1,11 @@
 import { DEFAULT_SERVER_URL } from "@/lib/constants";
 
-export type ShellKind = "desktop" | "mobile" | "web";
+export type ShellKind = "desktop" | "web";
 
 export interface ShellWorkspacePolicy {
   shellKind: ShellKind;
   supportsMultipleWorkspaces: boolean;
-  localWorkspaceMode: "desktop-local" | "web-local" | "none";
+  localWorkspaceMode: "desktop-local" | "web-local";
   configuredWebWorkspace: {
     baseUrl: string;
     name?: string;
@@ -21,13 +21,6 @@ interface RuntimeConfig {
 
 function isElectronRuntime() {
   return typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
-}
-
-function isCapacitorNativeRuntime() {
-  if (typeof window === "undefined") return false;
-  const capacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })
-    .Capacitor;
-  return capacitor?.isNativePlatform?.() === true;
 }
 
 function getRuntimeConfig(): RuntimeConfig {
@@ -67,7 +60,6 @@ function getConfiguredWebWorkspaceName(baseUrl: string) {
 
 export function getShellKind(): ShellKind {
   if (isElectronRuntime()) return "desktop";
-  if (isCapacitorNativeRuntime()) return "mobile";
   return "web";
 }
 
@@ -78,14 +70,6 @@ export function getShellWorkspacePolicy(): ShellWorkspacePolicy {
       shellKind,
       supportsMultipleWorkspaces: true,
       localWorkspaceMode: "desktop-local",
-      configuredWebWorkspace: null,
-    };
-  }
-  if (shellKind === "mobile") {
-    return {
-      shellKind,
-      supportsMultipleWorkspaces: true,
-      localWorkspaceMode: "none",
       configuredWebWorkspace: null,
     };
   }

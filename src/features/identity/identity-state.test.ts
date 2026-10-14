@@ -18,7 +18,6 @@ describe("identity gate state", () => {
     expect(shouldBypassIdentity("desktop", true)).toBe(true);
     expect(shouldBypassIdentity("desktop", false)).toBe(false);
     expect(shouldBypassIdentity("web", true)).toBe(false);
-    expect(shouldBypassIdentity("mobile", true)).toBe(false);
   });
 
   it("routes an empty remote Host to setup", () => {

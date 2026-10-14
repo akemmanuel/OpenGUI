@@ -1,3 +1,4 @@
+import type { ShellKind } from "@/runtime/shell-policy";
 import type { HostIdentityHealth, IdentityActor } from "./identity-client";
 
 export function ownerSettingsVisibility(actor: IdentityActor | null, localBypass: boolean) {
@@ -22,7 +23,7 @@ export type IdentityGateAction =
   | { type: "invalid-session"; health: HostIdentityHealth }
   | { type: "failed"; message: string };
 
-export function shouldBypassIdentity(shellKind: "desktop" | "mobile" | "web", isLocal: boolean) {
+export function shouldBypassIdentity(shellKind: ShellKind, isLocal: boolean) {
   return shellKind === "desktop" && isLocal;
 }
 

@@ -27,9 +27,6 @@ function preventDocumentPinchZoom() {
 preventDocumentPinchZoom();
 installWebElectronAPI();
 getDesktopShellClient();
-if (window.Capacitor?.isNativePlatform?.() === true) {
-  document.documentElement.dataset.shell = "mobile";
-}
 applyStoredAppearance();
 
 const elem = document.getElementById("root");

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-14T14:33:01.864Z",
+  "generatedAt": "2026-10-14T19:25:18.325Z",
   "scope": {
-    "firstPartyExecutableFiles": 351,
-    "testFiles": 246
+    "firstPartyExecutableFiles": 346,
+    "testFiles": 244
   },
   "caveats": [
     "Static imports identify direct and higher-level reachability, not assertion quality.",
@@ -7776,46 +7776,6 @@
       }
     },
     {
-      "path": "scripts/audit-waydroid-opengui.mjs",
-      "exports": [],
-      "routes": [],
-      "stateTransitions": [
-        {
-          "symbol": "operation:delete",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:set",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "type:error",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "type:page",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "type:rejection",
-          "mentionedByTests": []
-        }
-      ],
-      "tests": {
-        "direct": [],
-        "higherLevel": []
-      },
-      "hasBehaviorNamedTest": false,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
       "path": "scripts/browser-acceptance-multi-user.ts",
       "exports": [],
       "routes": [],
@@ -8124,42 +8084,6 @@
         },
         {
           "symbol": "type:user_message",
-          "mentionedByTests": []
-        }
-      ],
-      "tests": {
-        "direct": [],
-        "higherLevel": []
-      },
-      "hasBehaviorNamedTest": false,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
-      "path": "scripts/inspect-waydroid-webview.mjs",
-      "exports": [],
-      "routes": [],
-      "stateTransitions": [
-        {
-          "symbol": "operation:delete",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:set",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setWebContentsDebuggingEnabled",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "type:page",
           "mentionedByTests": []
         }
       ],
@@ -18558,8 +18482,7 @@
             "src/components/ProjectPathDialog.test.tsx",
             "src/components/SetupWizard.render.test.tsx",
             "src/features/profile/PreferenceControls.render.test.tsx",
-            "src/features/profile/ProfilePanel.render.test.tsx",
-            "src/shell/useMobileBackButton.test.tsx"
+            "src/features/profile/ProfilePanel.render.test.tsx"
           ]
         },
         {
@@ -18599,11 +18522,10 @@
           "src/components/SetupWizard.render.test.tsx",
           "src/components/SetupWizard.test.ts",
           "src/features/profile/PreferenceControls.render.test.tsx",
-          "src/features/profile/ProfilePanel.render.test.tsx",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -18878,12 +18800,12 @@
           "src/components/sidebar/use-sidebar-model.test.ts",
           "src/components/SidebarItemMenus.test.tsx",
           "src/components/TitleBar.test.tsx",
-          "src/components/ui/sidebar-state.test.ts",
           "src/features/app-shell/useAppKeyboardShortcuts.test.tsx",
           "src/features/host-provider/host-actions.test.ts",
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/identity/AccountSection.test.tsx",
+          "src/features/identity/identity-state.test.ts",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
@@ -18904,8 +18826,7 @@
           "src/i18n/document-language.test.ts",
           "src/lib/__tests__/sidebar-pins.test.ts",
           "src/lib/web-electron-api.test.ts",
-          "src/runtime/shell-policy.test.ts",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/runtime/shell-policy.test.ts"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -19989,8 +19910,7 @@
           "src/lib/__tests__/session-drafts.test.ts",
           "src/lib/__tests__/sidebar-collapsed.test.ts",
           "src/lib/__tests__/sidebar-pins.test.ts",
-          "src/lib/persistence/persistence.test.ts",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/lib/persistence/persistence.test.ts"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -20662,6 +20582,10 @@
             "src/protocol/host-transcript.stress.test.ts",
             "src/protocol/host-transcript.test.ts"
           ]
+        },
+        {
+          "symbol": "rehydrateHostTranscriptStream",
+          "mentionedByTests": ["src/protocol/host-transcript.test.ts"]
         }
       ],
       "routes": [],
@@ -20860,8 +20784,7 @@
           "src/features/profile/PreferenceControls.render.test.tsx",
           "src/features/profile/ProfilePanel.render.test.tsx",
           "src/hooks/use-update-check.test.tsx",
-          "src/i18n/document-language.test.ts",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/i18n/document-language.test.ts"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -20943,8 +20866,7 @@
           "src/lib/__tests__/session-drafts.test.ts",
           "src/lib/__tests__/sidebar-collapsed.test.ts",
           "src/lib/__tests__/sidebar-pins.test.ts",
-          "src/lib/persistence/persistence.test.ts",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/lib/persistence/persistence.test.ts"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -20958,7 +20880,7 @@
       "exports": [
         {
           "symbol": "getShellKind",
-          "mentionedByTests": ["src/shell/useMobileBackButton.test.tsx"]
+          "mentionedByTests": []
         },
         {
           "symbol": "getShellWorkspacePolicy",
@@ -20997,17 +20919,16 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx",
           "src/components/sidebar/use-sidebar-model.test.ts",
           "src/components/SidebarItemMenus.test.tsx",
           "src/components/TitleBar.test.tsx",
-          "src/components/ui/sidebar-state.test.ts",
           "src/features/app-shell/useAppKeyboardShortcuts.test.tsx",
           "src/features/host-provider/host-actions.test.ts",
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
           "src/features/identity/AccountSection.test.tsx",
+          "src/features/identity/identity-state.test.ts",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
@@ -21023,8 +20944,7 @@
           "src/hooks/use-agent-state.test.tsx",
           "src/hooks/use-session-skills.test.tsx",
           "src/lib/persistence/persistence.test.ts",
-          "src/lib/web-electron-api.test.ts",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/lib/web-electron-api.test.ts"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -21105,60 +21025,7 @@
           "src/features/profile/PreferenceControls.render.test.tsx",
           "src/features/profile/ProfilePanel.render.test.tsx",
           "src/hooks/use-update-check.test.tsx",
-          "src/i18n/document-language.test.ts",
-          "src/shell/useMobileBackButton.test.tsx"
-        ]
-      },
-      "hasBehaviorNamedTest": true,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
-      "path": "src/shell/mobile-back-handler.ts",
-      "exports": [
-        {
-          "symbol": "dismissTopOverlayViaEscape",
-          "mentionedByTests": ["src/shell/mobile-back-handler.test.ts"]
-        },
-        {
-          "symbol": "MOBILE_BACK_PRIORITY",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "registerMobileBackHandler",
-          "mentionedByTests": ["src/shell/mobile-back-handler.test.ts"]
-        },
-        {
-          "symbol": "runMobileBackHandlers",
-          "mentionedByTests": ["src/shell/mobile-back-handler.test.ts"]
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [
-        {
-          "symbol": "operation:dispatchEvent",
-          "mentionedByTests": []
-        }
-      ],
-      "tests": {
-        "direct": ["src/shell/mobile-back-handler.test.ts"],
-        "higherLevel": [
-          "src/App.render.test.tsx",
-          "src/components/AppSidebar.test.tsx",
-          "src/components/ModelSelector.test.tsx",
-          "src/components/ProjectPathDialog.test.tsx",
-          "src/components/PromptBox.test.tsx",
-          "src/components/SetupWizard.render.test.tsx",
-          "src/components/SetupWizard.test.ts",
-          "src/components/sidebar/ProjectEntry.test.tsx",
-          "src/components/sidebar/SessionRow.behavior.test.tsx",
-          "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx",
-          "src/components/ui/sidebar-state.test.ts",
-          "src/features/profile/ProfilePanel.render.test.tsx",
-          "src/shell/useMobileBackButton.test.tsx"
+          "src/i18n/document-language.test.ts"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -21198,78 +21065,6 @@
           "src/components/sidebar/SessionRow.test.tsx",
           "src/components/SidebarItemMenus.test.tsx",
           "src/components/TitleBar.test.tsx"
-        ]
-      },
-      "hasBehaviorNamedTest": true,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
-      "path": "src/shell/useMobileBackButton.ts",
-      "exports": [
-        {
-          "symbol": "useMobileBackButton",
-          "mentionedByTests": ["src/shell/useMobileBackButton.test.tsx"]
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [
-        {
-          "symbol": "operation:dispatchMobileBack",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:remove",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        }
-      ],
-      "tests": {
-        "direct": ["src/shell/useMobileBackButton.test.tsx"],
-        "higherLevel": ["src/App.render.test.tsx"]
-      },
-      "hasBehaviorNamedTest": true,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
-      "path": "src/shell/useRegisterMobileBackHandler.ts",
-      "exports": [
-        {
-          "symbol": "useRegisterMobileBackHandler",
-          "mentionedByTests": [
-            "src/App.render.test.tsx",
-            "src/components/ModelSelector.test.tsx",
-            "src/components/ProjectPathDialog.test.tsx",
-            "src/components/SetupWizard.render.test.tsx"
-          ]
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [],
-      "tests": {
-        "direct": [],
-        "higherLevel": [
-          "src/App.render.test.tsx",
-          "src/components/AppSidebar.test.tsx",
-          "src/components/ModelSelector.test.tsx",
-          "src/components/ProjectPathDialog.test.tsx",
-          "src/components/PromptBox.test.tsx",
-          "src/components/SetupWizard.render.test.tsx",
-          "src/components/SetupWizard.test.ts",
-          "src/components/sidebar/ProjectEntry.test.tsx",
-          "src/components/sidebar/SessionRow.behavior.test.tsx",
-          "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx",
-          "src/components/ui/sidebar-state.test.ts",
-          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,

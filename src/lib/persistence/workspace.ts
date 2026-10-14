@@ -153,12 +153,6 @@ function getLegacyStoredWorkspaces(): Workspace[] {
       })
     : workspaces;
 
-  if (policy.shellKind === "mobile") {
-    return workspacesWithLegacyDefault.filter(
-      (workspace) => !workspace.isLocal && workspace.id !== LOCAL_WORKSPACE_ID,
-    );
-  }
-
   if (policy.shellKind === "web") {
     const local = createLocalWorkspace();
     const storedLocal = workspacesWithLegacyDefault.find(
@@ -211,8 +205,7 @@ function sortLocalWorkspaces(workspaces: Workspace[]): Workspace[] {
 }
 
 function getInitialWorkspacesForShell(): Workspace[] {
-  const policy = getShellWorkspacePolicy();
-  return policy.shellKind === "mobile" ? [] : [createLocalWorkspace()];
+  return [createLocalWorkspace()];
 }
 
 async function loadBackendWorkspaces(): Promise<Workspace[]> {
@@ -253,11 +246,9 @@ export function persistWorkspaces(workspaces: Workspace[]) {
   const policy = getShellWorkspacePolicy();
   const normalized = workspaces.map(normalizeWorkspace);
   const scoped =
-    policy.shellKind === "mobile"
-      ? normalized.filter((workspace) => !workspace.isLocal && workspace.id !== LOCAL_WORKSPACE_ID)
-      : policy.shellKind === "web"
-        ? normalized.filter((workspace) => workspace.id === LOCAL_WORKSPACE_ID).slice(0, 1)
-        : normalized;
+    policy.shellKind === "web"
+      ? normalized.filter((workspace) => workspace.id === LOCAL_WORKSPACE_ID).slice(0, 1)
+      : normalized;
   const serialized = JSON.stringify(sortLocalWorkspaces(scoped));
   storageSet(STORAGE_KEYS.WORKSPACES, serialized);
   return storageGet(STORAGE_KEYS.WORKSPACES) === serialized;

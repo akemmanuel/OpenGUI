@@ -93,9 +93,6 @@
     "modelCount_one": "{{count}} modelo",
     "modelCount_other": "{{count}} modelos"
   },
-  "mobile": {
-    "backAgainToExit": "Pulsa atrás otra vez para salir"
-  },
   "windowControls": {
     "minimize": "Minimizar ventana",
     "maximize": "Maximizar ventana",

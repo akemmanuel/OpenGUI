@@ -166,7 +166,6 @@ function createRuntimeHostClient(workspace: Workspace): OpenGuiHostClient {
 function initialWorkspaces() {
   const policy = getShellWorkspacePolicy();
   const stored = getStoredWorkspaces();
-  if (policy.shellKind === "mobile") return stored.filter((item) => !item.isLocal);
   if (policy.shellKind === "web") return stored.length > 0 ? stored : [createLocalWorkspace()];
   const local = stored.find((item) => item.id === LOCAL_WORKSPACE_ID) ?? createLocalWorkspace();
   return [local, ...stored.filter((item) => item.id !== LOCAL_WORKSPACE_ID)];

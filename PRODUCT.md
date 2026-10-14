@@ -10,7 +10,7 @@ OpenGUI is for lightly technical adults who want ChatGPT-style help with longer-
 
 ## Product Purpose
 
-OpenGUI provides a multi-platform chat interface backed by its own long-running agent Harness. Users connect directory-backed Projects, choose models, send prompts, queue follow-up work, review streamed responses and tool calls, and continue the same Sessions from Desktop, Web, or Mobile. Success means a user can install or connect to a Host, authenticate a model, and complete practical work without installing Git or an external coding-agent CLI.
+OpenGUI provides a multi-platform chat interface backed by its own long-running agent Harness. Users connect directory-backed Projects, choose models, send prompts, queue follow-up work, review streamed responses and tool calls, and continue the same Sessions from Desktop or Web, including mobile browsers. Success means a user can install or connect to a Host, authenticate a model, and complete practical work without installing Git or an external coding-agent CLI.
 
 ## Brand Personality
 

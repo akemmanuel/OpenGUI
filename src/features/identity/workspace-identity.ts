@@ -11,12 +11,7 @@ import { createIdentityClient } from "./identity-client";
 export const WORKSPACE_IDENTITY_CHANGE_EVENT = "opengui:identity-workspace-change";
 
 export function getIdentityWorkspace(): Workspace | null {
-  const workspaces = getStoredWorkspaces();
-  const policy = getShellWorkspacePolicy();
-  return (
-    getActiveWorkspace(workspaces) ??
-    (policy.shellKind === "mobile" ? null : createLocalWorkspace())
-  );
+  return getActiveWorkspace(getStoredWorkspaces()) ?? createLocalWorkspace();
 }
 
 export function persistWorkspaceIdentityToken(workspaceId: string, token: string | undefined) {

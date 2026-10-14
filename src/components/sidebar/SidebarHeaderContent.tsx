@@ -2,7 +2,7 @@ import { Search, SquarePen, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { SidebarHeader } from "@/components/ui/sidebar";
-import appIcon from "../../../assets/mobile-icon.svg";
+import appIcon from "../../../assets/app-icon.svg";
 import openguiLogoDark from "../../../assets/opengui-dark.svg";
 import openguiLogoLight from "../../../assets/opengui-light.svg";
 

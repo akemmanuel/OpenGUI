@@ -1,9 +1,7 @@
 /** First-run onboarding for Everyday Builders. */
 
 import { ArrowRight, Check, Folder } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { MOBILE_BACK_PRIORITY } from "@/shell/mobile-back-handler";
-import { useRegisterMobileBackHandler } from "@/shell/useRegisterMobileBackHandler";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -106,27 +104,6 @@ export function SetupWizard({ onComplete }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [modelId, setModelId] = useState("gpt-4.1");
   const [savingModel, setSavingModel] = useState(false);
-  const stepRef = useRef(step);
-  stepRef.current = step;
-
-  useRegisterMobileBackHandler(
-    MOBILE_BACK_PRIORITY.SETUP_WIZARD,
-    true,
-    useCallback(() => {
-      const current = stepRef.current;
-      if (current === "folder") {
-        setStep("model");
-        return true;
-      }
-      if (current === "finish") {
-        setStep("folder");
-        return true;
-      }
-      onComplete();
-      return true;
-    }, [onComplete]),
-  );
-
   const currentStepNumber = stepNumber(step);
 
   const title = useMemo(() => {
