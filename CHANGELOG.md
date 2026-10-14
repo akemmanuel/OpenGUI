@@ -61,6 +61,7 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 
 - Sticky date and time while scrolling through a conversation.
 - Fixed file uploads to Remote Hosts failing with 401.
+- "Send now" on a queued message no longer hides the start of the new reply while it streams.
 - Offerings keep the upstream model's reasoning capabilities.
 
 ### Housekeeping
