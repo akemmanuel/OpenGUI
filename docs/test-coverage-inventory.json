@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-14T13:03:24.551Z",
+  "generatedAt": "2026-10-14T14:33:01.864Z",
   "scope": {
-    "firstPartyExecutableFiles": 352,
+    "firstPartyExecutableFiles": 351,
     "testFiles": 246
   },
   "caveats": [
@@ -126,10 +126,6 @@
         {
           "symbol": "createBackendSidecarController",
           "mentionedByTests": ["main/backend-sidecar.test.ts"]
-        },
-        {
-          "symbol": "defaultBackendProfile",
-          "mentionedByTests": []
         },
         {
           "symbol": "findAvailablePort",
@@ -355,10 +351,6 @@
       "path": "main/preload-api.ts",
       "exports": [
         {
-          "symbol": "createDisabledUpdateState",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "createElectronAPI",
           "mentionedByTests": ["main/preload-api.test.ts"]
         }
@@ -371,10 +363,6 @@
       ],
       "stateTransitions": [
         {
-          "symbol": "operation:createDisabledUpdateState",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "operation:createElectronAPI",
           "mentionedByTests": []
         },
@@ -384,10 +372,6 @@
         },
         {
           "symbol": "operation:removeListener",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "status:disabled",
           "mentionedByTests": []
         }
       ],
@@ -779,10 +763,6 @@
     {
       "path": "packages/backend/src/host/codex-oauth.ts",
       "exports": [
-        {
-          "symbol": "accountIdFromJwt",
-          "mentionedByTests": []
-        },
         {
           "symbol": "beginCodexDeviceAuth",
           "mentionedByTests": ["packages/backend/src/host/codex-oauth.test.ts"]
@@ -2204,26 +2184,6 @@
         {
           "symbol": "sanitizeDisplayName",
           "mentionedByTests": ["packages/backend/src/identity/mail.test.ts"]
-        },
-        {
-          "symbol": "SMTP_CONNECTION_TIMEOUT_MS",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "SMTP_DELIVERY_TIMEOUT_MS",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "SMTP_GREETING_TIMEOUT_MS",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "SMTP_SOCKET_TIMEOUT_MS",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "smtpTransportOptions",
-          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -3892,10 +3852,6 @@
         {
           "symbol": "parseCompactionHandoff",
           "mentionedByTests": ["packages/harness/src/context/compaction.test.ts"]
-        },
-        {
-          "symbol": "renderHandoffMarkdown",
-          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -5560,10 +5516,6 @@
     {
       "path": "packages/harness/src/models/provider-retry.ts",
       "exports": [
-        {
-          "symbol": "providerRetrySchedule",
-          "mentionedByTests": []
-        },
         {
           "symbol": "retryProviderRequest",
           "mentionedByTests": ["packages/harness/src/models/provider-retry.test.ts"]
@@ -7520,7 +7472,6 @@
           "src/hooks/agent-model-selection.test.ts",
           "src/hooks/agent-session-utils.test.ts",
           "src/hooks/use-agent-state.test.tsx",
-          "src/hooks/use-agent-variant-core.test.ts",
           "src/hooks/use-session-skills.test.tsx",
           "src/lib/__tests__/model-providers.test.ts",
           "src/lib/__tests__/session-drafts.test.ts",
@@ -7632,7 +7583,6 @@
           "src/hooks/agent-model-selection.test.ts",
           "src/hooks/agent-session-utils.test.ts",
           "src/hooks/use-agent-state.test.tsx",
-          "src/hooks/use-agent-variant-core.test.ts",
           "src/hooks/use-session-skills.test.tsx",
           "src/lib/__tests__/model-providers.test.ts",
           "src/lib/__tests__/session-drafts.test.ts",
@@ -7760,7 +7710,6 @@
           "src/hooks/agent-model-selection.test.ts",
           "src/hooks/agent-session-utils.test.ts",
           "src/hooks/use-agent-state.test.tsx",
-          "src/hooks/use-agent-variant-core.test.ts",
           "src/hooks/use-session-skills.test.tsx",
           "src/lib/__tests__/model-providers.test.ts",
           "src/lib/__tests__/session-drafts.test.ts",
@@ -8338,10 +8287,6 @@
         {
           "symbol": "resetPassword",
           "mentionedByTests": ["packages/backend/src/identity/password-recovery.repro.test.ts"]
-        },
-        {
-          "symbol": "temporaryPassword",
-          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -8359,10 +8304,6 @@
     {
       "path": "scripts/responsive-audit.ts",
       "exports": [
-        {
-          "symbol": "auditResponsiveDocument",
-          "mentionedByTests": []
-        },
         {
           "symbol": "responsiveAuditExpression",
           "mentionedByTests": ["scripts/responsive-audit.browser.test.ts"]
@@ -8492,10 +8433,6 @@
     {
       "path": "scripts/sandbox-shell-broker.ts",
       "exports": [
-        {
-          "symbol": "bearerMatches",
-          "mentionedByTests": []
-        },
         {
           "symbol": "createSandboxBroker",
           "mentionedByTests": ["scripts/sandbox-shell-broker.test.ts"]
@@ -9065,43 +9002,6 @@
       ],
       "tests": {
         "direct": ["src/App.render.test.tsx"],
-        "higherLevel": []
-      },
-      "hasBehaviorNamedTest": false,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
-      "path": "src/components/AppearanceSetting.tsx",
-      "exports": [
-        {
-          "symbol": "AppearanceSetting",
-          "mentionedByTests": []
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [
-        {
-          "symbol": "operation:setAccentColor",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setChatWidth",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setContrast",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTheme",
-          "mentionedByTests": []
-        }
-      ],
-      "tests": {
-        "direct": [],
         "higherLevel": []
       },
       "hasBehaviorNamedTest": false,
@@ -10415,10 +10315,6 @@
         {
           "symbol": "getToolCallViewModel",
           "mentionedByTests": ["src/components/message-list/tools/toolCallModel.test.ts"]
-        },
-        {
-          "symbol": "SANDBOX_SHELL_FAILURE_REASONS",
-          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -11057,14 +10953,6 @@
       "exports": [
         {
           "symbol": "getProviderIconSvg",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "providerIconSvgs",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "providerIconUrls",
           "mentionedByTests": []
         },
         {
@@ -17521,10 +17409,6 @@
       "path": "src/hooks/agent-model-selection.ts",
       "exports": [
         {
-          "symbol": "isAgentAvailable",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "isModelAvailable",
           "mentionedByTests": ["src/hooks/agent-model-selection.test.ts"]
         },
@@ -17598,20 +17482,12 @@
           "mentionedByTests": ["src/hooks/agent-session-utils.test.ts"]
         },
         {
-          "symbol": "getSessionDirectory",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "getSessionExecutionDirectory",
           "mentionedByTests": []
         },
         {
           "symbol": "getSessionProjectTarget",
           "mentionedByTests": ["src/hooks/agent-session-utils.test.ts"]
-        },
-        {
-          "symbol": "getSessionWorkspaceId",
-          "mentionedByTests": []
         },
         {
           "symbol": "makeProjectKey",
@@ -17864,16 +17740,8 @@
           "mentionedByTests": ["src/hooks/use-agent-variant-core.test.ts"]
         },
         {
-          "symbol": "resolveVariant",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "updateVariantSelections",
           "mentionedByTests": ["src/hooks/use-agent-variant-core.test.ts"]
-        },
-        {
-          "symbol": "variantKey",
-          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -17909,21 +17777,13 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/use-sidebar-model.test.ts",
           "src/components/SidebarItemMenus.test.tsx",
           "src/components/TitleBar.test.tsx",
           "src/features/app-shell/useAppKeyboardShortcuts.test.tsx",
           "src/features/host-provider/host-actions.test.ts",
-          "src/features/host-provider/host-domain-state.test.ts",
-          "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
           "src/features/identity/AccountSection.test.tsx",
-          "src/features/identity/IdentityGate.render.test.tsx",
-          "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
-          "src/features/identity/TeamSettings.render.test.tsx",
-          "src/features/instructions/InstructionsSettings.render.test.tsx",
-          "src/features/mcp/McpSettings.render.test.tsx",
           "src/features/profile/PreferenceControls.render.test.tsx",
           "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
@@ -17931,8 +17791,7 @@
           "src/features/session/useChatSessionSurface.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx",
           "src/hooks/use-agent-state.test.tsx",
-          "src/hooks/use-session-skills.test.tsx",
-          "src/lib/persistence/persistence.test.ts"
+          "src/hooks/use-session-skills.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -17975,10 +17834,6 @@
     {
       "path": "src/hooks/use-context-info.ts",
       "exports": [
-        {
-          "symbol": "getContextUsage",
-          "mentionedByTests": []
-        },
         {
           "symbol": "useContextInfo",
           "mentionedByTests": ["src/App.render.test.tsx"]
@@ -18275,10 +18130,6 @@
     {
       "path": "src/hooks/use-prompt-files.ts",
       "exports": [
-        {
-          "symbol": "getPromptFiles",
-          "mentionedByTests": []
-        },
         {
           "symbol": "usePromptFiles",
           "mentionedByTests": [
@@ -19126,14 +18977,6 @@
       "path": "src/lib/image-mentions.ts",
       "exports": [
         {
-          "symbol": "getImageMentionFilename",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "IMAGE_MENTION_PATTERN",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "splitImageMentions",
           "mentionedByTests": []
         }
@@ -19196,19 +19039,11 @@
       "path": "src/lib/new-chat-model-behavior.ts",
       "exports": [
         {
-          "symbol": "DEFAULT_NEW_CHAT_MODEL_BEHAVIOR",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "getNewChatModelBehavior",
           "mentionedByTests": []
         },
         {
           "symbol": "isNewChatModelBehavior",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "NEW_CHAT_MODEL_BEHAVIORS",
           "mentionedByTests": []
         },
         {
@@ -19856,10 +19691,6 @@
       "path": "src/lib/persistence/sidebar-pins.ts",
       "exports": [
         {
-          "symbol": "getSidebarSessionProjectDirectory",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "partitionSidebarPins",
           "mentionedByTests": ["src/lib/__tests__/sidebar-pins.test.ts"]
         }
@@ -20184,32 +20015,16 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "getLegacyStoredDefaultChatDirectory",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "getStoredWorkspaces",
           "mentionedByTests": ["src/lib/persistence/persistence.test.ts"]
-        },
-        {
-          "symbol": "getWorkspaceVariantSelectionsMap",
-          "mentionedByTests": []
         },
         {
           "symbol": "initializeBackendWorkspaceState",
           "mentionedByTests": ["src/lib/persistence/persistence.test.ts"]
         },
         {
-          "symbol": "loadBackendWorkspaces",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "LOCAL_WORKSPACE_ID",
           "mentionedByTests": ["src/lib/persistence/persistence.test.ts"]
-        },
-        {
-          "symbol": "migrateLegacyWorkspaceState",
-          "mentionedByTests": []
         },
         {
           "symbol": "normalizeWorkspace",
@@ -20218,10 +20033,6 @@
         {
           "symbol": "NOTIFICATIONS_ENABLED_KEY",
           "mentionedByTests": ["src/features/profile/PreferenceControls.render.test.tsx"]
-        },
-        {
-          "symbol": "persistVariantSelectionsForWorkspace",
-          "mentionedByTests": []
         },
         {
           "symbol": "persistWorkspaces",
@@ -20591,10 +20402,6 @@
         },
         {
           "symbol": "computeTokenTotal",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "DEFAULT_AGENT_NAME",
           "mentionedByTests": []
         },
         {

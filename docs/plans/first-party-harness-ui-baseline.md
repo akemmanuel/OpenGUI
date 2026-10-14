@@ -17,7 +17,7 @@ Captured before application-source migration on 2026-07-10. The browser captures
 | `09-active-transcript-reference.png` |  1202×798 | `b36cd983a7270c131caffa04f5db74c8ada9715d549763378afe2c1da8c1e30a` |
 | `10-mobile-session.png`              |   390×844 | `45c69130096747bc7993218ce434c4ff581d689e6bdd59d4f1ba552b94038a5d` |
 
-Captures 01–08 and 10 came from the restored app through browser automation. Capture 09 is a copy of the tracked `screenshot.png`, retained as the active transcript/tool-call reference because the clean browser profile had no external-Harness transcript to open.
+Captures 01–08 and 10 came from the restored app through browser automation. Capture 09 was a copy of the old `screenshot.png` (since removed), retained as the active transcript/tool-call reference because the clean browser profile had no external-Harness transcript to open.
 
 ## Protected visual surfaces
 

@@ -73,8 +73,11 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
   `source-map-js` security advisory.
 - Server-side retries, timeouts, cancellation, locks and shutdown now run on Effect 4
   (ADR 0016). Shutdown also closes the accounts database, which it previously left open.
-- Removed design prototypes, unused dependencies (`@tanstack/react-virtual`, `next-themes`),
-  dead helpers, the stale Biome config, and outdated bridge-era docs.
+- Removed design prototypes, unused dependencies (`@tanstack/react-virtual`, `next-themes`,
+  `@capacitor/assets`, `@effect/vitest`), dead helpers and storage keys, about 170 unused
+  translations, outdated screenshots, the stale Biome config, and outdated bridge-era docs.
+- Fixed plural messages ("3 messages reverted"), and a setup wizard hint and a model
+  backend placeholder that showed raw translation keys.
 
 ## 0.6.3
 
