@@ -10,6 +10,8 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 - Automatically retry temporary model provider failures (overloaded, connection drops, generic
   "please retry" errors) up to three times with backoff, before any output is shown, and show
   the retry in the chat. Context compaction retries the same way instead of pausing the Session.
+  Attempts that already took a minute or longer fail right away instead of retrying, so a
+  hanging provider no longer holds a run for half an hour.
 - Clearer failed-run messages: usage limits show when the model is available again and suggest
   switching models; outages and expired credentials explain what to do next.
 - Compaction handoffs no longer need project filesystem access, so restricted Accounts can
@@ -17,7 +19,13 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
   with a "Compact now" button on the error.
 - The Host shuts down gracefully on `SIGTERM`: active runs are stopped cleanly and the durable
   state lock is released, so restarts no longer leave a stale lock behind. Locks left by an
-  earlier run of the same container are recovered automatically.
+  earlier run of the same container are recovered automatically, and so are locks left by a
+  recreated container (including 0.6.x) once their holder has been gone for a minute. The
+  shipped compose files allow 15 s for a stop.
+- A Host that fails to start now logs the reason and exits, so Docker restarts it, instead of
+  staying up and answering every request with an error.
+- Fixed a crash of the whole Host when an OpenAI WebSocket connection timed out.
+- Prompts queued for the same Session are always admitted in the order they arrived.
 - `/api/health` reports low disk space, and the app warns when the Host is almost full.
 
 ### Accounts
