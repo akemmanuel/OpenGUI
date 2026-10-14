@@ -23,7 +23,7 @@ directly to the public internet.
 
 ## Build locally
 
-Requirements are Node.js 22.19+ (release CI uses Node.js 24), pnpm 11.8.0, Android SDK, and Java 21.
+Requirements are Node.js 22.19+ (release CI uses Node.js 24), pnpm 11.18.0, Android SDK, and Java 21.
 
 ```bash
 pnpm install --frozen-lockfile

@@ -1,13 +1,5 @@
 import { normalizeProjectPath } from "@/lib/path";
 
-/** Workspace Projects that should appear in the sidebar (not hidden by project meta). */
-export function listSidebarAvailableProjectDirectories(
-  workspaceProjects: string[] | undefined,
-  isHidden: (directory: string) => boolean,
-): string[] {
-  return (workspaceProjects ?? []).filter((directory) => !isHidden(directory));
-}
-
 /**
  * Root project directories to render in the Projects section.
  * Must include every workspace project even while its Host connection is pending.

@@ -1,19 +1,31 @@
-import i18n from "i18next";
+import i18n, { type BackendModule, type ResourceKey } from "i18next";
 import { initReactI18next } from "react-i18next";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { onSettingsChange, storageGet } from "@/lib/persistence/storage";
 import { getDesktopShellClient } from "@/runtime/clients";
-import de from "./locales/de.json";
 import en from "./locales/en.json";
-import es from "./locales/es.json";
 
-const resources = {
-  de: { translation: de },
-  en: { translation: en },
-  es: { translation: es },
-} as const;
+export type SupportedLanguage = "en" | "de" | "es";
 
-export type SupportedLanguage = keyof typeof resources;
+// English is the bundled fallback; other languages load on first use to keep startup small.
+const localeLoaders: Record<SupportedLanguage, () => Promise<{ default: ResourceKey }>> = {
+  en: async () => ({ default: en }),
+  de: () => import("./locales/de.json"),
+  es: () => import("./locales/es.json"),
+};
+
+const lazyLocales: BackendModule = {
+  type: "backend",
+  init() {},
+  read(language, _namespace, callback) {
+    const load = localeLoaders[language as SupportedLanguage];
+    if (!load) return callback(null, {});
+    load().then(
+      (module) => callback(null, module.default),
+      (error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null),
+    );
+  },
+};
 
 export const SUPPORTED_LANGUAGE_LIST: readonly SupportedLanguage[] = ["en", "de", "es"];
 
@@ -62,12 +74,16 @@ function updateDocumentLanguage(language: string) {
 export function initI18n(): Promise<typeof i18n> {
   if (!initPromise) {
     initPromise = detectInitialLanguage().then(async (language) => {
-      await i18n.use(initReactI18next).init({
-        resources,
-        lng: language,
-        fallbackLng: FALLBACK_LANGUAGE,
-        interpolation: { escapeValue: false },
-      });
+      await i18n
+        .use(lazyLocales)
+        .use(initReactI18next)
+        .init({
+          resources: { en: { translation: en } },
+          partialBundledLanguages: true,
+          lng: language,
+          fallbackLng: FALLBACK_LANGUAGE,
+          interpolation: { escapeValue: false },
+        });
       updateDocumentLanguage(i18n.resolvedLanguage ?? language);
       return i18n;
     });

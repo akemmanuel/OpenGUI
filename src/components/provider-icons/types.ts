@@ -34,16 +34,10 @@ export const providerIconSvgs = Object.fromEntries(
 
 export type ProviderIconName = string;
 
-export const providerIconNames = Object.keys(providerIconUrls) as readonly ProviderIconName[];
-
 const fallbackProviderIcon = "synthetic";
 
 export function resolveProviderIcon(id: string): ProviderIconName {
   return providerIconUrls[id] ? id : fallbackProviderIcon;
-}
-
-export function getProviderIconUrl(id: string): string {
-  return providerIconUrls[resolveProviderIcon(id)] ?? "";
 }
 
 export function getProviderIconSvg(id: string): string {

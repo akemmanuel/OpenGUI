@@ -66,34 +66,6 @@ export function getErrorMessage(err: unknown, fallback = "Unexpected error"): st
 }
 
 /**
- * Create a UUID in browser-like runtimes where crypto.randomUUID may be absent
- * (for example file://, insecure HTTP, older WebViews), while still preferring
- * the native implementation when available.
- */
-export function createUuid(): string {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-
-  const bytes = new Uint8Array(16);
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i += 1) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
-
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
-    .slice(6, 8)
-    .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
-}
-
-/**
  * Compute the total token count from a token snapshot.
  * Prefers the authoritative `total` field; falls back to summing components.
  */
@@ -112,19 +84,4 @@ export function computeTokenTotal(tokens: {
     (tokens.cache?.read ?? 0) +
     (tokens.cache?.write ?? 0)
   );
-}
-
-/** Prune keys not in `validKeys` from a Record. Returns prev if unchanged. */
-export function pruneRecord<T>(prev: Record<string, T>, validKeys: Set<string>): Record<string, T> {
-  let changed = false;
-  const next: Record<string, T> = {};
-  for (const key of Object.keys(prev)) {
-    if (validKeys.has(key)) {
-      const val = prev[key];
-      if (val !== undefined) next[key] = val;
-    } else {
-      changed = true;
-    }
-  }
-  return changed ? next : prev;
 }

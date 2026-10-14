@@ -688,5 +688,3 @@ function Meta({ label, value, title }: { label: string; value: string; title?: s
     </div>
   );
 }
-
-export { isSupportedSkillSource as isSkillInstallSource };

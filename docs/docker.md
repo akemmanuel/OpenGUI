@@ -2,7 +2,7 @@
 
 The OpenGUI image runs a first-party **Remote Host** and the Web shell. The Host owns the Harness,
 Sessions, model and MCP connections, Accounts, and authorization. It does not require or import an
-external coding-agent CLI. The image uses Node.js 24, pnpm 11.8.0, the repository's frozen lockfile,
+external coding-agent CLI. The image uses Node.js 24, pnpm 11.18.0, the repository's frozen lockfile,
 and Vite+ for the application bundles.
 
 ## Quick start (trusted host-control mode)

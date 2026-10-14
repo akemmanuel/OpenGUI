@@ -1,11 +1,7 @@
-import { Effect, Schedule } from "effect";
+import { Effect } from "effect";
 
 export function runEffect<A, E>(effect: Effect.Effect<A, E, never>): Promise<A> {
   return Effect.runPromise(effect);
-}
-
-export function forkEffect<A, E>(effect: Effect.Effect<A, E, never>) {
-  return Effect.runFork(effect);
 }
 
 export function tryPromiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
@@ -13,10 +9,6 @@ export function tryPromiseEffect<A>(operation: (signal: AbortSignal) => PromiseL
     try: operation,
     catch: (error) => error,
   });
-}
-
-export function sleepEffect(ms: number) {
-  return Effect.sleep(ms);
 }
 
 export function timeoutEffect<A, E>(
@@ -33,20 +25,5 @@ export function timeoutEffect<A, E>(
             : input.timeoutMessage,
         ),
     }),
-  );
-}
-
-export function pollUntilEffect(input: {
-  attempt: () => PromiseLike<boolean>;
-  intervalMs: number;
-  timeoutMs: number;
-  timeoutMessage: string | (() => string);
-}) {
-  return timeoutEffect(
-    tryPromiseEffect(async () => {
-      const ready = await input.attempt();
-      if (!ready) throw new Error("Condition not ready");
-    }).pipe(Effect.retry(Schedule.spaced(input.intervalMs))),
-    { timeoutMs: input.timeoutMs, timeoutMessage: input.timeoutMessage },
   );
 }

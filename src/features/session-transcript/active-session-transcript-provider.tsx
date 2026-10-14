@@ -35,27 +35,6 @@ export function useActiveTranscriptSnapshot(): ActiveTranscriptSnapshot {
   );
 }
 
-export function useActiveTranscriptMessages(): ActiveTranscriptSnapshot["messages"] {
-  const store = useActiveTranscriptStore();
-  return useSyncExternalStore(
-    (onStoreChange) => store.subscribe(onStoreChange),
-    () => store.getSnapshot().messages,
-    () => store.getSnapshot().messages,
-  );
-}
-
-export function useActiveTranscriptHistory(): Pick<
-  ActiveTranscriptSnapshot,
-  "hasOlder" | "loadingOlder" | "phase"
-> {
-  const store = useActiveTranscriptStore();
-  return useSyncExternalStore(
-    (onStoreChange) => store.subscribe(onStoreChange),
-    () => store.getHistorySnapshot(),
-    () => store.getHistorySnapshot(),
-  );
-}
-
 export function useActiveTranscriptPromptHistory(): readonly string[] {
   const store = useActiveTranscriptStore();
   return useSyncExternalStore(
@@ -80,14 +59,5 @@ export function useActiveTranscriptContextMessages(): ActiveTranscriptSnapshot["
     (onStoreChange) => store.subscribe(onStoreChange),
     () => store.getContextMessages() as ActiveTranscriptSnapshot["messages"],
     () => store.getContextMessages() as ActiveTranscriptSnapshot["messages"],
-  );
-}
-
-export function useActiveTranscriptCompactionTail(): ActiveTranscriptSnapshot["messages"] {
-  const store = useActiveTranscriptStore();
-  return useSyncExternalStore(
-    (onStoreChange) => store.subscribe(onStoreChange),
-    () => store.getCompactionTailMessages() as ActiveTranscriptSnapshot["messages"],
-    () => store.getCompactionTailMessages() as ActiveTranscriptSnapshot["messages"],
   );
 }

@@ -20,7 +20,7 @@ ENV PATH=/app/node_modules/.bin:$PATH
 
 COPY . .
 RUN corepack enable \
-	&& corepack prepare pnpm@11.8.0 --activate \
+	&& corepack prepare pnpm@11.18.0 --activate \
 	&& pnpm install --frozen-lockfile \
 	&& pnpm vp build
 COPY docker/host-exec /usr/local/bin/opengui-host-exec

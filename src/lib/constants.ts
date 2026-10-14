@@ -70,9 +70,6 @@ export const DEFAULT_MODEL_MAX_AGE_MONTHS = 6;
 /** Threshold in px – if the user is within this distance of the bottom we consider them "at bottom". */
 export const NEAR_BOTTOM_PX = 80;
 
-/** Threshold in px – scrollTop at or below this counts as "at top" for pagination and snapshots. */
-export const NEAR_TOP_PX = 1;
-
 /** Character count threshold before a user message is collapsed. */
 export const USER_MSG_COLLAPSE_CHARS = 500;
 
@@ -89,21 +86,3 @@ export const CTX_SUBTRIGGER_CLASS = `${CTX_ITEM_CLASS} data-[state=open]:bg-acce
 
 /** Class for `ContextMenu.Separator`. */
 export const CTX_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-muted";
-
-// ---------------------------------------------------------------------------
-// Popular providers
-// ---------------------------------------------------------------------------
-
-/** Provider IDs shown in the "Popular" section of provider pickers. */
-export const POPULAR_PROVIDER_IDS = [
-  "anthropic",
-  "openai",
-  "google",
-  "github-copilot",
-  "openrouter",
-  "xai",
-  "deepseek",
-  "groq",
-  "mistral",
-  "azure",
-] as const;

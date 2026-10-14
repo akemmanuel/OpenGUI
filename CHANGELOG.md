@@ -13,7 +13,8 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 - Clearer failed-run messages: usage limits show when the model is available again and suggest
   switching models; outages and expired credentials explain what to do next.
 - Compaction handoffs no longer need project filesystem access, so restricted Accounts can
-  compact; failed compactions are labelled correctly and pause until an explicit `/compact`.
+  compact; failed compactions are labelled correctly and pause until you compact again, now
+  with a "Compact now" button on the error.
 - The Host shuts down gracefully on `SIGTERM`: active runs are stopped cleanly and the durable
   state lock is released, so restarts no longer leave a stale lock behind. Locks left by an
   earlier run of the same container are recovered automatically.
@@ -42,6 +43,13 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 - Sticky date and time while scrolling through a conversation.
 - Fixed file uploads to Remote Hosts failing with 401.
 - Offerings keep the upstream model's reasoning capabilities.
+
+### Housekeeping
+
+- German and Spanish translations load on demand, cutting the initial download by about 110 KB.
+- Fresh Hosts no longer log a false "Database schema mismatch" error on first start.
+- Removed design prototypes, unused dependencies (`@tanstack/react-virtual`, `next-themes`),
+  dead helpers, the stale Biome config, and outdated bridge-era docs.
 
 ## 0.6.3
 

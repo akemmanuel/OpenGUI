@@ -34,14 +34,6 @@ export function getWorkspaceVariantSelectionsMap(): WorkspaceVariantSelectionsMa
   );
 }
 
-export function getVariantSelectionsForWorkspace(workspaceId: string): VariantSelections {
-  return (
-    getWorkspaceVariantSelectionsMap()[workspaceId] ??
-    storageParsed<VariantSelections>(STORAGE_KEYS.VARIANT_SELECTIONS) ??
-    {}
-  );
-}
-
 export function persistVariantSelectionsForWorkspace(
   workspaceId: string,
   selections: VariantSelections,
@@ -60,26 +52,6 @@ export function persistVariantSelectionsForWorkspace(
 export function getLegacyStoredDefaultChatDirectory(): string | null {
   const stored = storageGet(STORAGE_KEYS.DEFAULT_CHAT_DIRECTORY);
   return stored ? normalizeProjectPath(stored) : null;
-}
-
-export function getWorkspaceDefaultChatDirectory(
-  workspace: Workspace | null | undefined,
-): string | null {
-  if (!workspace) return null;
-  const settings = getWorkspaceSettings(workspace);
-  const value = settings.defaultChatDirectory;
-  return typeof value === "string" && value.trim() ? normalizeProjectPath(value) : null;
-}
-
-export function isLocalServer(
-  raw = storageGet(STORAGE_KEYS.SERVER_URL) ?? DEFAULT_SERVER_URL,
-): boolean {
-  try {
-    const hostname = new URL(raw).hostname;
-    return ["localhost", "127.0.0.1", "::1"].includes(hostname);
-  } catch {
-    return false;
-  }
 }
 
 export function createLocalWorkspace(): Workspace {
@@ -119,24 +91,6 @@ function getWorkspaceSettings(
       ? (workspace.settings as WorkspaceSettingsRecord)
       : {};
   return settings;
-}
-
-function orderProjectPaths(
-  paths: string[],
-  order: string[] | undefined,
-  hiddenProjects?: string[],
-): string[] {
-  const normalizedOrder = normalizeProjectList(order ?? []);
-  const hidden = new Set(normalizeProjectList(hiddenProjects ?? []));
-  const uniquePaths = normalizeProjectList(paths);
-  const ordered: string[] = [];
-  for (const entry of normalizedOrder) {
-    if (uniquePaths.includes(entry) && !ordered.includes(entry)) ordered.push(entry);
-  }
-  for (const path of uniquePaths) {
-    if (!ordered.includes(path)) ordered.push(path);
-  }
-  return ordered.filter((project) => !hidden.has(project));
 }
 
 function normalizeWorkspaceServerUrl(value: string | undefined) {
@@ -196,45 +150,6 @@ export function normalizeWorkspace(workspace: Workspace): Workspace {
     },
   };
   return normalized;
-}
-
-export function workspaceToCreateInput(workspace: Workspace) {
-  const normalized = normalizeWorkspace(workspace);
-  return {
-    name: normalized.name,
-    settings: normalized.settings,
-  };
-}
-
-export function workspaceToUpdateInput(workspace: Workspace) {
-  const normalized = normalizeWorkspace(workspace);
-  return {
-    name: normalized.name,
-    settings: normalized.settings,
-  };
-}
-
-export function workspaceFromBackend(
-  workspace: FrontendWorkspaceRecord,
-  projectPaths: string[] = [],
-): Workspace {
-  const settings = getWorkspaceSettings(workspace);
-  return normalizeWorkspace({
-    id: workspace.id,
-    name: workspace.name,
-    createdAt: workspace.createdAt,
-    updatedAt: workspace.updatedAt,
-    settings: workspace.settings,
-    serverUrl: settings.serverUrl ?? DEFAULT_SERVER_URL,
-    username: settings.username,
-    password: settings.password,
-    authToken: settings.authToken ?? (!settings.username ? settings.password : undefined),
-    isLocal: settings.isLocal === true,
-    projects: orderProjectPaths(projectPaths, settings.projectOrder, settings.hiddenProjects),
-    selectedModel: settings.selectedModel ?? null,
-    selectedAgent: settings.selectedAgent ?? null,
-    lastActiveSessionId: settings.lastActiveSessionId ?? null,
-  });
 }
 
 function getLegacyStoredWorkspaces(): Workspace[] {
@@ -389,10 +304,6 @@ export function getActiveWorkspace(
   return workspaces.find((workspace) => workspace.id === activeId) ?? null;
 }
 
-export function areNotificationsEnabled(): boolean {
-  const raw = storageGet(STORAGE_KEYS.NOTIFICATIONS_ENABLED);
-  return raw === null || raw === "true";
-}
 interface FrontendWorkspaceRecord {
   id: string;
   name: string;

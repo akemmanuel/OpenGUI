@@ -41,17 +41,6 @@ export function isAgentAvailable(agents: Agent[], agent: string | null | undefin
   return agents.some((candidate) => candidate.name === agent);
 }
 
-export function selectedModelsEqual(
-  a: SelectedModel | null | undefined,
-  b: SelectedModel | null | undefined,
-) {
-  return a?.providerID === b?.providerID && a?.modelID === b?.modelID;
-}
-
-export function selectedVariantsEqual(a: string | null | undefined, b: string | null | undefined) {
-  return (a ?? null) === (b ?? null);
-}
-
 export function resolveAvailableAgent({
   agents,
   sessionAgent,

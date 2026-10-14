@@ -1305,8 +1305,3 @@ export function HostProvider({
     </ActiveSessionTranscriptProvider>
   );
 }
-
-// Keep setup complete flag writable for wizard completion.
-export function markSetupComplete() {
-  storageSet(STORAGE_KEYS.SETUP_COMPLETE, "true");
-}

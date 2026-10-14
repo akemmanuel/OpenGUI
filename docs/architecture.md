@@ -88,4 +88,4 @@ pnpm run slop-check
 pnpm run build
 ```
 
-Release CI uses Node.js 24 and pnpm 11.8.0. Never invoke `tsc` directly; use Vite+ checks.
+Release CI uses Node.js 24 and pnpm 11.18.0. Never invoke `tsc` directly; use Vite+ checks.

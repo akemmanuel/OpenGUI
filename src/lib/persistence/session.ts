@@ -1,6 +1,6 @@
 import type { SelectedModel } from "@opengui/protocol";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { persistJsonRecord, persistJsonWhen, readJsonOr } from "./json";
+import { persistJsonRecord, readJsonOr } from "./json";
 
 export type SessionColor =
   | "red"
@@ -47,12 +47,4 @@ export function persistSessionMetaMap(meta: SessionMetaMap): void {
       Object.hasOwn(value, "movedToSessionId"),
     ),
   );
-}
-
-export function getUnreadSessionIds(): Set<string> {
-  return new Set(readJsonOr<string[]>(STORAGE_KEYS.UNREAD_SESSIONS, []));
-}
-
-export function persistUnreadSessionIds(ids: Set<string>): void {
-  persistJsonWhen(STORAGE_KEYS.UNREAD_SESSIONS, [...ids], ids.size > 0);
 }

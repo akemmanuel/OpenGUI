@@ -3,7 +3,7 @@
 ## Setup
 
 The application supports Node.js 22.19 or newer. Contributors and release gates use Node.js 24
-because the complete QA toolchain requires it. Install Node.js 24 and pnpm 11.8.0, then run:
+because the complete QA toolchain requires it. Install Node.js 24 and pnpm 11.18.0, then run:
 
 ```bash
 pnpm install

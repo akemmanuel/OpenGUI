@@ -240,6 +240,10 @@ export class IdentityService {
         bearer(),
         admin({ adminRoles: ["user", "admin"], roles: { user: adminAc, admin: adminAc } }),
       ],
+      // The Host migrates this schema in initialize(), and every auth call awaits it.
+      // Better Auth's eager check would race those migrations and log a false
+      // mismatch on fresh Hosts, so initialize() verifies the schema itself instead.
+      advanced: { database: { validateSchema: false } },
     });
     this.injectedMailSender = options.mailSender;
     this.mailSecrets = options.mailSecrets;
@@ -257,6 +261,13 @@ export class IdentityService {
   private async initialize() {
     const { runMigrations } = await getMigrations(this.auth.options);
     await runMigrations();
+    const pending = await getMigrations(this.auth.options);
+    if (pending.toBeCreated.length > 0 || pending.toBeAdded.length > 0) {
+      const tables = [...pending.toBeCreated, ...pending.toBeAdded].map((entry) => entry.table);
+      throw new Error(
+        `Identity database migration incomplete for: ${[...new Set(tables)].join(", ")}`,
+      );
+    }
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS host_membership (
         user_id TEXT PRIMARY KEY,

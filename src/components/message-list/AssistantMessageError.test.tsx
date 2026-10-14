@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { ActionsContext, type ActionsContextValue } from "@/hooks/agent-contexts";
 import { AssistantMessageError, parseRetryAfter } from "./AssistantMessageError";
 
 vi.mock("react-i18next", () => ({
@@ -55,6 +56,31 @@ describe("AssistantMessageError", () => {
     expect(screen.getByText("messageError.compactionRecoveryTitle")).toBeDefined();
     rerender(<AssistantMessageError error={undefined} />);
     expect(screen.queryByText("messageError.compactionRecoveryTitle")).toBeNull();
+  });
+
+  test("offers compacting from the recovery card and only there", async () => {
+    const summarizeSession = vi.fn(async () => {});
+    const actions = { summarizeSession } as unknown as ActionsContextValue;
+    const recovery = {
+      name: "Model request failed",
+      data: { message: "Compaction needs attention", code: "compactionRecoveryRequired" },
+    };
+    const { rerender } = render(
+      <ActionsContext.Provider value={actions}>
+        <AssistantMessageError error={recovery} />
+      </ActionsContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "messageError.compactNow" }));
+    await waitFor(() => expect(summarizeSession).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <ActionsContext.Provider value={actions}>
+        <AssistantMessageError
+          error={{ name: "Model request failed", data: { message: "Provider down" } }}
+        />
+      </ActionsContext.Provider>,
+    );
+    expect(screen.queryByRole("button", { name: "messageError.compactNow" })).toBeNull();
   });
 
   test("explains usage limits with the reset time and a model switch", () => {

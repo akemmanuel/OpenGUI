@@ -1,8 +1,6 @@
 import { normalizeProjectPath } from "@/lib/path";
-import type { ProjectMetaMap } from "@/lib/persistence/project";
 import type { SessionMeta } from "@/lib/persistence/session";
 import type { Session } from "@/hooks/agent-state-types";
-import type { SelectedModel } from "@opengui/protocol";
 
 const PROJECT_KEY_SEPARATOR = "\u0000";
 
@@ -87,67 +85,7 @@ export function getSessionProjectTarget(
   };
 }
 
-/** Filesystem directory for backend session APIs (messages, queue, …). */
-export function directoryScopeForSessionApi(
-  session: Session | undefined | null,
-  meta?: SessionMeta,
-): string | undefined {
-  const fromTarget = getSessionProjectTarget(session, meta)?.directory;
-  if (fromTarget) return fromTarget;
-  if (!session) return undefined;
-  const raw = session._projectDir ?? session.directory;
-  if (!raw) return undefined;
-  const normalized = normalizeProjectPath(raw);
-  return normalized || raw;
-}
-
-export function getSessionSelectedModel(session: Session | undefined | null): SelectedModel | null {
-  const model = session?.model;
-  if (!model?.providerID || !model.id) return null;
-  return { providerID: model.providerID, modelID: model.id };
-}
-
-export function getSessionSelectedVariant(session: Session | undefined | null): string | null {
-  const variant = session?.model?.variant;
-  return typeof variant === "string" && variant.length > 0 ? variant : null;
-}
-
-export function getSessionSelectedAgent(session: Session | undefined | null): string | null {
-  const agent = session?.agent;
-  return typeof agent === "string" && agent.length > 0 ? agent : null;
-}
-
 export function shouldAutoNameSession(session: Session | undefined | null) {
   const title = session?.title?.trim();
   return !title || ["untitled", "new session"].includes(title.toLowerCase());
-}
-
-function getSessionSortTime(session: Session | undefined | null): number {
-  if (!session) return 0;
-  const time = session.time;
-  if (!time || typeof time !== "object") return 0;
-  const updated = time.updated;
-  const created = time.created;
-  if (typeof updated === "number" && Number.isFinite(updated)) return updated;
-  if (typeof created === "number" && Number.isFinite(created)) return created;
-  return 0;
-}
-
-export function sortSessionsNewestFirst(sessions: Session[]): Session[] {
-  const defined = sessions.filter(
-    (session): session is Session => !!session && typeof session.id === "string",
-  );
-  return [...defined].sort((a, b) => {
-    const byUpdated = getSessionSortTime(b) - getSessionSortTime(a);
-    if (byUpdated !== 0) return byUpdated;
-    return b.id.localeCompare(a.id);
-  });
-}
-
-export function isHiddenProject(
-  projectMeta: ProjectMetaMap,
-  workspaceId: string | null | undefined,
-  directory: string,
-): boolean {
-  return projectMeta[makeProjectKey(workspaceId, directory)]?.hidden === true;
 }

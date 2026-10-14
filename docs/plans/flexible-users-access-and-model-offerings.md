@@ -179,7 +179,7 @@ Migration: existing `modelConnections[]` + `apiKeys` + identity `host_model_conn
 - [ ] Single model-access write path (no half identity / half host state)
 - [ ] Test-connection API
 - [ ] Optional: encrypt secrets at rest or OS keychain on Desktop
-- [ ] Retire unused `src/types/provider.ts` fossils in favor of protocol types
+- [x] Retire unused `src/types/provider.ts` fossils in favor of protocol types
 - [ ] Tests: header strategy, oauth template, dual-store invariant
 
 **Exit:** Custom OpenAI-compatible + header-auth backend without code change; Codex/xAI not special-cased in Host class beyond presets.

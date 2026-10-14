@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronDown, Copy } from "lucide-react";
+import { AlertTriangle, ChevronDown, Copy, Loader2, Minimize2 } from "lucide-react";
+import { ActionsContext } from "@/hooks/agent-contexts";
 import { copyTextToClipboard } from "@/lib/browser";
+import { notifyUnknownError } from "@/lib/notify";
 import type { TranscriptMessageEntry } from "@/protocol/session-transcript";
 
 export function AssistantMessageError({
@@ -10,7 +12,9 @@ export function AssistantMessageError({
   error: TranscriptMessageEntry["info"]["error"];
 }) {
   const { t, i18n } = useTranslation();
+  const actions = useContext(ActionsContext);
   const [expanded, setExpanded] = useState(false);
+  const [compacting, setCompacting] = useState(false);
   if (!error) return null;
   const data =
     "data" in error && error.data && typeof error.data === "object"
@@ -20,6 +24,19 @@ export function AssistantMessageError({
   const message = data && "message" in data ? String(data.message) : error.name;
   const providerCode = typeof data?.providerCode === "string" ? data.providerCode : undefined;
   const failedAt = typeof data?.failedAt === "number" ? data.failedAt : undefined;
+  const compactNow =
+    recoveryRequired && actions
+      ? async () => {
+          setCompacting(true);
+          try {
+            await actions.summarizeSession();
+          } catch (error) {
+            notifyUnknownError(error, t("compaction.failed"));
+          } finally {
+            setCompacting(false);
+          }
+        }
+      : undefined;
 
   // Computed directly (no memo): splitting one short message is trivial, and
   // every hook must run unconditionally so null/error transitions stay valid.
@@ -98,6 +115,21 @@ export function AssistantMessageError({
           <Copy className="size-3.5" aria-hidden="true" />
           {t("messageError.copy")}
         </button>
+        {compactNow && (
+          <button
+            type="button"
+            className="inline-flex min-h-8 min-w-0 max-w-full flex-none items-center gap-1.5 rounded-md px-2 text-left text-xs font-medium whitespace-normal text-destructive/85 [overflow-wrap:anywhere] transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/45 disabled:opacity-60"
+            disabled={compacting}
+            onClick={() => void compactNow()}
+          >
+            {compacting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Minimize2 className="size-3.5" aria-hidden="true" />
+            )}
+            {t("messageError.compactNow")}
+          </button>
+        )}
       </div>
     </div>
   );
