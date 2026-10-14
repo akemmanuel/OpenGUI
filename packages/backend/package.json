@@ -11,13 +11,13 @@
     }
   },
   "dependencies": {
-    "@better-auth/kysely-adapter": "1.7.6",
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@better-auth/kysely-adapter": "1.7.7",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@opengui/harness": "workspace:*",
     "@opengui/protocol": "workspace:*",
-    "better-auth": "1.7.6",
-    "hono": "^4.13.12",
-    "nodemailer": "^10.0.15"
+    "better-auth": "1.7.7",
+    "hono": "^4.13.13",
+    "nodemailer": "^10.1.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.2"

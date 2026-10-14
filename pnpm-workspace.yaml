@@ -2,19 +2,16 @@ packages:
   - "packages/*"
 
 overrides:
-  "@vitest/browser": 5.0.3
-  "@vitest/browser-preview": 5.0.3
-  vitest: 5.0.3
-
-patchedDependencies:
-  "@earendil-works/pi-ai@0.99.1": "patches/@earendil-works__pi-ai@0.99.1.patch"
+  "@vitest/browser": 5.0.4
+  "@vitest/browser-preview": 5.0.4
+  vitest: 5.0.4
 
 peerDependencyRules:
   allowedVersions:
     # Vite Plus provides a Vite-compatible API under its own package version.
-    vite: 1.0.0
+    vite: 1.1.0
     # better-auth's optional peer is only used for its own tests.
-    vitest: 5.0.3
+    vitest: 5.0.4
 
 allowBuilds:
   "@google/genai": true
@@ -26,7 +23,3 @@ allowBuilds:
   msw: false
   protobufjs: true
   sharp: true
-
-minimumReleaseAgeExclude:
-  - agent-browser@0.38.1
-  - "@earendil-works/pi-ai@0.99.1"

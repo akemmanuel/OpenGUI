@@ -16,13 +16,15 @@ export function timeoutEffect<A, E>(
   input: { timeoutMs: number; timeoutMessage: string | (() => string) },
 ) {
   return effect.pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: input.timeoutMs,
-      onTimeout: () =>
-        new Error(
-          typeof input.timeoutMessage === "function"
-            ? input.timeoutMessage()
-            : input.timeoutMessage,
+      orElse: () =>
+        Effect.fail(
+          new Error(
+            typeof input.timeoutMessage === "function"
+              ? input.timeoutMessage()
+              : input.timeoutMessage,
+          ),
         ),
     }),
   );

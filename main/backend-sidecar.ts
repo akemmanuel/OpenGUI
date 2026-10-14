@@ -262,14 +262,14 @@ async function stopChild(childState: ManagedChildState | null) {
     Effect.gen(function* () {
       child.kill("SIGTERM");
       yield* waitForExit.pipe(
-        Effect.timeoutFail({
+        Effect.timeoutOrElse({
           duration: STOP_TIMEOUT_MS,
-          onTimeout: () => new Error("Timed out stopping backend child"),
+          orElse: () => Effect.fail(new Error("Timed out stopping backend child")),
         }),
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           Effect.gen(function* () {
             child.kill("SIGKILL");
-            yield* waitForExit.pipe(Effect.catchAll(() => Effect.void));
+            yield* waitForExit.pipe(Effect.catch(() => Effect.void));
           }),
         ),
       );
