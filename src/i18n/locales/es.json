@@ -108,16 +108,14 @@
     "browse": "Explorar",
     "cancel": "Cancelar",
     "close": "Cerrar",
-    "add": "Añadir",
     "edit": "Editar",
     "remove": "Eliminar",
     "save": "Guardar",
     "restart": "Reiniciar",
     "settings": "Ajustes",
-    "version": "Versión",
-    "done": "Listo",
     "loading": "Cargando...",
-    "retry": "Intentar de nuevo"
+    "retry": "Intentar de nuevo",
+    "optional": "opcional"
   },
   "markdown": {
     "copy": "Copiar",
@@ -168,8 +166,6 @@
   },
   "settings": {
     "navigationLabel": "Secciones de ajustes",
-    "skillsPlaceholderTitle": "La gestión de habilidades aún no está disponible",
-    "skillsPlaceholderDescription": "El agente puede usar habilidades; su instalación y gestión llegarán en una actualización posterior.",
     "tabs": {
       "providers": "Modelos y proveedores",
       "models": "Modelos",
@@ -198,8 +194,7 @@
     },
     "paths": {
       "boundaryTitle": "Los permisos de ruta no son un sandbox",
-      "boundaryDescription": "Los permisos de lectura y escritura controlan las operaciones de proyecto y archivos de OpenGUI. No confinan los comandos de una Shell sin restricciones, que tiene la autoridad del usuario del sistema operativo del Host.",
-      "desktopOnly": "Los directorios predeterminados, el gestor de archivos y los comandos de terminal se configuran en la aplicación de escritorio."
+      "boundaryDescription": "Los permisos de lectura y escritura controlan las operaciones de proyecto y archivos de OpenGUI. No confinan los comandos de una Shell sin restricciones, que tiene la autoridad del usuario del sistema operativo del Host."
     },
     "instructions": {
       "scopeLabel": "Ámbito de las instrucciones",
@@ -220,7 +215,6 @@
       "editors": "Equipos que pueden editar las instrucciones de este proyecto",
       "editorsHelp": "Los miembros de los equipos seleccionados pueden editar. Basta con pertenecer a uno de ellos. Los lectores no pueden editar; los propietarios y administradores siempre pueden hacerlo. Estos permisos no conceden acceso al proyecto.",
       "label": "Instrucciones personalizadas",
-      "help": "Estas normas de la casa se aplican a cada Proyecto y Sesión de este Host. Se añaden al system prompt del agente en el siguiente turno.",
       "readOnly": "Estas normas de la casa se aplican a cada Sesión de este Host. Solo una administración del Host puede cambiarlas.",
       "placeholder": "Ejemplo: Prefiere la ortografía británica. Pregunta antes de cambiar archivos publicados.",
       "save": "Guardar instrucciones",
@@ -228,39 +222,7 @@
       "loadFailed": "No se pudieron cargar las instrucciones personalizadas.",
       "characterCount": "{{count}} / {{max}} caracteres"
     },
-    "plugins": {
-      "title": "Plugins",
-      "unavailable": "La gestión de plugins se eliminó con la última corrección de migración del harness. La entrada vuelve a estar visible; las acciones de gestión deben reconectarse a la nueva API del harness.",
-      "installed": "Instalados",
-      "discover": "Descubrir",
-      "project": "Proyecto",
-      "global": "Global",
-      "globalScope": "Instalar globalmente",
-      "published": "Publicado",
-      "custom": "Personalizado",
-      "searchPlaceholder": "Buscar plugins…",
-      "install": "Instalar",
-      "installSourcePlaceholder": "Instalar desde fuente, p. ej. owner/repo@skill-name",
-      "noResults": "No se encontraron plugins.",
-      "noPlugins": "No hay plugins instalados.",
-      "emptyScope": "No hay plugins en este ámbito.",
-      "pluginGroups": "Grupos de plugins",
-      "general": "General",
-      "capabilityCount": "{{count}} capacidades",
-      "updateGroup": "Actualizar grupo",
-      "update": "Actualizar",
-      "installNamed": "Instalar {{name}}",
-      "installedNamed": "{{name}} instalado",
-      "updateNamed": "Actualizar {{name}}",
-      "removeNamed": "Eliminar {{name}}",
-      "updateGroupNamed": "Actualizar grupo de plugins {{name}}",
-      "removeGroupNamed": "Eliminar grupo de plugins {{name}}",
-      "invalidInstallSource": "Introduce una fuente válida (p. ej. owner/repo@skill-name o una URL)."
-    },
     "general": {
-      "agentBackend": "Harness",
-      "darkMode": "Modo oscuro",
-      "appearance": "Apariencia",
       "chatWidth": "Ancho del chat",
       "chatWidthStandard": "Estándar",
       "chatWidthFull": "Ancho completo",
@@ -278,12 +240,10 @@
         "red": "Rojo",
         "teal": "Verde azulado"
       },
-      "customAccent": "Color de acento personalizado",
       "language": "Idioma",
       "defaultChatDirectory": "Directorio de chat predeterminado",
       "defaultChatDirectoryHelp": "Los chats nuevos empiezan en este directorio de trabajo.",
       "newChatModelBehavior": "Modelo LLM para chats nuevos",
-      "newChatModelBehaviorHelp": "Elige cómo OpenGUI preselecciona el modelo LLM al iniciar un chat nuevo.",
       "newChatModelAsk": "Elegir cada vez",
       "newChatModelLast": "Usar el último modelo LLM",
       "newChatModelWorkspaceDefault": "Usar predeterminado del espacio de trabajo",
@@ -380,13 +340,8 @@
     "newSession": "Nueva sesión",
     "collapseProject": "Contraer proyecto",
     "expandProject": "Expandir proyecto",
-    "newWorktree": "Nuevo worktree...",
-    "worktrees": "Worktrees",
-    "merge": "Fusionar",
-    "openPullRequest": "Abrir pull request",
     "removeProject": "Cerrar proyecto",
-    "closeOtherProjects": "Cerrar otros proyectos",
-    "createPullRequest": "Crear PR"
+    "closeOtherProjects": "Cerrar otros proyectos"
   },
   "prompt": {
     "inputLabel": "Entrada de mensaje",
@@ -398,9 +353,6 @@
     "uploadingFiles": "Subiendo archivos…",
     "add": "Añadir",
     "addFile": "Añadir archivo",
-    "mcps": "MCPs",
-    "newWorktree": "Nuevo worktree",
-    "currentRootWorktree": "Rama actual del worktree raíz.",
     "queueTitle": "Cola: esperar la respuesta completa y luego enviar (Ctrl/Cmd+D para alternar)",
     "steerTitle": "Guiar: esperar a que termine la parte actual del modelo y luego enviar (Ctrl/Cmd+D para alternar)",
     "queue": "Cola",
@@ -408,12 +360,7 @@
     "stop": "Detener",
     "stopGenerating": "Detener generación",
     "send": "Enviar",
-    "sendMessage": "Enviar mensaje",
-    "chooseHarnessAndModelBeforeSend": "Elige un modelo antes de enviar."
-  },
-  "variantSelector": {
-    "off": "apagado",
-    "thinkingEffort": "Esfuerzo de razonamiento: {{level}} (clic o Ctrl+T para cambiar, Ctrl+Mayús+T para retroceder)"
+    "sendMessage": "Enviar mensaje"
   },
   "reasoningEffort": {
     "label": "Esfuerzo de razonamiento",
@@ -429,32 +376,12 @@
       "ultra": "Ultra"
     }
   },
-  "agentSelector": {
-    "placeholder": "Agente"
-  },
   "modelSelector": {
-    "selectModel": "Seleccionar modelo",
-    "chooseHarnessAndModel": "Elegir modelo",
     "dialogTitle": "Elegir modelo",
     "searchPlaceholder": "Buscar proveedor, modelo o ID...",
-    "favorites": "Favoritos",
     "recent": "Recientes",
-    "harnessLocked": "El harness está fijado para esta sesión.",
-    "backendLocked": "Backend bloqueado para esta sesión.",
-    "changeHarness": "Cambiar harness",
-    "loadingCatalog": "Cargando modelos para este proyecto…",
-    "noModelsForHarness": "No hay modelos para este harness en este proyecto.",
-    "noModelsForHarnessHint": "Prueba otro harness o revisa las credenciales en Ajustes.",
-    "openSettings": "Abrir ajustes",
-    "harnessNotInstalled": "CLI no instalado",
-    "noHarnessInstalled": "No hay ningún CLI de harness instalado. Instala uno en Ajustes para elegir un modelo.",
-    "checkingHarnesses": "Comprobando harnesses instalados…",
-    "harnessCliFound": "Instalado — conecta en Ajustes si faltan modelos",
-    "harnessReady": "{{count}} modelos en inventario",
     "noModelsAvailable": "No hay modelos disponibles.",
-    "noModelsMatch": "Ningún modelo coincide con \"{{query}}\".",
-    "addFavorite": "Añadir a favoritos",
-    "removeFavorite": "Quitar de favoritos"
+    "noModelsMatch": "Ningún modelo coincide con \"{{query}}\"."
   },
   "compaction": {
     "inProgress": "Preparando la transferencia de contexto…",
@@ -515,8 +442,7 @@
     "createAccountAndAdd": "Crear cuenta y añadir",
     "addWorkspace": "Añadir espacio de trabajo",
     "toggleSidebar": "Alternar barra lateral",
-    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
-    "addProjectRequiresWorkspace": "Crea un espacio de trabajo primero"
+    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto."
   },
   "identity": {
     "checkingHost": "Comprobando la identidad del Host",
@@ -688,11 +614,9 @@
     "mailNotConfigured": "El envío de correo aún no está configurado. Guarda primero ajustes válidos."
   },
   "mcp": {
-    "title": "MCP",
     "heading": "Servidores de herramientas conectados",
     "addConnection": "Añadir servidor",
     "loading": "Cargando conexiones MCP…",
-    "enabled": "Activada",
     "toggle": "Cambiar {{name}}",
     "inspect": "Probar conexión",
     "inspecting": "Probando…",
@@ -734,14 +658,6 @@
       "stdio": "Comando local",
       "http": "HTTP Streamable"
     },
-    "noManagement": "El backend actual no tiene gestión de MCP.",
-    "noneConfigured": "No hay servidores MCP configurados.",
-    "disabled": "Desactivado",
-    "failed": "Fallido",
-    "needsAuth": "Requiere autenticación",
-    "needsRegistration": "Requiere registro",
-    "unknown": "Desconocido",
-    "loadTimedOut": "Cargar herramientas está tardando más de lo esperado.",
     "retry": "Reintentar",
     "addTitle": "Conectar un servidor MCP",
     "addHelp": "Pega la dirección del servidor o el comando de inicio de su guía de instalación. OpenGUI completa el resto.",
@@ -784,50 +700,11 @@
     "tokenLabel": "Token de acceso"
   },
   "contextStatus": {
-    "compacting": "Compactando",
     "contextWindow": "Ventana de contexto",
-    "tokens": "tokens",
     "usage": "{{used}} / {{limit}} tokens",
     "remaining": "Quedan {{count}} tokens",
     "estimated": "Estimado durante la transmisión",
-    "cost": "Coste",
-    "compact": "Compactar"
-  },
-  "worktree": {
-    "newWorktree": "Nuevo worktree",
-    "createFor": "Crear un nuevo worktree de git para",
-    "branch": "Rama",
-    "newBranch": "Nueva rama",
-    "existingBranch": "Rama existente",
-    "branchName": "Nombre de rama",
-    "selectBranch": "Seleccionar rama",
-    "loadingBranches": "Cargando ramas...",
-    "chooseBranch": "Elige una rama...",
-    "path": "Ruta del worktree",
-    "pathPlaceholder": "/ruta/al/worktree",
-    "pathHelp": "Se creará un nuevo directorio en esta ruta.",
-    "creating": "Creando...",
-    "createWorktree": "Crear worktree",
-    "setupTitle": "Configuración del worktree",
-    "detectingSetup": "Detectando configuración del proyecto...",
-    "detectedSetup": "Detectado {{file}} en {{project}}. ¿Ejecutar configuración?",
-    "runningSetup": "Ejecutando comando de configuración...",
-    "setupComplete": "Configuración completada correctamente.",
-    "setupFailed": "El comando de configuración falló.",
-    "skip": "Omitir",
-    "run": "Ejecutar",
-    "detectedCommand": "Comando detectado",
-    "setupFinished": "Configuración finalizada - el worktree está listo."
-  },
-  "worktreeCleanup": {
-    "title": "No quedan sesiones",
-    "descriptionPrefix": "El worktree",
-    "branch": "rama",
-    "descriptionSuffix": "no tiene sesiones activas. ¿Quieres eliminarlo?",
-    "keep": "Conservar",
-    "remove": "Eliminar",
-    "removing": "Eliminando...",
-    "deleteFromDisk": "Eliminar también los archivos del worktree del disco"
+    "cost": "Coste"
   },
   "providers": {
     "codex": {
@@ -997,7 +874,6 @@
     }
   },
   "skillsSettings": {
-    "title": "Skills",
     "aboutTitle": "Instrucciones y recursos de trabajo, no plugins ejecutables",
     "aboutDescription": "Las Skills agrupan instrucciones, referencias y archivos de apoyo para el agente. Instalar una Skill no instala un plugin ejecutable ni ejecuta un comando de shell.",
     "sessionPins": "Las Sessions existentes conservan exactamente las revisiones de Skills con las que comenzaron. Las actualizaciones se aplican a Sessions nuevas para mantener reproducible el trabajo en curso.",
@@ -1088,35 +964,11 @@
     "model": "Modelo",
     "skip": "Omitir",
     "readyDescription": "OpenGUI está listo. Conecta un proyecto e inicia una sesión con el agente integrado.",
-    "title": "Bienvenido a OpenGUI",
-    "setupAgentsTitle": "Configurar agentes de código",
     "chooseStartTitle": "Elige dónde empiezan los chats nuevos",
+    "chooseStartDescription": "Los chats nuevos se abren en esta carpeta, salvo que elijas otra.",
     "readyTitle": "Todo listo",
-    "setupSavedTitle": "Configuración guardada",
-    "checkingComputer": "Comprobando este equipo",
-    "lookingForHarnesses": "Buscando CLIs de Harness instaladas.",
-    "codingAgentFound": "Agente de código encontrado",
-    "codingAgentFoundDescription": "OpenGUI encontró un agente de código en este equipo.",
-    "noHarnessInstalledTitle": "No hay Harness instalado",
-    "noHarnessInstalledDescription": "OpenGUI necesita un agente de código antes de poder trabajar con tus archivos.",
-    "checkHarnessesFailedTitle": "No se pudieron comprobar los Harnesses",
-    "checkHarnessesFailedDescription": "Puedes continuar la configuración y volver a comprobarlo más tarde.",
-    "checkAgain": "Comprobar de nuevo",
-    "harnessInventoryTitle": "Inventario de agentes",
-    "modelsCount": "{{count}} modelos",
-    "cliFound": "CLI encontrada",
-    "harnessReadyDescription": "Este harness de agente está listo para usarse.",
-    "harnessCliFoundDescription": "La CLI está instalada. La selección de modelo y proveedor se hace más tarde en OpenGUI.",
-    "harnessNotFoundDescription": "No se encontró la CLI en este equipo.",
-    "notFound": "no encontrado",
-    "defaultChatDirectoryTitle": "Directorio de chat predeterminado",
-    "defaultChatDirectoryDescription": "Los chats nuevos empiezan en esta carpeta cuando no haya ningún proyecto seleccionado.",
     "folderPlaceholder": "Elige una carpeta o déjalo vacío",
     "continue": "Continuar",
-    "readyToWorkTitle": "OpenGUI está listo para trabajar",
-    "setupHarnessLaterTitle": "Puedes configurar un Harness más tarde",
-    "readyToWorkDescription": "Empieza conectando un proyecto o abriendo una sesión.",
-    "setupHarnessLaterDescription": "OpenGUI se abrirá ahora. Los envíos del agente necesitan un Harness antes de ejecutarse.",
     "openOpenGui": "Abrir OpenGUI"
   },
   "languages": {
@@ -1195,16 +1047,8 @@
     "checkingLocalServer": "Comprobando servidor local...",
     "startingLocalServer": "Iniciando servidor local..."
   },
-  "projectHarnessStatus": {
-    "title": "Errores de harness para {{project}}",
-    "hint": "Puedes seguir escribiendo y elegir otro harness en el selector de modelo. El historial de sesiones puede estar incompleto para los harnesses indicados.",
-    "sidebarSummary": "{{count}} error(es) de harness"
-  },
   "sessionError": {
-    "title": "Error del agente",
-    "nextStep": "Siguiente paso: ejecuta este comando en tu terminal y vuelve a intentarlo:",
-    "openTerminal": "Abrir terminal",
-    "messagesLoadFailed": "No se pudieron cargar los mensajes de esta sesión."
+    "title": "Error del agente"
   },
   "updateDialog": {
     "title": "Actualización disponible",
@@ -1231,22 +1075,6 @@
     "enableSkill": "Activar skill para esta sesión",
     "disableSkill": "Desactivar skill para esta sesión",
     "skillsRevisionLocked": "Esta Session conserva estas revisiones de Skills aunque se actualice la biblioteca. Las Sessions nuevas reciben las actualizaciones."
-  },
-  "mergeDialog": {
-    "failed": "La fusión falló",
-    "merging": "Fusionando...",
-    "mergingDescription": "Fusionando {{branch}} en la rama actual",
-    "success": "Fusión completada",
-    "successDescription": "{{branch}} se ha fusionado correctamente.",
-    "successDescriptionDelete": "{{branch}} se ha fusionado correctamente. El worktree se eliminará.",
-    "conflicts": "Conflictos de fusión",
-    "conflictsDescription": "Fusionar {{branch}} produjo conflictos en {{count}} archivo(s):",
-    "abort": "Abortar fusión",
-    "fixWithAI": "Corregir con IA",
-    "title": "Fusionar rama",
-    "description": "Fusionar {{branch}} en la rama actual de {{repoName}}",
-    "deleteWorktreeLabel": "Eliminar worktree tras una fusión correcta",
-    "deleteWorktreeDescription": "Elimina el directorio del worktree y lo desconecta del proyecto"
   },
   "questionPanel": {
     "title": "El asistente tiene una pregunta",
@@ -1296,11 +1124,6 @@
       "doneOne": "{{count}} tarea escrita",
       "doneOther": "{{count}} tareas escritas"
     },
-    "question": {
-      "running": "Preguntando",
-      "doneOne": "{{count}} pregunta hecha",
-      "doneOther": "{{count}} preguntas hechas"
-    },
     "patch": {
       "created": "Creado",
       "deleted": "Eliminado",
@@ -1308,31 +1131,24 @@
       "patched": "Parcheado"
     },
     "fileCountOther": "{{count}} archivos",
-    "matchCountOne": "{{count}} coincidencia",
-    "matchCountOther": "{{count}} coincidencias"
+    "matchCount_one": "{{count}} coincidencia",
+    "matchCount_other": "{{count}} coincidencias"
   },
   "attachments": {
     "image": "Imagen",
     "fileAttachment": "Archivo adjunto",
-    "imageAttachment": "Imagen adjunta {{count}}",
     "closeImagePreview": "Cerrar vista previa de imagen"
   },
   "projectPath": {
     "up": "Subir",
     "noFolders": "No hay carpetas",
-    "allowedRoots": "Raíces permitidas: {{roots}}",
-    "serverDefault": "predeterminado del servidor",
     "title": "Abrir proyecto",
-    "webLocalDescription": "Elige una ruta de proyecto en el servidor de OpenGUI. Si lo usas desde un teléfono, las rutas son del servidor, no archivos del teléfono.",
-    "localDescription": "Abre una carpeta de proyecto local para esta ventana. También puedes pegar una ruta absoluta manualmente.",
-    "remoteDescription": "Esta ventana está conectada a un servidor remoto, así que elige un proyecto introduciendo la ruta en ese servidor.",
     "openProject": "Abrir proyecto",
     "projectPathLabel": "Ruta del proyecto",
     "editPath": "Editar la ruta actual",
     "searchFolders": "Buscar carpetas",
     "clearSearch": "Borrar búsqueda de carpetas",
     "noMatchingFolders": "Ninguna carpeta coincide con tu búsqueda",
-    "browseServer": "Explorar servidor",
     "loadingServerFolders": "Cargando carpetas del servidor..."
   },
   "fileMention": {
@@ -1359,8 +1175,8 @@
     "reject": "Rechazar"
   },
   "revertBanner": {
-    "reverted": "{{count}} mensaje revertido",
-    "reverted_plural": "{{count}} mensajes revertidos",
+    "reverted_one": "{{count}} mensaje revertido",
+    "reverted_other": "{{count}} mensajes revertidos",
     "restore": "Restaurar"
   },
   "sessionShare": {
