@@ -95,6 +95,25 @@ describe("standalone Host server startup", () => {
     expect(startupError).toHaveBeenCalledWith(error);
   });
 
+  test("logs and exits when the Host fails to start after binding", async () => {
+    const failure = new Error("Durable state is already in use");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exit = vi.fn();
+    try {
+      startWebServer({
+        createBackendHost: () => ({ ...host(), hostReady: Promise.reject(failure) }) as never,
+        serve: (() => new EventEmitter()) as never,
+        info: vi.fn(),
+        exit,
+        ...noSignals,
+      });
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
+      expect(logged).toHaveBeenCalledWith("OpenGUI Host failed to start", failure);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   test("SIGTERM stops accepting requests, closes the Host, then exits cleanly", async () => {
     const server = Object.assign(new EventEmitter(), { close: vi.fn() });
     const close = vi.fn(async () => {});

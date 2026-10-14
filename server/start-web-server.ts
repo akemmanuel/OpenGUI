@@ -74,6 +74,13 @@ export function startWebServer(dependencies: Partial<WebServerDependencies> = {}
       exit(Exit.isSuccess(result) ? 0 : 1);
     });
   };
+  // A Host that cannot start (for example a held state lock) must not leave a
+  // process that only answers 500s: exit so the supervisor sees the failure.
+  backend.hostReady.catch((error: unknown) => {
+    if (shuttingDown) return;
+    console.error("OpenGUI Host failed to start", error);
+    exit(1);
+  });
   onSignal("SIGTERM", () => shutdown("SIGTERM"));
   onSignal("SIGINT", () => shutdown("SIGINT"));
   return server;
