@@ -72,8 +72,9 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 - Fresh Hosts no longer log a false "Database schema mismatch" error on first start.
 - Updated all dependencies to their latest releases, including pi-ai 1.2 (more provider errors
   retried upstream, Codex header overrides now built in, so the local patch is gone), Effect 4,
-  Electron 44.7, Vite+ 1.1, Better Auth 1.7.7 and happy-dom 21. This also clears the
-  `source-map-js` security advisory.
+  Electron 44.7, Vite+ 1.2, Better Auth 1.7.7 and happy-dom 21. This also clears the
+  `source-map-js` security advisory and 22 advisories in packages used to build the desktop
+  installers.
 - Server-side retries, timeouts, cancellation, locks and shutdown now run on Effect 4
   (ADR 0016). Shutdown also closes the accounts database, which it previously left open.
 - Removed design prototypes, unused dependencies (`@tanstack/react-virtual`, `next-themes`,

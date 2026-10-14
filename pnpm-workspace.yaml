@@ -5,11 +5,16 @@ overrides:
   "@vitest/browser": 5.0.4
   "@vitest/browser-preview": 5.0.4
   vitest: 5.0.4
+  # Patched releases of electron-builder's transitive packages (build-time only).
+  "@xmldom/xmldom@<0.8.15": ^0.8.15
+  "brace-expansion@<1.1.21": ^1.1.21
+  "http-cache-semantics@<4.2.1": ^4.2.1
+  "undici@>=6 <6.28.1": ^6.28.1
 
 peerDependencyRules:
   allowedVersions:
     # Vite Plus provides a Vite-compatible API under its own package version.
-    vite: 1.1.0
+    vite: 1.2.0
     # better-auth's optional peer is only used for its own tests.
     vitest: 5.0.4
 
@@ -20,3 +25,16 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   protobufjs: true
+
+minimumReleaseAgeExclude:
+  - "@voidzero-dev/vite-plus-core@1.2.0"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.2.0"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.2.0"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.2.0"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.2.0"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.2.0"
+  - vite-plus@1.2.0
+  - electron@44.7.2
