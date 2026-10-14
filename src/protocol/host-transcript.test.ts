@@ -5,6 +5,7 @@ import {
   createHostTranscriptStream,
   projectHostSnapshotToMessages,
   projectHostTranscriptStream,
+  rehydrateHostTranscriptStream,
 } from "./host-transcript";
 
 function snapshot(): HostSessionSnapshot {
@@ -1002,5 +1003,49 @@ describe("Host transcript shell failure reasons", () => {
         metadata: expect.objectContaining({ reason: "sandbox_not_configured" }),
       },
     });
+  });
+});
+
+describe("rehydrating the active Session", () => {
+  function entry(sequence: number, kind: string, runId: string) {
+    return {
+      id: `entry-${sequence}`,
+      sessionId: "session-1",
+      sequence,
+      kind,
+      payload: { runId },
+      createdAt: "2026-07-10T00:00:00.000Z",
+    };
+  }
+
+  test("keeps live text of a Run still streaming and drops finished Runs", () => {
+    let live = createHostTranscriptStream(snapshot());
+    for (const [runId, delta] of [
+      ["aborted-run", "old text"],
+      ["new-run", "Slow stream"],
+    ] as const) {
+      live = applyHostTranscriptEvent(live, {
+        sessionId: "session-1",
+        event: { type: "assistant_delta", runId, delta },
+      });
+    }
+    // Send-now reloads after aborting one Run while the next one already streams.
+    const reloaded = rehydrateHostTranscriptStream(
+      { ...snapshot(), entries: [entry(1, "run_aborted", "aborted-run")] },
+      live,
+    );
+    expect(reloaded.assistantTextByRun).toEqual({ "new-run": "Slow stream" });
+    const texts = projectHostTranscriptStream(reloaded).flatMap((message) =>
+      message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+    );
+    expect(texts).toEqual(["Slow stream"]);
+  });
+
+  test("starts fresh for a different Session", () => {
+    const other = applyHostTranscriptEvent(
+      createHostTranscriptStream({ ...snapshot(), id: "session-2" }),
+      { sessionId: "session-2", event: { type: "assistant_delta", runId: "run", delta: "x" } },
+    );
+    expect(rehydrateHostTranscriptStream(snapshot(), other).assistantTextByRun).toEqual({});
   });
 });

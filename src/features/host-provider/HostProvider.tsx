@@ -39,8 +39,8 @@ import type {
 import {
   applyHostTranscriptEvent,
   createHostTranscriptStream,
-  projectHostSnapshotToMessages,
   projectHostTranscriptStream,
+  rehydrateHostTranscriptStream,
   type HostTranscriptStream,
 } from "@/protocol/host-transcript";
 import type { Workspace } from "@/types/workspace";
@@ -410,11 +410,12 @@ function HostProviderBody({
         const snapshotScope = { directory: snapshot.projectDirectory, sessionId };
         if (snapshotScope.directory !== scope.directory) transcriptStore.select(snapshotScope);
         activeSnapshotRef.current = snapshot;
-        activeStreamRef.current = createHostTranscriptStream(snapshot);
+        // Keep live text of a Run that is still streaming (send-now reloads mid-Run).
+        activeStreamRef.current = rehydrateHostTranscriptStream(snapshot, activeStreamRef.current);
         modelSelectionRevisionRef.current += 1;
         setSelectedModel(selectedModelFromHostSnapshot(snapshot));
         if (snapshot.reasoning) setReasoningEffortState(snapshot.reasoning);
-        const messages = projectHostSnapshotToMessages(snapshot);
+        const messages = projectHostTranscriptStream(activeStreamRef.current);
         transcriptStore.dispatch({
           type: "page.loaded",
           scope: snapshotScope,

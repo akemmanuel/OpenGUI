@@ -19,6 +19,42 @@ export function createHostTranscriptStream(snapshot: HostSessionSnapshot): HostT
   return { snapshot, assistantTextByRun: {}, reasoningTextByRun: {} };
 }
 
+const TERMINAL_RUN_ENTRY_KINDS = new Set([
+  "run_completed",
+  "run_aborted",
+  "run_failed",
+  "run_interrupted",
+]);
+
+/**
+ * Replaces the snapshot after a reload of the same Session but keeps live text
+ * for Runs the snapshot has not finished. Send-now reloads while the new Run
+ * is already streaming; starting from an empty stream dropped its first text.
+ */
+export function rehydrateHostTranscriptStream(
+  snapshot: HostSessionSnapshot,
+  previous: HostTranscriptStream | null,
+): HostTranscriptStream {
+  const fresh = createHostTranscriptStream(snapshot);
+  if (!previous || previous.snapshot.id !== snapshot.id) return fresh;
+  const finishedText = new Set<string>();
+  const finishedReasoning = new Set<string>();
+  for (const entry of snapshot.entries) {
+    const runId = text(entry.payload.runId);
+    if (!runId) continue;
+    const terminal = TERMINAL_RUN_ENTRY_KINDS.has(entry.kind);
+    if (terminal || entry.kind === "assistant_message") finishedText.add(runId);
+    if (terminal || entry.kind === "assistant_reasoning") finishedReasoning.add(runId);
+  }
+  const keep = (buffers: Readonly<Record<string, string>>, finished: Set<string>) =>
+    Object.fromEntries(Object.entries(buffers).filter(([runId]) => !finished.has(runId)));
+  return {
+    ...fresh,
+    assistantTextByRun: keep(previous.assistantTextByRun, finishedText),
+    reasoningTextByRun: keep(previous.reasoningTextByRun, finishedReasoning),
+  };
+}
+
 function withoutRetry(stream: HostTranscriptStream, runId: string | undefined) {
   if (!runId || !stream.retryByRun?.[runId]) return stream.retryByRun;
   const { [runId]: _cleared, ...rest } = stream.retryByRun;
