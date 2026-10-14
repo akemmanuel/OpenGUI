@@ -475,7 +475,7 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
 
   log("mobile viewport and browser back from Settings");
   await browser("set", "viewport", "390", "844");
-  await clickButton("Back");
+  await clickButton("Back to chat");
   await clickButton("Toggle Sidebar");
   await waitForText("Acceptance Session");
 

@@ -250,7 +250,8 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   await fillLabel(ownerBrowser!, "Username", "acceptance_owner");
   await fillLabel(ownerBrowser!, "Password", "acceptance-password");
   await clickButton(ownerBrowser!, "Sign in");
-  await waitForText(ownerBrowser!, "Settings");
+  // Settings is an icon button; the signed-in name in the sidebar footer proves login.
+  await waitForText(ownerBrowser!, "acceptance_owner");
   await clickButton(ownerBrowser!, "Settings");
   await waitForText(ownerBrowser!, "People");
 
