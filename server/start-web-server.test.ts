@@ -6,7 +6,8 @@ function host(servesFrontend = false, close = vi.fn(async () => {})) {
   return {
     env: { hostname: "127.0.0.1", port: 41234, servesFrontend },
     app: { fetch: vi.fn() },
-    hostReady: Promise.resolve({ close }),
+    hostReady: Promise.resolve({}),
+    close,
   };
 }
 

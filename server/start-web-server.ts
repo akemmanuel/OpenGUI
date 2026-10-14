@@ -1,5 +1,6 @@
 import { serve as honoServe } from "@hono/node-server";
 import { createBackendHost as createHost } from "@opengui/backend";
+import { Cause, Effect, Exit } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 
 type BackendHost = ReturnType<typeof createHost>;
@@ -34,7 +35,8 @@ export function startWebServer(dependencies: Partial<WebServerDependencies> = {}
     dependencies.onSignal ??
     ((signal: NodeJS.Signals, handler: () => void) => void process.once(signal, handler));
   const exit = dependencies.exit ?? ((code: number) => process.exit(code));
-  const { env, app, hostReady } = createBackendHost();
+  const backend = createBackendHost();
+  const { env, app } = backend;
   const server = serve(
     {
       fetch: app.fetch,
@@ -54,23 +56,23 @@ export function startWebServer(dependencies: Partial<WebServerDependencies> = {}
 
   // Without this, `docker stop` kills the Host mid-write: active runs are cut
   // off and the durable state lock is left behind for the next start.
+  const stop = Effect.sync(() => server.close()).pipe(
+    Effect.andThen(Effect.promise(() => backend.close())),
+    Effect.timeoutOrElse({
+      duration: SHUTDOWN_TIMEOUT_MS,
+      orElse: () => Effect.fail(new Error("Timed out stopping the Host")),
+    }),
+  );
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
     info(`OpenGUI received ${signal}; stopping runs and closing state`);
-    const timer = setTimeout(() => exit(1), SHUTDOWN_TIMEOUT_MS);
-    timer.unref?.();
-    void (async () => {
-      server.close();
-      try {
-        await (await hostReady)?.close();
-        exit(0);
-      } catch (error) {
-        console.error("OpenGUI shutdown failed", error);
-        exit(1);
-      }
-    })();
+    void Effect.runPromiseExit(stop).then((result) => {
+      if (Exit.isFailure(result))
+        console.error("OpenGUI shutdown failed", Cause.squash(result.cause));
+      exit(Exit.isSuccess(result) ? 0 : 1);
+    });
   };
   onSignal("SIGTERM", () => shutdown("SIGTERM"));
   onSignal("SIGINT", () => shutdown("SIGINT"));

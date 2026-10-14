@@ -179,10 +179,13 @@ export class IdentityService {
   private readonly emailChangeLock = new SerialLock();
   private injectedMailSender?: MailSender;
   private readonly mailSecrets?: MailSecrets;
+  /** Whether this service opened (and therefore closes) its database. */
+  private readonly ownsDatabase: boolean;
 
   constructor(options: IdentityServiceOptions = {}) {
     const databasePath = options.databasePath ?? defaultDatabasePath();
     if (!options.database) mkdirSync(dirname(databasePath), { recursive: true });
+    this.ownsDatabase = !options.database;
     this.database = options.database ?? new DatabaseSync(databasePath);
     this.audit = new IdentityAuditLog(this.database);
     this.database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
@@ -642,6 +645,12 @@ export class IdentityService {
         throw error;
       }
     });
+  }
+
+  /** Waits for startup, then closes the database if this service opened it. */
+  async close() {
+    await this.ready.catch(() => undefined);
+    if (this.ownsDatabase && this.database.isOpen) this.database.close();
   }
 
   async login(usernameValue: string, password: string, headers: Headers) {

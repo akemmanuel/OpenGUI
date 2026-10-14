@@ -82,3 +82,23 @@ describe("createBackendHost API auth and CORS", () => {
     expect(response.headers.get("access-control-allow-methods")).toContain("GET");
   });
 });
+
+describe("createBackendHost lifecycle", () => {
+  test("close stops the Host, then closes the identity database it opened", async () => {
+    const dataDirectory = mkdtempSync(join(tmpdir(), "opengui-backend-close-"));
+    dataDirectories.push(dataDirectory);
+    const result = createBackendHost({
+      dataDirectory,
+      env: testEnv({}),
+      identityDatabasePath: join(dataDirectory, "identity.sqlite"),
+      identitySecret: "test-secret-that-is-at-least-thirty-two-characters",
+    });
+    const host = await result.hostReady;
+    await result.ready;
+    await result.close();
+    expect(result.identity?.database.isOpen).toBe(false);
+    await expect(host.listSessions(dataDirectory)).rejects.toThrow(/not started/);
+    // Closing twice is harmless.
+    await result.close();
+  });
+});

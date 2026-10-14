@@ -1,3 +1,4 @@
+import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
@@ -53,7 +54,23 @@ export type BackendHost = {
   hostReady: Promise<OpenGuiHost>;
   ready: Promise<void>;
   identity?: IdentityService;
+  /** Stops active runs and releases the Host, then the identity database. */
+  close(): Promise<void>;
 };
+
+/** Embedded Accounts; absent unless the Host runs in remote identity mode. */
+export class IdentityResource extends Context.Service<
+  IdentityResource,
+  IdentityService | undefined
+>()("opengui/backend/Identity") {}
+
+/** The started OpenGUI Host. Releasing it drains active runs and closes state. */
+export class HostResource extends Context.Service<HostResource, OpenGuiHost>()(
+  "opengui/backend/Host",
+) {}
+
+/** How long identity mail waits for the Host before reporting it as starting. */
+const MAIL_HOST_WAIT = "15 seconds";
 
 export function shouldApplyRequestBodyLimit(method: string) {
   return method === "POST" || method === "PUT" || method === "PATCH";
@@ -65,27 +82,18 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     authToken: env.authToken,
     allowedCorsOrigin: env.allowedCorsOrigin,
   });
-  // Bridge from identity mail to Host secret storage. The Host starts
-  // asynchronously after the identity service exists, so the callbacks await
-  // startup (bounded); tests inject an in-memory pair instead.
-  let resolveMailHost: ((host: OpenGuiHost) => void) | null = null;
-  const mailHostPromise = new Promise<OpenGuiHost>((resolve) => {
-    resolveMailHost = resolve;
-  });
-  async function mailHost(): Promise<OpenGuiHost> {
-    let timeout!: NodeJS.Timeout;
-    const deadline = new Promise<never>((_, reject) => {
-      timeout = setTimeout(
-        () => reject(new IdentityError("MAIL_SECRETS_UNAVAILABLE", 503, "Host is starting")),
-        15_000,
-      );
-    });
-    try {
-      return await Promise.race([mailHostPromise, deadline]);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
+  // Identity mail keeps its SMTP secret in Host storage, but the Host is built
+  // after identity. The callbacks look the Host up in the runtime when used.
+  const mailHost = (): Promise<OpenGuiHost> =>
+    runtime.runPromise(
+      HostResource.use(Effect.succeed).pipe(
+        Effect.timeoutOrElse({
+          duration: MAIL_HOST_WAIT,
+          orElse: () =>
+            Effect.fail(new IdentityError("MAIL_SECRETS_UNAVAILABLE", 503, "Host is starting")),
+        }),
+      ),
+    );
   const identity =
     env.identityMode === "remote"
       ? new IdentityService({
@@ -171,7 +179,7 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
         },
       }
     : undefined;
-  const hostReady = createHostContext({
+  const hostOptions: Parameters<typeof createHostContext>[0] = {
     dataDirectory: options.dataDirectory,
     resolveExecutionPolicy,
     shellExecutor: sandboxEndpoint
@@ -217,11 +225,27 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
           );
         }
       : undefined,
-  }).then((context) => context.host);
-  hostReady.then(
-    (host) => resolveMailHost?.(host),
-    () => {},
+  };
+  const identityLayer = Layer.effect(
+    IdentityResource,
+    Effect.acquireRelease(Effect.succeed(identity), (service) =>
+      Effect.promise(async () => await service?.close()),
+    ),
   );
+  // The Host depends on identity, so it is released first on shutdown.
+  const hostLayer = Layer.effect(
+    HostResource,
+    Effect.acquireRelease(
+      Effect.promise(() => createHostContext(hostOptions)).pipe(
+        Effect.map((context) => context.host),
+      ),
+      (host) => Effect.promise(() => host.close()),
+    ),
+  ).pipe(Layer.provideMerge(identityLayer));
+  const runtime: ManagedRuntime.ManagedRuntime<HostResource | IdentityResource, never> =
+    ManagedRuntime.make(hostLayer);
+  const hostReady = runtime.runPromise(HostResource.use(Effect.succeed));
+  hostReady.catch(() => undefined);
   const ready = Promise.all([hostReady, identity?.ready]).then(() => undefined);
 
   const app = new Hono<BackendRequestEnv>();
@@ -356,5 +380,5 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     return await serveDevIndex();
   });
 
-  return { env, app, hostReady, ready, identity };
+  return { env, app, hostReady, ready, identity, close: () => runtime.dispose() };
 }
