@@ -52,6 +52,8 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
   retried upstream, Codex header overrides now built in, so the local patch is gone), Effect 4,
   Electron 44.7, Vite+ 1.1, Better Auth 1.7.7 and happy-dom 21. This also clears the
   `source-map-js` security advisory.
+- Server-side retries, timeouts, cancellation, locks and shutdown now run on Effect 4
+  (ADR 0016). Shutdown also closes the accounts database, which it previously left open.
 - Removed design prototypes, unused dependencies (`@tanstack/react-virtual`, `next-themes`),
   dead helpers, the stale Biome config, and outdated bridge-era docs.
 
