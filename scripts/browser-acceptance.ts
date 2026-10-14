@@ -398,7 +398,7 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
 
   log("settings/provider persistence and keyboard focus");
   await clickButton("Settings");
-  await waitForText("Preferences, models, people, and Host administration in one place.");
+  await waitForText("Models");
   await clickButton("Models");
   await expectText("fixture-model");
   await browser("press", "Tab");

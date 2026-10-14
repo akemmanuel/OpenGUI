@@ -46,6 +46,17 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 - Broker faults are classified (unreachable, timeout, unauthorized, busy, rejected) instead of
   surfacing as generic tool errors; the preflight checks the configured shell image.
 
+### Profile and settings
+
+- A profile panel replaces the profile menu: open it from your avatar at the bottom of the
+  sidebar to change appearance, language and personal instructions, sign out, or open
+  **Manage account** for your name, email and password.
+- Settings are grouped into Agent, Host and This computer, with Desktop options in their own
+  section.
+- Connecting an MCP server takes one paste: an `https://` address or a start command such as
+  `npx …` or `uvx …` from the server's setup guide. OpenGUI fills in the name, arguments and
+  environment, and asks you to confirm that you trust commands that run on the Host.
+
 ### Chat
 
 - Sticky date and time while scrolling through a conversation.

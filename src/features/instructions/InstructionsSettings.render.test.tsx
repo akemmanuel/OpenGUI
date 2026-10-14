@@ -49,7 +49,7 @@ vi.mock("@/lib/notify", () => ({
   notifyUnknownError: fixture.notifyUnknownError,
 }));
 
-import { InstructionsSettings } from "./InstructionsSettings";
+import { InstructionsSettings, PersonalInstructions } from "./InstructionsSettings";
 
 describe("InstructionsSettings", () => {
   afterEach(() => {
@@ -85,17 +85,24 @@ describe("InstructionsSettings", () => {
     expect((editor as HTMLTextAreaElement).value).toBe("Prefer British spelling.");
   });
 
-  test("edits private personal preferences independently from host text", async () => {
+  test("keeps personal preferences out of shared settings", async () => {
     render(<InstructionsSettings />);
     await screen.findByLabelText("settings.instructions.label");
-    await userEvent.click(
-      screen.getByRole("button", { name: "settings.instructions.scope.personal" }),
-    );
-    const editor = await screen.findByLabelText("settings.instructions.label");
+    expect(
+      screen.queryByRole("button", { name: "settings.instructions.scope.personal" }),
+    ).toBeNull();
+    expect(fixture.host.getPersonalInstructions).not.toHaveBeenCalled();
+  });
+
+  test("edits private personal preferences independently from host text", async () => {
+    const onDirty = vi.fn();
+    render(<PersonalInstructions onDirty={onDirty} />);
+    const editor = await screen.findByLabelText("profile.personalInstructions");
     expect((editor as HTMLTextAreaElement).value).toBe("My preferences");
     await userEvent.clear(editor);
     await userEvent.type(editor, "Keep it short");
-    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.save" }));
+    expect(onDirty).toHaveBeenLastCalledWith(true);
+    await userEvent.click(screen.getByRole("button", { name: "common.save" }));
     await waitFor(() =>
       expect(fixture.host.setPersonalInstructions).toHaveBeenCalledWith("Keep it short"),
     );
@@ -127,12 +134,14 @@ describe("InstructionsSettings", () => {
         true,
       ),
     );
-    expect((screen.getByRole("checkbox", { name: "Frontend" }) as HTMLInputElement).checked).toBe(
-      true,
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: "Frontend" }).getAttribute("aria-checked")).toBe(
+        "true",
+      ),
     );
   });
 
-  test("project permissions come from the server and dirty drafts survive a cancelled scope change", async () => {
+  test("project permissions come from the server", async () => {
     fixture.actor = { type: "user", id: "member", role: "member" };
     fixture.host.getProjectInstructions.mockResolvedValue({
       directory: "/repo",
@@ -149,14 +158,23 @@ describe("InstructionsSettings", () => {
     const editor = await screen.findByLabelText("settings.instructions.label");
     expect((editor as HTMLTextAreaElement).disabled).toBe(true);
     expect(screen.queryByRole("checkbox")).toBeNull();
-    await userEvent.click(
-      screen.getByRole("button", { name: "settings.instructions.scope.personal" }),
-    );
-    const personal = await screen.findByLabelText("settings.instructions.label");
-    await userEvent.type(personal, " unsaved");
+    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.scope.host" }));
+    expect(
+      ((await screen.findByLabelText("settings.instructions.label")) as HTMLTextAreaElement)
+        .disabled,
+    ).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  test("dirty drafts survive a cancelled scope change", async () => {
+    render(<InstructionsSettings />);
+    const editor = await screen.findByLabelText("settings.instructions.label");
+    await userEvent.type(editor, " unsaved");
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
-    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.scope.host" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.instructions.scope.project" }),
+    );
     expect(confirm).toHaveBeenCalled();
     expect(
       (screen.getByLabelText("settings.instructions.label") as HTMLTextAreaElement).value,
@@ -184,19 +202,14 @@ describe("InstructionsSettings", () => {
 
   test("failed personal saves preserve the draft", async () => {
     fixture.host.setPersonalInstructions.mockRejectedValueOnce(new Error("Host unreachable"));
-    render(<InstructionsSettings />);
-    await screen.findByLabelText("settings.instructions.label");
-    await userEvent.click(
-      screen.getByRole("button", { name: "settings.instructions.scope.personal" }),
-    );
-    const editor = await screen.findByLabelText("settings.instructions.label");
+    render(<PersonalInstructions />);
+    const editor = await screen.findByLabelText("profile.personalInstructions");
     await userEvent.type(editor, " unsaved");
-    await userEvent.click(screen.getByRole("button", { name: "settings.instructions.save" }));
+    await userEvent.click(screen.getByRole("button", { name: "common.save" }));
     await waitFor(() => expect(fixture.notifyUnknownError).toHaveBeenCalled());
     expect((editor as HTMLTextAreaElement).value).toContain("unsaved");
     expect(
-      (screen.getByRole("button", { name: "settings.instructions.save" }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole("button", { name: "common.save" }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
 

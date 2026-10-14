@@ -244,18 +244,15 @@ async function runScenarios(frontendUrl: string, backendUrl: string, modelPort: 
   const owner = await login(backendUrl, "acceptance_owner", "acceptance-password");
 
   log("logout invalidates the old session and username/password login restores the account");
-  await clickButton(ownerBrowser!, "Open profile menu");
-  await find(ownerBrowser!, "role", "menuitem", "click", "Sign out");
+  await clickButton(ownerBrowser!, "Profile and preferences");
+  await clickButton(ownerBrowser!, "Sign out");
   await waitForText(ownerBrowser!, "Sign in to OpenGUI");
   await fillLabel(ownerBrowser!, "Username", "acceptance_owner");
   await fillLabel(ownerBrowser!, "Password", "acceptance-password");
   await clickButton(ownerBrowser!, "Sign in");
   await waitForText(ownerBrowser!, "Settings");
   await clickButton(ownerBrowser!, "Settings");
-  await waitForText(
-    ownerBrowser!,
-    "Preferences, models, people, and Host administration in one place.",
-  );
+  await waitForText(ownerBrowser!, "People");
 
   log("invite-only registration is closed and the owner-only Team surface is visible");
   const closedRegistration = await apiResponse(backendUrl, "/api/identity/register", {

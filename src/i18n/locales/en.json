@@ -1,6 +1,5 @@
 {
   "account": {
-    "openProfile": "Open profile menu",
     "connectedHost": "Connected to: {{host}}",
     "editProfile": "Edit profile",
     "changePassword": "Change password",
@@ -168,35 +167,34 @@
     "other_other": "used {{count}} tools"
   },
   "settings": {
-    "subtitle": "Preferences, models, people, and Host administration in one place.",
     "navigationLabel": "Settings sections",
     "skillsPlaceholderTitle": "Skill management is not available yet",
     "skillsPlaceholderDescription": "Skills can be used by the agent, but installing and managing them will arrive in a later update.",
     "tabs": {
-      "general": "General",
       "providers": "Models & providers",
       "models": "Models",
       "integrations": "Integrations",
       "users": "People",
-      "paths": "Paths & Shell",
+      "paths": "Path access",
       "host": "System",
       "instructions": "Instructions",
       "skills": "Skills",
       "team": "Team",
       "plugins": "Plugins",
       "tools": "Tools",
-      "teams": "Teams"
+      "teams": "Teams",
+      "desktop": "Desktop"
     },
     "sectionDescriptions": {
-      "general": "Appearance, language, notifications, and everyday model preferences.",
       "models": "Choose models and who can use them.",
-      "integrations": "Connect trusted MCP servers that provide additional tools to the agent.",
+      "integrations": "Give the agent extra tools by connecting MCP servers, such as your calendar, a database, or a design tool.",
       "users": "Invite people and manage their Host roles.",
-      "paths": "Control OpenGUI path access and understand the separate authority of Shell commands.",
+      "paths": "Choose which folders people can read and change through OpenGUI.",
       "host": "Host-wide restrictions, registration, and automation keys.",
-      "instructions": "Host-wide instructions, shared project instructions, and private personal preferences.",
+      "instructions": "House rules the agent follows on this Host and in shared projects. Your personal preferences live in your profile in the sidebar.",
       "skills": "Reusable instructions available to the agent.",
-      "teams": "Group people and manage their access together."
+      "teams": "Group people and manage their access together.",
+      "desktop": "Where new chats start and which apps open files and terminals on this computer."
     },
     "paths": {
       "boundaryTitle": "Path grants are not a sandbox",
@@ -210,11 +208,11 @@
         "project": "Project",
         "personal": "Personal"
       },
-      "hierarchy": "Host instructions apply everywhere. Shared project instructions apply to everyone working in that project. Personal preferences apply to your turns only. When instructions conflict, Host takes priority, then Project, then Personal.",
+      "hierarchy": "Host instructions apply everywhere. Shared project instructions apply to everyone working in that project. When they conflict, Host instructions win.",
       "helpScope": {
         "host": "Shared with everyone on this Host. Only owners and admins can edit.",
         "project": "Shared with everyone who has access to this project. Changes apply on the next turn.",
-        "personal": "Private to your account on this Host. Applied when you send a prompt, including in shared Sessions. Do not include secrets."
+        "personal": "Private to you and added to every prompt you send. Don't include secrets."
       },
       "discard": "Discard your unsaved instructions?",
       "noProjects": "Add a project first to set its shared instructions.",
@@ -290,7 +288,7 @@
       "newChatModelLast": "Use last LLM model",
       "newChatModelWorkspaceDefault": "Use workspace default",
       "respondingSidebar": "Response-focused sidebar",
-      "respondingSidebarHelp": "Show completed responses first, then working and idle chats. Turn this off to group chats by project.",
+      "respondingSidebarHelp": "List finished replies first instead of grouping chats by project.",
       "desktopNotifications": "Desktop notifications",
       "blockedByBrowser": "Blocked by browser",
       "fileManager": "File manager",
@@ -299,11 +297,21 @@
       "terminalHelp": "Command to open your terminal (e.g. ghostty, kitty). Leave empty to auto-detect.",
       "hideOldModels": "Hide old models",
       "months": "months",
-      "hideOldModelsHelp": "Selected and favorite models always stay visible. Models without a valid release date also stay visible.",
+      "hideOldModelsHelp": "Favorite and selected models always stay visible.",
       "restartLocalBackend": "Restart Local Backend",
       "restartLocalBackendTitle": "Restart Local Backend?",
-      "restartLocalBackendDescription": "This reloads OpenGUI's local backend and then refreshes the app. Running turns may be interrupted."
-    }
+      "restartLocalBackendDescription": "This reloads OpenGUI's local backend and then refreshes the app. Running turns may be interrupted.",
+      "theme": "Theme",
+      "olderThan": "Older than",
+      "blockedByBrowserHelp": "Allow notifications for this site in your browser settings to turn them on."
+    },
+    "groups": {
+      "agent": "Agent",
+      "host": "Host",
+      "device": "This computer"
+    },
+    "backToChat": "Back to chat",
+    "version": "OpenGUI {{version}}"
   },
   "sidebar": {
     "allProjectsPinned": "All projects pinned",
@@ -682,23 +690,20 @@
   "mcp": {
     "title": "MCP",
     "heading": "Connected tool servers",
-    "description": "Connect trusted MCP servers to give the agent additional tools. Enabled connections are available to unrestricted Sessions on this Host.",
-    "addConnection": "Add connection",
-    "editor": "MCP connection details",
+    "addConnection": "Add server",
     "loading": "Loading MCP connections…",
-    "emptyTitle": "No MCP connections yet",
-    "emptyDescription": "Add a trusted local command or Streamable HTTP endpoint. Local commands run with the Host operating-system user's authority.",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "toggle": "Toggle {{name}}",
-    "inspect": "Test & inspect",
-    "inspecting": "Connecting…",
+    "inspect": "Test connection",
+    "inspecting": "Testing…",
     "status": {
       "disabled": "Disabled",
       "refreshing": "Checking…",
       "ready": "Ready",
       "degraded": "Using cached tools",
-      "offline": "Offline"
+      "offline": "Offline",
+      "unchecked": "Not tested yet"
     },
     "problem": {
       "timeout": "Connection timed out. Chat remains available without these tools.",
@@ -710,24 +715,21 @@
     },
     "toolCount_one": "One tool available",
     "toolCount_other": "{{count}} tools available",
-    "save": "Save connection",
-    "saving": "Saving…",
+    "save": "Connect",
+    "saving": "Connecting…",
     "saved": "MCP connection saved",
-    "removeConfirm": "Remove {{name}}? Its credentials will also be deleted.",
-    "commandWarning": "This command can access anything available to the Host process.",
-    "commandPlaceholder": "Enter a command to review it here.",
-    "commandApproval": "I reviewed and approve this exact executable and argument list.",
+    "commandWarning": "It runs on the Host with the same access to files, network, and accounts as the Host's user. Only connect servers from sources you trust.",
+    "commandApproval": "I trust this command",
     "bearerTokenHelp": "OpenGUI sends this as the Authorization: Bearer header. Paste either the token or the complete Bearer value.",
     "fields": {
-      "label": "Display name",
+      "label": "Name",
       "id": "Connection ID",
-      "transport": "Connection type",
-      "command": "Executable",
-      "arguments": "Arguments, one per line",
-      "environment": "Secret environment values, NAME=value",
+      "transport": "Type",
+      "environment": "Environment variables",
       "cwd": "Working directory (optional)",
-      "url": "MCP endpoint URL",
-      "bearerToken": "Bearer token (optional)"
+      "url": "Server address",
+      "bearerToken": "Access token (optional)",
+      "commandLine": "Command"
     },
     "transport": {
       "stdio": "Local command",
@@ -735,13 +737,51 @@
     },
     "noManagement": "Current backend has no MCP management.",
     "noneConfigured": "No MCP servers configured.",
-    "connected": "Connected",
     "failed": "Failed",
     "needsAuth": "Needs auth",
     "needsRegistration": "Needs registration",
     "unknown": "Unknown",
     "loadTimedOut": "Loading tools is taking longer than expected.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "addTitle": "Connect an MCP server",
+    "addHelp": "Paste the server address or the start command from the server's setup guide. OpenGUI fills in the rest.",
+    "paste": {
+      "label": "Server address or command",
+      "placeholder": "https://… or npx -y …",
+      "continue": "Continue",
+      "help": "Addresses starting with https:// connect to a remote server. Anything else runs as a command on the Host.",
+      "unrecognized": "That doesn't look like a server address or command. Paste a single https:// address, or a command such as npx, uvx, node, or docker.",
+      "examples": "Try:"
+    },
+    "defaultName": "MCP server",
+    "reviewTitle": "Review and connect",
+    "editTitle": "Edit {{name}}",
+    "tokenSavedPlaceholder": "Saved token",
+    "tokenSavedHelp": "A token is saved. Leave this empty to keep it, or paste a new one to replace it.",
+    "tokenSaved": "Saved",
+    "tokenNone": "None",
+    "envHelp": "Add the API keys or settings the server's guide asks for. Values are stored as secrets on the Host.",
+    "envSaved": "Saved: {{keys}}",
+    "envReplace": "Replace values",
+    "addVariable": "Add variable",
+    "variableName": "Variable name",
+    "variableValue": "Value for {{name}}",
+    "variableValuePlaceholder": "Value",
+    "removeVariable": "Remove variable {{name}}",
+    "advanced": "Advanced",
+    "idHelp": "Letters, numbers, dots, dashes, and underscores. Can't be changed later.",
+    "idTaken": "Another server already uses this ID.",
+    "saveChanges": "Save and reconnect",
+    "connected_one": "{{name}} connected with one tool",
+    "connected_other": "{{name}} connected with {{count}} tools",
+    "toolsHeading": "Tools",
+    "toolsHint": "Test the connection to see which tools this server gives the agent.",
+    "noTools": "This server connected but didn't offer any tools.",
+    "enableToSeeTools": "Turn this server on to test it and see its tools.",
+    "updateCredentials": "Update credentials",
+    "removeTitle": "Remove {{name}}?",
+    "removeHelp": "The agent loses this server's tools, and its saved token and environment values are deleted.",
+    "tokenLabel": "Access token"
   },
   "contextStatus": {
     "compacting": "Compacting",
@@ -1362,5 +1402,20 @@
   },
   "host": {
     "lowDiskSpace": "This Host is almost out of disk space. Saving chats may fail until space is freed."
+  },
+  "profile": {
+    "title": "Your profile",
+    "preferencesTitle": "Preferences",
+    "open": "Profile and preferences",
+    "close": "Back to chats",
+    "account": "Account",
+    "sections": {
+      "appearance": "Appearance",
+      "chats": "Chats"
+    },
+    "personalInstructions": "Personal instructions",
+    "personalInstructionsPlaceholder": "Example: Keep answers short. I use British spelling.",
+    "discardInstructions": "Discard your unsaved personal instructions?",
+    "manageAccount": "Manage account"
   }
 }

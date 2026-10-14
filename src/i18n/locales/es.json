@@ -1,6 +1,5 @@
 {
   "account": {
-    "openProfile": "Abrir menú de perfil",
     "connectedHost": "Conectado a: {{host}}",
     "editProfile": "Editar perfil",
     "changePassword": "Cambiar contraseña",
@@ -168,35 +167,34 @@
     "authenticationDetail": "Vuelve a conectar este proveedor en Ajustes → Modelos y proveedores e inténtalo de nuevo."
   },
   "settings": {
-    "subtitle": "Preferencias, modelos, personas y administración del Host en un solo lugar.",
     "navigationLabel": "Secciones de ajustes",
     "skillsPlaceholderTitle": "La gestión de habilidades aún no está disponible",
     "skillsPlaceholderDescription": "El agente puede usar habilidades; su instalación y gestión llegarán en una actualización posterior.",
     "tabs": {
-      "general": "General",
       "providers": "Modelos y proveedores",
       "models": "Modelos",
       "integrations": "Integraciones",
       "users": "Personas",
-      "paths": "Rutas y Shell",
+      "paths": "Acceso a rutas",
       "host": "Sistema",
       "instructions": "Instrucciones",
       "skills": "Skills",
       "team": "Equipo",
       "plugins": "Plugins",
       "tools": "Herramientas",
-      "teams": "Equipos"
+      "teams": "Equipos",
+      "desktop": "Escritorio"
     },
     "sectionDescriptions": {
-      "general": "Apariencia, idioma, notificaciones y preferencias habituales de modelos.",
       "models": "Elige modelos y quién puede usarlos.",
-      "integrations": "Conecta servidores MCP de confianza que proporcionan herramientas adicionales al agente.",
+      "integrations": "Dale al agente herramientas adicionales conectando servidores MCP, como tu calendario, una base de datos o una herramienta de diseño.",
       "users": "Invita a personas y gestiona sus roles del Host.",
-      "paths": "Controla el acceso de OpenGUI a rutas y comprende la autoridad separada de Shell.",
+      "paths": "Elige qué carpetas pueden leer y modificar las personas desde OpenGUI.",
       "host": "Restricciones del Host, registro y claves de automatización.",
-      "instructions": "Instrucciones del Host, instrucciones compartidas del proyecto y preferencias personales privadas.",
+      "instructions": "Reglas que el agente sigue en este Host y en los proyectos compartidos. Tus preferencias personales están en tu perfil, en la barra lateral.",
       "skills": "Instrucciones reutilizables disponibles para el agente.",
-      "teams": "Agrupa personas y gestiona su acceso."
+      "teams": "Agrupa personas y gestiona su acceso.",
+      "desktop": "Dónde empiezan los chats nuevos y qué apps abren archivos y terminales en este equipo."
     },
     "paths": {
       "boundaryTitle": "Los permisos de ruta no son un sandbox",
@@ -210,11 +208,11 @@
         "project": "Proyecto",
         "personal": "Personal"
       },
-      "hierarchy": "Las instrucciones del Host se aplican siempre. Las del proyecto se comparten con todos sus participantes. Las preferencias personales solo se aplican a tus turnos. En caso de conflicto, tiene prioridad el Host, después el Proyecto y después Personal.",
+      "hierarchy": "Las instrucciones del Host se aplican en todas partes. Las instrucciones compartidas del proyecto se aplican a todos los que trabajan en él. Si chocan, prevalecen las del Host.",
       "helpScope": {
         "host": "Visibles para todos en este Host. Solo los propietarios y administradores pueden editarlas.",
         "project": "Compartidas con todos los que tienen acceso a este proyecto. Los cambios se aplican en el siguiente turno.",
-        "personal": "Privadas para tu cuenta en este Host. Se aplican cuando envías una solicitud, también en Sesiones compartidas. No incluyas secretos."
+        "personal": "Privadas y se añaden a cada mensaje que envías. No incluyas secretos."
       },
       "discard": "¿Descartar las instrucciones sin guardar?",
       "noProjects": "Añade un proyecto para definir sus instrucciones compartidas.",
@@ -290,7 +288,7 @@
       "newChatModelLast": "Usar el último modelo LLM",
       "newChatModelWorkspaceDefault": "Usar predeterminado del espacio de trabajo",
       "respondingSidebar": "Barra lateral centrada en respuestas",
-      "respondingSidebarHelp": "Muestra primero las respuestas terminadas y después los chats activos e inactivos. Desactívala para agrupar por proyecto.",
+      "respondingSidebarHelp": "Muestra primero las respuestas terminadas en vez de agrupar los chats por proyecto.",
       "desktopNotifications": "Notificaciones de escritorio",
       "blockedByBrowser": "Bloqueado por el navegador",
       "fileManager": "Gestor de archivos",
@@ -299,11 +297,21 @@
       "terminalHelp": "Comando para abrir tu terminal, por ejemplo ghostty o kitty. Déjalo vacío para detectarlo automáticamente.",
       "hideOldModels": "Ocultar modelos antiguos",
       "months": "meses",
-      "hideOldModelsHelp": "Los modelos seleccionados y favoritos siempre siguen visibles. Los modelos sin una fecha de lanzamiento válida también siguen visibles.",
+      "hideOldModelsHelp": "Los modelos favoritos y seleccionados siempre se muestran.",
       "restartLocalBackend": "Reiniciar backend local",
       "restartLocalBackendTitle": "¿Reiniciar backend local?",
-      "restartLocalBackendDescription": "Esto recarga el backend local de OpenGUI y luego actualiza la app. Los turnos en ejecución pueden interrumpirse."
-    }
+      "restartLocalBackendDescription": "Esto recarga el backend local de OpenGUI y luego actualiza la app. Los turnos en ejecución pueden interrumpirse.",
+      "theme": "Tema",
+      "olderThan": "Con más de",
+      "blockedByBrowserHelp": "Permite las notificaciones de este sitio en la configuración del navegador para activarlas."
+    },
+    "groups": {
+      "agent": "Agente",
+      "host": "Host",
+      "device": "Este equipo"
+    },
+    "backToChat": "Volver al chat",
+    "version": "OpenGUI {{version}}"
   },
   "sidebar": {
     "allProjectsPinned": "Todos los proyectos están fijados",
@@ -682,22 +690,19 @@
   "mcp": {
     "title": "MCP",
     "heading": "Servidores de herramientas conectados",
-    "description": "Conecta servidores MCP de confianza para dar herramientas adicionales al agente. Las conexiones activadas están disponibles para las Sessions sin restricciones de este Host.",
-    "addConnection": "Añadir conexión",
-    "editor": "Detalles de conexión MCP",
+    "addConnection": "Añadir servidor",
     "loading": "Cargando conexiones MCP…",
-    "emptyTitle": "Aún no hay conexiones MCP",
-    "emptyDescription": "Añade un comando local de confianza o un endpoint HTTP Streamable. Los comandos locales se ejecutan con la autoridad del usuario del sistema operativo del Host.",
     "enabled": "Activada",
     "toggle": "Cambiar {{name}}",
-    "inspect": "Probar e inspeccionar",
-    "inspecting": "Conectando…",
+    "inspect": "Probar conexión",
+    "inspecting": "Probando…",
     "status": {
       "disabled": "Desactivada",
       "refreshing": "Comprobando…",
       "ready": "Lista",
       "degraded": "Usando herramientas en caché",
-      "offline": "Sin conexión"
+      "offline": "Sin conexión",
+      "unchecked": "Aún sin probar"
     },
     "problem": {
       "timeout": "La conexión agotó el tiempo de espera. El chat sigue disponible sin estas herramientas.",
@@ -709,24 +714,21 @@
     },
     "toolCount_one": "Una herramienta disponible",
     "toolCount_other": "{{count}} herramientas disponibles",
-    "save": "Guardar conexión",
-    "saving": "Guardando…",
+    "save": "Conectar",
+    "saving": "Conectando…",
     "saved": "Conexión MCP guardada",
-    "removeConfirm": "¿Eliminar {{name}}? También se borrarán sus credenciales.",
-    "commandWarning": "Este comando puede acceder a todo lo que esté disponible para el proceso del Host.",
-    "commandPlaceholder": "Introduce un comando para revisarlo aquí.",
-    "commandApproval": "He revisado y apruebo este ejecutable y esta lista exacta de argumentos.",
+    "commandWarning": "Se ejecuta en el Host con el mismo acceso a archivos, red y cuentas que el usuario del Host. Conecta solo servidores de fuentes de confianza.",
+    "commandApproval": "Confío en este comando",
     "bearerTokenHelp": "OpenGUI envía este valor en la cabecera Authorization: Bearer. Pega el token o el valor Bearer completo.",
     "fields": {
-      "label": "Nombre visible",
+      "label": "Nombre",
       "id": "ID de conexión",
-      "transport": "Tipo de conexión",
-      "command": "Ejecutable",
-      "arguments": "Argumentos, uno por línea",
-      "environment": "Valores secretos de entorno, NOMBRE=valor",
+      "transport": "Tipo",
+      "environment": "Variables de entorno",
       "cwd": "Directorio de trabajo (opcional)",
-      "url": "URL del endpoint MCP",
-      "bearerToken": "Token Bearer (opcional)"
+      "url": "Dirección del servidor",
+      "bearerToken": "Token de acceso (opcional)",
+      "commandLine": "Comando"
     },
     "transport": {
       "stdio": "Comando local",
@@ -734,14 +736,52 @@
     },
     "noManagement": "El backend actual no tiene gestión de MCP.",
     "noneConfigured": "No hay servidores MCP configurados.",
-    "connected": "Conectado",
     "disabled": "Desactivado",
     "failed": "Fallido",
     "needsAuth": "Requiere autenticación",
     "needsRegistration": "Requiere registro",
     "unknown": "Desconocido",
     "loadTimedOut": "Cargar herramientas está tardando más de lo esperado.",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "addTitle": "Conectar un servidor MCP",
+    "addHelp": "Pega la dirección del servidor o el comando de inicio de su guía de instalación. OpenGUI completa el resto.",
+    "paste": {
+      "label": "Dirección o comando del servidor",
+      "placeholder": "https://… o npx -y …",
+      "continue": "Continuar",
+      "help": "Las direcciones que empiezan por https:// se conectan a un servidor remoto. Todo lo demás se ejecuta como comando en el Host.",
+      "unrecognized": "Eso no parece una dirección ni un comando. Pega una sola dirección https:// o un comando como npx, uvx, node o docker.",
+      "examples": "Prueba:"
+    },
+    "defaultName": "Servidor MCP",
+    "reviewTitle": "Revisar y conectar",
+    "editTitle": "Editar {{name}}",
+    "tokenSavedPlaceholder": "Token guardado",
+    "tokenSavedHelp": "Hay un token guardado. Déjalo vacío para conservarlo o pega uno nuevo para sustituirlo.",
+    "tokenSaved": "Guardado",
+    "tokenNone": "Ninguno",
+    "envHelp": "Añade las claves de API o ajustes que pide la guía del servidor. Los valores se guardan como secretos en el Host.",
+    "envSaved": "Guardadas: {{keys}}",
+    "envReplace": "Sustituir valores",
+    "addVariable": "Añadir variable",
+    "variableName": "Nombre de la variable",
+    "variableValue": "Valor de {{name}}",
+    "variableValuePlaceholder": "Valor",
+    "removeVariable": "Quitar la variable {{name}}",
+    "advanced": "Avanzado",
+    "idHelp": "Letras, números, puntos, guiones y guiones bajos. No se puede cambiar después.",
+    "idTaken": "Otro servidor ya usa este ID.",
+    "saveChanges": "Guardar y reconectar",
+    "connected_one": "{{name}} conectado con una herramienta",
+    "connected_other": "{{name}} conectado con {{count}} herramientas",
+    "toolsHeading": "Herramientas",
+    "toolsHint": "Prueba la conexión para ver qué herramientas da este servidor al agente.",
+    "noTools": "El servidor se conectó, pero no ofrece herramientas.",
+    "enableToSeeTools": "Activa este servidor para probarlo y ver sus herramientas.",
+    "updateCredentials": "Actualizar credenciales",
+    "removeTitle": "¿Quitar {{name}}?",
+    "removeHelp": "El agente pierde las herramientas de este servidor y se borran su token y sus variables guardadas.",
+    "tokenLabel": "Token de acceso"
   },
   "contextStatus": {
     "compacting": "Compactando",
@@ -1362,5 +1402,20 @@
   },
   "host": {
     "lowDiskSpace": "Este Host casi no tiene espacio en disco. Es posible que los chats no se guarden hasta que se libere espacio."
+  },
+  "profile": {
+    "title": "Tu perfil",
+    "preferencesTitle": "Preferencias",
+    "open": "Perfil y preferencias",
+    "close": "Volver a los chats",
+    "account": "Cuenta",
+    "sections": {
+      "appearance": "Apariencia",
+      "chats": "Chats"
+    },
+    "personalInstructions": "Instrucciones personales",
+    "personalInstructionsPlaceholder": "Ejemplo: Responde de forma breve. Escribo en español de España.",
+    "discardInstructions": "¿Descartar tus instrucciones personales sin guardar?",
+    "manageAccount": "Gestionar cuenta"
   }
 }

@@ -12,9 +12,11 @@ vi.mock("@/components/SettingsProviders", () => ({
     <button onClick={() => onDirtyChange(true)}>models-panel</button>
   ),
 }));
-vi.mock("@/components/settings/GeneralSettings", () => ({
-  GeneralSettings: () => <p>general-panel</p>,
-  PathsAndShellSettings: () => <p>paths-panel</p>,
+vi.mock("@/components/settings/DesktopSettings", () => ({
+  DesktopSettings: () => <p>desktop-panel</p>,
+}));
+vi.mock("@/runtime/clients", () => ({
+  getDesktopShellClient: () => ({ runtime: { isElectron: true } }),
 }));
 vi.mock("@/features/identity/TeamSettings", () => ({
   TeamSettings: ({ view }: { view: string }) => <p>team-{view}</p>,
@@ -41,18 +43,26 @@ import { SettingsView } from "./SettingsView";
 describe("SettingsView responsive navigation", () => {
   afterEach(cleanup);
 
-  test("exposes the same coherent sections to desktop and compact navigation", async () => {
+  test("groups sections and exposes the same ones to desktop and compact navigation", async () => {
     render(<SettingsView onBack={vi.fn()} />);
     const navigation = screen.getByRole("navigation", { name: "settings.navigationLabel" });
     expect(navigation).toBeTruthy();
-    expect(screen.getAllByText("settings.tabs.models").length).toBe(2);
-    expect(screen.getAllByText("settings.tabs.paths").length).toBe(2);
-    expect(screen.getAllByText("settings.tabs.host").length).toBe(2);
-    expect(screen.getAllByText("settings.tabs.integrations").length).toBe(2);
+    for (const tab of ["models", "integrations", "paths", "host", "desktop"]) {
+      expect(screen.getByRole("button", { name: `settings.tabs.${tab}` })).toBeTruthy();
+    }
+    expect(screen.getAllByText("settings.groups.host").length).toBe(1);
+    expect(screen.queryByText("settings.tabs.general")).toBeNull();
 
-    await userEvent.selectOptions(screen.getByRole("combobox"), "paths");
-    expect(screen.getByText("paths-panel")).toBeTruthy();
-    expect(screen.getByText("team-paths")).toBeTruthy();
+    await userEvent.click(screen.getByRole("combobox", { name: "settings.navigationLabel" }));
+    for (const tab of ["models", "integrations", "paths", "host", "desktop"]) {
+      expect(await screen.findByRole("option", { name: `settings.tabs.${tab}` })).toBeTruthy();
+    }
+    await userEvent.click(screen.getByRole("option", { name: "settings.tabs.paths" }));
+    expect(await screen.findByText("team-paths")).toBeTruthy();
+    expect(screen.getByText("settings.paths.boundaryTitle")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.desktop" }));
+    expect(screen.getByText("desktop-panel")).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "settings.tabs.host" }));
     expect(screen.getByText("team-host")).toBeTruthy();
@@ -67,25 +77,36 @@ describe("SettingsView responsive navigation", () => {
     expect(screen.getByText("instructions-panel")).toBeTruthy();
   });
 
-  test("asks before discarding access changes when switching settings", async () => {
+  test("opens on the first available section", () => {
     render(<SettingsView onBack={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.models" }));
+    expect(screen.getByText("models-panel")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "settings.tabs.models" }).getAttribute("aria-current"),
+    ).toBe("page");
+  });
+
+  test("asks before discarding access changes when switching settings or leaving", async () => {
+    const onBack = vi.fn();
+    render(<SettingsView onBack={onBack} />);
     await userEvent.click(screen.getByRole("button", { name: "models-panel" }));
     await userEvent.click(screen.getByRole("button", { name: "settings.tabs.host" }));
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "access.keepEditing" }));
     expect(screen.getByText("models-panel")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.host" }));
+    await userEvent.click(screen.getByRole("button", { name: "settings.backToChat" }));
+    expect(onBack).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "access.discard" }));
-    expect(screen.getByText("team-host")).toBeTruthy();
+    expect(onBack).toHaveBeenCalledOnce();
   });
 
   test("keeps the side navigation from the medium breakpoint upward", () => {
     render(<SettingsView onBack={vi.fn()} />);
-
-    expect(screen.getByRole("combobox").className).toContain("md:hidden");
     expect(
-      screen.getByRole("button", { name: "settings.tabs.general" }).parentElement?.className,
+      screen.getByRole("combobox", { name: "settings.navigationLabel" }).parentElement?.className,
+    ).toContain("md:hidden");
+    expect(
+      screen.getByRole("button", { name: "settings.tabs.models" }).closest("ul")?.parentElement
+        ?.parentElement?.className,
     ).toContain("md:block");
   });
 });

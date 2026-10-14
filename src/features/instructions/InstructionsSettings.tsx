@@ -1,29 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import {
   getIdentityWorkspace,
   identityWorkspaceIsLocalBypass,
 } from "@/features/identity/workspace-identity";
 import { notifySuccess, notifyUnknownError } from "@/lib/notify";
+import { cn } from "@/lib/utils";
 import { createHostClient } from "@/protocol/host-client";
 import type { HostProject, OpenGuiHostClient, ProjectInstructions } from "@/protocol/host-types";
 
 const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 32_000;
 type Scope = "host" | "personal" | "project";
-const selectClass =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-ring";
+type SharedScope = Exclude<Scope, "personal">;
 
-export function InstructionsSettings() {
-  const { t } = useTranslation();
-  const actor = useIdentityActor();
+function useInstructionsHost() {
   const workspace = useMemo(() => getIdentityWorkspace(), []);
-  const localBypass = Boolean(workspace && identityWorkspaceIsLocalBypass(workspace));
-  const admin =
-    localBypass || (actor?.type === "user" && (actor.role === "owner" || actor.role === "admin"));
   const host = useMemo(() => {
     const electron = window.electronAPI;
     return createHostClient({
@@ -31,7 +35,25 @@ export function InstructionsSettings() {
       resolveToken: () => electron?.backendToken || workspace?.authToken || "",
     });
   }, [workspace]);
-  const [scope, setScope] = useState<Scope>("host");
+  return { workspace, host };
+}
+
+/** Whether the current actor has private personal instructions on this Host. */
+export function usePersonalInstructionsAvailable() {
+  const actor = useIdentityActor();
+  const workspace = useMemo(() => getIdentityWorkspace(), []);
+  return Boolean(workspace && identityWorkspaceIsLocalBypass(workspace)) || actor?.type === "user";
+}
+
+/** Shared house rules: Host-wide and per project. Personal preferences live in the profile. */
+export function InstructionsSettings() {
+  const { t } = useTranslation();
+  const actor = useIdentityActor();
+  const { workspace, host } = useInstructionsHost();
+  const localBypass = Boolean(workspace && identityWorkspaceIsLocalBypass(workspace));
+  const admin =
+    localBypass || (actor?.type === "user" && (actor.role === "owner" || actor.role === "admin"));
+  const [scope, setScope] = useState<SharedScope>("host");
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [directory, setDirectory] = useState("");
   const [projectLoading, setProjectLoading] = useState(false);
@@ -73,25 +95,23 @@ export function InstructionsSettings() {
         role="group"
         aria-label={t("settings.instructions.scopeLabel")}
       >
-        {(["host", "project", "personal"] as const)
-          .filter((item) => item !== "personal" || localBypass || actor?.type === "user")
-          .map((item) => (
-            <Button
-              key={item}
-              type="button"
-              size="sm"
-              variant={scope === item ? "default" : "outline"}
-              aria-pressed={scope === item}
-              disabled={busy}
-              onClick={() => {
-                if (item === scope || !canLeave()) return;
-                setDirty(false);
-                setScope(item);
-              }}
-            >
-              {t(`settings.instructions.scope.${item}`)}
-            </Button>
-          ))}
+        {(["host", "project"] as const).map((item) => (
+          <Button
+            key={item}
+            type="button"
+            size="sm"
+            variant={scope === item ? "default" : "outline"}
+            aria-pressed={scope === item}
+            disabled={busy}
+            onClick={() => {
+              if (item === scope || !canLeave()) return;
+              setDirty(false);
+              setScope(item);
+            }}
+          >
+            {t(`settings.instructions.scope.${item}`)}
+          </Button>
+        ))}
       </div>
       <p className="max-w-[70ch] text-sm leading-6 text-muted-foreground">
         {t("settings.instructions.hierarchy")}
@@ -111,23 +131,28 @@ export function InstructionsSettings() {
         ) : (
           <div className="space-y-2">
             <Label htmlFor="instructions-project">{t("settings.instructions.scope.project")}</Label>
-            <select
-              id="instructions-project"
-              className={selectClass}
+            <Select
               value={directory}
               disabled={busy}
-              onChange={(event) => {
-                if (!canLeave()) return;
+              onValueChange={(value) => {
+                if (!value || !canLeave()) return;
                 setDirty(false);
-                setDirectory(event.target.value);
+                setDirectory(value);
               }}
             >
-              {projects.map((project) => (
-                <option key={project.directory} value={project.directory}>
-                  {project.name} · {project.directory}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="instructions-project" className="w-full">
+                <SelectValue>
+                  {projects.find((project) => project.directory === directory)?.name ?? directory}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((project) => (
+                  <SelectItem key={project.directory} value={project.directory}>
+                    {project.name} · {project.directory}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         ))}
       {(scope !== "project" || (!projectLoading && !projectError && directory)) && (
@@ -145,11 +170,30 @@ export function InstructionsSettings() {
   );
 }
 
+/** Private preferences applied to the current account's prompts, sized for the profile panel. */
+export function PersonalInstructions({ onDirty }: { onDirty?: (dirty: boolean) => void }) {
+  const { host } = useInstructionsHost();
+  return (
+    <InstructionsEditor
+      host={host}
+      scope="personal"
+      directory=""
+      admin={false}
+      compact
+      onDirty={onDirty ?? noop}
+      onBusy={noop}
+    />
+  );
+}
+
+function noop() {}
+
 function InstructionsEditor({
   host,
   scope,
   directory,
   admin,
+  compact = false,
   onDirty,
   onBusy,
 }: {
@@ -157,6 +201,7 @@ function InstructionsEditor({
   scope: Scope;
   directory: string;
   admin: boolean;
+  compact?: boolean;
   onDirty: (dirty: boolean) => void;
   onBusy: (busy: boolean) => void;
 }) {
@@ -253,13 +298,25 @@ function InstructionsEditor({
       </div>
     );
 
+  const editorId = compact ? "personal-instructions" : "custom-instructions";
+  const helpId = `${editorId}-help`;
+  const countId = `${editorId}-count`;
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <Label htmlFor="custom-instructions" className="text-sm font-medium">
-          {t("settings.instructions.label")}
+    <div className={compact ? "space-y-2" : "space-y-4"}>
+      <div className={compact ? "sr-only" : "space-y-1"}>
+        <Label htmlFor={editorId} className="text-sm font-medium">
+          {t(compact ? "profile.personalInstructions" : "settings.instructions.label")}
         </Label>
-        <p id="instructions-help" className="max-w-[70ch] text-sm leading-6 text-muted-foreground">
+      </div>
+      <div>
+        <p
+          id={helpId}
+          className={
+            compact
+              ? "text-xs leading-5 text-muted-foreground"
+              : "max-w-[70ch] text-sm leading-6 text-muted-foreground"
+          }
+        >
           {canEdit
             ? t(`settings.instructions.helpScope.${scope}`)
             : t(
@@ -269,20 +326,25 @@ function InstructionsEditor({
               )}
         </p>
       </div>
-      <textarea
-        id="custom-instructions"
-        aria-describedby="instructions-help instructions-count"
+      <Textarea
+        id={editorId}
+        aria-describedby={`${helpId} ${countId}`}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         disabled={!canEdit || saving}
-        rows={14}
+        rows={compact ? 6 : 14}
         spellCheck
-        placeholder={t("settings.instructions.placeholder")}
-        className="min-h-56 w-full resize-y rounded-lg border border-input bg-transparent px-3 py-2.5 text-base leading-6 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-70 dark:bg-input/30"
+        placeholder={t(
+          compact ? "profile.personalInstructionsPlaceholder" : "settings.instructions.placeholder",
+        )}
+        className={cn(
+          "max-h-[60vh] resize-y px-3 py-2.5 leading-6",
+          compact ? "min-h-32 text-sm md:text-sm" : "min-h-56",
+        )}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p
-          id="instructions-count"
+          id={countId}
           className={`text-xs tabular-nums ${overLimit ? "text-destructive" : "text-muted-foreground"}`}
         >
           {t("settings.instructions.characterCount", {
@@ -291,8 +353,15 @@ function InstructionsEditor({
           })}
         </p>
         {canEdit && (
-          <Button type="button" disabled={!dirty || saving || overLimit} onClick={save}>
-            {saving ? t("common.loading") : t("settings.instructions.save")}
+          <Button
+            type="button"
+            size={compact ? "sm" : "default"}
+            disabled={!dirty || saving || overLimit}
+            onClick={save}
+          >
+            {saving
+              ? t("common.loading")
+              : t(compact ? "common.save" : "settings.instructions.save")}
           </Button>
         )}
       </div>
@@ -303,12 +372,10 @@ function InstructionsEditor({
             {t("settings.instructions.editorsHelp")}
           </p>
           {project.teams.map((team) => (
-            <label key={team.id} className="flex items-center gap-3 text-sm">
-              <input
-                type="checkbox"
+            <Label key={team.id} className="flex items-center gap-3 text-sm font-normal">
+              <Checkbox
                 checked={team.allowed}
-                onChange={(event) => {
-                  const allowed = event.target.checked;
+                onCheckedChange={(allowed) => {
                   void mutate(async () => {
                     await host.setProjectInstructionEditor(directory, team.id, allowed);
                     setProject(
@@ -324,7 +391,7 @@ function InstructionsEditor({
                 }}
               />
               <span className="min-w-0 break-words">{team.name}</span>
-            </label>
+            </Label>
           ))}
         </fieldset>
       )}

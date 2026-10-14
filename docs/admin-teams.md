@@ -26,12 +26,13 @@ password is stored Host-side and never displayed again. Members cannot see these
 settings. Use **Send test mail** to verify delivery before announcing the feature.
 
 When mail is enabled, any signed-in Account may move its own contact email to a new
-address from the profile menu: the current password is rechecked, and the stored
-email is replaced only after a single-use confirmation link (30 minutes) is opened
-from the new inbox. Confirmation mail follows the reader's language (English,
-German, Spanish). Login stays username-based; sessions are not revoked by an
-email change. Mail is not a password-recovery mechanism: forgotten passwords use the
-administrator reset described below, regardless of mail settings.
+address from **Manage account** in the profile panel (the avatar at the bottom of the
+sidebar): the current password is rechecked, and the stored email is replaced only
+after a single-use confirmation link (30 minutes) is opened from the new inbox.
+Confirmation mail follows the reader's language (English, German, Spanish). Login
+stays username-based; sessions are not revoked by an email change. Mail is not a
+password-recovery mechanism: forgotten passwords use the administrator reset described
+below, regardless of mail settings.
 
 SMTP needs a host, sender address, and public HTTPS origin. Port 465 uses implicit
 TLS; any other host outside a loopback relay must negotiate STARTTLS, which the
@@ -59,8 +60,8 @@ a delivered but unusable link may require a fresh request.
 
 ## Passwords
 
-Anyone signed in can change their own password from the profile menu; the current
-password is required and other sessions are signed out.
+Anyone signed in can change their own password from **Manage account** in the profile
+panel; the current password is required and other sessions are signed out.
 
 Forgotten passwords are reset by an administrator in **Settings → People → Reset
 password**. Admins can reset members and viewers; only the owner can reset an admin.

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-13T23:56:47.951Z",
+  "generatedAt": "2026-10-14T13:03:24.551Z",
   "scope": {
-    "firstPartyExecutableFiles": 345,
-    "testFiles": 240
+    "firstPartyExecutableFiles": 352,
+    "testFiles": 246
   },
   "caveats": [
     "Static imports identify direct and higher-level reachability, not assertion quality.",
@@ -11,34 +11,6 @@
     "Dynamic routes/imports and computed state names require manual review."
   ],
   "files": [
-    {
-      "path": "lib/effect-runtime.ts",
-      "exports": [
-        {
-          "symbol": "runEffect",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "timeoutEffect",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "tryPromiseEffect",
-          "mentionedByTests": []
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [],
-      "tests": {
-        "direct": [],
-        "higherLevel": ["main/backend-sidecar.test.ts"]
-      },
-      "hasBehaviorNamedTest": false,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
     {
       "path": "lib/window-broadcast.ts",
       "exports": [
@@ -160,6 +132,10 @@
           "mentionedByTests": []
         },
         {
+          "symbol": "findAvailablePort",
+          "mentionedByTests": ["main/backend-sidecar.test.ts"]
+        },
+        {
           "symbol": "loadBackendProfile",
           "mentionedByTests": ["main/backend-sidecar.test.ts"]
         },
@@ -173,6 +149,10 @@
         },
         {
           "symbol": "selectBackendEntrypoint",
+          "mentionedByTests": ["main/backend-sidecar.test.ts"]
+        },
+        {
+          "symbol": "waitForHealth",
           "mentionedByTests": ["main/backend-sidecar.test.ts"]
         }
       ],
@@ -504,6 +484,14 @@
           ]
         },
         {
+          "symbol": "HostResource",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "IdentityResource",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "shouldApplyRequestBodyLimit",
           "mentionedByTests": ["packages/backend/src/create-backend-host.body-limit.test.ts"]
         }
@@ -560,10 +548,6 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "type:api_key",
           "mentionedByTests": []
         },
@@ -606,6 +590,77 @@
       }
     },
     {
+      "path": "packages/backend/src/effect/serial-lock.ts",
+      "exports": [
+        {
+          "symbol": "KeyedSerialLock",
+          "mentionedByTests": ["packages/backend/src/effect/serial-lock.test.ts"]
+        },
+        {
+          "symbol": "SerialLock",
+          "mentionedByTests": ["packages/backend/src/effect/serial-lock.test.ts"]
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [
+        {
+          "symbol": "operation:delete",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:set",
+          "mentionedByTests": []
+        }
+      ],
+      "tests": {
+        "direct": ["packages/backend/src/effect/serial-lock.test.ts"],
+        "higherLevel": [
+          "packages/backend/src/create-backend-host.auth-matrix.test.ts",
+          "packages/backend/src/create-backend-host.auth.test.ts",
+          "packages/backend/src/create-backend-host.body-limit.test.ts",
+          "packages/backend/src/host-client.integration.test.ts",
+          "packages/backend/src/host/bootstrap.test.ts",
+          "packages/backend/src/host/host-health.test.ts",
+          "packages/backend/src/host/opengui-host.auth.test.ts",
+          "packages/backend/src/host/opengui-host.compaction-events.test.ts",
+          "packages/backend/src/host/opengui-host.concurrency.test.ts",
+          "packages/backend/src/host/opengui-host.instructions.test.ts",
+          "packages/backend/src/host/opengui-host.lifecycle.test.ts",
+          "packages/backend/src/host/opengui-host.mcp.test.ts",
+          "packages/backend/src/host/opengui-host.path-enforcement.test.ts",
+          "packages/backend/src/host/opengui-host.sandbox-shell-broker-faults.test.ts",
+          "packages/backend/src/host/opengui-host.sandbox-shell.test.ts",
+          "packages/backend/src/host/opengui-host.skills.test.ts",
+          "packages/backend/src/host/opengui-host.sse-acl.test.ts",
+          "packages/backend/src/identity/email-change.integration.test.ts",
+          "packages/backend/src/identity/host-api-key.integration.test.ts",
+          "packages/backend/src/identity/identity.integration.test.ts",
+          "packages/backend/src/identity/multi-user-access.integration.test.ts",
+          "packages/backend/src/identity/password-recovery.repro.test.ts",
+          "packages/backend/src/identity/path-grants.e2e.test.ts",
+          "packages/backend/src/identity/path-grants.test.ts",
+          "packages/backend/src/identity/personal-instructions.verification.test.ts",
+          "packages/backend/src/identity/personal-subscriptions.integration.test.ts",
+          "packages/backend/src/identity/project-instructions.integration.test.ts",
+          "packages/backend/src/identity/roles-model-offerings.integration.test.ts",
+          "packages/backend/src/identity/session-access-reconciliation.test.ts",
+          "packages/backend/src/identity/session-acl.integration.test.ts",
+          "packages/backend/src/routes/exported-route-auth.contract.test.ts",
+          "packages/backend/src/routes/host-product.actor.test.ts",
+          "packages/backend/src/routes/host-request-validation.contract.test.ts",
+          "packages/backend/src/routes/host-sse.contract.test.ts",
+          "packages/backend/src/routes/mcp-connections.routes.test.ts",
+          "packages/backend/src/routes/path-enforcement.routes.test.ts",
+          "packages/backend/src/routes/project-instructions.actor.test.ts"
+        ]
+      },
+      "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
       "path": "packages/backend/src/execution/sandbox-shell-client.ts",
       "exports": [
         {
@@ -615,6 +670,10 @@
         {
           "symbol": "parseBrokerEndpoint",
           "mentionedByTests": ["packages/backend/src/execution/sandbox-shell-client.test.ts"]
+        },
+        {
+          "symbol": "SandboxBrokerError",
+          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -629,10 +688,6 @@
         },
         {
           "symbol": "operation:createSandboxShellExecutor",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
           "mentionedByTests": []
         },
         {
@@ -873,7 +928,27 @@
           "mentionedByTests": ["packages/backend/src/host/durable-json-transaction.test.ts"]
         },
         {
+          "symbol": "DurableStateClosedError",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "DurableStateLockedError",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "DurableStateMalformedError",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "makeDurableJsonTransaction",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "openDurableJsonTransaction",
+          "mentionedByTests": ["packages/backend/src/host/durable-json-transaction.test.ts"]
+        },
+        {
+          "symbol": "releaseHeldLocksSync",
           "mentionedByTests": ["packages/backend/src/host/durable-json-transaction.test.ts"]
         }
       ],
@@ -881,6 +956,14 @@
       "stateTransitions": [
         {
           "symbol": "operation:delete",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:set",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setInterval",
           "mentionedByTests": []
         },
         {
@@ -1946,10 +2029,6 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "operation:setUserPassword",
           "mentionedByTests": []
         },
@@ -2155,10 +2234,6 @@
         },
         {
           "symbol": "operation:createTransport",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
           "mentionedByTests": []
         }
       ],
@@ -2467,10 +2542,6 @@
         },
         {
           "symbol": "operation:delete",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:removeEventListener",
           "mentionedByTests": []
         },
         {
@@ -3991,6 +4062,92 @@
       }
     },
     {
+      "path": "packages/harness/src/effect/run-abortable.ts",
+      "exports": [
+        {
+          "symbol": "runAbortable",
+          "mentionedByTests": []
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [
+        {
+          "symbol": "operation:abortReason",
+          "mentionedByTests": []
+        }
+      ],
+      "tests": {
+        "direct": [],
+        "higherLevel": [
+          "packages/backend/src/create-backend-host.auth-matrix.test.ts",
+          "packages/backend/src/create-backend-host.auth.test.ts",
+          "packages/backend/src/create-backend-host.body-limit.test.ts",
+          "packages/backend/src/execution/sandbox-shell-client.test.ts",
+          "packages/backend/src/host-client.integration.test.ts",
+          "packages/backend/src/host/bootstrap.test.ts",
+          "packages/backend/src/host/host-health.test.ts",
+          "packages/backend/src/host/opengui-host.auth.test.ts",
+          "packages/backend/src/host/opengui-host.compaction-events.test.ts",
+          "packages/backend/src/host/opengui-host.concurrency.test.ts",
+          "packages/backend/src/host/opengui-host.instructions.test.ts",
+          "packages/backend/src/host/opengui-host.lifecycle.test.ts",
+          "packages/backend/src/host/opengui-host.mcp.test.ts",
+          "packages/backend/src/host/opengui-host.path-enforcement.test.ts",
+          "packages/backend/src/host/opengui-host.sandbox-shell-broker-faults.test.ts",
+          "packages/backend/src/host/opengui-host.sandbox-shell.test.ts",
+          "packages/backend/src/host/opengui-host.skills.test.ts",
+          "packages/backend/src/host/opengui-host.sse-acl.test.ts",
+          "packages/backend/src/host/skills-management.test.ts",
+          "packages/backend/src/identity/email-change.integration.test.ts",
+          "packages/backend/src/identity/host-api-key.integration.test.ts",
+          "packages/backend/src/identity/identity.integration.test.ts",
+          "packages/backend/src/identity/multi-user-access.integration.test.ts",
+          "packages/backend/src/identity/password-recovery.repro.test.ts",
+          "packages/backend/src/identity/path-grants.e2e.test.ts",
+          "packages/backend/src/identity/path-grants.test.ts",
+          "packages/backend/src/identity/personal-instructions.verification.test.ts",
+          "packages/backend/src/identity/personal-subscriptions.integration.test.ts",
+          "packages/backend/src/identity/project-instructions.integration.test.ts",
+          "packages/backend/src/identity/roles-model-offerings.integration.test.ts",
+          "packages/backend/src/identity/session-access-reconciliation.test.ts",
+          "packages/backend/src/identity/session-acl.integration.test.ts",
+          "packages/backend/src/mcp/mcp-agent-tool-source.test.ts",
+          "packages/backend/src/mcp/mcp-broker.test.ts",
+          "packages/backend/src/routes/exported-route-auth.contract.test.ts",
+          "packages/backend/src/routes/host-product.actor.test.ts",
+          "packages/backend/src/routes/host-request-validation.contract.test.ts",
+          "packages/backend/src/routes/host-sse.contract.test.ts",
+          "packages/backend/src/routes/mcp-connections.routes.test.ts",
+          "packages/backend/src/routes/path-enforcement.routes.test.ts",
+          "packages/backend/src/routes/project-instructions.actor.test.ts",
+          "packages/harness/src/agent-tools.integration.test.ts",
+          "packages/harness/src/context/compaction-failure-recovery.test.ts",
+          "packages/harness/src/context/compaction-handoff.test.ts",
+          "packages/harness/src/execution-policy.test.ts",
+          "packages/harness/src/harness.test.ts",
+          "packages/harness/src/models/codex-responses.test.ts",
+          "packages/harness/src/models/model-catalog.test.ts",
+          "packages/harness/src/models/model-stream.property.test.ts",
+          "packages/harness/src/models/openai-chat.test.ts",
+          "packages/harness/src/models/openai-responses-websocket.test.ts",
+          "packages/harness/src/models/opencode-headers.test.ts",
+          "packages/harness/src/models/pi-ai-catalog.test.ts",
+          "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
+          "packages/harness/src/models/transport-contracts.test.ts",
+          "packages/harness/src/queue.property.test.ts",
+          "packages/harness/src/storage-migrations.property.test.ts",
+          "packages/harness/src/storage.contract.test.ts",
+          "packages/harness/src/tools.contract.test.ts"
+        ]
+      },
+      "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
       "path": "packages/harness/src/execution-policy.ts",
       "exports": [
         {
@@ -4059,6 +4216,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -4203,6 +4361,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -4318,6 +4477,10 @@
           "mentionedByTests": []
         },
         {
+          "symbol": "runAbortable",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "selectSkillsForPrompt",
           "mentionedByTests": []
         },
@@ -4417,10 +4580,6 @@
         },
         {
           "symbol": "operation:set",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
           "mentionedByTests": []
         },
         {
@@ -4709,10 +4868,6 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "type:assistant_message",
           "mentionedByTests": []
         },
@@ -4929,10 +5084,6 @@
         },
         {
           "symbol": "operation:set",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
           "mentionedByTests": []
         },
         {
@@ -5407,6 +5558,89 @@
       }
     },
     {
+      "path": "packages/harness/src/models/provider-retry.ts",
+      "exports": [
+        {
+          "symbol": "providerRetrySchedule",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "retryProviderRequest",
+          "mentionedByTests": ["packages/harness/src/models/provider-retry.test.ts"]
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [],
+      "tests": {
+        "direct": ["packages/harness/src/models/provider-retry.test.ts"],
+        "higherLevel": [
+          "packages/backend/src/create-backend-host.auth-matrix.test.ts",
+          "packages/backend/src/create-backend-host.auth.test.ts",
+          "packages/backend/src/create-backend-host.body-limit.test.ts",
+          "packages/backend/src/execution/sandbox-shell-client.test.ts",
+          "packages/backend/src/host-client.integration.test.ts",
+          "packages/backend/src/host/bootstrap.test.ts",
+          "packages/backend/src/host/host-health.test.ts",
+          "packages/backend/src/host/opengui-host.auth.test.ts",
+          "packages/backend/src/host/opengui-host.compaction-events.test.ts",
+          "packages/backend/src/host/opengui-host.concurrency.test.ts",
+          "packages/backend/src/host/opengui-host.instructions.test.ts",
+          "packages/backend/src/host/opengui-host.lifecycle.test.ts",
+          "packages/backend/src/host/opengui-host.mcp.test.ts",
+          "packages/backend/src/host/opengui-host.path-enforcement.test.ts",
+          "packages/backend/src/host/opengui-host.sandbox-shell-broker-faults.test.ts",
+          "packages/backend/src/host/opengui-host.sandbox-shell.test.ts",
+          "packages/backend/src/host/opengui-host.skills.test.ts",
+          "packages/backend/src/host/opengui-host.sse-acl.test.ts",
+          "packages/backend/src/host/skills-management.test.ts",
+          "packages/backend/src/identity/email-change.integration.test.ts",
+          "packages/backend/src/identity/host-api-key.integration.test.ts",
+          "packages/backend/src/identity/identity.integration.test.ts",
+          "packages/backend/src/identity/multi-user-access.integration.test.ts",
+          "packages/backend/src/identity/password-recovery.repro.test.ts",
+          "packages/backend/src/identity/path-grants.e2e.test.ts",
+          "packages/backend/src/identity/path-grants.test.ts",
+          "packages/backend/src/identity/personal-instructions.verification.test.ts",
+          "packages/backend/src/identity/personal-subscriptions.integration.test.ts",
+          "packages/backend/src/identity/project-instructions.integration.test.ts",
+          "packages/backend/src/identity/roles-model-offerings.integration.test.ts",
+          "packages/backend/src/identity/session-access-reconciliation.test.ts",
+          "packages/backend/src/identity/session-acl.integration.test.ts",
+          "packages/backend/src/mcp/mcp-agent-tool-source.test.ts",
+          "packages/backend/src/mcp/mcp-broker.test.ts",
+          "packages/backend/src/routes/exported-route-auth.contract.test.ts",
+          "packages/backend/src/routes/host-product.actor.test.ts",
+          "packages/backend/src/routes/host-request-validation.contract.test.ts",
+          "packages/backend/src/routes/host-sse.contract.test.ts",
+          "packages/backend/src/routes/mcp-connections.routes.test.ts",
+          "packages/backend/src/routes/path-enforcement.routes.test.ts",
+          "packages/backend/src/routes/project-instructions.actor.test.ts",
+          "packages/harness/src/agent-tools.integration.test.ts",
+          "packages/harness/src/context/compaction-failure-recovery.test.ts",
+          "packages/harness/src/context/compaction-handoff.test.ts",
+          "packages/harness/src/execution-policy.test.ts",
+          "packages/harness/src/harness.test.ts",
+          "packages/harness/src/models/codex-responses.test.ts",
+          "packages/harness/src/models/model-catalog.test.ts",
+          "packages/harness/src/models/model-stream.property.test.ts",
+          "packages/harness/src/models/openai-chat.test.ts",
+          "packages/harness/src/models/openai-responses-websocket.test.ts",
+          "packages/harness/src/models/opencode-headers.test.ts",
+          "packages/harness/src/models/pi-ai-catalog.test.ts",
+          "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/queue.property.test.ts",
+          "packages/harness/src/storage-migrations.property.test.ts",
+          "packages/harness/src/storage.contract.test.ts",
+          "packages/harness/src/tools.contract.test.ts"
+        ]
+      },
+      "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
       "path": "packages/harness/src/models/transport.ts",
       "exports": [
         {
@@ -5607,6 +5841,7 @@
           "packages/harness/src/models/model-catalog.test.ts",
           "packages/harness/src/models/openai-chat.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
           "packages/harness/src/tools.contract.test.ts",
           "packages/harness/src/tools/sandbox-shell.test.ts",
@@ -5724,10 +5959,6 @@
         },
         {
           "symbol": "operation:setReasoning",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
           "mentionedByTests": []
         },
         {
@@ -6401,6 +6632,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -6491,6 +6723,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -6591,6 +6824,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -6683,6 +6917,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -6773,6 +7008,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -6858,6 +7094,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -6865,6 +7102,7 @@
           "packages/harness/src/test/index.ts",
           "packages/harness/src/tools.contract.test.ts",
           "packages/harness/src/tools/sandbox-shell.test.ts",
+          "packages/harness/src/tools/shell.test.ts",
           "packages/harness/src/tools/tool-validation.property.test.ts"
         ]
       },
@@ -6879,7 +7117,7 @@
       "exports": [
         {
           "symbol": "executeShellTool",
-          "mentionedByTests": []
+          "mentionedByTests": ["packages/harness/src/tools/shell.test.ts"]
         }
       ],
       "routes": [],
@@ -6893,16 +7131,12 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setTimeout",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "operation:stop",
           "mentionedByTests": []
         }
       ],
       "tests": {
-        "direct": [],
+        "direct": ["packages/harness/src/tools/shell.test.ts"],
         "higherLevel": [
           "packages/backend/src/create-backend-host.auth-matrix.test.ts",
           "packages/backend/src/create-backend-host.auth.test.ts",
@@ -6960,6 +7194,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -7150,6 +7385,7 @@
           "packages/harness/src/models/opencode-headers.test.ts",
           "packages/harness/src/models/pi-ai-catalog.test.ts",
           "packages/harness/src/models/pi-ai.test.ts",
+          "packages/harness/src/models/provider-retry.test.ts",
           "packages/harness/src/models/transport-contracts.test.ts",
           "packages/harness/src/queue.property.test.ts",
           "packages/harness/src/storage-migrations.property.test.ts",
@@ -7236,6 +7472,7 @@
           "packages/backend/src/routes/project-instructions.actor.test.ts",
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -7246,7 +7483,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -7268,13 +7504,15 @@
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/host-session-selection.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -7346,6 +7584,7 @@
           "packages/backend/src/routes/project-instructions.actor.test.ts",
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -7356,7 +7595,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -7378,13 +7616,15 @@
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/host-session-selection.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -7472,6 +7712,7 @@
           "packages/backend/src/routes/project-instructions.actor.test.ts",
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -7482,7 +7723,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -7504,13 +7744,15 @@
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/host-session-selection.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -8251,6 +8493,10 @@
       "path": "scripts/sandbox-shell-broker.ts",
       "exports": [
         {
+          "symbol": "bearerMatches",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "createSandboxBroker",
           "mentionedByTests": ["scripts/sandbox-shell-broker.test.ts"]
         },
@@ -8267,6 +8513,10 @@
       "stateTransitions": [
         {
           "symbol": "operation:abort",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:createHash",
           "mentionedByTests": []
         },
         {
@@ -8295,6 +8545,10 @@
         },
         {
           "symbol": "operation:setTimeout",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:update",
           "mentionedByTests": []
         }
       ],
@@ -8679,7 +8933,7 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setTimeout",
+          "symbol": "operation:start",
           "mentionedByTests": []
         },
         {
@@ -8824,7 +9078,7 @@
       "exports": [
         {
           "symbol": "AppearanceSetting",
-          "mentionedByTests": ["src/components/settings/GeneralSettings.render.test.tsx"]
+          "mentionedByTests": []
         }
       ],
       "routes": [],
@@ -8848,13 +9102,9 @@
       ],
       "tests": {
         "direct": [],
-        "higherLevel": [
-          "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
-        ]
+        "higherLevel": []
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -8903,6 +9153,10 @@
           "mentionedByTests": []
         },
         {
+          "symbol": "operation:setProfileOpen",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "operation:setProjectPopover",
           "mentionedByTests": []
         },
@@ -8934,26 +9188,6 @@
       "tests": {
         "direct": ["src/components/AppSidebar.test.tsx"],
         "higherLevel": ["src/App.render.test.tsx"]
-      },
-      "hasBehaviorNamedTest": false,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
-      "path": "src/components/ConnectionPanel.tsx",
-      "exports": [
-        {
-          "symbol": "ConnectionPanel",
-          "mentionedByTests": []
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [],
-      "tests": {
-        "direct": [],
-        "higherLevel": ["src/App.render.test.tsx", "src/components/AppSidebar.test.tsx"]
       },
       "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
@@ -9188,6 +9422,10 @@
       ],
       "routes": [],
       "stateTransitions": [
+        {
+          "symbol": "operation:setCompacting",
+          "mentionedByTests": []
+        },
         {
           "symbol": "operation:setExpanded",
           "mentionedByTests": []
@@ -10972,64 +11210,21 @@
       }
     },
     {
-      "path": "src/components/settings/GeneralSettings.tsx",
+      "path": "src/components/settings/DesktopSettings.tsx",
       "exports": [
         {
-          "symbol": "GeneralSettings",
-          "mentionedByTests": [
-            "src/components/settings/GeneralSettings.render.test.tsx",
-            "src/components/settings/SettingsView.render.test.tsx"
-          ]
-        },
-        {
-          "symbol": "PathsAndShellSettings",
+          "symbol": "DesktopSettings",
           "mentionedByTests": ["src/components/settings/SettingsView.render.test.tsx"]
         }
       ],
       "routes": [],
       "stateTransitions": [
         {
-          "symbol": "operation:dispatchEvent",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:removeEventListener",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setBehavior",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "operation:setDefaultChatDirectory",
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setEnabled",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setLanguage",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setMonths",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setNewChatModelBehavior",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setRespondingSidebarEnabled",
-          "mentionedByTests": []
-        },
-        {
           "symbol": "operation:setRestarting",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setTimeout",
           "mentionedByTests": []
         },
         {
@@ -11038,7 +11233,7 @@
         }
       ],
       "tests": {
-        "direct": ["src/components/settings/GeneralSettings.render.test.tsx"],
+        "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx"
@@ -11745,7 +11940,12 @@
         }
       ],
       "routes": [],
-      "stateTransitions": [],
+      "stateTransitions": [
+        {
+          "symbol": "type:user",
+          "mentionedByTests": []
+        }
+      ],
       "tests": {
         "direct": [],
         "higherLevel": ["src/App.render.test.tsx", "src/components/AppSidebar.test.tsx"]
@@ -12327,10 +12527,10 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
+          "src/features/mcp/McpSettings.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -12405,7 +12605,6 @@
           "src/components/sidebar/SessionRow.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
-          "src/features/mcp/McpSettings.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -12472,7 +12671,6 @@
           "src/components/PromptBox.test.tsx",
           "src/components/QueueList.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -12486,16 +12684,17 @@
           "src/components/title-bar/WorkspaceTabs.test.tsx",
           "src/components/TitleBar.test.tsx",
           "src/components/ui/OpenGuiPrimitives.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/EmailConfirmScreen.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/identity/ViewLinkScreen.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/transcript-viewport.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
@@ -12540,9 +12739,45 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/TeamSettings.render.test.tsx"
+          "src/features/identity/TeamSettings.render.test.tsx",
+          "src/features/instructions/InstructionsSettings.render.test.tsx",
+          "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
+        ]
+      },
+      "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
+      "path": "src/components/ui/collapsible.tsx",
+      "exports": [
+        {
+          "symbol": "Collapsible",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "CollapsibleContent",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "CollapsibleTrigger",
+          "mentionedByTests": []
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [],
+      "tests": {
+        "direct": [],
+        "higherLevel": [
+          "src/App.render.test.tsx",
+          "src/components/settings/SettingsView.render.test.tsx",
+          "src/features/mcp/McpSettings.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -12788,10 +13023,11 @@
           "src/components/title-bar/WorkspaceDialog.test.tsx",
           "src/components/TitleBar.test.tsx",
           "src/components/ui/OpenGuiPrimitives.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
-          "src/features/identity/TeamSettings.render.test.tsx"
+          "src/features/identity/TeamSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -12931,8 +13167,7 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/SidebarItemMenus.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx"
+          "src/components/SidebarItemMenus.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -12968,12 +13203,13 @@
           "symbol": "Input",
           "mentionedByTests": [
             "src/components/AppSidebar.test.tsx",
-            "src/components/settings/GeneralSettings.render.test.tsx",
             "src/components/sidebar/SessionRow.behavior.test.tsx",
             "src/components/title-bar/WorkspaceDialog.test.tsx",
+            "src/features/identity/AccountSection.test.tsx",
             "src/features/identity/NamedTeamsSettings.render.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx",
-            "src/features/identity/TeamSettings.render.test.tsx"
+            "src/features/identity/TeamSettings.render.test.tsx",
+            "src/features/mcp/McpSettings.render.test.tsx",
+            "src/features/profile/PreferenceControls.render.test.tsx"
           ]
         }
       ],
@@ -12986,7 +13222,6 @@
           "src/components/AppSidebar.test.tsx",
           "src/components/ModelSelector.test.tsx",
           "src/components/PromptBox.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -12996,12 +13231,14 @@
           "src/components/sidebar/SidebarContentSections.test.tsx",
           "src/components/title-bar/WorkspaceDialog.test.tsx",
           "src/components/TitleBar.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -13023,8 +13260,8 @@
             "src/components/title-bar/WorkspaceDialog.test.tsx",
             "src/components/TitleBar.test.tsx",
             "src/components/ui/OpenGuiPrimitives.test.tsx",
+            "src/features/identity/AccountSection.test.tsx",
             "src/features/identity/NamedTeamsSettings.render.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx",
             "src/features/identity/TeamSettings.render.test.tsx",
             "src/features/instructions/InstructionsSettings.render.test.tsx",
             "src/features/mcp/McpSettings.render.test.tsx"
@@ -13038,7 +13275,6 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -13047,14 +13283,16 @@
           "src/components/title-bar/WorkspaceDialog.test.tsx",
           "src/components/TitleBar.test.tsx",
           "src/components/ui/OpenGuiPrimitives.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
-          "src/features/mcp/McpSettings.render.test.tsx"
+          "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13104,15 +13342,44 @@
       }
     },
     {
+      "path": "src/components/ui/radio-group.tsx",
+      "exports": [
+        {
+          "symbol": "RadioGroup",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "RadioGroupItem",
+          "mentionedByTests": []
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [],
+      "tests": {
+        "direct": [],
+        "higherLevel": [
+          "src/App.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
+        ]
+      },
+      "hasBehaviorNamedTest": false,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
       "path": "src/components/ui/select.tsx",
       "exports": [
         {
           "symbol": "Select",
           "mentionedByTests": [
-            "src/components/settings/GeneralSettings.render.test.tsx",
             "src/components/sidebar/SessionRow.behavior.test.tsx",
             "src/features/identity/SessionShareDialog.test.tsx",
-            "src/features/identity/TeamSettings.render.test.tsx"
+            "src/features/identity/TeamSettings.render.test.tsx",
+            "src/features/profile/PreferenceControls.render.test.tsx"
           ]
         },
         {
@@ -13159,7 +13426,6 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -13167,7 +13433,10 @@
           "src/components/sidebar/SessionRow.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
-          "src/features/identity/TeamSettings.render.test.tsx"
+          "src/features/identity/TeamSettings.render.test.tsx",
+          "src/features/instructions/InstructionsSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13194,7 +13463,8 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx"
+          "src/components/sidebar/SidebarContentSections.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13249,7 +13519,8 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx"
+          "src/components/sidebar/SidebarContentSections.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13293,7 +13564,8 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx"
+          "src/components/sidebar/SidebarContentSections.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13308,6 +13580,7 @@
         {
           "symbol": "Sidebar",
           "mentionedByTests": [
+            "src/features/profile/ProfilePanel.render.test.tsx",
             "src/App.render.test.tsx",
             "src/components/AppSidebar.test.tsx",
             "src/components/sidebar/ProjectEntry.test.tsx",
@@ -13398,7 +13671,10 @@
         },
         {
           "symbol": "SidebarProvider",
-          "mentionedByTests": ["src/App.render.test.tsx"]
+          "mentionedByTests": [
+            "src/features/profile/ProfilePanel.render.test.tsx",
+            "src/App.render.test.tsx"
+          ]
         },
         {
           "symbol": "SidebarRail",
@@ -13429,7 +13705,7 @@
         }
       ],
       "tests": {
-        "direct": [],
+        "direct": ["src/features/profile/ProfilePanel.render.test.tsx"],
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
@@ -13473,6 +13749,8 @@
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/identity/ViewLinkScreen.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
+          "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -13496,11 +13774,12 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -13549,7 +13828,6 @@
           "src/components/message-list/MessageBubble.test.tsx",
           "src/components/message-list/MessageListViewportShell.test.tsx",
           "src/components/message-list/MessagePartsStack.test.ts",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
@@ -13577,13 +13855,15 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
-          "src/features/mcp/McpSettings.render.test.tsx"
+          "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13633,6 +13913,32 @@
       }
     },
     {
+      "path": "src/components/ui/textarea.tsx",
+      "exports": [
+        {
+          "symbol": "Textarea",
+          "mentionedByTests": []
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [],
+      "tests": {
+        "direct": [],
+        "higherLevel": [
+          "src/App.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
+          "src/components/settings/SettingsView.render.test.tsx",
+          "src/features/instructions/InstructionsSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
+        ]
+      },
+      "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
       "path": "src/components/ui/toggle-group.tsx",
       "exports": [
         {
@@ -13655,11 +13961,12 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -13683,11 +13990,12 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -13741,12 +14049,11 @@
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
           "src/components/PromptBox.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx",
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx"
+          "src/components/sidebar/SidebarContentSections.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -13798,7 +14105,8 @@
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
-          "src/components/sidebar/SidebarContentSections.test.tsx"
+          "src/components/sidebar/SidebarContentSections.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -14458,6 +14766,129 @@
       }
     },
     {
+      "path": "src/features/identity/AccountSection.tsx",
+      "exports": [
+        {
+          "symbol": "AccountSection",
+          "mentionedByTests": [
+            "src/features/identity/AccountSection.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
+        },
+        {
+          "symbol": "initialsFor",
+          "mentionedByTests": [
+            "src/features/identity/AccountSection.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [
+        {
+          "symbol": "kind:email",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "kind:password",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "kind:profile",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:createIdentityClient",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:set",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setBusy",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setConfirmation",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setCurrentPassword",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setDialog",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setDisplayName",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setEmailPassword",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setError",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setLastDialog",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setLoadError",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setNewEmail",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setNewPassword",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setPendingEmail",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setRetry",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setShowPasswords",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setUser",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:updateProfile",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "type:user",
+          "mentionedByTests": []
+        }
+      ],
+      "tests": {
+        "direct": ["src/features/identity/AccountSection.test.tsx"],
+        "higherLevel": [
+          "src/App.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
+        ]
+      },
+      "hasBehaviorNamedTest": false,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
       "path": "src/features/identity/ActorAttribution.tsx",
       "exports": [
         {
@@ -14632,8 +15063,9 @@
             "src/components/SettingsProviders.access.test.tsx",
             "src/components/SettingsProviders.render.test.tsx",
             "src/components/sidebar/SessionRow.behavior.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx",
+            "src/features/identity/AccountSection.test.tsx",
             "src/features/instructions/InstructionsSettings.render.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx",
             "src/features/skills/SkillsSettings.render.test.tsx"
           ]
         }
@@ -14661,9 +15093,10 @@
           "src/components/SettingsProviders.render.test.tsx",
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/ActorAttribution.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -14679,9 +15112,9 @@
         {
           "symbol": "createIdentityClient",
           "mentionedByTests": [
+            "src/features/identity/AccountSection.test.tsx",
             "src/features/identity/identity-client.test.ts",
             "src/features/identity/IdentityGate.render.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx",
             "src/components/SettingsProviders.access.test.tsx",
             "src/components/SettingsProviders.render.test.tsx",
             "src/components/title-bar/WorkspaceDialog.test.tsx",
@@ -14694,9 +15127,9 @@
         {
           "symbol": "IdentityRequestError",
           "mentionedByTests": [
+            "src/features/identity/AccountSection.test.tsx",
             "src/features/identity/identity-client.test.ts",
             "src/features/identity/IdentityGate.render.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx",
             "src/components/title-bar/WorkspaceDialog.test.tsx"
           ]
         }
@@ -14722,9 +15155,9 @@
       ],
       "tests": {
         "direct": [
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/identity-client.test.ts",
-          "src/features/identity/IdentityGate.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx"
+          "src/features/identity/IdentityGate.render.test.tsx"
         ],
         "higherLevel": [
           "src/App.render.test.tsx",
@@ -14751,6 +15184,7 @@
           "src/features/identity/ViewLinkScreen.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -15326,111 +15760,6 @@
       }
     },
     {
-      "path": "src/features/identity/ProfileMenu.tsx",
-      "exports": [
-        {
-          "symbol": "ProfileMenu",
-          "mentionedByTests": ["src/features/identity/ProfileMenu.test.tsx"]
-        }
-      ],
-      "routes": [],
-      "stateTransitions": [
-        {
-          "symbol": "kind:email",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "kind:profile",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:createIdentityClient",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:set",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setBusy",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setConfirmation",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setCurrentPassword",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setDialog",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setDisplayName",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setEmailPassword",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setError",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setLastDialog",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setLoadError",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setNewEmail",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setNewPassword",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setPendingEmail",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setRetry",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setShowPasswords",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:setUser",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "operation:updateProfile",
-          "mentionedByTests": []
-        },
-        {
-          "symbol": "type:user",
-          "mentionedByTests": []
-        }
-      ],
-      "tests": {
-        "direct": ["src/features/identity/ProfileMenu.test.tsx"],
-        "higherLevel": ["src/App.render.test.tsx", "src/components/AppSidebar.test.tsx"]
-      },
-      "hasBehaviorNamedTest": false,
-      "runtimeCoverage": {
-        "available": false,
-        "behaviorCoverage": "unknown"
-      }
-    },
-    {
       "path": "src/features/identity/SessionShareDialog.tsx",
       "exports": [
         {
@@ -15860,7 +16189,7 @@
       "exports": [
         {
           "symbol": "announceIdentityWorkspaceChange",
-          "mentionedByTests": ["src/features/identity/ProfileMenu.test.tsx"]
+          "mentionedByTests": ["src/features/identity/AccountSection.test.tsx"]
         },
         {
           "symbol": "getIdentityWorkspace",
@@ -15887,13 +16216,16 @@
         },
         {
           "symbol": "logoutActiveWorkspaceIdentity",
-          "mentionedByTests": ["src/features/identity/ProfileMenu.test.tsx"]
+          "mentionedByTests": [
+            "src/features/identity/AccountSection.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
         },
         {
           "symbol": "persistWorkspaceIdentityToken",
           "mentionedByTests": [
-            "src/features/identity/IdentityGate.render.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx"
+            "src/features/identity/AccountSection.test.tsx",
+            "src/features/identity/IdentityGate.render.test.tsx"
           ]
         },
         {
@@ -15927,13 +16259,14 @@
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -15950,8 +16283,20 @@
           "symbol": "InstructionsSettings",
           "mentionedByTests": [
             "src/features/instructions/InstructionsSettings.render.test.tsx",
-            "src/components/settings/SettingsView.render.test.tsx"
+            "src/components/settings/SettingsView.render.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
           ]
+        },
+        {
+          "symbol": "PersonalInstructions",
+          "mentionedByTests": [
+            "src/features/instructions/InstructionsSettings.render.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
+        },
+        {
+          "symbol": "usePersonalInstructionsAvailable",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
         }
       ],
       "routes": [],
@@ -16037,7 +16382,62 @@
         "direct": ["src/features/instructions/InstructionsSettings.render.test.tsx"],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/components/AppSidebar.test.tsx",
+          "src/components/settings/SettingsView.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
+        ]
+      },
+      "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
+      "path": "src/features/mcp/mcp-input.ts",
+      "exports": [
+        {
+          "symbol": "connectionIdFrom",
+          "mentionedByTests": ["src/features/mcp/mcp-input.test.ts"]
+        },
+        {
+          "symbol": "formatCommandLine",
+          "mentionedByTests": ["src/features/mcp/mcp-input.test.ts"]
+        },
+        {
+          "symbol": "labelFromCommand",
+          "mentionedByTests": ["src/features/mcp/mcp-input.test.ts"]
+        },
+        {
+          "symbol": "labelFromUrl",
+          "mentionedByTests": ["src/features/mcp/mcp-input.test.ts"]
+        },
+        {
+          "symbol": "parseMcpInput",
+          "mentionedByTests": ["src/features/mcp/mcp-input.test.ts"]
+        },
+        {
+          "symbol": "tokenizeCommandLine",
+          "mentionedByTests": ["src/features/mcp/mcp-input.test.ts"]
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [
+        {
+          "symbol": "kind:http",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "kind:stdio",
+          "mentionedByTests": []
+        }
+      ],
+      "tests": {
+        "direct": ["src/features/mcp/mcp-input.test.ts"],
+        "higherLevel": [
+          "src/App.render.test.tsx",
+          "src/components/settings/SettingsView.render.test.tsx",
+          "src/features/mcp/McpSettings.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -16080,15 +16480,19 @@
           "mentionedByTests": []
         },
         {
+          "symbol": "operation:set",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "operation:setConnections",
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setDraft",
+          "symbol": "operation:setEditor",
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:setInspecting",
+          "symbol": "operation:setExpanded",
           "mentionedByTests": []
         },
         {
@@ -16096,7 +16500,15 @@
           "mentionedByTests": []
         },
         {
+          "symbol": "operation:setRemoving",
+          "mentionedByTests": []
+        },
+        {
           "symbol": "operation:setSaving",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setTesting",
           "mentionedByTests": []
         },
         {
@@ -16108,11 +16520,11 @@
           "mentionedByTests": []
         },
         {
-          "symbol": "operation:updateDraft",
+          "symbol": "operation:update",
           "mentionedByTests": []
         },
         {
-          "symbol": "state:offline",
+          "symbol": "state:degraded",
           "mentionedByTests": []
         },
         {
@@ -16262,6 +16674,166 @@
         ]
       },
       "hasBehaviorNamedTest": true,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
+      "path": "src/features/profile/PreferenceControls.tsx",
+      "exports": [
+        {
+          "symbol": "AccentSetting",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "ChatWidthSetting",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "ContrastSetting",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "LanguageOptions",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "ModelAgeFilterSetting",
+          "mentionedByTests": [
+            "src/features/profile/PreferenceControls.render.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
+        },
+        {
+          "symbol": "NewChatModelSetting",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "NotificationsSetting",
+          "mentionedByTests": [
+            "src/features/profile/PreferenceControls.render.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
+        },
+        {
+          "symbol": "RespondingSidebarSetting",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "ThemeSetting",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        },
+        {
+          "symbol": "useLanguagePreference",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [
+        {
+          "symbol": "operation:dispatchEvent",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:removeEventListener",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setAccentColor",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setBehavior",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setChatWidth",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setContrast",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setEnabled",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setLanguage",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setMonths",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setNewChatModelBehavior",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setRespondingSidebarEnabled",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setTheme",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setTimeout",
+          "mentionedByTests": []
+        }
+      ],
+      "tests": {
+        "direct": ["src/features/profile/PreferenceControls.render.test.tsx"],
+        "higherLevel": [
+          "src/App.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
+        ]
+      },
+      "hasBehaviorNamedTest": false,
+      "runtimeCoverage": {
+        "available": false,
+        "behaviorCoverage": "unknown"
+      }
+    },
+    {
+      "path": "src/features/profile/ProfilePanel.tsx",
+      "exports": [
+        {
+          "symbol": "ProfilePanel",
+          "mentionedByTests": ["src/features/profile/ProfilePanel.render.test.tsx"]
+        }
+      ],
+      "routes": [],
+      "stateTransitions": [
+        {
+          "symbol": "operation:setInstructionsDirty",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setSigningOut",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:setView",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "operation:stopPropagation",
+          "mentionedByTests": []
+        },
+        {
+          "symbol": "type:user",
+          "mentionedByTests": []
+        }
+      ],
+      "tests": {
+        "direct": ["src/features/profile/ProfilePanel.render.test.tsx"],
+        "higherLevel": ["src/App.render.test.tsx", "src/components/AppSidebar.test.tsx"]
+      },
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -16871,6 +17443,7 @@
         {
           "symbol": "ActionsContext",
           "mentionedByTests": [
+            "src/components/message-list/AssistantMessageError.test.tsx",
             "src/features/host-provider/host-actions.test.ts",
             "src/features/host-provider/HostProvider.render.test.tsx",
             "src/hooks/use-agent-state.test.tsx"
@@ -16896,6 +17469,7 @@
       "stateTransitions": [],
       "tests": {
         "direct": [
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/features/host-provider/host-actions.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
           "src/hooks/use-agent-state.test.tsx"
@@ -16913,7 +17487,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -16927,8 +17500,10 @@
           "src/components/SidebarItemMenus.test.tsx",
           "src/components/TitleBar.test.tsx",
           "src/features/app-shell/useAppKeyboardShortcuts.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -16979,7 +17554,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -16994,8 +17568,10 @@
           "src/components/TitleBar.test.tsx",
           "src/features/app-shell/useAppKeyboardShortcuts.test.tsx",
           "src/features/host-provider/HostProvider.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -17073,6 +17649,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -17083,7 +17660,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -17102,13 +17678,15 @@
           "src/features/host-provider/host-actions.test.ts",
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -17157,7 +17735,7 @@
         },
         {
           "symbol": "NOTIFICATIONS_ENABLED_KEY",
-          "mentionedByTests": ["src/components/settings/GeneralSettings.render.test.tsx"]
+          "mentionedByTests": ["src/features/profile/PreferenceControls.render.test.tsx"]
         },
         {
           "symbol": "resolveServerDefaultModel",
@@ -17174,7 +17752,6 @@
             "src/components/ModelSelector.test.tsx",
             "src/components/PromptBox.test.tsx",
             "src/components/ReasoningEffortSelector.test.tsx",
-            "src/components/settings/GeneralSettings.render.test.tsx",
             "src/components/SettingsProviders.access.test.tsx",
             "src/components/SettingsProviders.render.test.tsx",
             "src/components/SetupWizard.render.test.tsx",
@@ -17214,9 +17791,8 @@
             "src/components/message-list/message-rendering.test.tsx",
             "src/components/ProjectPathDialog.test.tsx",
             "src/components/PromptBox.test.tsx",
-            "src/components/settings/GeneralSettings.render.test.tsx",
             "src/components/TitleBar.test.tsx",
-            "src/features/identity/ProfileMenu.test.tsx",
+            "src/features/identity/AccountSection.test.tsx",
             "src/features/identity/SessionShareDialog.test.tsx",
             "src/features/skills/SkillsSettings.render.test.tsx"
           ]
@@ -17242,7 +17818,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -17256,8 +17831,10 @@
           "src/components/SidebarItemMenus.test.tsx",
           "src/components/TitleBar.test.tsx",
           "src/features/app-shell/useAppKeyboardShortcuts.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -17311,6 +17888,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -17321,7 +17899,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -17340,13 +17917,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -17381,12 +17960,13 @@
         "direct": ["src/hooks/use-chat-width.test.tsx"],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/transcript-viewport.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -17608,7 +18188,8 @@
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
           "src/components/sidebar/SidebarContentSections.test.tsx",
-          "src/components/ui/sidebar-state.test.ts"
+          "src/components/ui/sidebar-state.test.ts",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -17940,7 +18521,10 @@
         },
         {
           "symbol": "useTheme",
-          "mentionedByTests": ["src/hooks/use-theme.test.tsx"]
+          "mentionedByTests": [
+            "src/hooks/use-theme.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx"
+          ]
         }
       ],
       "routes": [],
@@ -17978,8 +18562,9 @@
         "direct": ["src/hooks/use-theme.test.tsx"],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,
@@ -18120,8 +18705,9 @@
             "src/i18n/document-language.test.ts",
             "src/components/AppSidebar.test.tsx",
             "src/components/ProjectPathDialog.test.tsx",
-            "src/components/settings/SettingsView.render.test.tsx",
             "src/components/SetupWizard.render.test.tsx",
+            "src/features/profile/PreferenceControls.render.test.tsx",
+            "src/features/profile/ProfilePanel.render.test.tsx",
             "src/shell/useMobileBackButton.test.tsx"
           ]
         },
@@ -18159,10 +18745,10 @@
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
           "src/components/ProjectPathDialog.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SetupWizard.render.test.tsx",
           "src/components/SetupWizard.test.ts",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/shell/useMobileBackButton.test.tsx"
         ]
       },
@@ -18382,10 +18968,10 @@
           "symbol": "STORAGE_KEYS",
           "mentionedByTests": [
             "src/components/ModelSelector.test.tsx",
-            "src/components/settings/GeneralSettings.render.test.tsx",
             "src/components/SetupWizard.render.test.tsx",
             "src/components/SetupWizard.test.ts",
             "src/features/host-provider/HostProvider.render.test.tsx",
+            "src/features/profile/PreferenceControls.render.test.tsx",
             "src/features/session-transcript/transcript-viewport.test.tsx",
             "src/hooks/use-chat-width.test.tsx",
             "src/hooks/use-theme.test.tsx",
@@ -18405,11 +18991,11 @@
         "direct": [
           "src/components/message-list/MessageBubble.test.tsx",
           "src/components/ModelSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/SetupWizard.render.test.tsx",
           "src/components/SetupWizard.test.ts",
           "src/components/sidebar/ProjectEntry.test.tsx",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
           "src/features/session-transcript/transcript-viewport.test.tsx",
           "src/hooks/use-chat-width.test.tsx",
           "src/hooks/use-theme.test.tsx",
@@ -18421,6 +19007,7 @@
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
           "src/components/EmptyChatStates.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -18445,14 +19032,15 @@
           "src/features/host-provider/host-actions.test.ts",
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session-transcript/use-pinned-scroll.test.tsx",
           "src/features/session/useActiveSessionQueue.test.tsx",
@@ -18643,11 +19231,12 @@
         "direct": [],
         "higherLevel": [
           "src/App.render.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/components/AppSidebar.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -18704,6 +19293,9 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
+          "src/components/message-list/message-rendering.test.tsx",
+          "src/components/message-list/MessageBubble.test.tsx",
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
@@ -18722,6 +19314,7 @@
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/hooks/use-prompt-files.test.tsx"
         ]
       },
@@ -18754,6 +19347,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -18764,7 +19358,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -18786,13 +19379,15 @@
           "src/features/host-provider/host-event-stream.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/active-session-transcript-store.test.ts",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
@@ -18841,6 +19436,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -18851,7 +19447,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -18870,13 +19465,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -18901,6 +19498,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -18911,7 +19509,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -18930,13 +19527,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -18974,6 +19573,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -18984,7 +19584,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19004,13 +19603,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19051,6 +19652,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19061,7 +19663,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19080,13 +19681,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19122,6 +19725,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19132,7 +19736,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19151,13 +19754,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19192,6 +19797,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19202,7 +19808,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19222,13 +19827,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19273,6 +19880,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19283,7 +19891,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19302,13 +19909,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19354,6 +19963,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19364,7 +19974,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19383,13 +19992,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19495,6 +20106,7 @@
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
           "src/components/EmptyChatStates.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19505,7 +20117,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19524,14 +20135,16 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19604,7 +20217,7 @@
         },
         {
           "symbol": "NOTIFICATIONS_ENABLED_KEY",
-          "mentionedByTests": ["src/components/settings/GeneralSettings.render.test.tsx"]
+          "mentionedByTests": ["src/features/profile/PreferenceControls.render.test.tsx"]
         },
         {
           "symbol": "persistVariantSelectionsForWorkspace",
@@ -19627,6 +20240,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -19637,7 +20251,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -19656,13 +20269,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -19729,11 +20344,11 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
-          "src/components/settings/SettingsView.render.test.tsx"
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
-      "hasBehaviorNamedTest": true,
+      "hasBehaviorNamedTest": false,
       "runtimeCoverage": {
         "available": false,
         "behaviorCoverage": "unknown"
@@ -20014,6 +20629,7 @@
           "src/components/DeviceAuthDialog.test.tsx",
           "src/components/EmptyChatStates.test.tsx",
           "src/components/MarkdownRenderer.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/interactions/InteractionRequestsView.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
@@ -20025,7 +20641,6 @@
           "src/components/PromptBox.test.tsx",
           "src/components/QueueList.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -20046,17 +20661,19 @@
           "src/features/host-provider/host-event-stream.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/ActorAttribution.test.tsx",
           "src/features/identity/EmailConfirmScreen.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/identity/ViewLinkScreen.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/transcript-viewport.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx",
           "src/hooks/use-prompt-files.test.tsx",
@@ -20189,6 +20806,7 @@
         ],
         "higherLevel": [
           "src/App.render.test.tsx",
+          "src/components/AppSidebar.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -20197,6 +20815,7 @@
           "src/features/host-provider/HostProvider.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/skills/SkillsSettings.render.test.tsx"
         ]
       },
@@ -20382,7 +21001,7 @@
         {
           "symbol": "getDesktopShellClient",
           "mentionedByTests": [
-            "src/components/settings/GeneralSettings.render.test.tsx",
+            "src/components/settings/SettingsView.render.test.tsx",
             "src/i18n/document-language.test.ts"
           ]
         }
@@ -20415,7 +21034,6 @@
           "src/components/message-list/MessageBubble.test.tsx",
           "src/components/message-list/MessagePartsStack.test.ts",
           "src/components/ProjectPathDialog.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -20432,6 +21050,8 @@
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/identity/ViewLinkScreen.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/hooks/use-update-check.test.tsx",
           "src/i18n/document-language.test.ts",
           "src/shell/useMobileBackButton.test.tsx"
@@ -20459,6 +21079,7 @@
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
           "src/components/EmptyChatStates.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -20469,7 +21090,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -20489,14 +21109,16 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
           "src/features/identity/PathGrantEditor.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session-transcript/transcript-viewport.test.tsx",
           "src/features/session/useActiveSessionQueue.test.tsx",
@@ -20547,6 +21169,7 @@
         "higherLevel": [
           "src/App.render.test.tsx",
           "src/components/AppSidebar.test.tsx",
+          "src/components/message-list/AssistantMessageError.test.tsx",
           "src/components/message-list/EmptySessionOverview.test.tsx",
           "src/components/message-list/message-rendering.test.tsx",
           "src/components/message-list/message-revert.test.ts",
@@ -20557,7 +21180,6 @@
           "src/components/ProjectPathDialog.test.tsx",
           "src/components/PromptBox.test.tsx",
           "src/components/ReasoningEffortSelector.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -20578,13 +21200,15 @@
           "src/features/host-provider/host-domain-state.test.ts",
           "src/features/host-provider/host-provider.integration.test.ts",
           "src/features/host-provider/HostProvider.render.test.tsx",
+          "src/features/identity/AccountSection.test.tsx",
           "src/features/identity/IdentityGate.render.test.tsx",
           "src/features/identity/NamedTeamsSettings.render.test.tsx",
-          "src/features/identity/ProfileMenu.test.tsx",
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/instructions/InstructionsSettings.render.test.tsx",
           "src/features/mcp/McpSettings.render.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/features/session-transcript/message-list-viewport-state.test.ts",
           "src/features/session/useActiveSessionQueue.test.tsx",
           "src/features/session/useChatSessionSurface.test.tsx",
@@ -20655,7 +21279,6 @@
           "src/components/message-list/MessageBubble.test.tsx",
           "src/components/message-list/MessagePartsStack.test.ts",
           "src/components/ProjectPathDialog.test.tsx",
-          "src/components/settings/GeneralSettings.render.test.tsx",
           "src/components/settings/SettingsView.render.test.tsx",
           "src/components/SettingsProviders.access.test.tsx",
           "src/components/SettingsProviders.render.test.tsx",
@@ -20672,6 +21295,8 @@
           "src/features/identity/SessionShareDialog.test.tsx",
           "src/features/identity/TeamSettings.render.test.tsx",
           "src/features/identity/ViewLinkScreen.test.tsx",
+          "src/features/profile/PreferenceControls.render.test.tsx",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/hooks/use-update-check.test.tsx",
           "src/i18n/document-language.test.ts",
           "src/shell/useMobileBackButton.test.tsx"
@@ -20725,6 +21350,7 @@
           "src/components/sidebar/SessionRow.test.tsx",
           "src/components/sidebar/SidebarContentSections.test.tsx",
           "src/components/ui/sidebar-state.test.ts",
+          "src/features/profile/ProfilePanel.render.test.tsx",
           "src/shell/useMobileBackButton.test.tsx"
         ]
       },
@@ -20835,7 +21461,8 @@
           "src/components/sidebar/SessionRow.behavior.test.tsx",
           "src/components/sidebar/SessionRow.test.tsx",
           "src/components/sidebar/SidebarContentSections.test.tsx",
-          "src/components/ui/sidebar-state.test.ts"
+          "src/components/ui/sidebar-state.test.ts",
+          "src/features/profile/ProfilePanel.render.test.tsx"
         ]
       },
       "hasBehaviorNamedTest": true,

@@ -35,7 +35,7 @@ vi.mock("./identity-client", async (original) => ({
     cancelEmailChange: fixture.cancelEmailChange,
   }),
 }));
-import { ProfileMenu } from "./ProfileMenu";
+import { AccountSection, initialsFor } from "./AccountSection";
 import { IdentityRequestError } from "./identity-client";
 afterEach(cleanup);
 beforeEach(() => {
@@ -51,18 +51,18 @@ beforeEach(() => {
   fixture.cancelEmailChange.mockResolvedValue({ cancelled: true });
 });
 async function openMenu() {
-  render(<ProfileMenu />);
+  render(<AccountSection />);
   await waitFor(() => expect(fixture.me).toHaveBeenCalled());
-  await userEvent.click(screen.getByRole("button", { name: "account.openProfile" }));
+  await screen.findByText("alex@example.com");
 }
 test("hides account controls for Local", () => {
   fixture.actor.type = "local";
-  render(<ProfileMenu />);
+  render(<AccountSection />);
   expect(screen.queryByRole("button")).toBeNull();
 });
 test("edits display name while keeping username and email read-only", async () => {
   await openMenu();
-  await userEvent.click(screen.getByRole("menuitem", { name: "account.editProfile" }));
+  await userEvent.click(screen.getByRole("button", { name: "account.editProfile" }));
   expect((screen.getByLabelText("identity.username") as HTMLInputElement).readOnly).toBe(true);
   expect((screen.getByLabelText("identity.email") as HTMLInputElement).readOnly).toBe(true);
   await userEvent.clear(screen.getByLabelText("account.displayName"));
@@ -73,7 +73,7 @@ test("edits display name while keeping username and email read-only", async () =
 });
 test("validates matching passwords, handles wrong current password, and persists rotated token", async () => {
   await openMenu();
-  await userEvent.click(screen.getByRole("menuitem", { name: "account.changePassword" }));
+  await userEvent.click(screen.getByRole("button", { name: "account.changePassword" }));
   await userEvent.type(screen.getByLabelText("account.currentPassword"), "wrong password");
   await userEvent.type(screen.getByLabelText("account.newPassword"), "new secure password");
   await userEvent.type(screen.getByLabelText("identity.confirmPassword"), "different password");
@@ -92,14 +92,9 @@ test("validates matching passwords, handles wrong current password, and persists
   await userEvent.click(screen.getByRole("button", { name: "common.save" }));
   expect(fixture.persist).toHaveBeenCalledWith("host", "new-token");
 });
-test("offers logout directly from the menu", async () => {
-  await openMenu();
-  await userEvent.click(screen.getByRole("menuitem", { name: "identity.signOut" }));
-  expect(fixture.logout).toHaveBeenCalledOnce();
-});
 test("requests email change with reauthentication and preserves the draft on failure", async () => {
   await openMenu();
-  await userEvent.click(screen.getByRole("menuitem", { name: "account.changeEmail" }));
+  await userEvent.click(screen.getByRole("button", { name: "account.changeEmail" }));
   expect((screen.getByLabelText("account.currentEmail") as HTMLInputElement).readOnly).toBe(true);
   expect((screen.getByLabelText("account.currentEmail") as HTMLInputElement).value).toBe(
     "alex@example.com",
@@ -129,7 +124,7 @@ test("shows the pending change and cancels it", async () => {
   });
   fixture.requestEmailChange.mockResolvedValueOnce({ sent: true, expiresAt: Date.now() + 1000 });
   await openMenu();
-  await userEvent.click(screen.getByRole("menuitem", { name: "account.changeEmail" }));
+  await userEvent.click(screen.getByRole("button", { name: "account.changeEmail" }));
   await waitFor(() =>
     expect(screen.getByText("account.emailPendingNotice", { exact: false })).toBeTruthy(),
   );
@@ -145,4 +140,8 @@ test("shows the pending change and cancels it", async () => {
   );
   await userEvent.click(screen.getByRole("button", { name: "account.emailCancelChange" }));
   expect(fixture.cancelEmailChange).toHaveBeenCalledOnce();
+});
+test("derives avatar initials from up to two names", () => {
+  expect(initialsFor("  alex   smith jones ")).toBe("AS");
+  expect(initialsFor("Émile")).toBe("É");
 });

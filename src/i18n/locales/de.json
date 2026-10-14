@@ -1,6 +1,5 @@
 {
   "account": {
-    "openProfile": "Profilmenü öffnen",
     "connectedHost": "Verbunden mit: {{host}}",
     "editProfile": "Profil bearbeiten",
     "changePassword": "Passwort ändern",
@@ -168,35 +167,34 @@
     "authenticationDetail": "Verbinde diesen Anbieter unter Einstellungen → Modelle & Anbieter neu und versuche es dann erneut."
   },
   "settings": {
-    "subtitle": "Einstellungen, Modelle, Personen und Host-Verwaltung an einem Ort.",
     "navigationLabel": "Einstellungsbereiche",
     "skillsPlaceholderTitle": "Skill-Verwaltung ist noch nicht verfügbar",
     "skillsPlaceholderDescription": "Der Agent kann Skills verwenden; Installation und Verwaltung folgen in einem späteren Update.",
     "tabs": {
-      "general": "Allgemein",
       "providers": "Modelle & Anbieter",
       "models": "Modelle",
       "integrations": "Integrationen",
       "users": "Personen",
-      "paths": "Pfade & Shell",
+      "paths": "Pfadzugriff",
       "host": "System",
       "instructions": "Anweisungen",
       "skills": "Skills",
       "team": "Team",
       "plugins": "Plugins",
       "tools": "Werkzeuge",
-      "teams": "Teams"
+      "teams": "Teams",
+      "desktop": "Desktop"
     },
     "sectionDescriptions": {
-      "general": "Darstellung, Sprache, Benachrichtigungen und alltägliche Modelleinstellungen.",
       "models": "Modelle auswählen und den Zugriff verwalten.",
-      "integrations": "Vertrauenswürdige MCP-Server verbinden, die dem Agenten zusätzliche Werkzeuge bereitstellen.",
+      "integrations": "Geben Sie dem Agenten zusätzliche Werkzeuge, indem Sie MCP-Server verbinden, etwa Ihren Kalender, eine Datenbank oder ein Design-Tool.",
       "users": "Personen einladen und ihre Host-Rollen verwalten.",
-      "paths": "OpenGUI-Pfadzugriff und die getrennte Berechtigung von Shell-Befehlen.",
+      "paths": "Festlegen, welche Ordner Personen über OpenGUI lesen und ändern dürfen.",
       "host": "Host-weite Sperren, Registrierung und Automatisierungsschlüssel.",
-      "instructions": "Hostweite Anweisungen, gemeinsame Projektanweisungen und private persönliche Einstellungen.",
+      "instructions": "Hausregeln, denen der Agent auf diesem Host und in gemeinsamen Projekten folgt. Ihre persönlichen Vorgaben finden Sie in Ihrem Profil in der Seitenleiste.",
       "skills": "Wiederverwendbare Anweisungen für den Agenten.",
-      "teams": "Personen gruppieren und ihren Zugriff gemeinsam verwalten."
+      "teams": "Personen gruppieren und ihren Zugriff gemeinsam verwalten.",
+      "desktop": "Wo neue Chats beginnen und welche Apps auf diesem Computer Dateien und Terminals öffnen."
     },
     "paths": {
       "boundaryTitle": "Pfadfreigaben sind keine Sandbox",
@@ -210,11 +208,11 @@
         "project": "Projekt",
         "personal": "Persönlich"
       },
-      "hierarchy": "Host-Anweisungen gelten überall. Gemeinsame Projektanweisungen gelten für alle im Projekt. Persönliche Einstellungen gelten nur für deine Anfragen. Bei Widersprüchen hat der Host Vorrang, danach das Projekt, dann deine persönlichen Einstellungen.",
+      "hierarchy": "Host-Anweisungen gelten überall. Gemeinsame Projektanweisungen gelten für alle, die in diesem Projekt arbeiten. Bei Konflikten haben Host-Anweisungen Vorrang.",
       "helpScope": {
         "host": "Für alle auf diesem Host sichtbar. Nur Eigentümer und Administratoren können sie bearbeiten.",
         "project": "Für alle mit Zugriff auf dieses Projekt sichtbar. Änderungen gelten ab der nächsten Anfrage.",
-        "personal": "Privat für dein Konto auf diesem Host. Gelten bei deinen Anfragen, auch in geteilten Sessions. Keine Geheimnisse eintragen."
+        "personal": "Nur für Sie sichtbar und wird jedem Ihrer Prompts hinzugefügt. Keine Geheimnisse eintragen."
       },
       "discard": "Nicht gespeicherte Anweisungen verwerfen?",
       "noProjects": "Füge zuerst ein Projekt hinzu, um gemeinsame Anweisungen festzulegen.",
@@ -290,7 +288,7 @@
       "newChatModelLast": "Letztes LLM-Modell verwenden",
       "newChatModelWorkspaceDefault": "Workspace-Standard verwenden",
       "respondingSidebar": "Antwortorientierte Seitenleiste",
-      "respondingSidebarHelp": "Zeigt fertige Antworten zuerst, danach laufende und inaktive Chats. Deaktivieren, um Chats nach Projekt zu gruppieren.",
+      "respondingSidebarHelp": "Fertige Antworten zuerst anzeigen, statt Chats nach Projekt zu gruppieren.",
       "desktopNotifications": "Desktop-Benachrichtigungen",
       "blockedByBrowser": "Vom Browser blockiert",
       "fileManager": "Dateimanager",
@@ -299,11 +297,21 @@
       "terminalHelp": "Befehl zum Öffnen deines Terminals, z. B. ghostty oder kitty. Leer lassen für automatische Erkennung.",
       "hideOldModels": "Alte Modelle ausblenden",
       "months": "Monate",
-      "hideOldModelsHelp": "Ausgewählte und favorisierte Modelle bleiben immer sichtbar. Modelle ohne gültiges Veröffentlichungsdatum bleiben ebenfalls sichtbar.",
+      "hideOldModelsHelp": "Favoriten und ausgewählte Modelle bleiben immer sichtbar.",
       "restartLocalBackend": "Lokales Backend neu starten",
       "restartLocalBackendTitle": "Lokales Backend neu starten?",
-      "restartLocalBackendDescription": "Dadurch wird das lokale OpenGUI-Backend neu geladen und die App anschließend aktualisiert. Laufende Vorgänge können unterbrochen werden."
-    }
+      "restartLocalBackendDescription": "Dadurch wird das lokale OpenGUI-Backend neu geladen und die App anschließend aktualisiert. Laufende Vorgänge können unterbrochen werden.",
+      "theme": "Design",
+      "olderThan": "Älter als",
+      "blockedByBrowserHelp": "Erlauben Sie Benachrichtigungen für diese Seite in den Browsereinstellungen, um sie einzuschalten."
+    },
+    "groups": {
+      "agent": "Agent",
+      "host": "Host",
+      "device": "Dieser Computer"
+    },
+    "backToChat": "Zurück zum Chat",
+    "version": "OpenGUI {{version}}"
   },
   "sidebar": {
     "allProjectsPinned": "Alle Projekte sind angeheftet",
@@ -682,22 +690,19 @@
   "mcp": {
     "title": "MCP",
     "heading": "Verbundene Werkzeugserver",
-    "description": "Verbinde vertrauenswürdige MCP-Server, um dem Agenten zusätzliche Werkzeuge zu geben. Aktivierte Verbindungen stehen uneingeschränkten Sessions auf diesem Host zur Verfügung.",
-    "addConnection": "Verbindung hinzufügen",
-    "editor": "MCP-Verbindungsdetails",
+    "addConnection": "Server hinzufügen",
     "loading": "MCP-Verbindungen werden geladen…",
-    "emptyTitle": "Noch keine MCP-Verbindungen",
-    "emptyDescription": "Füge einen vertrauenswürdigen lokalen Befehl oder einen Streamable-HTTP-Endpunkt hinzu. Lokale Befehle laufen mit den Rechten des Host-Betriebssystembenutzers.",
     "enabled": "Aktiviert",
     "toggle": "{{name}} umschalten",
-    "inspect": "Testen & prüfen",
-    "inspecting": "Verbindung wird hergestellt…",
+    "inspect": "Verbindung testen",
+    "inspecting": "Teste…",
     "status": {
       "disabled": "Deaktiviert",
       "refreshing": "Wird geprüft…",
       "ready": "Bereit",
       "degraded": "Zwischengespeicherte Werkzeuge",
-      "offline": "Offline"
+      "offline": "Offline",
+      "unchecked": "Noch nicht getestet"
     },
     "problem": {
       "timeout": "Zeitüberschreitung bei der Verbindung. Der Chat bleibt ohne diese Werkzeuge verfügbar.",
@@ -709,24 +714,21 @@
     },
     "toolCount_one": "Ein Werkzeug verfügbar",
     "toolCount_other": "{{count}} Werkzeuge verfügbar",
-    "save": "Verbindung speichern",
-    "saving": "Wird gespeichert…",
+    "save": "Verbinden",
+    "saving": "Verbinde…",
     "saved": "MCP-Verbindung gespeichert",
-    "removeConfirm": "{{name}} entfernen? Die Zugangsdaten werden ebenfalls gelöscht.",
-    "commandWarning": "Dieser Befehl kann auf alles zugreifen, was dem Host-Prozess zur Verfügung steht.",
-    "commandPlaceholder": "Gib einen Befehl ein, um ihn hier zu prüfen.",
-    "commandApproval": "Ich habe diese genaue ausführbare Datei und Argumentliste geprüft und genehmige sie.",
+    "commandWarning": "Er läuft auf dem Host mit denselben Rechten auf Dateien, Netzwerk und Konten wie der Host-Benutzer. Verbinden Sie nur Server aus vertrauenswürdigen Quellen.",
+    "commandApproval": "Ich vertraue diesem Befehl",
     "bearerTokenHelp": "OpenGUI sendet diesen Wert als Authorization: Bearer-Header. Füge entweder das Token oder den vollständigen Bearer-Wert ein.",
     "fields": {
-      "label": "Anzeigename",
+      "label": "Name",
       "id": "Verbindungs-ID",
-      "transport": "Verbindungstyp",
-      "command": "Ausführbare Datei",
-      "arguments": "Argumente, eines pro Zeile",
-      "environment": "Geheime Umgebungswerte, NAME=Wert",
+      "transport": "Typ",
+      "environment": "Umgebungsvariablen",
       "cwd": "Arbeitsverzeichnis (optional)",
-      "url": "MCP-Endpunkt-URL",
-      "bearerToken": "Bearer-Token (optional)"
+      "url": "Serveradresse",
+      "bearerToken": "Zugriffstoken (optional)",
+      "commandLine": "Befehl"
     },
     "transport": {
       "stdio": "Lokaler Befehl",
@@ -734,14 +736,52 @@
     },
     "noManagement": "Das aktuelle Backend unterstützt keine MCP-Verwaltung.",
     "noneConfigured": "Keine MCP-Server konfiguriert.",
-    "connected": "Verbunden",
     "disabled": "Deaktiviert",
     "failed": "Fehlgeschlagen",
     "needsAuth": "Authentifizierung nötig",
     "needsRegistration": "Registrierung nötig",
     "unknown": "Unbekannt",
     "loadTimedOut": "Das Laden der Werkzeuge dauert länger als erwartet.",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "addTitle": "MCP-Server verbinden",
+    "addHelp": "Fügen Sie die Serveradresse oder den Startbefehl aus der Einrichtungsanleitung des Servers ein. OpenGUI ergänzt den Rest.",
+    "paste": {
+      "label": "Serveradresse oder Befehl",
+      "placeholder": "https://… oder npx -y …",
+      "continue": "Weiter",
+      "help": "Adressen mit https:// verbinden sich mit einem entfernten Server. Alles andere wird als Befehl auf dem Host ausgeführt.",
+      "unrecognized": "Das sieht nicht nach einer Serveradresse oder einem Befehl aus. Fügen Sie eine einzelne https://-Adresse oder einen Befehl wie npx, uvx, node oder docker ein.",
+      "examples": "Beispiele:"
+    },
+    "defaultName": "MCP-Server",
+    "reviewTitle": "Prüfen und verbinden",
+    "editTitle": "{{name}} bearbeiten",
+    "tokenSavedPlaceholder": "Gespeichertes Token",
+    "tokenSavedHelp": "Ein Token ist gespeichert. Leer lassen, um es zu behalten, oder ein neues einfügen, um es zu ersetzen.",
+    "tokenSaved": "Gespeichert",
+    "tokenNone": "Keins",
+    "envHelp": "Tragen Sie die API-Schlüssel oder Einstellungen ein, die die Anleitung des Servers verlangt. Werte werden als Geheimnisse auf dem Host gespeichert.",
+    "envSaved": "Gespeichert: {{keys}}",
+    "envReplace": "Werte ersetzen",
+    "addVariable": "Variable hinzufügen",
+    "variableName": "Variablenname",
+    "variableValue": "Wert für {{name}}",
+    "variableValuePlaceholder": "Wert",
+    "removeVariable": "Variable {{name}} entfernen",
+    "advanced": "Erweitert",
+    "idHelp": "Buchstaben, Ziffern, Punkte, Binde- und Unterstriche. Kann später nicht geändert werden.",
+    "idTaken": "Diese ID wird bereits von einem anderen Server verwendet.",
+    "saveChanges": "Speichern und neu verbinden",
+    "connected_one": "{{name}} mit einem Werkzeug verbunden",
+    "connected_other": "{{name}} mit {{count}} Werkzeugen verbunden",
+    "toolsHeading": "Werkzeuge",
+    "toolsHint": "Testen Sie die Verbindung, um zu sehen, welche Werkzeuge dieser Server dem Agenten gibt.",
+    "noTools": "Der Server ist verbunden, bietet aber keine Werkzeuge an.",
+    "enableToSeeTools": "Schalten Sie den Server ein, um ihn zu testen und seine Werkzeuge zu sehen.",
+    "updateCredentials": "Zugangsdaten ändern",
+    "removeTitle": "{{name}} entfernen?",
+    "removeHelp": "Der Agent verliert die Werkzeuge dieses Servers, und gespeicherte Tokens und Umgebungswerte werden gelöscht.",
+    "tokenLabel": "Zugriffstoken"
   },
   "contextStatus": {
     "compacting": "Komprimiere",
@@ -1362,5 +1402,20 @@
   },
   "host": {
     "lowDiskSpace": "Auf diesem Host ist fast kein Speicherplatz mehr frei. Chats werden eventuell nicht gespeichert, bis Platz geschaffen wird."
+  },
+  "profile": {
+    "title": "Ihr Profil",
+    "preferencesTitle": "Einstellungen",
+    "open": "Profil und Einstellungen",
+    "close": "Zurück zu den Chats",
+    "account": "Konto",
+    "sections": {
+      "appearance": "Darstellung",
+      "chats": "Chats"
+    },
+    "personalInstructions": "Persönliche Anweisungen",
+    "personalInstructionsPlaceholder": "Beispiel: Antworte kurz und duze mich.",
+    "discardInstructions": "Ungespeicherte persönliche Anweisungen verwerfen?",
+    "manageAccount": "Konto verwalten"
   }
 }

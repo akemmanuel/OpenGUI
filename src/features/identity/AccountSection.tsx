@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Eye, EyeOff, KeyRound, LogOut, Mail, UserRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Mail, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,24 +12,28 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { toast } from "sonner";
 import { useIdentityActor } from "./identity-actor-context";
 import { createIdentityClient, IdentityRequestError, type IdentityUser } from "./identity-client";
 import {
   announceIdentityWorkspaceChange,
-  logoutActiveWorkspaceIdentity,
   persistWorkspaceIdentityToken,
 } from "./workspace-identity";
 
-export function ProfileMenu() {
+/** Initials for an avatar, e.g. "Alex Smith" → "AS". */
+export function initialsFor(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toLocaleUpperCase();
+}
+
+/** Signed-in account details and security actions for a remote Host; nothing on Desktop Local. */
+export function AccountSection() {
   const actor = useIdentityActor();
   const { activeWorkspace } = useWorkspaceState();
   if (actor?.type !== "user" || !activeWorkspace?.authToken) return null;
@@ -211,75 +215,64 @@ function AccountMenu({
       setBusy(false);
     }
   }
-  async function logout() {
-    setBusy(true);
-    try {
-      await logoutActiveWorkspaceIdentity();
-    } catch {
-      toast.error(t("account.logoutFailed"));
-    } finally {
-      setBusy(false);
-    }
-  }
   const name = user?.name || actorName;
-  const initials = name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toLocaleUpperCase();
+  const initials = initialsFor(name);
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="ghost" />}
-          disabled={busy}
-          aria-label={t("account.openProfile")}
-          title={name}
-          className="h-auto w-full justify-start gap-2 px-3 py-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-        >
+      <section className="space-y-3" aria-label={t("profile.account")}>
+        <div className="flex min-w-0 items-center gap-3">
           <span
             aria-hidden="true"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
           >
             {initials}
           </span>
-          <span className="truncate text-sm group-data-[collapsible=icon]:hidden">{name}</span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-64 max-w-[calc(100vw-2rem)]">
-          <div className="space-y-1 px-2 py-2 text-sm">
-            <p className="break-words font-medium">{name}</p>
-            {user && <p className="break-all text-xs text-muted-foreground">{user.email}</p>}
-            <p className="break-words text-xs text-muted-foreground">
+          <div className="min-w-0 text-sm">
+            <p className="truncate font-medium" title={name}>
+              {name}
+            </p>
+            {user && (
+              <p className="truncate text-xs text-muted-foreground" title={user.email}>
+                {user.email}
+              </p>
+            )}
+            <p className="truncate text-xs text-muted-foreground" title={host}>
               {t("account.connectedHost", { host })}
             </p>
-            {loadError && (
-              <Button variant="ghost" size="sm" onClick={() => setRetry((value) => value + 1)}>
-                {t("account.retryProfile")}
-              </Button>
-            )}
           </div>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem disabled={!user} onClick={() => open("profile")}>
-            <UserRound />
-            {t("account.editProfile")}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={!user} onClick={() => open("password")}>
-            <KeyRound />
-            {t("account.changePassword")}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={!user} onClick={() => open("email")}>
-            <Mail />
-            {t("account.changeEmail")}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => void logout()}>
-            <LogOut />
-            {t("identity.signOut")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </div>
+        {loadError && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            {t("account.retryProfile")}
+          </Button>
+        )}
+        <div className="grid gap-0.5">
+          {(
+            [
+              { kind: "profile", icon: UserRound, label: "account.editProfile" },
+              { kind: "email", icon: Mail, label: "account.changeEmail" },
+              { kind: "password", icon: KeyRound, label: "account.changePassword" },
+            ] as const
+          ).map((item) => (
+            <Button
+              key={item.kind}
+              type="button"
+              variant="ghost"
+              disabled={!user || busy}
+              className="h-9 justify-start px-2 font-normal"
+              onClick={() => open(item.kind)}
+            >
+              <item.icon className="text-muted-foreground" />
+              {t(item.label)}
+            </Button>
+          ))}
+        </div>
+      </section>
       <Dialog
         open={dialog !== null}
         onOpenChange={(value) => {

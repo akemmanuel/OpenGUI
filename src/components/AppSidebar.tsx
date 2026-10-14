@@ -24,6 +24,7 @@ import { SidebarContentSections } from "./sidebar/SidebarContentSections";
 import { RespondingSidebarSections } from "./sidebar/RespondingSidebarSections";
 import { SidebarFooterContent } from "./sidebar/SidebarFooterContent";
 import { SidebarHeaderContent } from "./sidebar/SidebarHeaderContent";
+import { ProfilePanel } from "@/features/profile/ProfilePanel";
 import { SessionBulkActionBar } from "./sidebar/SessionBulkActionBar";
 import {
   EMPTY_SESSION_MULTI_SELECT,
@@ -55,6 +56,12 @@ export function AppSidebar({
   const { t } = useTranslation();
   const respondingSidebarEnabled = useRespondingSidebarEnabled();
   const { state: sidebarState, isMobile, setOpen: setSidebarOpen, setOpenMobile } = useSidebar();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileCollapsed = sidebarState === "collapsed" && !isMobile;
+  useEffect(() => {
+    // The panel needs the full sidebar width; collapsing to icons closes it.
+    if (profileCollapsed) setProfileOpen(false);
+  }, [profileCollapsed]);
   const {
     selectSession,
     startNewChat,
@@ -420,7 +427,11 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon" className="select-none relative">
-      <div ref={selectionAreaRef} className="flex min-h-0 flex-1 flex-col">
+      {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} />}
+      <div
+        ref={selectionAreaRef}
+        className={profileOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}
+      >
         <SidebarHeaderContent
           searchInputRef={searchInputRef}
           searchQuery={searchQuery}
@@ -651,8 +662,14 @@ export function AppSidebar({
           homeDir={homeDir}
           settingsActive={settingsActive}
           onOpenSettings={() => {
+            setProfileOpen(false);
             onOpenSettings();
             closeMobileSidebar();
+          }}
+          profileOpen={profileOpen}
+          onToggleProfile={() => {
+            if (profileCollapsed) setSidebarOpen(true);
+            setProfileOpen((open) => !open || profileCollapsed);
           }}
         />
       )}

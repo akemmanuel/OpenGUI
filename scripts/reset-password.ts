@@ -6,7 +6,7 @@
  *
  * Prints a one-time temporary password (or reads one from OPENGUI_NEW_PASSWORD),
  * signs the account out everywhere, and records an audit event. The person should
- * change the password from the profile menu after signing in.
+ * change the password from Manage account in the profile panel after signing in.
  */
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
