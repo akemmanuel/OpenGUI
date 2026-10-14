@@ -69,7 +69,7 @@ export function ToolCallPartView({
       </span>
       {tool.matchCount != null && (
         <span className="text-[11px] text-blue-400 ml-auto whitespace-nowrap">
-          {tool.matchCount} {tool.matchCount === 1 ? "match" : "matches"}
+          {t("toolLabels.matchCount", { count: tool.matchCount })}
         </span>
       )}
       {tool.diffSummary && (

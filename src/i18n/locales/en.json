@@ -108,16 +108,14 @@
     "browse": "Browse",
     "cancel": "Cancel",
     "close": "Close",
-    "add": "Add",
     "edit": "Edit",
     "remove": "Remove",
     "save": "Save",
     "restart": "Restart",
     "settings": "Settings",
-    "version": "Version",
-    "done": "Done",
     "loading": "Loading...",
-    "retry": "Try again"
+    "retry": "Try again",
+    "optional": "optional"
   },
   "messageError": {
     "showDetails": "Show details",
@@ -168,8 +166,6 @@
   },
   "settings": {
     "navigationLabel": "Settings sections",
-    "skillsPlaceholderTitle": "Skill management is not available yet",
-    "skillsPlaceholderDescription": "Skills can be used by the agent, but installing and managing them will arrive in a later update.",
     "tabs": {
       "providers": "Models & providers",
       "models": "Models",
@@ -198,8 +194,7 @@
     },
     "paths": {
       "boundaryTitle": "Path grants are not a sandbox",
-      "boundaryDescription": "Read and write grants control OpenGUI's project and file operations. They do not confine commands run by an unrestricted Shell, which has the Host operating-system user's authority.",
-      "desktopOnly": "Default directories, file manager, and terminal commands are configured in the Desktop app."
+      "boundaryDescription": "Read and write grants control OpenGUI's project and file operations. They do not confine commands run by an unrestricted Shell, which has the Host operating-system user's authority."
     },
     "instructions": {
       "scopeLabel": "Instruction scope",
@@ -220,7 +215,6 @@
       "editors": "Teams allowed to edit this project's instructions",
       "editorsHelp": "Allow members of the selected teams to edit. Membership in any allowed team is enough. Viewers remain read-only; owners and admins can always edit. These permissions do not grant project access.",
       "label": "Custom instructions",
-      "help": "These house rules apply to every Project and Session on this Host. They are added to the agent's system prompt on the next turn.",
       "readOnly": "These house rules apply to every Session on this Host. Only a Host administrator can change them.",
       "placeholder": "Example: Prefer British spelling. Ask before changing published files.",
       "save": "Save instructions",
@@ -228,39 +222,7 @@
       "loadFailed": "Could not load custom instructions.",
       "characterCount": "{{count}} / {{max}} characters"
     },
-    "plugins": {
-      "title": "Plugins",
-      "unavailable": "Plugin management was removed by the last harness migration fix. The entry point is visible again; management actions need to be reconnected to the new harness API.",
-      "installed": "Installed",
-      "discover": "Discover",
-      "project": "Project",
-      "global": "Global",
-      "globalScope": "Install globally",
-      "published": "Published",
-      "custom": "Custom",
-      "searchPlaceholder": "Search plugins…",
-      "install": "Install",
-      "installSourcePlaceholder": "Install from source, e.g. owner/repo@skill-name",
-      "noResults": "No plugins found.",
-      "noPlugins": "No plugins installed.",
-      "emptyScope": "No plugins in this scope.",
-      "pluginGroups": "Plugin Groups",
-      "general": "General",
-      "capabilityCount": "{{count}} capabilities",
-      "updateGroup": "Update group",
-      "update": "Update",
-      "installNamed": "Install {{name}}",
-      "installedNamed": "{{name}} installed",
-      "updateNamed": "Update {{name}}",
-      "removeNamed": "Remove {{name}}",
-      "updateGroupNamed": "Update plugin group {{name}}",
-      "removeGroupNamed": "Remove plugin group {{name}}",
-      "invalidInstallSource": "Enter a valid source (e.g. owner/repo@skill-name or a URL)."
-    },
     "general": {
-      "agentBackend": "Harness",
-      "darkMode": "Dark mode",
-      "appearance": "Appearance",
       "chatWidth": "Chat width",
       "chatWidthStandard": "Standard",
       "chatWidthFull": "Full width",
@@ -278,12 +240,10 @@
         "red": "Red",
         "teal": "Teal"
       },
-      "customAccent": "Custom accent color",
       "language": "Language",
       "defaultChatDirectory": "Default chat directory",
       "defaultChatDirectoryHelp": "New chats start in this working directory.",
       "newChatModelBehavior": "LLM model for new chats",
-      "newChatModelBehaviorHelp": "Choose how OpenGUI preselects the LLM model when starting a fresh chat.",
       "newChatModelAsk": "Choose every time",
       "newChatModelLast": "Use last LLM model",
       "newChatModelWorkspaceDefault": "Use workspace default",
@@ -380,13 +340,8 @@
     "newSession": "New session",
     "collapseProject": "Collapse project",
     "expandProject": "Expand project",
-    "newWorktree": "New worktree...",
-    "worktrees": "Worktrees",
-    "merge": "Merge",
-    "openPullRequest": "Open pull request",
     "removeProject": "Close project",
-    "closeOtherProjects": "Close other projects",
-    "createPullRequest": "Create PR"
+    "closeOtherProjects": "Close other projects"
   },
   "prompt": {
     "inputLabel": "Message input",
@@ -398,9 +353,6 @@
     "uploadingFiles": "Uploading files…",
     "add": "Add",
     "addFile": "Add file",
-    "mcps": "MCPs",
-    "newWorktree": "New worktree",
-    "currentRootWorktree": "Current branch of the root worktree.",
     "queueTitle": "Queue: wait for full response, then send (Ctrl/Cmd+D to toggle)",
     "steerTitle": "Steer: wait for the current model part to finish, then send (Ctrl/Cmd+D to toggle)",
     "queue": "Queue",
@@ -408,12 +360,7 @@
     "stop": "Stop",
     "stopGenerating": "Stop generating",
     "send": "Send",
-    "sendMessage": "Send message",
-    "chooseHarnessAndModelBeforeSend": "Choose a model before sending."
-  },
-  "variantSelector": {
-    "off": "off",
-    "thinkingEffort": "Thinking effort: {{level}} (click or Ctrl+T to cycle, Ctrl+Shift+T to cycle backward)"
+    "sendMessage": "Send message"
   },
   "reasoningEffort": {
     "label": "Reasoning effort",
@@ -429,32 +376,12 @@
       "ultra": "Ultra"
     }
   },
-  "agentSelector": {
-    "placeholder": "Agent"
-  },
   "modelSelector": {
-    "selectModel": "Select model",
-    "chooseHarnessAndModel": "Choose model",
     "dialogTitle": "Choose model",
     "searchPlaceholder": "Search provider, model, or id...",
-    "favorites": "Favorites",
     "recent": "Recent",
-    "harnessLocked": "Harness is locked for this session.",
-    "backendLocked": "Backend locked for this session.",
-    "changeHarness": "Change harness",
-    "loadingCatalog": "Loading models for this project…",
-    "noModelsForHarness": "No models for this harness in this project.",
-    "noModelsForHarnessHint": "Try another harness or check provider credentials in Settings.",
-    "openSettings": "Open Settings",
-    "harnessNotInstalled": "CLI not installed",
-    "noHarnessInstalled": "No harness CLI is installed. Install one in Settings to choose a model.",
-    "checkingHarnesses": "Checking installed harnesses…",
-    "harnessCliFound": "Installed — connect in Settings if models are missing",
-    "harnessReady": "{{count}} models in inventory",
     "noModelsAvailable": "No models are available.",
-    "noModelsMatch": "No models match \"{{query}}\".",
-    "addFavorite": "Add to favorites",
-    "removeFavorite": "Remove from favorites"
+    "noModelsMatch": "No models match \"{{query}}\"."
   },
   "compaction": {
     "inProgress": "Preparing a context handoff…",
@@ -515,8 +442,7 @@
     "createAccountAndAdd": "Create account & add workspace",
     "addWorkspace": "Add workspace",
     "toggleSidebar": "Toggle Sidebar",
-    "requiredBeforeProject": "Add a workspace before connecting a project.",
-    "addProjectRequiresWorkspace": "Create a workspace first"
+    "requiredBeforeProject": "Add a workspace before connecting a project."
   },
   "identity": {
     "checkingHost": "Checking Host identity",
@@ -688,12 +614,9 @@
     "mailNotConfigured": "Mail delivery is not configured yet. Save valid settings first."
   },
   "mcp": {
-    "title": "MCP",
     "heading": "Connected tool servers",
     "addConnection": "Add server",
     "loading": "Loading MCP connections…",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
     "toggle": "Toggle {{name}}",
     "inspect": "Test connection",
     "inspecting": "Testing…",
@@ -735,13 +658,6 @@
       "stdio": "Local command",
       "http": "Streamable HTTP"
     },
-    "noManagement": "Current backend has no MCP management.",
-    "noneConfigured": "No MCP servers configured.",
-    "failed": "Failed",
-    "needsAuth": "Needs auth",
-    "needsRegistration": "Needs registration",
-    "unknown": "Unknown",
-    "loadTimedOut": "Loading tools is taking longer than expected.",
     "retry": "Retry",
     "addTitle": "Connect an MCP server",
     "addHelp": "Paste the server address or the start command from the server's setup guide. OpenGUI fills in the rest.",
@@ -784,50 +700,11 @@
     "tokenLabel": "Access token"
   },
   "contextStatus": {
-    "compacting": "Compacting",
     "contextWindow": "Context window",
-    "tokens": "tokens",
     "usage": "{{used}} / {{limit}} tokens",
     "remaining": "{{count}} tokens left",
     "estimated": "Estimated while streaming",
-    "cost": "Cost",
-    "compact": "Compact"
-  },
-  "worktree": {
-    "newWorktree": "New Worktree",
-    "createFor": "Create a new git worktree for",
-    "branch": "Branch",
-    "newBranch": "New branch",
-    "existingBranch": "Existing branch",
-    "branchName": "Branch name",
-    "selectBranch": "Select branch",
-    "loadingBranches": "Loading branches...",
-    "chooseBranch": "Choose a branch...",
-    "path": "Worktree path",
-    "pathPlaceholder": "/path/to/worktree",
-    "pathHelp": "A new directory will be created at this path.",
-    "creating": "Creating...",
-    "createWorktree": "Create worktree",
-    "setupTitle": "Worktree Setup",
-    "detectingSetup": "Detecting project setup...",
-    "detectedSetup": "Detected {{file}} in {{project}}. Run setup?",
-    "runningSetup": "Running setup command...",
-    "setupComplete": "Setup completed successfully.",
-    "setupFailed": "Setup command failed.",
-    "skip": "Skip",
-    "run": "Run",
-    "detectedCommand": "Detected command",
-    "setupFinished": "Setup finished - worktree is ready."
-  },
-  "worktreeCleanup": {
-    "title": "No sessions remaining",
-    "descriptionPrefix": "The worktree",
-    "branch": "branch",
-    "descriptionSuffix": "has no active sessions. Would you like to remove it?",
-    "keep": "Keep",
-    "remove": "Remove",
-    "removing": "Removing...",
-    "deleteFromDisk": "Also delete worktree files from disk"
+    "cost": "Cost"
   },
   "providers": {
     "codex": {
@@ -997,7 +874,6 @@
     }
   },
   "skillsSettings": {
-    "title": "Skills",
     "aboutTitle": "Instructions and working assets—not executable plugins",
     "aboutDescription": "Skills package instructions, references, and supporting files for the agent. Installing a Skill does not install an executable plugin or run a shell command.",
     "sessionPins": "Existing Sessions keep the exact Skill revisions they started with. Updates apply to new Sessions, so ongoing work stays reproducible.",
@@ -1088,35 +964,11 @@
     "model": "Model",
     "skip": "Skip",
     "readyDescription": "OpenGUI is ready. Connect a project and start a Session with the first-party agent.",
-    "title": "Welcome to OpenGUI",
-    "setupAgentsTitle": "Set up coding agents",
     "chooseStartTitle": "Choose where new chats start",
+    "chooseStartDescription": "New chats open in this folder unless you pick another one.",
     "readyTitle": "You're ready",
-    "setupSavedTitle": "Setup saved",
-    "checkingComputer": "Checking this computer",
-    "lookingForHarnesses": "Looking for installed Harness CLIs.",
-    "codingAgentFound": "Coding agent found",
-    "codingAgentFoundDescription": "OpenGUI found a coding agent on this computer.",
-    "noHarnessInstalledTitle": "No Harness installed",
-    "noHarnessInstalledDescription": "OpenGUI needs a coding agent before it can work on your files.",
-    "checkHarnessesFailedTitle": "Could not check Harnesses",
-    "checkHarnessesFailedDescription": "You can continue setup and check again later.",
-    "checkAgain": "Check again",
-    "harnessInventoryTitle": "Harness inventory",
-    "modelsCount": "{{count}} models",
-    "cliFound": "CLI found",
-    "harnessReadyDescription": "This agent harness is ready to use.",
-    "harnessCliFoundDescription": "The CLI is installed. Model and provider selection happens later in OpenGUI.",
-    "harnessNotFoundDescription": "The CLI was not found on this computer.",
-    "notFound": "not found",
-    "defaultChatDirectoryTitle": "Default chat directory",
-    "defaultChatDirectoryDescription": "New chats start in this folder when no project is selected.",
     "folderPlaceholder": "Choose a folder or leave empty",
     "continue": "Continue",
-    "readyToWorkTitle": "OpenGUI is ready to work",
-    "setupHarnessLaterTitle": "You can set up a Harness later",
-    "readyToWorkDescription": "Start by connecting a project or opening a session.",
-    "setupHarnessLaterDescription": "OpenGUI will open now. Agent sends need a Harness before they can run.",
     "openOpenGui": "Open OpenGUI"
   },
   "languages": {
@@ -1195,16 +1047,8 @@
     "checkingLocalServer": "Checking local server...",
     "startingLocalServer": "Starting local server..."
   },
-  "projectHarnessStatus": {
-    "title": "Harness errors for {{project}}",
-    "hint": "You can still type and pick another harness in the model selector. Session history may be incomplete for the harnesses listed above.",
-    "sidebarSummary": "{{count}} harness error(s)"
-  },
   "sessionError": {
-    "title": "Agent error",
-    "nextStep": "Next step: run this command in your terminal, then retry:",
-    "openTerminal": "Open terminal",
-    "messagesLoadFailed": "Could not load messages for this session."
+    "title": "Agent error"
   },
   "updateDialog": {
     "title": "Update Available",
@@ -1231,22 +1075,6 @@
     "enableSkill": "Enable skill for this session",
     "disableSkill": "Disable skill for this session",
     "skillsRevisionLocked": "This Session keeps these Skill revisions even if the library is updated. New Sessions receive updates."
-  },
-  "mergeDialog": {
-    "failed": "Merge failed",
-    "merging": "Merging...",
-    "mergingDescription": "Merging {{branch}} into the current branch",
-    "success": "Merge successful",
-    "successDescription": "{{branch}} has been merged successfully.",
-    "successDescriptionDelete": "{{branch}} has been merged successfully. The worktree will be removed.",
-    "conflicts": "Merge conflicts",
-    "conflictsDescription": "Merging {{branch}} produced conflicts in {{count}} file(s):",
-    "abort": "Abort merge",
-    "fixWithAI": "Fix with AI",
-    "title": "Merge branch",
-    "description": "Merge {{branch}} into the current branch of {{repoName}}",
-    "deleteWorktreeLabel": "Delete worktree after successful merge",
-    "deleteWorktreeDescription": "Removes the worktree directory and disconnects it from the project"
   },
   "questionPanel": {
     "title": "The assistant has a question",
@@ -1296,11 +1124,6 @@
       "doneOne": "Wrote {{count}} todo",
       "doneOther": "Wrote {{count}} todos"
     },
-    "question": {
-      "running": "Asking",
-      "doneOne": "Asked {{count}} question",
-      "doneOther": "Asked {{count}} questions"
-    },
     "patch": {
       "created": "Created",
       "deleted": "Deleted",
@@ -1308,31 +1131,24 @@
       "patched": "Patched"
     },
     "fileCountOther": "{{count}} files",
-    "matchCountOne": "{{count}} match",
-    "matchCountOther": "{{count}} matches"
+    "matchCount_one": "{{count}} match",
+    "matchCount_other": "{{count}} matches"
   },
   "attachments": {
     "image": "Image",
     "fileAttachment": "File attachment",
-    "imageAttachment": "Image attachment {{count}}",
     "closeImagePreview": "Close image preview"
   },
   "projectPath": {
     "up": "Up",
     "noFolders": "No folders",
-    "allowedRoots": "Allowed roots: {{roots}}",
-    "serverDefault": "server default",
     "title": "Open Project",
-    "webLocalDescription": "Choose a project path on the OpenGUI server. If you use this from a phone, paths are server paths, not phone files.",
-    "localDescription": "Open a local project folder for this window. You can also paste an absolute path manually.",
-    "remoteDescription": "This window is connected to a remote server, so choose a project by entering the path on that server.",
     "openProject": "Open project",
     "projectPathLabel": "Project path",
     "editPath": "Edit current path",
     "searchFolders": "Search folders",
     "clearSearch": "Clear folder search",
     "noMatchingFolders": "No folders match your search",
-    "browseServer": "Browse server",
     "loadingServerFolders": "Loading server folders..."
   },
   "fileMention": {
@@ -1359,8 +1175,8 @@
     "reject": "Reject"
   },
   "revertBanner": {
-    "reverted": "{{count}} message reverted",
-    "reverted_plural": "{{count}} messages reverted",
+    "reverted_one": "{{count}} message reverted",
+    "reverted_other": "{{count}} messages reverted",
     "restore": "Restore"
   },
   "sessionShare": {
