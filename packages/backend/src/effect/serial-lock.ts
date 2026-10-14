@@ -1,16 +1,25 @@
-import { Effect, Semaphore } from "effect";
-
-/** Runs async tasks one at a time, in arrival order. */
+/**
+ * Runs async tasks one at a time, strictly in arrival order.
+ *
+ * Deliberately a promise chain rather than an Effect `Semaphore`: the
+ * semaphore wakes waiters a tick after release, so a task arriving in that
+ * gap overtakes queued ones. Prompt admission relies on arrival order.
+ */
 export class SerialLock {
-  readonly #semaphore = Semaphore.makeUnsafe(1);
+  #tail: Promise<void> = Promise.resolve();
 
   run<A>(task: () => Promise<A>): Promise<A> {
-    return Effect.runPromise(this.#semaphore.withPermits(1)(Effect.promise(task)));
+    const result = this.#tail.then(task);
+    this.#tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   /** Resolves once every task queued before this call has finished. */
   idle(): Promise<void> {
-    return Effect.runPromise(this.#semaphore.withPermits(1)(Effect.void));
+    return this.#tail;
   }
 }
 

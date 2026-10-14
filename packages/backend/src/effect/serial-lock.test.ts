@@ -19,6 +19,28 @@ describe("SerialLock", () => {
     expect(events).toEqual(["a:start", "a:end", "b:start", "b:end", "c:start", "c:end"]);
   });
 
+  test("a task arriving just as the lock is released never overtakes a queued one", async () => {
+    const lock = new SerialLock();
+    const order: string[] = [];
+    let releaseA!: () => void;
+    const a = lock.run(async () => {
+      order.push("a");
+      await new Promise<void>((resolve) => (releaseA = resolve));
+    });
+    await tick();
+    const b = lock.run(async () => {
+      order.push("b");
+    });
+    await tick();
+    releaseA();
+    await a;
+    const c = lock.run(async () => {
+      order.push("c");
+    });
+    await Promise.all([b, c]);
+    expect(order).toEqual(["a", "b", "c"]);
+  });
+
   test("a failing task rejects with its own error and releases the lock", async () => {
     const lock = new SerialLock();
     class Boom extends Error {}
