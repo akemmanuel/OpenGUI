@@ -684,14 +684,18 @@ export class OpenGuiHost {
         }),
       );
       await Promise.allSettled(activeRuns);
-      await harness.close();
-      await this.#mcpBroker.close();
-      this.#piAiTransport.close();
-      await this.#stateStore?.close();
-      this.#stateStore = null;
-      this.#activeRuns.clear();
-      this.#promptAdmissions.clear();
-      this.#listeners.clear();
+      try {
+        await harness.close();
+        await this.#mcpBroker.close();
+        this.#piAiTransport.close();
+      } finally {
+        // Always release the durable state lock, or the next start finds it held.
+        await this.#stateStore?.close();
+        this.#stateStore = null;
+        this.#activeRuns.clear();
+        this.#promptAdmissions.clear();
+        this.#listeners.clear();
+      }
     })();
     try {
       await this.#closing;

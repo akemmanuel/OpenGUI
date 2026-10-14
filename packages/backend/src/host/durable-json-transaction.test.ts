@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   openDurableJsonTransaction,
+  releaseHeldLocksSync,
   type DurableJsonFileSystem,
 } from "./durable-json-transaction.ts";
 
@@ -175,5 +176,62 @@ describe("durable JSON transaction", () => {
     await expect(
       openDurableJsonTransaction(path, { fallback: {}, validate: (value) => value as object }),
     ).rejects.toThrow(/in use by pid \d+ on other-container/);
+  });
+
+  test("recovers a reused-pid lock from a recreated container once its heartbeat stopped", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    await writeFile(
+      `${path}.lock`,
+      JSON.stringify({ pid: process.pid, owner: "old", hostname: "old-container" }),
+    );
+    const stopped = new Date(Date.now() - 2 * 60_000);
+    await utimes(`${path}.lock`, stopped, stopped);
+    const transaction = await openDurableJsonTransaction(path, {
+      fallback: {},
+      validate: (value) => value as object,
+    });
+    await transaction.close();
+  });
+
+  test("recovers a legacy lock without hostname or heartbeat that names this pid", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    await writeFile(`${path}.lock`, JSON.stringify({ pid: process.pid, owner: "legacy" }));
+    const created = new Date(Date.now() - 24 * 60 * 60_000);
+    await utimes(`${path}.lock`, created, created);
+    const transaction = await openDurableJsonTransaction(path, {
+      fallback: {},
+      validate: (value) => value as object,
+    });
+    await transaction.close();
+  });
+
+  test("refreshes the lock heartbeat while held", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    const transaction = await openDurableJsonTransaction(path, {
+      fallback: {},
+      validate: (value) => value as object,
+      lockHeartbeatMs: 20,
+    });
+    const old = new Date(Date.now() - 2 * 60_000);
+    await utimes(`${path}.lock`, old, old);
+    await vi.waitFor(async () => {
+      expect(Date.now() - (await stat(`${path}.lock`)).mtimeMs).toBeLessThan(60_000);
+    });
+    await transaction.close();
+  });
+
+  test("releases held locks when the process exits without closing", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    const transaction = await openDurableJsonTransaction(path, {
+      fallback: {},
+      validate: (value) => value as object,
+    });
+    releaseHeldLocksSync();
+    await expect(readdir(directory)).resolves.not.toContain("state.json.lock");
+    await transaction.close();
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { constants, readFileSync, unlinkSync } from "node:fs";
+import { mkdir, open, readFile, rename, stat, unlink, utimes } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
 import { Effect, Exit, Schema, Scope, Semaphore } from "effect";
@@ -97,27 +97,56 @@ function processIsAlive(pid: number) {
   }
 }
 
-/** Lock paths held by this process. Two transactions in one process still conflict. */
-const heldLocks = new Set<string>();
+/** How often a held lock's mtime is refreshed, proving its holder is alive. */
+const LOCK_HEARTBEAT_MS = 10_000;
+/** A lock whose heartbeat is older than this has no live holder anywhere. */
+const LOCK_STALE_AFTER_MS = 60_000;
+
+/**
+ * Locks held by this process, by path. Two transactions in one process still
+ * conflict. Held locks are refreshed by a heartbeat and released on exit.
+ */
+const heldLocks = new Map<string, { owner: string; heartbeat: ReturnType<typeof setInterval> }>();
+
+/**
+ * Synchronously removes every lock this process still holds. `process.exit()`
+ * (for example a shutdown deadline) skips Scope finalizers, so this runs on
+ * exit to keep the next start from finding our lock.
+ */
+export function releaseHeldLocksSync() {
+  for (const [path, { owner, heartbeat }] of heldLocks) {
+    clearInterval(heartbeat);
+    heldLocks.delete(path);
+    try {
+      if ((JSON.parse(readFileSync(path, "utf8")) as LockRecord).owner === owner) unlinkSync(path);
+    } catch {
+      // Best effort: the process is exiting.
+    }
+  }
+}
+
+let exitHookInstalled = false;
+function installExitHook() {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once("exit", releaseHeldLocksSync);
+}
 
 type LockRecord = { pid?: number; owner?: string; hostname?: string };
 
 /**
  * A lock is stale when its process is gone, or when it names this very process
- * on this very machine/container without being held here: containers reuse small
- * PIDs, so after an unclean stop the next start sees "its own" PID in the lock.
- * Locks from another hostname (another container sharing the data directory)
- * are only stale when their PID is not alive here; never steal a live one.
+ * without being held here: containers reuse small PIDs, so after an unclean stop
+ * the next start sees "its own" PID in the lock. On the same hostname that is
+ * certain. A recreated container gets a new hostname, but another live container
+ * sharing the data directory could also have our PID, so a lock from another (or
+ * unknown) hostname is only stale once its heartbeat has stopped.
  */
-function lockIsStale(path: string, lock: LockRecord) {
+function lockIsStale(path: string, lock: LockRecord, heartbeatAgeMs: number) {
   const pid = lock.pid ?? 0;
-  if (
-    pid === process.pid &&
-    lock.hostname !== undefined &&
-    lock.hostname === hostname() &&
-    !heldLocks.has(path)
-  )
-    return true;
+  if (pid === process.pid && !heldLocks.has(path)) {
+    return lock.hostname === hostname() || heartbeatAgeMs > LOCK_STALE_AFTER_MS;
+  }
   return !processIsAlive(pid);
 }
 
@@ -150,8 +179,19 @@ const writeLockFile = (path: string, owner: string) =>
     }
   });
 
+function holdLock(path: string, owner: string, heartbeatMs: number) {
+  const heartbeat = setInterval(() => {
+    const now = new Date();
+    void utimes(path, now, now).catch(() => undefined);
+  }, heartbeatMs);
+  // The heartbeat must never keep a process alive on its own.
+  heartbeat.unref?.();
+  heldLocks.set(path, { owner, heartbeat });
+  installExitHook();
+}
+
 /** Creates the lock file, stealing it once if its holder is provably gone. */
-const acquireLock = Effect.fnUntraced(function* (path: string, owner: string) {
+const acquireLock = Effect.fnUntraced(function* (path: string, owner: string, heartbeatMs: number) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const created = yield* writeLockFile(path, owner).pipe(
       Effect.as(true),
@@ -160,14 +200,16 @@ const acquireLock = Effect.fnUntraced(function* (path: string, owner: string) {
       ),
     );
     if (created) {
-      heldLocks.add(path);
+      holdLock(path, owner, heartbeatMs);
       return;
     }
     // A malformed lock is not stolen: another process may still be creating it.
-    const holder = yield* Effect.promise(
-      async () => JSON.parse(await readFile(path, "utf8")) as LockRecord,
-    ).pipe(Effect.catchDefect(() => Effect.succeed(undefined)));
-    if (!holder || !lockIsStale(path, holder)) return yield* lockInUseError(path, holder ?? {});
+    const holder = yield* Effect.promise(async () => ({
+      record: JSON.parse(await readFile(path, "utf8")) as LockRecord,
+      heartbeatAgeMs: Date.now() - (await stat(path)).mtimeMs,
+    })).pipe(Effect.catchDefect(() => Effect.succeed(undefined)));
+    if (!holder || !lockIsStale(path, holder.record, holder.heartbeatAgeMs))
+      return yield* lockInUseError(path, holder?.record ?? {});
     yield* Effect.promise(() => unlink(path)).pipe(
       Effect.catchDefect((error) =>
         errnoCode(error) === "ENOENT" ? Effect.void : Effect.die(error),
@@ -179,13 +221,16 @@ const acquireLock = Effect.fnUntraced(function* (path: string, owner: string) {
 
 const releaseLock = (path: string, owner: string) =>
   Effect.promise(async () => {
+    const held = heldLocks.get(path);
+    if (held?.owner === owner) {
+      clearInterval(held.heartbeat);
+      heldLocks.delete(path);
+    }
     try {
       const lock = JSON.parse(await readFile(path, "utf8")) as { owner?: string };
       if (lock.owner === owner) await unlink(path);
     } catch (error) {
       if (errnoCode(error) !== "ENOENT") throw error;
-    } finally {
-      heldLocks.delete(path);
     }
   });
 
@@ -205,6 +250,8 @@ export const makeDurableJsonTransaction = Effect.fnUntraced(function* <T>(
     failOnInvalid?: boolean;
     mode?: number;
     fileSystem?: Partial<DurableJsonFileSystem>;
+    /** Lock heartbeat interval; tests shorten it. */
+    lockHeartbeatMs?: number;
   },
 ) {
   const directory = dirname(path);
@@ -212,7 +259,10 @@ export const makeDurableJsonTransaction = Effect.fnUntraced(function* <T>(
   const owner = randomUUID();
   const fileSystem = { ...durableJsonFileSystem, ...options.fileSystem };
   yield* Effect.promise(() => fileSystem.mkdir(directory));
-  yield* Effect.acquireRelease(acquireLock(lockPath, owner), () => releaseLock(lockPath, owner));
+  yield* Effect.acquireRelease(
+    acquireLock(lockPath, owner, options.lockHeartbeatMs ?? LOCK_HEARTBEAT_MS),
+    () => releaseLock(lockPath, owner),
+  );
 
   let state = yield* Effect.tryPromise({
     try: async () => options.validate(JSON.parse(await fileSystem.read(path))),
