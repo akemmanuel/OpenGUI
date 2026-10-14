@@ -1,6 +1,6 @@
 import { request as httpRequest, type ClientRequestArgs } from "node:http";
 import { request as httpsRequest } from "node:https";
-import type { ShellToolExecutor } from "@opengui/harness";
+import { runAbortable, type ShellToolExecutor } from "@opengui/harness";
 import { Duration, Effect, Schedule, Schema } from "effect";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -269,14 +269,14 @@ export function createSandboxShellExecutor(
     });
     // Failures become ordinary tool outputs; cancellation interrupts the
     // request and rejects so the Harness aborts the Run.
-    return Effect.runPromise(
+    return runAbortable(
       execute(endpoint, token, input, body, graceSeconds).pipe(
         Effect.retry({ while: (error) => error.reason === "broker_busy", schedule: busyRetry }),
         Effect.catchTag("SandboxBrokerError", (error) =>
           Effect.succeed(failure(error.reason, error.summary)),
         ),
       ),
-      { signal: context.signal },
+      context.signal,
     );
   };
 }

@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { Effect } from "effect";
 import type { ResolvedShell } from "./shell-resolution.ts";
 
 // Leave room for command/status metadata so the shared 5 KiB tool-result limiter
@@ -105,33 +106,42 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
   child.stdout?.on("data", capture);
   child.stderr?.on("data", capture);
 
-  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
-  const stop = (force = false) => {
-    terminateProcessTree(child, force);
-    if (!force && !forceKillTimer) {
-      forceKillTimer = setTimeout(() => terminateProcessTree(child, true), FORCE_KILL_DELAY_MS);
-    }
-  };
-  const onAbort = () => {
-    aborted = true;
-    stop();
-  };
-  context.signal.addEventListener("abort", onAbort, { once: true });
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    stop();
-  }, timeoutMs);
-
-  const result = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
+  // Subscribe before anything can stop the child, so a fast exit is never missed.
+  const closed = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
       child.once("error", reject);
       child.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
     },
-  ).finally(() => {
-    clearTimeout(timeout);
-    if (forceKillTimer) clearTimeout(forceKillTimer);
-    context.signal.removeEventListener("abort", onAbort);
+  );
+  const exited = Effect.promise(() => closed);
+  // SIGTERM the process tree, then SIGKILL whatever is still running.
+  const stop = (reason: "timeout" | "abort") =>
+    Effect.sync(() => {
+      if (reason === "timeout") timedOut = true;
+      else aborted = true;
+      terminateProcessTree(child, false);
+    }).pipe(
+      Effect.andThen(exited),
+      Effect.timeoutOrElse({
+        duration: FORCE_KILL_DELAY_MS,
+        orElse: () =>
+          Effect.sync(() => terminateProcessTree(child, true)).pipe(Effect.andThen(exited)),
+      }),
+    );
+  const abortRequested = Effect.callback<void>((resume) => {
+    const onAbort = () => resume(Effect.void);
+    if (context.signal.aborted) return onAbort();
+    context.signal.addEventListener("abort", onAbort, { once: true });
+    return Effect.sync(() => context.signal.removeEventListener("abort", onAbort));
   });
+
+  const result = await Effect.runPromise(
+    Effect.raceAllFirst([
+      exited,
+      Effect.sleep(timeoutMs).pipe(Effect.andThen(stop("timeout"))),
+      abortRequested.pipe(Effect.andThen(stop("abort"))),
+    ]),
+  );
   await new Promise<void>((resolve, reject) => {
     fullOutput.once("error", reject);
     fullOutput.end(resolve);

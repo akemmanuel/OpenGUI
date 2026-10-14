@@ -2,7 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { Effect } from "effect";
 import { buildModelContext } from "./context/build-context.ts";
+import { runAbortable } from "./effect/run-abortable.ts";
 import {
   buildHandoffPrompt,
   COMPACTION_RECOVERY_MESSAGE,
@@ -90,19 +92,8 @@ function isAutomaticallyRetryable(failure: { code: string; retryable: boolean })
   );
 }
 
-async function abortableDelay(ms: number, signal: AbortSignal) {
-  signal.throwIfAborted();
-  await new Promise<void>((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal.reason);
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
+function abortableDelay(ms: number, signal: AbortSignal) {
+  return runAbortable(Effect.sleep(ms), signal);
 }
 
 async function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal) {

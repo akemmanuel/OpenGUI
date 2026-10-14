@@ -1,4 +1,5 @@
 export * from "./harness.ts";
+export { runAbortable } from "./effect/run-abortable.ts";
 export { ModelCatalog } from "./models/model-catalog.ts";
 export * from "./execution-policy.ts";
 export type { ShellToolExecutor, ToolExecutionContext } from "./tools/execute-tool.ts";

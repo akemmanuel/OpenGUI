@@ -1,4 +1,5 @@
 import WebSocket, { type RawData } from "ws";
+import { Effect } from "effect";
 import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
 import { codexInput } from "./codex-responses.ts";
 import {
@@ -304,24 +305,33 @@ export class OpenAiResponsesWebSocketTransport {
       authorization: `Bearer ${route.apiKey}`,
       "user-agent": "OpenGUI/1.0",
     });
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        socket.terminate?.();
-        reject(new Error("OpenAI WebSocket connection timed out"));
-      }, this.#options.connectTimeoutMs ?? 15_000);
-      const opened = () => {
-        clearTimeout(timeout);
-        socket.off("error", failed);
-        resolve();
+    const opened = Effect.callback<void, Error>((resume) => {
+      const onOpen = () => {
+        socket.off("error", onError);
+        resume(Effect.void);
       };
-      const failed = (error: Error) => {
-        clearTimeout(timeout);
-        socket.off("open", opened);
-        reject(error);
+      const onError = (error: Error) => {
+        socket.off("open", onOpen);
+        resume(Effect.fail(error));
       };
-      socket.on("open", opened);
-      socket.on("error", failed);
+      socket.on("open", onOpen);
+      socket.on("error", onError);
+      return Effect.sync(() => {
+        socket.off("open", onOpen);
+        socket.off("error", onError);
+      });
     });
+    await Effect.runPromise(
+      opened.pipe(
+        Effect.timeoutOrElse({
+          duration: this.#options.connectTimeoutMs ?? 15_000,
+          orElse: () =>
+            Effect.sync(() => socket.terminate?.()).pipe(
+              Effect.andThen(Effect.fail(new Error("OpenAI WebSocket connection timed out"))),
+            ),
+        }),
+      ),
+    );
     const entry: PoolEntry = {
       socket,
       active: true,

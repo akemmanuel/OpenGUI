@@ -1,3 +1,4 @@
+import { retryProviderRequest } from "./provider-retry.ts";
 import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
 import type {
   ModelContextItem,
@@ -214,39 +215,27 @@ export class CodexResponsesTransport implements ModelTransport {
         },
       );
     };
-    let response = await requestWithCredential();
     // One forced refresh-and-retry is safe for this POST: a 401 cannot have
     // started a successful response stream, and the retry count is bounded.
-    if (response.status === 401) {
+    const send = async () => {
+      const response = await requestWithCredential();
+      if (response.status !== 401) return response;
       attempts += 1;
-      response = await requestWithCredential(true);
-    }
-    for (
-      let retry = 0;
-      !response.ok &&
-      response.status !== 401 &&
-      (response.status === 408 ||
-        response.status === 409 ||
-        response.status === 429 ||
-        response.status >= 500) &&
-      retry < (request.delivery?.maxRetries ?? 2);
-      retry += 1
-    ) {
-      const delay = Math.min(500 * 2 ** retry, request.delivery?.maxRetryDelayMs ?? 60_000);
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, delay);
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-          },
-          { once: true },
-        );
-      });
-      attempts += 1;
-      response = await requestWithCredential();
-    }
+      return await requestWithCredential(true);
+    };
+    let sent = 0;
+    const response = await retryProviderRequest(
+      async () => {
+        if (sent++ > 0) attempts += 1;
+        return await send();
+      },
+      (candidate) =>
+        candidate.status === 408 ||
+        candidate.status === 409 ||
+        candidate.status === 429 ||
+        candidate.status >= 500,
+      { delivery: request.delivery, signal },
+    );
     if (
       isPossibleImageInputRejection(response.status) &&
       !response.ok &&

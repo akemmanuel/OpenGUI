@@ -1,3 +1,4 @@
+import { retryProviderRequest } from "./provider-retry.ts";
 import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
 import { CodexResponsesTransport } from "./codex-responses.ts";
 import { OpenCodeRequestHeaders } from "./opencode-headers.ts";
@@ -158,20 +159,6 @@ export function shouldRetryChatCompletion(status: number, body: string) {
   );
 }
 
-function waitForRetry(delayMs: number, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, delayMs);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason ?? new Error("Aborted"));
-      },
-      { once: true },
-    );
-  });
-}
-
 export function chatDeltaEvents(delta: Record<string, any>): ModelStreamEvent[] {
   const events: ModelStreamEvent[] = [];
   const reasoning =
@@ -298,38 +285,39 @@ export class OpenAiChatTransport implements ModelTransport {
       ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
     });
 
-    let response: Response | undefined;
-    const maxAttempts = (request.delivery?.maxRetries ?? 2) + 1;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      response = await (this.#options.fetchImpl ?? fetch)(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(connection.apiKey ? { authorization: `Bearer ${connection.apiKey}` } : {}),
-          ...this.#openCodeHeaders.forRequest(connection.baseUrl, request),
-        },
-        body,
-        signal,
-      });
-      if (response.ok && response.body) break;
-      const text = await response.text().catch(() => "");
-      if (
-        isPossibleImageInputRejection(response.status) &&
-        modelContextHasImages(effectiveRequest.context)
-      ) {
+    const imageRejected = (response: Response) =>
+      isPossibleImageInputRejection(response.status) &&
+      modelContextHasImages(effectiveRequest.context);
+    const { response, text } = await retryProviderRequest(
+      async (attemptSignal) => {
+        const response = await (this.#options.fetchImpl ?? fetch)(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(connection.apiKey ? { authorization: `Bearer ${connection.apiKey}` } : {}),
+            ...this.#openCodeHeaders.forRequest(connection.baseUrl, request),
+          },
+          body,
+          signal: attemptSignal,
+        });
+        if (response.ok && response.body) return { response, text: "" };
+        return { response, text: await response.text().catch(() => "") };
+      },
+      ({ response, text }) =>
+        !(response.ok && response.body) &&
+        !imageRejected(response) &&
+        shouldRetryChatCompletion(response.status, text),
+      { delivery: request.delivery, signal },
+    );
+    if (!(response.ok && response.body)) {
+      if (imageRejected(response)) {
         this.#imageUnsupportedModels.add(modelKey);
         yield* this.stream(request, signal);
         return;
       }
-      if (attempt === maxAttempts - 1 || !shouldRetryChatCompletion(response.status, text)) {
-        const error = new Error(safeProviderError(text, response.status, connection.apiKey));
-        Object.assign(error, { status: response.status });
-        throw error;
-      }
-      await waitForRetry(
-        Math.min(500 * 2 ** attempt, request.delivery?.maxRetryDelayMs ?? 60_000),
-        signal,
-      );
+      const error = new Error(safeProviderError(text, response.status, connection.apiKey));
+      Object.assign(error, { status: response.status });
+      throw error;
     }
     if (!response?.body) throw new Error("Model response did not include a body");
 
