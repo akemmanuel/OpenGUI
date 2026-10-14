@@ -4,7 +4,8 @@ import {
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { contentFingerprint, type AgentToolSource } from "@opengui/harness";
+import { contentFingerprint, runAbortable, type AgentToolSource } from "@opengui/harness";
+import { Effect } from "effect";
 
 export interface McpActorScope {
   actorId: string;
@@ -138,13 +139,12 @@ function cacheKey(scope: McpActorScope, connectionId: string) {
 }
 
 function waitWithSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise<T>((resolve, reject) => {
-    const aborted = () => reject(signal.reason);
-    signal.addEventListener("abort", aborted, { once: true });
-    void promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
-  });
+  return signal
+    ? runAbortable(
+        Effect.promise(() => promise),
+        signal,
+      )
+    : promise;
 }
 
 function normalizedContent(content: unknown): McpResultContent[] {

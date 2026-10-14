@@ -7,6 +7,8 @@ import { NodeSqliteDialect } from "@better-auth/kysely-adapter/node-sqlite-diale
 import { betterAuth } from "better-auth";
 import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
+import { Effect, Schedule } from "effect";
+import { SerialLock } from "../effect/serial-lock.ts";
 import { admin, bearer, username } from "better-auth/plugins";
 import { adminAc } from "better-auth/plugins/admin/access";
 import {
@@ -40,7 +42,6 @@ import {
   renderTestMail,
   resolveMailLanguage,
   type MailConfigInput,
-  type MailLanguage,
   type MailSender,
   type StoredMailConfig,
 } from "./mail.ts";
@@ -173,9 +174,9 @@ export class IdentityService {
   private readonly configuredAllowedRoots: string[];
   private readonly audit: IdentityAuditLog;
   private canonicalAllowedRoots?: Promise<string[]>;
-  private setupQueue = Promise.resolve();
-  private inviteAcceptQueue = Promise.resolve();
-  private emailChangeQueue = Promise.resolve();
+  private readonly setupLock = new SerialLock();
+  private readonly inviteAcceptLock = new SerialLock();
+  private readonly emailChangeLock = new SerialLock();
   private injectedMailSender?: MailSender;
   private readonly mailSecrets?: MailSecrets;
 
@@ -546,107 +547,101 @@ export class IdentityService {
     password: string;
     headers?: Headers;
   }): Promise<Response> {
-    const previous = this.setupQueue;
-    let release!: () => void;
-    this.setupQueue = new Promise<void>((resolveQueue) => {
-      release = resolveQueue;
-    });
-    await previous;
-    let transactionOpen = false;
-    try {
-      await this.ready;
+    return this.setupLock.run(async () => {
+      let transactionOpen = false;
       try {
-        this.database.exec("BEGIN IMMEDIATE");
-        transactionOpen = true;
-      } catch (error) {
-        if (error instanceof Error && /busy|locked/i.test(error.message)) {
+        await this.ready;
+        try {
+          this.database.exec("BEGIN IMMEDIATE");
+          transactionOpen = true;
+        } catch (error) {
+          if (error instanceof Error && /busy|locked/i.test(error.message)) {
+            return Response.json(
+              { ok: false, error: "Host setup is already in progress", code: "SETUP_IN_PROGRESS" },
+              { status: 409 },
+            );
+          }
+          throw error;
+        }
+        const owner = this.database
+          .prepare("SELECT 1 AS found FROM host_membership WHERE role = 'owner' LIMIT 1")
+          .get();
+        if (owner) {
+          this.database.exec("ROLLBACK");
+          transactionOpen = false;
           return Response.json(
-            { ok: false, error: "Host setup is already in progress", code: "SETUP_IN_PROGRESS" },
+            { ok: false, error: "Host setup has already been completed", code: "SETUP_COMPLETE" },
             { status: 409 },
           );
         }
+        const response = await this.auth.handler(
+          jsonRequest(
+            `${this.authBaseURL}/api/auth/sign-up/email`,
+            {
+              name: input.username,
+              username: input.username,
+              email: input.email,
+              password: input.password,
+            },
+            input.headers,
+          ),
+        );
+        if (!response.ok) {
+          this.database.exec("ROLLBACK");
+          transactionOpen = false;
+          const failure = (await response.json().catch(() => null)) as { code?: unknown } | null;
+          const accountExists =
+            typeof failure?.code === "string" &&
+            ["USERNAME_IS_ALREADY_TAKEN", "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"].includes(
+              failure.code,
+            );
+          return Response.json(
+            {
+              ok: false,
+              error: accountExists
+                ? "Username or email is already in use"
+                : "Account details are invalid",
+              code: accountExists ? "ACCOUNT_EXISTS" : "INVITE_ACCOUNT_INVALID",
+              recoverable: true,
+            },
+            { status: accountExists ? 409 : 400 },
+          );
+        }
+        const body = (await response.json()) as {
+          token?: string;
+          user?: { id?: string; username?: string; email?: string };
+        };
+        if (!body.user?.id) throw new Error("Better Auth did not return the created user");
+        this.database
+          .prepare(
+            "INSERT INTO host_membership (user_id, team_id, role, can_invite, created_at) VALUES (?, ?, 'owner', 1, ?)",
+          )
+          .run(body.user.id, TEAM_ID, Date.now());
+        this.database.exec("COMMIT");
+        transactionOpen = false;
+        const headers = new Headers(response.headers);
+        headers.delete("content-length");
+        return Response.json(
+          {
+            ok: true,
+            value: {
+              token: body.token,
+              actor: {
+                type: "user",
+                id: body.user.id,
+                displayName: body.user.username || input.username,
+                role: "owner",
+              },
+              user: body.user,
+            },
+          },
+          { status: 201, headers },
+        );
+      } catch (error) {
+        if (transactionOpen) this.database.exec("ROLLBACK");
         throw error;
       }
-      const owner = this.database
-        .prepare("SELECT 1 AS found FROM host_membership WHERE role = 'owner' LIMIT 1")
-        .get();
-      if (owner) {
-        this.database.exec("ROLLBACK");
-        transactionOpen = false;
-        return Response.json(
-          { ok: false, error: "Host setup has already been completed", code: "SETUP_COMPLETE" },
-          { status: 409 },
-        );
-      }
-      const response = await this.auth.handler(
-        jsonRequest(
-          `${this.authBaseURL}/api/auth/sign-up/email`,
-          {
-            name: input.username,
-            username: input.username,
-            email: input.email,
-            password: input.password,
-          },
-          input.headers,
-        ),
-      );
-      if (!response.ok) {
-        this.database.exec("ROLLBACK");
-        transactionOpen = false;
-        const failure = (await response.json().catch(() => null)) as { code?: unknown } | null;
-        const accountExists =
-          typeof failure?.code === "string" &&
-          ["USERNAME_IS_ALREADY_TAKEN", "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"].includes(
-            failure.code,
-          );
-        return Response.json(
-          {
-            ok: false,
-            error: accountExists
-              ? "Username or email is already in use"
-              : "Account details are invalid",
-            code: accountExists ? "ACCOUNT_EXISTS" : "INVITE_ACCOUNT_INVALID",
-            recoverable: true,
-          },
-          { status: accountExists ? 409 : 400 },
-        );
-      }
-      const body = (await response.json()) as {
-        token?: string;
-        user?: { id?: string; username?: string; email?: string };
-      };
-      if (!body.user?.id) throw new Error("Better Auth did not return the created user");
-      this.database
-        .prepare(
-          "INSERT INTO host_membership (user_id, team_id, role, can_invite, created_at) VALUES (?, ?, 'owner', 1, ?)",
-        )
-        .run(body.user.id, TEAM_ID, Date.now());
-      this.database.exec("COMMIT");
-      transactionOpen = false;
-      const headers = new Headers(response.headers);
-      headers.delete("content-length");
-      return Response.json(
-        {
-          ok: true,
-          value: {
-            token: body.token,
-            actor: {
-              type: "user",
-              id: body.user.id,
-              displayName: body.user.username || input.username,
-              role: "owner",
-            },
-            user: body.user,
-          },
-        },
-        { status: 201, headers },
-      );
-    } catch (error) {
-      if (transactionOpen) this.database.exec("ROLLBACK");
-      throw error;
-    } finally {
-      release();
-    }
+    });
   }
 
   async login(usernameValue: string, password: string, headers: Headers) {
@@ -1160,127 +1155,123 @@ export class IdentityService {
     password: string;
     headers?: Headers;
   }): Promise<Response> {
-    const previous = this.inviteAcceptQueue;
-    let release!: () => void;
-    this.inviteAcceptQueue = new Promise<void>((resolveQueue) => {
-      release = resolveQueue;
-    });
-    await previous;
-    let transactionOpen = false;
-    try {
-      await this.ready;
-      this.database.exec("BEGIN IMMEDIATE");
-      transactionOpen = true;
-      const invite = this.database
-        .prepare(
-          `SELECT id, email, created_by_user_id, created_at, expires_at, accepted_at, revoked_at
-           FROM host_invite WHERE token_hash = ?`,
-        )
-        .get(hashSecret(input.token)) as InviteRow | undefined;
-      const now = Date.now();
-      if (!invite || invite.accepted_at || invite.revoked_at || invite.expires_at <= now) {
-        this.database.exec("ROLLBACK");
-        transactionOpen = false;
-        return Response.json(
-          { ok: false, error: "Invite is invalid or expired", code: "INVITE_INVALID" },
-          { status: 410 },
-        );
-      }
-      if (invite.email.toLowerCase() !== input.email.toLowerCase()) {
-        this.database.exec("ROLLBACK");
-        transactionOpen = false;
-        return Response.json(
-          { ok: false, error: "Email does not match the invite", code: "INVITE_EMAIL_MISMATCH" },
-          { status: 400 },
-        );
-      }
-      const response = await this.auth.handler(
-        jsonRequest(
-          `${this.authBaseURL}/api/auth/sign-up/email`,
-          {
-            name: input.username,
-            username: input.username,
-            email: input.email,
-            password: input.password,
-          },
-          input.headers,
-        ),
-      );
-      if (!response.ok) {
-        this.database.exec("ROLLBACK");
-        transactionOpen = false;
-        return response;
-      }
-      const body = (await response.json()) as {
-        token?: string;
-        user?: { id?: string; username?: string; email?: string };
-      };
-      if (!body.user?.id) throw new Error("Better Auth did not return the invited user");
-      this.database
-        .prepare(
-          "INSERT INTO host_membership (user_id, team_id, role, can_invite, created_at) VALUES (?, ?, 'member', 0, ?)",
-        )
-        .run(body.user.id, TEAM_ID, now);
-      const accepted = this.database
-        .prepare(
-          `UPDATE host_invite SET accepted_at = ?, accepted_by_user_id = ?
-           WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL`,
-        )
-        .run(now, body.user.id, invite.id);
-      if (accepted.changes !== 1) throw new Error("Invite was consumed concurrently");
-      const inviteGrants = this.database
-        .prepare(`SELECT root_path AS root, access FROM host_invite_path_grant WHERE invite_id = ?`)
-        .all(invite.id) as { root: string; access: PathGrantAccess }[];
-      if (inviteGrants.length > 0) {
-        const insertGrant = this.database.prepare(
-          `INSERT INTO host_path_grant
-            (subject_type, subject_id, root_path, access, created_by_user_id, created_at)
-           VALUES ('user', ?, ?, ?, ?, ?)`,
-        );
-        for (const grant of inviteGrants) {
-          insertGrant.run(body.user.id, grant.root, grant.access, invite.created_by_user_id, now);
+    return this.inviteAcceptLock.run(async () => {
+      let transactionOpen = false;
+      try {
+        await this.ready;
+        this.database.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const invite = this.database
+          .prepare(
+            `SELECT id, email, created_by_user_id, created_at, expires_at, accepted_at, revoked_at
+             FROM host_invite WHERE token_hash = ?`,
+          )
+          .get(hashSecret(input.token)) as InviteRow | undefined;
+        const now = Date.now();
+        if (!invite || invite.accepted_at || invite.revoked_at || invite.expires_at <= now) {
+          this.database.exec("ROLLBACK");
+          transactionOpen = false;
+          return Response.json(
+            { ok: false, error: "Invite is invalid or expired", code: "INVITE_INVALID" },
+            { status: 410 },
+          );
         }
-        this.incrementPathPolicyRevision();
-      }
-      this.database
-        .prepare("DELETE FROM host_invite_path_grant WHERE invite_id = ?")
-        .run(invite.id);
-      this.audit.record(
-        identityAuditEventTypes.inviteAccepted,
-        {
-          type: "user",
-          id: body.user.id,
-          displayName: body.user.username || input.username,
-          role: "member",
-        },
-        { type: "invite", id: invite.id },
-      );
-      this.database.exec("COMMIT");
-      transactionOpen = false;
-      const headers = new Headers(response.headers);
-      headers.delete("content-length");
-      return Response.json(
-        {
-          ok: true,
-          value: {
-            token: body.token,
-            actor: {
-              type: "user",
-              id: body.user.id,
-              displayName: body.user.username || input.username,
-              role: "member",
+        if (invite.email.toLowerCase() !== input.email.toLowerCase()) {
+          this.database.exec("ROLLBACK");
+          transactionOpen = false;
+          return Response.json(
+            { ok: false, error: "Email does not match the invite", code: "INVITE_EMAIL_MISMATCH" },
+            { status: 400 },
+          );
+        }
+        const response = await this.auth.handler(
+          jsonRequest(
+            `${this.authBaseURL}/api/auth/sign-up/email`,
+            {
+              name: input.username,
+              username: input.username,
+              email: input.email,
+              password: input.password,
             },
-            user: body.user,
+            input.headers,
+          ),
+        );
+        if (!response.ok) {
+          this.database.exec("ROLLBACK");
+          transactionOpen = false;
+          return response;
+        }
+        const body = (await response.json()) as {
+          token?: string;
+          user?: { id?: string; username?: string; email?: string };
+        };
+        if (!body.user?.id) throw new Error("Better Auth did not return the invited user");
+        this.database
+          .prepare(
+            "INSERT INTO host_membership (user_id, team_id, role, can_invite, created_at) VALUES (?, ?, 'member', 0, ?)",
+          )
+          .run(body.user.id, TEAM_ID, now);
+        const accepted = this.database
+          .prepare(
+            `UPDATE host_invite SET accepted_at = ?, accepted_by_user_id = ?
+             WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL`,
+          )
+          .run(now, body.user.id, invite.id);
+        if (accepted.changes !== 1) throw new Error("Invite was consumed concurrently");
+        const inviteGrants = this.database
+          .prepare(
+            `SELECT root_path AS root, access FROM host_invite_path_grant WHERE invite_id = ?`,
+          )
+          .all(invite.id) as { root: string; access: PathGrantAccess }[];
+        if (inviteGrants.length > 0) {
+          const insertGrant = this.database.prepare(
+            `INSERT INTO host_path_grant
+              (subject_type, subject_id, root_path, access, created_by_user_id, created_at)
+             VALUES ('user', ?, ?, ?, ?, ?)`,
+          );
+          for (const grant of inviteGrants) {
+            insertGrant.run(body.user.id, grant.root, grant.access, invite.created_by_user_id, now);
+          }
+          this.incrementPathPolicyRevision();
+        }
+        this.database
+          .prepare("DELETE FROM host_invite_path_grant WHERE invite_id = ?")
+          .run(invite.id);
+        this.audit.record(
+          identityAuditEventTypes.inviteAccepted,
+          {
+            type: "user",
+            id: body.user.id,
+            displayName: body.user.username || input.username,
+            role: "member",
           },
-        },
-        { status: 201, headers },
-      );
-    } catch (error) {
-      if (transactionOpen) this.database.exec("ROLLBACK");
-      throw error;
-    } finally {
-      release();
-    }
+          { type: "invite", id: invite.id },
+        );
+        this.database.exec("COMMIT");
+        transactionOpen = false;
+        const headers = new Headers(response.headers);
+        headers.delete("content-length");
+        return Response.json(
+          {
+            ok: true,
+            value: {
+              token: body.token,
+              actor: {
+                type: "user",
+                id: body.user.id,
+                displayName: body.user.username || input.username,
+                role: "member",
+              },
+              user: body.user,
+            },
+          },
+          { status: 201, headers },
+        );
+      } catch (error) {
+        if (transactionOpen) this.database.exec("ROLLBACK");
+        throw error;
+      }
+    });
   }
 
   async listMembers(actor: Actor) {
@@ -2677,119 +2668,104 @@ export class IdentityService {
     if (actor.type !== "user") {
       throw new IdentityError("FORBIDDEN", 403, "User access required");
     }
-    const previous = this.emailChangeQueue;
-    let release!: () => void;
-    this.emailChangeQueue = new Promise<void>((resolveQueue) => {
-      release = resolveQueue;
-    });
-    await previous;
     // Reserved under the lock with synchronous database work only; the network
     // send below runs outside the lock so one slow SMTP server cannot stall
     // other accounts.
-    let reservation: {
-      rowId: string;
-      userId: string;
-      token: string;
-      pendingEmail: string;
-      publicOrigin: string;
-      language: MailLanguage;
-    } | null = null;
-    try {
-      const user = this.database
-        .prepare("SELECT id, email FROM user WHERE id = ?")
-        .get(actor.id) as { id: string; email: string } | undefined;
-      if (!user || !this.membership(user.id)) {
-        throw new IdentityError("MEMBER_NOT_FOUND", 404, "Member not found");
-      }
-      // Throws MAIL_NOT_CONFIGURED unless the owner enabled mail. The draft
-      // stays client-side; nothing is stored or sent in that case.
-      const mail = this.activeMailSettings();
-      // Cheap budget checks run before the expensive password-hash verification.
-      // Cancelled, replaced, and delivery-failed rows are retained, so cycles
-      // of request/cancel cannot reset the hourly budget.
-      this.checkRequestBudgets(user.id);
-      const pendingEmail = input.newEmail.trim().toLowerCase();
-      if (!isValidEmailAddress(pendingEmail)) {
-        throw new IdentityError("INVALID_EMAIL", 400, "New email address is invalid");
-      }
-      if (pendingEmail === user.email.toLowerCase()) {
-        throw new IdentityError("INVALID_EMAIL", 400, "New email must differ from current");
-      }
-      if (this.emailTakenByOtherUser(pendingEmail, user.id)) {
-        throw new IdentityError("EMAIL_UNAVAILABLE", 409, "Email address is unavailable");
-      }
-      // Capture the credential epoch BEFORE the async verification: a
-      // rotation that lands during scrypt must invalidate this proof.
-      const preMembership = this.membership(user.id);
-      const preEpoch = preMembership?.credential_epoch ?? 0;
-      // Host-wide CPU bound for the expensive hash check.
-      if (this.recordRateEvent("reauth", Date.now()) >= EMAIL_CHANGE_MAX_GLOBAL_REAUTH_PER_HOUR) {
-        throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
-      }
-      const verified = await this.verifyAccountPassword(user.id, input.currentPassword);
-      // Recheck synchronously: no await runs between here and the reserve
-      // writes below, so a rotation in this gap is impossible.
-      const postMembership = this.membership(user.id);
-      if (!postMembership || postMembership.credential_epoch !== preEpoch) {
-        throw new IdentityError(
-          "EMAIL_CHANGE_SUPERSEDED",
-          409,
-          "Credentials changed during verification; request again",
-        );
-      }
-      if (!verified) {
-        // Failed reauthentication is retained in the existing rate authority:
-        // never confirmable, never listed, never revived or cancel-reset, and
-        // it never retires a prior valid challenge.
-        this.recordFailedReauth(user.id, pendingEmail, preEpoch);
-        throw new IdentityError("INVALID_PASSWORD", 400, "Current password is incorrect");
-      }
-      const now = Date.now();
-      // A new request retires any outstanding change for this user. Retired
-      // rows stay in history for rate accounting but can never be confirmed,
-      // listed, or revived.
-      this.retireEmailChanges(user.id, "replaced");
-      const token = randomBytes(32).toString("base64url");
-      const rowId = randomUUID();
-      // The challenge is bound to the epoch rechecked above (identical to the
-      // pre-verification epoch by construction); finalize and consume recheck
-      // it again against live membership.
-      this.database
-        .prepare(
-          `INSERT INTO host_email_change
-           (id, user_id, pending_email, token_hash, created_at, expires_at,
-            send_state, credential_epoch, language)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-        )
-        .run(
+    const reservation = await this.emailChangeLock.run(async () => {
+      try {
+        const user = this.database
+          .prepare("SELECT id, email FROM user WHERE id = ?")
+          .get(actor.id) as { id: string; email: string } | undefined;
+        if (!user || !this.membership(user.id)) {
+          throw new IdentityError("MEMBER_NOT_FOUND", 404, "Member not found");
+        }
+        // Throws MAIL_NOT_CONFIGURED unless the owner enabled mail. The draft
+        // stays client-side; nothing is stored or sent in that case.
+        const mail = this.activeMailSettings();
+        // Cheap budget checks run before the expensive password-hash verification.
+        // Cancelled, replaced, and delivery-failed rows are retained, so cycles
+        // of request/cancel cannot reset the hourly budget.
+        this.checkRequestBudgets(user.id);
+        const pendingEmail = input.newEmail.trim().toLowerCase();
+        if (!isValidEmailAddress(pendingEmail)) {
+          throw new IdentityError("INVALID_EMAIL", 400, "New email address is invalid");
+        }
+        if (pendingEmail === user.email.toLowerCase()) {
+          throw new IdentityError("INVALID_EMAIL", 400, "New email must differ from current");
+        }
+        if (this.emailTakenByOtherUser(pendingEmail, user.id)) {
+          throw new IdentityError("EMAIL_UNAVAILABLE", 409, "Email address is unavailable");
+        }
+        // Capture the credential epoch BEFORE the async verification: a
+        // rotation that lands during scrypt must invalidate this proof.
+        const preMembership = this.membership(user.id);
+        const preEpoch = preMembership?.credential_epoch ?? 0;
+        // Host-wide CPU bound for the expensive hash check.
+        if (this.recordRateEvent("reauth", Date.now()) >= EMAIL_CHANGE_MAX_GLOBAL_REAUTH_PER_HOUR) {
+          throw new IdentityError("RATE_LIMITED", 429, "Too many email change requests");
+        }
+        const verified = await this.verifyAccountPassword(user.id, input.currentPassword);
+        // Recheck synchronously: no await runs between here and the reserve
+        // writes below, so a rotation in this gap is impossible.
+        const postMembership = this.membership(user.id);
+        if (!postMembership || postMembership.credential_epoch !== preEpoch) {
+          throw new IdentityError(
+            "EMAIL_CHANGE_SUPERSEDED",
+            409,
+            "Credentials changed during verification; request again",
+          );
+        }
+        if (!verified) {
+          // Failed reauthentication is retained in the existing rate authority:
+          // never confirmable, never listed, never revived or cancel-reset, and
+          // it never retires a prior valid challenge.
+          this.recordFailedReauth(user.id, pendingEmail, preEpoch);
+          throw new IdentityError("INVALID_PASSWORD", 400, "Current password is incorrect");
+        }
+        const now = Date.now();
+        // A new request retires any outstanding change for this user. Retired
+        // rows stay in history for rate accounting but can never be confirmed,
+        // listed, or revived.
+        this.retireEmailChanges(user.id, "replaced");
+        const token = randomBytes(32).toString("base64url");
+        const rowId = randomUUID();
+        // The challenge is bound to the epoch rechecked above (identical to the
+        // pre-verification epoch by construction); finalize and consume recheck
+        // it again against live membership.
+        this.database
+          .prepare(
+            `INSERT INTO host_email_change
+             (id, user_id, pending_email, token_hash, created_at, expires_at,
+              send_state, credential_epoch, language)
+             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+          )
+          .run(
+            rowId,
+            user.id,
+            pendingEmail,
+            hashSecret(token),
+            now,
+            now + EMAIL_CHANGE_TOKEN_TTL_MS,
+            preEpoch,
+            resolveMailLanguage(headers?.get("accept-language")),
+          );
+        this.pruneEmailChangeHistory(now);
+        return {
           rowId,
-          user.id,
+          userId: user.id,
+          token,
           pendingEmail,
-          hashSecret(token),
-          now,
-          now + EMAIL_CHANGE_TOKEN_TTL_MS,
-          preEpoch,
-          resolveMailLanguage(headers?.get("accept-language")),
-        );
-      this.pruneEmailChangeHistory(now);
-      reservation = {
-        rowId,
-        userId: user.id,
-        token,
-        pendingEmail,
-        publicOrigin: mail.publicOrigin,
-        language: resolveMailLanguage(headers?.get("accept-language")),
-      };
-    } catch (error) {
-      if (error instanceof IdentityError) throw error;
-      if (error instanceof Error && /busy|locked/i.test(error.message)) {
-        throw new IdentityError("RATE_LIMITED", 429, "Storage is busy, retry shortly");
+          publicOrigin: mail.publicOrigin,
+          language: resolveMailLanguage(headers?.get("accept-language")),
+        };
+      } catch (error) {
+        if (error instanceof IdentityError) throw error;
+        if (error instanceof Error && /busy|locked/i.test(error.message)) {
+          throw new IdentityError("RATE_LIMITED", 429, "Storage is busy, retry shortly");
+        }
+        throw error;
       }
-      throw error;
-    } finally {
-      release();
-    }
-    if (!reservation) throw new Error("Email change reservation failed");
+    });
     const rendered = renderEmailChangeMail({
       // Built only from the validated configured origin, never Host headers.
       confirmUrl: buildEmailChangeUrl(reservation.publicOrigin, reservation.token),
@@ -3250,18 +3226,15 @@ export class IdentityService {
    * lock contention (Better Auth shares this database with autocommit
    * writes). Callers convert an exhausted retry into a retryable 429.
    */
-  private async runBusyRetried<T>(operation: () => T): Promise<T> {
-    let delayMs = 25;
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return operation();
-      } catch (error) {
-        const busy = error instanceof Error && /busy|locked/i.test(error.message);
-        if (!busy || attempt >= 2) throw error;
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        delayMs *= 2;
-      }
-    }
+  private runBusyRetried<T>(operation: () => T): Promise<T> {
+    return Effect.runPromise(
+      Effect.try({ try: operation, catch: (error) => error }).pipe(
+        Effect.retry({
+          while: (error) => error instanceof Error && /busy|locked/i.test(error.message),
+          schedule: Schedule.max([Schedule.exponential("25 millis"), Schedule.recurs(2)]),
+        }),
+      ),
+    );
   }
 
   private markEmailChangeUnusable(rowId: string, reason: string): void {

@@ -1,3 +1,4 @@
+import { KeyedSerialLock } from "../effect/serial-lock.ts";
 import {
   chmod,
   lstat,
@@ -401,7 +402,8 @@ export class OpenGuiHost {
   #stateStore: DurableJsonTransaction<HostDurableState> | null = null;
   readonly #listeners = new Set<(event: HostEvent) => void | Promise<void>>();
   readonly #activeRuns = new Map<string, Promise<void>>();
-  readonly #promptAdmissions = new Map<string, Promise<void>>();
+  /** Admits one prompt or compaction per Session at a time, in arrival order. */
+  readonly #promptAdmissions = new KeyedSerialLock();
   readonly #fetch: typeof fetch;
   readonly #model: ModelTransport | undefined;
   readonly #mcpBroker: McpBroker = createMcpBroker({ connections: [] });
@@ -2269,15 +2271,7 @@ export class OpenGuiHost {
   }
 
   async compact(sessionId: string, actor?: DurableActor) {
-    const previousAdmission = this.#promptAdmissions.get(sessionId) ?? Promise.resolve();
-    let releaseAdmission!: () => void;
-    const admission = new Promise<void>((resolve) => {
-      releaseAdmission = resolve;
-    });
-    const queuedAdmission = previousAdmission.then(() => admission);
-    this.#promptAdmissions.set(sessionId, queuedAdmission);
-    await previousAdmission;
-    try {
+    return this.#promptAdmissions.run(sessionId, async () => {
       const { session, snapshot } = await this.#authorizedSession(sessionId, actor, "run");
       if (snapshot.status === "running") throw new Error("Cannot compact a running Session");
       const iterator = session.compact(actor)[Symbol.asyncIterator]();
@@ -2305,12 +2299,7 @@ export class OpenGuiHost {
         if (this.#activeRuns.get(sessionId) === run) this.#activeRuns.delete(sessionId);
       });
       return { startedEntries };
-    } finally {
-      releaseAdmission();
-      if (this.#promptAdmissions.get(sessionId) === queuedAdmission) {
-        this.#promptAdmissions.delete(sessionId);
-      }
-    }
+    });
   }
 
   async prompt(
@@ -2319,15 +2308,7 @@ export class OpenGuiHost {
     actor: DurableActor | undefined = prompt.actor,
     options?: { interrupt?: boolean },
   ) {
-    const previousAdmission = this.#promptAdmissions.get(sessionId) ?? Promise.resolve();
-    let releaseAdmission!: () => void;
-    const admission = new Promise<void>((resolve) => {
-      releaseAdmission = resolve;
-    });
-    const queuedAdmission = previousAdmission.then(() => admission);
-    this.#promptAdmissions.set(sessionId, queuedAdmission);
-    await previousAdmission;
-    try {
+    return this.#promptAdmissions.run(sessionId, async () => {
       const { session, snapshot } = await this.#authorizedSession(sessionId, actor, "run");
       if (snapshot.status === "running") {
         if (options?.interrupt) {
@@ -2378,12 +2359,7 @@ export class OpenGuiHost {
         if (this.#activeRuns.get(sessionId) === run) this.#activeRuns.delete(sessionId);
       });
       return { mode: "run" as const, startedEntries };
-    } finally {
-      releaseAdmission();
-      if (this.#promptAdmissions.get(sessionId) === queuedAdmission) {
-        this.#promptAdmissions.delete(sessionId);
-      }
-    }
+    });
   }
 
   async updateFollowUp(
@@ -2438,7 +2414,7 @@ export class OpenGuiHost {
 
   async waitForIdle(sessionId: string, actor?: DurableActor) {
     await this.#authorizedSession(sessionId, actor, "view");
-    await this.#promptAdmissions.get(sessionId);
+    await this.#promptAdmissions.idle(sessionId);
     await this.#activeRuns.get(sessionId);
   }
 }

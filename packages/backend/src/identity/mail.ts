@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { createTransport, type Transporter } from "nodemailer";
 
 export type MailMessage = {
@@ -321,27 +322,29 @@ export function smtpTransportOptions(settings: SmtpMailSettings): {
 
 export function createSmtpSender(settings: SmtpMailSettings): MailSender {
   const transporter: Transporter = createTransport(smtpTransportOptions(settings));
-  return async (message) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        transporter.sendMail({
-          from: buildFromHeader(settings),
-          to: message.to,
-          subject: message.subject,
-          text: message.text,
+  return (message) =>
+    Effect.runPromise(
+      Effect.tryPromise({
+        try: () =>
+          transporter.sendMail({
+            from: buildFromHeader(settings),
+            to: message.to,
+            subject: message.subject,
+            text: message.text,
+          }),
+        catch: (error) => error,
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: SMTP_DELIVERY_TIMEOUT_MS,
+          orElse: () => Effect.fail(new Error("Mail delivery timed out")),
         }),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(
-            () => reject(new Error("Mail delivery timed out")),
-            SMTP_DELIVERY_TIMEOUT_MS,
-          );
-        }),
-      ]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-      // Also close a trickling/hung transport when the total deadline wins.
-      if (typeof transporter.close === "function") transporter.close();
-    }
-  };
+        // Also close a trickling/hung transport when the total deadline wins.
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (typeof transporter.close === "function") transporter.close();
+          }),
+        ),
+        Effect.asVoid,
+      ),
+    );
 }
