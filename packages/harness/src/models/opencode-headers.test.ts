@@ -66,10 +66,11 @@ describe.each(["pi-ai", "native"] as const)("%s OpenCode requests", (adapter) =>
       const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
         const headers = new Headers(init?.headers);
         observed.push(headers);
-        expect(headers.get("user-agent")).toBe("opencode/1.18.30");
+        expect(headers.get("user-agent")).toBe("opencode/1.19.0");
         expect(headers.get("x-opencode-client")).toBe("cli");
         expect(headers.get("x-opencode-project")).toBe("global");
         expect(headers.get("x-opencode-session")).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+        expect(headers.get("x-opencode-session-id")).toBe(headers.get("x-opencode-session"));
         expect(headers.get("x-opencode-request")).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
         if (apiKey) {
           expect(
@@ -149,6 +150,15 @@ describe("OpenCode header scope", () => {
   ])("leaves %s untouched", (baseUrl) => {
     expect(new OpenCodeRequestHeaders().forRequest(baseUrl, request())).toEqual({});
   });
+
+  test.each(["https://opencode.ai/inference/v1", "https://opencode.ai/zen/go/v1"])(
+    "scopes headers to the OpenCode gateway at %s",
+    (baseUrl) => {
+      expect(new OpenCodeRequestHeaders().forRequest(baseUrl, request())).toHaveProperty(
+        "x-opencode-session-id",
+      );
+    },
+  );
 
   test("isolates provider session IDs by Host, principal and Session without leaking durable IDs", () => {
     const headers = new OpenCodeRequestHeaders();

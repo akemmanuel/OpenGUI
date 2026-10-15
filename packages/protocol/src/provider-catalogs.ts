@@ -77,6 +77,15 @@ export const OPENCODE_ZEN_PRESET = {
   modelIds: [],
 } as const satisfies ProviderConnectionPreset;
 
+/**
+ * Keyless Zen calls use the free-tier gateway the OpenCode CLI calls. The /zen route rejects
+ * them with FreeTierError, so they go here with the CLI's public key.
+ */
+export const OPENCODE_FREE_TIER = {
+  baseUrl: "https://opencode.ai/inference/v1",
+  apiKey: "public",
+} as const;
+
 export const OPENCODE_GO_PRESET = {
   id: "opencode-go",
   label: "OpenCode Go",

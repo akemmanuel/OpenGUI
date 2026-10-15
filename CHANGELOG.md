@@ -64,6 +64,8 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
 
 ### Chat
 
+- OpenCode Zen's free models work again without an API key: keyless requests now use the
+  free-tier gateway and the same headers as the OpenCode CLI 1.19.
 - Sticky date and time while scrolling through a conversation.
 - Fixed file uploads to Remote Hosts failing with 401.
 - "Send now" on a queued message no longer hides the start of the new reply while it streams.

@@ -3,6 +3,7 @@ export { REASONING_EFFORTS, type ModelReasoningEffort } from "./model-capabiliti
 export type { SelectedModel } from "./selected-model.ts";
 export {
   CHATGPT_CODEX_PRESET,
+  OPENCODE_FREE_TIER,
   OPENCODE_GO_PRESET,
   OPENCODE_ZEN_PRESET,
   SUPERGROK_PRESET,

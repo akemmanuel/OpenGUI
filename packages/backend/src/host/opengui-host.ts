@@ -46,6 +46,7 @@ import {
 } from "@opengui/harness";
 import {
   CHATGPT_CODEX_PRESET,
+  OPENCODE_FREE_TIER,
   OPENCODE_GO_PRESET,
   OPENCODE_ZEN_PRESET,
   SUPERGROK_PRESET,
@@ -507,7 +508,7 @@ export class OpenGuiHost {
             websocketConnectTimeoutMs: 15_000,
           };
         }
-        const apiKey = this.#apiKeys[connection.id];
+        const apiKey = this.#apiKeyFor(connection.id);
         return {
           backendId: connection.id,
           label: connection.label,
@@ -520,7 +521,6 @@ export class OpenGuiHost {
           baseUrl: connection.baseUrl,
           modelId: selection.modelId,
           apiKey,
-          authHeader: connection.id === OPENCODE_ZEN_CONNECTION_ID && !apiKey ? false : undefined,
           reasoning: capabilities?.reasoning,
           reasoningEfforts: capabilities?.reasoningEfforts,
           contextWindow: capabilities?.context,
@@ -1221,11 +1221,19 @@ export class OpenGuiHost {
     await this.#updateState((state) => ({ ...state, secrets }));
   }
 
+  /** Keyless Zen connections authenticate with the free tier's public key. */
+  #apiKeyFor(connectionId: string) {
+    return (
+      this.#apiKeys[connectionId] ??
+      (connectionId === OPENCODE_ZEN_CONNECTION_ID ? OPENCODE_FREE_TIER.apiKey : undefined)
+    );
+  }
+
   #refreshTransport() {
     this.#transport.setConnections(
       this.listModelConnections().map((connection) => ({
         ...connection,
-        apiKey: this.#apiKeys[connection.id],
+        apiKey: this.#apiKeyFor(connection.id),
       })),
       this.#settings.defaultConnectionId,
     );
@@ -1659,8 +1667,13 @@ export class OpenGuiHost {
               ...OPENCODE_GO_PRESET,
               defaultModelId: connection.defaultModelId,
             });
-          if (connection.id === OPENCODE_ZEN_PRESET.id)
-            return this.#catalog.connection("opencode", connection, !this.#apiKeys[connection.id]);
+          if (connection.id === OPENCODE_ZEN_PRESET.id) {
+            const keyless = !this.#apiKeys[connection.id];
+            return {
+              ...this.#catalog.connection("opencode", connection, keyless),
+              ...(keyless ? { baseUrl: OPENCODE_FREE_TIER.baseUrl } : {}),
+            };
+          }
           return connection;
         }),
     ];

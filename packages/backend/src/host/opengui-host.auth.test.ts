@@ -586,7 +586,7 @@ describe("OpenGuiHost authentication persistence", () => {
     await restarted.close();
   });
 
-  test("sends OpenCode client headers without authorization for keyless Zen free models", async () => {
+  test("sends OpenCode client headers with the public key for keyless Zen free models", async () => {
     const dataDirectory = await directory();
     const requestHeaders: Headers[] = [];
     vi.stubGlobal(
@@ -611,17 +611,19 @@ describe("OpenGuiHost authentication persistence", () => {
         }
         const headers = new Headers(init?.headers);
         requestHeaders.push(headers);
-        if (headers.has("authorization")) {
+        if (headers.get("authorization") !== "Bearer public") {
           return Response.json(
             { type: "error", error: { type: "AuthError", message: "Invalid API key." } },
             { status: 401 },
           );
         }
         if (
-          headers.get("user-agent") !== "opencode/1.18.30" ||
+          !url.startsWith("https://opencode.ai/inference/v1/") ||
+          headers.get("user-agent") !== "opencode/1.19.0" ||
           headers.get("x-opencode-client") !== "cli" ||
           headers.get("x-opencode-project") !== "global" ||
           !/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(headers.get("x-opencode-session") ?? "") ||
+          headers.get("x-opencode-session-id") !== headers.get("x-opencode-session") ||
           !/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(headers.get("x-opencode-request") ?? "")
         ) {
           return Response.json(
@@ -663,7 +665,9 @@ describe("OpenGuiHost authentication persistence", () => {
     await host.waitForIdle(session.id);
     expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
     expect(requestHeaders).toHaveLength(2);
-    expect(requestHeaders.every((headers) => !headers.has("authorization"))).toBe(true);
+    expect(
+      requestHeaders.every((headers) => headers.get("authorization") === "Bearer public"),
+    ).toBe(true);
     expect(requestHeaders[1]?.get("x-opencode-session")).toBe(
       requestHeaders[0]?.get("x-opencode-session"),
     );

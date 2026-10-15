@@ -1,7 +1,7 @@
 import type { ModelRequest } from "./transport.ts";
 
-// Keep in sync with the local Pi extension's OpenCode request headers.
-const OPENCODE_USER_AGENT = "opencode/1.18.30";
+// Matches the OpenCode CLI 1.19.0 request headers (the free tier rejects older clients).
+const OPENCODE_USER_AGENT = "opencode/1.19.0";
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 let lastTimestamp = 0;
 let sequence = 0;
@@ -28,7 +28,9 @@ function isOpenCodeEndpoint(baseUrl: string) {
     const url = new URL(baseUrl);
     return (
       url.origin === "https://opencode.ai" &&
-      (url.pathname === "/zen" || url.pathname.startsWith("/zen/"))
+      ["/zen", "/inference"].some(
+        (prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`),
+      )
     );
   } catch {
     return false;
@@ -55,6 +57,7 @@ export class OpenCodeRequestHeaders {
       "user-agent": OPENCODE_USER_AGENT,
       "x-opencode-client": "cli",
       "x-opencode-project": "global",
+      "x-opencode-session-id": sessionId,
       "x-opencode-session": sessionId,
       "x-opencode-request": opencodeId("msg"),
     };
