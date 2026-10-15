@@ -5,17 +5,31 @@ export * from "./execution-policy.ts";
 export type { ShellToolExecutor, ToolExecutionContext } from "./tools/execute-tool.ts";
 export * from "./models/transport.ts";
 export { OpenAiChatTransport, type OpenAiCompatibleConnection } from "./models/openai-chat.ts";
+export type {
+  AuthEvent as PiAuthEvent,
+  AuthInteraction as PiAuthInteraction,
+  AuthPrompt as PiAuthPrompt,
+  Credential as PiCredential,
+  CredentialInfo as PiCredentialInfo,
+  CredentialStore as PiCredentialStore,
+  Models as PiModels,
+} from "@earendil-works/pi-ai";
 export {
+  createPiModels,
+  ISOLATED_AUTH_CONTEXT,
   piAiCatalogConnection,
-  piAiFreeModelIds,
-  piAiTextOnlyModelIds,
+  piProvider,
+  piProviderDescriptors,
   type PiAiCatalogProviderId,
+  type PiProviderDescriptor,
 } from "./models/pi-ai-catalog.ts";
 export {
   PiAiTransport,
   benchmarkPiSerialization,
+  protocolForPiApi,
   toPiContext,
   type PiAiProtocol,
+  type PiAiProviderRoute,
   type PiAiRoute,
 } from "./models/pi-ai.ts";
 export {

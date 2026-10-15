@@ -25,7 +25,7 @@ OpenGUI does **not** add background runs or webhooks in this slice. The current 
 ## Configuration and diagnostics
 
 - `OPENGUI_MODEL_TRANSPORT=pi-ai|native` (`pi-ai` default). `native` preserves the legacy OpenGUI adapters. Unknown values select `native`.
-- `OPENGUI_CODEX_TRANSPORT=auto|websocket|websocket-cached|sse|native` (`auto` default). `native` preserves the legacy Codex SSE adapter. Unknown values select the native adapter.
+- `OPENGUI_CODEX_TRANSPORT=auto|websocket|websocket-cached|sse` (`auto` default). Codex always streams through pi-ai; unknown values select `auto`.
 - `OPENGUI_OPENAI_RESPONSES_TRANSPORT=auto|websocket|sse` (`auto` default)
 - Unknown OpenAI Responses transport values fail toward `sse`; unknown diagnostics values remain disabled. Native fallback therefore remains operable even with malformed environment configuration.
 - `OPENGUI_OWNER_MODEL_DIAGNOSTICS=1` enables owner-process-only transport diagnostics. Stderr receives only a transport code and opaque connection hash. The optional Codex diagnostic file is bounded to 64 KiB, mode `0600`, and contains only hashed Session/model identifiers, numeric usage/timing, and diagnostic codes—never prompts, identities, headers, payloads, provider messages, or credentials.

@@ -1,70 +1,66 @@
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Model } from "@earendil-works/pi-ai";
-import { piAiCatalogConnection, type PiAiCatalogProviderId } from "./pi-ai-catalog.ts";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import {
+  piAiCatalogConnection,
+  piBundledModels,
+  piProvider,
+  type PiAiCatalogProviderId,
+} from "./pi-ai-catalog.ts";
 import type { OpenAiCompatibleConnection } from "./openai-chat.ts";
 
 const FRESH_MS = 4 * 60 * 60 * 1000;
-type Entry = { models: Model<any>[]; checkedAt: number; etag?: string };
+type Entry = { models: Model<Api>[]; checkedAt: number; etag?: string };
 
-// Only model metadata crosses this boundary. Endpoint URLs, headers and credentials
-// always come from the Host's configured backend, never the remote catalog.
-function parseModels(value: unknown, provider: PiAiCatalogProviderId): Model<any>[] {
+function validModel(item: any) {
+  return (
+    item &&
+    typeof item === "object" &&
+    typeof item.id === "string" &&
+    item.id.trim() &&
+    typeof item.name === "string" &&
+    typeof item.reasoning === "boolean" &&
+    Array.isArray(item.input) &&
+    item.input.every((v: unknown) => v === "text" || v === "image") &&
+    Number.isFinite(item.contextWindow) &&
+    item.contextWindow > 0 &&
+    Number.isFinite(item.maxTokens) &&
+    item.maxTokens > 0 &&
+    item.cost &&
+    ["input", "output", "cacheRead", "cacheWrite"].every(
+      (key) =>
+        typeof item.cost[key] === "number" &&
+        Number.isFinite(item.cost[key]) &&
+        item.cost[key] >= 0,
+    ) &&
+    (item.thinkingLevelMap === undefined ||
+      (item.thinkingLevelMap &&
+        typeof item.thinkingLevelMap === "object" &&
+        !Array.isArray(item.thinkingLevelMap) &&
+        Object.entries(item.thinkingLevelMap).every(
+          ([key, v]) =>
+            ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(key) &&
+            (v === null || typeof v === "string"),
+        )))
+  );
+}
+
+// Only model metadata crosses this boundary. Endpoint URLs and headers always come from the
+// installed pi provider, and credentials from the Host, never from the remote catalog.
+function parseModels(value: unknown, provider: PiAiCatalogProviderId): Model<Api>[] {
   const entries = Array.isArray(value)
     ? value
     : value && typeof value === "object"
       ? Object.values(value)
       : [];
-  const supported = entries.filter(
-    (item) =>
-      item &&
-      typeof item === "object" &&
-      [
-        "openai-completions",
-        "openai-responses",
-        "openai-codex-responses",
-        "anthropic-messages",
-      ].includes(item.api),
-  );
-  if (supported.length === 0) throw new Error("Invalid or unsupported pi model catalog");
-  return supported.map((item) => {
-    if (
-      !item ||
-      typeof item !== "object" ||
-      typeof item.id !== "string" ||
-      !item.id.trim() ||
-      typeof item.name !== "string" ||
-      typeof item.reasoning !== "boolean" ||
-      !Array.isArray(item.input) ||
-      !item.input.every((v: unknown) => v === "text" || v === "image") ||
-      !Number.isFinite(item.contextWindow) ||
-      item.contextWindow <= 0 ||
-      !Number.isFinite(item.maxTokens) ||
-      item.maxTokens <= 0 ||
-      (provider === "openai-codex" && item.api !== "openai-codex-responses") ||
-      !item.cost ||
-      !["input", "output", "cacheRead", "cacheWrite"].every(
-        (key) =>
-          typeof item.cost[key] === "number" &&
-          Number.isFinite(item.cost[key]) &&
-          item.cost[key] >= 0,
-      )
-    )
-      throw new Error("Invalid pi model metadata");
-    const thinkingLevelMap = item.thinkingLevelMap;
-    if (
-      thinkingLevelMap !== undefined &&
-      (!thinkingLevelMap ||
-        typeof thinkingLevelMap !== "object" ||
-        Array.isArray(thinkingLevelMap) ||
-        Object.entries(thinkingLevelMap).some(
-          ([key, v]) =>
-            !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(key) ||
-            (v !== null && typeof v !== "string"),
-        ))
-    )
-      throw new Error("Invalid thinking levels");
+  const bundled = piBundledModels(provider);
+  const apis = new Set(bundled.map((model) => model.api));
+  const models = entries.flatMap((item: any): Model<Api>[] => {
+    if (!validModel(item) || !apis.has(item.api)) return [];
+    const installed =
+      bundled.find((model) => model.id === item.id && model.api === item.api) ??
+      bundled.find((model) => model.api === item.api)!;
     // Compatibility flags are data, but routing/header overrides are not accepted.
     const compat = Object.fromEntries(
       Object.entries(item.compat ?? {}).filter(
@@ -77,21 +73,27 @@ function parseModels(value: unknown, provider: PiAiCatalogProviderId): Model<any
           (typeof v === "boolean" || typeof v === "string"),
       ),
     );
-    return {
-      id: item.id,
-      name: item.name,
-      provider,
-      api: item.api,
-      baseUrl: "",
-      reasoning: item.reasoning,
-      input: item.input,
-      contextWindow: item.contextWindow,
-      maxTokens: item.maxTokens,
-      cost: item.cost,
-      thinkingLevelMap,
-      compat,
-    };
+    const sameModel = installed.id === item.id;
+    return [
+      {
+        id: item.id,
+        name: item.name,
+        provider,
+        api: item.api,
+        baseUrl: installed.baseUrl,
+        ...(sameModel && installed.headers ? { headers: { ...installed.headers } } : {}),
+        reasoning: item.reasoning,
+        input: item.input,
+        contextWindow: item.contextWindow,
+        maxTokens: item.maxTokens,
+        cost: item.cost,
+        thinkingLevelMap: item.thinkingLevelMap,
+        compat: { ...(sameModel ? installed.compat : undefined), ...compat },
+      } as Model<Api>,
+    ];
   });
+  if (models.length === 0) throw new Error("Invalid or unsupported pi model catalog");
+  return models;
 }
 
 /** Host-local catalog: online pi.dev models with a persisted offline cache, and no auth. */
@@ -105,21 +107,28 @@ export class ModelCatalog {
     this.#fetch = fetchImpl;
   }
 
+  #models(provider: PiAiCatalogProviderId, freeOnly: boolean) {
+    return (this.#entries.get(provider)?.models ?? []).filter(
+      (model) => !freeOnly || (model.cost.input === 0 && model.cost.output === 0),
+    );
+  }
+
   connection(
     provider: PiAiCatalogProviderId,
     preset: Pick<OpenAiCompatibleConnection, "id" | "label" | "baseUrl" | "defaultModelId">,
     freeOnly = false,
   ) {
-    return piAiCatalogConnection(
-      provider,
-      preset,
-      (this.#entries.get(provider)?.models ?? []).filter(
-        (model) => !freeOnly || (model.cost.input === 0 && model.cost.output === 0),
-      ),
-    );
+    return piAiCatalogConnection(provider, preset, this.#models(provider, freeOnly));
+  }
+
+  /** A listed model, ready to stream through its pi provider. */
+  model(provider: PiAiCatalogProviderId, modelId: string): Model<Api> | undefined {
+    const model = this.#models(provider, false).find((item) => item.id === modelId);
+    return model ? structuredClone(model) : undefined;
   }
 
   refresh(provider: PiAiCatalogProviderId, force = false): Promise<void> {
+    if (!piProvider(provider)) return Promise.resolve();
     const pending = this.#pending.get(provider);
     if (pending) return pending;
     const task = this.#refresh(provider, force).finally(() => this.#pending.delete(provider));

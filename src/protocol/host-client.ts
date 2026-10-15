@@ -1,6 +1,5 @@
 import type {
   HostEvent,
-  CodexAuthStatus,
   HostModelConnection,
   HostModelOffering,
   HostMcpConnection,
@@ -10,8 +9,10 @@ import type {
   HostInstalledSkill,
   HostSkillInstallation,
   HostSkillSourceDescriptor,
+  HostProviderInfo,
   OpenGuiHostClient,
   ProjectInstructions,
+  ProviderLoginStatus,
 } from "@/protocol/host-types";
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -80,41 +81,30 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
   }
 
   return {
-    codexAuthStatus: async () => (await request("/api/host/auth/codex")) as CodexAuthStatus,
-    beginCodexAuth: async () =>
-      (await request("/api/host/auth/codex", { method: "POST", body: "{}" })) as CodexAuthStatus,
-    pollCodexAuth: async () =>
-      (await request("/api/host/auth/codex/poll", {
+    listProviders: async () => (await request("/api/host/providers")) as HostProviderInfo[],
+    beginProviderLogin: async (providerId, method) =>
+      (await request(`/api/host/providers/${encodeURIComponent(providerId)}/login`, {
         method: "POST",
-        body: "{}",
-      })) as CodexAuthStatus,
-    cancelCodexAuth: async () =>
-      (await request("/api/host/auth/codex/cancel", {
+        body: JSON.stringify({ method }),
+      })) as ProviderLoginStatus,
+    providerLoginStatus: async (providerId) =>
+      (await request(
+        `/api/host/providers/${encodeURIComponent(providerId)}/login`,
+      )) as ProviderLoginStatus | null,
+    respondProviderLogin: async (providerId, promptId, value) =>
+      (await request(`/api/host/providers/${encodeURIComponent(providerId)}/login/input`, {
         method: "POST",
-        body: "{}",
-      })) as CodexAuthStatus,
-    disconnectCodex: async () => {
-      await request("/api/host/auth/codex", { method: "DELETE" });
+        body: JSON.stringify({ promptId, value }),
+      })) as ProviderLoginStatus,
+    cancelProviderLogin: async (providerId) => {
+      await request(`/api/host/providers/${encodeURIComponent(providerId)}/login`, {
+        method: "DELETE",
+      });
     },
-    subscriptionAuthStatus: async (provider) =>
-      (await request(`/api/host/auth/${provider}`)) as CodexAuthStatus,
-    beginSubscriptionAuth: async (provider) =>
-      (await request(`/api/host/auth/${provider}`, {
-        method: "POST",
-        body: "{}",
-      })) as CodexAuthStatus,
-    pollSubscriptionAuth: async (provider) =>
-      (await request(`/api/host/auth/${provider}/poll`, {
-        method: "POST",
-        body: "{}",
-      })) as CodexAuthStatus,
-    cancelSubscriptionAuth: async (provider) =>
-      (await request(`/api/host/auth/${provider}/cancel`, {
-        method: "POST",
-        body: "{}",
-      })) as CodexAuthStatus,
-    disconnectSubscription: async (provider) => {
-      await request(`/api/host/auth/${provider}`, { method: "DELETE" });
+    disconnectProvider: async (providerId) => {
+      await request(`/api/host/providers/${encodeURIComponent(providerId)}`, {
+        method: "DELETE",
+      });
     },
     health: async () =>
       (await request("/api/host/health")) as {

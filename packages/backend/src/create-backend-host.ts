@@ -42,8 +42,6 @@ export type CreateBackendHostOptions = {
   model?: ModelTransport;
   /** Canary switch; OPENGUI_MODEL_TRANSPORT=native is the process-level equivalent. */
   usePiAiTransport?: boolean;
-  /** Codex-only fallback; OPENGUI_CODEX_TRANSPORT=native is the process-level equivalent. */
-  usePiAiCodexTransport?: boolean;
   /** Official API-key Responses delivery. Custom endpoints always use SSE. */
   openAiResponsesTransport?: "auto" | "websocket" | "sse";
 };
@@ -188,7 +186,6 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     sessionAccess,
     model: options.model,
     usePiAiTransport: options.usePiAiTransport,
-    usePiAiCodexTransport: options.usePiAiCodexTransport,
     openAiResponsesTransport: options.openAiResponsesTransport,
     resolveModelOffering: identity
       ? async (offeringId, durableActor) => {
@@ -298,7 +295,7 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
       return;
     }
     if (
-      c.req.path.startsWith("/api/host/models") &&
+      (c.req.path.startsWith("/api/host/models") || c.req.path.startsWith("/api/host/providers")) &&
       c.req.method !== "GET" &&
       actor.type === "api_key"
     ) {

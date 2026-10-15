@@ -1,6 +1,14 @@
 // Compatibility exports. Canonical shared domain shapes live outside the host
 // transport contract so renderer and preload types cannot drift from it.
-export type { SelectedModel } from "@opengui/protocol";
+export type {
+  HostProviderInfo,
+  ProviderAuthMethod,
+  ProviderLoginEvent,
+  ProviderLoginPrompt,
+  ProviderLoginStatus,
+  SelectedModel,
+} from "@opengui/protocol";
+import type { HostProviderInfo, ProviderAuthMethod, ProviderLoginStatus } from "@opengui/protocol";
 export type { ConnectionStatus } from "@/types/connection";
 export type { Workspace } from "@/types/workspace";
 
@@ -12,6 +20,9 @@ export interface HostModelConnection {
   modelIds: string[];
   defaultModelId?: string;
   modelRoutes?: Record<string, "openai-chat" | "anthropic-messages" | "responses">;
+  /** Set for pi provider connections, which are managed through provider sign-in. */
+  providerId?: string;
+  authType?: ProviderAuthMethod;
   plane?: "host" | "team" | "user";
   ownerType?: "host" | "team" | "user";
   ownerId?: string;
@@ -232,16 +243,16 @@ export interface ProjectInstructions {
 }
 
 export interface OpenGuiHostClient {
-  codexAuthStatus(): Promise<CodexAuthStatus>;
-  beginCodexAuth(): Promise<CodexAuthStatus>;
-  pollCodexAuth(): Promise<CodexAuthStatus>;
-  cancelCodexAuth(): Promise<CodexAuthStatus>;
-  disconnectCodex(): Promise<void>;
-  subscriptionAuthStatus(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
-  beginSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
-  pollSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
-  cancelSubscriptionAuth(provider: SubscriptionProvider): Promise<CodexAuthStatus>;
-  disconnectSubscription(provider: SubscriptionProvider): Promise<void>;
+  listProviders(): Promise<HostProviderInfo[]>;
+  beginProviderLogin(providerId: string, method: ProviderAuthMethod): Promise<ProviderLoginStatus>;
+  providerLoginStatus(providerId: string): Promise<ProviderLoginStatus | null>;
+  respondProviderLogin(
+    providerId: string,
+    promptId: string,
+    value: string,
+  ): Promise<ProviderLoginStatus>;
+  cancelProviderLogin(providerId: string): Promise<void>;
+  disconnectProvider(providerId: string): Promise<void>;
   health(): Promise<{ ok: true; version: string; shell: string; lowDiskSpace?: boolean }>;
   listModelConnections(): Promise<HostModelConnection[]>;
   listModelOfferings(): Promise<HostModelOffering[]>;
@@ -311,8 +322,3 @@ export interface OpenGuiHostClient {
     onReady?: () => void,
   ): () => void;
 }
-export interface CodexAuthStatus {
-  connected: boolean;
-  pending: { userCode: string; verificationUri: string; expiresAt: number } | null;
-}
-export type SubscriptionProvider = "xai";

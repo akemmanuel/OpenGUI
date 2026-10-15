@@ -355,39 +355,36 @@ describe("Host product actor attribution", () => {
   });
 });
 
-describe("personal subscription authorization", () => {
+describe("personal provider sign-in authorization", () => {
   const member: Actor = {
     type: "user",
     id: "member-1",
     displayName: "Member",
     role: "member",
   };
+  const durableMember = { type: "user", id: "member-1", displayName: "Member" };
+  const denied = async () => {
+    throw new IdentityError(
+      "MODEL_CREDENTIAL_POLICY_DENIED",
+      403,
+      "This credential type is disabled by Host policy",
+    );
+  };
 
-  function subscriptionApp(input: {
+  function providerApp(input: {
     actor?: Actor;
-    authorize?: () => Promise<void>;
+    authorize?: ReturnType<typeof vi.fn> | (() => Promise<void>);
     status?: ReturnType<typeof vi.fn>;
-    begin?: ReturnType<typeof vi.fn>;
-    disconnect?: ReturnType<typeof vi.fn>;
-    poll?: ReturnType<typeof vi.fn>;
     personalConnection?: ReturnType<typeof vi.fn>;
-    resolveActor?: ReturnType<typeof vi.fn>;
     recordConnection?: ReturnType<typeof vi.fn>;
-    subscriptionBegin?: ReturnType<typeof vi.fn>;
-    subscriptionPoll?: ReturnType<typeof vi.fn>;
   }) {
     const actor = input.actor ?? member;
-    const status = input.status ?? vi.fn(() => ({ connected: false, pending: null }));
-    const begin = input.begin ?? vi.fn(async () => ({ connected: false, pending: null }));
-    const disconnect = input.disconnect ?? vi.fn(async () => undefined);
-    const poll = input.poll ?? vi.fn(async () => ({ connected: false, pending: null }));
+    const begin = vi.fn(() => ({ providerId: "openai-codex", state: "running", events: [] }));
+    const status = input.status ?? vi.fn(() => undefined);
+    const disconnect = vi.fn(async () => "personal-opaque");
     const personalConnection = input.personalConnection ?? vi.fn(() => undefined);
-    const resolveActor = input.resolveActor ?? vi.fn(async () => ({ id: actor.id }));
     const recordConnection = input.recordConnection ?? vi.fn(async () => undefined);
-    const subscriptionBegin =
-      input.subscriptionBegin ?? vi.fn(async () => ({ connected: false, pending: null }));
-    const subscriptionPoll =
-      input.subscriptionPoll ?? vi.fn(async () => ({ connected: false, pending: null }));
+    const authorize = input.authorize ?? vi.fn(async () => undefined);
     const app = new Hono<BackendRequestEnv>();
     app.use("/api/host/*", async (c, next) => {
       c.set("actor", actor);
@@ -396,143 +393,103 @@ describe("personal subscription authorization", () => {
     registerHostProductRoutes(app, {
       getHost: async () =>
         ({
-          codexAuthStatus: status,
-          beginCodexAuth: begin,
-          pollCodexAuth: poll,
-          disconnectCodex: disconnect,
-          personalSubscriptionConnection: personalConnection,
-          beginSubscriptionAuth: subscriptionBegin,
-          pollSubscriptionAuth: subscriptionPoll,
+          beginProviderLogin: begin,
+          providerLoginStatus: status,
+          disconnectProvider: disconnect,
+          personalProviderConnection: personalConnection,
         }) as unknown as OpenGuiHost,
       resolveSafeDirectory: async (path) => path ?? "/tmp",
       identity: {
-        authorizePersonalSubscription: input.authorize ?? vi.fn(async () => undefined),
-        resolveDurableActor: resolveActor,
+        authorizePersonalCredential: authorize,
+        resolveDurableActor: vi.fn(async () => ({ id: actor.id })),
         recordModelConnection: recordConnection,
+        removeModelConnection: vi.fn(async () => undefined),
       } as unknown as IdentityService,
     });
-    return {
-      app,
-      status,
-      begin,
-      poll,
-      disconnect,
-      personalConnection,
-      recordConnection,
-      subscriptionBegin,
-      subscriptionPoll,
-    };
+    const start = (method: string) =>
+      app.request("http://localhost/api/host/providers/openai-codex/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method }),
+      });
+    return { app, start, begin, status, disconnect, authorize, recordConnection };
   }
 
-  test("an allowed member reads and starts only their own subscription sign-in", async () => {
-    const authorize = vi.fn(async () => undefined);
-    const { app, status, begin } = subscriptionApp({ authorize });
+  test("a member signs in only within their own scope, under the matching policy", async () => {
+    const { start, begin, authorize } = providerApp({});
 
-    expect((await app.request("http://localhost/api/host/auth/codex")).status).toBe(200);
-    expect(
-      (
-        await app.request("http://localhost/api/host/auth/codex", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: "{}",
-        })
-      ).status,
-    ).toBe(200);
-
-    expect(authorize).toHaveBeenCalledTimes(2);
-    expect(authorize).toHaveBeenCalledWith(member);
-    expect(status).toHaveBeenCalledWith({ type: "user", id: "member-1", displayName: "Member" });
-    expect(begin).toHaveBeenCalledWith({ type: "user", id: "member-1", displayName: "Member" });
+    expect((await start("oauth")).status).toBe(200);
+    expect((await start("api_key")).status).toBe(200);
+    expect(authorize).toHaveBeenNthCalledWith(1, member, "byos");
+    expect(authorize).toHaveBeenNthCalledWith(2, member, "byok");
+    expect(begin).toHaveBeenCalledWith("openai-codex", "oauth", durableMember);
+    expect((await start("password")).status).toBe(400);
   });
 
-  test("rolls back a newly connected personal subscription when metadata persistence fails", async () => {
-    const disconnect = vi.fn(async () => undefined);
-    const connection = { id: "personal-opaque", modelIds: ["gpt-5"] };
-    const { app } = subscriptionApp({
-      poll: vi.fn(async () => ({ connected: true, pending: null })),
-      personalConnection: vi.fn(() => connection),
+  test("administrators manage the Host's connections without personal policy checks", async () => {
+    const { start, begin, authorize } = providerApp({
+      actor: { type: "user", id: "admin-1", displayName: "Admin", role: "admin" },
+    });
+    expect((await start("oauth")).status).toBe(200);
+    expect(authorize).not.toHaveBeenCalled();
+    expect(begin).toHaveBeenCalledWith("openai-codex", "oauth", undefined);
+  });
+
+  test("records a completed personal sign-in as a user-plane connection", async () => {
+    const recordConnection = vi.fn(async () => undefined);
+    const { app } = providerApp({
+      status: vi.fn(() => ({ providerId: "openai-codex", state: "succeeded", events: [] })),
+      personalConnection: vi.fn(() => ({ id: "personal-opaque", authType: "oauth" })),
+      recordConnection,
+    });
+    const response = await app.request("http://localhost/api/host/providers/openai-codex/login");
+    expect(response.status).toBe(200);
+    expect(recordConnection).toHaveBeenCalledWith(
+      { id: "member-1" },
+      { id: "personal-opaque", plane: "user", credentialKind: "byos" },
+    );
+  });
+
+  test("rolls back a newly connected personal sign-in when metadata persistence fails", async () => {
+    const { app, disconnect } = providerApp({
+      status: vi.fn(() => ({ providerId: "openai-codex", state: "succeeded", events: [] })),
+      personalConnection: vi.fn(() => ({ id: "personal-opaque", authType: "api_key" })),
       recordConnection: vi.fn(async () => {
         throw new Error("metadata unavailable");
       }),
-      disconnect,
     });
 
-    const response = await app.request("http://localhost/api/host/auth/codex/poll", {
-      method: "POST",
-    });
+    const response = await app.request("http://localhost/api/host/providers/openai-codex/login");
 
     expect(response.status).toBe(400);
-    expect(disconnect).toHaveBeenCalledWith({
-      type: "user",
-      id: "member-1",
-      displayName: "Member",
-    });
+    expect(disconnect).toHaveBeenCalledWith("openai-codex", durableMember);
   });
 
-  test("a member denied by BYOS policy receives 403 from xAI start and poll", async () => {
-    const { app, subscriptionBegin, subscriptionPoll } = subscriptionApp({
-      authorize: async () => {
-        throw new IdentityError(
-          "MODEL_CREDENTIAL_POLICY_DENIED",
-          403,
-          "This credential type is disabled by Host policy",
-        );
-      },
-    });
+  test("a member denied by policy receives JSON 403 without touching Host auth", async () => {
+    const { start, begin } = providerApp({ authorize: denied });
 
-    expect(
-      (await app.request("http://localhost/api/host/auth/xai", { method: "POST" })).status,
-    ).toBe(403);
-    expect(
-      (await app.request("http://localhost/api/host/auth/xai/poll", { method: "POST" })).status,
-    ).toBe(403);
-    expect(subscriptionBegin).not.toHaveBeenCalled();
-    expect(subscriptionPoll).not.toHaveBeenCalled();
-  });
-
-  test("a member denied by BYOS policy receives JSON 403 from disconnect", async () => {
-    const { app, disconnect } = subscriptionApp({
-      authorize: async () => {
-        throw new IdentityError(
-          "MODEL_CREDENTIAL_POLICY_DENIED",
-          403,
-          "This credential type is disabled by Host policy",
-        );
-      },
-    });
-
-    const response = await app.request("http://localhost/api/host/auth/codex", {
-      method: "DELETE",
-    });
-
+    const response = await start("oauth");
     expect(response.status).toBe(403);
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(await response.json()).toMatchObject({ ok: false });
-    expect(disconnect).not.toHaveBeenCalled();
+    expect((await start("api_key")).status).toBe(403);
+    expect(begin).not.toHaveBeenCalled();
   });
 
-  test("a member denied by BYOS policy receives 403 without touching Host auth", async () => {
-    const { app, status, begin } = subscriptionApp({
-      authorize: async () => {
-        throw new IdentityError(
-          "MODEL_CREDENTIAL_POLICY_DENIED",
-          403,
-          "This credential type is disabled by Host policy",
-        );
-      },
+  test("a member can always remove their own credential, even when policy now denies it", async () => {
+    const { app, disconnect } = providerApp({ authorize: denied });
+    const response = await app.request("http://localhost/api/host/providers/openai-codex", {
+      method: "DELETE",
     });
+    expect(response.status).toBe(200);
+    expect(disconnect).toHaveBeenCalledWith("openai-codex", durableMember);
+  });
 
-    expect((await app.request("http://localhost/api/host/auth/codex")).status).toBe(403);
-    expect(
-      (
-        await app.request("http://localhost/api/host/auth/codex", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: "{}",
-        })
-      ).status,
-    ).toBe(403);
-    expect(status).not.toHaveBeenCalled();
+  test("API-key actors cannot manage provider credentials", async () => {
+    const { start, begin } = providerApp({
+      actor: { type: "api_key", id: "key-1", displayName: "Automation" } as unknown as Actor,
+    });
+    expect((await start("api_key")).status).toBe(403);
     expect(begin).not.toHaveBeenCalled();
   });
 });

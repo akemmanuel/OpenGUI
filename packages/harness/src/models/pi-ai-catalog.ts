@@ -1,45 +1,101 @@
-import { getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
-import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
+import {
+  createModels,
+  getSupportedThinkingLevels,
+  type Api,
+  type AuthContext,
+  type CreateModelsOptions,
+  type Model,
+  type Models,
+  type Provider,
+} from "@earendil-works/pi-ai";
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import type { OpenAiCompatibleConnection } from "./openai-chat.ts";
 
-export type PiAiCatalogProviderId = "openai-codex" | "opencode" | "opencode-go";
+export type PiAiCatalogProviderId = string;
 
-const providers = {
-  "openai-codex": openaiCodexProvider(),
-  opencode: opencodeProvider(),
-  "opencode-go": opencodeGoProvider(),
-} as const;
+/** Non-secret description of a pi provider and the sign-in methods it offers. */
+export interface PiProviderDescriptor {
+  id: string;
+  name: string;
+  apiKey?: { name: string; interactive: boolean };
+  oauth?: { name: string; loginLabel?: string; subscription: boolean };
+}
 
-function routeFor(model: Model<any>): "openai-chat" | "anthropic-messages" | "responses" | null {
-  if (model.api === "openai-completions") return "openai-chat";
-  if (model.api === "anthropic-messages") return "anthropic-messages";
-  if (model.api === "openai-responses" || model.api === "openai-codex-responses")
-    return "responses";
-  return null;
+let registry: ReadonlyMap<string, Provider> | undefined;
+
+/** Every pi provider that can serve chat models, keyed by pi provider id. */
+export function piProviders(): ReadonlyMap<string, Provider> {
+  registry ??= new Map(
+    builtinProviders()
+      .filter((provider) => provider.getModels().length > 0)
+      .map((provider) => [provider.id, provider]),
+  );
+  return registry;
+}
+
+export function piProvider(providerId: string) {
+  return piProviders().get(providerId);
+}
+
+export function piProviderDescriptors(): PiProviderDescriptor[] {
+  return [...piProviders().values()]
+    .map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      ...(provider.auth.apiKey
+        ? {
+            apiKey: {
+              name: provider.auth.apiKey.name,
+              interactive: typeof provider.auth.apiKey.login === "function",
+            },
+          }
+        : {}),
+      ...(provider.auth.oauth
+        ? {
+            oauth: {
+              name: provider.auth.oauth.name,
+              loginLabel: provider.auth.oauth.loginLabel,
+              subscription: provider.auth.oauth.isSubscription === true,
+            },
+          }
+        : {}),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** A pi `Models` collection over every provider, resolving auth through `options.credentials`. */
+export function createPiModels(options: CreateModelsOptions): Models {
+  const models = createModels(options);
+  for (const provider of piProviders().values()) models.setProvider(provider);
+  return models;
+}
+
+/** Auth context with no ambient credentials: no environment variables and no credential files. */
+export const ISOLATED_AUTH_CONTEXT: AuthContext = {
+  env: async () => undefined,
+  fileExists: async () => false,
+};
+
+/** Installed pi models for a provider. They supply trusted endpoints, never the listing. */
+export function piBundledModels(providerId: string): readonly Model<Api>[] {
+  return piProvider(providerId)?.getModels() ?? [];
 }
 
 /** Project pi metadata into the Host's connection format. */
 export function piAiCatalogConnection(
   providerId: PiAiCatalogProviderId,
   input: Pick<OpenAiCompatibleConnection, "id" | "label" | "baseUrl" | "defaultModelId">,
-  catalog: readonly Model<any>[] = providers[providerId].getModels(),
+  catalog: readonly Model<Api>[] = piBundledModels(providerId),
 ): OpenAiCompatibleConnection {
-  const models = catalog.flatMap((model) => {
-    const route = routeFor(model);
-    return route ? [{ model, route }] : [];
-  });
-  const modelIds = models.map(({ model }) => model.id);
+  const modelIds = catalog.map((model) => model.id);
   return {
     ...input,
     modelIds,
     defaultModelId: modelIds.includes(input.defaultModelId ?? "")
       ? input.defaultModelId
       : modelIds[0],
-    modelRoutes: Object.fromEntries(models.map(({ model, route }) => [model.id, route])),
     modelCapabilities: Object.fromEntries(
-      models.map(({ model }) => [
+      catalog.map((model) => [
         model.id,
         {
           displayName: model.name,
@@ -56,18 +112,4 @@ export function piAiCatalogConnection(
       ]),
     ),
   };
-}
-
-export function piAiFreeModelIds(providerId: "opencode") {
-  return providers[providerId]
-    .getModels()
-    .filter((model) => routeFor(model) && model.cost.input === 0 && model.cost.output === 0)
-    .map((model) => model.id);
-}
-
-export function piAiTextOnlyModelIds(providerId: PiAiCatalogProviderId) {
-  return providers[providerId]
-    .getModels()
-    .filter((model) => routeFor(model) && !model.input.includes("image"))
-    .map((model) => model.id);
 }

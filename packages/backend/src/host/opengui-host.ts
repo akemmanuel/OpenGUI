@@ -15,8 +15,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   createOpenGuiHarness,
-  CodexResponsesTransport,
+  createPiModels,
   discoverSkills,
+  ISOLATED_AUTH_CONTEXT,
   loadSkillsFromDir,
   OpenAiChatTransport,
   PiAiTransport,
@@ -30,11 +31,17 @@ import {
   deriveModelCacheKey,
   normalizeModelError,
   ModelCatalog,
+  piProvider,
+  piProviderDescriptors,
+  protocolForPiApi,
   withoutModelContextImages,
   type ModelProtocol,
+  type ModelStreamEvent,
   type ProviderResponseMetadata,
   type OpenAiCompatibleConnection,
   type OpenGuiHarness,
+  type PiAiRoute,
+  type PiModels,
   type PromptInput,
   type ReasoningLevel,
   type SessionEvent,
@@ -45,29 +52,23 @@ import {
   type Skill,
 } from "@opengui/harness";
 import {
-  CHATGPT_CODEX_PRESET,
-  OPENCODE_FREE_TIER,
-  OPENCODE_GO_PRESET,
-  OPENCODE_ZEN_PRESET,
-  SUPERGROK_PRESET,
-  XAI_API_PRESET,
-  type ProviderConnectionPreset,
+  PI_PROVIDER_DEFAULT_MODELS,
+  piProviderConnectionId,
+  RETIRED_PROVIDER_CONNECTION_IDS,
+  type HostProviderInfo,
+  type ProviderAuthMethod,
+  type ProviderLoginStatus,
 } from "@opengui/protocol";
+import { revokeCodexToken } from "./codex-oauth.ts";
 import {
-  beginCodexDeviceAuth,
-  pollCodexDeviceAuth,
-  refreshCodexTokens,
-  revokeCodexToken,
-  type CodexTokens,
-  type DeviceAuthorization,
-} from "./codex-oauth.ts";
-import {
-  beginDeviceOAuth,
-  pollDeviceOAuth,
-  refreshDeviceOAuth,
-  type DeviceOAuthPending,
-  type OAuthTokens,
-} from "./device-oauth.ts";
+  createHostCredentialStore,
+  migrateLegacyProviderCredentials,
+  ProviderLogins,
+  providerCredentialConnectionId,
+  validProviderCredentials,
+  type ProviderCredentialEntry,
+  type ProviderCredentials,
+} from "./provider-auth.ts";
 import {
   composeInstructions,
   normalizeScopedInstructions,
@@ -125,7 +126,11 @@ export function isLowDiskSpace(freeBytes: number, totalBytes: number) {
   );
 }
 
-export interface HostModelConnection extends OpenAiCompatibleConnection {}
+export interface HostModelConnection extends OpenAiCompatibleConnection {
+  /** Set for pi provider connections; those are managed through the provider sign-in API. */
+  providerId?: string;
+  authType?: ProviderAuthMethod;
+}
 
 export interface HostMcpConnectionStatus {
   state: "disabled" | "refreshing" | "ready" | "degraded" | "offline";
@@ -239,8 +244,6 @@ interface HostSettingsFile {
   scopedInstructions: ScopedInstructions;
 }
 
-type PersonalCredential<T> = { connectionId: string; tokens: T };
-
 type HostMailSecrets = {
   smtpPassword: string;
 };
@@ -252,15 +255,11 @@ function validMailSecrets(value: unknown): HostMailSecrets | null {
 }
 
 type HostSecretsFile = {
+  /** Custom OpenAI-compatible connection keys, by connection id. */
   apiKeys: Record<string, string>;
+  /** pi provider credentials, by connection id. */
+  providerCredentials: ProviderCredentials;
   mail: HostMailSecrets | null;
-  codexTokens: CodexTokens | null;
-  subscriptionTokens: Partial<Record<"xai", OAuthTokens>>;
-  personalCodexTokens: Record<string, PersonalCredential<CodexTokens>>;
-  personalSubscriptionTokens: Record<
-    string,
-    Partial<Record<"xai", PersonalCredential<OAuthTokens>>>
-  >;
   mcp: Record<string, { env?: Record<string, string>; bearerToken?: string }>;
 };
 
@@ -274,66 +273,18 @@ const SETTINGS_FILENAME = "opengui-host-settings.json";
 const SECRETS_FILENAME = "opengui-host-secrets.json";
 export const HOST_STATE_FILENAME = "opengui-host-state.json";
 export const CODEX_DIAGNOSTICS_FILENAME = "opengui-codex-transport.jsonl";
-function connectionFromPreset(preset: ProviderConnectionPreset): HostModelConnection {
-  return {
-    ...preset,
-    modelIds: [...preset.modelIds],
-    modelRoutes: preset.modelRoutes ? { ...preset.modelRoutes } : undefined,
-    modelCapabilities: preset.modelCapabilities
-      ? Object.fromEntries(
-          Object.entries(preset.modelCapabilities).map(([modelId, capabilities]) => [
-            modelId,
-            {
-              ...capabilities,
-              reasoningEfforts: capabilities.reasoningEfforts
-                ? [...capabilities.reasoningEfforts]
-                : undefined,
-            },
-          ]),
-        )
-      : undefined,
-  };
+/** Custom connections must not shadow a pi provider connection or a retired alias. */
+function reservedConnectionId(id: string) {
+  return (
+    id in RETIRED_PROVIDER_CONNECTION_IDS ||
+    piProviderDescriptors().some((provider) => piProviderConnectionId(provider.id) === id) ||
+    id.startsWith("personal-")
+  );
 }
-
-const CODEX_CONNECTION = CHATGPT_CODEX_PRESET;
-const XAI_CONNECTION = connectionFromPreset(SUPERGROK_PRESET);
-const XAI_API_CONNECTION = connectionFromPreset(XAI_API_PRESET);
-const OPENCODE_ZEN_CONNECTION_ID = OPENCODE_ZEN_PRESET.id;
-const XAI_OAUTH = {
-  clientId: "b1a00492-073a-47ea-816f-4c329264a828",
-  deviceEndpoint: "https://auth.x.ai/oauth2/device/code",
-  tokenEndpoint: "https://auth.x.ai/oauth2/token",
-  scope:
-    "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write",
-};
 
 function projectName(directory: string) {
   const parts = directory.split(/[\\/]/u).filter(Boolean);
   return parts.at(-1) || directory;
-}
-
-function validOAuthTokens(value: unknown): OAuthTokens | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const token = value as Record<string, unknown>;
-  return typeof token.accessToken === "string" &&
-    token.accessToken.length > 0 &&
-    typeof token.refreshToken === "string" &&
-    token.refreshToken.length > 0 &&
-    typeof token.expiresAt === "number" &&
-    Number.isFinite(token.expiresAt)
-    ? {
-        accessToken: token.accessToken,
-        refreshToken: token.refreshToken,
-        expiresAt: token.expiresAt,
-      }
-    : null;
-}
-
-function validCodexTokens(value: unknown): CodexTokens | null {
-  const token = validOAuthTokens(value);
-  if (!token || !value || typeof value !== "object") return null;
-  const accountId = (value as Record<string, unknown>).accountId;
-  return typeof accountId === "string" && accountId.length > 0 ? { ...token, accountId } : null;
 }
 
 /** Provider continuation material is durable Host state, never a public Session payload. */
@@ -374,9 +325,6 @@ export class OpenGuiHost {
   readonly #statePath: string;
   readonly #transport = new OpenAiChatTransport();
   readonly #piAiTransport: PiAiTransport;
-  readonly #codexTransport: CodexResponsesTransport;
-  readonly #xaiTransport: CodexResponsesTransport;
-  readonly #xaiApiTransport: CodexResponsesTransport;
   #harness: OpenGuiHarness | null = null;
   #settings: HostSettingsFile = {
     hostId: "",
@@ -388,18 +336,13 @@ export class OpenGuiHost {
     scopedInstructions: { personal: {}, projects: {} },
   };
   #apiKeys: Record<string, string> = {};
-  #codexTokens: CodexTokens | null = null;
-  #deviceAuth: DeviceAuthorization | null = null;
-  #subscriptionTokens: Partial<Record<"xai", OAuthTokens>> = {};
-  #personalCodexTokens: HostSecretsFile["personalCodexTokens"] = {};
-  #personalDeviceAuth: Record<string, DeviceAuthorization> = {};
-  #personalSubscriptionTokens: HostSecretsFile["personalSubscriptionTokens"] = {};
+  #providerCredentials: ProviderCredentials = {};
   #mcpSecrets: HostSecretsFile["mcp"] = {};
   #mailSecrets: HostSecretsFile["mail"] = null;
-  #subscriptionPending: Partial<Record<"xai", DeviceOAuthPending>> = {};
-  #personalSubscriptionPending: Record<string, Partial<Record<"xai", DeviceOAuthPending>>> = {};
-  readonly #codexRefreshes = new Map<string, Promise<CodexTokens>>();
-  readonly #subscriptionRefreshes = new Map<string, Promise<OAuthTokens>>();
+  /** pi `Models` per credential scope: "" for the Host, otherwise a personal actor id. */
+  readonly #piModels = new Map<string, PiModels>();
+  readonly #credentialLock = new KeyedSerialLock();
+  readonly #providerLogins = new ProviderLogins();
   #stateStore: DurableJsonTransaction<HostDurableState> | null = null;
   readonly #listeners = new Set<(event: HostEvent) => void | Promise<void>>();
   readonly #activeRuns = new Map<string, Promise<void>>();
@@ -409,7 +352,6 @@ export class OpenGuiHost {
   readonly #model: ModelTransport | undefined;
   readonly #mcpBroker: McpBroker = createMcpBroker({ connections: [] });
   readonly #usePiAiTransport: boolean;
-  readonly #usePiAiCodexTransport: boolean;
   readonly #codexPiTransport: "auto" | "websocket" | "websocket-cached" | "sse";
   readonly #ownerModelDiagnostics: boolean;
   #diagnosticWrite = Promise.resolve();
@@ -445,9 +387,8 @@ export class OpenGuiHost {
       skillSourceResolver?: SkillSourceResolver;
       authorizeSkillManagement?: (actor: DurableActor | undefined) => Promise<void>;
       authorizeMcpUse?: (actor: DurableActor | undefined) => Promise<boolean>;
-      /** Explicit canary fallback. Defaults to the OpenGUI-owned pi-ai adapter. */
+      /** Explicit canary fallback for custom connections. Defaults to the pi-ai adapter. */
       usePiAiTransport?: boolean;
-      usePiAiCodexTransport?: boolean;
       codexPiTransport?: "auto" | "websocket" | "websocket-cached" | "sse";
       openAiResponsesTransport?: "auto" | "websocket" | "sse";
       ownerModelDiagnostics?: boolean;
@@ -460,7 +401,6 @@ export class OpenGuiHost {
     this.#fetch = options.fetchImpl ?? fetch;
     this.#catalog = new ModelCatalog(join(dataDirectory, "model-catalog"), this.#fetch);
     this.#usePiAiTransport = options.usePiAiTransport ?? true;
-    this.#usePiAiCodexTransport = options.usePiAiCodexTransport ?? true;
     this.#codexPiTransport = options.codexPiTransport ?? "auto";
     this.#ownerModelDiagnostics = options.ownerModelDiagnostics ?? false;
     this.#piAiTransport = new PiAiTransport({
@@ -470,93 +410,7 @@ export class OpenGuiHost {
             process.stderr.write(`[OpenGUI model transport] ${JSON.stringify(event)}\n`);
           }
         : undefined,
-      resolve: async (request) => {
-        const selection = request.context.findLast((item) => item.type === "user_message")?.model;
-        if (!selection) throw new Error("Model request has no selected model");
-        const credentialActor = request.executionScope === "host" ? undefined : request.actor;
-        const connection = this.listModelConnections(credentialActor).find(
-          (item) => item.id === selection.connectionId,
-        );
-        if (!connection) throw new Error(`Unknown model connection: ${selection.connectionId}`);
-        if (!connection.modelIds.includes(selection.modelId)) {
-          throw new Error(`Unknown model ${selection.modelId} for ${connection.id}`);
-        }
-        const configuredRoute = connection.modelRoutes?.[selection.modelId];
-        const capabilities = connection.modelCapabilities?.[selection.modelId];
-        if (this.#isCodexConnection(connection.id, credentialActor)) {
-          const credential = await this.#codexCredential(false, credentialActor);
-          return {
-            backendId: connection.id,
-            providerId: "openai-codex",
-            label: connection.label,
-            protocol: "codex-responses" as const,
-            baseUrl: connection.baseUrl,
-            modelId: selection.modelId,
-            apiKey: credential.accessToken,
-            headers: {
-              "chatgpt-account-id": credential.accountId,
-              originator: "opengui",
-              "user-agent": "OpenGUI/1.0",
-            },
-            reasoning: capabilities?.reasoning,
-            reasoningEfforts: capabilities?.reasoningEfforts,
-            contextWindow: capabilities?.context,
-            maxTokens: capabilities?.maxTokens,
-            thinkingLevelMap: capabilities?.thinkingLevelMap,
-            compat: capabilities?.compat,
-            transport: this.#codexPiTransport,
-            websocketConnectTimeoutMs: 15_000,
-          };
-        }
-        const apiKey = this.#apiKeyFor(connection.id);
-        return {
-          backendId: connection.id,
-          label: connection.label,
-          protocol:
-            configuredRoute === "responses"
-              ? "openai-responses"
-              : configuredRoute === "anthropic-messages"
-                ? "anthropic-messages"
-                : "openai-chat",
-          baseUrl: connection.baseUrl,
-          modelId: selection.modelId,
-          apiKey,
-          reasoning: capabilities?.reasoning,
-          reasoningEfforts: capabilities?.reasoningEfforts,
-          contextWindow: capabilities?.context,
-          maxTokens: capabilities?.maxTokens,
-          thinkingLevelMap: capabilities?.thinkingLevelMap,
-          compat: capabilities?.compat,
-        };
-      },
-    });
-    this.#codexTransport = new CodexResponsesTransport({
-      fetchImpl: this.#fetch,
-      getCredential: (forceRefresh) => this.#codexCredential(forceRefresh),
-    });
-    this.#xaiTransport = new CodexResponsesTransport({
-      fetchImpl: this.#fetch,
-      endpoint: "https://cli-chat-proxy.grok.com/v1/responses",
-      headers: {
-        "x-xai-token-auth": "xai-grok-cli",
-        "x-grok-client-identifier": "opengui",
-      },
-      requestLabel: "SuperGrok experimental subscription proxy",
-      unauthorizedMessage:
-        "SuperGrok proxy authorization expired. Reconnect the experimental third-party OAuth authorization in Providers.",
-      getCredential: (forceRefresh) => this.#subscriptionCredential("xai", forceRefresh),
-    });
-    this.#xaiApiTransport = new CodexResponsesTransport({
-      fetchImpl: this.#fetch,
-      endpoint: "https://api.x.ai/v1/responses",
-      requestLabel: "xAI API",
-      unauthorizedMessage: "The xAI API key was rejected. Save a valid API key in Providers.",
-      getCredential: async () => {
-        const accessToken = this.#apiKeys[XAI_API_PRESET.id];
-        if (!accessToken)
-          throw new Error("Add an xAI API key in Providers before using Grok Build");
-        return { accessToken, accountId: "" };
-      },
+      resolve: (request) => this.#resolveModelRoute(request),
     });
     this.#model = options.model;
     this.#resolveExecutionPolicy = options.resolveExecutionPolicy;
@@ -687,6 +541,7 @@ export class OpenGuiHost {
       try {
         await harness.close();
         await this.#mcpBroker.close();
+        this.#providerLogins.clear();
         this.#piAiTransport.close();
       } finally {
         // Always release the durable state lock, or the next start finds it held.
@@ -724,9 +579,7 @@ export class OpenGuiHost {
     if (!routedSelection) throw new Error("Model offerings are not available");
     const credentialActor =
       (resolved?.executionScope ?? executionScope) === "host" ? undefined : actor;
-    const connection = this.listModelConnections(credentialActor).find(
-      (item) => item.id === routedSelection.connectionId,
-    );
+    const connection = this.#findConnection(routedSelection.connectionId, credentialActor);
     if (!connection) throw new Error(`Unknown model connection: ${routedSelection.connectionId}`);
     const configured = connection.modelCapabilities?.[routedSelection.modelId];
     // Custom models without explicit metadata remain configurable.
@@ -778,9 +631,7 @@ export class OpenGuiHost {
       );
     }
     const credentialActor = effectiveRequest.executionScope === "host" ? undefined : request.actor;
-    const connection = this.listModelConnections(credentialActor).find(
-      (item) => item.id === connectionId,
-    );
+    const connection = this.#findConnection(connectionId, credentialActor);
     const input = connection?.modelCapabilities?.[modelId]?.input;
     if (input && !input.includes("image")) {
       effectiveRequest = {
@@ -788,41 +639,23 @@ export class OpenGuiHost {
         context: withoutModelContextImages(effectiveRequest.context),
       };
     }
-    const isCodex = this.#isCodexConnection(connectionId, credentialActor);
-    const isXaiSubscription = this.#isXaiSubscriptionConnection(connectionId, credentialActor);
-    const protocol: ModelProtocol =
-      isCodex || isXaiSubscription || connectionId === XAI_API_CONNECTION.id
-        ? "codex-responses"
-        : connection?.modelRoutes?.[modelId] === "anthropic-messages"
-          ? "anthropic-messages"
-          : connection?.modelRoutes?.[modelId] === "responses"
-            ? "openai-responses"
-            : "openai-chat";
+    const piModel = connection?.providerId
+      ? this.#catalog.model(connection.providerId, modelId)
+      : undefined;
+    const protocol: ModelProtocol = piModel
+      ? protocolForPiApi(piModel.api)
+      : connection?.modelRoutes?.[modelId] === "anthropic-messages"
+        ? "anthropic-messages"
+        : connection?.modelRoutes?.[modelId] === "responses"
+          ? "openai-responses"
+          : "openai-chat";
     try {
       if (this.#model) {
         yield* this.#model.stream(effectiveRequest, deliverySignal);
         return;
       }
-      if (isCodex) {
-        if (this.#usePiAiCodexTransport) {
-          yield* this.#streamCodexPi(effectiveRequest, deliverySignal);
-        } else if (credentialActor) {
-          yield* this.#codexTransportFor(credentialActor).stream(effectiveRequest, deliverySignal);
-        } else {
-          yield* this.#codexTransport.stream(effectiveRequest, deliverySignal);
-        }
-        return;
-      }
-      if (isXaiSubscription) {
-        if (credentialActor) {
-          yield* this.#xaiTransportFor(credentialActor).stream(effectiveRequest, deliverySignal);
-        } else {
-          yield* this.#xaiTransport.stream(effectiveRequest, deliverySignal);
-        }
-        return;
-      }
-      if (connectionId === XAI_API_CONNECTION.id) {
-        yield* this.#xaiApiTransport.stream(effectiveRequest, deliverySignal);
+      if (connection?.providerId) {
+        yield* this.#streamProvider(effectiveRequest, deliverySignal, connection);
         return;
       }
       if (this.#usePiAiTransport) {
@@ -867,29 +700,116 @@ export class OpenGuiHost {
     }
   }
 
-  #codexTransportFor(actor: DurableActor) {
-    return new CodexResponsesTransport({
-      fetchImpl: this.#fetch,
-      getCredential: (forceRefresh) => this.#codexCredential(forceRefresh, actor),
-    });
+  /** The connection a selection names, following retired first-party connection ids. */
+  #findConnection(connectionId: string, actor?: DurableActor) {
+    const connections = this.listModelConnections(actor);
+    const direct = connections.find((item) => item.id === connectionId);
+    if (direct) return direct;
+    const providerId = RETIRED_PROVIDER_CONNECTION_IDS[connectionId];
+    return providerId ? connections.find((item) => item.providerId === providerId) : undefined;
   }
 
-  #xaiTransportFor(actor: DurableActor) {
-    return new CodexResponsesTransport({
-      fetchImpl: this.#fetch,
-      endpoint: "https://cli-chat-proxy.grok.com/v1/responses",
-      headers: {
-        "x-xai-token-auth": "xai-grok-cli",
-        "x-grok-client-identifier": "opengui",
-      },
-      requestLabel: "SuperGrok experimental subscription proxy",
-      unauthorizedMessage:
-        "SuperGrok proxy authorization expired. Reconnect the experimental third-party OAuth authorization in Providers.",
-      getCredential: (forceRefresh) => this.#subscriptionCredential("xai", forceRefresh, actor),
-    });
+  #piModelsFor(ownerId?: string) {
+    const scope = ownerId ?? "";
+    let models = this.#piModels.get(scope);
+    if (!models) {
+      models = createPiModels({
+        credentials: createHostCredentialStore({
+          ownerId,
+          current: () => this.#providerCredentials,
+          update: (change) =>
+            this.#updateState((state) => ({
+              ...state,
+              secrets: {
+                ...state.secrets,
+                providerCredentials: change(state.secrets.providerCredentials),
+              },
+            })).then(() => undefined),
+          lock: this.#credentialLock,
+        }),
+        // Personal credentials never fall back to the Host's environment or credential files.
+        authContext: ownerId ? ISOLATED_AUTH_CONTEXT : undefined,
+      });
+      this.#piModels.set(scope, models);
+    }
+    return models;
   }
 
-  async *#streamCodexPi(request: ModelRequest, signal: AbortSignal) {
+  async #resolveModelRoute(request: ModelRequest): Promise<PiAiRoute> {
+    const selection = request.context.findLast((item) => item.type === "user_message")?.model;
+    if (!selection) throw new Error("Model request has no selected model");
+    const credentialActor = request.executionScope === "host" ? undefined : request.actor;
+    const connection = this.#findConnection(selection.connectionId, credentialActor);
+    if (!connection) throw new Error(`Unknown model connection: ${selection.connectionId}`);
+    if (!connection.modelIds.includes(selection.modelId)) {
+      throw new Error(`Unknown model ${selection.modelId} for ${connection.id}`);
+    }
+    const capabilities = connection.modelCapabilities?.[selection.modelId];
+    if (connection.providerId) {
+      const model = this.#catalog.model(connection.providerId, selection.modelId);
+      if (!model) throw new Error(`Unknown model ${selection.modelId} for ${connection.id}`);
+      const entry = this.#providerCredentials[connection.id];
+      const codex = connection.providerId === "openai-codex";
+      return {
+        backendId: connection.id,
+        providerId: connection.providerId,
+        label: connection.label,
+        protocol: protocolForPiApi(model.api),
+        baseUrl: model.baseUrl,
+        modelId: model.id,
+        reasoning: model.reasoning,
+        reasoningEfforts: capabilities?.reasoningEfforts,
+        pi: { models: this.#piModelsFor(entry?.ownerId), model },
+        // Keyless OpenCode Zen requests carry no credential at all.
+        ...(this.#keylessOpenCode(entry)
+          ? { apiKey: "unused", headers: { authorization: null } }
+          : {}),
+        ...(codex
+          ? {
+              headers: { originator: "opengui", "user-agent": "OpenGUI/1.0" },
+              transport: this.#codexPiTransport,
+              websocketConnectTimeoutMs: 15_000,
+            }
+          : {}),
+      };
+    }
+    const configuredRoute = connection.modelRoutes?.[selection.modelId];
+    return {
+      backendId: connection.id,
+      label: connection.label,
+      protocol:
+        configuredRoute === "responses"
+          ? "openai-responses"
+          : configuredRoute === "anthropic-messages"
+            ? "anthropic-messages"
+            : "openai-chat",
+      baseUrl: connection.baseUrl,
+      modelId: selection.modelId,
+      apiKey: this.#apiKeys[connection.id],
+      reasoning: capabilities?.reasoning,
+      reasoningEfforts: capabilities?.reasoningEfforts,
+      contextWindow: capabilities?.context,
+      maxTokens: capabilities?.maxTokens,
+      thinkingLevelMap: capabilities?.thinkingLevelMap,
+      compat: capabilities?.compat,
+    };
+  }
+
+  #keylessOpenCode(entry?: ProviderCredentialEntry) {
+    return (
+      entry?.providerId === "opencode" &&
+      entry.credential.type === "api_key" &&
+      !entry.credential.key
+    );
+  }
+
+  /** A pi provider rejected an OAuth token before any output: refresh it once and replay. */
+  async *#streamProvider(
+    request: ModelRequest,
+    signal: AbortSignal,
+    connection: HostModelConnection,
+  ): AsyncGenerator<ModelStreamEvent> {
+    const codex = connection.providerId === "openai-codex";
     let attempts = 0;
     while (attempts < 2) {
       attempts += 1;
@@ -905,10 +825,10 @@ export class OpenGuiHost {
                 timing: { ...event.response.timing, attempts },
               },
             };
-            await this.#recordCodexDiagnostic(request, completed.response);
+            if (codex) await this.#recordCodexDiagnostic(request, completed.response);
             yield completed;
           } else {
-            if (event.type === "completed" && event.response) {
+            if (codex && event.type === "completed" && event.response) {
               await this.#recordCodexDiagnostic(request, event.response);
             }
             yield event;
@@ -916,25 +836,41 @@ export class OpenGuiHost {
         }
         return;
       } catch (error) {
+        const entry = this.#providerCredentials[connection.id];
         if (
           attempts !== 1 ||
           emitted ||
+          entry?.credential.type !== "oauth" ||
           !(error instanceof ModelTransportError) ||
           error.normalized.code !== "authentication"
         ) {
-          if (error instanceof ModelTransportError) {
+          if (codex && error instanceof ModelTransportError) {
             await this.#recordCodexDiagnostic(request, error.response);
           }
           throw error;
         }
-        // A provider 401 occurs before response output. Refresh exactly once;
-        // never replay after any model delta or tool argument has escaped.
-        await this.#codexCredential(
-          true,
-          request.executionScope === "host" ? undefined : request.actor,
-        );
+        // Never replay after any model delta or tool argument has escaped. Expiring the
+        // stored token makes pi refresh it under its credential lock on the retry.
+        await this.#expireProviderCredential(connection.id);
       }
     }
+  }
+
+  async #expireProviderCredential(connectionId: string) {
+    await this.#updateState((state) => {
+      const entry = state.secrets.providerCredentials[connectionId];
+      if (entry?.credential.type !== "oauth") return state;
+      return {
+        ...state,
+        secrets: {
+          ...state.secrets,
+          providerCredentials: {
+            ...state.secrets.providerCredentials,
+            [connectionId]: { ...entry, credential: { ...entry.credential, expires: 0 } },
+          },
+        },
+      };
+    });
   }
 
   async #recordCodexDiagnostic(request: ModelRequest, response: ProviderResponseMetadata) {
@@ -1054,7 +990,7 @@ export class OpenGuiHost {
     }
   }
 
-  async #loadLegacySecrets(): Promise<HostSecretsFile> {
+  async #loadLegacySecrets(): Promise<HostSecretsFile & { legacy?: Record<string, unknown> }> {
     try {
       const raw = await readFile(this.#secretsPath, "utf8");
       const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -1064,39 +1000,39 @@ export class OpenGuiHost {
             entry[0] !== "codex" && entry[0] !== "subscriptions" && typeof entry[1] === "string",
         ),
       );
-      const codexTokens = validCodexTokens(parsed.codex);
       const subscriptions =
         parsed.subscriptions && typeof parsed.subscriptions === "object"
           ? (parsed.subscriptions as Record<string, unknown>)
           : {};
-      const xai = validOAuthTokens(subscriptions.xai);
       return {
         apiKeys,
-        codexTokens,
-        subscriptionTokens: xai ? { xai } : {},
-        personalCodexTokens: {},
-        personalSubscriptionTokens: {},
+        providerCredentials: {},
         mcp: {},
         mail: null,
+        legacy: { codexTokens: parsed.codex, subscriptionTokens: subscriptions },
       };
     } catch {
-      return {
-        apiKeys: {},
-        codexTokens: null,
-        subscriptionTokens: {},
-        personalCodexTokens: {},
-        personalSubscriptionTokens: {},
-        mcp: {},
-        mail: null,
-      };
+      return { apiKeys: {}, providerCredentials: {}, mcp: {}, mail: null };
     }
   }
 
   async #loadLegacyState(): Promise<HostDurableState> {
+    const settings = await this.#loadLegacySettings();
+    const { legacy, ...secrets } = await this.#loadLegacySecrets();
+    const migrated = migrateLegacyProviderCredentials({
+      ...legacy,
+      providerCredentials: secrets.providerCredentials,
+      apiKeys: secrets.apiKeys,
+      modelConnections: settings.modelConnections,
+    });
     return {
       version: 1,
-      settings: await this.#loadLegacySettings(),
-      secrets: await this.#loadLegacySecrets(),
+      settings: { ...settings, modelConnections: migrated.modelConnections },
+      secrets: {
+        ...secrets,
+        apiKeys: migrated.apiKeys,
+        providerCredentials: migrated.providerCredentials,
+      },
     };
   }
 
@@ -1105,18 +1041,37 @@ export class OpenGuiHost {
       throw new Error("Invalid state");
     const state = value as Partial<HostDurableState>;
     if (state.version !== 1 || !state.settings || !state.secrets) throw new Error("Invalid state");
-    const subscriptions = state.secrets.subscriptionTokens ?? {};
+    // Pre-pi Hosts stored first-party OAuth tokens beside the API keys.
+    const legacySecrets = state.secrets as Record<string, unknown>;
+    const migrated = migrateLegacyProviderCredentials({
+      providerCredentials: validProviderCredentials(state.secrets.providerCredentials),
+      apiKeys:
+        state.secrets.apiKeys && typeof state.secrets.apiKeys === "object"
+          ? Object.fromEntries(
+              Object.entries(state.secrets.apiKeys).filter(
+                (entry): entry is [string, string] => typeof entry[1] === "string",
+              ),
+            )
+          : {},
+      modelConnections: Array.isArray(state.settings.modelConnections)
+        ? state.settings.modelConnections
+        : [],
+      codexTokens: legacySecrets.codexTokens,
+      subscriptionTokens: legacySecrets.subscriptionTokens,
+      personalCodexTokens: legacySecrets.personalCodexTokens,
+      personalSubscriptionTokens: legacySecrets.personalSubscriptionTokens,
+    });
+    const defaultConnectionId =
+      typeof state.settings.defaultConnectionId === "string"
+        ? (RETIRED_PROVIDER_CONNECTION_IDS[state.settings.defaultConnectionId] ??
+          state.settings.defaultConnectionId)
+        : null;
     return {
       version: 1,
       settings: {
         hostId: typeof state.settings.hostId === "string" ? state.settings.hostId : "",
-        modelConnections: Array.isArray(state.settings.modelConnections)
-          ? state.settings.modelConnections
-          : [],
-        defaultConnectionId:
-          typeof state.settings.defaultConnectionId === "string"
-            ? state.settings.defaultConnectionId
-            : null,
+        modelConnections: migrated.modelConnections,
+        defaultConnectionId,
         projects: Array.isArray(state.settings.projects)
           ? state.settings.projects.filter((item): item is string => typeof item === "string")
           : [],
@@ -1127,49 +1082,8 @@ export class OpenGuiHost {
         scopedInstructions: normalizeScopedInstructions(state.settings.scopedInstructions),
       },
       secrets: {
-        apiKeys:
-          state.secrets.apiKeys && typeof state.secrets.apiKeys === "object"
-            ? Object.fromEntries(
-                Object.entries(state.secrets.apiKeys).filter(
-                  (entry): entry is [string, string] => typeof entry[1] === "string",
-                ),
-              )
-            : {},
-        codexTokens: validCodexTokens(state.secrets.codexTokens),
-        subscriptionTokens: validOAuthTokens(subscriptions.xai)
-          ? { xai: validOAuthTokens(subscriptions.xai)! }
-          : {},
-        personalCodexTokens:
-          state.secrets.personalCodexTokens && typeof state.secrets.personalCodexTokens === "object"
-            ? Object.fromEntries(
-                Object.entries(state.secrets.personalCodexTokens).flatMap(([actorId, value]) => {
-                  if (!value || typeof value !== "object") return [];
-                  const credential = value as Record<string, unknown>;
-                  const valid = validCodexTokens(credential.tokens);
-                  return typeof credential.connectionId === "string" && valid
-                    ? [[actorId, { connectionId: credential.connectionId, tokens: valid }]]
-                    : [];
-                }),
-              )
-            : {},
-        personalSubscriptionTokens:
-          state.secrets.personalSubscriptionTokens &&
-          typeof state.secrets.personalSubscriptionTokens === "object"
-            ? Object.fromEntries(
-                Object.entries(state.secrets.personalSubscriptionTokens).flatMap(
-                  ([actorId, providers]) => {
-                    if (!providers || typeof providers !== "object") return [];
-                    const xaiValue = (providers as Record<string, unknown>).xai;
-                    if (!xaiValue || typeof xaiValue !== "object") return [];
-                    const credential = xaiValue as Record<string, unknown>;
-                    const tokens = validOAuthTokens(credential.tokens);
-                    return typeof credential.connectionId === "string" && tokens
-                      ? [[actorId, { xai: { connectionId: credential.connectionId, tokens } }]]
-                      : [];
-                  },
-                ),
-              )
-            : {},
+        apiKeys: migrated.apiKeys,
+        providerCredentials: migrated.providerCredentials,
         mcp:
           state.secrets.mcp && typeof state.secrets.mcp === "object"
             ? structuredClone(state.secrets.mcp)
@@ -1182,10 +1096,7 @@ export class OpenGuiHost {
   #applyState(state: HostDurableState) {
     this.#settings = structuredClone(state.settings);
     this.#apiKeys = { ...state.secrets.apiKeys };
-    this.#codexTokens = state.secrets.codexTokens ? { ...state.secrets.codexTokens } : null;
-    this.#subscriptionTokens = structuredClone(state.secrets.subscriptionTokens);
-    this.#personalCodexTokens = structuredClone(state.secrets.personalCodexTokens);
-    this.#personalSubscriptionTokens = structuredClone(state.secrets.personalSubscriptionTokens);
+    this.#providerCredentials = structuredClone(state.secrets.providerCredentials);
     this.#mcpSecrets = structuredClone(state.secrets.mcp);
     this.#mailSecrets = validMailSecrets(state.secrets.mail);
     this.#refreshTransport();
@@ -1208,33 +1119,11 @@ export class OpenGuiHost {
     await this.#updateState((state) => ({ ...state, settings }));
   }
 
-  async #saveSecrets() {
-    const secrets: HostSecretsFile = {
-      apiKeys: { ...this.#apiKeys },
-      codexTokens: this.#codexTokens ? { ...this.#codexTokens } : null,
-      subscriptionTokens: structuredClone(this.#subscriptionTokens),
-      personalCodexTokens: structuredClone(this.#personalCodexTokens),
-      personalSubscriptionTokens: structuredClone(this.#personalSubscriptionTokens),
-      mcp: structuredClone(this.#mcpSecrets),
-      mail: this.#mailSecrets ? { ...this.#mailSecrets } : null,
-    };
-    await this.#updateState((state) => ({ ...state, secrets }));
-  }
-
-  /** Keyless Zen connections authenticate with the free tier's public key. */
-  #apiKeyFor(connectionId: string) {
-    return (
-      this.#apiKeys[connectionId] ??
-      (connectionId === OPENCODE_ZEN_CONNECTION_ID ? OPENCODE_FREE_TIER.apiKey : undefined)
-    );
-  }
-
   #refreshTransport() {
     this.#transport.setConnections(
-      this.listModelConnections().map((connection) => ({
-        ...connection,
-        apiKey: this.#apiKeyFor(connection.id),
-      })),
+      this.listModelConnections()
+        .filter((connection) => !connection.providerId)
+        .map((connection) => ({ ...connection, apiKey: this.#apiKeys[connection.id] })),
       this.#settings.defaultConnectionId,
     );
   }
@@ -1279,29 +1168,11 @@ export class OpenGuiHost {
   }
 
   async refreshModelCatalogs(force = false) {
-    await Promise.all([
-      ...(this.#codexTokens || Object.keys(this.#personalCodexTokens).length > 0
-        ? [this.#catalog.refresh("openai-codex", force)]
-        : []),
-      ...this.#settings.modelConnections.flatMap((connection) =>
-        connection.id === OPENCODE_GO_PRESET.id
-          ? [this.#catalog.refresh("opencode-go", force)]
-          : connection.id === OPENCODE_ZEN_PRESET.id
-            ? [this.#catalog.refresh("opencode", force)]
-            : [],
-      ),
-    ]);
+    const providers = new Set(
+      Object.values(this.#providerCredentials).map((entry) => entry.providerId),
+    );
+    await Promise.all([...providers].map((providerId) => this.#catalog.refresh(providerId, force)));
     this.#refreshTransport();
-  }
-
-  async #openCodeGoConnection(_apiKey?: string): Promise<HostModelConnection> {
-    await this.#catalog.refresh("opencode-go");
-    return this.#catalog.connection("opencode-go", OPENCODE_GO_PRESET);
-  }
-
-  async #openCodeZenConnection(apiKey?: string): Promise<HostModelConnection> {
-    await this.#catalog.refresh("opencode");
-    return this.#catalog.connection("opencode", OPENCODE_ZEN_PRESET, !apiKey);
   }
 
   health(): HostHealth {
@@ -1636,46 +1507,41 @@ export class OpenGuiHost {
       }));
   }
 
-  listModelConnections(actor?: DurableActor) {
+  listModelConnections(actor?: DurableActor): HostModelConnection[] {
     const actorId = this.#personalActorId(actor);
-    const personalCodex = actorId ? this.#personalCodexTokens[actorId] : undefined;
-    const personalXai = actorId ? this.#personalSubscriptionTokens[actorId]?.xai : undefined;
+    const entries = Object.entries(this.#providerCredentials);
+    const personal = actorId ? entries.filter(([, entry]) => entry.ownerId === actorId) : [];
+    // A personal credential replaces the Host's connection to the same provider for its owner.
+    const personalProviders = new Set(personal.map(([, entry]) => entry.providerId));
+    const shared = entries.filter(
+      ([, entry]) => !entry.ownerId && !personalProviders.has(entry.providerId),
+    );
+    const providerConnections = [...shared, ...personal].flatMap(([connectionId, entry]) => {
+      const provider = piProvider(entry.providerId);
+      if (!provider) return [];
+      return [
+        {
+          ...this.#catalog.connection(
+            entry.providerId,
+            {
+              id: connectionId,
+              label: provider.name,
+              baseUrl: provider.baseUrl ?? "",
+              defaultModelId: PI_PROVIDER_DEFAULT_MODELS[entry.providerId],
+            },
+            this.#keylessOpenCode(entry),
+          ),
+          providerId: entry.providerId,
+          authType: entry.credential.type,
+        },
+      ];
+    });
+    const providerIds = new Set(providerConnections.map((connection) => connection.id));
     return [
-      ...(personalCodex
-        ? [
-            this.#catalog.connection("openai-codex", {
-              ...CHATGPT_CODEX_PRESET,
-              id: personalCodex.connectionId,
-            }),
-          ]
-        : this.#codexTokens
-          ? [this.#catalog.connection("openai-codex", CHATGPT_CODEX_PRESET)]
-          : []),
-      ...(personalXai
-        ? [{ ...XAI_CONNECTION, id: personalXai.connectionId }]
-        : this.#subscriptionTokens.xai
-          ? [XAI_CONNECTION]
-          : []),
+      ...providerConnections,
       ...this.#settings.modelConnections
-        .filter(
-          (connection) =>
-            connection.id !== XAI_API_PRESET.id || Boolean(this.#apiKeys[XAI_API_PRESET.id]),
-        )
-        .map(({ apiKey: _apiKey, ...connection }) => {
-          if (connection.id === OPENCODE_GO_PRESET.id)
-            return this.#catalog.connection("opencode-go", {
-              ...OPENCODE_GO_PRESET,
-              defaultModelId: connection.defaultModelId,
-            });
-          if (connection.id === OPENCODE_ZEN_PRESET.id) {
-            const keyless = !this.#apiKeys[connection.id];
-            return {
-              ...this.#catalog.connection("opencode", connection, keyless),
-              ...(keyless ? { baseUrl: OPENCODE_FREE_TIER.baseUrl } : {}),
-            };
-          }
-          return connection;
-        }),
+        .filter((connection) => !providerIds.has(connection.id))
+        .map(({ apiKey: _apiKey, ...connection }) => connection),
     ];
   }
 
@@ -1683,283 +1549,143 @@ export class OpenGuiHost {
     return actor?.type === "user" ? actor.id : null;
   }
 
-  #isCodexConnection(connectionId: string, actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    return actorId
-      ? this.#personalCodexTokens[actorId]?.connectionId === connectionId
-      : connectionId === CODEX_CONNECTION.id;
-  }
-
-  #isXaiSubscriptionConnection(connectionId: string, actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    return actorId
-      ? this.#personalSubscriptionTokens[actorId]?.xai?.connectionId === connectionId
-      : connectionId === XAI_CONNECTION.id;
-  }
-
-  personalSubscriptionConnection(provider: "codex" | "xai", actor?: DurableActor) {
+  /** The actor's personal connection to a pi provider, if they have one. */
+  personalProviderConnection(providerId: string, actor?: DurableActor) {
     const actorId = this.#personalActorId(actor);
     if (!actorId) return undefined;
-    const connectionId =
-      provider === "codex"
-        ? this.#personalCodexTokens[actorId]?.connectionId
-        : this.#personalSubscriptionTokens[actorId]?.xai?.connectionId;
+    const connectionId = providerCredentialConnectionId(
+      this.#providerCredentials,
+      providerId,
+      actorId,
+    );
     return connectionId
       ? this.listModelConnections(actor).find((connection) => connection.id === connectionId)
       : undefined;
   }
 
-  codexAuthStatus(actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    const pending = actorId ? this.#personalDeviceAuth[actorId] : this.#deviceAuth;
-    return {
-      connected: Boolean(actorId ? this.#personalCodexTokens[actorId] : this.#codexTokens),
-      pending: pending
-        ? {
-            userCode: pending.userCode,
-            verificationUri: pending.verificationUri,
-            expiresAt: pending.expiresAt,
-          }
-        : null,
-    };
-  }
-  async beginCodexAuth(actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    const pending = await beginCodexDeviceAuth();
-    if (actorId) this.#personalDeviceAuth[actorId] = pending;
-    else this.#deviceAuth = pending;
-    return this.codexAuthStatus(actor);
-  }
-  async pollCodexAuth(actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    const pending = actorId ? this.#personalDeviceAuth[actorId] : this.#deviceAuth;
-    if (!pending) throw new Error("No ChatGPT sign-in is pending");
-    if (Date.now() >= pending.expiresAt) {
-      if (actorId) delete this.#personalDeviceAuth[actorId];
-      else this.#deviceAuth = null;
-      throw new Error("The device code expired. Start sign-in again.");
-    }
-    const result = await pollCodexDeviceAuth(pending);
-    const current = actorId ? this.#personalDeviceAuth[actorId] : this.#deviceAuth;
-    if (result && current === pending) {
-      if (actorId) {
-        this.#personalCodexTokens[actorId] = {
-          connectionId: `personal-${randomUUID()}`,
-          tokens: result,
-        };
-        delete this.#personalDeviceAuth[actorId];
-      } else {
-        this.#codexTokens = result;
-        this.#deviceAuth = null;
-      }
-      await this.#saveSecrets();
-      await this.refreshModelCatalogs();
-    }
-    return this.codexAuthStatus(actor);
-  }
-  async cancelCodexAuth(actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    if (actorId) delete this.#personalDeviceAuth[actorId];
-    else this.#deviceAuth = null;
-    return this.codexAuthStatus(actor);
-  }
-  async disconnectCodex(actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    const tokens = actorId ? this.#personalCodexTokens[actorId]?.tokens : this.#codexTokens;
-    if (actorId) {
-      delete this.#personalCodexTokens[actorId];
-      delete this.#personalDeviceAuth[actorId];
-    } else {
-      this.#codexTokens = null;
-      this.#deviceAuth = null;
-    }
-    await this.#saveSecrets();
-    this.#piAiTransport.close();
-    if (tokens) await revokeCodexToken(tokens.refreshToken);
-  }
-  async #codexCredential(forceRefresh = false, actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    let tokens = actorId ? this.#personalCodexTokens[actorId]?.tokens : this.#codexTokens;
-    if (!tokens) throw new Error("Sign in to ChatGPT in Providers before using Codex");
-    if (forceRefresh || tokens.expiresAt <= Date.now() + 60_000) {
-      const refreshKey = actorId ?? "global";
-      let refresh = this.#codexRefreshes.get(refreshKey);
-      if (!refresh) {
-        const current = tokens;
-        refresh = (async () => {
-          try {
-            const refreshed = await refreshCodexTokens(current);
-            const latest = actorId ? this.#personalCodexTokens[actorId]?.tokens : this.#codexTokens;
-            if (latest !== current) throw new Error("ChatGPT sign-in changed");
-            if (actorId) this.#personalCodexTokens[actorId]!.tokens = refreshed;
-            else this.#codexTokens = refreshed;
-            await this.#saveSecrets();
-            return refreshed;
-          } catch {
-            const latest = actorId ? this.#personalCodexTokens[actorId]?.tokens : this.#codexTokens;
-            if (latest === current) {
-              if (actorId) delete this.#personalCodexTokens[actorId];
-              else this.#codexTokens = null;
-              await this.#saveSecrets();
-            }
-            throw new Error("ChatGPT sign-in expired or was revoked. Sign in again in Providers.");
-          }
-        })();
-        this.#codexRefreshes.set(refreshKey, refresh);
-        void refresh.finally(() => {
-          if (this.#codexRefreshes.get(refreshKey) === refresh)
-            this.#codexRefreshes.delete(refreshKey);
-        });
-      }
-      tokens = await refresh;
-    }
-    return { accessToken: tokens.accessToken, accountId: tokens.accountId };
+  #requireProvider(providerId: string) {
+    const provider = piProvider(providerId);
+    if (!provider) throw new Error(`Unknown model provider: ${providerId}`);
+    return provider;
   }
 
-  subscriptionAuthStatus(provider: "xai", actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    const pending = actorId
-      ? this.#personalSubscriptionPending[actorId]?.[provider]
-      : this.#subscriptionPending[provider];
-    const tokens = actorId
-      ? this.#personalSubscriptionTokens[actorId]?.[provider]
-      : this.#subscriptionTokens[provider];
-    return {
-      connected: Boolean(tokens),
-      pending: pending
-        ? {
-            userCode: pending.userCode,
-            verificationUri: pending.verificationUri,
-            expiresAt: pending.expiresAt,
-          }
-        : null,
-    };
+  #loginKey(providerId: string, actor?: DurableActor) {
+    return JSON.stringify([this.#personalActorId(actor), providerId]);
   }
-  async beginSubscriptionAuth(provider: "xai", actor?: DurableActor) {
-    const pending = await beginDeviceOAuth({ ...XAI_OAUTH, fetchImpl: this.#fetch });
-    const actorId = this.#personalActorId(actor);
-    if (actorId) (this.#personalSubscriptionPending[actorId] ??= {})[provider] = pending;
-    else this.#subscriptionPending[provider] = pending;
-    return this.subscriptionAuthStatus(provider, actor);
-  }
-  async pollSubscriptionAuth(provider: "xai", actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    const pending = actorId
-      ? this.#personalSubscriptionPending[actorId]?.[provider]
-      : this.#subscriptionPending[provider];
-    if (!pending) throw new Error("No sign-in is pending");
-    if (pending.expiresAt <= Date.now()) {
-      if (actorId) delete this.#personalSubscriptionPending[actorId]?.[provider];
-      else delete this.#subscriptionPending[provider];
-      throw new Error("The device code expired. Start sign-in again.");
-    }
-    const result = await pollDeviceOAuth({ ...XAI_OAUTH, fetchImpl: this.#fetch }, pending);
-    const current = actorId
-      ? this.#personalSubscriptionPending[actorId]?.[provider]
-      : this.#subscriptionPending[provider];
-    if (result && current === pending) {
-      if (actorId) {
-        (this.#personalSubscriptionTokens[actorId] ??= {})[provider] = {
-          connectionId: `personal-${randomUUID()}`,
-          tokens: result,
-        };
-        delete this.#personalSubscriptionPending[actorId]?.[provider];
-      } else {
-        this.#subscriptionTokens[provider] = result;
-        delete this.#subscriptionPending[provider];
-      }
-      this.#refreshTransport();
-      await this.#saveSecrets();
-    }
-    return this.subscriptionAuthStatus(provider, actor);
-  }
-  async cancelSubscriptionAuth(provider: "xai", actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    if (actorId) delete this.#personalSubscriptionPending[actorId]?.[provider];
-    else delete this.#subscriptionPending[provider];
-    return this.subscriptionAuthStatus(provider, actor);
-  }
-  async disconnectSubscription(provider: "xai", actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    if (actorId) {
-      delete this.#personalSubscriptionTokens[actorId]?.[provider];
-      delete this.#personalSubscriptionPending[actorId]?.[provider];
-    } else {
-      delete this.#subscriptionTokens[provider];
-      delete this.#subscriptionPending[provider];
-    }
-    this.#refreshTransport();
-    await this.#saveSecrets();
-  }
-  async #subscriptionCredential(provider: "xai", forceRefresh = false, actor?: DurableActor) {
-    const actorId = this.#personalActorId(actor);
-    let current = actorId
-      ? this.#personalSubscriptionTokens[actorId]?.[provider]?.tokens
-      : this.#subscriptionTokens[provider];
-    if (!current) throw new Error("Sign in to this provider in Settings before using it");
-    if (forceRefresh || current.expiresAt <= Date.now() + 60_000) {
-      const refreshKey = `${provider}:${actorId ?? "global"}`;
-      let refresh = this.#subscriptionRefreshes.get(refreshKey);
-      if (!refresh) {
-        const expected = current;
-        refresh = (async () => {
-          try {
-            const refreshed = await refreshDeviceOAuth(
-              { ...XAI_OAUTH, fetchImpl: this.#fetch },
-              expected,
-            );
-            const latest = actorId
-              ? this.#personalSubscriptionTokens[actorId]?.[provider]?.tokens
-              : this.#subscriptionTokens[provider];
-            if (latest !== expected) throw new Error("Provider sign-in changed");
-            if (actorId) this.#personalSubscriptionTokens[actorId]![provider]!.tokens = refreshed;
-            else this.#subscriptionTokens[provider] = refreshed;
-            this.#refreshTransport();
-            await this.#saveSecrets();
-            return refreshed;
-          } catch {
-            const latest = actorId
-              ? this.#personalSubscriptionTokens[actorId]?.[provider]?.tokens
-              : this.#subscriptionTokens[provider];
-            if (latest === expected) {
-              if (actorId) delete this.#personalSubscriptionTokens[actorId]?.[provider];
-              else delete this.#subscriptionTokens[provider];
-              this.#refreshTransport();
-              await this.#saveSecrets();
+
+  /** Every pi provider, with the actor's connection and any sign-in in progress. */
+  listProviders(actor?: DurableActor): HostProviderInfo[] {
+    const actorId = this.#personalActorId(actor) ?? undefined;
+    return piProviderDescriptors().map((provider) => {
+      const connectionId =
+        (actorId &&
+          providerCredentialConnectionId(this.#providerCredentials, provider.id, actorId)) ||
+        providerCredentialConnectionId(this.#providerCredentials, provider.id);
+      const entry = connectionId ? this.#providerCredentials[connectionId] : undefined;
+      const login = this.#providerLogins.status(this.#loginKey(provider.id, actor));
+      return {
+        ...provider,
+        ...(connectionId && entry
+          ? {
+              connection: {
+                id: connectionId,
+                authType: entry.credential.type,
+                personal: Boolean(entry.ownerId),
+              },
             }
-            throw new Error("Provider sign-in expired or was revoked. Sign in again in Settings.");
-          }
-        })();
-        this.#subscriptionRefreshes.set(refreshKey, refresh);
-        void refresh.finally(() => {
-          if (this.#subscriptionRefreshes.get(refreshKey) === refresh)
-            this.#subscriptionRefreshes.delete(refreshKey);
+          : {}),
+        ...(login && (login.state === "running" || login.state === "awaiting_input")
+          ? { login }
+          : {}),
+      };
+    });
+  }
+
+  providerLoginStatus(providerId: string, actor?: DurableActor): ProviderLoginStatus | undefined {
+    this.#requireProvider(providerId);
+    return this.#providerLogins.status(this.#loginKey(providerId, actor));
+  }
+
+  /** Starts pi's sign-in flow. Prompts and progress surface through `providerLoginStatus`. */
+  beginProviderLogin(providerId: string, method: ProviderAuthMethod, actor?: DurableActor) {
+    const provider = this.#requireProvider(providerId);
+    const auth = method === "oauth" ? provider.auth.oauth : provider.auth.apiKey;
+    if (!auth?.login) throw new Error(`${provider.name} does not support this sign-in method`);
+    const ownerId = this.#personalActorId(actor) ?? undefined;
+    const models = this.#piModelsFor(ownerId);
+    return this.#providerLogins.begin(
+      this.#loginKey(providerId, actor),
+      { providerId, method },
+      async (interaction) => {
+        await models.login(providerId, method, interaction, {
+          getDeviceId: () => this.#settings.hostId,
         });
-      }
-      current = await refresh;
+        await this.refreshModelCatalogs();
+        return providerCredentialConnectionId(this.#providerCredentials, providerId, ownerId);
+      },
+    );
+  }
+
+  async respondProviderLogin(
+    providerId: string,
+    promptId: string,
+    value: string,
+    actor?: DurableActor,
+  ) {
+    this.#requireProvider(providerId);
+    return await this.#providerLogins.respond(this.#loginKey(providerId, actor), promptId, value);
+  }
+
+  cancelProviderLogin(providerId: string, actor?: DurableActor) {
+    this.#requireProvider(providerId);
+    return this.#providerLogins.cancel(this.#loginKey(providerId, actor));
+  }
+
+  /** Signs out of a provider in the actor's scope, removing that connection. */
+  async disconnectProvider(providerId: string, actor?: DurableActor) {
+    this.#requireProvider(providerId);
+    const ownerId = this.#personalActorId(actor) ?? undefined;
+    this.#providerLogins.cancel(this.#loginKey(providerId, actor));
+    const connectionId = providerCredentialConnectionId(
+      this.#providerCredentials,
+      providerId,
+      ownerId,
+    );
+    const credential = connectionId
+      ? this.#providerCredentials[connectionId]?.credential
+      : undefined;
+    await this.#piModelsFor(ownerId).logout(providerId);
+    if (connectionId) await this.#forgetDefaultConnection(connectionId);
+    this.#piAiTransport.close();
+    if (providerId === "openai-codex" && credential?.type === "oauth") {
+      await revokeCodexToken(credential.refresh, this.#fetch);
     }
-    return { accessToken: current.accessToken, accountId: "" };
+    return connectionId;
+  }
+
+  async #forgetDefaultConnection(connectionId: string) {
+    if (this.#settings.defaultConnectionId !== connectionId) return;
+    await this.#updateState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        defaultConnectionId: this.listModelConnections()[0]?.id ?? null,
+      },
+    }));
   }
 
   async upsertModelConnection(connection: HostModelConnection) {
+    if (reservedConnectionId(connection.id)) {
+      throw new Error(
+        `Connection id ${connection.id} is reserved for a model provider. Sign in to it under Providers.`,
+      );
+    }
     let publicConnection: HostModelConnection | undefined;
     await this.#updateState(async (state) => {
       const apiKeys = { ...state.secrets.apiKeys };
       if (connection.apiKey) apiKeys[connection.id] = connection.apiKey;
-      if (connection.id === XAI_API_PRESET.id && !apiKeys[XAI_API_PRESET.id]?.trim())
-        throw new Error("An xAI API key is required to enable the xAI API");
-      if (connection.id === OPENCODE_GO_PRESET.id) {
-        connection = await this.#openCodeGoConnection(
-          connection.apiKey ?? apiKeys[OPENCODE_GO_PRESET.id],
-        );
-      }
-      if (connection.id === OPENCODE_ZEN_PRESET.id) {
-        connection = await this.#openCodeZenConnection(
-          connection.apiKey ?? apiKeys[OPENCODE_ZEN_PRESET.id],
-        );
-      }
-      if (connection.id === XAI_API_PRESET.id) connection = connectionFromPreset(XAI_API_PRESET);
-      publicConnection = { ...connection, apiKey: undefined };
+      const { providerId: _providerId, authType: _authType, ...custom } = connection;
+      publicConnection = { ...custom, apiKey: undefined };
       const next = state.settings.modelConnections.filter((item) => item.id !== connection.id);
       next.push(publicConnection);
       return {
@@ -1982,6 +1708,12 @@ export class OpenGuiHost {
       );
       const apiKeys = { ...state.secrets.apiKeys };
       delete apiKeys[connectionId];
+      const providerCredentials = { ...state.secrets.providerCredentials };
+      delete providerCredentials[connectionId];
+      const remaining = [
+        ...Object.keys(providerCredentials).filter((id) => !providerCredentials[id]!.ownerId),
+        ...modelConnections.map((item) => item.id),
+      ];
       return {
         ...state,
         settings: {
@@ -1989,10 +1721,10 @@ export class OpenGuiHost {
           modelConnections,
           defaultConnectionId:
             state.settings.defaultConnectionId === connectionId
-              ? (modelConnections[0]?.id ?? null)
+              ? (remaining[0] ?? null)
               : state.settings.defaultConnectionId,
         },
-        secrets: { ...state.secrets, apiKeys },
+        secrets: { ...state.secrets, apiKeys, providerCredentials },
       };
     });
   }
@@ -2448,7 +2180,6 @@ export async function createOpenGuiHost(
       actor?: DurableActor,
     ) => Promise<{ connectionId: string; modelId: string; executionScope: "host" }>;
     usePiAiTransport?: boolean;
-    usePiAiCodexTransport?: boolean;
     codexPiTransport?: "auto" | "websocket" | "websocket-cached" | "sse";
     openAiResponsesTransport?: "auto" | "websocket" | "sse";
     ownerModelDiagnostics?: boolean;

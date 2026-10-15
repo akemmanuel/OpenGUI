@@ -1,7 +1,6 @@
 import { retryProviderRequest } from "./provider-retry.ts";
 import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
 import { CodexResponsesTransport } from "./codex-responses.ts";
-import { OpenCodeRequestHeaders } from "./opencode-headers.ts";
 import type {
   ModelContextItem,
   ModelRequest,
@@ -186,7 +185,6 @@ export function chatDeltaEvents(delta: Record<string, any>): ModelStreamEvent[] 
 
 export class OpenAiChatTransport implements ModelTransport {
   readonly #options: OpenAiChatTransportOptions;
-  readonly #openCodeHeaders = new OpenCodeRequestHeaders();
   readonly #connections = new Map<string, OpenAiCompatibleConnection>();
   readonly #imageUnsupportedModels = new Set<string>();
   #defaultConnectionId: string | null = null;
@@ -197,7 +195,6 @@ export class OpenAiChatTransport implements ModelTransport {
 
   setConnections(connections: OpenAiCompatibleConnection[], defaultConnectionId?: string | null) {
     this.#connections.clear();
-    this.#openCodeHeaders.clear();
     this.#imageUnsupportedModels.clear();
     for (const connection of connections) this.#connections.set(connection.id, connection);
     this.#defaultConnectionId = defaultConnectionId ?? connections[0]?.id ?? null;
@@ -244,7 +241,6 @@ export class OpenAiChatTransport implements ModelTransport {
         protocol: "openai-responses",
         providerId: connection.id,
         apiId: "openai-responses",
-        headers: this.#openCodeHeaders.forRequest(connection.baseUrl, request),
       });
       for await (const event of responses.stream(effectiveRequest, signal)) {
         if (event.type === "completed" && event.response) {
@@ -295,7 +291,6 @@ export class OpenAiChatTransport implements ModelTransport {
           headers: {
             "content-type": "application/json",
             ...(connection.apiKey ? { authorization: `Bearer ${connection.apiKey}` } : {}),
-            ...this.#openCodeHeaders.forRequest(connection.baseUrl, request),
           },
           body,
           signal: attemptSignal,
@@ -455,7 +450,6 @@ export class OpenAiChatTransport implements ModelTransport {
           "content-type": "application/json",
           "anthropic-version": "2023-06-01",
           ...(connection.apiKey ? { "x-api-key": connection.apiKey } : {}),
-          ...this.#openCodeHeaders.forRequest(connection.baseUrl, request),
         },
         body: JSON.stringify({
           model: modelId,

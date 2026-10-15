@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
-import { piAiCatalogConnection, piAiFreeModelIds, piAiTextOnlyModelIds } from "./pi-ai-catalog.ts";
+import {
+  createPiModels,
+  ISOLATED_AUTH_CONTEXT,
+  piAiCatalogConnection,
+  piBundledModels,
+  piProviderDescriptors,
+} from "./pi-ai-catalog.ts";
 
 describe("pi-ai provider catalogs", () => {
   test("adapts the canonical Codex catalog", () => {
@@ -10,7 +16,6 @@ describe("pi-ai provider catalogs", () => {
     });
 
     expect(connection.modelIds).toContain("gpt-5.5");
-    expect(connection.modelRoutes?.["gpt-5.5"]).toBe("responses");
     expect(connection.modelCapabilities?.["gpt-5.5"]).toMatchObject({
       displayName: "GPT-5.5",
       context: 272_000,
@@ -19,28 +24,49 @@ describe("pi-ai provider catalogs", () => {
     expect(connection.modelCapabilities?.["gpt-5.5"]?.reasoningEfforts).toContain("xhigh");
   });
 
-  test("preserves OpenCode Go's per-model protocols", () => {
-    const connection = piAiCatalogConnection("opencode-go", {
-      id: "opencode-go",
-      label: "OpenCode Go",
-      baseUrl: "https://opencode.ai/zen/go/v1",
+  test("lists every pi chat provider with its sign-in methods", () => {
+    const providers = piProviderDescriptors();
+    const ids = providers.map((provider) => provider.id);
+    for (const id of ["anthropic", "openai", "google", "amazon-bedrock", "mistral", "xai"]) {
+      expect(ids).toContain(id);
+    }
+    expect(ids).toContain("opencode");
+    expect(ids).toContain("opencode-go");
+    // Classifier-only providers have nothing to chat with.
+    expect(ids).not.toContain("typesafe");
+    expect(providers.find((provider) => provider.id === "openai-codex")).toMatchObject({
+      oauth: { subscription: true },
     });
-
-    expect(connection.modelRoutes?.["minimax-m3"]).toBe("anthropic-messages");
-    expect(connection.modelRoutes?.["glm-5.2"]).toBe("openai-chat");
-    expect(connection.modelRoutes?.["grok-4.6"]).toBe("responses");
+    expect(providers.find((provider) => provider.id === "openai-codex")?.apiKey).toBeUndefined();
+    expect(providers.find((provider) => provider.id === "anthropic")).toMatchObject({
+      apiKey: { interactive: true },
+      oauth: { subscription: true },
+    });
   });
 
-  test("derives Zen's free models from pi-ai pricing metadata", () => {
-    const free = piAiFreeModelIds("opencode");
-    expect(free).toContain("big-pickle");
-    expect(free).toContain("mimo-v2.6-flash-free");
-    expect(free).not.toContain("deepseek-v4-pro");
+  test("keeps installed models for every chat API pi supports", () => {
+    expect(piBundledModels("google")[0]?.api).toBe("google-generative-ai");
+    expect(piBundledModels("amazon-bedrock")[0]?.api).toBe("bedrock-converse-stream");
+    expect(piBundledModels("mistral")[0]?.api).toBe("mistral-conversations");
   });
 
-  test("derives text-only behavior from pi-ai input metadata", () => {
-    const textOnly = piAiTextOnlyModelIds("opencode");
-    expect(textOnly).toContain("deepseek-v4-flash");
-    expect(textOnly).not.toContain("mimo-v2.6-flash-free");
+  test("resolves stored API keys and never ambient credentials in an isolated scope", async () => {
+    const stored = new Map<string, any>([["groq", { type: "api_key", key: "gsk-stored" }]]);
+    const models = createPiModels({
+      authContext: ISOLATED_AUTH_CONTEXT,
+      credentials: {
+        read: async (providerId) => stored.get(providerId),
+        list: async () => [],
+        modify: async (providerId, change) => {
+          const next = await change(stored.get(providerId));
+          if (next) stored.set(providerId, next);
+          return next ?? stored.get(providerId);
+        },
+        delete: async (providerId) => void stored.delete(providerId),
+      },
+    });
+    expect((await models.getAuth("groq"))?.auth.apiKey).toBe("gsk-stored");
+    process.env.ANTHROPIC_API_KEY ??= "sk-ant-ambient";
+    expect(await models.getAuth("anthropic")).toBeUndefined();
   });
 });

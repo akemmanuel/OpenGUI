@@ -704,61 +704,35 @@
     "cost": "Kosten"
   },
   "providers": {
-    "codex": {
-      "title": "ChatGPT",
-      "description": "Nutze dein ChatGPT-Abonnement mit Codex-Modellen.",
-      "signIn": "Bei ChatGPT anmelden",
-      "signOut": "Abmelden",
-      "authorizeTitle": "ChatGPT autorisieren",
-      "code": "Code {{code}} eingeben",
-      "open": "Bestätigungsseite öffnen",
-      "check": "Ich habe OpenGUI autorisiert"
+    "directory": {
+      "connectedTitle": "Verbundene Anbieter",
+      "connectedEmpty": "Noch keine Anbieter verbunden. Füge unten einen hinzu.",
+      "addTitle": "Anbieter hinzufügen",
+      "addHelp": "Melde dich mit einem Abo an oder füge einen API-Schlüssel ein. Modelle erscheinen, sobald der Anbieter verbunden ist.",
+      "signIn": "Anmelden",
+      "signInNamed": "Bei {{name}} anmelden",
+      "subscription": "Abo verwenden",
+      "apiKey": "API-Schlüssel",
+      "apiKeyOrFree": "API-Schlüssel oder kostenlos",
+      "apiKeyNamed": "API-Schlüssel für {{name}} hinzufügen",
+      "authOAuth": "Angemeldet",
+      "authApiKey": "API-Schlüssel",
+      "freeTierHint": "Leer lassen, um die kostenlosen Modelle von OpenCode Zen ohne Konto zu nutzen."
     },
-    "deviceAuth": {
-      "description": "Schließe diese Schritte im Browser ab. OpenGUI wartet automatisch.",
-      "stepOpen": "Bestätigungsseite öffnen",
-      "stepEnterCode": "Den hier angezeigten Code eingeben",
-      "stepEnterCodeHelp": "Kopiere ihn, statt ihn abzutippen.",
-      "stepWait": "Zugriff genehmigen — wir erkennen das automatisch",
-      "codeLabel": "Code",
-      "copyCode": "Code kopieren",
-      "copied": "Kopiert",
-      "copyCodeAria": "Autorisierungscode {{code}}. Zum Kopieren klicken.",
-      "openPage": "Bestätigungsseite öffnen",
-      "expiresIn": "Läuft ab in {{time}}",
-      "polling": "Abfrage alle paar Sekunden",
-      "stop": "Autorisierung stoppen",
-      "expired": "Der Code ist abgelaufen, bevor die Autorisierung fertig war.",
-      "retry": "Neuen Code holen",
-      "successTitle": "Autorisierung abgeschlossen",
-      "successBody": "Dieser Anbieter ist einsatzbereit."
-    },
-    "xai": {
-      "title": "SuperGrok-Proxy (experimentell)",
-      "description": "Experimenteller Abonnementzugriff über cli-chat-proxy.grok.com. OpenGUI autorisiert den OAuth-Client der Grok CLI eines Drittanbieters; xAI hat keine Erlaubnis zur Wiederverwendung durch OpenGUI veröffentlicht und dein Tarif ist möglicherweise nicht berechtigt.",
-      "signIn": "OAuth-Client des Drittanbieters autorisieren",
-      "authorizeTitle": "SuperGrok-Proxy autorisieren"
-    },
-    "xaiApi": {
-      "title": "xAI API",
-      "description": "Verwende die dokumentierte Responses API unter api.x.ai mit deinem xAI-API-Schlüssel und Grok-Build-0.1-Modellen.",
-      "apiKeyPlaceholder": "xAI-API-Schlüssel",
-      "enable": "xAI API aktivieren",
-      "saveKey": "API-Schlüssel speichern"
-    },
-    "opencode": {
-      "title": "OpenCode Go",
-      "description": "Füge den API-Schlüssel deines OpenCode-Go-Abonnements ein.",
-      "apiKeyPlaceholder": "OpenCode-Go-API-Schlüssel",
-      "enable": "OpenCode Go aktivieren",
-      "saveKey": "API-Schlüssel speichern"
-    },
-    "zen": {
-      "title": "OpenCode Zen",
-      "description": "Aktiviere kostenlose, ratenbegrenzte Zen-Modelle ohne API-Schlüssel oder füge deinen eigenen OpenCode-Zen-Schlüssel hinzu.",
-      "apiKeyPlaceholder": "API-Schlüssel (optional)",
-      "enable": "Kostenlose Modelle aktivieren",
-      "saveKey": "API-Schlüssel speichern"
+    "login": {
+      "title": "{{name}} verbinden",
+      "description": "Folge den Schritten unten. OpenGUI schließt automatisch ab, sobald der Anbieter bestätigt.",
+      "deviceCodeHelp": "Öffne die Bestätigungsseite und gib diesen Code ein.",
+      "copyCodeAria": "Autorisierungscode {{code}}. Klicken zum Kopieren.",
+      "openSignIn": "Anmeldeseite öffnen",
+      "submit": "Weiter",
+      "waiting": "Warte auf {{name}}…",
+      "polling": "Autorisierung wird automatisch geprüft",
+      "stop": "Anmeldung abbrechen",
+      "failed": "Die Anmeldung wurde nicht abgeschlossen.",
+      "retry": "Erneut versuchen",
+      "successTitle": "Verbunden",
+      "successBody": "Die Modelle dieses Anbieters sind einsatzbereit."
     },
     "description": "Verbinde Modelle für den OpenGUI-Agenten.",
     "addProvider": "Verbindung hinzufügen",
@@ -840,6 +814,7 @@
     "editOffering": "{{name}} bearbeiten",
     "removeOffering": "{{name}} entfernen",
     "everyone": "Alle auf diesem Host",
+    "customBackendsTitle": "Eigene Backends",
     "customBackendTitle": "Eigenes OpenAI-kompatibles Backend",
     "customBackendHelp": "Füge einen Endpunkt einmal hinzu und liste alle unterstützten Modelle zeilenweise oder durch Kommas getrennt auf.",
     "backendNamePlaceholder": "Backend-Name",

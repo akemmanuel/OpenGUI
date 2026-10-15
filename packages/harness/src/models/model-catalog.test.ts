@@ -36,7 +36,7 @@ afterEach(async () => {
 });
 
 describe("Host model catalog", () => {
-  test("adds a released model without a package update, preserving routing and defaults", async () => {
+  test("adds a released model without a package update, preserving endpoints and defaults", async () => {
     const fetchImpl = vi.fn(async () =>
       Response.json(
         {
@@ -57,7 +57,13 @@ describe("Host model catalog", () => {
     expect(connection.defaultModelId).toBe(astra.id);
     expect(connection.modelIds).toEqual([astra.id]);
     expect(connection.modelIds).not.toContain("unsupported");
-    expect(connection.modelRoutes?.[astra.id]).toBe("responses");
+    // pi dispatches by API, from an installed endpoint, never the remote one.
+    expect(catalog.model("openai-codex", astra.id)).toMatchObject({
+      provider: "openai-codex",
+      api: "openai-codex-responses",
+      baseUrl: "https://chatgpt.com/backend-api",
+    });
+    expect(JSON.stringify(catalog.model("openai-codex", astra.id))).not.toContain("untrusted");
     expect(connection.modelCapabilities?.[astra.id]).toMatchObject({
       context: 272000,
       maxTokens: 128000,

@@ -63,7 +63,7 @@ describe("OpenGuiHost lifecycle", () => {
     const host = new OpenGuiHost(root);
     await host.start();
     await host.upsertModelConnection({
-      id: "deepseek",
+      id: "deepseek-custom",
       label: "DeepSeek",
       baseUrl: "https://api.deepseek.com",
       modelIds: ["deepseek-v4-pro"],
@@ -74,13 +74,13 @@ describe("OpenGuiHost lifecycle", () => {
     await expect(
       host.createSession({
         projectDirectory: project,
-        model: { connectionId: "deepseek", modelId: "deepseek-v4-pro" },
+        model: { connectionId: "deepseek-custom", modelId: "deepseek-v4-pro" },
         reasoning: "ultra",
       }),
     ).rejects.toThrow("does not support reasoning effort ultra");
     const session = await host.createSession({
       projectDirectory: project,
-      model: { connectionId: "deepseek", modelId: "deepseek-v4-pro" },
+      model: { connectionId: "deepseek-custom", modelId: "deepseek-v4-pro" },
       reasoning: "high",
     });
 

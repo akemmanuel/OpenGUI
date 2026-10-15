@@ -11,6 +11,7 @@ export function connectionsToModelProviders(connections: HostModelConnection[]) 
     id: connection.id,
     name: connection.label,
     source: "custom",
+    ...(connection.providerId ? { icon: connection.providerId } : {}),
     models: Object.fromEntries(
       connection.modelIds.map((id) => {
         const metadata = connection.modelCapabilities?.[id];

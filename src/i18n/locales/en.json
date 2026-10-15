@@ -704,61 +704,35 @@
     "cost": "Cost"
   },
   "providers": {
-    "codex": {
-      "title": "ChatGPT",
-      "description": "Use your ChatGPT subscription with Codex models.",
-      "signIn": "Sign in to ChatGPT",
-      "signOut": "Sign out",
-      "authorizeTitle": "Authorize ChatGPT",
-      "code": "Enter code {{code}}",
-      "open": "Open verification page",
-      "check": "I've authorized OpenGUI"
+    "directory": {
+      "connectedTitle": "Connected providers",
+      "connectedEmpty": "No providers connected yet. Add one below.",
+      "addTitle": "Add a provider",
+      "addHelp": "Sign in with a subscription or paste an API key. Models appear as soon as the provider is connected.",
+      "signIn": "Sign in",
+      "signInNamed": "Sign in to {{name}}",
+      "subscription": "Use subscription",
+      "apiKey": "API key",
+      "apiKeyOrFree": "API key or free",
+      "apiKeyNamed": "Add an API key for {{name}}",
+      "authOAuth": "Signed in",
+      "authApiKey": "API key",
+      "freeTierHint": "Leave blank to use OpenCode Zen's free models without an account."
     },
-    "deviceAuth": {
-      "description": "Complete these steps in your browser. OpenGUI waits automatically.",
-      "stepOpen": "Open the verification page",
-      "stepEnterCode": "Enter the code shown here",
-      "stepEnterCodeHelp": "Copy it so you don't retype.",
-      "stepWait": "Approve access — we detect it automatically",
-      "codeLabel": "Code",
-      "copyCode": "Copy code",
-      "copied": "Copied",
+    "login": {
+      "title": "Connect {{name}}",
+      "description": "Follow the steps below. OpenGUI finishes automatically once the provider confirms.",
+      "deviceCodeHelp": "Open the verification page and enter this code.",
       "copyCodeAria": "Authorization code {{code}}. Click to copy.",
-      "openPage": "Open verification page",
-      "expiresIn": "Expires in {{time}}",
-      "polling": "Polling every few seconds",
-      "stop": "Stop authorization",
-      "expired": "Code expired before authorization finished.",
-      "retry": "Get a new code",
-      "successTitle": "Authorization complete",
-      "successBody": "This provider is ready to use."
-    },
-    "xai": {
-      "title": "SuperGrok proxy (experimental)",
-      "description": "Experimental subscription access through cli-chat-proxy.grok.com. OpenGUI authorizes the third-party Grok CLI OAuth client; xAI has not published permission for OpenGUI to reuse that client, and your plan may not be entitled.",
-      "signIn": "Authorize third-party OAuth client",
-      "authorizeTitle": "Authorize SuperGrok proxy"
-    },
-    "xaiApi": {
-      "title": "xAI API",
-      "description": "Use the documented Responses API at api.x.ai with your xAI API key and Grok Build 0.1 models.",
-      "apiKeyPlaceholder": "xAI API key",
-      "enable": "Enable xAI API",
-      "saveKey": "Save API key"
-    },
-    "opencode": {
-      "title": "OpenCode Go",
-      "description": "Paste the API key from your OpenCode Go subscription.",
-      "apiKeyPlaceholder": "OpenCode Go API key",
-      "enable": "Enable OpenCode Go",
-      "saveKey": "Save API key"
-    },
-    "zen": {
-      "title": "OpenCode Zen",
-      "description": "Enable free, rate-limited Zen models without an API key, or add your own key for your OpenCode Zen account.",
-      "apiKeyPlaceholder": "API key (optional)",
-      "enable": "Enable free models",
-      "saveKey": "Save API key"
+      "openSignIn": "Open sign-in page",
+      "submit": "Continue",
+      "waiting": "Waiting for {{name}}…",
+      "polling": "Checking for authorization automatically",
+      "stop": "Cancel sign-in",
+      "failed": "Sign-in did not finish.",
+      "retry": "Try again",
+      "successTitle": "Connected",
+      "successBody": "This provider's models are ready to use."
     },
     "description": "Connect models used by the OpenGUI agent.",
     "addProvider": "Add connection",
@@ -840,6 +814,7 @@
     "editOffering": "Edit {{name}}",
     "removeOffering": "Remove {{name}}",
     "everyone": "Everyone on this Host",
+    "customBackendsTitle": "Custom backends",
     "customBackendTitle": "Custom OpenAI-compatible backend",
     "customBackendHelp": "Add one endpoint once, then list every model it supports on separate lines or separated by commas.",
     "backendNamePlaceholder": "Backend name",

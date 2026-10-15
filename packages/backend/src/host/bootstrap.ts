@@ -14,15 +14,8 @@ export function modelTransportEnvironment(env: NodeJS.ProcessEnv = process.env) 
   const model = env.OPENGUI_MODEL_TRANSPORT;
   const modelPiAi = model === undefined || model === "pi-ai";
   const codex = env.OPENGUI_CODEX_TRANSPORT;
-  const codexPiAi =
-    modelPiAi &&
-    codex !== "native" &&
-    (codex === undefined ||
-      codex === "auto" ||
-      codex === "sse" ||
-      codex === "websocket" ||
-      codex === "websocket-cached");
-  const codexPiTransport = codexPiAi && codex !== undefined ? codex : "auto";
+  const codexPiTransport =
+    codex === "sse" || codex === "websocket" || codex === "websocket-cached" ? codex : "auto";
   const openAi = env.OPENGUI_OPENAI_RESPONSES_TRANSPORT;
   const openAiResponsesTransport =
     openAi === undefined || openAi === "auto"
@@ -32,7 +25,6 @@ export function modelTransportEnvironment(env: NodeJS.ProcessEnv = process.env) 
         : "sse";
   return {
     usePiAiTransport: modelPiAi,
-    usePiAiCodexTransport: codexPiAi,
     codexPiTransport,
     openAiResponsesTransport,
     ownerModelDiagnostics: env.OPENGUI_OWNER_MODEL_DIAGNOSTICS === "1",
@@ -55,7 +47,6 @@ export async function createHostContext(
     authorizeSkillManagement?: (actor: DurableActor | undefined) => Promise<void>;
     authorizeMcpUse?: (actor: DurableActor | undefined) => Promise<boolean>;
     usePiAiTransport?: boolean;
-    usePiAiCodexTransport?: boolean;
     codexPiTransport?: "auto" | "websocket" | "websocket-cached" | "sse";
     openAiResponsesTransport?: "auto" | "websocket" | "sse";
     ownerModelDiagnostics?: boolean;
@@ -74,7 +65,6 @@ export async function createHostContext(
   const host = await createOpenGuiHost(dataDir, {
     ...options,
     usePiAiTransport: options.usePiAiTransport ?? environment.usePiAiTransport,
-    usePiAiCodexTransport: options.usePiAiCodexTransport ?? environment.usePiAiCodexTransport,
     codexPiTransport: options.codexPiTransport ?? environment.codexPiTransport,
     openAiResponsesTransport:
       options.openAiResponsesTransport ?? environment.openAiResponsesTransport,

@@ -155,7 +155,13 @@ export type ModelProtocol =
   | "openai-chat"
   | "anthropic-messages"
   | "openai-responses"
-  | "codex-responses";
+  | "codex-responses"
+  | "azure-openai-responses"
+  | "bedrock-converse-stream"
+  | "google-generative-ai"
+  | "google-vertex"
+  | "mistral-conversations"
+  | "pi-messages";
 
 export interface ModelCachePolicy {
   mode: "off" | "session";

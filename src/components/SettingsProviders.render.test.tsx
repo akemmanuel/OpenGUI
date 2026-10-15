@@ -14,15 +14,25 @@ const fixture = vi.hoisted(() => ({
   list: vi.fn(),
   upsert: vi.fn().mockResolvedValue(undefined),
   remove: vi.fn().mockResolvedValue(undefined),
-  beginCodex: vi.fn(),
-  pollCodex: vi.fn().mockResolvedValue({ connected: false, pending: null }),
-  cancelCodex: vi.fn().mockResolvedValue({ connected: false, pending: null }),
-  codexStatus: vi.fn().mockResolvedValue({ connected: false, pending: null }),
-  subscriptionStatus: vi.fn().mockResolvedValue({ connected: false, pending: null }),
-  beginSubscription: vi.fn(),
-  pollSubscription: vi.fn().mockResolvedValue({ connected: false, pending: null }),
-  cancelSubscription: vi.fn().mockResolvedValue({ connected: false, pending: null }),
+  providers: [] as any[],
+  listProviders: vi.fn(),
+  beginLogin: vi.fn(),
+  loginStatus: vi.fn(),
+  respondLogin: vi.fn(),
+  cancelLogin: vi.fn().mockResolvedValue(undefined),
+  disconnectProvider: vi.fn().mockResolvedValue(undefined),
 }));
+
+const PROVIDERS = [
+  { id: "openai-codex", name: "ChatGPT", oauth: { name: "ChatGPT", subscription: true } },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    apiKey: { name: "Anthropic API key", interactive: true },
+    oauth: { name: "Claude", subscription: true },
+  },
+  { id: "opencode", name: "OpenCode Zen", apiKey: { name: "OpenCode API key", interactive: true } },
+];
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -47,16 +57,12 @@ vi.mock("@/protocol/host-client", () => ({
     listModelConnections: fixture.list,
     upsertModelConnection: fixture.upsert,
     removeModelConnection: fixture.remove,
-    codexAuthStatus: fixture.codexStatus,
-    beginCodexAuth: fixture.beginCodex,
-    pollCodexAuth: fixture.pollCodex,
-    cancelCodexAuth: fixture.cancelCodex,
-    disconnectCodex: vi.fn(),
-    subscriptionAuthStatus: fixture.subscriptionStatus,
-    beginSubscriptionAuth: fixture.beginSubscription,
-    pollSubscriptionAuth: fixture.pollSubscription,
-    cancelSubscriptionAuth: fixture.cancelSubscription,
-    disconnectSubscription: vi.fn(),
+    listProviders: fixture.listProviders,
+    beginProviderLogin: fixture.beginLogin,
+    providerLoginStatus: fixture.loginStatus,
+    respondProviderLogin: fixture.respondLogin,
+    cancelProviderLogin: fixture.cancelLogin,
+    disconnectProvider: fixture.disconnectProvider,
   }),
 }));
 
@@ -75,10 +81,8 @@ describe("SettingsProviders", () => {
       effective: { allowByok: true, allowByos: fixture.allowByos },
     }));
     fixture.list.mockImplementation(async () => fixture.connections);
-    fixture.beginCodex.mockResolvedValue({
-      connected: false,
-      pending: { userCode: "ABCD", verificationUri: "https://auth.example/device" },
-    });
+    fixture.providers = PROVIDERS;
+    fixture.listProviders.mockImplementation(async () => fixture.providers);
   });
   afterEach(cleanup);
 
@@ -106,17 +110,26 @@ describe("SettingsProviders", () => {
     expect(fixture.refresh).toHaveBeenCalled();
   });
 
-  test("shows personal subscription sign-in to a member allowed by BYOS policy", async () => {
+  test("offers every provider's sign-in methods to a member allowed by BYOS policy", async () => {
     fixture.allowByos = true;
     render(<SettingsProviders />);
 
-    expect(await screen.findByRole("button", { name: "providers.codex.signIn" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "providers.xai.signIn" })).toBeTruthy();
-    await waitFor(() => expect(fixture.codexStatus).toHaveBeenCalledTimes(1));
-    expect(fixture.subscriptionStatus).toHaveBeenCalledWith("xai");
+    expect(
+      await screen.findByRole("button", { name: "providers.directory.signInNamed:ChatGPT" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "providers.directory.signInNamed:Anthropic" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "providers.directory.apiKeyNamed:Anthropic" }),
+    ).toBeTruthy();
+    // ChatGPT has no API-key sign-in.
+    expect(
+      screen.queryByRole("button", { name: "providers.directory.apiKeyNamed:ChatGPT" }),
+    ).toBeNull();
   });
 
-  test("does not expose raw shared connections or subscriptions to a member denied by BYOS policy", async () => {
+  test("withholds subscriptions and shared connections from a member denied by BYOS policy", async () => {
     fixture.connections = [
       {
         id: "host-model",
@@ -127,36 +140,120 @@ describe("SettingsProviders", () => {
       },
     ];
     render(<SettingsProviders />);
-    await waitFor(() => expect(fixture.list).toHaveBeenCalled());
+    expect(
+      await screen.findByRole("button", { name: "providers.directory.apiKeyNamed:Anthropic" }),
+    ).toBeTruthy();
     expect(screen.queryByText("Shared model")).toBeNull();
-    expect(screen.queryByRole("button", { name: "providers.codex.signIn" })).toBeNull();
-    expect(fixture.codexStatus).not.toHaveBeenCalled();
-    expect(fixture.subscriptionStatus).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "providers.directory.signInNamed:ChatGPT" }),
+    ).toBeNull();
   });
 
-  test("opens the device authorization dialog returned by the Host", async () => {
+  test("filters providers by search", async () => {
+    fixture.allowByos = true;
+    render(<SettingsProviders />);
+    await screen.findByText("Anthropic");
+    await userEvent.type(screen.getByLabelText("providers.searchPlaceholder"), "zen");
+    expect(screen.getByText("OpenCode Zen")).toBeTruthy();
+    expect(screen.queryByText("Anthropic")).toBeNull();
+  });
+
+  test("answers a pi API-key prompt and refreshes models once connected", async () => {
     fixture.actor = { type: "user", id: "owner-1", role: "owner" };
     fixture.identityEnabled = false;
-    fixture.beginCodex.mockResolvedValue({
-      connected: false,
-      pending: {
-        userCode: "ABCD",
-        verificationUri: "https://auth.example/device",
-        expiresAt: Date.now() + 60_000,
-      },
+    fixture.beginLogin.mockResolvedValue({
+      providerId: "anthropic",
+      method: "api_key",
+      state: "awaiting_input",
+      prompt: { id: "prompt-1", type: "secret", message: "Enter Anthropic API key" },
+      events: [],
     });
-    fixture.pollCodex.mockResolvedValue({
-      connected: false,
-      pending: {
-        userCode: "ABCD",
-        verificationUri: "https://auth.example/device",
-        expiresAt: Date.now() + 60_000,
-      },
+    fixture.respondLogin.mockResolvedValue({
+      providerId: "anthropic",
+      method: "api_key",
+      state: "succeeded",
+      events: [],
+      connectionId: "anthropic",
     });
     render(<SettingsProviders />);
-    await userEvent.click(await screen.findByRole("button", { name: "providers.codex.signIn" }));
-    expect(await screen.findByText("providers.codex.authorizeTitle")).toBeTruthy();
-    expect(screen.getByText("ABCD")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "providers.deviceAuth.stop" })).toBeTruthy();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "providers.directory.apiKeyNamed:Anthropic" }),
+    );
+    expect(fixture.beginLogin).toHaveBeenCalledWith("anthropic", "api_key");
+    const input = await screen.findByLabelText("Enter Anthropic API key");
+    expect(input.getAttribute("type")).toBe("password");
+    const submit = screen.getByRole("button", { name: "providers.login.submit" });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    await userEvent.type(input, " sk-ant-test ");
+    await userEvent.click(submit);
+    expect(fixture.respondLogin).toHaveBeenCalledWith("anthropic", "prompt-1", "sk-ant-test");
+    expect(await screen.findByText("providers.login.successTitle")).toBeTruthy();
+    await waitFor(() => expect(fixture.refresh).toHaveBeenCalled());
+  });
+
+  test("lets OpenCode Zen continue without a key for its free models", async () => {
+    fixture.actor = { type: "user", id: "owner-1", role: "owner" };
+    fixture.identityEnabled = false;
+    fixture.beginLogin.mockResolvedValue({
+      providerId: "opencode",
+      method: "api_key",
+      state: "awaiting_input",
+      prompt: { id: "prompt-zen", type: "secret", message: "Enter OpenCode API key" },
+      events: [],
+    });
+    fixture.respondLogin.mockResolvedValue({
+      providerId: "opencode",
+      method: "api_key",
+      state: "succeeded",
+      events: [],
+    });
+    render(<SettingsProviders />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "providers.directory.apiKeyNamed:OpenCode Zen" }),
+    );
+    expect(await screen.findByText("providers.directory.freeTierHint")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "providers.login.submit" }));
+    expect(fixture.respondLogin).toHaveBeenCalledWith("opencode", "prompt-zen", "");
+  });
+
+  test("shows the device code and sign-in link pi reports", async () => {
+    fixture.actor = { type: "user", id: "owner-1", role: "owner" };
+    fixture.identityEnabled = false;
+    const status = {
+      providerId: "openai-codex",
+      method: "oauth",
+      state: "running",
+      events: [
+        {
+          type: "device_code",
+          userCode: "ABCD-1234",
+          verificationUri: "https://auth.example/device",
+        },
+      ],
+    };
+    fixture.beginLogin.mockResolvedValue(status);
+    fixture.loginStatus.mockResolvedValue(status);
+    render(<SettingsProviders />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "providers.directory.signInNamed:ChatGPT" }),
+    );
+    expect(await screen.findByText("ABCD-1234")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "auth.example" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "providers.login.stop" }));
+    expect(fixture.cancelLogin).toHaveBeenCalledWith("openai-codex");
+  });
+
+  test("lists connected providers and disconnects them", async () => {
+    fixture.actor = { type: "user", id: "owner-1", role: "owner" };
+    fixture.identityEnabled = false;
+    fixture.providers = [
+      { ...PROVIDERS[1], connection: { id: "anthropic", authType: "api_key", personal: false } },
+    ];
+    render(<SettingsProviders />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "providers.disconnectNamed:Anthropic" }),
+    );
+    expect(fixture.disconnectProvider).toHaveBeenCalledWith("anthropic");
+    await waitFor(() => expect(fixture.refresh).toHaveBeenCalled());
   });
 });

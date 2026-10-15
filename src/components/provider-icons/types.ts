@@ -36,8 +36,26 @@ export type ProviderIconName = string;
 
 const fallbackProviderIcon = "synthetic";
 
+/** pi provider and connection ids whose icon is filed under another name. */
+const providerIconAliases: Readonly<Record<string, string>> = {
+  "chatgpt-codex": "openai",
+  "openai-codex": "openai",
+  fireworks: "fireworks-ai",
+  together: "togetherai",
+  "kimi-coding": "kimi-for-coding",
+  "vercel-ai-gateway": "vercel",
+  "zai-coding-cn": "zai-coding-plan",
+  "qwen-token-plan": "alibaba",
+  "qwen-token-plan-cn": "alibaba-cn",
+  "qwen-token-plan-individual": "alibaba",
+  "xiaomi-token-plan-ams": "xiaomi",
+  "xiaomi-token-plan-cn": "xiaomi",
+  "xiaomi-token-plan-sgp": "xiaomi",
+};
+
 export function resolveProviderIcon(id: string): ProviderIconName {
-  return providerIconUrls[id] ? id : fallbackProviderIcon;
+  const name = providerIconAliases[id] ?? id;
+  return providerIconUrls[name] ? name : fallbackProviderIcon;
 }
 
 export function getProviderIconSvg(id: string): string {

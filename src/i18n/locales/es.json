@@ -704,61 +704,35 @@
     "cost": "Coste"
   },
   "providers": {
-    "codex": {
-      "title": "ChatGPT",
-      "description": "Usa tu suscripción de ChatGPT con modelos Codex.",
-      "signIn": "Iniciar sesión en ChatGPT",
-      "signOut": "Cerrar sesión",
-      "authorizeTitle": "Autorizar ChatGPT",
-      "code": "Introduce el código {{code}}",
-      "open": "Abrir página de verificación",
-      "check": "He autorizado OpenGUI"
+    "directory": {
+      "connectedTitle": "Proveedores conectados",
+      "connectedEmpty": "Todavía no hay proveedores conectados. Añade uno abajo.",
+      "addTitle": "Añadir un proveedor",
+      "addHelp": "Inicia sesión con una suscripción o pega una clave de API. Los modelos aparecen en cuanto el proveedor está conectado.",
+      "signIn": "Iniciar sesión",
+      "signInNamed": "Iniciar sesión en {{name}}",
+      "subscription": "Usar suscripción",
+      "apiKey": "Clave de API",
+      "apiKeyOrFree": "Clave de API o gratis",
+      "apiKeyNamed": "Añadir una clave de API para {{name}}",
+      "authOAuth": "Sesión iniciada",
+      "authApiKey": "Clave de API",
+      "freeTierHint": "Déjalo en blanco para usar los modelos gratuitos de OpenCode Zen sin cuenta."
     },
-    "deviceAuth": {
-      "description": "Completa estos pasos en el navegador. OpenGUI espera automáticamente.",
-      "stepOpen": "Abre la página de verificación",
-      "stepEnterCode": "Introduce el código que se muestra aquí",
-      "stepEnterCodeHelp": "Cópialo para no tener que escribirlo.",
-      "stepWait": "Aprueba el acceso: lo detectamos automáticamente",
-      "codeLabel": "Código",
-      "copyCode": "Copiar código",
-      "copied": "Copiado",
-      "copyCodeAria": "Código de autorización {{code}}. Haz clic para copiar.",
-      "openPage": "Abrir página de verificación",
-      "expiresIn": "Caduca en {{time}}",
-      "polling": "Comprobando cada pocos segundos",
-      "stop": "Detener autorización",
-      "expired": "El código caducó antes de terminar la autorización.",
-      "retry": "Obtener un código nuevo",
-      "successTitle": "Autorización completada",
-      "successBody": "Este proveedor ya está listo."
-    },
-    "xai": {
-      "title": "Proxy de SuperGrok (experimental)",
-      "description": "Acceso experimental a la suscripción mediante cli-chat-proxy.grok.com. OpenGUI autoriza el cliente OAuth de Grok CLI de un tercero; xAI no ha publicado permiso para que OpenGUI reutilice ese cliente y tu plan podría no tener acceso.",
-      "signIn": "Autorizar cliente OAuth de terceros",
-      "authorizeTitle": "Autorizar proxy de SuperGrok"
-    },
-    "xaiApi": {
-      "title": "API de xAI",
-      "description": "Usa la API Responses documentada en api.x.ai con tu clave de API de xAI y los modelos Grok Build 0.1.",
-      "apiKeyPlaceholder": "Clave de API de xAI",
-      "enable": "Activar API de xAI",
-      "saveKey": "Guardar clave de API"
-    },
-    "opencode": {
-      "title": "OpenCode Go",
-      "description": "Pega la clave API de tu suscripción a OpenCode Go.",
-      "apiKeyPlaceholder": "Clave API de OpenCode Go",
-      "enable": "Activar OpenCode Go",
-      "saveKey": "Guardar clave API"
-    },
-    "zen": {
-      "title": "OpenCode Zen",
-      "description": "Activa modelos Zen gratuitos con límites de uso sin clave API, o añade la clave de tu cuenta de OpenCode Zen.",
-      "apiKeyPlaceholder": "Clave API (opcional)",
-      "enable": "Activar modelos gratuitos",
-      "saveKey": "Guardar clave API"
+    "login": {
+      "title": "Conectar {{name}}",
+      "description": "Sigue los pasos de abajo. OpenGUI termina automáticamente cuando el proveedor confirma.",
+      "deviceCodeHelp": "Abre la página de verificación e introduce este código.",
+      "copyCodeAria": "Código de autorización {{code}}. Haz clic para copiarlo.",
+      "openSignIn": "Abrir página de inicio de sesión",
+      "submit": "Continuar",
+      "waiting": "Esperando a {{name}}…",
+      "polling": "Comprobando la autorización automáticamente",
+      "stop": "Cancelar inicio de sesión",
+      "failed": "El inicio de sesión no terminó.",
+      "retry": "Reintentar",
+      "successTitle": "Conectado",
+      "successBody": "Los modelos de este proveedor están listos."
     },
     "description": "Conecta los modelos que usa el agente de OpenGUI.",
     "addProvider": "Añadir conexión",
@@ -840,6 +814,7 @@
     "editOffering": "Editar {{name}}",
     "removeOffering": "Eliminar {{name}}",
     "everyone": "Todos en este Host",
+    "customBackendsTitle": "Backends personalizados",
     "customBackendTitle": "Backend personalizado compatible con OpenAI",
     "customBackendHelp": "Añade un endpoint una vez y enumera todos los modelos compatibles, uno por línea o separados por comas.",
     "backendNamePlaceholder": "Nombre del backend",

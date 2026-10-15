@@ -1,15 +1,12 @@
 import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { OPENCODE_GO_PRESET, OPENCODE_ZEN_PRESET, XAI_API_PRESET } from "@opengui/protocol";
-import { DeviceAuthDialog } from "@/components/DeviceAuthDialog";
 import { Button } from "@/components/ui/button";
 import { createHostClient } from "@/protocol/host-client";
 import type {
-  CodexAuthStatus,
   HostModelConnection,
   HostModelOffering,
-  SubscriptionProvider,
+  HostProviderInfo,
 } from "@/protocol/host-types";
 import { useActions } from "@/hooks/use-agent-state";
 import { notifyUnknownError } from "@/lib/notify";
@@ -33,6 +30,7 @@ import { getIdentityWorkspace } from "@/features/identity/workspace-identity";
 import { ModelAccessEditor } from "@/features/model-access/ModelAccessEditor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CustomBackendEditor } from "@/features/model-access/CustomBackendEditor";
+import { ProviderDirectory } from "@/features/model-access/ProviderDirectory";
 import {
   buildCustomModelConnection,
   createCustomBackendDraft,
@@ -62,6 +60,7 @@ export function SettingsProviders({
     });
   }, [workspace]);
   const [connections, setConnections] = useState<HostModelConnection[]>([]);
+  const [providers, setProviders] = useState<HostProviderInfo[]>([]);
   const [offerings, setOfferings] = useState<HostModelOffering[]>([]);
   const [offeringEntitlements, setOfferingEntitlements] = useState<
     Record<string, ModelOfferingEntitlement[]>
@@ -77,9 +76,6 @@ export function SettingsProviders({
   const [showConnections, setShowConnections] = useState(false);
   const [showOfferingForm, setShowOfferingForm] = useState(false);
   const [savingOffering, setSavingOffering] = useState(false);
-  const [zenApiKey, setZenApiKey] = useState("");
-  const [goApiKey, setGoApiKey] = useState("");
-  const [xaiApiKey, setXaiApiKey] = useState("");
   const [offeringName, setOfferingName] = useState("");
   const [offeringSlug, setOfferingSlug] = useState("");
   const [offeringBackendId, setOfferingBackendId] = useState("");
@@ -93,15 +89,6 @@ export function SettingsProviders({
   const [loadError, setLoadError] = useState(false);
   const [savingBackend, setSavingBackend] = useState(false);
   const [modelPolicy, setModelPolicy] = useState<ModelPolicy | null>(null);
-  const [codex, setCodex] = useState<CodexAuthStatus>({ connected: false, pending: null });
-  const [subscriptions, setSubscriptions] = useState<Record<SubscriptionProvider, CodexAuthStatus>>(
-    {
-      xai: { connected: false, pending: null },
-    },
-  );
-  const [activeDeviceAuth, setActiveDeviceAuth] = useState<
-    { kind: "codex" } | { kind: "subscription"; provider: SubscriptionProvider } | null
-  >(null);
   const canManageShared =
     actor?.type !== "user" || actor.role === "owner" || actor.role === "admin";
   const personalByokAllowed =
@@ -118,24 +105,15 @@ export function SettingsProviders({
       modelPolicy?.effective?.allowByos ??
       (modelPolicy?.host.allowByos && modelPolicy.team.allowByos),
     );
-  const activeDevicePending =
-    activeDeviceAuth?.kind === "codex"
-      ? codex.pending
-      : activeDeviceAuth?.kind === "subscription"
-        ? subscriptions[activeDeviceAuth.provider]?.pending
-        : null;
-  const activeDeviceTitle =
-    activeDeviceAuth?.kind === "codex"
-      ? t("providers.codex.authorizeTitle")
-      : activeDeviceAuth?.kind === "subscription"
-        ? t(`providers.${activeDeviceAuth.provider}.authorizeTitle`)
-        : "";
-
   const reload = async () => {
     setLoadError(false);
     try {
-      const next = await host.listModelConnections();
+      const [next, nextProviders] = await Promise.all([
+        host.listModelConnections(),
+        host.listProviders(),
+      ]);
       setConnections(next);
+      setProviders(nextProviders);
       const nextOfferings = (await host.listModelOfferings?.()) ?? [];
       setOfferings(nextOfferings);
       if (identity && actor?.type === "user") setModelPolicy(await identity.modelPolicy());
@@ -168,26 +146,6 @@ export function SettingsProviders({
   useEffect(() => {
     void reload().catch(notifyUnknownError);
   }, []);
-  useEffect(() => {
-    if (!personalByosAllowed) return;
-    void host
-      .codexAuthStatus()
-      .then((status) => {
-        setCodex(status);
-        if (status.pending) setActiveDeviceAuth({ kind: "codex" });
-      })
-      .catch(notifyUnknownError);
-    for (const provider of ["xai"] as const) {
-      void host
-        .subscriptionAuthStatus(provider)
-        .then((status) => {
-          setSubscriptions((current) => ({ ...current, [provider]: status }));
-          if (status.pending) setActiveDeviceAuth({ kind: "subscription", provider });
-        })
-        .catch(notifyUnknownError);
-    }
-  }, [personalByosAllowed]);
-
   async function saveConnection() {
     if (!backendDraft) return;
     const connection = buildCustomModelConnection(backendDraft);
@@ -231,64 +189,8 @@ export function SettingsProviders({
     }
   }
 
-  async function enableZen() {
-    try {
-      await host.upsertModelConnection({
-        ...OPENCODE_ZEN_PRESET,
-        modelIds: [],
-        apiKey: zenApiKey.trim() || undefined,
-      });
-      setZenApiKey("");
-      await reload();
-      await refreshProviders();
-    } catch (error) {
-      notifyUnknownError(error);
-    }
-  }
-
-  async function enableGo() {
-    try {
-      await host.upsertModelConnection({
-        id: OPENCODE_GO_PRESET.id,
-        label: OPENCODE_GO_PRESET.label,
-        baseUrl: OPENCODE_GO_PRESET.baseUrl,
-        modelIds: [],
-        apiKey: goApiKey.trim(),
-      });
-      setGoApiKey("");
-      await reload();
-      await refreshProviders();
-    } catch (error) {
-      notifyUnknownError(error);
-    }
-  }
-
-  async function enableXaiApi() {
-    try {
-      await host.upsertModelConnection({
-        ...XAI_API_PRESET,
-        modelIds: [...XAI_API_PRESET.modelIds],
-        modelRoutes: { ...XAI_API_PRESET.modelRoutes },
-        modelCapabilities: { ...XAI_API_PRESET.modelCapabilities },
-        apiKey: xaiApiKey.trim(),
-      });
-      setXaiApiKey("");
-      await reload();
-      await refreshProviders();
-    } catch (error) {
-      notifyUnknownError(error);
-    }
-  }
-
-  const zenEnabled = connections.some((connection) => connection.id === OPENCODE_ZEN_PRESET.id);
-  const goEnabled = connections.some((connection) => connection.id === OPENCODE_GO_PRESET.id);
-  const xaiApiEnabled = connections.some((connection) => connection.id === XAI_API_PRESET.id);
   const customConnections = connections.filter(
-    (connection) =>
-      !["chatgpt-codex", "supergrok", "opencode-go", "xai-api", OPENCODE_ZEN_PRESET.id].includes(
-        connection.id,
-      ) &&
-      (canManageShared || connection.plane === "user"),
+    (connection) => !connection.providerId && (canManageShared || connection.plane === "user"),
   );
 
   if (loading)
@@ -537,200 +439,16 @@ export function SettingsProviders({
       {(!identity || !canManageShared || showConnections) && (
         <>
           <div className="space-y-2">
-            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-              <div>
-                <div className="text-sm font-medium">{t("providers.zen.title")}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t("providers.zen.description")}
-                </div>
-              </div>
-              <input
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={zenApiKey}
-                onChange={(event) => setZenApiKey(event.target.value)}
-                type="password"
-                placeholder={t("providers.zen.apiKeyPlaceholder")}
-              />
-              <div className="flex gap-2">
-                <Button type="button" onClick={() => void enableZen()}>
-                  {zenEnabled ? t("providers.zen.saveKey") : t("providers.zen.enable")}
-                </Button>
-                {zenEnabled && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void host
-                        .removeModelConnection(OPENCODE_ZEN_PRESET.id)
-                        .then(reload)
-                        .then(refreshProviders)
-                        .catch(notifyUnknownError)
-                    }
-                  >
-                    {t("providers.disconnect")}
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-              <div>
-                <div className="text-sm font-medium">{t("providers.xaiApi.title")}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t("providers.xaiApi.description")}
-                </div>
-              </div>
-              <input
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={xaiApiKey}
-                onChange={(event) => setXaiApiKey(event.target.value)}
-                type="password"
-                placeholder={t("providers.xaiApi.apiKeyPlaceholder")}
-              />
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  disabled={!xaiApiKey.trim()}
-                  onClick={() => void enableXaiApi()}
-                >
-                  {xaiApiEnabled ? t("providers.xaiApi.saveKey") : t("providers.xaiApi.enable")}
-                </Button>
-                {xaiApiEnabled && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void host
-                        .removeModelConnection(XAI_API_PRESET.id)
-                        .then(reload)
-                        .then(refreshProviders)
-                        .catch(notifyUnknownError)
-                    }
-                  >
-                    {t("providers.disconnect")}
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div hidden={!personalByosAllowed} className="space-y-3 rounded-lg border p-3">
-              <div>
-                <div className="text-sm font-medium">{t("providers.codex.title")}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t("providers.codex.description")}
-                </div>
-              </div>
-              {codex.connected ? (
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    void host
-                      .disconnectCodex()
-                      .then(() => setCodex({ connected: false, pending: null }))
-                      .then(reload)
-                      .then(refreshProviders)
-                      .catch(notifyUnknownError)
-                  }
-                >
-                  {t("providers.codex.signOut")}
-                </Button>
-              ) : (
-                <Button
-                  onClick={() =>
-                    void host
-                      .beginCodexAuth()
-                      .then((status) => {
-                        setCodex(status);
-                        setActiveDeviceAuth({ kind: "codex" });
-                      })
-                      .catch(notifyUnknownError)
-                  }
-                >
-                  {t("providers.codex.signIn")}
-                </Button>
-              )}
-            </div>
-            <div hidden={!canManageShared} className="space-y-3 rounded-lg border p-3">
-              <div>
-                <div className="text-sm font-medium">{t("providers.opencode.title")}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t("providers.opencode.description")}
-                </div>
-              </div>
-              <input
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={goApiKey}
-                onChange={(event) => setGoApiKey(event.target.value)}
-                type="password"
-                placeholder={t("providers.opencode.apiKeyPlaceholder")}
-              />
-              <div className="flex gap-2">
-                <Button type="button" disabled={!goApiKey.trim()} onClick={() => void enableGo()}>
-                  {goEnabled ? t("providers.opencode.saveKey") : t("providers.opencode.enable")}
-                </Button>
-                {goEnabled && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void host
-                        .removeModelConnection(OPENCODE_GO_PRESET.id)
-                        .then(reload)
-                        .then(refreshProviders)
-                        .catch(notifyUnknownError)
-                    }
-                  >
-                    {t("providers.disconnect")}
-                  </Button>
-                )}
-              </div>
-            </div>
-            {(["xai"] as const).map((provider) => {
-              if (!personalByosAllowed) return null;
-              const status = subscriptions[provider];
-              return (
-                <div key={provider} className="space-y-3 rounded-lg border p-3">
-                  <div>
-                    <div className="text-sm font-medium">{t(`providers.${provider}.title`)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {t(`providers.${provider}.description`)}
-                    </div>
-                  </div>
-                  {status.connected ? (
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        void host
-                          .disconnectSubscription(provider)
-                          .then(() =>
-                            setSubscriptions((current) => ({
-                              ...current,
-                              [provider]: { connected: false, pending: null },
-                            })),
-                          )
-                          .then(reload)
-                          .then(refreshProviders)
-                          .catch(notifyUnknownError)
-                      }
-                    >
-                      {t("providers.codex.signOut")}
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() =>
-                        void host
-                          .beginSubscriptionAuth(provider)
-                          .then((next) => {
-                            setSubscriptions((current) => ({ ...current, [provider]: next }));
-                            setActiveDeviceAuth({ kind: "subscription", provider });
-                          })
-                          .catch(notifyUnknownError)
-                      }
-                    >
-                      {t(`providers.${provider}.signIn`)}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
+            <ProviderDirectory
+              host={host}
+              providers={providers}
+              canManageShared={canManageShared}
+              allowApiKeys={personalByokAllowed}
+              allowSubscriptions={personalByosAllowed}
+              showScope={Boolean(identity)}
+              onChanged={() => reload().then(refreshProviders)}
+            />
+            <h3 className="border-t pt-5 font-medium">{t("providers.customBackendsTitle")}</h3>
             {customConnections.map((connection) => (
               <div
                 key={connection.id}
@@ -833,53 +551,6 @@ export function SettingsProviders({
           )}
         </>
       )}
-      <DeviceAuthDialog
-        open={activeDeviceAuth != null}
-        title={activeDeviceTitle}
-        pending={activeDevicePending}
-        onPoll={async () => {
-          if (activeDeviceAuth?.kind === "subscription") {
-            return host.pollSubscriptionAuth(activeDeviceAuth.provider);
-          }
-          return host.pollCodexAuth();
-        }}
-        onCancel={async () => {
-          if (activeDeviceAuth?.kind === "subscription") {
-            const next = await host.cancelSubscriptionAuth(activeDeviceAuth.provider);
-            setSubscriptions((current) => ({
-              ...current,
-              [activeDeviceAuth.provider]: next,
-            }));
-            return;
-          }
-          if (activeDeviceAuth?.kind === "codex") {
-            setCodex(await host.cancelCodexAuth());
-          }
-        }}
-        onClose={() => setActiveDeviceAuth(null)}
-        onSuccess={(status) => {
-          if (activeDeviceAuth?.kind === "subscription") {
-            setSubscriptions((current) => ({
-              ...current,
-              [activeDeviceAuth.provider]: status,
-            }));
-          } else {
-            setCodex(status);
-          }
-          void reload().then(refreshProviders).catch(notifyUnknownError);
-        }}
-        onRetry={async () => {
-          if (activeDeviceAuth?.kind === "subscription") {
-            const next = await host.beginSubscriptionAuth(activeDeviceAuth.provider);
-            setSubscriptions((current) => ({
-              ...current,
-              [activeDeviceAuth.provider]: next,
-            }));
-            return;
-          }
-          setCodex(await host.beginCodexAuth());
-        }}
-      />
     </div>
   );
 }

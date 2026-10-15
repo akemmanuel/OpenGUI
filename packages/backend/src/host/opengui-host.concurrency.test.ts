@@ -165,12 +165,13 @@ describe("OpenGuiHost concurrent arbitration", () => {
       ]);
     const host = new OpenGuiHost(root, { model, fetchImpl: fetchImpl as typeof fetch });
     await host.start();
-    await host.upsertModelConnection({
-      id: "opencode-zen",
-      label: "OpenCode Zen",
-      baseUrl: "https://opencode.ai/zen/v1",
-      modelIds: ["big-pickle"],
-    });
+    // An empty key enables Zen's keyless free tier.
+    let login = host.beginProviderLogin("opencode", "api_key");
+    while (login.state === "running") {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      login = host.providerLoginStatus("opencode") ?? login;
+    }
+    await host.respondProviderLogin("opencode", login.prompt!.id, "");
     const session = await host.createSession({
       projectDirectory: project,
       model: { connectionId: "opencode-zen", modelId: "big-pickle" },

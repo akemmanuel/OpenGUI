@@ -1,96 +1,75 @@
 export type ProviderModelRoute = "openai-chat" | "anthropic-messages" | "responses";
 
-export interface ProviderModelCapabilities {
-  displayName?: string;
-  context?: number;
-  reasoning: boolean;
-  reasoningEfforts?: readonly string[];
-}
-
-export interface ProviderConnectionPreset {
-  id: string;
-  label: string;
-  baseUrl: string;
-  defaultModelId?: string;
-  modelIds: readonly string[];
-  modelRoutes?: Readonly<Record<string, ProviderModelRoute>>;
-  modelCapabilities?: Readonly<Record<string, ProviderModelCapabilities>>;
-}
-
-export const CHATGPT_CODEX_PRESET = {
-  id: "chatgpt-codex",
-  label: "ChatGPT (Codex)",
-  baseUrl: "https://chatgpt.com/backend-api/codex",
-  defaultModelId: "gpt-5.6-sol",
-  // The Host loads model metadata from pi's online catalog (or its offline cache).
-  modelIds: [],
-} as const satisfies ProviderConnectionPreset;
-
-export const SUPERGROK_PRESET = {
-  id: "supergrok",
-  label: "SuperGrok (experimental OAuth)",
-  baseUrl: "https://cli-chat-proxy.grok.com/v1",
-  defaultModelId: "grok-build",
-  modelIds: ["grok-build"],
-  modelRoutes: { "grok-build": "responses" },
-  modelCapabilities: {
-    "grok-build": {
-      displayName: "Grok Build",
-      context: 256_000,
-      reasoning: true,
-    },
-  },
-} as const satisfies ProviderConnectionPreset;
-
-/** Public, documented xAI API surface. This is deliberately not the subscription proxy. */
-export const XAI_API_PRESET = {
-  id: "xai-api",
-  label: "xAI API",
-  baseUrl: "https://api.x.ai/v1",
-  defaultModelId: "grok-build-0.1",
-  modelIds: ["grok-build-0.1", "grok-code-fast-1", "grok-code-fast", "grok-code-fast-1-0825"],
-  modelRoutes: {
-    "grok-build-0.1": "responses",
-    "grok-code-fast-1": "responses",
-    "grok-code-fast": "responses",
-    "grok-code-fast-1-0825": "responses",
-  },
-  modelCapabilities: Object.fromEntries(
-    ["grok-build-0.1", "grok-code-fast-1", "grok-code-fast", "grok-code-fast-1-0825"].map(
-      (modelId) => [
-        modelId,
-        {
-          displayName: modelId === "grok-build-0.1" ? "Grok Build 0.1" : modelId,
-          context: 256_000,
-          reasoning: true,
-        },
-      ],
-    ),
-  ),
-} as const satisfies ProviderConnectionPreset;
-
-export const OPENCODE_ZEN_PRESET = {
-  id: "opencode-zen",
-  label: "OpenCode Zen",
-  baseUrl: "https://opencode.ai/zen/v1",
-  // The Host filters pi's catalog to free models when no API key is configured.
-  modelIds: [],
-} as const satisfies ProviderConnectionPreset;
-
 /**
- * Keyless Zen calls use the free-tier gateway the OpenCode CLI calls. The /zen route rejects
- * them with FreeTierError, so they go here with the CLI's public key.
+ * Host-scope connection ids for pi providers whose connections predate the provider list.
+ * Every other pi provider's connection id is its pi provider id.
  */
-export const OPENCODE_FREE_TIER = {
-  baseUrl: "https://opencode.ai/inference/v1",
-  apiKey: "public",
-} as const;
+const PI_PROVIDER_CONNECTION_IDS: Readonly<Record<string, string>> = {
+  "openai-codex": "chatgpt-codex",
+  opencode: "opencode-zen",
+};
 
-export const OPENCODE_GO_PRESET = {
-  id: "opencode-go",
-  label: "OpenCode Go",
-  baseUrl: "https://opencode.ai/zen/go/v1",
-  defaultModelId: "glm-5.2",
-  // The Host loads model metadata from pi's online catalog (or its offline cache).
-  modelIds: [],
-} as const satisfies ProviderConnectionPreset;
+/** Retired first-party connection ids that now route to a pi provider connection. */
+export const RETIRED_PROVIDER_CONNECTION_IDS: Readonly<Record<string, string>> = {
+  supergrok: "xai",
+  "xai-api": "xai",
+};
+
+/** Preferred model for a new connection; pi's first listed model is used otherwise. */
+export const PI_PROVIDER_DEFAULT_MODELS: Readonly<Record<string, string>> = {
+  "openai-codex": "gpt-5.6-sol",
+  "opencode-go": "glm-5.2",
+};
+
+export function piProviderConnectionId(providerId: string) {
+  return PI_PROVIDER_CONNECTION_IDS[providerId] ?? providerId;
+}
+
+export type ProviderAuthMethod = "api_key" | "oauth";
+
+/** A pi provider and how the requesting actor can sign in to it. */
+export interface HostProviderInfo {
+  id: string;
+  name: string;
+  apiKey?: { name: string; interactive: boolean };
+  oauth?: { name: string; loginLabel?: string; subscription: boolean };
+  /** The actor's usable connection to this provider, if any. */
+  connection?: { id: string; authType: ProviderAuthMethod; personal: boolean };
+  login?: ProviderLoginStatus;
+}
+
+export type ProviderLoginPrompt =
+  | {
+      id: string;
+      type: "text" | "secret" | "manual_code";
+      message: string;
+      placeholder?: string;
+    }
+  | {
+      id: string;
+      type: "select";
+      message: string;
+      options: Array<{ id: string; label: string; description?: string }>;
+    };
+
+export type ProviderLoginEvent =
+  | { type: "info"; message: string; links?: Array<{ url: string; label?: string }> }
+  | { type: "auth_url"; url: string; instructions?: string }
+  | {
+      type: "device_code";
+      userCode: string;
+      verificationUri: string;
+      intervalSeconds?: number;
+      expiresInSeconds?: number;
+    }
+  | { type: "progress"; message: string };
+
+export interface ProviderLoginStatus {
+  providerId: string;
+  method: ProviderAuthMethod;
+  state: "running" | "awaiting_input" | "succeeded" | "failed" | "cancelled";
+  prompt?: ProviderLoginPrompt;
+  events: ProviderLoginEvent[];
+  error?: string;
+  connectionId?: string;
+}

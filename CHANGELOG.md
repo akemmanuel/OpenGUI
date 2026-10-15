@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Providers
+
+- Connect any provider pi supports, not just ChatGPT, xAI and OpenCode: Anthropic, OpenAI,
+  Google Gemini and Vertex, Amazon Bedrock, Azure OpenAI, Mistral, OpenRouter, GitHub Copilot,
+  Groq, Cerebras, DeepSeek, Fireworks, Together, Hugging Face, Moonshot, Z.AI, MiniMax, Vercel
+  and Cloudflare gateways, and more. Settings lists them all with search; each offers its own
+  API-key or subscription sign-in, including device codes, browser sign-in with a pasted code,
+  and the extra values some providers ask for.
+- Members connect their own providers under the existing BYOK/BYOS policy and can always remove
+  their own credentials. Personal credentials never pick up the Host's environment variables.
+- Existing ChatGPT, SuperGrok, xAI API, OpenCode Zen and OpenCode Go connections move over
+  automatically, and Sessions that used them keep working. SuperGrok and the xAI API key are now
+  one xAI connection (the API key wins if both were set).
+- OpenCode Zen without a key no longer impersonates the OpenCode CLI or sends the CLI's public
+  key. OpenCode currently rejects such requests (`FreeTierError`); add a Zen API key to use it.
+
 ## 0.7.0
 
 OpenGUI 0.7.0 brings the release in line with what has been running on managed Hosts, and

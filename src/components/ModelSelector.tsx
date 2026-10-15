@@ -27,6 +27,7 @@ type ModelOption = {
   value: string;
   providerID: string;
   providerName: string;
+  iconID: string;
   modelID: string;
   label: string;
   reasoning: boolean;
@@ -35,6 +36,7 @@ type ModelOption = {
 type ModelGroup = {
   id: string;
   name: string;
+  iconID: string;
   models: ModelOption[];
 };
 
@@ -70,7 +72,7 @@ function ModelRow({
       onClick={() => onSelect(model)}
       onMouseEnter={() => onMouseEnter(model.value)}
     >
-      {showProvider && <ProviderIcon provider={model.providerID} className="size-4 shrink-0" />}
+      {showProvider && <ProviderIcon provider={model.iconID} className="size-4 shrink-0" />}
       <span className="min-w-0 flex-1 truncate font-medium">{model.label}</span>
       {showProvider && (
         <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
@@ -107,9 +109,11 @@ export function ModelSelector() {
   const groups = useMemo<ModelGroup[]>(() => {
     const byProvider = new Map<string, ModelGroup>();
     for (const provider of providers) {
+      const iconID = typeof provider.icon === "string" ? provider.icon : provider.id;
       const group = byProvider.get(provider.id) ?? {
         id: provider.id,
         name: provider.name,
+        iconID,
         models: [],
       };
       const knownValues = new Set(group.models.map((model) => model.value));
@@ -120,6 +124,7 @@ export function ModelSelector() {
           value,
           providerID: provider.id,
           providerName: provider.name,
+          iconID,
           modelID,
           label: model.name || modelID,
           reasoning: model.capabilities.reasoning,
@@ -299,7 +304,10 @@ export function ModelSelector() {
           className="!h-7 !min-w-0 !flex-1 max-w-24 gap-1.5 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground sm:max-w-44"
         >
           {selectedModel ? (
-            <ProviderIcon provider={selectedModel.providerID} className="size-3.5 shrink-0" />
+            <ProviderIcon
+              provider={currentModel?.iconID ?? selectedModel.providerID}
+              className="size-3.5 shrink-0"
+            />
           ) : (
             <BrainCircuit className="size-3.5 shrink-0" />
           )}
@@ -380,7 +388,7 @@ export function ModelSelector() {
               {browseGroups.map((group) => (
                 <section key={group.id}>
                   <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-popover px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                    <ProviderIcon provider={group.id} className="size-3.5 shrink-0" />
+                    <ProviderIcon provider={group.iconID} className="size-3.5 shrink-0" />
                     <span className="truncate">{group.name}</span>
                   </h3>
                   {group.models.map((model) => (

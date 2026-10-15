@@ -4,7 +4,7 @@ import {
   type OpenGuiHost,
 } from "../host/opengui-host.ts";
 import { resolve } from "node:path";
-import { OPENCODE_GO_PRESET, OPENCODE_ZEN_PRESET } from "@opengui/protocol";
+import type { ProviderAuthMethod, ProviderLoginStatus } from "@opengui/protocol";
 import type { DurableActor } from "@opengui/harness";
 import type { Context } from "hono";
 import type { BackendApp, BackendRequestEnv } from "../http/request-context.ts";
@@ -195,163 +195,146 @@ export function registerHostProductRoutes(
     );
     return Response.json({ ok: true, value });
   });
-  async function subscriptionActor(c: Context<BackendRequestEnv>) {
+  /** Host administrators manage the Host's provider connections; members manage their own. */
+  function providerScope(c: Context<BackendRequestEnv>) {
     const actor = c.get("actor") as Actor;
-    await input.identity?.authorizePersonalSubscription(actor);
     return actor.type === "user" && actor.role !== "owner" && actor.role !== "admin"
       ? durableActor(actor)
       : undefined;
   }
 
-  async function personalSubscriptionMetadata(
-    actor: DurableActor | undefined,
-    provider: "codex" | "xai",
+  async function authorizeProviderMutation(
+    c: Context<BackendRequestEnv>,
+    method?: ProviderAuthMethod,
   ) {
-    if (!actor || actor.type !== "user" || !input.identity) return undefined;
-    const resolved = await input.identity.resolveDurableActor(actor);
-    if (!resolved) throw new IdentityError("FORBIDDEN", 403, "User access required");
-    const connection = (await input.getHost()).personalSubscriptionConnection(provider, actor);
-    return connection ? { resolved, connection } : undefined;
+    const actor = c.get("actor") as Actor;
+    if (actor.type !== "local" && actor.type !== "user") {
+      throw new IdentityError("FORBIDDEN", 403, "Human user access required");
+    }
+    const scope = providerScope(c);
+    if (scope && method) {
+      await input.identity?.authorizePersonalCredential(
+        actor,
+        method === "oauth" ? "byos" : "byok",
+      );
+    }
+    return scope;
   }
 
-  async function recordPersonalSubscription(
+  /** A personal sign-in becomes a user-plane connection once pi has stored its credential. */
+  async function recordPersonalProvider(
     actor: DurableActor | undefined,
-    provider: "codex" | "xai",
+    providerId: string,
+    status: ProviderLoginStatus | undefined,
   ) {
-    const metadata = await personalSubscriptionMetadata(actor, provider);
-    if (!metadata || !input.identity) return;
+    if (status?.state !== "succeeded" || !actor || actor.type !== "user" || !input.identity) return;
+    const host = await input.getHost();
+    const connection = host.personalProviderConnection(providerId, actor);
+    if (!connection) return;
+    const resolved = await input.identity.resolveDurableActor(actor);
+    if (!resolved) throw new IdentityError("FORBIDDEN", 403, "User access required");
     try {
-      await input.identity.recordModelConnection(metadata.resolved, {
-        id: metadata.connection.id,
+      await input.identity.recordModelConnection(resolved, {
+        id: connection.id,
         plane: "user",
-        credentialKind: "byos",
+        credentialKind: connection.authType === "oauth" ? "byos" : "byok",
       });
     } catch (error) {
-      const host = await input.getHost();
-      if (provider === "codex") await host.disconnectCodex(actor);
-      else await host.disconnectSubscription(provider, actor);
+      await host.disconnectProvider(providerId, actor);
       throw error;
     }
   }
 
-  app.get("/api/host/auth/codex", async (c) => {
+  app.get("/api/host/providers", async (c) => {
     try {
-      const actor = await subscriptionActor(c);
-      return Response.json({ ok: true, value: (await input.getHost()).codexAuthStatus(actor) });
-    } catch (error) {
-      return sessionError(error);
-    }
-  });
-  app.post("/api/host/auth/codex", async (c) => {
-    try {
-      const actor = await subscriptionActor(c);
       return Response.json({
         ok: true,
-        value: await (await input.getHost()).beginCodexAuth(actor),
+        value: (await input.getHost()).listProviders(providerScope(c)),
       });
     } catch (error) {
       return sessionError(error);
     }
   });
-  app.post("/api/host/auth/codex/poll", async (c) => {
+  app.post("/api/host/providers/:providerId/login", async (c) => {
     try {
-      const actor = await subscriptionActor(c);
-      const value = await (await input.getHost()).pollCodexAuth(actor);
-      if (value.connected) await recordPersonalSubscription(actor, "codex");
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body)) throw new Error("Request body must be an object");
+      const method = body.method;
+      if (method !== "api_key" && method !== "oauth") {
+        throw new Error("method must be api_key or oauth");
+      }
+      const actor = await authorizeProviderMutation(c, method);
       return Response.json({
         ok: true,
-        value,
+        value: (await input.getHost()).beginProviderLogin(c.req.param("providerId"), method, actor),
       });
     } catch (error) {
       return sessionError(error);
     }
   });
-  app.post("/api/host/auth/codex/cancel", async (c) => {
+  app.get("/api/host/providers/:providerId/login", async (c) => {
     try {
+      const actor = providerScope(c);
+      const providerId = c.req.param("providerId");
+      const value = (await input.getHost()).providerLoginStatus(providerId, actor) ?? null;
+      await recordPersonalProvider(actor, providerId, value ?? undefined);
+      return Response.json({ ok: true, value });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+  app.post("/api/host/providers/:providerId/login/input", async (c) => {
+    try {
+      const actor = await authorizeProviderMutation(c);
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (
+        !isPlainObject(body) ||
+        typeof body.promptId !== "string" ||
+        typeof body.value !== "string"
+      ) {
+        throw new Error("promptId and value are required");
+      }
+      const providerId = c.req.param("providerId");
+      const value = await (
+        await input.getHost()
+      ).respondProviderLogin(providerId, body.promptId, body.value, actor);
+      await recordPersonalProvider(actor, providerId, value);
+      return Response.json({ ok: true, value });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+  app.delete("/api/host/providers/:providerId/login", async (c) => {
+    try {
+      const actor = await authorizeProviderMutation(c);
       return Response.json({
         ok: true,
-        value: await (await input.getHost()).cancelCodexAuth(await subscriptionActor(c)),
+        value:
+          (await input.getHost()).cancelProviderLogin(c.req.param("providerId"), actor) ?? null,
       });
     } catch (error) {
       return sessionError(error);
     }
   });
-  app.delete("/api/host/auth/codex", async (c) => {
+  app.delete("/api/host/providers/:providerId", async (c) => {
     try {
-      const actor = await subscriptionActor(c);
-      const metadata = await personalSubscriptionMetadata(actor, "codex");
-      await (await input.getHost()).disconnectCodex(actor);
-      if (metadata && input.identity)
-        await input.identity.removeModelConnection(metadata.resolved, metadata.connection.id);
+      const actor = await authorizeProviderMutation(c);
+      const providerId = c.req.param("providerId");
+      const host = await input.getHost();
+      const personal = host.personalProviderConnection(providerId, actor);
+      const resolved =
+        personal && actor && input.identity
+          ? await input.identity.resolveDurableActor(actor)
+          : null;
+      await host.disconnectProvider(providerId, actor);
+      if (personal && resolved && input.identity) {
+        await input.identity.removeModelConnection(resolved, personal.id);
+      }
       return Response.json({ ok: true, value: true });
     } catch (error) {
       return sessionError(error);
     }
   });
-  for (const provider of ["xai"] as const) {
-    app.get(`/api/host/auth/${provider}`, async (c) => {
-      try {
-        return Response.json({
-          ok: true,
-          value: (await input.getHost()).subscriptionAuthStatus(
-            provider,
-            await subscriptionActor(c),
-          ),
-        });
-      } catch (error) {
-        return sessionError(error);
-      }
-    });
-    app.post(`/api/host/auth/${provider}`, async (c) => {
-      try {
-        return Response.json({
-          ok: true,
-          value: await (
-            await input.getHost()
-          ).beginSubscriptionAuth(provider, await subscriptionActor(c)),
-        });
-      } catch (error) {
-        return sessionError(error);
-      }
-    });
-    app.post(`/api/host/auth/${provider}/poll`, async (c) => {
-      try {
-        const actor = await subscriptionActor(c);
-        const value = await (await input.getHost()).pollSubscriptionAuth(provider, actor);
-        if (value.connected) await recordPersonalSubscription(actor, provider);
-        return Response.json({
-          ok: true,
-          value,
-        });
-      } catch (error) {
-        return sessionError(error);
-      }
-    });
-    app.post(`/api/host/auth/${provider}/cancel`, async (c) => {
-      try {
-        return Response.json({
-          ok: true,
-          value: await (
-            await input.getHost()
-          ).cancelSubscriptionAuth(provider, await subscriptionActor(c)),
-        });
-      } catch (error) {
-        return sessionError(error);
-      }
-    });
-    app.delete(`/api/host/auth/${provider}`, async (c) => {
-      try {
-        const actor = await subscriptionActor(c);
-        const metadata = await personalSubscriptionMetadata(actor, provider);
-        await (await input.getHost()).disconnectSubscription(provider, actor);
-        if (metadata && input.identity)
-          await input.identity.removeModelConnection(metadata.resolved, metadata.connection.id);
-        return Response.json({ ok: true, value: true });
-      } catch (error) {
-        return sessionError(error);
-      }
-    });
-  }
 
   app.post("/api/host/models", async (c) => {
     try {
@@ -369,8 +352,7 @@ export function registerHostProductRoutes(
             .filter(Boolean)
         : [];
       if (!baseUrl) throw new Error("baseUrl is required");
-      if (modelIds.length === 0 && id !== OPENCODE_ZEN_PRESET.id && id !== OPENCODE_GO_PRESET.id)
-        throw new Error("modelIds must include at least one model");
+      if (modelIds.length === 0) throw new Error("modelIds must include at least one model");
       let parsedBaseUrl: URL;
       try {
         parsedBaseUrl = new URL(baseUrl);

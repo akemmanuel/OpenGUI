@@ -58,6 +58,46 @@ async function register(backend: BackendHost, ownerToken: string, username: stri
   );
 }
 
+type LoginStatus = {
+  state: string;
+  prompt?: { id: string; type: string; options?: Array<{ id: string }> };
+  error?: string;
+};
+
+/** Drives a pi sign-in through the Host API, answering prompts in order. */
+async function signIn(
+  backend: BackendHost,
+  token: string,
+  providerId: string,
+  method: "api_key" | "oauth",
+  answers: string[] = [],
+) {
+  const path = `http://localhost/api/host/providers/${providerId}/login`;
+  let status = await value<LoginStatus>(
+    await backend.app.request(path, {
+      method: "POST",
+      headers: headers(token, true),
+      body: JSON.stringify({ method }),
+    }),
+  );
+  for (let tick = 0; tick < 400; tick += 1) {
+    if (status.state === "succeeded" || status.state === "failed") break;
+    if (status.state === "awaiting_input" && answers.length > 0) {
+      status = await value<LoginStatus>(
+        await backend.app.request(`${path}/input`, {
+          method: "POST",
+          headers: headers(token, true),
+          body: JSON.stringify({ promptId: status.prompt!.id, value: answers.shift() }),
+        }),
+      );
+      continue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    status = await value<LoginStatus>(await backend.app.request(path, { headers: headers(token) }));
+  }
+  expect(status).toMatchObject({ state: "succeeded" });
+}
+
 describe("personal provider subscriptions", () => {
   test("keeps two members' xAI subscriptions independently visible and disconnectable", async () => {
     const root = await mkdtemp(join(tmpdir(), "opengui-personal-subscriptions-"));
@@ -81,7 +121,10 @@ describe("personal provider subscriptions", () => {
           });
         }
         if (url === "https://auth.x.ai/oauth2/token") {
-          const body = init?.body instanceof URLSearchParams ? init.body.toString() : "";
+          const body =
+            init?.body instanceof URLSearchParams || typeof init?.body === "string"
+              ? init.body.toString()
+              : "";
           const match = body.match(/device_code=device-(\d+)/);
           const suffix = match?.[1] ?? "unknown";
           return Response.json({
@@ -90,10 +133,21 @@ describe("personal provider subscriptions", () => {
             expires_in: 3600,
           });
         }
-        if (url.startsWith("https://pi.dev/api/models/providers/")) {
-          return new Response("not modified", { status: 304 });
+        if (url === "https://pi.dev/api/models/providers/xai") {
+          return Response.json([
+            {
+              id: "grok-code-fast-1",
+              name: "Grok Code Fast 1",
+              api: "openai-responses",
+              reasoning: true,
+              input: ["text"],
+              contextWindow: 256_000,
+              maxTokens: 64_000,
+              cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            },
+          ]);
         }
-        if (url === "https://cli-chat-proxy.grok.com/v1/responses") {
+        if (url === "https://api.x.ai/v1/responses") {
           const requestHeaders = new Headers(init?.headers);
           providerAuthorizations.push(requestHeaders.get("authorization") ?? "");
           return new Response('data: {"type":"response.completed","response":{"output":[]}}\n\n', {
@@ -142,24 +196,7 @@ describe("personal provider subscriptions", () => {
       }),
     });
 
-    for (const member of [alice, bob]) {
-      expect(
-        (
-          await backend.app.request("http://localhost/api/host/auth/xai", {
-            method: "POST",
-            headers: headers(member.token),
-          })
-        ).status,
-      ).toBe(200);
-      expect(
-        (
-          await backend.app.request("http://localhost/api/host/auth/xai/poll", {
-            method: "POST",
-            headers: headers(member.token),
-          })
-        ).status,
-      ).toBe(200);
-    }
+    for (const member of [alice, bob]) await signIn(backend, member.token, "xai", "oauth");
 
     const modelsFor = async (token: string) =>
       value<Array<{ id: string; plane: string; ownerId?: string }>>(
@@ -228,7 +265,7 @@ describe("personal provider subscriptions", () => {
 
     expect(
       (
-        await backend.app.request("http://localhost/api/host/auth/xai", {
+        await backend.app.request("http://localhost/api/host/providers/xai", {
           method: "DELETE",
           headers: headers(alice.token),
         })
@@ -368,22 +405,7 @@ describe("personal provider subscriptions", () => {
       headers: headers(owner.token, true),
       body: JSON.stringify({ grants: [{ root: project, access: "write" }] }),
     });
-    expect(
-      (
-        await backend.app.request("/api/host/auth/codex", {
-          method: "POST",
-          headers: headers(member.token),
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      (
-        await backend.app.request("/api/host/auth/codex/poll", {
-          method: "POST",
-          headers: headers(member.token),
-        })
-      ).status,
-    ).toBe(200);
+    await signIn(backend, member.token, "openai-codex", "oauth", ["device_code"]);
     const memberModels = await value<Array<{ id: string }>>(
       await backend.app.request("/api/host/models", { headers: headers(member.token) }),
     );

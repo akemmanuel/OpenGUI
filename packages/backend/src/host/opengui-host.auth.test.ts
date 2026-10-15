@@ -17,6 +17,88 @@ async function directory() {
   return value;
 }
 
+const GROK = {
+  id: "grok-build-0.1",
+  name: "Grok Build 0.1",
+  api: "openai-responses",
+  reasoning: true,
+  input: ["text", "image"],
+  contextWindow: 256_000,
+  maxTokens: 64_000,
+  cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+};
+
+function requestUrl(input: string | URL | Request) {
+  return input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+}
+
+/** A minimal OpenAI Responses SSE body carrying one assistant message. */
+function responsesText(text: string) {
+  return new Response(
+    [
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          type: "message",
+          id: "msg_1",
+          role: "assistant",
+          status: "in_progress",
+          content: [],
+        },
+      },
+      {
+        type: "response.content_part.added",
+        output_index: 0,
+        content_index: 0,
+        part: { type: "output_text", text: "" },
+      },
+      { type: "response.output_text.delta", output_index: 0, content_index: 0, delta: text },
+      {
+        type: "response.output_item.done",
+        output_index: 0,
+        item: {
+          type: "message",
+          id: "msg_1",
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text }],
+        },
+      },
+      {
+        type: "response.completed",
+        response: {
+          id: "resp_1",
+          status: "completed",
+          usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+        },
+      },
+    ]
+      .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+      .join(""),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+/** Answers every pi sign-in prompt from `answers`, in order. */
+async function signIn(
+  host: OpenGuiHost,
+  providerId: string,
+  method: "api_key" | "oauth",
+  answers: string[],
+) {
+  let status = host.beginProviderLogin(providerId, method);
+  for (let tick = 0; tick < 200 && status.state === "running"; tick += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    status = host.providerLoginStatus(providerId) ?? status;
+  }
+  for (const answer of answers) {
+    expect(status.state).toBe("awaiting_input");
+    status = await host.respondProviderLogin(providerId, status.prompt!.id, answer);
+  }
+  return status;
+}
+
 describe("OpenGuiHost authentication persistence", () => {
   test("offers and runs a newly published Codex model, including after an offline restart", async () => {
     const dataDirectory = await directory();
@@ -274,7 +356,14 @@ describe("OpenGuiHost authentication persistence", () => {
     expect(
       JSON.parse(await readFile(join(dataDirectory, HOST_STATE_FILENAME), "utf8")),
     ).toMatchObject({
-      secrets: { codexTokens: { refreshToken: "refresh-rotated", accountId: "account-new" } },
+      secrets: {
+        providerCredentials: {
+          "chatgpt-codex": {
+            providerId: "openai-codex",
+            credential: { type: "oauth", refresh: "refresh-rotated", accountId: "account-new" },
+          },
+        },
+      },
     });
     const diagnosticsPath = join(dataDirectory, CODEX_DIAGNOSTICS_FILENAME);
     const diagnostics = await readFile(diagnosticsPath, "utf8");
@@ -285,89 +374,69 @@ describe("OpenGuiHost authentication persistence", () => {
     vi.unstubAllGlobals();
   });
 
-  test("routes documented xAI API-key Responses and completes a reasoning/tool round trip", async () => {
+  test("signs in to xAI with an API key through pi and streams its Responses API", async () => {
     const dataDirectory = await directory();
-    await writeFile(join(dataDirectory, "fixture.txt"), "fixture contents");
     const requests: Array<{ url: string; authorization: string; body: string }> = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      requests.push({
-        url: input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-        authorization: new Headers(init?.headers).get("authorization") ?? "",
-        body: typeof init?.body === "string" ? init.body : "",
-      });
-      const wire =
-        requests.length === 1
-          ? [
-              {
-                type: "response.reasoning_summary_text.delta",
-                delta: "I will read the fixture.",
-              },
-              {
-                type: "response.output_item.done",
-                output_index: 0,
-                item: {
-                  id: "item-read",
-                  type: "function_call",
-                  call_id: "call-read",
-                  name: "read",
-                  arguments: JSON.stringify({ path: join(dataDirectory, "fixture.txt") }),
-                },
-              },
-              { type: "response.completed", response: { output: [] } },
-            ]
-          : [
-              { type: "response.output_text.delta", delta: "The fixture is readable." },
-              { type: "response.completed", response: { output: [] } },
-            ];
-      return new Response(wire.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
-    });
-    const host = new OpenGuiHost(dataDirectory, { fetchImpl: fetchImpl as typeof fetch });
-    await host.start();
-    expect(host.listModelConnections()).toEqual([]);
-    await expect(
-      host.upsertModelConnection({
-        id: "xai-api",
-        label: "xAI API",
-        baseUrl: "https://api.x.ai/v1",
-        modelIds: ["grok-build-0.1"],
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url === "https://pi.dev/api/models/providers/xai") return Response.json([GROK]);
+        requests.push({
+          url,
+          authorization: new Headers(init?.headers).get("authorization") ?? "",
+          body: typeof init?.body === "string" ? init.body : "",
+        });
+        return responsesText("grok ok");
       }),
-    ).rejects.toThrow("API key is required");
-    await host.upsertModelConnection({
-      id: "xai-api",
-      label: "ignored",
-      baseUrl: "https://wrong.invalid",
-      modelIds: ["wrong-model"],
-      apiKey: "xai-api-secret",
-    });
-    const session = await host.createSession({
-      projectDirectory: dataDirectory,
-      model: { connectionId: "xai-api", modelId: "grok-build-0.1" },
-      reasoning: "medium",
-    });
-    await host.prompt(session.id, { text: "Read fixture.txt" });
-    await host.waitForIdle(session.id);
+    );
+    const host = new OpenGuiHost(dataDirectory);
+    await host.start();
+    try {
+      expect(host.listModelConnections()).toEqual([]);
+      await expect(
+        host.upsertModelConnection({
+          id: "xai",
+          label: "xAI",
+          baseUrl: "https://api.x.ai/v1",
+          modelIds: ["grok-build-0.1"],
+          apiKey: "xai-api-secret",
+        }),
+      ).rejects.toThrow("reserved");
+      expect(await signIn(host, "xai", "api_key", ["xai-api-secret"])).toMatchObject({
+        state: "succeeded",
+        connectionId: "xai",
+      });
+      expect(host.listModelConnections()).toEqual([
+        expect.objectContaining({ id: "xai", providerId: "xai", modelIds: ["grok-build-0.1"] }),
+      ]);
+      expect(JSON.stringify(host.listModelConnections())).not.toContain("xai-api-secret");
+      expect(JSON.stringify(host.listProviders())).not.toContain("xai-api-secret");
+      // Sessions created against the retired first-party id keep working.
+      const session = await host.createSession({
+        projectDirectory: dataDirectory,
+        model: { connectionId: "xai-api", modelId: "grok-build-0.1" },
+        reasoning: "medium",
+      });
+      await host.prompt(session.id, { text: "hello" });
+      await host.waitForIdle(session.id);
 
-    expect(requests).toHaveLength(2);
-    expect(requests.every((request) => request.url === "https://api.x.ai/v1/responses")).toBe(true);
-    expect(requests.every((request) => request.authorization === "Bearer xai-api-secret")).toBe(
-      true,
-    );
-    expect(requests[0]?.body).toContain('"model":"grok-build-0.1"');
-    const entries = (await host.readSession(session.id)).entries;
-    expect(entries.map((entry) => entry.kind)).toEqual(
-      expect.arrayContaining([
-        "assistant_reasoning",
-        "tool_call",
-        "tool_result",
-        "assistant_message",
-        "run_completed",
-      ]),
-    );
-    expect(JSON.stringify(entries)).toContain("The fixture is readable.");
-    await host.close();
+      const entries = (await host.readSession(session.id)).entries;
+      expect(entries.at(-1)?.kind).toBe("run_completed");
+      expect(JSON.stringify(entries)).toContain("grok ok");
+      expect(requests).toEqual([
+        expect.objectContaining({
+          url: "https://api.x.ai/v1/responses",
+          authorization: "Bearer xai-api-secret",
+        }),
+      ]);
+      expect(requests[0]?.body).toContain('"model":"grok-build-0.1"');
+    } finally {
+      await host.close();
+    }
   });
 
-  test("refreshes once after a SuperGrok proxy 401 and persists the rotated refresh token", async () => {
+  test("refreshes a rejected SuperGrok token once and persists the rotation", async () => {
     const dataDirectory = await directory();
     await writeFile(
       join(dataDirectory, "opengui-host-secrets.json"),
@@ -384,45 +453,55 @@ describe("OpenGuiHost authentication persistence", () => {
     );
     const authorizations: string[] = [];
     let refreshes = 0;
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
-      if (url === "https://auth.x.ai/oauth2/token") {
-        refreshes += 1;
-        return Response.json({
-          access_token: "new-access",
-          refresh_token: "rotated-refresh",
-          expires_in: 3600,
-        });
-      }
-      authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
-      if (authorizations.length === 1) return new Response(null, { status: 401 });
-      return new Response(
-        'data: {"type":"response.output_text.delta","delta":"proxy ok"}\n\n' +
-          'data: {"type":"response.completed","response":{"output":[]}}\n\n',
-      );
-    });
-    const host = new OpenGuiHost(dataDirectory, { fetchImpl: fetchImpl as typeof fetch });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url === "https://pi.dev/api/models/providers/xai") return Response.json([GROK]);
+        if (url === "https://auth.x.ai/oauth2/token") {
+          refreshes += 1;
+          return Response.json({
+            access_token: "new-access",
+            refresh_token: "rotated-refresh",
+            expires_in: 3600,
+          });
+        }
+        authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
+        if (authorizations.length === 1) {
+          return Response.json({ error: { message: "expired" } }, { status: 401 });
+        }
+        return responsesText("proxy ok");
+      }),
+    );
+    const host = new OpenGuiHost(dataDirectory);
     await host.start();
-    const session = await host.createSession({
-      projectDirectory: dataDirectory,
-      model: { connectionId: "supergrok", modelId: "grok-build" },
-      reasoning: "none",
-    });
-    await host.prompt(session.id, { text: "hello" });
-    await host.waitForIdle(session.id);
+    try {
+      const session = await host.createSession({
+        projectDirectory: dataDirectory,
+        model: { connectionId: "supergrok", modelId: "grok-build-0.1" },
+        reasoning: "none",
+      });
+      await host.prompt(session.id, { text: "hello" });
+      await host.waitForIdle(session.id);
 
-    expect(refreshes).toBe(1);
-    expect(authorizations).toEqual(["Bearer old-access", "Bearer new-access"]);
-    expect(
-      JSON.parse(await readFile(join(dataDirectory, HOST_STATE_FILENAME), "utf8")),
-    ).toMatchObject({
-      secrets: {
-        subscriptionTokens: {
-          xai: { accessToken: "new-access", refreshToken: "rotated-refresh" },
+      expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
+      expect(refreshes).toBe(1);
+      expect(authorizations).toEqual(["Bearer old-access", "Bearer new-access"]);
+      expect(
+        JSON.parse(await readFile(join(dataDirectory, HOST_STATE_FILENAME), "utf8")),
+      ).toMatchObject({
+        secrets: {
+          providerCredentials: {
+            xai: {
+              providerId: "xai",
+              credential: { type: "oauth", access: "new-access", refresh: "rotated-refresh" },
+            },
+          },
         },
-      },
-    });
-    await host.close();
+      });
+    } finally {
+      await host.close();
+    }
   });
 
   test("coalesces concurrent proactive SuperGrok refreshes", async () => {
@@ -437,95 +516,97 @@ describe("OpenGuiHost authentication persistence", () => {
       { mode: 0o600 },
     );
     let refreshes = 0;
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
-      if (url === "https://auth.x.ai/oauth2/token") {
-        refreshes += 1;
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        return Response.json({
-          access_token: "shared-access",
-          refresh_token: "shared-refresh",
-          expires_in: 3600,
-        });
-      }
-      return new Response("data: [DONE]\n\n");
-    });
-    const host = new OpenGuiHost(dataDirectory, { fetchImpl: fetchImpl as typeof fetch });
-    await host.start();
-    const sessions = await Promise.all(
-      ["first", "second"].map(() =>
-        host.createSession({
-          projectDirectory: dataDirectory,
-          model: { connectionId: "supergrok", modelId: "grok-build" },
-          reasoning: "none",
-        }),
-      ),
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = requestUrl(input);
+        if (url === "https://pi.dev/api/models/providers/xai") return Response.json([GROK]);
+        if (url === "https://auth.x.ai/oauth2/token") {
+          refreshes += 1;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return Response.json({
+            access_token: "shared-access",
+            refresh_token: "shared-refresh",
+            expires_in: 3600,
+          });
+        }
+        return responsesText("ok");
+      }),
     );
-
-    await Promise.all(sessions.map((session) => host.prompt(session.id, { text: "hello" })));
-    await Promise.all(sessions.map((session) => host.waitForIdle(session.id)));
-
-    expect(refreshes).toBe(1);
-    expect(sessions).toHaveLength(2);
-    await host.close();
+    const host = new OpenGuiHost(dataDirectory);
+    await host.start();
+    try {
+      const sessions = await Promise.all(
+        ["first", "second"].map(() =>
+          host.createSession({
+            projectDirectory: dataDirectory,
+            model: { connectionId: "xai", modelId: "grok-build-0.1" },
+            reasoning: "none",
+          }),
+        ),
+      );
+      await Promise.all(sessions.map((session) => host.prompt(session.id, { text: "hello" })));
+      await Promise.all(sessions.map((session) => host.waitForIdle(session.id)));
+      expect(refreshes).toBe(1);
+    } finally {
+      await host.close();
+    }
   });
 
-  test("routes Grok policy errors safely and aborts an active Responses stream", async () => {
+  test("keeps provider credentials out of failed and aborted Runs", async () => {
     const errorDirectory = await directory();
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const deniedHost = new OpenGuiHost(errorDirectory, {
-      fetchImpl: (async () =>
-        new Response("upstream-secret-policy-detail", { status: 403 })) as typeof fetch,
-    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        requestUrl(input) === "https://pi.dev/api/models/providers/xai"
+          ? Response.json([GROK])
+          : Response.json({ error: { message: "denied by policy" } }, { status: 403 }),
+      ),
+    );
+    const deniedHost = new OpenGuiHost(errorDirectory);
     await deniedHost.start();
-    await deniedHost.upsertModelConnection({
-      id: "xai-api",
-      label: "xAI API",
-      baseUrl: "https://api.x.ai/v1",
-      modelIds: ["grok-build-0.1"],
-      apiKey: "request-secret",
-    });
+    await signIn(deniedHost, "xai", "api_key", ["request-secret"]);
     const deniedSession = await deniedHost.createSession({
       projectDirectory: errorDirectory,
-      model: { connectionId: "xai-api", modelId: "grok-build-0.1" },
+      model: { connectionId: "xai", modelId: "grok-build-0.1" },
       reasoning: "none",
     });
     await deniedHost.prompt(deniedSession.id, { text: "hello" });
     await deniedHost.waitForIdle(deniedSession.id);
     const deniedSnapshot = await deniedHost.readSession(deniedSession.id);
-    const failure = deniedSnapshot.entries.find((entry) => entry.kind === "run_failed");
-    expect(failure?.payload.error).toContain("entitlement and organization policy");
-    expect(JSON.stringify(deniedSnapshot)).not.toMatch(/request-secret|upstream-secret/);
-    expect(JSON.stringify(errorLog.mock.calls)).not.toMatch(/request-secret|upstream-secret/);
+    expect(deniedSnapshot.entries.at(-1)?.kind).toBe("run_failed");
+    expect(JSON.stringify(deniedSnapshot)).not.toContain("request-secret");
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("request-secret");
     await deniedHost.close();
     errorLog.mockRestore();
 
     const abortDirectory = await directory();
-    const abortHost = new OpenGuiHost(abortDirectory, {
-      fetchImpl: (async () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(
-                new TextEncoder().encode(
-                  'data: {"type":"response.output_text.delta","delta":"partial"}\n\n',
-                ),
-              );
-            },
-          }),
-        )) as typeof fetch,
-    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        requestUrl(input) === "https://pi.dev/api/models/providers/xai"
+          ? Response.json([GROK])
+          : new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      'data: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+                    ),
+                  );
+                },
+              }),
+              { headers: { "content-type": "text/event-stream" } },
+            ),
+      ),
+    );
+    const abortHost = new OpenGuiHost(abortDirectory);
     await abortHost.start();
-    await abortHost.upsertModelConnection({
-      id: "xai-api",
-      label: "xAI API",
-      baseUrl: "https://api.x.ai/v1",
-      modelIds: ["grok-build-0.1"],
-      apiKey: "abort-secret",
-    });
+    await signIn(abortHost, "xai", "api_key", ["abort-secret"]);
     const abortSession = await abortHost.createSession({
       projectDirectory: abortDirectory,
-      model: { connectionId: "xai-api", modelId: "grok-build-0.1" },
+      model: { connectionId: "xai", modelId: "grok-build-0.1" },
       reasoning: "none",
     });
     await abortHost.prompt(abortSession.id, { text: "wait" });
@@ -535,108 +616,99 @@ describe("OpenGuiHost authentication persistence", () => {
     await abortHost.close();
   });
 
-  test("persists an OpenCode Go API key separately and never returns it", async () => {
+  test("stores an OpenCode Go API key as a pi credential and never returns it", async () => {
     const dataDirectory = await directory();
-    const catalogFetch = vi.fn(async () =>
-      Response.json([
-        {
-          id: "future-go-model",
-          name: "Future Go Model",
-          api: "openai-completions",
-          reasoning: false,
-          input: ["text"],
-          contextWindow: 128000,
-          maxTokens: 16000,
-          cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
-        },
-      ]),
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json([
+          {
+            id: "future-go-model",
+            name: "Future Go Model",
+            api: "openai-completions",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 16000,
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ]),
+      ),
     );
-    const host = new OpenGuiHost(dataDirectory, { fetchImpl: catalogFetch as typeof fetch });
+    const host = new OpenGuiHost(dataDirectory);
     await host.start();
-    await host.listSessions(dataDirectory);
-    await host.upsertModelConnection({
-      id: "opencode-go",
-      label: "OpenCode Go",
-      baseUrl: "https://opencode.ai/zen/go/v1",
-      apiKey: "go-secret",
-      modelIds: ["glm-5.2"],
-    });
+    await signIn(host, "opencode-go", "api_key", ["go-secret"]);
 
     expect(host.listModelConnections()).toEqual([
       expect.objectContaining({
         id: "opencode-go",
         label: "OpenCode Go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
-        defaultModelId: "future-go-model",
+        providerId: "opencode-go",
+        authType: "api_key",
         modelIds: ["future-go-model"],
       }),
     ]);
+    expect(host.listProviders().find((provider) => provider.id === "opencode-go")).toMatchObject({
+      connection: { id: "opencode-go", authType: "api_key", personal: false },
+    });
     await host.close();
 
     const statePath = join(dataDirectory, HOST_STATE_FILENAME);
     expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({
-      secrets: { apiKeys: { "opencode-go": "go-secret" } },
+      secrets: {
+        apiKeys: {},
+        providerCredentials: {
+          "opencode-go": { providerId: "opencode-go", credential: { key: "go-secret" } },
+        },
+      },
     });
     expect((await stat(statePath)).mode & 0o777).toBe(0o600);
 
-    const restarted = new OpenGuiHost(dataDirectory, { fetchImpl: catalogFetch as typeof fetch });
+    const restarted = new OpenGuiHost(dataDirectory);
     await restarted.start();
-    await restarted.listSessions(dataDirectory);
     expect(restarted.listModelConnections()[0]?.id).toBe("opencode-go");
+    await restarted.disconnectProvider("opencode-go");
+    expect(restarted.listModelConnections()).toEqual([]);
     await restarted.close();
   });
 
-  test("sends OpenCode client headers with the public key for keyless Zen free models", async () => {
+  test("sends keyless Zen requests with no credential and no OpenCode client impersonation", async () => {
     const dataDirectory = await directory();
     const requestHeaders: Headers[] = [];
+    const urls: string[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const url = requestUrl(input);
         if (url === "https://pi.dev/api/models/providers/opencode") {
-          expect(new Headers(init?.headers).has("authorization")).toBe(false);
           return Response.json([
             {
               id: "hy3-free",
               name: "Hy3 Free",
               api: "openai-completions",
-              reasoning: true,
+              reasoning: false,
               input: ["text"],
               contextWindow: 190000,
               maxTokens: 16000,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
+            {
+              id: "deepseek-v4-pro",
+              name: "DeepSeek V4 Pro",
+              api: "openai-completions",
+              reasoning: false,
+              input: ["text"],
+              contextWindow: 190000,
+              maxTokens: 16000,
+              cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+            },
           ]);
         }
-        const headers = new Headers(init?.headers);
-        requestHeaders.push(headers);
-        if (headers.get("authorization") !== "Bearer public") {
-          return Response.json(
-            { type: "error", error: { type: "AuthError", message: "Invalid API key." } },
-            { status: 401 },
-          );
-        }
-        if (
-          !url.startsWith("https://opencode.ai/inference/v1/") ||
-          headers.get("user-agent") !== "opencode/1.19.0" ||
-          headers.get("x-opencode-client") !== "cli" ||
-          headers.get("x-opencode-project") !== "global" ||
-          !/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(headers.get("x-opencode-session") ?? "") ||
-          headers.get("x-opencode-session-id") !== headers.get("x-opencode-session") ||
-          !/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(headers.get("x-opencode-request") ?? "")
-        ) {
-          return Response.json(
-            {
-              type: "FreeTierError",
-              message: "OpenCode's free tier can only be used from within OpenCode",
-            },
-            { status: 403 },
-          );
-        }
+        urls.push(url);
+        requestHeaders.push(new Headers(init?.headers));
         return new Response(
-          'data: {"id":"chat_1","object":"chat.completion.chunk","model":"deepseek-v4-flash-free","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":null}]}\n\n' +
-            'data: {"id":"chat_1","object":"chat.completion.chunk","model":"deepseek-v4-flash-free","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n' +
+          'data: {"id":"chat_1","object":"chat.completion.chunk","model":"hy3-free","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":null}]}\n\n' +
+            'data: {"id":"chat_1","object":"chat.completion.chunk","model":"hy3-free","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n' +
             "data: [DONE]\n\n",
           { headers: { "content-type": "text/event-stream" } },
         );
@@ -644,14 +716,12 @@ describe("OpenGuiHost authentication persistence", () => {
     );
     const host = new OpenGuiHost(dataDirectory);
     await host.start();
-    await host.upsertModelConnection({
+    // An empty API key enables the keyless free tier.
+    await signIn(host, "opencode", "api_key", [""]);
+    expect(host.listModelConnections()[0]).toMatchObject({
       id: "opencode-zen",
-      label: "OpenCode Zen",
-      baseUrl: "https://opencode.ai/zen/v1",
-      modelIds: [],
+      modelIds: ["hy3-free"],
     });
-    expect(host.listModelConnections()[0]?.modelIds).toEqual(["hy3-free"]);
-    expect(host.listModelConnections()[0]?.modelIds).not.toContain("deepseek-v4-pro");
     const session = await host.createSession({
       projectDirectory: dataDirectory,
       model: { connectionId: "opencode-zen", modelId: "hy3-free" },
@@ -661,19 +731,14 @@ describe("OpenGuiHost authentication persistence", () => {
     await host.waitForIdle(session.id);
 
     expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
-    await host.prompt(session.id, { text: "continue" });
-    await host.waitForIdle(session.id);
-    expect((await host.readSession(session.id)).entries.at(-1)?.kind).toBe("run_completed");
-    expect(requestHeaders).toHaveLength(2);
-    expect(
-      requestHeaders.every((headers) => headers.get("authorization") === "Bearer public"),
-    ).toBe(true);
-    expect(requestHeaders[1]?.get("x-opencode-session")).toBe(
-      requestHeaders[0]?.get("x-opencode-session"),
-    );
-    expect(requestHeaders[1]?.get("x-opencode-request")).not.toBe(
-      requestHeaders[0]?.get("x-opencode-request"),
-    );
+    expect(urls).toEqual(["https://opencode.ai/zen/v1/chat/completions"]);
+    const headers = requestHeaders[0]!;
+    expect(headers.has("authorization")).toBe(false);
+    expect(headers.get("user-agent") ?? "").not.toContain("opencode");
+    expect(headers.has("x-opencode-client")).toBe(false);
+    expect(headers.has("x-opencode-project")).toBe(false);
+    expect(headers.has("x-opencode-request")).toBe(false);
+    expect(JSON.stringify([...headers])).not.toContain("public");
     await host.close();
   });
 
@@ -693,7 +758,9 @@ describe("OpenGuiHost authentication persistence", () => {
     await host.start();
     await host.listSessions(dataDirectory);
 
-    expect(host.codexAuthStatus().connected).toBe(false);
+    expect(
+      host.listProviders().find((provider) => provider.id === "openai-codex")?.connection,
+    ).toBeUndefined();
     expect(host.listModelConnections()).toEqual([]);
     await host.close();
   });
@@ -714,14 +781,14 @@ describe("OpenGuiHost authentication persistence", () => {
     expect(await host.listProjects()).toEqual([
       { directory: dataDirectory, name: dataDirectory.split("/").at(-1) },
     ]);
-    await host.disconnectSubscription("xai");
+    await host.disconnectProvider("xai");
     await host.close();
 
     expect(
       JSON.parse(await readFile(join(dataDirectory, HOST_STATE_FILENAME), "utf8")),
     ).toMatchObject({
       settings: { projects: [dataDirectory] },
-      secrets: { subscriptionTokens: {} },
+      secrets: { providerCredentials: {} },
     });
   });
 

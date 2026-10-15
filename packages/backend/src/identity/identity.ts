@@ -2498,14 +2498,17 @@ export class IdentityService {
     );
   }
 
-  async authorizePersonalSubscription(actor: Actor) {
+  /** Personal provider sign-in: subscriptions are BYOS, API keys are BYOK. */
+  async authorizePersonalCredential(actor: Actor, kind: ModelCredentialKind) {
     await this.ready;
     if (actor.type !== "user") return;
-    if (!this.modelCredentialAllowed(actor, "byos")) {
+    if (!this.modelCredentialAllowed(actor, kind)) {
       throw new IdentityError(
         "MODEL_CREDENTIAL_POLICY_DENIED",
         403,
-        "Personal subscriptions are disabled by Host policy",
+        kind === "byos"
+          ? "Personal subscriptions are disabled by Host policy"
+          : "Personal API keys are disabled by Host policy",
       );
     }
   }

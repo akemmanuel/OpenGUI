@@ -43,8 +43,7 @@ vi.mock("@/protocol/host-client", () => ({
   createHostClient: () => ({
     listModelConnections: async () => [],
     listModelOfferings: async () => [{ id: "company", displayName: "Company model" }],
-    codexAuthStatus: async () => ({ connected: false, pending: null }),
-    subscriptionAuthStatus: async () => ({ connected: false, pending: null }),
+    listProviders: async () => [],
   }),
 }));
 import { SettingsProviders } from "./SettingsProviders";

@@ -601,6 +601,96 @@ describe("PiAiTransport", () => {
     expect(resolve).toHaveBeenCalledOnce();
   });
 
+  test("streams pi provider models through pi, which owns the endpoint and credential", async () => {
+    const model = {
+      id: "gemini-test",
+      name: "Gemini Test",
+      api: "google-generative-ai",
+      provider: "google",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 1_000_000,
+      maxTokens: 64_000,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    } as Model<any>;
+    const streamSimple = vi.fn(
+      (_model: Model<any>, _context: Context, _options?: SimpleStreamOptions) =>
+        fakeStream([
+          {
+            type: "done",
+            reason: "stop",
+            message: message({ api: "google-generative-ai", stopReason: "stop" }),
+          },
+        ]),
+    );
+    const transport = new PiAiTransport({
+      resolve: () => ({
+        backendId: "google",
+        providerId: "google",
+        label: "Google",
+        protocol: "google-generative-ai",
+        baseUrl: model.baseUrl,
+        modelId: model.id,
+        reasoning: true,
+        pi: { models: { streamSimple } as any, model },
+      }),
+    });
+    const events: ModelStreamEvent[] = [];
+    for await (const event of transport.stream(request(), new AbortController().signal)) {
+      events.push(event);
+    }
+    expect(streamSimple).toHaveBeenCalledOnce();
+    const [streamedModel, context, options] = streamSimple.mock.calls[0]!;
+    expect(streamedModel).toBe(model);
+    expect(context.systemPrompt).toBe("System");
+    // No placeholder key: pi resolves the stored credential itself.
+    expect(options?.apiKey).toBeUndefined();
+    expect(options?.headers).toEqual({});
+    expect(events.at(-1)).toMatchObject({
+      type: "completed",
+      response: {
+        provider: "google",
+        api: "google-generative-ai",
+        protocol: "google-generative-ai",
+      },
+    });
+  });
+
+  test("sends keyless pi requests without an Authorization header", async () => {
+    const streamSimple = vi.fn(
+      (_model: Model<any>, _context: Context, _options?: SimpleStreamOptions) =>
+        fakeStream([{ type: "done", reason: "stop", message: message({ stopReason: "stop" }) }]),
+    );
+    const transport = new PiAiTransport({
+      resolve: () => ({
+        backendId: "opencode-zen",
+        providerId: "opencode",
+        label: "OpenCode Zen",
+        protocol: "openai-chat",
+        baseUrl: "https://opencode.ai/zen/v1",
+        modelId: "big-pickle",
+        apiKey: "unused",
+        headers: { authorization: null },
+        pi: {
+          models: { streamSimple } as any,
+          model: {
+            id: "big-pickle",
+            api: "openai-completions",
+            provider: "opencode",
+          } as Model<any>,
+        },
+      }),
+    });
+    for await (const _event of transport.stream(request(), new AbortController().signal)) {
+      /* drain */
+    }
+    const options = streamSimple.mock.calls[0]![2];
+    expect(options?.apiKey).toBe("unused");
+    expect(options?.headers).toEqual({ authorization: null });
+    expect(JSON.stringify(options?.headers)).not.toContain("public");
+  });
+
   test("routes Codex through pi-ai with stable per-session WebSocket identity", async () => {
     const options: SimpleStreamOptions[] = [];
     const codexRoute: PiAiRoute = {

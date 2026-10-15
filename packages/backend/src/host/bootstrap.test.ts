@@ -2,10 +2,9 @@ import { describe, expect, test } from "vite-plus/test";
 import { modelTransportEnvironment } from "./bootstrap.ts";
 
 describe("model transport environment", () => {
-  test("documents the default pi-ai/native fallback routing", () => {
+  test("documents the default pi-ai routing and the custom-connection fallback", () => {
     expect(modelTransportEnvironment({})).toEqual({
       usePiAiTransport: true,
-      usePiAiCodexTransport: true,
       codexPiTransport: "auto",
       openAiResponsesTransport: "auto",
       ownerModelDiagnostics: false,
@@ -18,7 +17,7 @@ describe("model transport environment", () => {
       }),
     ).toMatchObject({
       usePiAiTransport: false,
-      usePiAiCodexTransport: false,
+      codexPiTransport: "auto",
       openAiResponsesTransport: "sse",
     });
   });
@@ -33,7 +32,6 @@ describe("model transport environment", () => {
       }),
     ).toEqual({
       usePiAiTransport: false,
-      usePiAiCodexTransport: false,
       codexPiTransport: "auto",
       openAiResponsesTransport: "sse",
       ownerModelDiagnostics: false,

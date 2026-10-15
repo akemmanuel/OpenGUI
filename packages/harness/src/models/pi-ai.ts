@@ -5,6 +5,7 @@ import type {
   AssistantMessageEventStream,
   Context,
   Model,
+  Models,
   ModelThinkingLevel,
   ProviderHeaders,
   SimpleStreamOptions,
@@ -20,7 +21,6 @@ import {
   streamSimple as streamOpenAiCodexResponses,
 } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { modelToolDefinitionsFor } from "../tools/tool-definitions.ts";
-import { OpenCodeRequestHeaders } from "./opencode-headers.ts";
 import {
   OpenAiResponsesWebSocketTransport,
   type OpenAiResponsesTransportMode,
@@ -51,12 +51,20 @@ export type PiAiProtocol =
   | "codex-responses"
   | "anthropic-messages";
 
+/** A model served by a pi provider. `models` resolves its credential at request time. */
+export interface PiAiProviderRoute {
+  models: Models;
+  model: Model<Api>;
+}
+
 /** OpenGUI-owned route material. It is resolved per request and is never persisted by pi-ai. */
 export interface PiAiRoute {
   backendId: string;
   providerId?: string;
   label: string;
-  protocol: PiAiProtocol;
+  protocol: ModelProtocol;
+  /** Set for pi provider connections; endpoint, auth and API dispatch then belong to pi. */
+  pi?: PiAiProviderRoute;
   baseUrl: string;
   modelId: string;
   apiKey?: string;
@@ -97,10 +105,17 @@ export interface PiAiTransportOptions {
 
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
-function apiFor(protocol: PiAiProtocol): Api {
+function apiFor(protocol: ModelProtocol): Api {
   if (protocol === "openai-chat") return "openai-completions";
   if (protocol === "codex-responses") return "openai-codex-responses";
   return protocol;
+}
+
+/** The protocol a pi API speaks, for cache keys and response metadata. */
+export function protocolForPiApi(api: Api): ModelProtocol {
+  if (api === "openai-completions") return "openai-chat";
+  if (api === "openai-codex-responses") return "codex-responses";
+  return api as ModelProtocol;
 }
 
 function protocolFor(route: PiAiRoute): ModelProtocol {
@@ -411,7 +426,6 @@ function applyCurrentOpenAiCacheFields(payload: unknown, request: ModelRequest, 
 
 export class PiAiTransport implements ModelTransport {
   readonly #options: PiAiTransportOptions;
-  readonly #openCodeHeaders = new OpenCodeRequestHeaders();
   readonly #codexConnections = new Map<string, { generation: string; active: number }>();
   readonly #openAiResponses: OpenAiResponsesWebSocketTransport;
 
@@ -427,7 +441,6 @@ export class PiAiTransport implements ModelTransport {
   }
 
   close() {
-    this.#openCodeHeaders.clear();
     this.#openAiResponses.close();
     for (const key of this.#codexConnections.keys()) closeOpenAICodexWebSocketSessions(key);
     this.#codexConnections.clear();
@@ -472,7 +485,18 @@ export class PiAiTransport implements ModelTransport {
     const now = this.#options.now ?? Date.now;
     const started = now();
     // This is the authority boundary: no model or credential is materialized before resolution.
-    const route = await this.#options.resolve(request);
+    let route = await this.#options.resolve(request);
+    if (route.pi && route.protocol === "openai-responses" && !route.apiKey) {
+      // The direct Responses WebSocket needs the resolved key; pi refreshes it if necessary.
+      const resolved = await route.pi.models.getAuth(route.pi.model).catch(() => undefined);
+      if (resolved?.auth.apiKey) {
+        route = {
+          ...route,
+          apiKey: resolved.auth.apiKey,
+          baseUrl: resolved.auth.baseUrl ?? route.baseUrl,
+        };
+      }
+    }
     if (
       route.protocol === "openai-responses" &&
       (this.#options.openAiWebSocketFactory || !this.#options.streams?.["openai-responses"]) &&
@@ -482,11 +506,8 @@ export class PiAiTransport implements ModelTransport {
       if (delivered) return;
     }
     const codexConnection = this.#acquireCodexConnection(request, route);
-    const api = apiFor(route.protocol);
-    const headers: ProviderHeaders = {
-      ...route.headers,
-      ...this.#openCodeHeaders.forRequest(route.baseUrl, request),
-    };
+    const api = route.pi?.model.api ?? apiFor(route.protocol);
+    const headers: ProviderHeaders = { ...route.headers };
     if (route.authHeader === false) headers.authorization = null;
     if (
       route.authHeader &&
@@ -495,25 +516,27 @@ export class PiAiTransport implements ModelTransport {
     ) {
       headers.authorization = `Bearer ${route.apiKey}`;
     }
-    const model = {
-      id: route.modelId,
-      name: route.label,
-      api,
-      provider: route.providerId ?? route.backendId,
-      baseUrl: route.baseUrl.replace(/\/+$/u, ""),
-      reasoning: route.reasoning ?? false,
-      input: ["text", "image"],
-      contextWindow: route.contextWindow ?? 128_000,
-      maxTokens: route.maxTokens ?? 16_384,
-      cost: ZERO_COST,
-      headers: Object.fromEntries(
-        Object.entries(headers).flatMap(([key, value]) =>
-          typeof value === "string" ? [[key, value]] : [],
+    const model =
+      route.pi?.model ??
+      ({
+        id: route.modelId,
+        name: route.label,
+        api,
+        provider: route.providerId ?? route.backendId,
+        baseUrl: route.baseUrl.replace(/\/+$/u, ""),
+        reasoning: route.reasoning ?? false,
+        input: ["text", "image"],
+        contextWindow: route.contextWindow ?? 128_000,
+        maxTokens: route.maxTokens ?? 16_384,
+        cost: ZERO_COST,
+        headers: Object.fromEntries(
+          Object.entries(headers).flatMap(([key, value]) =>
+            typeof value === "string" ? [[key, value]] : [],
+          ),
         ),
-      ),
-      compat: route.compat,
-      thinkingLevelMap: route.thinkingLevelMap,
-    } as Model<Api>;
+        compat: route.compat,
+        thinkingLevelMap: route.thinkingLevelMap,
+      } as Model<Api>);
     const key = deriveModelCacheKey(request, {
       backendId: route.backendId,
       upstreamModelId: route.modelId,
@@ -522,26 +545,34 @@ export class PiAiTransport implements ModelTransport {
     const effectiveRequest = request.cache
       ? { ...request, cache: { ...request.cache, key } }
       : request;
-    const context = normalizeContext(toPiContext(effectiveRequest, model));
+    const piContext = toPiContext(effectiveRequest, model);
+    const context = route.pi ? piContext : normalizeContext(piContext);
     const streams = this.#options.streams;
-    const streamImpl = (streams?.[route.protocol] ??
-      (route.protocol === "openai-chat"
-        ? streamOpenAiCompletions
-        : route.protocol === "codex-responses"
-          ? streamOpenAiCodexResponses
-          : route.protocol === "openai-responses"
-            ? streamOpenAiResponses
-            : streamAnthropic)) as PiStream;
+    const pi = route.pi;
+    const streamImpl = (
+      pi
+        ? (piModel: Model<Api>, piRequestContext: Context, options?: SimpleStreamOptions) =>
+            pi.models.streamSimple(piModel, piRequestContext, options)
+        : (streams?.[route.protocol as PiAiProtocol] ??
+          (route.protocol === "openai-chat"
+            ? streamOpenAiCompletions
+            : route.protocol === "codex-responses"
+              ? streamOpenAiCodexResponses
+              : route.protocol === "openai-responses"
+                ? streamOpenAiResponses
+                : streamAnthropic))
+    ) as PiStream;
     const cacheRetention =
       effectiveRequest.cache?.mode === "session" ? effectiveRequest.cache.retention : "none";
     let firstDeltaMs: number | undefined;
     let responseStatus: number | undefined;
-    const piStream = streamImpl(model, context, {
+    const piStream = streamImpl(model, context as TranscriptContext, {
       signal,
       // Some OpenAI-compatible endpoints allow anonymous requests. The SDK still
       // requires a placeholder key; an explicit null Authorization header above
-      // removes the header it would otherwise generate.
-      apiKey: route.apiKey || "unused",
+      // removes the header it would otherwise generate. pi provider routes resolve
+      // their own credential unless the Host supplies one.
+      apiKey: pi ? route.apiKey : route.apiKey || "unused",
       headers,
       reasoning: selectedReasoning(effectiveRequest, route) as any,
       sessionId: codexConnection?.key ?? key,

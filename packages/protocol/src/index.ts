@@ -2,13 +2,13 @@ export type { QueueMode } from "./queue.ts";
 export { REASONING_EFFORTS, type ModelReasoningEffort } from "./model-capabilities.ts";
 export type { SelectedModel } from "./selected-model.ts";
 export {
-  CHATGPT_CODEX_PRESET,
-  OPENCODE_FREE_TIER,
-  OPENCODE_GO_PRESET,
-  OPENCODE_ZEN_PRESET,
-  SUPERGROK_PRESET,
-  XAI_API_PRESET,
-  type ProviderConnectionPreset,
-  type ProviderModelCapabilities,
+  PI_PROVIDER_DEFAULT_MODELS,
+  piProviderConnectionId,
+  RETIRED_PROVIDER_CONNECTION_IDS,
+  type HostProviderInfo,
+  type ProviderAuthMethod,
+  type ProviderLoginEvent,
+  type ProviderLoginPrompt,
+  type ProviderLoginStatus,
   type ProviderModelRoute,
 } from "./provider-catalogs.ts";
