@@ -13,6 +13,8 @@ import {
   parseBackendProfile,
   resolveManagedRuntime,
   selectBackendEntrypoint,
+  sidecarStartupFailureReason,
+  stopOrphanedSidecar,
   waitForHealth,
 } from "./backend-sidecar";
 
@@ -40,7 +42,7 @@ class FakeChild extends EventEmitter {
   killed = false;
   exitCode: number | null = null;
   stdout = null;
-  stderr = null;
+  stderr: EventEmitter | null = null;
   signals: NodeJS.Signals[] = [];
 
   kill(signal: NodeJS.Signals = "SIGTERM") {
@@ -56,12 +58,15 @@ function managedHarness(
   overrides: {
     waitForHealth?: (signal?: AbortSignal) => Promise<void>;
     children?: FakeChild[];
+    withStderr?: boolean;
   } = {},
 ) {
   process.env.OPENGUI_USE_SIDECAR = "1";
   const children = overrides.children ?? [];
+  const stopOrphanedSidecar = vi.fn(async () => false);
   const spawn = vi.fn(() => {
     const child = new FakeChild();
+    if (overrides.withStderr) child.stderr = new EventEmitter();
     children.push(child);
     return child as unknown as ChildProcess;
   });
@@ -79,9 +84,10 @@ function managedHarness(
       randomUUID: () => "fixed-token",
       mkdirSync: vi.fn() as never,
       homedir: () => "/home/person",
+      stopOrphanedSidecar,
     },
   });
-  return { controller, spawn, children };
+  return { controller, spawn, children, stopOrphanedSidecar };
 }
 
 describe("Desktop backend profile", () => {
@@ -221,11 +227,12 @@ describe("Desktop backend sidecar controller", () => {
   });
 
   test("coalesces concurrent starts and passes deterministic token, cwd, env, and entrypoint", async () => {
-    const { controller, spawn } = managedHarness();
+    const { controller, spawn, stopOrphanedSidecar } = managedHarness();
     const [first, second] = await Promise.all([controller.start(), controller.start()]);
 
     expect(first).toEqual(second);
     expect(spawn).toHaveBeenCalledTimes(1);
+    expect(stopOrphanedSidecar).toHaveBeenCalledWith("/tmp/opengui-test-user-data/backend");
     expect(spawn).toHaveBeenCalledWith(
       process.execPath,
       ["/app/backend.js"],
@@ -239,8 +246,10 @@ describe("Desktop backend sidecar controller", () => {
           OPENGUI_DATA_DIR: "/tmp/opengui-test-user-data/backend",
           OPENGUI_MODE: "desktop-sidecar",
           OPENGUI_SERVER_MODE: "desktop-sidecar",
+          OPENGUI_EXIT_WITH_STDIN: "1",
           ELECTRON_RUN_AS_NODE: "1",
         }),
+        stdio: ["pipe", "pipe", "pipe"],
       }),
     );
   });
@@ -285,6 +294,26 @@ describe("Desktop backend sidecar controller", () => {
     expect(controller.getStatus()).toBe("crashed");
   });
 
+  test("explains a startup exit with the reason the sidecar logged", async () => {
+    const { controller, children } = managedHarness({
+      withStderr: true,
+      waitForHealth: () => new Promise(() => {}),
+    });
+    const start = controller.start();
+    await vi.waitFor(() => expect(children).toHaveLength(1));
+    const child = children[0]!;
+    child.stderr?.emit(
+      "data",
+      "OpenGUI Host failed to start: Durable state is already in use by pid 42\n",
+    );
+    child.exitCode = 1;
+    child.emit("exit", 1, null);
+
+    await expect(start).rejects.toThrow(
+      "Backend sidecar exited before becoming healthy (1): Durable state is already in use by pid 42",
+    );
+  });
+
   test("reports a child crash after a successful start", async () => {
     const statuses: string[] = [];
     const harness = managedHarness();
@@ -301,6 +330,7 @@ describe("Desktop backend sidecar controller", () => {
         resolveBackendEntrypoint: () => "/app/backend.js",
         randomUUID: () => "fixed-token",
         mkdirSync: vi.fn() as never,
+        stopOrphanedSidecar: async () => false,
       },
     });
     await controller.start();
@@ -309,6 +339,84 @@ describe("Desktop backend sidecar controller", () => {
     expect(controller.getStatus()).toBe("crashed");
     expect(controller.getConfig()).toBeNull();
     expect(statuses).toEqual(["starting", "running", "crashed"]);
+  });
+});
+
+describe("sidecar startup diagnostics", () => {
+  test("prefers the Host failure line and falls back to the last stderr line", () => {
+    expect(
+      sidecarStartupFailureReason(
+        "OpenGUI Host failed to start: Durable state is already in use\n{ _tag: 'X' }\n",
+      ),
+    ).toBe("Durable state is already in use");
+    expect(sidecarStartupFailureReason("warning\nError: listen EADDRINUSE\n\n")).toBe(
+      "Error: listen EADDRINUSE",
+    );
+    expect(sidecarStartupFailureReason("")).toBeNull();
+  });
+});
+
+describe("orphaned sidecar cleanup", () => {
+  function orphan(options: { lock?: string | null; command?: string | null; diesAfter?: number }) {
+    let checks = 0;
+    let clock = 0;
+    const kill = vi.fn();
+    const dependencies = {
+      readLock: vi.fn(() =>
+        options.lock === undefined ? JSON.stringify({ pid: 4242 }) : options.lock,
+      ),
+      isAlive: vi.fn(() => {
+        checks += 1;
+        return checks <= (options.diesAfter ?? 2);
+      }),
+      commandLine: vi.fn(() =>
+        options.command === undefined
+          ? "/Applications/OpenGUI.app/Contents/MacOS/OpenGUI /app.asar.unpacked/dist-electron/backend.js"
+          : options.command,
+      ),
+      kill,
+      sleep: vi.fn(async () => {
+        clock += 1_000;
+      }),
+      now: () => clock,
+    };
+    return { dependencies, kill };
+  }
+
+  test("stops a live sidecar that still holds the Host state lock", async () => {
+    const { dependencies, kill } = orphan({});
+    await expect(stopOrphanedSidecar("/data", dependencies)).resolves.toBe(true);
+    expect(dependencies.readLock).toHaveBeenCalledWith(
+      join("/data", "opengui-host-state.json.lock"),
+    );
+    expect(kill.mock.calls).toEqual([[4242, "SIGTERM"]]);
+  });
+
+  test("kills an orphan that ignores SIGTERM", async () => {
+    const { dependencies, kill } = orphan({ diesAfter: Number.POSITIVE_INFINITY });
+    await expect(stopOrphanedSidecar("/data", dependencies)).resolves.toBe(true);
+    expect(kill.mock.calls).toEqual([
+      [4242, "SIGTERM"],
+      [4242, "SIGKILL"],
+    ]);
+  });
+
+  test.each([
+    ["no lock", { lock: null }],
+    ["a malformed lock", { lock: "{" }],
+    ["a dead holder", { diesAfter: 0 }],
+    ["a reused PID", { command: "/usr/bin/vim notes.txt" }],
+    ["an unreadable command line", { command: null }],
+  ])("leaves %s alone", async (_label, options) => {
+    const { dependencies, kill } = orphan(options);
+    await expect(stopOrphanedSidecar("/data", dependencies)).resolves.toBe(false);
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  test("never stops the current process", async () => {
+    const { dependencies, kill } = orphan({ lock: JSON.stringify({ pid: process.pid }) });
+    await expect(stopOrphanedSidecar("/data", dependencies)).resolves.toBe(false);
+    expect(kill).not.toHaveBeenCalled();
   });
 });
 

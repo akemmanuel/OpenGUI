@@ -1,6 +1,6 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -16,6 +16,12 @@ const SIDE_CAR_HOST = "127.0.0.1";
 const HEALTH_TIMEOUT_MS = 30_000;
 const HEALTH_POLL_INTERVAL_MS = 250;
 const STOP_TIMEOUT_MS = 5_000;
+/** The Host state lock in the sidecar data directory (see HOST_STATE_FILENAME). */
+const HOST_STATE_LOCK = "opengui-host-state.json.lock";
+/** Covers the sidecar's own graceful shutdown deadline before it is killed. */
+const ORPHAN_STOP_TIMEOUT_MS = 12_000;
+/** Enough of the sidecar's stderr to explain why it exited during startup. */
+const STDERR_TAIL_BYTES = 8_192;
 
 export type BackendProfileMode = "local-managed" | "local-external" | "remote";
 export type BackendStatus = "starting" | "running" | "stopped" | "crashed";
@@ -53,6 +59,7 @@ export interface BackendSidecarDependencies {
   randomUUID: () => string;
   mkdirSync: typeof mkdirSync;
   homedir: () => string;
+  stopOrphanedSidecar: (dataDir: string) => Promise<unknown>;
 }
 
 export interface CreateBackendSidecarControllerOptions {
@@ -249,6 +256,117 @@ function resolveBackendEntrypoint(app: App) {
   });
 }
 
+export interface OrphanedSidecarDependencies {
+  readLock: (path: string) => string | null;
+  isAlive: (pid: number) => boolean;
+  commandLine: (pid: number) => string | null;
+  kill: (pid: number, signal: NodeJS.Signals) => void;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+}
+
+function processIsAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function processCommandLine(pid: number) {
+  try {
+    return process.platform === "win32"
+      ? execFileSync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+          ],
+          { encoding: "utf8", timeout: 10_000, windowsHide: true },
+        )
+      : execFileSync("ps", ["-o", "command=", "-p", String(pid)], {
+          encoding: "utf8",
+          timeout: 5_000,
+        });
+  } catch {
+    return null;
+  }
+}
+
+const orphanedSidecarDependencies: OrphanedSidecarDependencies = {
+  readLock: (lockPath) => {
+    try {
+      return readFileSync(lockPath, "utf8");
+    } catch {
+      return null;
+    }
+  },
+  isAlive: processIsAlive,
+  commandLine: processCommandLine,
+  kill: (pid, signal) => {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // Already gone, or not ours to stop.
+    }
+  },
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: Date.now,
+};
+
+/**
+ * Stops a sidecar left running by an earlier Desktop session. A crashed,
+ * force-quit, or replaced app (and any version before 0.7.0-rc.3, whose sidecar
+ * did not exit with its parent) can leave one holding the Host state lock, and
+ * every new sidecar then fails to start. Only this app's sidecars use this data
+ * directory, and the single-instance lock means no live app owns one, so a live
+ * lock holder running a backend entrypoint is an orphan. Returns whether one
+ * was stopped.
+ */
+export async function stopOrphanedSidecar(
+  dataDir: string,
+  dependencies: OrphanedSidecarDependencies = orphanedSidecarDependencies,
+) {
+  const raw = dependencies.readLock(path.join(dataDir, HOST_STATE_LOCK));
+  if (!raw) return false;
+  let pid: unknown;
+  try {
+    pid = (JSON.parse(raw) as { pid?: unknown }).pid;
+  } catch {
+    return false;
+  }
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return false;
+  if (pid === process.pid || !dependencies.isAlive(pid)) return false;
+  // A stale lock's PID may have been reused by an unrelated process.
+  if (!/backend\.js|web-server\.ts/.test(dependencies.commandLine(pid) ?? "")) return false;
+  console.warn(`Stopping orphaned backend sidecar (pid ${pid}) that holds the Host state lock`);
+  dependencies.kill(pid, "SIGTERM");
+  const deadline = dependencies.now() + ORPHAN_STOP_TIMEOUT_MS;
+  while (dependencies.isAlive(pid)) {
+    if (dependencies.now() >= deadline) {
+      dependencies.kill(pid, "SIGKILL");
+      break;
+    }
+    await dependencies.sleep(100);
+  }
+  return true;
+}
+
+/** The reason a sidecar gave for exiting during startup, from its stderr. */
+export function sidecarStartupFailureReason(stderr: string) {
+  const hostFailure = /OpenGUI Host failed to start: ([^\n]+)/.exec(stderr)?.[1];
+  const lastLine = stderr
+    .split("\n")
+    .map((line) => line.replace(/^\[sidecar\] /, "").trim())
+    .filter(Boolean)
+    .at(-1);
+  const reason = (hostFailure ?? lastLine)?.trim();
+  return reason ? reason.slice(0, 500) : null;
+}
+
 /** SIGTERM, then SIGKILL if the child has not exited within {@link STOP_TIMEOUT_MS}. */
 function stopChild(childState: ManagedChildState | null) {
   if (!childState?.child || childState.child.killed || childState.child.exitCode !== null) {
@@ -279,6 +397,7 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     randomUUID,
     mkdirSync,
     homedir,
+    stopOrphanedSidecar: (dataDir) => stopOrphanedSidecar(dataDir),
     ...options.dependencies,
   };
   let status: BackendStatus = "stopped";
@@ -311,6 +430,7 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
     // (for example “OpenGUI.app wants access to Documents”) when the app is run
     // from a protected user folder, even though the backend only needs its data dir.
     dependencies.mkdirSync(dataDir, { recursive: true });
+    await dependencies.stopOrphanedSidecar(dataDir);
 
     const child = dependencies.spawn(runtime.command, runtime.args, {
       cwd: dataDir,
@@ -324,15 +444,19 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
         OPENGUI_CORS_ORIGIN: process.env.OPENGUI_CORS_ORIGIN || "*",
         OPENGUI_MODE: "desktop-sidecar",
         OPENGUI_SERVER_MODE: "desktop-sidecar",
+        // The sidecar exits when this pipe closes, so it never outlives the app.
+        OPENGUI_EXIT_WITH_STDIN: "1",
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
+    let stderrTail = "";
     child.stdout?.on("data", (data) => {
       process.stdout.write(`[sidecar] ${String(data)}`);
     });
     child.stderr?.on("data", (data) => {
       process.stderr.write(`[sidecar] ${String(data)}`);
+      stderrTail = (stderrTail + String(data)).slice(-STDERR_TAIL_BYTES);
     });
     child.on("exit", (code, signal) => {
       childState = null;
@@ -365,11 +489,15 @@ export function createBackendSidecarController(options: CreateBackendSidecarCont
         Effect.raceFirst(
           Effect.promise(() => dependencies.waitForHealth(url, token, HEALTH_TIMEOUT_MS, signal)),
           Effect.promise(() => once(child, "exit")).pipe(
-            Effect.flatMap(([code, exitSignal]) =>
-              Effect.die(
-                new Error(`Backend sidecar exited before becoming healthy (${code ?? exitSignal})`),
-              ),
-            ),
+            Effect.flatMap(([code, exitSignal]) => {
+              const reason = sidecarStartupFailureReason(stderrTail);
+              return Effect.die(
+                new Error(
+                  `Backend sidecar exited before becoming healthy (${code ?? exitSignal})` +
+                    (reason ? `: ${reason}` : ""),
+                ),
+              );
+            }),
           ),
         ),
       );

@@ -11,7 +11,7 @@ function host(servesFrontend = false, close = vi.fn(async () => {})) {
   };
 }
 
-const noSignals = { onSignal: () => {} };
+const noSignals = { onSignal: () => {}, onParentExit: () => {} };
 
 describe("standalone Host server startup", () => {
   test("propagates Host bootstrap errors to the process entrypoint", () => {
@@ -108,7 +108,10 @@ describe("standalone Host server startup", () => {
         ...noSignals,
       });
       await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
-      expect(logged).toHaveBeenCalledWith("OpenGUI Host failed to start", failure);
+      expect(logged).toHaveBeenCalledWith(
+        "OpenGUI Host failed to start: Durable state is already in use",
+        failure,
+      );
     } finally {
       logged.mockRestore();
     }
@@ -131,6 +134,25 @@ describe("standalone Host server startup", () => {
     handlers.get("SIGTERM")?.();
     await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
     expect(server.close).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test("shuts down cleanly when the parent Desktop app goes away", async () => {
+    const server = Object.assign(new EventEmitter(), { close: vi.fn() });
+    const close = vi.fn(async () => {});
+    let parentGone: (() => void) | undefined;
+    const exit = vi.fn();
+    startWebServer({
+      createBackendHost: () => host(false, close) as never,
+      serve: (() => server) as never,
+      info: vi.fn(),
+      onSignal: () => {},
+      onParentExit: (handler) => (parentGone = handler),
+      exit,
+    });
+
+    parentGone?.();
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
     expect(close).toHaveBeenCalledOnce();
   });
 });

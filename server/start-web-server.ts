@@ -14,6 +14,16 @@ export interface WebServerDependencies {
   /** Registers process signal handlers; tests replace it to avoid global listeners. */
   onSignal: (signal: NodeJS.Signals, handler: () => void) => void;
   exit: (code: number) => void;
+  /** Calls `handler` once the parent process is gone; Desktop sets OPENGUI_EXIT_WITH_STDIN. */
+  onParentExit: (handler: () => void) => void;
+}
+
+/** A Desktop sidecar's stdin is a pipe from the app; it closes when the app exits, however it exits. */
+function exitWithStdin(handler: () => void) {
+  if (process.env.OPENGUI_EXIT_WITH_STDIN !== "1") return;
+  process.stdin.once("end", handler);
+  process.stdin.once("close", handler);
+  process.stdin.resume();
 }
 
 /** Upper bound for draining runs before the process exits anyway. Docker sends
@@ -35,6 +45,7 @@ export function startWebServer(dependencies: Partial<WebServerDependencies> = {}
     dependencies.onSignal ??
     ((signal: NodeJS.Signals, handler: () => void) => void process.once(signal, handler));
   const exit = dependencies.exit ?? ((code: number) => process.exit(code));
+  const onParentExit = dependencies.onParentExit ?? exitWithStdin;
   const backend = createBackendHost();
   const { env, app } = backend;
   const server = serve(
@@ -64,10 +75,10 @@ export function startWebServer(dependencies: Partial<WebServerDependencies> = {}
     }),
   );
   let shuttingDown = false;
-  const shutdown = (signal: NodeJS.Signals) => {
+  const shutdown = (reason: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    info(`OpenGUI received ${signal}; stopping runs and closing state`);
+    info(`OpenGUI received ${reason}; stopping runs and closing state`);
     void Effect.runPromiseExit(stop).then((result) => {
       if (Exit.isFailure(result))
         console.error("OpenGUI shutdown failed", Cause.squash(result.cause));
@@ -78,10 +89,12 @@ export function startWebServer(dependencies: Partial<WebServerDependencies> = {}
   // process that only answers 500s: exit so the supervisor sees the failure.
   backend.hostReady.catch((error: unknown) => {
     if (shuttingDown) return;
-    console.error("OpenGUI Host failed to start", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`OpenGUI Host failed to start: ${message}`, error);
     exit(1);
   });
   onSignal("SIGTERM", () => shutdown("SIGTERM"));
   onSignal("SIGINT", () => shutdown("SIGINT"));
+  onParentExit(() => shutdown("parent exit"));
   return server;
 }
