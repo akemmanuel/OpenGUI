@@ -135,18 +135,17 @@ function installExitHook() {
 type LockRecord = { pid?: number; owner?: string; hostname?: string };
 
 /**
- * A lock is stale when its process is gone, or when it names this very process
- * without being held here: containers reuse small PIDs, so after an unclean stop
- * the next start sees "its own" PID in the lock. On the same hostname that is
- * certain. A recreated container gets a new hostname, but another live container
- * sharing the data directory could also have our PID, so a lock from another (or
- * unknown) hostname is only stale once its heartbeat has stopped.
+ * A lock is stale once its heartbeat has stopped: every live holder refreshes
+ * it, and its PID alone proves nothing after an unclean stop, because the OS may
+ * have given that PID to an unrelated process (a 0.6.x lock on macOS was seen
+ * naming a system daemon) or, in a container, to this very process. Before that,
+ * it is stale when its process is gone, or when it names this process without
+ * being held here on the same hostname (an earlier run of this container).
  */
 function lockIsStale(path: string, lock: LockRecord, heartbeatAgeMs: number) {
+  if (heartbeatAgeMs > LOCK_STALE_AFTER_MS) return true;
   const pid = lock.pid ?? 0;
-  if (pid === process.pid && !heldLocks.has(path)) {
-    return lock.hostname === hostname() || heartbeatAgeMs > LOCK_STALE_AFTER_MS;
-  }
+  if (pid === process.pid && !heldLocks.has(path)) return lock.hostname === hostname();
   return !processIsAlive(pid);
 }
 

@@ -26,8 +26,9 @@ focuses on reliability: long chats, flaky providers, restricted shells, and acco
   staying up and answering every request with an error.
 - The desktop app's backend now exits with the app, even after a crash or force quit, and a
   backend left running by an earlier version is stopped on the next launch instead of blocking
-  it with "Backend sidecar exited before becoming healthy". If the backend still fails to start,
-  the error now says why.
+  it with "Backend sidecar exited before becoming healthy". A state lock left behind by a crash
+  is recovered even when its old process ID now belongs to another program, which blocked
+  macOS upgrades from 0.6.x. If the backend still fails to start, the error now says why.
 - Fixed a crash of the whole Host when an OpenAI WebSocket connection timed out.
 - Prompts queued for the same Session are always admitted in the order they arrived.
 - `/api/health` reports low disk space, and the app warns when the Host is almost full.

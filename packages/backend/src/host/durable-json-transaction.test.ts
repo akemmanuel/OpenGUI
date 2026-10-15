@@ -207,6 +207,29 @@ describe("durable JSON transaction", () => {
     await transaction.close();
   });
 
+  test("recovers an old lock whose pid now belongs to an unrelated live process", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    // The parent process is alive but is not the lock's holder.
+    await writeFile(`${path}.lock`, JSON.stringify({ pid: process.ppid, owner: "legacy" }));
+    const stopped = new Date(Date.now() - 2 * 60_000);
+    await utimes(`${path}.lock`, stopped, stopped);
+    const transaction = await openDurableJsonTransaction(path, {
+      fallback: {},
+      validate: (value) => value as object,
+    });
+    await transaction.close();
+  });
+
+  test("keeps a fresh lock held by another live process", async () => {
+    const directory = await root();
+    const path = join(directory, "state.json");
+    await writeFile(`${path}.lock`, JSON.stringify({ pid: process.ppid, owner: "live" }));
+    await expect(
+      openDurableJsonTransaction(path, { fallback: {}, validate: (value) => value as object }),
+    ).rejects.toThrow(`in use by pid ${process.ppid}`);
+  });
+
   test("refreshes the lock heartbeat while held", async () => {
     const directory = await root();
     const path = join(directory, "state.json");
