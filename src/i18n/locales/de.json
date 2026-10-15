@@ -122,7 +122,11 @@
   },
   "messageList": {
     "loadOlder": "Ältere Nachrichten laden",
-    "loadOlderFailed": "Ältere Nachrichten konnten nicht geladen werden. Versuche es erneut."
+    "loadOlderFailed": "Ältere Nachrichten konnten nicht geladen werden. Versuche es erneut.",
+    "scrollToEnd": "Zum Ende",
+    "newMessages": "Neue Nachrichten",
+    "promptNavigation": "Prompt-Navigation",
+    "promptNumber": "Prompt {{number}}"
   },
   "toolGroup": {
     "runningCommands_one": "führe einen Befehl aus",

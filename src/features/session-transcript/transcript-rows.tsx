@@ -24,6 +24,8 @@ export const TranscriptMessageRow = memo(function TranscriptMessageRow({
       className={row.spacing}
       style={{ contentVisibility: "auto" }}
       data-created-at={row.entry.info.time.created || undefined}
+      data-transcript-role={row.entry.info.role}
+      data-message-id={row.id}
     >
       <MessageBubble
         entry={row.entry}
