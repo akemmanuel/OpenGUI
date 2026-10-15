@@ -1,7 +1,9 @@
-import { Search, SquarePen, X } from "lucide-react";
+import { PanelLeftIcon, Search, SquarePen, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { Input } from "@/components/ui/input";
-import { SidebarHeader } from "@/components/ui/sidebar";
+import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { SidebarHeader, useSidebar } from "@/components/ui/sidebar";
 import appIcon from "../../../assets/app-icon.svg";
 import openguiLogoDark from "../../../assets/opengui-dark.svg";
 import openguiLogoLight from "../../../assets/opengui-light.svg";
@@ -37,12 +39,15 @@ export function SidebarHeaderContent({
   projectSelector?: ReactNode;
   selectionActions?: ReactNode;
 }) {
+  const { t } = useTranslation();
+  const { toggleSidebar } = useSidebar();
+
   return (
     <SidebarHeader className="border-b border-sidebar-border p-0 gap-0 group-data-[collapsible=icon]:p-2">
       {selectionActions ?? (
         <>
           <div
-            className="flex items-center justify-center gap-2 h-9 shrink-0 border-b border-sidebar-border group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:border-b-0"
+            className="flex items-center justify-start gap-3 h-9 shrink-0 border-b border-sidebar-border px-2 group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-b-0"
             style={
               {
                 WebkitAppRegion: "drag",
@@ -51,6 +56,20 @@ export function SidebarHeaderContent({
               } as React.CSSProperties
             }
           >
+            {!detachedProject && (
+              <Button
+                data-sidebar="trigger"
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                title={`${t("workspace.hideSidebar")} (Ctrl+B)`}
+                onClick={toggleSidebar}
+              >
+                <PanelLeftIcon />
+                <span className="sr-only">{t("workspace.hideSidebar")}</span>
+              </Button>
+            )}
             <img
               src={appIcon}
               alt="OpenGUI"

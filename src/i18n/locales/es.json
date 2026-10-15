@@ -443,7 +443,9 @@
     "createAccountAndAdd": "Crear cuenta y añadir",
     "addWorkspace": "Añadir espacio de trabajo",
     "toggleSidebar": "Alternar barra lateral",
-    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto."
+    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
+    "hideSidebar": "Ocultar barra lateral",
+    "resizeSidebar": "Arrastra para cambiar el ancho de la barra lateral"
   },
   "identity": {
     "checkingHost": "Comprobando la identidad del Host",

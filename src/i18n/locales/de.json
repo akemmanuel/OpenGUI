@@ -443,7 +443,9 @@
     "createAccountAndAdd": "Konto erstellen und Workspace hinzufügen",
     "addWorkspace": "Workspace hinzufügen",
     "toggleSidebar": "Sidebar umschalten",
-    "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest."
+    "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest.",
+    "hideSidebar": "Sidebar ausblenden",
+    "resizeSidebar": "Ziehen, um die Sidebar-Breite zu ändern"
   },
   "identity": {
     "checkingHost": "Host-Identität wird geprüft",

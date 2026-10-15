@@ -443,7 +443,9 @@
     "createAccountAndAdd": "Create account & add workspace",
     "addWorkspace": "Add workspace",
     "toggleSidebar": "Toggle Sidebar",
-    "requiredBeforeProject": "Add a workspace before connecting a project."
+    "requiredBeforeProject": "Add a workspace before connecting a project.",
+    "hideSidebar": "Hide sidebar",
+    "resizeSidebar": "Drag to resize sidebar"
   },
   "identity": {
     "checkingHost": "Checking Host identity",
