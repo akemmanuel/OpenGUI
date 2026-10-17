@@ -8,6 +8,7 @@ import {
   type Models,
   type Provider,
 } from "@earendil-works/pi-ai";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import type { OpenAiCompatibleConnection } from "./openai-chat.ts";
 
@@ -20,6 +21,10 @@ export interface PiProviderDescriptor {
   apiKey?: { name: string; interactive: boolean };
   oauth?: { name: string; loginLabel?: string; subscription: boolean };
 }
+
+// pi loads its OAuth flows through runtime-relative imports, which a bundled backend cannot
+// resolve. Registering them statically keeps sign-in and token refresh working when bundled.
+registerBunOAuthFlows();
 
 let registry: ReadonlyMap<string, Provider> | undefined;
 
