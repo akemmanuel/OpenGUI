@@ -78,7 +78,8 @@ export function TranscriptViewport({
       >
         <ScrollTimeIndicator label={timeIndicator.label} visible={timeIndicator.visible} />
         <div
-          className={`mx-auto flex min-w-0 w-full flex-col gap-0 ${chatWidth === "full" ? "max-w-none" : "max-w-2xl"}`}
+          className="mx-auto flex min-w-0 w-full flex-col gap-0 md:w-[var(--chat-width)]"
+          style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
         >
           {showLoadOlderRow && (
             <div className="flex flex-col items-center justify-center gap-1 py-2">

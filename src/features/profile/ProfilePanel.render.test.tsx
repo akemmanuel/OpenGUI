@@ -66,15 +66,11 @@ describe("ProfilePanel", () => {
     fixture.actor = { type: "local", id: "local", displayName: "Local" };
   });
 
-  test("starts as a short menu that summarises each group", () => {
+  test("keeps account actions separate from centralized preferences", () => {
     render(<ProfilePanel onClose={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "profile.preferencesTitle" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /profile.sections.appearance/u }).textContent,
-    ).toContain("settings.general.themeDark");
-    expect(
-      screen.getByRole("button", { name: /settings.general.language/u }).textContent,
-    ).toContain("common.autoDetect");
+    expect(screen.queryByRole("button", { name: /profile.sections.appearance/u })).toBeNull();
+    expect(screen.queryByRole("button", { name: /settings.general.language/u })).toBeNull();
     expect(screen.getByRole("button", { name: /profile.personalInstructions/u })).toBeTruthy();
     // Nothing is expanded until asked for.
     expect(screen.queryByText("theme")).toBeNull();
@@ -86,12 +82,9 @@ describe("ProfilePanel", () => {
   test("opens one group at a time and returns to the menu", async () => {
     const onClose = vi.fn();
     render(<ProfilePanel onClose={onClose} />);
-    await userEvent.click(screen.getByRole("button", { name: /profile.sections.appearance/u }));
-    expect(screen.getByRole("heading", { name: "profile.sections.appearance" })).toBeTruthy();
-    for (const control of ["theme", "accent", "contrast", "chat-width"]) {
-      expect(screen.getByText(control)).toBeTruthy();
-    }
-    expect(screen.queryByText("notifications")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /profile.personalInstructions/u }));
+    expect(screen.getByRole("heading", { name: "profile.personalInstructions" })).toBeTruthy();
+    expect(screen.getByText("personal-instructions")).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "common.back" }));
     expect(screen.getByRole("heading", { name: "profile.preferencesTitle" })).toBeTruthy();

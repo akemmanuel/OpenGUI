@@ -71,9 +71,12 @@ describe("TranscriptViewport scroll anchoring", () => {
       </TranscriptViewport>,
     );
     const content = screen.getByText("message").parentElement!;
-    expect(content.classList.contains("max-w-2xl")).toBe(true);
+    expect(content.classList.contains("md:w-[var(--chat-width)]")).toBe(true);
+    expect(content.style.getPropertyValue("--chat-width")).toBe("70%");
     act(() => storageSet(STORAGE_KEYS.CHAT_WIDTH, "full"));
-    expect(content.classList.contains("max-w-none")).toBe(true);
+    expect(content.style.getPropertyValue("--chat-width")).toBe("100%");
+    act(() => storageSet(STORAGE_KEYS.CHAT_WIDTH, "83"));
+    expect(content.style.getPropertyValue("--chat-width")).toBe("83%");
     view.unmount();
   });
 

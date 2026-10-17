@@ -1,19 +1,9 @@
-import {
-  ArrowLeft,
-  ChevronRight,
-  Languages,
-  LogOut,
-  MessageSquare,
-  Palette,
-  ScrollText,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeft, ChevronRight, LogOut, ScrollText, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
-import { useTheme } from "@/hooks/use-theme";
 import { AccountSection, initialsFor } from "@/features/identity/AccountSection";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { logoutActiveWorkspaceIdentity } from "@/features/identity/workspace-identity";
@@ -21,20 +11,7 @@ import {
   PersonalInstructions,
   usePersonalInstructionsAvailable,
 } from "@/features/instructions/InstructionsSettings";
-import {
-  AccentSetting,
-  ChatWidthSetting,
-  ContrastSetting,
-  LanguageOptions,
-  ModelAgeFilterSetting,
-  NewChatModelSetting,
-  NotificationsSetting,
-  RespondingSidebarSetting,
-  ThemeSetting,
-  useLanguagePreference,
-} from "./PreferenceControls";
-
-type View = "home" | "account" | "appearance" | "language" | "chats" | "instructions";
+type View = "home" | "account" | "instructions";
 
 function MenuRow({
   icon: Icon,
@@ -70,16 +47,9 @@ function Home({
 }) {
   const { t } = useTranslation();
   const actor = useIdentityActor();
-  const { mode } = useTheme();
-  const [language] = useLanguagePreference();
+
   const [signingOut, setSigningOut] = useState(false);
   const signedIn = actor?.type === "user";
-  const themeLabel = {
-    light: t("settings.general.themeLight"),
-    dark: t("settings.general.themeDark"),
-    system: t("settings.general.themeSystem"),
-  }[mode];
-
   return (
     <div className="space-y-4 px-1.5 py-3">
       {signedIn && (
@@ -108,34 +78,15 @@ function Home({
           </SidebarMenuItem>
         </SidebarMenu>
       )}
-      <nav aria-label={t("profile.preferencesTitle")}>
+      {showInstructions && (
         <SidebarMenu>
           <MenuRow
-            icon={Palette}
-            label={t("profile.sections.appearance")}
-            value={themeLabel}
-            onClick={() => onOpen("appearance")}
+            icon={ScrollText}
+            label={t("profile.personalInstructions")}
+            onClick={() => onOpen("instructions")}
           />
-          <MenuRow
-            icon={Languages}
-            label={t("settings.general.language")}
-            value={language === "auto" ? t("common.autoDetect") : t(`languages.${language}`)}
-            onClick={() => onOpen("language")}
-          />
-          <MenuRow
-            icon={MessageSquare}
-            label={t("profile.sections.chats")}
-            onClick={() => onOpen("chats")}
-          />
-          {showInstructions && (
-            <MenuRow
-              icon={ScrollText}
-              label={t("profile.personalInstructions")}
-              onClick={() => onOpen("instructions")}
-            />
-          )}
         </SidebarMenu>
-      </nav>
+      )}
       {signedIn && (
         <SidebarMenu className="border-t border-sidebar-border pt-3">
           <SidebarMenuItem>
@@ -205,9 +156,6 @@ export function ProfilePanel({ onClose }: { onClose: () => void }) {
   const title = {
     home: signedIn ? t("profile.title") : t("profile.preferencesTitle"),
     account: t("profile.account"),
-    appearance: t("profile.sections.appearance"),
-    language: t("settings.general.language"),
-    chats: t("profile.sections.chats"),
     instructions: t("profile.personalInstructions"),
   }[view];
 
@@ -248,27 +196,6 @@ export function ProfilePanel({ onClose }: { onClose: () => void }) {
         {view === "account" && (
           <SubView>
             <AccountSection />
-          </SubView>
-        )}
-        {view === "appearance" && (
-          <SubView>
-            <ThemeSetting />
-            <AccentSetting />
-            <ContrastSetting />
-            <ChatWidthSetting />
-          </SubView>
-        )}
-        {view === "language" && (
-          <div className="px-1.5 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200">
-            <LanguageOptions />
-          </div>
-        )}
-        {view === "chats" && (
-          <SubView>
-            <NewChatModelSetting />
-            <ModelAgeFilterSetting />
-            <RespondingSidebarSetting />
-            <NotificationsSetting />
           </SubView>
         )}
         {view === "instructions" && (

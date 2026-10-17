@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { STORAGE_KEYS } from "@/lib/constants";
-import { storageGet, storageSet } from "@/lib/persistence/storage";
+import { onSettingsChange, storageGet, storageSet } from "@/lib/persistence/storage";
 
 export type ThemeMode = "dark" | "light" | "system";
 /** Resolved actual theme (never "system") */
@@ -121,6 +121,24 @@ export function useTheme() {
   useEffect(() => {
     applyTheme(mode, contrast, accentColor);
   }, [mode, contrast, accentColor]);
+
+  // All mounted controls share the same persisted preferences.
+  useEffect(() => {
+    const sync = () => {
+      setModeState(getStoredMode());
+      setContrastState(getStoredContrast());
+      setAccentColorState(getStoredAccentColor());
+    };
+    const unsubscribe = onSettingsChange(({ key }) => {
+      if ([STORAGE_KEYS.THEME, STORAGE_KEYS.CONTRAST, STORAGE_KEYS.ACCENT_COLOR].includes(key))
+        sync();
+    });
+    window.addEventListener("storage", sync);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   // Follow system preference changes when mode is "system"
   useEffect(() => {

@@ -49,6 +49,18 @@ describe("appearance persistence", () => {
     );
   });
 
+  test("keeps simultaneous appearance controls synchronized", () => {
+    vi.spyOn(window, "matchMedia").mockReturnValue(mediaQuery(false) as never);
+    const first = renderHook(() => useTheme());
+    const second = renderHook(() => useTheme());
+    act(() => first.result.current.setTheme("dark"));
+    expect(second.result.current.mode).toBe("dark");
+    act(() => second.result.current.setAccentColor("#5482ff"));
+    expect(first.result.current.accentColor).toBe("#5482ff");
+    first.unmount();
+    second.unmount();
+  });
+
   test("follows system changes, persists controls, and cleans up", () => {
     const query = mediaQuery(true);
     vi.spyOn(window, "matchMedia").mockReturnValue(query as never);
