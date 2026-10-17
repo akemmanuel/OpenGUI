@@ -137,7 +137,11 @@
   },
   "messageList": {
     "loadOlder": "Load older messages",
-    "loadOlderFailed": "Could not load older messages. Try again."
+    "loadOlderFailed": "Could not load older messages. Try again.",
+    "scrollToEnd": "Scroll to end",
+    "newMessages": "New messages",
+    "promptNavigation": "Prompt navigation",
+    "promptNumber": "Prompt {{number}}"
   },
   "toolGroup": {
     "runningCommands_one": "running one command",
@@ -439,7 +443,9 @@
     "createAccountAndAdd": "Create account & add workspace",
     "addWorkspace": "Add workspace",
     "toggleSidebar": "Toggle Sidebar",
-    "requiredBeforeProject": "Add a workspace before connecting a project."
+    "requiredBeforeProject": "Add a workspace before connecting a project.",
+    "hideSidebar": "Hide sidebar",
+    "resizeSidebar": "Drag to resize sidebar"
   },
   "identity": {
     "checkingHost": "Checking Host identity",

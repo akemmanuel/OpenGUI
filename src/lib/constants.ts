@@ -33,6 +33,7 @@ export const STORAGE_KEYS = {
   LANGUAGE: key("language"),
   THEME: "theme",
   CHAT_WIDTH: key("chatWidth"),
+  SIDEBAR_WIDTH: key("sidebarWidth"),
   CONTRAST: key("contrast"),
   ACCENT_COLOR: key("accentColor"),
   DISMISSED_UPDATE_VERSION: key("dismissedUpdateVersion"),
