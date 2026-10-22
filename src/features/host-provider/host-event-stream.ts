@@ -48,6 +48,7 @@ export interface HostEventDispatcherDependencies {
   setBusySessionIds: Dispatch<SetStateAction<Set<string>>>;
   transcriptStore: ActiveSessionTranscriptStore;
   refreshSessions: () => Promise<void>;
+  onSessionEventObserved?: (sessionId: string) => void;
   onFollowUpDispatched?: (sessionId: string, followUpId: string) => void;
   /** Fires once, when the whole assistant turn reaches a terminal entry. */
   onTurnFinished?: (sessionId: string) => void;
@@ -70,11 +71,13 @@ export function createHostEventDispatcher({
   setBusySessionIds,
   transcriptStore,
   refreshSessions,
+  onSessionEventObserved,
   onFollowUpDispatched,
   onTurnFinished,
   onModelPartEnded,
 }: HostEventDispatcherDependencies): (hostEvent: HostEvent) => void {
   return (hostEvent) => {
+    onSessionEventObserved?.(hostEvent.sessionId);
     const terminal = isTerminalHostEvent(hostEvent);
     if (
       hostEvent.event.type === "entry_appended" &&
@@ -127,18 +130,13 @@ export function createHostReconnectHandler({
   activeSessionIdRef,
   hydrateTranscript,
 }: Pick<UseHostEventStreamOptions, "activeSessionIdRef" | "hydrateTranscript">) {
-  let hasConnected = false;
   return () => {
-    if (!hasConnected) {
-      hasConnected = true;
-      return;
-    }
     const sessionId = activeSessionIdRef.current;
     if (sessionId) void hydrateTranscript(sessionId).catch(notifyUnknownError);
   };
 }
 
-/** Owns subscription lifetime and rehydrates after every reconnect except initial readiness. */
+/** Owns subscription lifetime and repairs the read/subscription gap on every readiness, including the first. */
 export function useHostEventStream(options: UseHostEventStreamOptions): void {
   const onFollowUpDispatchedRef = useRef(options.onFollowUpDispatched);
   onFollowUpDispatchedRef.current = options.onFollowUpDispatched;
@@ -172,5 +170,6 @@ export function useHostEventStream(options: UseHostEventStreamOptions): void {
     options.activeStreamRef,
     options.setActiveSnapshot,
     options.setBusySessionIds,
+    options.onSessionEventObserved,
   ]);
 }

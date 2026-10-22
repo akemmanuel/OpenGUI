@@ -22,6 +22,24 @@ function message(
 }
 
 describe("buildTurnFooterByMessageId", () => {
+  test("a tool turn without a terminal timestamp keeps its timer running", () => {
+    const tool = message("tool", "assistant", 1_500);
+    tool.parts = [
+      { id: "tool-1", type: "tool", tool: "shell", state: { status: "running" } },
+    ] as MessageEntry["parts"];
+    expect(
+      buildTurnFooterByMessageId([message("user", "user", 1_000), tool], true).get("tool")?.running,
+    ).toBe(true);
+  });
+
+  test("a durable terminal timestamp wins over a stale busy flag", () => {
+    const footer = buildTurnFooterByMessageId(
+      [message("user", "user", 1_000), message("answer", "assistant", 1_500, 301_000)],
+      true,
+    ).get("answer");
+    expect(footer).toMatchObject({ running: false, completedAt: 301_000 });
+  });
+
   test("marks only the active assistant turn as running", () => {
     const footers = buildTurnFooterByMessageId(
       [

@@ -12,7 +12,8 @@ import {
 } from "@/hooks/use-agent-state";
 import { useActiveTranscriptContextMessages } from "@/features/session-transcript/active-session-transcript-provider";
 import { IdentityActorProvider } from "@/features/identity/identity-actor-context";
-import type { HostSessionSnapshot, HostSessionSummary } from "@/protocol/host-types";
+import { buildTurnFooterByMessageId } from "@/components/message-list/turn-footers";
+import type { HostEvent, HostSessionSnapshot, HostSessionSummary } from "@/protocol/host-types";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { makeProjectKey } from "@/hooks/agent-session-utils";
 
@@ -176,6 +177,291 @@ describe("HostProvider render integration", () => {
       providerID: "provider-1",
       id: "gpt-5.6-luna",
     });
+  });
+
+  function timerFixture() {
+    const running: HostSessionSnapshot = {
+      ...snapshot,
+      status: "running",
+      entries: [
+        { ...snapshot.entries[0]!, payload: { text: "work", runId: "run-1" } },
+        {
+          id: "start-1",
+          sessionId: summary.id,
+          sequence: 2,
+          kind: "run_started",
+          payload: { runId: "run-1" },
+          createdAt: "2026-01-01T00:00:01.000Z",
+        },
+        {
+          id: "answer-1",
+          sessionId: summary.id,
+          sequence: 3,
+          kind: "assistant_message",
+          payload: { runId: "run-1", text: "Done" },
+          createdAt: "2026-01-01T00:05:01.000Z",
+        },
+      ],
+    };
+    const terminal: HostEvent = {
+      sessionId: summary.id,
+      event: {
+        type: "entry_appended",
+        entry: {
+          id: "done-1",
+          sessionId: summary.id,
+          sequence: 4,
+          kind: "run_completed",
+          payload: { runId: "run-1" },
+          createdAt: "2026-01-01T00:05:01.000Z",
+        },
+      },
+    };
+    const finished: HostSessionSnapshot = {
+      ...running,
+      status: "idle",
+      entries: [
+        ...running.entries,
+        terminal.event.type === "entry_appended" ? terminal.event.entry : neverEntry(),
+      ],
+    };
+    return { running, terminal, finished };
+  }
+
+  function neverEntry(): never {
+    throw new Error("Expected durable terminal entry");
+  }
+
+  async function renderRunningChat(running: HostSessionSnapshot) {
+    host.listSessions.mockResolvedValue([{ ...summary, status: "running" }]);
+    host.readSession.mockResolvedValue(running);
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession(summary.id));
+    await waitFor(() => {
+      expect(messages.some((message) => message.info.id === "run:run-1")).toBe(true);
+      expect(state.isBusy).toBe(true);
+    });
+  }
+
+  test("a delayed Session list cannot restart an already completed turn", async () => {
+    const { running, terminal } = timerFixture();
+    await renderRunningChat(running);
+    let resolveOldList!: (value: HostSessionSummary[]) => void;
+    host.listSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOldList = resolve;
+        }),
+    );
+    let refresh!: Promise<unknown>;
+    await act(async () => {
+      refresh = actions.renameSession(summary.id, "renamed");
+    });
+    await waitFor(() => expect(resolveOldList).toBeTypeOf("function"));
+    host.listSessions.mockResolvedValue([summary]);
+    const dispatch = host.subscribe.mock.lastCall![0] as (event: HostEvent) => void;
+    await act(async () => dispatch(terminal));
+    expect(state.isBusy).toBe(false);
+    expect(
+      messages.find((message) => message.info.id === "run:run-1")?.info.time.completed,
+    ).toBeDefined();
+    await act(async () => {
+      resolveOldList([{ ...summary, status: "running" }]);
+      await refresh;
+    });
+    expect(state.isBusy).toBe(false);
+    expect(buildTurnFooterByMessageId(messages, state.isBusy).get("run:run-1")?.running).toBe(
+      false,
+    );
+  });
+
+  test("a delayed reconnect read cannot erase a delivered run completion", async () => {
+    const { running, terminal } = timerFixture();
+    await renderRunningChat(running);
+    let resolveOldRead!: (value: HostSessionSnapshot) => void;
+    host.readSession.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOldRead = resolve;
+        }),
+    );
+    const connected = host.subscribe.mock.lastCall![2] as () => void;
+    await act(async () => connected());
+    await waitFor(() => expect(resolveOldRead).toBeTypeOf("function"));
+    host.listSessions.mockResolvedValue([summary]);
+    const dispatch = host.subscribe.mock.lastCall![0] as (event: HostEvent) => void;
+    await act(async () => dispatch(terminal));
+    expect(state.isBusy).toBe(false);
+    await act(async () => resolveOldRead(running));
+    expect(state.isBusy).toBe(false);
+    expect(
+      messages.find((message) => message.info.id === "run:run-1")?.info.time.completed,
+    ).toBeDefined();
+  });
+
+  test("first stream readiness repairs a completion missed before subscription", async () => {
+    const { running, finished } = timerFixture();
+    host.subscribe.mockImplementation(() => vi.fn());
+    await renderRunningChat(running);
+    host.listSessions.mockResolvedValue([summary]);
+    host.readSession.mockResolvedValue(finished);
+    const connected = host.subscribe.mock.lastCall![2] as () => void;
+    await act(async () => connected());
+    await waitFor(() => expect(state.isBusy).toBe(false));
+    expect(
+      messages.find((message) => message.info.id === "run:run-1")?.info.time.completed,
+    ).toBeDefined();
+  });
+
+  test("stream readiness during an initial read queues a gap-repair read", async () => {
+    const { running, finished } = timerFixture();
+    let resolveInitial!: (value: HostSessionSnapshot) => void;
+    host.listSessions.mockResolvedValue([{ ...summary, status: "running" }]);
+    host.readSession.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+    );
+    host.readSession.mockResolvedValue(finished);
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    act(() => {
+      void actions.selectSession(summary.id);
+    });
+    await waitFor(() => expect(resolveInitial).toBeTypeOf("function"));
+    const connected = host.subscribe.mock.lastCall![2] as () => void;
+    await act(async () => connected());
+    await act(async () => resolveInitial(running));
+    await waitFor(() => expect(state.isBusy).toBe(false));
+    expect(host.readSession).toHaveBeenCalledTimes(2);
+    expect(
+      messages.find((message) => message.info.id === "run:run-1")?.info.time.completed,
+    ).toBeDefined();
+  });
+
+  test("a list started before completion cannot undo it even while the newer refresh is pending", async () => {
+    const { running, terminal } = timerFixture();
+    await renderRunningChat(running);
+    let resolveOldList!: (value: HostSessionSummary[]) => void;
+    let resolveNewList!: (value: HostSessionSummary[]) => void;
+    host.listSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOldList = resolve;
+        }),
+    );
+    let refresh!: Promise<unknown>;
+    await act(async () => {
+      refresh = actions.renameSession(summary.id, "renamed");
+    });
+    host.listSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveNewList = resolve;
+        }),
+    );
+    const dispatch = host.subscribe.mock.lastCall![0] as (event: HostEvent) => void;
+    await act(async () => dispatch(terminal));
+    await act(async () => {
+      resolveOldList([{ ...summary, status: "running" }]);
+      await refresh;
+    });
+    expect(state.isBusy).toBe(false);
+    await act(async () => resolveNewList([summary]));
+  });
+
+  test("a delayed idle list cannot clear a newer run-start event without a second list request", async () => {
+    const { running, terminal } = timerFixture();
+    await renderRunningChat(running);
+    const dispatch = host.subscribe.mock.lastCall![0] as (event: HostEvent) => void;
+    host.listSessions.mockResolvedValue([summary]);
+    await act(async () => dispatch(terminal));
+    expect(state.isBusy).toBe(false);
+    let resolveList!: (value: HostSessionSummary[]) => void;
+    host.listSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveList = resolve;
+        }),
+    );
+    let refresh!: Promise<unknown>;
+    await act(async () => {
+      refresh = actions.renameSession(summary.id, "renamed");
+    });
+    await act(async () =>
+      dispatch({
+        sessionId: summary.id,
+        event: {
+          type: "entry_appended",
+          entry: {
+            id: "start-2",
+            sessionId: summary.id,
+            sequence: 5,
+            kind: "run_started",
+            payload: { runId: "run-2" },
+            createdAt: "2026-01-01T00:06:00.000Z",
+          },
+        },
+      }),
+    );
+    await act(async () => {
+      resolveList([summary]);
+      await refresh;
+    });
+    expect(state.isBusy).toBe(true);
+  });
+
+  test("a terminal event during the very first read schedules repair before a stream exists", async () => {
+    const { running, terminal, finished } = timerFixture();
+    let resolveInitial!: (value: HostSessionSnapshot) => void;
+    host.listSessions.mockResolvedValue([{ ...summary, status: "running" }]);
+    host.readSession.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+    );
+    host.readSession.mockResolvedValue(finished);
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    act(() => {
+      void actions.selectSession(summary.id);
+    });
+    await waitFor(() => expect(resolveInitial).toBeTypeOf("function"));
+    host.listSessions.mockResolvedValue([summary]);
+    const dispatch = host.subscribe.mock.lastCall![0] as (event: HostEvent) => void;
+    await act(async () => dispatch(terminal));
+    await act(async () => resolveInitial(running));
+    await waitFor(() => expect(state.isBusy).toBe(false));
+    expect(
+      messages.find((message) => message.info.id === "run:run-1")?.info.time.completed,
+    ).toBeDefined();
   });
 
   test("bootstraps, hydrates, orchestrates Host mutations, persists UI state, and cleans up", async () => {
