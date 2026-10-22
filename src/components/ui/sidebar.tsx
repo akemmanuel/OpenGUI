@@ -17,6 +17,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSidebarController } from "./use-sidebar-controller";
+import {
+  SIDEBAR_DEFAULT_WIDTH_PX,
+  SIDEBAR_MAX_WIDTH_PX,
+  SIDEBAR_MIN_WIDTH_PX,
+  clampSidebarWidth,
+  useSidebarWidth,
+} from "@/hooks/use-sidebar-width";
 
 function Slot({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) {
   if (React.isValidElement(children)) {
@@ -27,7 +34,6 @@ function Slot({ children, ...props }: { children?: React.ReactNode; [key: string
 
 Slot.Root = Slot as React.ElementType;
 
-const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 
@@ -75,6 +81,7 @@ function SidebarProvider({
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? "expanded" : "collapsed";
+  const [sidebarWidth] = useSidebarWidth();
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
@@ -96,7 +103,7 @@ function SidebarProvider({
           data-slot="sidebar-wrapper"
           style={
             {
-              "--sidebar-width": SIDEBAR_WIDTH,
+              "--sidebar-width": `${sidebarWidth}px`,
               "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
               ...style,
             } as React.CSSProperties
@@ -183,7 +190,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear in-data-[sidebar-resizing=true]:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -194,7 +201,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-          "app-safe-sidebar fixed z-10 hidden w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear lg:flex",
+          "app-safe-sidebar fixed z-10 hidden w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear in-data-[sidebar-resizing=true]:transition-none lg:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -213,8 +220,87 @@ function Sidebar({
         >
           {children}
         </div>
+        {side === "left" && <SidebarResizeHandle />}
       </div>
     </div>
+  );
+}
+
+const SIDEBAR_RESIZE_KEYBOARD_STEP_PX = 16;
+
+/** Drag handle on the sidebar's inner edge; double-click restores the default width. */
+function SidebarResizeHandle() {
+  const { t } = useTranslation();
+  const { state } = useSidebar();
+  const [width, setWidth] = useSidebarWidth();
+  const dragRef = React.useRef<{ startX: number; startWidth: number; wrapper: HTMLElement } | null>(
+    null,
+  );
+
+  if (state === "collapsed") return null;
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    dragRef.current = null;
+    delete drag.wrapper.dataset.sidebarResizing;
+    document.body.style.removeProperty("cursor");
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setWidth(drag.startWidth + event.clientX - drag.startX);
+  };
+
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: A focusable separator is the ARIA pattern for resizable panes.
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("workspace.resizeSidebar")}
+      aria-valuemin={SIDEBAR_MIN_WIDTH_PX}
+      aria-valuemax={SIDEBAR_MAX_WIDTH_PX}
+      aria-valuenow={width}
+      tabIndex={0}
+      title={t("workspace.resizeSidebar")}
+      data-slot="sidebar-resize-handle"
+      className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:bg-transparent after:transition-colors hover:after:bg-sidebar-border focus-visible:after:bg-ring data-[dragging=true]:after:bg-ring"
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        const wrapper = event.currentTarget.closest<HTMLElement>("[data-slot=sidebar-wrapper]");
+        if (!wrapper) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.dataset.dragging = "true";
+        wrapper.dataset.sidebarResizing = "true";
+        document.body.style.cursor = "col-resize";
+        dragRef.current = { startX: event.clientX, startWidth: width, wrapper };
+      }}
+      onPointerMove={(event) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const next = clampSidebarWidth(drag.startWidth + event.clientX - drag.startX);
+        // Live-update the CSS variable; the setting is persisted once on release.
+        drag.wrapper.style.setProperty("--sidebar-width", `${next}px`);
+      }}
+      onPointerUp={(event) => {
+        delete event.currentTarget.dataset.dragging;
+        endDrag(event);
+      }}
+      onPointerCancel={(event) => {
+        delete event.currentTarget.dataset.dragging;
+        endDrag(event);
+      }}
+      onDoubleClick={() => setWidth(SIDEBAR_DEFAULT_WIDTH_PX)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") setWidth(width - SIDEBAR_RESIZE_KEYBOARD_STEP_PX);
+        else if (event.key === "ArrowRight") setWidth(width + SIDEBAR_RESIZE_KEYBOARD_STEP_PX);
+        else if (event.key === "Home") setWidth(SIDEBAR_MIN_WIDTH_PX);
+        else if (event.key === "End") setWidth(SIDEBAR_MAX_WIDTH_PX);
+        else return;
+        event.preventDefault();
+      }}
+    />
   );
 }
 

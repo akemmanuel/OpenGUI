@@ -122,7 +122,11 @@
   },
   "messageList": {
     "loadOlder": "Cargar mensajes anteriores",
-    "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo."
+    "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo.",
+    "scrollToEnd": "Ir al final",
+    "newMessages": "Mensajes nuevos",
+    "promptNavigation": "Navegación de prompts",
+    "promptNumber": "Prompt {{number}}"
   },
   "toolGroup": {
     "runningCommands_one": "ejecutando un comando",
@@ -176,7 +180,10 @@
       "plugins": "Plugins",
       "tools": "Herramientas",
       "teams": "Equipos",
-      "desktop": "Escritorio"
+      "desktop": "Escritorio",
+      "appearance": "Apariencia",
+      "language": "Idioma",
+      "chats": "Chats"
     },
     "sectionDescriptions": {
       "models": "Elige modelos y quién puede usarlos.",
@@ -187,7 +194,10 @@
       "instructions": "Reglas que el agente sigue en este Host y en los proyectos compartidos. Tus preferencias personales están en tu perfil, en la barra lateral.",
       "skills": "Instrucciones reutilizables disponibles para el agente.",
       "teams": "Agrupa personas y gestiona su acceso.",
-      "desktop": "Dónde empiezan los chats nuevos y qué apps abren archivos y terminales en este equipo."
+      "desktop": "Dónde empiezan los chats nuevos y qué apps abren archivos y terminales en este equipo.",
+      "appearance": "Personaliza el diseño, el tamaño del texto y la distribución de OpenGUI.",
+      "language": "Elige el idioma de la interfaz.",
+      "chats": "Configura los valores predeterminados y las notificaciones de tus chats."
     },
     "paths": {
       "boundaryTitle": "Los permisos de ruta no son un sandbox",
@@ -260,15 +270,21 @@
       "restartLocalBackendDescription": "Esto recarga el backend local de OpenGUI y luego actualiza la app. Los turnos en ejecución pueden interrumpirse.",
       "theme": "Tema",
       "olderThan": "Con más de",
-      "blockedByBrowserHelp": "Permite las notificaciones de este sitio en la configuración del navegador para activarlas."
+      "blockedByBrowserHelp": "Permite las notificaciones de este sitio en la configuración del navegador para activarlas.",
+      "fontSize": "Tamaño de fuente"
     },
     "groups": {
       "agent": "Agente",
       "host": "Host",
-      "device": "Este equipo"
+      "device": "Este equipo",
+      "personal": "Personal"
     },
     "backToChat": "Volver al chat",
-    "version": "OpenGUI {{version}}"
+    "version": "OpenGUI {{version}}",
+    "quick": {
+      "title": "Ajustes rápidos",
+      "allAppearance": "Todos los ajustes de apariencia…"
+    }
   },
   "sidebar": {
     "allProjectsPinned": "Todos los proyectos están fijados",
@@ -439,7 +455,9 @@
     "createAccountAndAdd": "Crear cuenta y añadir",
     "addWorkspace": "Añadir espacio de trabajo",
     "toggleSidebar": "Alternar barra lateral",
-    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto."
+    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
+    "hideSidebar": "Ocultar barra lateral",
+    "resizeSidebar": "Arrastra para cambiar el ancho de la barra lateral"
   },
   "identity": {
     "checkingHost": "Comprobando la identidad del Host",

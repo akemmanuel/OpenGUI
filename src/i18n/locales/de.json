@@ -122,7 +122,11 @@
   },
   "messageList": {
     "loadOlder": "Ältere Nachrichten laden",
-    "loadOlderFailed": "Ältere Nachrichten konnten nicht geladen werden. Versuche es erneut."
+    "loadOlderFailed": "Ältere Nachrichten konnten nicht geladen werden. Versuche es erneut.",
+    "scrollToEnd": "Zum Ende",
+    "newMessages": "Neue Nachrichten",
+    "promptNavigation": "Prompt-Navigation",
+    "promptNumber": "Prompt {{number}}"
   },
   "toolGroup": {
     "runningCommands_one": "führe einen Befehl aus",
@@ -176,7 +180,10 @@
       "plugins": "Plugins",
       "tools": "Werkzeuge",
       "teams": "Teams",
-      "desktop": "Desktop"
+      "desktop": "Desktop",
+      "appearance": "Darstellung",
+      "language": "Sprache",
+      "chats": "Chats"
     },
     "sectionDescriptions": {
       "models": "Modelle auswählen und den Zugriff verwalten.",
@@ -187,7 +194,10 @@
       "instructions": "Hausregeln, denen der Agent auf diesem Host und in gemeinsamen Projekten folgt. Ihre persönlichen Vorgaben finden Sie in Ihrem Profil in der Seitenleiste.",
       "skills": "Wiederverwendbare Anweisungen für den Agenten.",
       "teams": "Personen gruppieren und ihren Zugriff gemeinsam verwalten.",
-      "desktop": "Wo neue Chats beginnen und welche Apps auf diesem Computer Dateien und Terminals öffnen."
+      "desktop": "Wo neue Chats beginnen und welche Apps auf diesem Computer Dateien und Terminals öffnen.",
+      "appearance": "Passe Design, Schriftgröße und Layout von OpenGUI an.",
+      "language": "Wähle die Sprache der Oberfläche.",
+      "chats": "Lege Vorgaben und Benachrichtigungen für deine Chats fest."
     },
     "paths": {
       "boundaryTitle": "Pfadfreigaben sind keine Sandbox",
@@ -260,15 +270,21 @@
       "restartLocalBackendDescription": "Dadurch wird das lokale OpenGUI-Backend neu geladen und die App anschließend aktualisiert. Laufende Vorgänge können unterbrochen werden.",
       "theme": "Design",
       "olderThan": "Älter als",
-      "blockedByBrowserHelp": "Erlauben Sie Benachrichtigungen für diese Seite in den Browsereinstellungen, um sie einzuschalten."
+      "blockedByBrowserHelp": "Erlauben Sie Benachrichtigungen für diese Seite in den Browsereinstellungen, um sie einzuschalten.",
+      "fontSize": "Schriftgröße"
     },
     "groups": {
       "agent": "Agent",
       "host": "Host",
-      "device": "Dieser Computer"
+      "device": "Dieser Computer",
+      "personal": "Persönlich"
     },
     "backToChat": "Zurück zum Chat",
-    "version": "OpenGUI {{version}}"
+    "version": "OpenGUI {{version}}",
+    "quick": {
+      "title": "Schnelleinstellungen",
+      "allAppearance": "Alle Darstellungseinstellungen …"
+    }
   },
   "sidebar": {
     "allProjectsPinned": "Alle Projekte sind angeheftet",
@@ -439,7 +455,9 @@
     "createAccountAndAdd": "Konto erstellen und Workspace hinzufügen",
     "addWorkspace": "Workspace hinzufügen",
     "toggleSidebar": "Sidebar umschalten",
-    "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest."
+    "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest.",
+    "hideSidebar": "Sidebar ausblenden",
+    "resizeSidebar": "Ziehen, um die Sidebar-Breite zu ändern"
   },
   "identity": {
     "checkingHost": "Host-Identität wird geprüft",

@@ -20,7 +20,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { NOTIFICATIONS_ENABLED_KEY } from "@/hooks/use-agent-state";
-import { useChatWidth, type ChatWidth } from "@/hooks/use-chat-width";
+import { useChatWidth } from "@/hooks/use-chat-width";
 import { useTheme, type ThemeMode } from "@/hooks/use-theme";
 import { detectSystemLanguage, SUPPORTED_LANGUAGE_LIST, type SupportedLanguage } from "@/i18n";
 import { DEFAULT_MODEL_MAX_AGE_MONTHS, STORAGE_KEYS } from "@/lib/constants";
@@ -207,27 +207,25 @@ export function ContrastSetting() {
 export function ChatWidthSetting() {
   const { t } = useTranslation();
   const [chatWidth, setChatWidth] = useChatWidth();
+  const id = useId();
   return (
-    <StackedSetting label={t("settings.general.chatWidth")}>
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        spacing={0}
-        value={chatWidth}
-        aria-label={t("settings.general.chatWidth")}
-        onValueChange={(value) => {
-          if (value) setChatWidth(value as ChatWidth);
-        }}
-        className="flex w-full"
-      >
-        <ToggleGroupItem value="standard" className={toggleItem}>
-          {t("settings.general.chatWidthStandard")}
-        </ToggleGroupItem>
-        <ToggleGroupItem value="full" className={toggleItem}>
-          {t("settings.general.chatWidthFull")}
-        </ToggleGroupItem>
-      </ToggleGroup>
-    </StackedSetting>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label id={id} className="text-xs font-medium text-muted-foreground">
+          {t("settings.general.chatWidth")}
+        </Label>
+        <span className="text-xs tabular-nums text-muted-foreground">{chatWidth}%</span>
+      </div>
+      <Slider
+        aria-labelledby={id}
+        aria-valuetext={`${chatWidth}%`}
+        value={[chatWidth]}
+        onValueChange={([value]) => setChatWidth(value ?? 70)}
+        min={40}
+        max={100}
+        step={1}
+      />
+    </div>
   );
 }
 
