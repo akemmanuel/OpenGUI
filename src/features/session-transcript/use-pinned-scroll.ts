@@ -5,7 +5,7 @@ function distanceFromBottom(element: HTMLElement): number {
   return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
 }
 
-function isNearBottom(element: HTMLElement): boolean {
+export function isNearBottom(element: HTMLElement): boolean {
   const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
   if (maxScrollTop <= NEAR_BOTTOM_PX) return true;
   return distanceFromBottom(element) <= NEAR_BOTTOM_PX;
@@ -56,6 +56,20 @@ export function usePinnedScroll(input: {
     };
   }, []);
 
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinnedRef.current = true;
+    markProgrammatic();
+    pinToBottom(el);
+    // Rows use content-visibility, so their real height can settle after the jump.
+    requestAnimationFrame(() => {
+      if (!pinnedRef.current) return;
+      markProgrammatic();
+      pinToBottom(el);
+    });
+  }, [markProgrammatic]);
+
   useLayoutEffect(() => {
     pinnedRef.current = true;
     prependAnchorRef.current = null;
@@ -103,6 +117,7 @@ export function usePinnedScroll(input: {
     onScroll,
     detachPin,
     capturePrependAnchor,
+    scrollToBottom,
     isPinned: () => pinnedRef.current,
   };
 }

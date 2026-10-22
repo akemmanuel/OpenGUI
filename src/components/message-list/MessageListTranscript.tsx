@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { MessageListTrailing } from "@/components/message-list/MessageListTrailing";
 import type { useMessageListModel } from "@/components/message-list/useMessageListModel";
 import { useMessageListTranscriptRows } from "@/features/session-transcript/build-message-list-transcript-rows";
+import { buildPromptMarkers } from "@/features/session-transcript/transcript-prompt-markers";
 import { TranscriptMessageRow } from "@/features/session-transcript/transcript-rows";
 import { TranscriptViewport } from "@/features/session-transcript/transcript-viewport";
 import { useActions } from "@/hooks/use-agent-state";
@@ -50,6 +52,8 @@ export function MessageListTranscript({ model }: { model: MessageListModel }) {
     revertToMessage,
   });
 
+  const promptMarkers = useMemo(() => buildPromptMarkers(rows), [rows]);
+
   const contentKey = `${activeSessionId ?? ""}:${transcriptRevision}:${visibleMessages.length}:${isBusy ? 1 : 0}`;
 
   const trailingContent = (
@@ -76,6 +80,7 @@ export function MessageListTranscript({ model }: { model: MessageListModel }) {
       onLoadOlder={loadOlderMessages}
       showLoadOlderRow={messageHistoryHasMore}
       trailingContent={trailingContent}
+      promptMarkers={promptMarkers}
     >
       {rows.map((row) => (
         <TranscriptMessageRow
