@@ -180,7 +180,10 @@
       "plugins": "Plugins",
       "tools": "Tools",
       "teams": "Teams",
-      "desktop": "Desktop"
+      "desktop": "Desktop",
+      "appearance": "Appearance",
+      "language": "Language",
+      "chats": "Chats"
     },
     "sectionDescriptions": {
       "models": "Choose models and who can use them.",
@@ -191,7 +194,10 @@
       "instructions": "House rules the agent follows on this Host and in shared projects. Your personal preferences live in your profile in the sidebar.",
       "skills": "Reusable instructions available to the agent.",
       "teams": "Group people and manage their access together.",
-      "desktop": "Where new chats start and which apps open files and terminals on this computer."
+      "desktop": "Where new chats start and which apps open files and terminals on this computer.",
+      "appearance": "Customize the look, text size and layout of OpenGUI.",
+      "language": "Choose the interface language.",
+      "chats": "Set defaults and notifications for your chats."
     },
     "paths": {
       "boundaryTitle": "Path grants are not a sandbox",
@@ -264,15 +270,21 @@
       "restartLocalBackendDescription": "This reloads OpenGUI's local backend and then refreshes the app. Running turns may be interrupted.",
       "theme": "Theme",
       "olderThan": "Older than",
-      "blockedByBrowserHelp": "Allow notifications for this site in your browser settings to turn them on."
+      "blockedByBrowserHelp": "Allow notifications for this site in your browser settings to turn them on.",
+      "fontSize": "Font size"
     },
     "groups": {
       "agent": "Agent",
       "host": "Host",
-      "device": "This computer"
+      "device": "This computer",
+      "personal": "Personal"
     },
     "backToChat": "Back to chat",
-    "version": "OpenGUI {{version}}"
+    "version": "OpenGUI {{version}}",
+    "quick": {
+      "title": "Quick preferences",
+      "allAppearance": "All appearance settings…"
+    }
   },
   "sidebar": {
     "allProjectsPinned": "All projects pinned",

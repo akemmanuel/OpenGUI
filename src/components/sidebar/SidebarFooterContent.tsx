@@ -1,3 +1,5 @@
+import type { SectionId } from "@/components/settings/SettingsView";
+import { QuickPreferences } from "@/features/profile/QuickPreferences";
 import { FolderOpen, Settings, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -20,7 +22,7 @@ export function SidebarFooterContent({
 }: {
   activeSessionDirectory: string | null;
   homeDir: string | null;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab?: SectionId) => void;
   settingsActive: boolean;
   onToggleProfile: () => void;
   profileOpen: boolean;
@@ -47,35 +49,6 @@ export function SidebarFooterContent({
         </div>
       )}
       <SidebarMenu className="flex-row items-center gap-1 p-1 group-data-[collapsible=icon]:flex-col">
-        <SidebarMenuItem className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
-          <SidebarMenuButton
-            type="button"
-            size="lg"
-            tooltip={profileLabel}
-            isActive={profileOpen}
-            aria-label={t("profile.open")}
-            aria-expanded={profileOpen}
-            onClick={onToggleProfile}
-            className="h-10 gap-2 px-2 data-[active=true]:font-normal"
-          >
-            {signedIn ? (
-              <span
-                aria-hidden="true"
-                className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground group-data-[collapsible=icon]:size-8"
-              >
-                {initialsFor(actor.displayName)}
-              </span>
-            ) : (
-              <span
-                aria-hidden="true"
-                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-sidebar-border text-muted-foreground group-data-[collapsible=icon]:size-8"
-              >
-                <SlidersHorizontal className="size-3.5" />
-              </span>
-            )}
-            <span className="group-data-[collapsible=icon]:hidden">{profileLabel}</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton
             type="button"
@@ -84,12 +57,46 @@ export function SidebarFooterContent({
             isActive={settingsActive}
             aria-label={t("common.settings")}
             aria-current={settingsActive ? "page" : undefined}
-            onClick={onOpenSettings}
+            onClick={() => onOpenSettings()}
             className="size-8 justify-center p-0 text-muted-foreground"
           >
             <Settings />
           </SidebarMenuButton>
         </SidebarMenuItem>
+        <SidebarMenuItem>
+          <QuickPreferences onOpenAppearance={() => onOpenSettings("appearance")} />
+        </SidebarMenuItem>
+        {signedIn && (
+          <SidebarMenuItem className="min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
+            <SidebarMenuButton
+              type="button"
+              size="lg"
+              tooltip={profileLabel}
+              isActive={profileOpen}
+              aria-label={t("profile.open")}
+              aria-expanded={profileOpen}
+              onClick={onToggleProfile}
+              className="h-10 gap-2 px-2 data-[active=true]:font-normal"
+            >
+              {signedIn ? (
+                <span
+                  aria-hidden="true"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground group-data-[collapsible=icon]:size-8"
+                >
+                  {initialsFor(actor.displayName)}
+                </span>
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-full border border-sidebar-border text-muted-foreground group-data-[collapsible=icon]:size-8"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                </span>
+              )}
+              <span className="group-data-[collapsible=icon]:hidden">{profileLabel}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
       </SidebarMenu>
     </SidebarFooter>
   );
