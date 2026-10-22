@@ -122,7 +122,11 @@
   },
   "messageList": {
     "loadOlder": "Cargar mensajes anteriores",
-    "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo."
+    "loadOlderFailed": "No se pudieron cargar los mensajes anteriores. Inténtalo de nuevo.",
+    "scrollToEnd": "Ir al final",
+    "newMessages": "Mensajes nuevos",
+    "promptNavigation": "Navegación de prompts",
+    "promptNumber": "Prompt {{number}}"
   },
   "toolGroup": {
     "runningCommands_one": "ejecutando un comando",
@@ -439,7 +443,9 @@
     "createAccountAndAdd": "Crear cuenta y añadir",
     "addWorkspace": "Añadir espacio de trabajo",
     "toggleSidebar": "Alternar barra lateral",
-    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto."
+    "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
+    "hideSidebar": "Ocultar barra lateral",
+    "resizeSidebar": "Arrastra para cambiar el ancho de la barra lateral"
   },
   "identity": {
     "checkingHost": "Comprobando la identidad del Host",

@@ -202,7 +202,13 @@ export function AppContent({
       />
       <SidebarInset className="overflow-hidden">
         <div className="flex flex-col h-full">
-          <TitleBar onToggleLeftSidebar={detachedProject ? undefined : leftSidebar.toggleSidebar} />
+          <TitleBar
+            onToggleLeftSidebar={
+              detachedProject || (leftSidebar.state === "expanded" && !leftSidebar.isMobile)
+                ? undefined
+                : leftSidebar.toggleSidebar
+            }
+          />
 
           <div className="flex-1 flex flex-col min-w-0 min-h-0 select-none">
             {isBooting && (

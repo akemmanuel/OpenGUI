@@ -426,7 +426,7 @@ export function AppSidebar({
   });
 
   return (
-    <Sidebar collapsible="icon" className="select-none relative">
+    <Sidebar collapsible="offcanvas" className="select-none">
       {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} />}
       <div
         ref={selectionAreaRef}
