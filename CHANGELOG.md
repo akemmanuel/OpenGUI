@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.1
+
+### Chat and sidebar
+
+- Navigate long conversations with a prompt rail, prompt previews, and keyboard shortcuts:
+  `Alt+Up` / `Alt+Down` move between prompts and `Alt+End` jumps to the latest message.
+- A scroll-to-end button shows when you are reading earlier messages and highlights new output
+  without pulling you away from your place.
+- Fully hide the sidebar or drag its edge to resize it. The width is remembered; double-click
+  the resize handle to reset it. Keyboard resizing is also supported.
+- Completed turns stop their thinking and response timers reliably, even when delayed Session
+  reads or stream reconnects arrive after completion. Reconnecting also repairs missed events.
+
+### Preferences
+
+- Appearance, language, and chat preferences are grouped in Settings, with the chat sidebar
+  still available while Settings is open.
+- Open quick preferences beside the Settings button to change theme, accent, font size,
+  contrast, chat width, and language.
+- Adjust chat width continuously from 40% to 100%; the transcript and prompt share the setting,
+  and existing width preferences carry over.
+- Updated English, German, and Spanish translations for the new controls.
+
 ## 0.7.0
 
 OpenGUI 0.7.0 brings the release in line with what has been running on managed Hosts, and
