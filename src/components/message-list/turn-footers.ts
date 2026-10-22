@@ -97,7 +97,10 @@ export function buildTurnFooterByMessageId(
   for (const assistantTurn of assistantTurns) {
     const entry = assistantTurn.assistants.at(-1);
     if (!entry) continue;
-    const running = isBusy && assistantTurn.user?.info.id === latestUserId;
+    const running =
+      isBusy &&
+      assistantTurn.user?.info.id === latestUserId &&
+      typeof entry.info.time.completed !== "number";
     const footer = footerFromTranscriptTurn(assistantTurn, running);
     if (footer) footerByMessageId.set(entry.info.id, footer);
   }

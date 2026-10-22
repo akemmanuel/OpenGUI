@@ -30,6 +30,7 @@ import {
   useActiveTranscriptSnapshot,
   useActiveTranscriptStore,
 } from "@/features/session-transcript/active-session-transcript-provider";
+import { reconcileHostTranscriptRead } from "@/protocol/host-transcript-reconcile";
 import { createHostClient } from "@/protocol/host-client";
 import type {
   HostSessionSnapshot,
@@ -40,7 +41,6 @@ import {
   applyHostTranscriptEvent,
   createHostTranscriptStream,
   projectHostTranscriptStream,
-  rehydrateHostTranscriptStream,
   type HostTranscriptStream,
 } from "@/protocol/host-transcript";
 import type { Workspace } from "@/types/workspace";
@@ -262,7 +262,30 @@ function HostProviderBody({
   const setLastError = transportSlice.setter("lastError");
   const activeSnapshotRef = useRef<HostSessionSnapshot | null>(null);
   const activeStreamRef = useRef<HostTranscriptStream | null>(null);
+  const sessionRevisionsRef = useRef(new Map<string, number>());
+  const sessionListRequestRef = useRef(0);
+  const pendingHydrationIdsRef = useRef(new Set<string>());
+  const observeSession = useCallback((sessionId: string) => {
+    sessionRevisionsRef.current.set(
+      sessionId,
+      (sessionRevisionsRef.current.get(sessionId) ?? 0) + 1,
+    );
+  }, []);
   const hydratingSessionIdsRef = useRef(new Set<string>());
+  const observeSessionEvent = useCallback(
+    (sessionId: string) => {
+      observeSession(sessionId);
+      // Before the first snapshot there is no stream to reduce into. Repair after
+      // the in-flight read so events delivered in that gap cannot be lost.
+      if (
+        hydratingSessionIdsRef.current.has(sessionId) &&
+        activeStreamRef.current?.snapshot.id !== sessionId
+      ) {
+        pendingHydrationIdsRef.current.add(sessionId);
+      }
+    },
+    [observeSession],
+  );
   const activeSessionIdRef = useRef(activeSessionId);
   const modelSelectionRevisionRef = useRef(0);
   const modelSelectionMutationRef = useRef<Promise<void>>(Promise.resolve());
@@ -355,6 +378,8 @@ function HostProviderBody({
 
   const refreshSessions = useCallback(
     async (directories = projectsRef.current) => {
+      const request = ++sessionListRequestRef.current;
+      const revisions = new Map(sessionRevisionsRef.current);
       if (directories.length === 0) {
         setSessions([]);
         setBusySessionIds(new Set());
@@ -362,6 +387,7 @@ function HostProviderBody({
       }
       if (!host) return;
       const listed = await loadHostSessionSummaries(host, directories);
+      if (request !== sessionListRequestRef.current) return;
       setSessions(listed.map((item) => toSession(item, activeWorkspaceId)));
       const restoredSessionId = resolveRestoredSessionId(
         activeSessionIdRef.current,
@@ -372,9 +398,17 @@ function HostProviderBody({
         activeSessionIdRef.current = restoredSessionId;
         setActiveSessionId(restoredSessionId);
       }
-      setBusySessionIds(
-        new Set(listed.filter((item) => item.status === "running").map((item) => item.id)),
-      );
+      setBusySessionIds((current) => {
+        const next = new Set(
+          listed.filter((item) => item.status === "running").map((item) => item.id),
+        );
+        for (const [id, revision] of sessionRevisionsRef.current) {
+          if (revision === revisions.get(id)) continue;
+          if (current.has(id)) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      });
       setQueuedPrompts((current) => {
         const next = { ...current };
         for (const item of listed) {
@@ -396,7 +430,10 @@ function HostProviderBody({
         return;
       }
       if (!host) return;
-      if (hydratingSessionIdsRef.current.has(sessionId)) return;
+      if (hydratingSessionIdsRef.current.has(sessionId)) {
+        pendingHydrationIdsRef.current.add(sessionId);
+        return;
+      }
       hydratingSessionIdsRef.current.add(sessionId);
       const scope = {
         directory: activeTargetDirectoryRef.current ?? "",
@@ -404,53 +441,60 @@ function HostProviderBody({
       };
       transcriptStore.select(scope);
       try {
-        const snapshot = await host.readSession(sessionId);
-        if (activeSessionIdRef.current !== sessionId) return;
-        const snapshotScope = { directory: snapshot.projectDirectory, sessionId };
-        if (snapshotScope.directory !== scope.directory) transcriptStore.select(snapshotScope);
-        activeSnapshotRef.current = snapshot;
-        // Keep live text of a Run that is still streaming (send-now reloads mid-Run).
-        activeStreamRef.current = rehydrateHostTranscriptStream(snapshot, activeStreamRef.current);
-        modelSelectionRevisionRef.current += 1;
-        setSelectedModel(selectedModelFromHostSnapshot(snapshot));
-        if (snapshot.reasoning) setReasoningEffortState(snapshot.reasoning);
-        const messages = projectHostTranscriptStream(activeStreamRef.current);
-        transcriptStore.dispatch({
-          type: "page.loaded",
-          scope: snapshotScope,
-          phase: "initial",
-          messages,
-          hasMore: false,
-          nextCursor: null,
-        });
-        // Lock skill selection to the first turn's allowlist when present so
-        // reloads keep the same catalog for prompt-cache stability.
-        if (messages.length > 0) {
-          const key = sessionSkillsKey(sessionId, null);
-          if (key) {
-            const locked = lockedSkillsFromSnapshot(snapshot);
-            if (locked) {
-              setEnabledSkillsByKey((current) =>
-                current[key] ? current : { ...current, [key]: locked },
-              );
+        do {
+          pendingHydrationIdsRef.current.delete(sessionId);
+          const streamAtRead = activeStreamRef.current;
+          const read = await host.readSession(sessionId);
+          if (activeSessionIdRef.current !== sessionId) return;
+          const stream = reconcileHostTranscriptRead(read, activeStreamRef.current, streamAtRead);
+          const snapshot = stream.snapshot;
+          observeSession(sessionId);
+          const snapshotScope = { directory: snapshot.projectDirectory, sessionId };
+          if (snapshotScope.directory !== scope.directory) transcriptStore.select(snapshotScope);
+          activeSnapshotRef.current = snapshot;
+          activeStreamRef.current = stream;
+          modelSelectionRevisionRef.current += 1;
+          setSelectedModel(selectedModelFromHostSnapshot(snapshot));
+          if (snapshot.reasoning) setReasoningEffortState(snapshot.reasoning);
+          const messages = projectHostTranscriptStream(stream);
+          transcriptStore.dispatch({
+            type: "page.loaded",
+            scope: snapshotScope,
+            phase: "initial",
+            messages,
+            hasMore: false,
+            nextCursor: null,
+          });
+          // Lock skill selection to the first turn's allowlist when present so
+          // reloads keep the same catalog for prompt-cache stability.
+          if (messages.length > 0) {
+            const key = sessionSkillsKey(sessionId, null);
+            if (key) {
+              const locked = lockedSkillsFromSnapshot(snapshot);
+              if (locked) {
+                setEnabledSkillsByKey((current) =>
+                  current[key] ? current : { ...current, [key]: locked },
+                );
+              }
             }
           }
-        }
-        setQueuedPrompts((current) => ({
-          ...current,
-          [sessionId]: projectHostFollowUps(snapshot.followUps),
-        }));
-        setBusySessionIds((current) => {
-          const next = new Set(current);
-          if (snapshot.status === "running") next.add(sessionId);
-          else next.delete(sessionId);
-          return next;
-        });
+          setQueuedPrompts((current) => ({
+            ...current,
+            [sessionId]: projectHostFollowUps(snapshot.followUps),
+          }));
+          setBusySessionIds((current) => {
+            const next = new Set(current);
+            if (snapshot.status === "running") next.add(sessionId);
+            else next.delete(sessionId);
+            return next;
+          });
+        } while (pendingHydrationIdsRef.current.has(sessionId));
       } finally {
+        pendingHydrationIdsRef.current.delete(sessionId);
         hydratingSessionIdsRef.current.delete(sessionId);
       }
     },
-    [host, transcriptStore],
+    [host, transcriptStore, observeSession],
   );
 
   const forgetAfterPartFollowUp = useCallback((sessionId: string, followUpId: string) => {
@@ -536,6 +580,7 @@ function HostProviderBody({
     activeSessionIdRef,
     activeStreamRef,
     setActiveSnapshot,
+    onSessionEventObserved: observeSessionEvent,
     setBusySessionIds,
     transcriptStore,
     refreshSessions,
@@ -741,6 +786,7 @@ function HostProviderBody({
 
     const compactActiveSession = async () => {
       if (!activeSessionId) throw new Error(t("compaction.selectSession"));
+      observeSession(activeSessionId);
       setBusySessionIds((current) => new Set(current).add(activeSessionId));
       try {
         await requireHost().compact(activeSessionId);
@@ -875,6 +921,7 @@ function HostProviderBody({
               }),
             });
           }
+          observeSession(sessionId!);
           setBusySessionIds((current) => new Set(current).add(sessionId!));
           // Prefer the session key; if this was a pending new chat, migrate the
           // pending allowlist onto the created Session so later turns stay stable.
@@ -1264,6 +1311,7 @@ function HostProviderBody({
     forgetAfterPartFollowUp,
     host,
     hydrateTranscript,
+    observeSession,
     rememberActiveSession,
     queuedPrompts,
     queueController,

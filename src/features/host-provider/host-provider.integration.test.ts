@@ -39,7 +39,7 @@ describe("HostProvider public event pipeline", () => {
       "session-1",
     );
   });
-  test("rehydrates the active Session after reconnect but not initial stream readiness", async () => {
+  test("rehydrates the active Session on initial stream readiness and after reconnect", async () => {
     const hydrateTranscript = vi.fn(async () => {});
     const connected = createHostReconnectHandler({
       activeSessionIdRef: { current: "session-1" },
@@ -47,10 +47,11 @@ describe("HostProvider public event pipeline", () => {
     });
 
     connected();
-    expect(hydrateTranscript).not.toHaveBeenCalled();
+    expect(hydrateTranscript).toHaveBeenCalledTimes(1);
     connected();
     await Promise.resolve();
     expect(hydrateTranscript).toHaveBeenCalledWith("session-1");
+    expect(hydrateTranscript).toHaveBeenCalledTimes(2);
   });
 
   test("projects ordered deltas and durable tool output through the real transcript store", () => {
