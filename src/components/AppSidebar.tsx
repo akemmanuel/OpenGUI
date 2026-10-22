@@ -1,3 +1,4 @@
+import type { SectionId } from "@/components/settings/SettingsView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, X } from "lucide-react";
@@ -49,7 +50,7 @@ export function AppSidebar({
 }: {
   detachedProject?: string;
   highlightedSessionId?: string | null;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab?: SectionId) => void;
   onOpenChat: () => void;
   settingsActive?: boolean;
 }) {
@@ -661,9 +662,9 @@ export function AppSidebar({
           activeSessionDirectory={activeSessionDirectory}
           homeDir={homeDir}
           settingsActive={settingsActive}
-          onOpenSettings={() => {
+          onOpenSettings={(tab) => {
             setProfileOpen(false);
-            onOpenSettings();
+            onOpenSettings(tab);
             closeMobileSidebar();
           }}
           profileOpen={profileOpen}

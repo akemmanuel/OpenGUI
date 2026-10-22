@@ -134,6 +134,7 @@ describe("App shell orchestration", () => {
     render(<AppContent onDismissSetup={fixture.dismissSetup} />);
     await userEvent.click(screen.getByText("open settings"));
     expect(await screen.findByText("settings view")).toBeTruthy();
+    expect(screen.getByText("open settings")).toBeTruthy();
     expect(fixture.dismissSetup).toHaveBeenCalled();
     await userEvent.click(screen.getByText("back"));
     expect(screen.getByText("transcript")).toBeTruthy();

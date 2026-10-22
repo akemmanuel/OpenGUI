@@ -1,3 +1,4 @@
+import { applyStoredFontSize } from "./hooks/use-font-size";
 /**
  * This file is the entry point for the React app, it sets up the root
  * element and renders the App component to the DOM.
@@ -28,6 +29,7 @@ preventDocumentPinchZoom();
 installWebElectronAPI();
 getDesktopShellClient();
 applyStoredAppearance();
+applyStoredFontSize();
 
 const elem = document.getElementById("root");
 if (!elem) throw new Error("Root element not found");

@@ -3,6 +3,9 @@ import {
   Bot,
   FolderKey,
   Laptop,
+  Palette,
+  Languages,
+  MessageSquare,
   Plug,
   ScrollText,
   Settings2,
@@ -38,7 +41,11 @@ import {
 import { NamedTeamsSettings } from "@/features/identity/NamedTeamsSettings";
 import { TeamSettings } from "@/features/identity/TeamSettings";
 import { SkillsSettings } from "@/features/skills/SkillsSettings";
-import { InstructionsSettings } from "@/features/instructions/InstructionsSettings";
+import {
+  PersonalInstructions,
+  usePersonalInstructionsAvailable,
+  InstructionsSettings,
+} from "@/features/instructions/InstructionsSettings";
 import { McpSettings } from "@/features/mcp/McpSettings";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { ownerSettingsVisibility } from "@/features/identity/identity-state";
@@ -50,7 +57,10 @@ import { cn } from "@/lib/utils";
 import { getDesktopShellClient } from "@/runtime/clients";
 import packageJson from "../../../package.json";
 
-type SectionId =
+export type SectionId =
+  | "appearance"
+  | "language"
+  | "chats"
   | "models"
   | "integrations"
   | "skills"
@@ -61,12 +71,22 @@ type SectionId =
   | "host"
   | "desktop";
 
-type Section = { id: SectionId; icon: LucideIcon; visible: boolean };
-type Group = { id: "agent" | "host" | "device"; sections: Section[] };
+import { AppearanceSettings, ChatPreferences } from "@/features/profile/PreferenceSections";
+import { LanguageOptions } from "@/features/profile/PreferenceControls";
 
-export function SettingsView({ onBack }: { onBack: () => void }) {
+type Section = { id: SectionId; icon: LucideIcon; visible: boolean };
+type Group = { id: "personal" | "agent" | "host" | "device"; sections: Section[] };
+
+export function SettingsView({
+  onBack,
+  initialTab,
+}: {
+  onBack: () => void;
+  initialTab?: SectionId;
+}) {
   const { t } = useTranslation();
-  const [requestedTab, setActiveTab] = useState<SectionId | null>(null);
+  const showPersonalInstructions = usePersonalInstructionsAvailable();
+  const [requestedTab, setActiveTab] = useState<SectionId | null>(initialTab ?? "models");
   const [dirty, setDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<SectionId | "back" | null>(null);
 
@@ -83,6 +103,14 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
 
   const groups: Group[] = (
     [
+      {
+        id: "personal",
+        sections: [
+          { id: "appearance", icon: Palette, visible: true },
+          { id: "language", icon: Languages, visible: true },
+          { id: "chats", icon: MessageSquare, visible: true },
+        ],
+      },
       {
         id: "agent",
         sections: [
@@ -258,10 +286,23 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
               {t(`settings.sectionDescriptions.${activeTab}`)}
             </p>
           </header>
+          {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "language" && <LanguageOptions />}
+          {activeTab === "chats" && <ChatPreferences />}
           {activeTab === "models" && <SettingsProviders onDirtyChange={setDirty} />}
           {activeTab === "integrations" && <McpSettings />}
           {activeTab === "skills" && <SkillsSettings />}
-          {activeTab === "instructions" && <InstructionsSettings />}
+          {activeTab === "instructions" && (
+            <div className="space-y-8">
+              <InstructionsSettings />
+              {showPersonalInstructions && (
+                <section className="space-y-4 border-t pt-6">
+                  <h3 className="font-medium">{t("profile.personalInstructions")}</h3>
+                  <PersonalInstructions onDirty={setDirty} />
+                </section>
+              )}
+            </div>
+          )}
           {activeTab === "users" && <TeamSettings view="people" />}
           {activeTab === "teams" && <NamedTeamsSettings onDirtyChange={setDirty} />}
           {activeTab === "paths" && (

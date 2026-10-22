@@ -26,6 +26,7 @@ vi.mock("@/features/skills/SkillsSettings", () => ({
 }));
 vi.mock("@/features/instructions/InstructionsSettings", () => ({
   InstructionsSettings: () => <p>instructions-panel</p>,
+  usePersonalInstructionsAvailable: () => false,
 }));
 vi.mock("@/features/mcp/McpSettings", () => ({
   McpSettings: () => <p>mcp-connections</p>,
@@ -38,6 +39,14 @@ vi.mock("@/features/identity/workspace-identity", () => ({
   identityWorkspaceIsLocalBypass: () => false,
 }));
 
+vi.mock("@/features/profile/PreferenceSections", () => ({
+  AppearanceSettings: () => <p>appearance-controls</p>,
+  ChatPreferences: () => <p>chat-controls</p>,
+}));
+vi.mock("@/features/profile/PreferenceControls", () => ({
+  LanguageOptions: () => <p>language-options</p>,
+}));
+
 import { SettingsView } from "./SettingsView";
 
 describe("SettingsView responsive navigation", () => {
@@ -47,14 +56,32 @@ describe("SettingsView responsive navigation", () => {
     render(<SettingsView onBack={vi.fn()} />);
     const navigation = screen.getByRole("navigation", { name: "settings.navigationLabel" });
     expect(navigation).toBeTruthy();
-    for (const tab of ["models", "integrations", "paths", "host", "desktop"]) {
+    for (const tab of [
+      "appearance",
+      "language",
+      "chats",
+      "models",
+      "integrations",
+      "paths",
+      "host",
+      "desktop",
+    ]) {
       expect(screen.getByRole("button", { name: `settings.tabs.${tab}` })).toBeTruthy();
     }
     expect(screen.getAllByText("settings.groups.host").length).toBe(1);
     expect(screen.queryByText("settings.tabs.general")).toBeNull();
 
     await userEvent.click(screen.getByRole("combobox", { name: "settings.navigationLabel" }));
-    for (const tab of ["models", "integrations", "paths", "host", "desktop"]) {
+    for (const tab of [
+      "appearance",
+      "language",
+      "chats",
+      "models",
+      "integrations",
+      "paths",
+      "host",
+      "desktop",
+    ]) {
       expect(await screen.findByRole("option", { name: `settings.tabs.${tab}` })).toBeTruthy();
     }
     await userEvent.click(screen.getByRole("option", { name: "settings.tabs.paths" }));
@@ -75,6 +102,15 @@ describe("SettingsView responsive navigation", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "settings.tabs.instructions" }));
     expect(screen.getByText("instructions-panel")).toBeTruthy();
+  });
+
+  test("opens personal preferences and supports the appearance shortcut", async () => {
+    render(<SettingsView initialTab="appearance" onBack={vi.fn()} />);
+    expect(screen.getByText("appearance-controls")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.language" }));
+    expect(screen.getByText("language-options")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "settings.tabs.chats" }));
+    expect(screen.getByText("chat-controls")).toBeTruthy();
   });
 
   test("opens on the first available section", () => {

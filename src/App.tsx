@@ -1,3 +1,4 @@
+import type { SectionId } from "@/components/settings/SettingsView";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QueueList } from "@/components/QueueList";
@@ -63,6 +64,7 @@ export function AppContent({
 }) {
   const { t } = useTranslation();
   const [chatWidth] = useChatWidth();
+  const [settingsTab, setSettingsTab] = useState<SectionId | undefined>();
   const identityActor = useIdentityActor();
   const [activeView, setActiveView] = useState<"chat" | "settings">("chat");
   const leftSidebar = useSidebar();
@@ -181,6 +183,7 @@ export function AppContent({
 
   useEffect(() => {
     const openSettings = () => {
+      setSettingsTab(undefined);
       onDismissSetup?.();
       setActiveView("settings");
     };
@@ -193,7 +196,8 @@ export function AppContent({
       <AppSidebar
         detachedProject={detachedProject}
         highlightedSessionId={activeView === "chat" ? sessionActiveId : null}
-        onOpenSettings={() => {
+        onOpenSettings={(tab) => {
+          setSettingsTab(tab);
           onDismissSetup?.();
           setActiveView("settings");
         }}
@@ -231,7 +235,7 @@ export function AppContent({
                   </div>
                 }
               >
-                <SettingsView onBack={() => setActiveView("chat")} />
+                <SettingsView initialTab={settingsTab} onBack={() => setActiveView("chat")} />
               </Suspense>
             ) : (
               <>
@@ -257,7 +261,8 @@ export function AppContent({
                 {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
                   <div className="relative z-[1] shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
                     <div
-                      className={`w-full md:mx-auto ${chatWidth === "full" ? "md:max-w-none" : "md:max-w-2xl"}`}
+                      className="w-full md:mx-auto md:w-[var(--chat-width)]"
+                      style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
                     >
                       {queuedPrompts.length > 0 && (
                         <div className="mb-1.5">
