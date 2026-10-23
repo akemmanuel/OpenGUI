@@ -1,6 +1,7 @@
 import { CheckCircle2, Circle, Wrench, XCircle } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { HostImage } from "@/components/HostImage";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
 import { Button } from "@/components/ui/button";
@@ -27,11 +28,12 @@ function ToolImages({ block }: { block: Extract<ToolOutputBlock, { type: "images
           key={`${image.url}-${idx}`}
           className="overflow-hidden rounded-md border border-border/60 bg-background/60"
         >
-          <img
+          <HostImage
             src={image.src}
             alt={image.filename ?? `Image attachment ${idx + 1}`}
             loading="lazy"
             className="w-full max-h-52 object-contain bg-black/20"
+            fallbackClassName="m-1 h-8 min-w-40"
           />
         </div>
       ))}

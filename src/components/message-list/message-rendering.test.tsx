@@ -8,9 +8,13 @@ const browser = vi.hoisted(() => ({ copy: vi.fn().mockResolvedValue(undefined) }
 vi.mock("@/lib/browser", () => ({ copyTextToClipboard: browser.copy }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/hooks/use-agent-state", () => ({
-  useWorkspaceState: () => ({ workspaceServerUrl: "https://host.example" }),
+  useWorkspaceState: () => ({
+    workspaceServerUrl: "https://host.example",
+    attachmentBaseUrl: "https://host.example",
+  }),
 }));
-vi.mock("@/components/MarkdownRenderer", () => ({
+vi.mock("@/components/MarkdownRenderer", async () => ({
+  MarkdownImageContext: (await import("react")).createContext(null),
   MarkdownRenderer: ({ content }: { content: string }) => (
     <div data-testid="markdown">{content}</div>
   ),

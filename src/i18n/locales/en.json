@@ -1127,7 +1127,9 @@
   "attachments": {
     "image": "Image",
     "fileAttachment": "File attachment",
-    "closeImagePreview": "Close image preview"
+    "closeImagePreview": "Close image preview",
+    "openImage": "Open image {{name}}",
+    "imageUnavailable": "Image unavailable"
   },
   "projectPath": {
     "up": "Up",

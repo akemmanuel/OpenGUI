@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative as relativePath } from "node:path";
 import { Hono } from "hono";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import type { DurableActor, ExecutionPolicyResolver } from "@opengui/harness";
@@ -208,6 +208,20 @@ describe("filesystem and duplicate RPC path enforcement", () => {
     );
     expect(preview.status).toBe(200);
     expect(await preview.text()).toBe("png");
+    // Agent-written files (SVG included) must not run script when opened directly.
+    expect(preview.headers.get("content-type")).toBe("image/png");
+    expect(preview.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(preview.headers.get("content-security-policy")).toContain("sandbox");
+    expect(preview.headers.get("cache-control")).toBe("no-cache");
+
+    // Project-relative previews resolve against the Project directory.
+    const relative = await app.request(
+      `http://localhost/api/fs/file?path=${encodeURIComponent(
+        relativePath(await realpath(project), uploaded),
+      )}&directory=${encodeURIComponent(project)}`,
+    );
+    expect(relative.status).toBe(200);
+    expect(await relative.text()).toBe("png");
 
     const outside = await mkdtemp(join(tmpdir(), "opengui-local-upload-outside-"));
     temporaryDirectories.push(outside);

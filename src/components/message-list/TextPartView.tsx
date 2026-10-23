@@ -1,5 +1,6 @@
 import { ImageMentionToken, type ImageMention } from "@/components/ImageMentionPreview";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { useMemo } from "react";
+import { MarkdownImageContext, MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { splitImageMentions } from "@/lib/image-mentions";
 import type { TextTranscriptPart } from "@/protocol/session-transcript";
@@ -20,6 +21,14 @@ export function TextPartView({
   imageBaseDirectory?: string | null;
 }) {
   const { attachmentBaseUrl } = useWorkspaceState();
+  const markdownImages = useMemo(
+    () => ({
+      baseUrl: attachmentBaseUrl,
+      baseDirectory: imageBaseDirectory ?? null,
+      onOpen: onImageOpen,
+    }),
+    [attachmentBaseUrl, imageBaseDirectory, onImageOpen],
+  );
   if (!part.text) return null;
 
   if (isUser) {
@@ -48,7 +57,9 @@ export function TextPartView({
 
   return (
     <div>
-      <MarkdownRenderer content={part.text} />
+      <MarkdownImageContext.Provider value={markdownImages}>
+        <MarkdownRenderer content={part.text} />
+      </MarkdownImageContext.Provider>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import type { BackendApp } from "../http/request-context.ts";
 import { findFilesInDirectory } from "../../../../server/services/file-search.ts";
 import { isWithinAllowedRoot } from "../host/path-safety.ts";
@@ -122,7 +122,9 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
       const inputPath = c.req.query("path")?.trim();
       if (!inputPath) throw new Error("path is required");
       const directory = c.req.query("directory")?.trim() || null;
-      const requestedPath = inputPath.startsWith("/")
+      // `isAbsolute` follows the Host platform, so Windows drive and UNC paths
+      // are not mistaken for Project-relative paths.
+      const requestedPath = isAbsolute(inputPath)
         ? inputPath
         : join(
             await deps.pathAuthorizer.authorizePath(
@@ -145,6 +147,13 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
       return new Response(await readFile(actual), {
         headers: {
           "content-type": contentTypeForPath(actual),
+          // Transcripts render agent-written files, including SVG. Opened
+          // directly, they must never run script with the Host's origin.
+          "x-content-type-options": "nosniff",
+          "content-security-policy":
+            "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+          // Agents overwrite images in place; always revalidate.
+          "cache-control": "no-cache",
         },
       });
     } catch (error) {

@@ -39,9 +39,9 @@ export function ToolCallPartView({
   expandedToolCalls?: ReadonlySet<string>;
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
 }) {
-  const { workspaceServerUrl } = useWorkspaceState();
+  const { attachmentBaseUrl } = useWorkspaceState();
   const { t } = useTranslation();
-  const tool = getToolCallViewModel(part, workspaceServerUrl, t);
+  const tool = getToolCallViewModel(part, attachmentBaseUrl, t);
   const expanded = expandedToolCalls?.has(part.id) ?? false;
   const setExpanded = (nextExpanded: boolean) => onSetToolCallExpanded?.(part.id, nextExpanded);
   const outputRef = useRef<HTMLDivElement | null>(null);
