@@ -35,3 +35,17 @@ export function resolveAttachmentImageSrc(
   if (isAbsolutePath(resolvedPath)) return toFileUrl(resolvedPath);
   return trimmed;
 }
+
+/**
+ * Host URL that image previews are fetched from. Desktop Local runs its Host
+ * as a sidecar on a per-launch port, so the stored workspace URL (the web
+ * default) never reaches it.
+ */
+export function resolveAttachmentBaseUrl(
+  workspace: { isLocal?: boolean; serverUrl?: string } | null | undefined,
+  electronApi: { kind?: "electron" | "web"; backendUrl?: string | null } | undefined,
+): string | null {
+  if (!workspace) return null;
+  if (electronApi?.kind === "electron" && workspace.isLocal) return electronApi.backendUrl ?? null;
+  return workspace.serverUrl ?? null;
+}
