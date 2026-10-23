@@ -32,9 +32,24 @@ Check `/api/health`, owner login, Session listing, and a read-only transcript be
 Upgrade only after a successful restore rehearsal; migrations run on Host startup and must never be
 downgraded in place.
 
-For an online backup, use SQLite's backup API or `VACUUM INTO` from an operator-controlled process;
-copying only the main database while WAL writes continue is unsafe. Schedule WAL checkpoints during
-quiet periods and monitor disk growth. Never delete `-wal`/`-shm` files while the Host is running.
+For an online backup, take the snapshot from inside the Host's container or sandbox:
+
+```sh
+docker exec opengui node --experimental-strip-types scripts/backup-databases.ts
+```
+
+The command uses SQLite's backup API and writes integrity-checked, self-contained copies without
+`-wal`/`-shm` files to `OPENGUI_DATA_DIR/backups/<UTC timestamp>/`, or to a directory passed as the
+first argument. Archive that directory with any file-level tool. Copying only the main database while
+WAL writes continue is unsafe. Never delete `-wal`/`-shm` files while the Host is running.
+
+**Never open the live databases from outside the Host's sandbox.** SQLite coordinates WAL access
+through POSIX locks and the shared-memory `-shm` index. gVisor (`runsc`) and similar sandboxes do
+not share either with processes on the host machine. A host-side connection, including the
+`sqlite3` CLI running a read-only `SELECT` or another program's online backup, then assumes it is
+the last connection. On close it checkpoints and deletes the live `-wal` file. The Host keeps
+writing to the deleted file, so every later change, such as new Session access, logins, or settings,
+is silently lost at the next restart. To inspect data, query a snapshot instead.
 
 ## Corruption and rollback
 

@@ -346,9 +346,14 @@ changing a source module from outside the sandbox and fetching the same module U
 - Monitor disk, process, memory, and build-output growth. Resource limits protect availability but
   do not replace host monitoring. A full disk makes SQLite writes fail; `/api/health` reports
   low free space in the Host data directory.
-- Back up SQLite with the online backup API (not a file copy while WAL is active), keep an
-  encrypted off-host copy, and export the pinned runtime images: a local image ID cannot be pulled
-  onto a replacement machine.
+- Back up SQLite from inside the sandbox with
+  `docker exec <container> node --experimental-strip-types scripts/backup-databases.ts`, never with
+  a file copy while WAL is active. Keep an encrypted off-host copy, and export the pinned runtime
+  images: a local image ID cannot be pulled onto a replacement machine.
+- Never open the live SQLite files from the host machine, not even read-only with the `sqlite3`
+  CLI or another program's backup API. gVisor does not share SQLite's locks and `-shm` index with
+  host processes, so such a connection can delete the live `-wal` file and every later write is
+  lost at the next restart. See [Backup and restore](operations.md#backup-and-restore).
 - Let one supervisor own application restarts. Do not combine Docker restart policies with a
   second restart mechanism.
 - gVisor is defense in depth, not a virtual machine. Operators with a stronger hostile-tenant

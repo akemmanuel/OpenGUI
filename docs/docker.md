@@ -76,8 +76,11 @@ restrict CORS, and do not expose host-control mode directly to the internet.
 ## Backup and upgrade
 
 Stop the container before a cold backup, then archive the `opengui-data` volume (or the directory
-mapped to `OPENGUI_DATA_DIR`). Back up mounted Projects separately; they are not stored in the Host
-data volume. Restore by attaching the saved data directory to the same `OPENGUI_DATA_DIR` before
+mapped to `OPENGUI_DATA_DIR`). For an online backup, run
+`docker exec opengui node --experimental-strip-types scripts/backup-databases.ts` and archive the
+snapshot directory it prints; do not open the live SQLite files from the host machine (see
+[Backup and restore](operations.md#backup-and-restore)). Back up mounted Projects separately; they
+are not stored in the Host data volume. Restore by attaching the saved data directory to the same `OPENGUI_DATA_DIR` before
 starting the replacement image.
 
 Before changing image tags:
