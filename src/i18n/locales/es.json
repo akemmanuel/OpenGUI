@@ -856,6 +856,8 @@
     "contextWindow": "Ventana de contexto (tokens)",
     "reasoningModel": "Modelo de razonamiento",
     "reasoningModelHelp": "Ofrece controles de razonamiento para este modelo.",
+    "reasoningEfforts": "Niveles de razonamiento",
+    "reasoningEffortsHelp": "Niveles disponibles en el compositor para este modelo.",
     "defaultModel": "Usar como predeterminado de este backend",
     "routes": {
       "openai-chat": "OpenAI Chat Completions",

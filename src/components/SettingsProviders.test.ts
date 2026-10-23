@@ -2,6 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   buildCustomModelConnection,
   createCustomBackendDraft,
+  toggleReasoningEffort,
   validateCustomBackend,
 } from "@/features/model-access/custom-backend";
 
@@ -65,6 +66,32 @@ describe("buildCustomModelConnection", () => {
       ],
     });
     expect(connection?.modelCapabilities?.["gpt-test"]).not.toHaveProperty("reasoningEfforts");
+  });
+
+  test("keeps selected reasoning levels in canonical order", () => {
+    let efforts = toggleReasoningEffort([], "max", true);
+    efforts = toggleReasoningEffort(efforts, "low", true);
+    efforts = toggleReasoningEffort(efforts, "high", true);
+    expect(efforts).toEqual(["low", "high", "max"]);
+    expect(toggleReasoningEffort(efforts, "high", false)).toEqual(["low", "max"]);
+
+    const connection = buildCustomModelConnection({
+      ...createCustomBackendDraft("user"),
+      label: "Test backend",
+      models: [
+        {
+          ...createCustomBackendDraft("user").models[0]!,
+          id: "claude-test",
+          route: "anthropic-messages",
+          reasoning: true,
+          reasoningEfforts: efforts,
+        },
+      ],
+    });
+    expect(connection?.modelCapabilities?.["claude-test"]).toMatchObject({
+      reasoning: true,
+      reasoningEfforts: ["low", "high", "max"],
+    });
   });
 
   test("reports duplicate upstream IDs before save", () => {
