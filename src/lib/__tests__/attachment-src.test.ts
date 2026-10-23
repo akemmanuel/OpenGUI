@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { resolveAttachmentImageSrc } from "../attachment-src";
+import { resolveAttachmentBaseUrl, resolveAttachmentImageSrc } from "../attachment-src";
 
 describe("resolveAttachmentImageSrc", () => {
   test("keeps data urls unchanged", () => {
@@ -33,5 +33,42 @@ describe("resolveAttachmentImageSrc", () => {
 
   test("converts windows absolute paths to file urls", () => {
     expect(resolveAttachmentImageSrc("C:\\temp\\image.png")).toBe("file:///C:/temp/image.png");
+  });
+});
+
+describe("resolveAttachmentBaseUrl", () => {
+  const electron = { kind: "electron" as const, backendUrl: "http://127.0.0.1:36627" };
+
+  test("uses the Desktop Local sidecar instead of the stored default url", () => {
+    expect(
+      resolveAttachmentBaseUrl({ isLocal: true, serverUrl: "http://127.0.0.1:4096" }, electron),
+    ).toBe("http://127.0.0.1:36627");
+  });
+
+  test("keeps remote workspace urls on desktop", () => {
+    expect(
+      resolveAttachmentBaseUrl({ isLocal: false, serverUrl: "https://host.example" }, electron),
+    ).toBe("https://host.example");
+  });
+
+  test("keeps the configured url in the web shell", () => {
+    expect(
+      resolveAttachmentBaseUrl(
+        { isLocal: true, serverUrl: "https://gui.example" },
+        { kind: "web", backendUrl: null },
+      ),
+    ).toBe("https://gui.example");
+  });
+
+  test("falls back to file urls while the sidecar url is unknown", () => {
+    expect(
+      resolveAttachmentBaseUrl(
+        { isLocal: true, serverUrl: "http://127.0.0.1:4096" },
+        {
+          kind: "electron",
+          backendUrl: null,
+        },
+      ),
+    ).toBeNull();
   });
 });

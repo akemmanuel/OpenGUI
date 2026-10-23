@@ -21,6 +21,16 @@ function fsError(error: unknown) {
   return jsonError(error, error instanceof PathAuthorizationError ? 403 : 400);
 }
 
+// Keep pasted screenshots out of the user's repository without touching their
+// own .gitignore.
+async function ensureUploadsIgnored(dir: string) {
+  try {
+    await writeFile(join(dir, ".gitignore"), "*\n", { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+}
+
 async function listServerDirectories(
   path: string,
   roots: string[],
@@ -177,15 +187,18 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
         if (file.size > deps.env.uploadMaxFileBytes) throw new Error("File exceeds size limit");
       }
 
+      const directoryValue = form.get("directory");
+      const directory = typeof directoryValue === "string" ? directoryValue.trim() : "";
+      if (restricted && !directory) throw new Error("directory is required");
+      // Project uploads must outlive the OS temp dir and stay inside allowed
+      // roots, so transcripts can still render them through /api/fs/file.
+      const projectScoped = Boolean(directory);
+
       let dir: string;
-      if (restricted) {
-        const directoryValue = form.get("directory");
-        if (typeof directoryValue !== "string" || !directoryValue.trim()) {
-          throw new Error("directory is required");
-        }
+      if (projectScoped) {
         const destination = await deps.pathAuthorizer.authorizePath(
           actor,
-          resolve(directoryValue.trim()),
+          resolve(directory),
           "write",
         );
         await deps.resolveSafeDirectory(destination);
@@ -199,6 +212,7 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
         dir = join(tmpdir(), "opengui-uploads");
       }
       await mkdir(dir, { recursive: true });
+      if (projectScoped) await ensureUploadsIgnored(dir);
 
       const uploaded: string[] = [];
       for (const file of files) {
@@ -207,7 +221,7 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
           .replace(/[^a-zA-Z0-9.]/g, "")
           .slice(0, 24);
         const requestedFilePath = join(dir, `${randomUUID()}${extension}`);
-        const filePath = restricted
+        const filePath = projectScoped
           ? await deps.pathAuthorizer.authorizePath(actor, requestedFilePath, "write", {
               allowMissingLeaf: true,
             })

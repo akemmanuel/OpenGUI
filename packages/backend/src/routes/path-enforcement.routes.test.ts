@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
@@ -8,7 +8,7 @@ import { resolveSafeDirectory } from "../host/path-safety.ts";
 import type { BackendRequestEnv } from "../http/request-context.ts";
 import type { Actor } from "../identity/types.ts";
 import { createEffectivePathPolicy } from "../path-policy/path-policy.ts";
-import { HostPathAuthorizer } from "../path-policy/enforcement.ts";
+import { HostPathAuthorizer, createLocalPolicyResolver } from "../path-policy/enforcement.ts";
 import { registerFsRoutes } from "./fs.ts";
 import { registerHostTransportRoutes } from "./host-transport.ts";
 
@@ -170,5 +170,47 @@ describe("filesystem and duplicate RPC path enforcement", () => {
       permissions: true,
       uploads: true,
     });
+  });
+
+  test("stores Desktop Local uploads in the project so transcripts can read them back", async () => {
+    const root = await mkdtemp(join(tmpdir(), "opengui-local-upload-"));
+    temporaryDirectories.push(root);
+    const project = join(root, "project");
+    await mkdir(project);
+
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/*", async (c, next) => {
+      c.set("actor", { type: "local", id: "desktop-local", displayName: "", role: "owner" });
+      await next();
+    });
+    registerFsRoutes(app, {
+      env: { allowedRoots: [root], uploadMaxFileBytes: 1024, uploadMaxBatchBytes: 2048 },
+      resolveSafeDirectory: (path) => resolveSafeDirectory(path, [root]),
+      pathAuthorizer: new HostPathAuthorizer(createLocalPolicyResolver([root])),
+    });
+    const upload = async (directory: string) => {
+      const form = new FormData();
+      form.append("directory", directory);
+      form.append("files", new File(["png"], "screenshot.png"));
+      return await app.request("http://localhost/api/fs/upload", { method: "POST", body: form });
+    };
+
+    const response = await upload(project);
+    expect(response.status).toBe(200);
+    const uploaded = ((await response.json()) as { value: string[] }).value[0]!;
+    const uploadsDir = await realpath(join(project, ".opengui-uploads"));
+    expect(uploaded.startsWith(uploadsDir)).toBe(true);
+    expect(await readFile(join(uploadsDir, ".gitignore"), "utf8")).toBe("*\n");
+    expect((await upload(project)).status).toBe(200);
+
+    const preview = await app.request(
+      `http://localhost/api/fs/file?path=${encodeURIComponent(uploaded)}`,
+    );
+    expect(preview.status).toBe(200);
+    expect(await preview.text()).toBe("png");
+
+    const outside = await mkdtemp(join(tmpdir(), "opengui-local-upload-outside-"));
+    temporaryDirectories.push(outside);
+    expect((await upload(outside)).status).toBe(403);
   });
 });
