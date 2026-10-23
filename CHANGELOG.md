@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.2
+
+### Images and uploads
+
+- Show previews for Host image files referenced in assistant replies, including Project-relative,
+  absolute, Windows, and file URL paths. Click a preview to open the image viewer. Remote image
+  URLs remain blocked, and inaccessible files show an unavailable placeholder.
+- Fix Desktop Local transcript image previews by using the backend sidecar's actual address.
+  Token-authenticated Remote Host previews now load with the appropriate Host credentials.
+- Keep uploads associated with a Project in its `.opengui-uploads/` directory, including on
+  Desktop Local, so they survive temporary-directory cleanup. A local `.gitignore` keeps them
+  out of version control.
+- File responses now include content security headers and refresh images overwritten in place.
+
+### Providers
+
+- Custom backends can declare supported reasoning levels in Settings. The composer offers the
+  selected levels using the existing model capability configuration.
+
+### Operations
+
+- Add `scripts/backup-databases.ts` for verified SQLite snapshots from inside the Host's
+  container or sandbox. Snapshots are self-contained files with restricted permissions.
+- Correct backup guidance for sandboxed Hosts: opening live databases from outside the sandbox,
+  even for read-only queries, can destroy live WAL state. Run the backup command inside the
+  container and copy the closed snapshots instead.
+
 ## 0.7.1
 
 ### Chat and sidebar
