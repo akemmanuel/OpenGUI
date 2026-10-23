@@ -856,6 +856,8 @@
     "contextWindow": "Context window (tokens)",
     "reasoningModel": "Reasoning model",
     "reasoningModelHelp": "Advertise reasoning controls for this model.",
+    "reasoningEfforts": "Reasoning levels",
+    "reasoningEffortsHelp": "Levels offered in the composer for this model.",
     "defaultModel": "Use as this backend's default",
     "routes": {
       "openai-chat": "OpenAI Chat Completions",

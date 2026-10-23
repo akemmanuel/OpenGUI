@@ -30,6 +30,28 @@ export type CustomBackendErrors = {
   contexts: Set<string>;
 };
 
+export const REASONING_EFFORT_OPTIONS: readonly ReasoningEffort[] = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+];
+
+export function toggleReasoningEffort(
+  efforts: readonly ReasoningEffort[],
+  effort: ReasoningEffort,
+  enabled: boolean,
+): ReasoningEffort[] {
+  const next = new Set(efforts);
+  if (enabled) next.add(effort);
+  else next.delete(effort);
+  return REASONING_EFFORT_OPTIONS.filter((option) => next.has(option));
+}
+
 export function emptyUpstreamModel(id = ""): EditableUpstreamModel {
   return {
     key: `model_${Date.now()}_${Math.random().toString(36).slice(2)}`,

@@ -856,6 +856,8 @@
     "contextWindow": "Kontextfenster (Tokens)",
     "reasoningModel": "Reasoning-Modell",
     "reasoningModelHelp": "Reasoning-Steuerung für dieses Modell anbieten.",
+    "reasoningEfforts": "Reasoning-Stufen",
+    "reasoningEffortsHelp": "Stufen, die im Eingabefeld für dieses Modell zur Auswahl stehen.",
     "defaultModel": "Als Standard dieses Backends verwenden",
     "routes": {
       "openai-chat": "OpenAI Chat Completions",

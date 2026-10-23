@@ -2,6 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,6 +16,8 @@ import { Switch } from "@/components/ui/switch";
 import type { IdentityActor } from "@/features/identity/identity-client";
 import {
   emptyUpstreamModel,
+  REASONING_EFFORT_OPTIONS,
+  toggleReasoningEffort,
   validateCustomBackend,
   type CustomBackendDraft,
   type EditableUpstreamModel,
@@ -231,6 +234,33 @@ export function CustomBackendEditor({
                   onCheckedChange={(reasoning) => updateModel(model.key, { reasoning })}
                 />
               </label>
+              {model.reasoning && (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">{t("providers.reasoningEfforts")}</legend>
+                  <p className="text-xs text-muted-foreground">
+                    {t("providers.reasoningEffortsHelp")}
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    {REASONING_EFFORT_OPTIONS.map((effort) => (
+                      <label key={effort} className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={model.reasoningEfforts.includes(effort)}
+                          onCheckedChange={(checked) =>
+                            updateModel(model.key, {
+                              reasoningEfforts: toggleReasoningEffort(
+                                model.reasoningEfforts,
+                                effort,
+                                checked,
+                              ),
+                            })
+                          }
+                        />
+                        {t(`reasoningEffort.levels.${effort}`)}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
               <label className="flex items-center gap-2 text-xs">
                 <input
                   type="radio"
