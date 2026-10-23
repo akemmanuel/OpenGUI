@@ -14,6 +14,10 @@ export interface SystemPromptInput {
   platform?: NodeJS.Platform;
 }
 
+// The Frontend renders markdown images only from Host files (never remote URLs).
+const IMAGE_DISPLAY_GUIDANCE =
+  "To show the user an image file, reference it in your reply as ![description](path) with a Project-relative or absolute path. Remote image URLs are not displayed.";
+
 export function buildSystemPrompt(input: SystemPromptInput): string {
   const now = input.now ?? new Date();
   const platform = input.platform ?? process.platform;
@@ -31,6 +35,8 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   if (tools.includes("shell") && input.shell) {
     sections.push(`Shell: ${input.shell.executable} (${input.shell.family})`);
   }
+
+  sections.push(IMAGE_DISPLAY_GUIDANCE);
 
   const skillsSection = formatSkillsForPrompt(input.skills);
   if (skillsSection) sections.push(skillsSection);

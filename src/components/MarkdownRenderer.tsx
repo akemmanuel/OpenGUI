@@ -1,19 +1,82 @@
 import { Check, Copy } from "lucide-react";
 import {
+  createContext,
   isValidElement,
   memo,
   type ComponentProps,
   type MouseEvent,
+  useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
+import { HostImage } from "@/components/HostImage";
+import type { ImageMention } from "@/components/ImageMentionPreview";
 import { Button } from "@/components/ui/button";
+import { classifyMarkdownImageSource, resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { copyTextToClipboard, openExternalLink } from "@/lib/browser";
 import { cn } from "@/lib/utils";
+
+/**
+ * Where markdown images may load from. Without a provider, images render as
+ * their alt text only.
+ */
+export type MarkdownImageContextValue = {
+  baseUrl: string | null;
+  baseDirectory: string | null;
+  onOpen?: (image: ImageMention) => void;
+};
+
+export const MarkdownImageContext = createContext<MarkdownImageContextValue | null>(null);
+
+// The default transform drops `file:` and Windows drive paths (`C:` reads as a
+// protocol). Image sources are validated by the `img` component instead.
+const urlTransform: UrlTransform = (url, key, node) =>
+  node.tagName === "img" && key === "src" ? url : defaultUrlTransform(url);
+
+function imageFilename(path: string, alt: string | undefined) {
+  return path.split(/[\\/]/).pop() || alt || "Image";
+}
+
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useTranslation();
+  const context = useContext(MarkdownImageContext);
+  const source = context ? classifyMarkdownImageSource(src) : null;
+  if (!context || !source) {
+    // Model-authored markdown is untrusted. Do not automatically contact an
+    // arbitrary image origin (tracking pixels can leak IP and URL metadata).
+    return alt ? <span className="text-muted-foreground">{alt}</span> : null;
+  }
+
+  const path = source.kind === "path" ? source.path : source.src;
+  const label = alt || (source.kind === "path" ? imageFilename(path, alt) : t("attachments.image"));
+  const image: ImageMention = {
+    path,
+    filename: source.kind === "path" ? imageFilename(path, alt) : label,
+  };
+  const resolvedSrc = resolveAttachmentImageSrc(path, context.baseUrl, context.baseDirectory);
+
+  return (
+    <button
+      type="button"
+      className="my-2 block max-w-full overflow-hidden rounded-lg border border-border/60 bg-background/60 text-left focus:outline-none focus:ring-2 focus:ring-primary/40"
+      title={source.kind === "path" ? path : label}
+      aria-label={t("attachments.openImage", { name: label })}
+      onClick={() => context.onOpen?.(image)}
+    >
+      <HostImage
+        src={resolvedSrc}
+        alt={label}
+        loading="lazy"
+        className="block max-h-80 max-w-full object-contain"
+        fallbackClassName="m-1 h-8 min-w-40"
+      />
+    </button>
+  );
+}
 
 function nodeToString(node: React.ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -180,10 +243,8 @@ const markdownComponents = {
       </a>
     );
   },
-  img({ alt }: ComponentProps<"img">) {
-    // Model-authored markdown is untrusted. Do not automatically contact an
-    // arbitrary image origin (tracking pixels can leak IP and URL metadata).
-    return alt ? <span className="text-muted-foreground">{alt}</span> : null;
+  img({ src, alt }: ComponentProps<"img">) {
+    return <MarkdownImage src={typeof src === "string" ? src : undefined} alt={alt} />;
   },
   code({ children, node: _node, ...props }: ComponentProps<"code"> & { node?: unknown }) {
     return (
@@ -202,7 +263,12 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { co
 
   return (
     <div className="markdown-renderer text-sm leading-relaxed select-text">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={remarkPlugins} skipHtml>
+      <ReactMarkdown
+        components={markdownComponents}
+        remarkPlugins={remarkPlugins}
+        urlTransform={urlTransform}
+        skipHtml
+      >
         {content}
       </ReactMarkdown>
     </div>

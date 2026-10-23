@@ -1129,7 +1129,9 @@
   "attachments": {
     "image": "Bild",
     "fileAttachment": "Dateianhang",
-    "closeImagePreview": "Bildvorschau schließen"
+    "closeImagePreview": "Bildvorschau schließen",
+    "openImage": "Bild {{name}} öffnen",
+    "imageUnavailable": "Bild nicht verfügbar"
   },
   "projectPath": {
     "up": "Nach oben",

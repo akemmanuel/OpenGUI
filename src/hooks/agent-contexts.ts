@@ -84,6 +84,8 @@ export interface WorkspaceContextValue {
   supportsNativeDirectoryPicker: boolean;
   /** Base URL for attachment/image paths; null for Electron local backend. */
   attachmentBaseUrl: string | null;
+  /** Bearer credential for image requests to a token-authenticated Remote Host. */
+  attachmentAuthToken: string | null;
   bootState: TransportAgentState["bootState"];
   bootError: string | null;
   bootLogs: string | null;

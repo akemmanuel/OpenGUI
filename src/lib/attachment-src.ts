@@ -1,5 +1,6 @@
+// POSIX, Windows drive (`C:\`), and Windows UNC (`\\server\share`) paths.
 function isAbsolutePath(path: string): boolean {
-  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\");
 }
 
 function joinPath(baseDirectory: string, path: string): string {
@@ -48,4 +49,57 @@ export function resolveAttachmentBaseUrl(
   if (!workspace) return null;
   if (electronApi?.kind === "electron" && workspace.isLocal) return electronApi.backendUrl ?? null;
   return workspace.serverUrl ?? null;
+}
+
+/**
+ * Bearer credential for image requests. Desktop Local's sidecar trusts its own
+ * renderer, and cookie sessions ride along with plain `<img>` requests; only a
+ * token-authenticated Remote Host needs an explicit header.
+ */
+export function resolveAttachmentAuthToken(
+  workspace: { isLocal?: boolean; authToken?: string } | null | undefined,
+  electronApi: { kind?: "electron" | "web" } | undefined,
+): string | null {
+  if (!workspace) return null;
+  if (electronApi?.kind === "electron" && workspace.isLocal) return null;
+  return workspace.authToken?.trim() || null;
+}
+
+const IMAGE_FILE_EXTENSION = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i;
+const INLINE_IMAGE_DATA_URL = /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
+
+export type MarkdownImageSource = { kind: "path"; path: string } | { kind: "data"; src: string };
+
+/**
+ * Classify a model-authored markdown image `src`. Only Host files and inline
+ * raster data render; remote URLs stay blocked so transcripts never contact an
+ * arbitrary origin.
+ */
+export function classifyMarkdownImageSource(
+  src: string | null | undefined,
+): MarkdownImageSource | null {
+  const trimmed = src?.trim();
+  if (!trimmed) return null;
+  if (INLINE_IMAGE_DATA_URL.test(trimmed)) return { kind: "data", src: trimmed };
+
+  // Markdown percent-encodes spaces, non-ASCII, and backslashes in URLs.
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // Keep the raw value; a malformed escape is still a usable path.
+  }
+
+  let path = decoded;
+  if (/^file:/i.test(decoded)) {
+    path = decoded.replace(/^file:(\/\/[^/]*)?/i, "");
+    // file:///C:/dir -> C:/dir
+    if (/^\/[a-zA-Z]:[\\/]/.test(path)) path = path.slice(1);
+  } else if (!/^[a-zA-Z]:[\\/]/.test(decoded) && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(decoded)) {
+    return null;
+  }
+
+  const withoutQuery = path.replace(/[?#].*$/, "");
+  if (!IMAGE_FILE_EXTENSION.test(withoutQuery)) return null;
+  return { kind: "path", path: withoutQuery };
 }

@@ -18,6 +18,7 @@ describe("buildSystemPrompt", () => {
         "Project directory: /tmp/proj",
         "Operating system: linux",
         "Shell: /bin/bash (posix)",
+        "To show the user an image file, reference it in your reply as ![description](path) with a Project-relative or absolute path. Remote image URLs are not displayed.",
         "Skills: no skills are enabled for this Session. Do not discover, load, or follow any SKILL.md files.",
       ].join("\n"),
     );
@@ -66,6 +67,7 @@ describe("buildSystemPrompt", () => {
         "Project directory: /tmp/proj",
         "Operating system: linux",
         "Shell: /bin/bash (posix)",
+        "To show the user an image file, reference it in your reply as ![description](path) with a Project-relative or absolute path. Remote image URLs are not displayed.",
         "Skills: no skills are enabled for this Session. Do not discover, load, or follow any SKILL.md files.",
         "Custom instructions:",
         "Always reply in Spanish.\nNever commit without asking.",

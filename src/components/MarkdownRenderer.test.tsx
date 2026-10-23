@@ -9,9 +9,25 @@ vi.mock("@/lib/browser", () => ({
   copyTextToClipboard: browser.copy,
   openExternalLink: browser.open,
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { name?: string }) =>
+      options?.name ? `${key}:${options.name}` : key,
+  }),
+}));
 
-import { MarkdownRenderer } from "./MarkdownRenderer";
+import { MarkdownImageContext, MarkdownRenderer } from "./MarkdownRenderer";
+
+function renderWithImages(content: string, onOpen = vi.fn()) {
+  render(
+    <MarkdownImageContext.Provider
+      value={{ baseUrl: "http://127.0.0.1:36627", baseDirectory: "/home/me/project", onOpen }}
+    >
+      <MarkdownRenderer content={content} />
+    </MarkdownImageContext.Provider>,
+  );
+  return onOpen;
+}
 
 afterEach(() => {
   cleanup();
@@ -59,5 +75,47 @@ describe("MarkdownRenderer", () => {
     expect(screen.queryByRole("img", { name: "tracking pixel" })).toBeNull();
     expect(screen.getByText("tracking pixel")).toBeTruthy();
     expect(browser.open).not.toHaveBeenCalled();
+  });
+
+  test("renders Project images through the Host file route and opens the lightbox", async () => {
+    const onOpen = renderWithImages("![Maus auf dem Mars](bilder/maus%20mars.png)");
+    const image = screen.getByRole("img", { name: "Maus auf dem Mars" }) as HTMLImageElement;
+    const url = new URL(image.src);
+    expect(url.origin + url.pathname).toBe("http://127.0.0.1:36627/api/fs/file");
+    expect(url.searchParams.get("path")).toBe("/home/me/project/bilder/maus mars.png");
+    expect(url.searchParams.get("directory")).toBe("/home/me/project");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "attachments.openImage:Maus auf dem Mars" }),
+    );
+    expect(onOpen).toHaveBeenCalledWith({
+      path: "bilder/maus mars.png",
+      filename: "maus mars.png",
+    });
+  });
+
+  test("keeps Windows paths that the default url sanitizer would drop", () => {
+    renderWithImages("![shot](<C:\\Users\\me\\shot.png>)");
+    const image = screen.getByRole("img", { name: "shot" }) as HTMLImageElement;
+    expect(new URL(image.src).searchParams.get("path")).toBe("C:\\Users\\me\\shot.png");
+  });
+
+  test("still blocks remote images when Host images are enabled", () => {
+    renderWithImages("![tracking pixel](https://tracker.example/collect.png)");
+    expect(screen.queryByRole("img", { name: "tracking pixel" })).toBeNull();
+    expect(screen.getByText("tracking pixel")).toBeTruthy();
+  });
+
+  test("shows a placeholder when the Host cannot serve the image", async () => {
+    renderWithImages("![missing](gone.png)");
+    const image = screen.getByRole("img", { name: "missing" });
+    image.dispatchEvent(new Event("error"));
+    await waitFor(() => expect(screen.getByText("attachments.imageUnavailable")).toBeTruthy());
+  });
+
+  test("renders Host paths as alt text without an image context", () => {
+    render(<MarkdownRenderer content="![local](shot.png)" />);
+    expect(screen.queryByRole("img", { name: "local" })).toBeNull();
+    expect(screen.getByText("local")).toBeTruthy();
   });
 });

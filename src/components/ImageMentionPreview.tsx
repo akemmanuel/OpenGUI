@@ -2,6 +2,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HostImage } from "@/components/HostImage";
 import { resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { cn } from "@/lib/utils";
 
@@ -50,12 +51,15 @@ function ImageLightbox({
         >
           <X className="size-4" />
         </button>
-        <img
+        <HostImage
           src={src}
           alt={image.filename}
           className="max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
+          fallbackClassName="m-6 h-10 min-w-56"
         />
-        <div className="mt-2 max-w-[90vw] truncate text-xs text-muted-foreground">{image.path}</div>
+        <div className="mt-2 max-w-[90vw] truncate text-xs text-muted-foreground">
+          {image.path.startsWith("data:") ? image.filename : image.path}
+        </div>
       </div>
     </div>,
     document.body,
@@ -150,7 +154,12 @@ export function ImageMentionThumbnails({
               onBlur={() => onHover?.(null)}
               onClick={() => (onOpen ? onOpen(image) : setLocalOpenImage(image))}
             >
-              <img src={src} alt={image.filename} className="h-16 w-16 rounded-md object-cover" />
+              <HostImage
+                src={src}
+                alt={image.filename}
+                className="h-16 w-16 rounded-md object-cover"
+                fallbackClassName="h-16 w-16 justify-center p-1 [&>span]:sr-only"
+              />
             </button>
           );
         })}

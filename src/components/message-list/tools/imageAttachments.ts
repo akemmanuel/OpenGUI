@@ -18,7 +18,7 @@ export function extractImageAttachments(
   return state.attachments
     .filter((att) => {
       const mime = (att.mime ?? "").toLowerCase();
-      return mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg";
+      return /^image\/(png|jpe?g|gif|webp)$/.test(mime);
     })
     .map((att) => {
       const mime = att.mime ?? "";

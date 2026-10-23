@@ -45,7 +45,7 @@ import {
 } from "@/protocol/host-transcript";
 import type { Workspace } from "@/types/workspace";
 import { getShellWorkspacePolicy } from "@/runtime/shell-policy";
-import { resolveAttachmentBaseUrl } from "@/lib/attachment-src";
+import { resolveAttachmentAuthToken, resolveAttachmentBaseUrl } from "@/lib/attachment-src";
 import { normalizeProjectPath } from "@/lib/path";
 import { defaultEnabledSkillNames, sessionSkillsKey } from "@/lib/session-skills";
 import { findModel } from "@/lib/utils";
@@ -716,6 +716,7 @@ function HostProviderBody({
       isLocalWorkspace: Boolean(workspace?.isLocal),
       supportsNativeDirectoryPicker: policy.shellKind === "desktop" && Boolean(workspace?.isLocal),
       attachmentBaseUrl: resolveAttachmentBaseUrl(workspace, window.electronAPI),
+      attachmentAuthToken: resolveAttachmentAuthToken(workspace, window.electronAPI),
       activeDirectory: activeTargetDirectory,
       bootState,
       bootError,

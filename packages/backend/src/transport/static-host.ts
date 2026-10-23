@@ -13,6 +13,8 @@ const contentTypes: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".gif": "image/gif",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
 };
 
 export function contentTypeForPath(filePath: string) {
