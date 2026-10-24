@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Wrench, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Wrench, XCircle } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HostImage } from "@/components/HostImage";
@@ -14,13 +14,27 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { todoStatusConfig } from "@/lib/todos";
-import { copyTextToClipboard } from "@/lib/browser";
+import { copyTextToClipboard, openExternalLink } from "@/lib/browser";
 import { looksLikeTerminalOutput } from "@/lib/terminal-output";
 import { cn } from "@/lib/utils";
 import { ApplyPatchFilesView } from "./ApplyPatchFilesView";
 import type { ToolOutputBlock } from "./toolCallModel";
 
-function ToolImages({ block }: { block: Extract<ToolOutputBlock, { type: "images" }> }) {
+function linkHost(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+export function ToolImages({
+  block,
+  large = false,
+}: {
+  block: Extract<ToolOutputBlock, { type: "images" }>;
+  large?: boolean;
+}) {
   return (
     <div className={cn("grid gap-2", block.images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
       {block.images.map((image, idx) => (
@@ -32,7 +46,7 @@ function ToolImages({ block }: { block: Extract<ToolOutputBlock, { type: "images
             src={image.src}
             alt={image.filename ?? `Image attachment ${idx + 1}`}
             loading="lazy"
-            className="w-full max-h-52 object-contain bg-black/20"
+            className={cn("w-full object-contain bg-black/20", large ? "max-h-96" : "max-h-52")}
             fallbackClassName="m-1 h-8 min-w-40"
           />
         </div>
@@ -70,6 +84,30 @@ export function ToolCallOutputView({
             return <ApplyPatchFilesView key={index} files={block.files} />;
           case "images":
             return <ToolImages key={index} block={block} />;
+          case "links":
+            return (
+              <ul key={index} className="space-y-0.5">
+                {block.links.map((link) => (
+                  <li key={link.url} className="flex min-w-0 items-center gap-1.5">
+                    <ExternalLink className="size-2.5 shrink-0" />
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="truncate hover:text-foreground hover:underline"
+                      title={link.url}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        openExternalLink(link.url);
+                      }}
+                    >
+                      {link.title}
+                    </a>
+                    <span className="shrink-0 opacity-60">{linkHost(link.url)}</span>
+                  </li>
+                ))}
+              </ul>
+            );
           case "todos":
             return (
               <div key={index} className="space-y-0.5">

@@ -523,6 +523,29 @@ export function registerHostProductRoutes(
     }
   });
 
+  app.get("/api/host/codex-tools", async () => {
+    const host = await input.getHost();
+    return Response.json({ ok: true, value: host.getCodexToolsSettings() });
+  });
+
+  app.put("/api/host/codex-tools", async (c) => {
+    try {
+      skillManagementActor(c.get("actor") as Actor);
+      const body = (await c.req.json()) as Record<string, unknown>;
+      if (!isPlainObject(body)) throw new Error("settings object is required");
+      const value = await (
+        await input.getHost()
+      ).setCodexToolsSettings({
+        ...(body.webSearch !== undefined ? { webSearch: body.webSearch } : {}),
+        ...(body.imageGeneration !== undefined ? { imageGeneration: body.imageGeneration } : {}),
+        ...(body.sharedOfferings !== undefined ? { sharedOfferings: body.sharedOfferings } : {}),
+      });
+      return Response.json({ ok: true, value });
+    } catch (error) {
+      return sessionError(error);
+    }
+  });
+
   const instructionAdmin = (actor: Actor) =>
     actor.type === "local" ||
     (actor.type === "user" && (actor.role === "owner" || actor.role === "admin"));

@@ -91,6 +91,14 @@ const DEFAULT_MODEL_RETRY_DELAYS_MS = [2_000, 6_000, 15_000] as const;
  * keep the user waiting for many minutes before the failure is reported.
  */
 const MAX_RETRYABLE_ATTEMPT_MS = 60_000;
+/** Additional tools may raise their durable result cap, but never without bound. */
+const MAX_AGENT_TOOL_RESULT_BYTES = 64 * 1024;
+
+function agentToolResultLimit(requested: number | undefined) {
+  if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0)
+    return undefined;
+  return Math.min(Math.floor(requested), MAX_AGENT_TOOL_RESULT_BYTES);
+}
 
 /** Transient provider outages that failed fast, not quota exhaustion or request faults. */
 function isAutomaticallyRetryable(
@@ -1096,6 +1104,7 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               sessionId,
               runId,
               projectDirectory: current.projectDirectory,
+              model: snapshot.model,
               ...(nextPrompt.actor ? { actor: nextPrompt.actor } : {}),
             },
             abortController.signal,
@@ -1350,17 +1359,24 @@ class OpenGuiHarnessImpl implements OpenGuiHarness {
               shellExecutor: this.#shellExecutor,
             };
             let output: unknown;
+            const agentToolDefinition = agentToolSet?.definitions.find(
+              (definition) => definition.name === toolCall.name,
+            );
             try {
-              output = agentToolSet?.definitions.some(
-                (definition) => definition.name === toolCall.name,
-              )
+              output = agentToolDefinition
                 ? await promiseWithAbort(
-                    agentToolSet
+                    agentToolSet!
                       .invoke(
-                        { name: toolCall.name, input: toolCall.input },
+                        { name: toolCall.name, input: toolCall.input, toolCallId: toolCall.id },
                         abortController.signal,
                       )
-                      .then((result) => limitToolResult(toolContext, result)),
+                      .then((result) =>
+                        limitToolResult(
+                          toolContext,
+                          result,
+                          agentToolResultLimit(agentToolDefinition.maxResultBytes),
+                        ),
+                      ),
                     abortController.signal,
                   )
                 : await executeTool(toolContext, toolCall.name, toolCall.input);

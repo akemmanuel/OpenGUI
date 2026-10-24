@@ -25,11 +25,14 @@ export type ToolCallKind =
   | "task"
   | "browser"
   | "fetch"
+  | "websearch"
+  | "image"
   | "unknown";
 
 export type ToolOutputBlock =
   | { type: "text"; text: string; format: "plain" | "terminal" }
   | { type: "images"; images: ImageAttachmentInfo[] }
+  | { type: "links"; links: Array<{ title: string; url: string }> }
   | { type: "diff"; files: ApplyPatchFileDiff[] }
   | { type: "task"; taskInfo: TaskInfo }
   | { type: "todos"; todos: TodoItem[] };
@@ -45,6 +48,8 @@ export interface ToolCallViewModel {
   durationLabel: string | null;
   resultLabel: string | null;
   output: ToolOutputBlock[];
+  /** Images that stay visible without expanding the call, such as generated images. */
+  pinnedImages: ImageAttachmentInfo[];
   rawOutput: string | null;
   expandable: boolean;
 }
@@ -119,6 +124,10 @@ const KNOWN_TOOLS: Record<string, ToolCallKind> = {
   http: "fetch",
   web_fetch: "fetch",
   curl: "fetch",
+  web_search: "websearch",
+  "web search": "websearch",
+  generate_image: "image",
+  "image generation": "image",
 };
 
 function normalizeKind(name: string): ToolCallKind {
@@ -152,6 +161,30 @@ function meaningfulText(value: string | null | undefined): string | null {
     .filter((line) => line.trim() && !/^>+$/.test(line.trim()));
   const text = lines.join("\n").trim();
   return text ? text : null;
+}
+
+/** Queries, then opened pages, named by a web search call. */
+function webSearchTargets(input: Record<string, unknown> | null) {
+  const entries = (key: string, field: string) =>
+    Array.isArray(input?.[key])
+      ? (input[key] as unknown[]).flatMap((item) => {
+          const value = isRecord(item) ? item[field] : null;
+          return typeof value === "string" && value.trim() ? [value.trim()] : [];
+        })
+      : [];
+  return [...entries("search_query", "q"), ...entries("open", "ref_id")].join(" · ");
+}
+
+function webSearchLinks(state: ToolCallState) {
+  if (!("metadata" in state) || !isRecord(state.metadata)) return [];
+  const sources = state.metadata.sources;
+  return Array.isArray(sources)
+    ? sources.flatMap((item) =>
+        isRecord(item) && typeof item.url === "string" && typeof item.title === "string"
+          ? [{ title: item.title, url: item.url }]
+          : [],
+      )
+    : [];
 }
 
 function labelFor(
@@ -216,6 +249,20 @@ function labelFor(
             (t?.(running ? "toolLabels.task.running" : "toolLabels.task.done") ??
               (running ? "Running" : "Ran"));
     }
+    case "websearch": {
+      const verb =
+        t?.(running ? "toolLabels.webSearch.running" : "toolLabels.webSearch.done") ??
+        (running ? "Searching the web" : "Searched the web");
+      const targets = webSearchTargets(input);
+      return targets ? `${verb}: ${targets}` : verb;
+    }
+    case "image": {
+      const verb =
+        t?.(running ? "toolLabels.image.running" : "toolLabels.image.done") ??
+        (running ? "Generating image" : "Generated image");
+      const prompt = stringField(input, "prompt")?.replace(/\s+/g, " ").trim();
+      return prompt ? `${verb}: ${prompt}` : verb;
+    }
     case "browser":
     case "fetch":
     case "unknown":
@@ -270,7 +317,10 @@ export function getToolCallViewModel(
   if (editFiles.length > 0) output.push({ type: "diff", files: editFiles });
   else if (taskInfo) output.push({ type: "task", taskInfo });
   if (todos?.length) output.push({ type: "todos", todos });
-  if (images.length) output.push({ type: "images", images });
+  const pinnedImages = kind === "image" ? images : [];
+  if (images.length && kind !== "image") output.push({ type: "images", images });
+  const links = kind === "websearch" ? webSearchLinks(state) : [];
+  if (links.length) output.push({ type: "links", links });
 
   const hasFormattedOutput = output.length > 0;
   if (rawContent) {
@@ -296,6 +346,7 @@ export function getToolCallViewModel(
     durationLabel: kind === "task" ? getTaskDurationLabel(state) : null,
     resultLabel,
     output,
+    pinnedImages,
     rawOutput: hasFormattedOutput && rawContent ? rawCandidate : null,
     expandable: status !== "error" && output.length > 0,
   };

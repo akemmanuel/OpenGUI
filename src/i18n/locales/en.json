@@ -163,7 +163,15 @@
     "edited_one": "edited one file",
     "edited_other": "edited {{count}} files",
     "other_one": "used one tool",
-    "other_other": "used {{count}} tools"
+    "other_other": "used {{count}} tools",
+    "searchingWeb_one": "searching the web",
+    "searchingWeb_other": "running {{count}} web searches",
+    "searchedWeb_one": "searched the web",
+    "searchedWeb_other": "ran {{count}} web searches",
+    "generatingImages_one": "generating one image",
+    "generatingImages_other": "generating {{count}} images",
+    "generatedImages_one": "generated one image",
+    "generatedImages_other": "generated {{count}} images"
   },
   "settings": {
     "navigationLabel": "Settings sections",
@@ -187,7 +195,7 @@
     },
     "sectionDescriptions": {
       "models": "Choose models and who can use them.",
-      "integrations": "Give the agent extra tools by connecting MCP servers, such as your calendar, a database, or a design tool.",
+      "integrations": "Give the agent extra tools: ChatGPT web search and image generation, or MCP servers such as your calendar, a database, or a design tool.",
       "users": "Invite people and manage their Host roles.",
       "paths": "Choose which folders people can read and change through OpenGUI.",
       "host": "Host-wide restrictions, registration, and automation keys.",
@@ -284,6 +292,23 @@
     "quick": {
       "title": "Quick preferences",
       "allAppearance": "All appearance settings…"
+    },
+    "codexTools": {
+      "title": "ChatGPT tools",
+      "description": "Web search and image generation for chats that use a Codex model. They run on the connected ChatGPT subscription and count toward its usage limits.",
+      "webSearch": "Web search",
+      "webSearchDescription": "Lets the agent search the internet and read web pages. Cached results only uses OpenAI's index and never fetches pages live.",
+      "webSearchModes": {
+        "live": "Live",
+        "cached": "Cached results only",
+        "off": "Off"
+      },
+      "imageGeneration": "Image generation",
+      "imageGenerationDescription": "Lets the agent create and edit images. Images are saved in the project's .opengui-images folder.",
+      "sharedOfferings": "Allow on shared models",
+      "sharedOfferingsDescription": "People using a shared Codex model can use these tools on the Host's ChatGPT subscription and its usage limits.",
+      "saved": "ChatGPT tool settings saved",
+      "loadFailed": "Could not load ChatGPT tool settings."
     }
   },
   "sidebar": {
@@ -1124,7 +1149,15 @@
     },
     "fileCountOther": "{{count}} files",
     "matchCount_one": "{{count}} match",
-    "matchCount_other": "{{count}} matches"
+    "matchCount_other": "{{count}} matches",
+    "webSearch": {
+      "running": "Searching the web",
+      "done": "Searched the web"
+    },
+    "image": {
+      "running": "Generating image",
+      "done": "Generated image"
+    }
   },
   "attachments": {
     "image": "Image",

@@ -281,6 +281,7 @@ export function createBackendHost(options: CreateBackendHostOptions = {}): Backe
     const humanAdminOnly =
       c.req.path.startsWith("/api/host/mcp-connections") ||
       (c.req.path === "/api/host/custom-instructions" && c.req.method !== "GET") ||
+      (c.req.path === "/api/host/codex-tools" && c.req.method !== "GET") ||
       (c.req.path.startsWith("/api/host/skills") &&
         (c.req.method !== "GET" || c.req.path.endsWith("/installations")));
     if (
