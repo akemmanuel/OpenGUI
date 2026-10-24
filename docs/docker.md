@@ -15,7 +15,7 @@ curl --fail http://127.0.0.1:${PORT:-4839}/api/health
 To pin the Host to this release instead of following `latest`:
 
 ```bash
-OPENGUI_IMAGE=ghcr.io/akemmanuel/opengui:0.7.2 docker compose up -d
+OPENGUI_IMAGE=ghcr.io/akemmanuel/opengui:0.7.3 docker compose up -d
 ```
 
 Open `http://127.0.0.1:4839`. The first browser creates the Host owner Account. The compose file
