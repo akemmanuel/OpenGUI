@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.3
+
+### ChatGPT tools
+
+- Codex models connected through a ChatGPT subscription can now search the web, open results,
+  and find text within pages. Searches retain references within each Session and show source
+  links in the transcript.
+- Generate images with Codex models, including transparent backgrounds and edits using up to
+  five reference images from the Project. Generated images are saved in `.opengui-images/`,
+  kept out of version control, and previewed below the tool call.
+- Admins can control web search (live, cached, or off) and image generation in
+  Settings → Integrations. Shared offerings can use the Host's ChatGPT subscription only when
+  explicitly enabled; this option is off by default.
+- Tool calls refresh expired credentials once and report clear errors for authentication,
+  permissions, usage limits, and temporary service failures. Reference images respect Host
+  path permissions.
+
 ## 0.7.2
 
 ### Images and uploads
