@@ -28,6 +28,8 @@ export interface ModelToolDefinition {
   name: string;
   /** Human-readable transcript label; provider adapters ignore it. */
   title?: string;
+  /** Harness-only cap on the durable result size; provider adapters ignore it. */
+  maxResultBytes?: number;
   description: string;
   parameters: Record<string, unknown>;
 }

@@ -604,6 +604,62 @@ describe("Host transcript streaming", () => {
     ).toBe(Date.parse("2026-07-10T00:00:04.000Z"));
   });
 
+  test("shows generated images and web sources without exposing model attachments", () => {
+    const input = snapshot();
+    const call = (sequence: number, toolCallId: string, name: string, displayName: string) => ({
+      id: `call-${sequence}`,
+      sessionId: input.id,
+      sequence,
+      kind: "tool_call" as const,
+      payload: { runId: "run-1", toolCallId, name, displayName, input: {} },
+      createdAt: "2026-07-10T00:00:01.000Z",
+    });
+    const result = (sequence: number, toolCallId: string, output: unknown) => ({
+      id: `result-${sequence}`,
+      sessionId: input.id,
+      sequence,
+      kind: "tool_result" as const,
+      payload: { runId: "run-1", toolCallId, output },
+      createdAt: "2026-07-10T00:00:02.000Z",
+    });
+    input.entries = [
+      call(1, "image-1", "generate_image", "Image generation"),
+      result(2, "image-1", {
+        content: "Generated image saved.",
+        savedPath: "/project/.opengui-images/call_1.png",
+        previewImages: [{ path: "/project/.opengui-images/call_1.png", mimeType: "image/png" }],
+        attachments: [{ type: "image", mimeType: "image/png", path: "/data/tool-output/1.png" }],
+      }),
+      call(3, "search-1", "web_search", "Web search"),
+      result(4, "search-1", {
+        content: "Results",
+        sources: [
+          { title: "Node.js", url: "https://nodejs.org" },
+          { title: "Bad", url: "javascript:alert(1)" },
+        ],
+      }),
+    ];
+
+    const parts = projectHostTranscriptStream(createHostTranscriptStream(input))[0]?.parts ?? [];
+    expect(parts[0]).toMatchObject({
+      tool: "Image generation",
+      state: {
+        status: "completed",
+        attachments: [
+          {
+            url: "/project/.opengui-images/call_1.png",
+            mime: "image/png",
+            filename: "call_1.png",
+          },
+        ],
+      },
+    });
+    expect(parts[1]).toMatchObject({
+      tool: "Web search",
+      state: { metadata: { sources: [{ title: "Node.js", url: "https://nodejs.org" }] } },
+    });
+  });
+
   test("projects completed shell output and exit status for transcript presentation", () => {
     const input = snapshot();
     input.entries = [

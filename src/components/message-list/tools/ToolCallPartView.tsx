@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { cn } from "@/lib/utils";
 import type { ToolCallTranscriptPart } from "@/protocol/session-transcript";
-import { ToolCallOutputView } from "./ToolCallOutputView";
+import { ToolCallOutputView, ToolImages } from "./ToolCallOutputView";
 import { getToolCallViewModel, type ToolCallStatus } from "./toolCallModel";
 
 const ROW = "flex min-w-0 items-center gap-1.5";
@@ -34,10 +34,13 @@ export function ToolCallPartView({
   part,
   expandedToolCalls,
   onSetToolCallExpanded,
+  showPinnedImages = true,
 }: {
   part: ToolCallTranscriptPart;
   expandedToolCalls?: ReadonlySet<string>;
   onSetToolCallExpanded?: (partId: string, expanded: boolean) => void;
+  /** Tool groups render pinned images once below their summary instead. */
+  showPinnedImages?: boolean;
 }) {
   const { attachmentBaseUrl } = useWorkspaceState();
   const { t } = useTranslation();
@@ -119,6 +122,11 @@ export function ToolCallPartView({
           className="max-h-96 overflow-auto"
         >
           <ToolCallOutputView blocks={tool.output} rawOutput={tool.rawOutput} />
+        </div>
+      )}
+      {showPinnedImages && tool.pinnedImages.length > 0 && (
+        <div className="pt-1 pl-5">
+          <ToolImages block={{ type: "images", images: tool.pinnedImages }} large />
         </div>
       )}
     </div>

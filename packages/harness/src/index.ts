@@ -55,3 +55,5 @@ export type { LoadSkillsResult, Skill, SkillDiagnostic } from "./skills/types.ts
 export { buildSystemPrompt } from "./context/system-prompt.ts";
 export { HARNESS_DATABASE_FILENAME } from "./storage/sqlite-store.ts";
 export type { AgentToolScope, AgentToolSet, AgentToolSource } from "./tools/agent-tools.ts";
+export { combineAgentToolSources } from "./tools/agent-tools.ts";
+export { processImageFile, type ProcessedImage } from "./tools/image.ts";

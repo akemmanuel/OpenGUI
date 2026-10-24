@@ -87,10 +87,14 @@ async function externalizeImageAttachments(context: ToolExecutionContext, result
   return { ...record, attachments };
 }
 
-export async function limitToolResult(context: ToolExecutionContext, result: unknown) {
+export async function limitToolResult(
+  context: ToolExecutionContext,
+  result: unknown,
+  maxBytes = MAX_TOOL_RESULT_BYTES,
+) {
   const durableResult = await externalizeImageAttachments(context, result);
   const serialized = JSON.stringify(durableResult);
-  if (Buffer.byteLength(serialized) <= MAX_TOOL_RESULT_BYTES) return durableResult;
+  if (Buffer.byteLength(serialized) <= maxBytes) return durableResult;
 
   const outputDirectory = join(tmpdir(), "opengui-tool-output", safePathSegment(context.sessionId));
   await mkdir(outputDirectory, { recursive: true });
@@ -99,8 +103,7 @@ export async function limitToolResult(context: ToolExecutionContext, result: unk
 
   const separator = "\n\n… tool result truncated …\n\n";
   const notice = `\n\nThe full tool result has been saved to ${fullOutputPath}.`;
-  const availableBytes =
-    MAX_TOOL_RESULT_BYTES - Buffer.byteLength(separator) - Buffer.byteLength(notice) - 512;
+  const availableBytes = maxBytes - Buffer.byteLength(separator) - Buffer.byteLength(notice) - 512;
   const headBytes = Math.ceil(availableBytes / 2);
   const tailBytes = Math.floor(availableBytes / 2);
   return {

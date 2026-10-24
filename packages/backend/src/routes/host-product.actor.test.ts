@@ -355,6 +355,65 @@ describe("Host product actor attribution", () => {
   });
 });
 
+describe("ChatGPT tool settings routes", () => {
+  test.each([
+    { type: "user", id: "member", displayName: "Member", role: "member" },
+    { type: "user", id: "viewer", displayName: "Viewer", role: "viewer" },
+    { type: "api_key", id: "key", displayName: "API key", role: "admin" },
+  ] as Actor[])("denies ChatGPT tool policy edits to $type/$role actors", async (actor) => {
+    const setCodexToolsSettings = vi.fn();
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", actor);
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () => ({ setCodexToolsSettings }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+
+    const response = await app.request("http://localhost/api/host/codex-tools", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sharedOfferings: true }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(setCodexToolsSettings).not.toHaveBeenCalled();
+  });
+
+  test("lets a Host administrator read and change only known ChatGPT tool settings", async () => {
+    const settings = { webSearch: "live", imageGeneration: true, sharedOfferings: false };
+    const getCodexToolsSettings = vi.fn(() => settings);
+    const setCodexToolsSettings = vi.fn(async (patch: object) => ({ ...settings, ...patch }));
+    const app = new Hono<BackendRequestEnv>();
+    app.use("/api/host/*", async (c, next) => {
+      c.set("actor", { type: "user", id: "admin", displayName: "Admin", role: "admin" });
+      await next();
+    });
+    registerHostProductRoutes(app, {
+      getHost: async () =>
+        ({ getCodexToolsSettings, setCodexToolsSettings }) as unknown as OpenGuiHost,
+      resolveSafeDirectory: async (path) => path ?? "/tmp",
+    });
+
+    const read = await app.request("http://localhost/api/host/codex-tools");
+    expect(await read.json()).toEqual({ ok: true, value: settings });
+
+    const write = await app.request("http://localhost/api/host/codex-tools", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ webSearch: "cached", unrelated: "ignored" }),
+    });
+    expect(write.status).toBe(200);
+    expect(setCodexToolsSettings).toHaveBeenCalledWith({ webSearch: "cached" });
+    expect(await write.json()).toEqual({
+      ok: true,
+      value: { ...settings, webSearch: "cached" },
+    });
+  });
+});
+
 describe("personal provider sign-in authorization", () => {
   const member: Actor = {
     type: "user",

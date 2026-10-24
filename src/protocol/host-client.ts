@@ -1,4 +1,5 @@
 import type {
+  CodexToolsSettings,
   HostEvent,
   HostModelConnection,
   HostModelOffering,
@@ -135,6 +136,13 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
           body: JSON.stringify({ text }),
         })) as { text: string }
       ).text,
+    getCodexToolsSettings: async () =>
+      (await request("/api/host/codex-tools")) as CodexToolsSettings,
+    setCodexToolsSettings: async (patch) =>
+      (await request("/api/host/codex-tools", {
+        method: "PUT",
+        body: JSON.stringify(patch),
+      })) as CodexToolsSettings,
     getPersonalInstructions: async () =>
       ((await request("/api/host/personal-instructions")) as { text: string }).text,
     setPersonalInstructions: async (text) =>

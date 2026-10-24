@@ -148,7 +148,15 @@
     "edited_one": "eine Datei bearbeitet",
     "edited_other": "{{count}} Dateien bearbeitet",
     "other_one": "ein Werkzeug verwendet",
-    "other_other": "{{count}} Werkzeuge verwendet"
+    "other_other": "{{count}} Werkzeuge verwendet",
+    "searchingWeb_one": "durchsucht das Web",
+    "searchingWeb_other": "führt {{count}} Websuchen aus",
+    "searchedWeb_one": "hat das Web durchsucht",
+    "searchedWeb_other": "hat {{count}} Websuchen ausgeführt",
+    "generatingImages_one": "erzeugt ein Bild",
+    "generatingImages_other": "erzeugt {{count}} Bilder",
+    "generatedImages_one": "hat ein Bild erzeugt",
+    "generatedImages_other": "hat {{count}} Bilder erzeugt"
   },
   "messageError": {
     "showDetails": "Details anzeigen",
@@ -187,7 +195,7 @@
     },
     "sectionDescriptions": {
       "models": "Modelle auswählen und den Zugriff verwalten.",
-      "integrations": "Geben Sie dem Agenten zusätzliche Werkzeuge, indem Sie MCP-Server verbinden, etwa Ihren Kalender, eine Datenbank oder ein Design-Tool.",
+      "integrations": "Gib dem Agenten zusätzliche Werkzeuge: ChatGPT-Websuche und Bilderzeugung oder MCP-Server wie deinen Kalender, eine Datenbank oder ein Design-Tool.",
       "users": "Personen einladen und ihre Host-Rollen verwalten.",
       "paths": "Festlegen, welche Ordner Personen über OpenGUI lesen und ändern dürfen.",
       "host": "Host-weite Sperren, Registrierung und Automatisierungsschlüssel.",
@@ -284,6 +292,23 @@
     "quick": {
       "title": "Schnelleinstellungen",
       "allAppearance": "Alle Darstellungseinstellungen …"
+    },
+    "codexTools": {
+      "title": "ChatGPT-Werkzeuge",
+      "description": "Websuche und Bilderzeugung für Chats mit einem Codex-Modell. Sie laufen über das verbundene ChatGPT-Abo und zählen zu dessen Nutzungslimits.",
+      "webSearch": "Websuche",
+      "webSearchDescription": "Erlaubt dem Agenten, im Internet zu suchen und Webseiten zu lesen. „Nur zwischengespeicherte Ergebnisse“ nutzt nur den Index von OpenAI und ruft keine Seiten live ab.",
+      "webSearchModes": {
+        "live": "Live",
+        "cached": "Nur zwischengespeicherte Ergebnisse",
+        "off": "Aus"
+      },
+      "imageGeneration": "Bilderzeugung",
+      "imageGenerationDescription": "Erlaubt dem Agenten, Bilder zu erstellen und zu bearbeiten. Bilder werden im Ordner .opengui-images des Projekts gespeichert.",
+      "sharedOfferings": "Bei geteilten Modellen erlauben",
+      "sharedOfferingsDescription": "Personen, die ein geteiltes Codex-Modell nutzen, können diese Werkzeuge über das ChatGPT-Abo des Hosts und dessen Nutzungslimits verwenden.",
+      "saved": "Einstellungen der ChatGPT-Werkzeuge gespeichert",
+      "loadFailed": "Einstellungen der ChatGPT-Werkzeuge konnten nicht geladen werden."
     }
   },
   "sidebar": {
@@ -1124,7 +1149,15 @@
     },
     "fileCountOther": "{{count}} Dateien",
     "matchCount_one": "{{count}} Treffer",
-    "matchCount_other": "{{count}} Treffer"
+    "matchCount_other": "{{count}} Treffer",
+    "webSearch": {
+      "running": "Durchsucht das Web",
+      "done": "Web durchsucht"
+    },
+    "image": {
+      "running": "Erzeugt Bild",
+      "done": "Bild erzeugt"
+    }
   },
   "attachments": {
     "image": "Bild",

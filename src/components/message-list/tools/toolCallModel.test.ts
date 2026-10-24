@@ -273,4 +273,49 @@ describe("getToolCallViewModel", () => {
 
     expect(vm.resultLabel).toBe("Exit 125");
   });
+  test("labels web searches with their queries and lists sources", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "Web search",
+        state: {
+          status: "completed",
+          input: { search_query: [{ q: "node lts" }], open: [{ ref_id: "https://nodejs.org" }] },
+          output: { content: "Results" },
+          metadata: { sources: [{ title: "Node.js", url: "https://nodejs.org" }] },
+        } as ToolCallState,
+      }),
+    );
+
+    expect(vm.kind).toBe("websearch");
+    expect(vm.label).toBe("Searched the web: node lts · https://nodejs.org");
+    expect(vm.output).toEqual([
+      { type: "links", links: [{ title: "Node.js", url: "https://nodejs.org" }] },
+    ]);
+    expect(vm.expandable).toBe(true);
+  });
+
+  test("pins generated images instead of hiding them in the expanded output", () => {
+    const vm = getToolCallViewModel(
+      toolPart({
+        tool: "Image generation",
+        state: {
+          status: "completed",
+          input: { prompt: "A  red\nfox" },
+          output: {},
+          attachments: [{ url: "/project/.opengui-images/a.png", mime: "image/png" }],
+        } as ToolCallState,
+      }),
+      "https://host.example",
+    );
+
+    expect(vm.kind).toBe("image");
+    expect(vm.label).toBe("Generated image: A red fox");
+    expect(vm.output).toEqual([]);
+    expect(vm.pinnedImages).toEqual([
+      expect.objectContaining({
+        url: "/project/.opengui-images/a.png",
+        src: "https://host.example/api/fs/file?path=%2Fproject%2F.opengui-images%2Fa.png",
+      }),
+    ]);
+  });
 });
