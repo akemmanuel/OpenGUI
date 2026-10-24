@@ -41,6 +41,7 @@ import {
 import { NamedTeamsSettings } from "@/features/identity/NamedTeamsSettings";
 import { TeamSettings } from "@/features/identity/TeamSettings";
 import { SkillsSettings } from "@/features/skills/SkillsSettings";
+import { CodexToolsSettings } from "@/features/codex-tools/CodexToolsSettings";
 import {
   PersonalInstructions,
   usePersonalInstructionsAvailable,
@@ -290,7 +291,14 @@ export function SettingsView({
           {activeTab === "language" && <LanguageOptions />}
           {activeTab === "chats" && <ChatPreferences />}
           {activeTab === "models" && <SettingsProviders onDirtyChange={setDirty} />}
-          {activeTab === "integrations" && <McpSettings />}
+          {activeTab === "integrations" && (
+            <div className="space-y-8">
+              <CodexToolsSettings />
+              <section className="border-t pt-6">
+                <McpSettings />
+              </section>
+            </div>
+          )}
           {activeTab === "skills" && <SkillsSettings />}
           {activeTab === "instructions" && (
             <div className="space-y-8">

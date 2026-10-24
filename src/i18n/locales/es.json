@@ -148,7 +148,15 @@
     "edited_one": "editó un archivo",
     "edited_other": "editó {{count}} archivos",
     "other_one": "usó una herramienta",
-    "other_other": "usó {{count}} herramientas"
+    "other_other": "usó {{count}} herramientas",
+    "searchingWeb_one": "buscando en la web",
+    "searchingWeb_other": "haciendo {{count}} búsquedas web",
+    "searchedWeb_one": "buscó en la web",
+    "searchedWeb_other": "hizo {{count}} búsquedas web",
+    "generatingImages_one": "generando una imagen",
+    "generatingImages_other": "generando {{count}} imágenes",
+    "generatedImages_one": "generó una imagen",
+    "generatedImages_other": "generó {{count}} imágenes"
   },
   "messageError": {
     "showDetails": "Mostrar detalles",
@@ -187,7 +195,7 @@
     },
     "sectionDescriptions": {
       "models": "Elige modelos y quién puede usarlos.",
-      "integrations": "Dale al agente herramientas adicionales conectando servidores MCP, como tu calendario, una base de datos o una herramienta de diseño.",
+      "integrations": "Dale al agente herramientas adicionales: búsqueda web y generación de imágenes de ChatGPT, o servidores MCP como tu calendario, una base de datos o una herramienta de diseño.",
       "users": "Invita a personas y gestiona sus roles del Host.",
       "paths": "Elige qué carpetas pueden leer y modificar las personas desde OpenGUI.",
       "host": "Restricciones del Host, registro y claves de automatización.",
@@ -284,6 +292,23 @@
     "quick": {
       "title": "Ajustes rápidos",
       "allAppearance": "Todos los ajustes de apariencia…"
+    },
+    "codexTools": {
+      "title": "Herramientas de ChatGPT",
+      "description": "Búsqueda web y generación de imágenes para chats que usan un modelo Codex. Funcionan con la suscripción de ChatGPT conectada y cuentan para sus límites de uso.",
+      "webSearch": "Búsqueda web",
+      "webSearchDescription": "Permite al agente buscar en internet y leer páginas web. «Solo resultados en caché» usa únicamente el índice de OpenAI y nunca descarga páginas en vivo.",
+      "webSearchModes": {
+        "live": "En vivo",
+        "cached": "Solo resultados en caché",
+        "off": "Desactivada"
+      },
+      "imageGeneration": "Generación de imágenes",
+      "imageGenerationDescription": "Permite al agente crear y editar imágenes. Las imágenes se guardan en la carpeta .opengui-images del proyecto.",
+      "sharedOfferings": "Permitir en modelos compartidos",
+      "sharedOfferingsDescription": "Las personas que usan un modelo Codex compartido pueden usar estas herramientas con la suscripción de ChatGPT del Host y sus límites de uso.",
+      "saved": "Ajustes de las herramientas de ChatGPT guardados",
+      "loadFailed": "No se pudieron cargar los ajustes de las herramientas de ChatGPT."
     }
   },
   "sidebar": {
@@ -1124,7 +1149,15 @@
     },
     "fileCountOther": "{{count}} archivos",
     "matchCount_one": "{{count}} coincidencia",
-    "matchCount_other": "{{count}} coincidencias"
+    "matchCount_other": "{{count}} coincidencias",
+    "webSearch": {
+      "running": "Buscando en la web",
+      "done": "Buscó en la web"
+    },
+    "image": {
+      "running": "Generando imagen",
+      "done": "Imagen generada"
+    }
   },
   "attachments": {
     "image": "Imagen",

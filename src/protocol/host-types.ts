@@ -234,6 +234,14 @@ export interface HostEvent {
     | { type: "entry_appended"; entry: HostSessionEntry };
 }
 
+/** Host policy for ChatGPT web search and image generation alongside Codex models. */
+export interface CodexToolsSettings {
+  webSearch: "off" | "cached" | "live";
+  imageGeneration: boolean;
+  /** Allow Accounts to use these tools through shared offerings on the Host's subscription. */
+  sharedOfferings: boolean;
+}
+
 export interface ProjectInstructions {
   directory: string;
   text: string;
@@ -260,6 +268,8 @@ export interface OpenGuiHostClient {
   removeModelConnection(connectionId: string): Promise<void>;
   getCustomInstructions(): Promise<string>;
   setCustomInstructions(text: string): Promise<string>;
+  getCodexToolsSettings(): Promise<CodexToolsSettings>;
+  setCodexToolsSettings(patch: Partial<CodexToolsSettings>): Promise<CodexToolsSettings>;
   getPersonalInstructions(): Promise<string>;
   setPersonalInstructions(text: string): Promise<string>;
   getProjectInstructions(directory: string): Promise<ProjectInstructions>;

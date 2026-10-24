@@ -2,13 +2,63 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createOpenGuiHarness, type AgentToolSource } from "./index.ts";
+import { combineAgentToolSources, createOpenGuiHarness, type AgentToolSource } from "./index.ts";
 import { FakeModel } from "./test/index.ts";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })));
+});
+
+describe("combineAgentToolSources", () => {
+  test("routes each call to the source that defined the tool", async () => {
+    const first = vi.fn(async () => "first");
+    const second = vi.fn(async () => "second");
+    const combined = combineAgentToolSources([
+      {
+        resolve: async () => ({
+          generation: "a",
+          definitions: [{ name: "one", description: "", parameters: {} }],
+          invoke: first,
+        }),
+      },
+      {
+        resolve: async () => ({
+          generation: "b",
+          definitions: [{ name: "two", description: "", parameters: {} }],
+          invoke: second,
+        }),
+      },
+    ]);
+    const scope = { sessionId: "s", runId: "r", projectDirectory: "/tmp" };
+    const set = await combined.resolve(scope, new AbortController().signal);
+
+    expect(set.definitions.map((definition) => definition.name)).toEqual(["one", "two"]);
+    await expect(
+      set.invoke({ name: "two", input: {} }, new AbortController().signal),
+    ).resolves.toBe("second");
+    expect(first).not.toHaveBeenCalled();
+    await expect(
+      set.invoke({ name: "three", input: {} }, new AbortController().signal),
+    ).rejects.toThrow(/Unknown additional tool/);
+  });
+
+  test("rejects duplicate tool names across sources", async () => {
+    const duplicate = {
+      resolve: async () => ({
+        generation: "x",
+        definitions: [{ name: "same", description: "", parameters: {} }],
+        invoke: async () => null,
+      }),
+    };
+    await expect(
+      combineAgentToolSources([duplicate, duplicate]).resolve(
+        { sessionId: "s", runId: "r", projectDirectory: "/tmp" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(/not unique/);
+  });
 });
 
 describe("AgentToolSet", () => {
@@ -55,10 +105,14 @@ describe("AgentToolSet", () => {
         expect.objectContaining({ name: modelName }),
       );
       expect(invoke).toHaveBeenCalledWith(
-        { name: modelName, input: { message: "hello" } },
+        { name: modelName, input: { message: "hello" }, toolCallId: "mcp-call" },
         expect.any(AbortSignal),
       );
       expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith(
+        expect.objectContaining({ model: { connectionId: "fake", modelId: "fake-model" } }),
+        expect.any(AbortSignal),
+      );
       const entries = (await session.read()).entries;
       expect(entries.find((entry) => entry.kind === "tool_call")?.payload).toMatchObject({
         name: modelName,
@@ -121,6 +175,62 @@ describe("AgentToolSet", () => {
         type: "tool_result",
         output: { truncated: true },
       });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test("lets a tool raise its result cap within the Harness bound", async () => {
+    const dataDirectory = await mkdtemp(join(tmpdir(), "opengui-agent-tool-cap-"));
+    temporaryDirectories.push(dataDirectory);
+    const model = new FakeModel([
+      {
+        toolCalls: [
+          { id: "fits", name: "search", input: { size: 10_000 } },
+          { id: "unbounded", name: "search", input: { size: 100_000 } },
+        ],
+      },
+      { text: "Complete" },
+    ]);
+    const harness = createOpenGuiHarness({
+      dataDirectory,
+      model,
+      agentTools: {
+        async resolve() {
+          return {
+            generation: "search",
+            definitions: [
+              {
+                name: "search",
+                description: "Search.",
+                parameters: { type: "object", properties: {} },
+                maxResultBytes: 1_000_000,
+              },
+            ],
+            async invoke(call) {
+              return { content: "x".repeat((call.input as { size: number }).size) };
+            },
+          };
+        },
+      },
+    });
+
+    try {
+      const session = await harness.createSession({
+        projectDirectory: dataDirectory,
+        model: { connectionId: "fake", modelId: "fake-model" },
+        reasoning: "none",
+      });
+      for await (const _event of session.run({ text: "Search twice" })) {
+        // Drain the Run.
+      }
+
+      const results = (await session.read()).entries.filter(
+        (entry) => entry.kind === "tool_result",
+      );
+      expect(results[0]?.payload.output).toEqual({ content: "x".repeat(10_000) });
+      expect(results[1]?.payload.output).toMatchObject({ truncated: true });
+      expect(JSON.stringify(results[1]?.payload.output).length).toBeLessThanOrEqual(64 * 1024);
     } finally {
       await harness.close();
     }

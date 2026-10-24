@@ -14,6 +14,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  combineAgentToolSources,
   createOpenGuiHarness,
   createPiModels,
   discoverSkills,
@@ -88,6 +89,12 @@ import {
   type SkillSourceDescriptor,
   type SkillSourceResolver,
 } from "./skills-management.ts";
+import {
+  createCodexAgentToolSource,
+  normalizeCodexToolsSettings,
+  type CodexToolRoute,
+  type CodexToolsSettings,
+} from "../codex-tools/codex-agent-tool-source.ts";
 import {
   createMcpAgentToolSource,
   createMcpBroker,
@@ -242,6 +249,7 @@ interface HostSettingsFile {
   mcpConnections: HostMcpConnection[];
   customInstructions: string;
   scopedInstructions: ScopedInstructions;
+  codexTools: CodexToolsSettings;
 }
 
 type HostMailSecrets = {
@@ -334,6 +342,7 @@ export class OpenGuiHost {
     mcpConnections: [],
     customInstructions: "",
     scopedInstructions: { personal: {}, projects: {} },
+    codexTools: normalizeCodexToolsSettings(undefined),
   };
   #apiKeys: Record<string, string> = {};
   #providerCredentials: ProviderCredentials = {};
@@ -485,13 +494,22 @@ export class OpenGuiHost {
         );
       },
       shellExecutor: this.#shellExecutor,
-      agentTools: createMcpAgentToolSource(this.#mcpBroker, {
-        authorize: async (scope) => {
-          if (this.#authorizeMcpUse && !(await this.#authorizeMcpUse(scope.actor))) return false;
-          if (!this.#resolveExecutionPolicy) return true;
-          return !(await this.#resolveExecutionPolicy(scope.actor)).restricted;
-        },
-      }),
+      agentTools: combineAgentToolSources([
+        createMcpAgentToolSource(this.#mcpBroker, {
+          authorize: async (scope) => {
+            if (this.#authorizeMcpUse && !(await this.#authorizeMcpUse(scope.actor))) return false;
+            if (!this.#resolveExecutionPolicy) return true;
+            return !(await this.#resolveExecutionPolicy(scope.actor)).restricted;
+          },
+        }),
+        createCodexAgentToolSource({
+          route: (scope) => this.#codexToolRoute(scope.model, scope.actor),
+          settings: () => this.#settings.codexTools,
+          authorizePath: (scope, path, access, options) =>
+            this.#pathAuthorizer.authorizePath(scope.actor, path, access, options),
+          fetchImpl: this.#fetch,
+        }),
+      ]),
     });
     // Do not report the Host as started while the Harness store is still
     // migrating/recovering; close() must be safe immediately after start().
@@ -976,6 +994,7 @@ export class OpenGuiHost {
         mcpConnections: [],
         customInstructions: normalizeCustomInstructions(parsed.customInstructions),
         scopedInstructions: normalizeScopedInstructions(parsed.scopedInstructions),
+        codexTools: normalizeCodexToolsSettings(parsed.codexTools),
       };
     } catch {
       return {
@@ -986,6 +1005,7 @@ export class OpenGuiHost {
         mcpConnections: [],
         customInstructions: "",
         scopedInstructions: { personal: {}, projects: {} },
+        codexTools: normalizeCodexToolsSettings(undefined),
       };
     }
   }
@@ -1080,6 +1100,7 @@ export class OpenGuiHost {
           : [],
         customInstructions: normalizeCustomInstructions(state.settings.customInstructions),
         scopedInstructions: normalizeScopedInstructions(state.settings.scopedInstructions),
+        codexTools: normalizeCodexToolsSettings(state.settings.codexTools),
       },
       secrets: {
         apiKeys: migrated.apiKeys,
@@ -1220,6 +1241,71 @@ export class OpenGuiHost {
 
   getCustomInstructions() {
     return this.#settings.customInstructions;
+  }
+
+  getCodexToolsSettings(): CodexToolsSettings {
+    return { ...this.#settings.codexTools };
+  }
+
+  async setCodexToolsSettings(value: Partial<Record<keyof CodexToolsSettings, unknown>>) {
+    if (
+      value.webSearch !== undefined &&
+      value.webSearch !== "off" &&
+      value.webSearch !== "cached" &&
+      value.webSearch !== "live"
+    )
+      throw new Error("webSearch must be off, cached, or live");
+    for (const key of ["imageGeneration", "sharedOfferings"] as const) {
+      if (value[key] !== undefined && typeof value[key] !== "boolean")
+        throw new Error(`${key} must be a boolean`);
+    }
+    const codexTools = normalizeCodexToolsSettings({ ...this.#settings.codexTools, ...value });
+    await this.#updateState((state) => ({
+      ...state,
+      settings: { ...state.settings, codexTools },
+    }));
+    return this.getCodexToolsSettings();
+  }
+
+  /**
+   * The ChatGPT credential behind a run's Codex model, following shared offerings
+   * to the Host connection. Any other provider yields no ChatGPT tools.
+   */
+  async #codexToolRoute(
+    selection: ModelSelection | null | undefined,
+    actor: DurableActor | undefined,
+  ): Promise<CodexToolRoute | null> {
+    if (!selection) return null;
+    let routed = selection;
+    let shared = false;
+    if (selection.connectionId === MODEL_OFFERING_CONNECTION_ID) {
+      const resolved = await this.#resolveModelOffering?.(selection.modelId, actor).catch(
+        () => undefined,
+      );
+      if (!resolved) return null;
+      routed = { connectionId: resolved.connectionId, modelId: resolved.modelId };
+      shared = true;
+    }
+    const connection = this.#findConnection(routed.connectionId, shared ? undefined : actor);
+    if (connection?.providerId !== "openai-codex") return null;
+    const entry = this.#providerCredentials[connection.id];
+    if (entry?.credential.type !== "oauth") return null;
+    const model = this.#catalog.model(connection.providerId, routed.modelId);
+    if (!model) return null;
+    const connectionId = connection.id;
+    const models = this.#piModelsFor(entry.ownerId);
+    return {
+      modelId: model.id,
+      shared,
+      credential: async (forceRefresh) => {
+        // Expiring the stored token makes pi refresh it under its credential lock.
+        if (forceRefresh) await this.#expireProviderCredential(connectionId);
+        const resolved = await models.getAuth(model);
+        const accessToken = resolved?.auth.apiKey;
+        if (!accessToken) throw new Error("ChatGPT sign-in is unavailable. Reconnect Codex.");
+        return { accessToken };
+      },
+    };
   }
 
   async setCustomInstructions(value: string) {

@@ -1,5 +1,6 @@
 import type { MessageEntry } from "@/hooks/agent-state-types";
 import type { HostEvent, HostSessionSnapshot } from "@/protocol/host-types";
+import type { TranscriptAttachment } from "@/protocol/session-transcript";
 
 export interface HostModelRetry {
   attempt: number;
@@ -13,6 +14,36 @@ export interface HostTranscriptStream {
   reasoningTextByRun: Readonly<Record<string, string>>;
   /** Pending automatic model retry per run; cleared by the next output or entry. */
   retryByRun?: Readonly<Record<string, HostModelRetry>>;
+}
+
+/** Host files a tool asked the transcript to show, such as generated images. */
+function previewImageAttachments(output: object | null): TranscriptAttachment[] {
+  const previews = output && (output as { previewImages?: unknown }).previewImages;
+  if (!Array.isArray(previews)) return [];
+  return previews.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const { path, mimeType } = item as { path?: unknown; mimeType?: unknown };
+    if (typeof path !== "string" || !path) return [];
+    return [
+      {
+        url: path,
+        mime: typeof mimeType === "string" ? mimeType : "image/png",
+        filename: path.split(/[\\/]/u).at(-1),
+      },
+    ];
+  });
+}
+
+/** Web pages a search tool reported, limited to http(s) links. */
+function webSources(output: object | null) {
+  const sources = output && (output as { sources?: unknown }).sources;
+  if (!Array.isArray(sources)) return undefined;
+  return sources.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const { title, url } = item as { title?: unknown; url?: unknown };
+    if (typeof url !== "string" || !/^https?:\/\//iu.test(url)) return [];
+    return [{ title: typeof title === "string" && title ? title : url, url }];
+  });
 }
 
 export function createHostTranscriptStream(snapshot: HostSessionSnapshot): HostTranscriptStream {
@@ -519,6 +550,8 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
                       reason: (structuredOutput as { reason?: unknown }).reason,
                     }
                   : undefined;
+        const attachments = previewImageAttachments(structuredOutput);
+        const sources = webSources(structuredOutput);
         return {
           ...part,
           state: {
@@ -526,7 +559,8 @@ export function projectHostSnapshotToMessages(snapshot: HostSessionSnapshot): Me
             status: error ? "error" : "completed",
             output: toolOutput,
             error,
-            metadata,
+            metadata: sources ? { ...metadata, sources } : metadata,
+            ...(attachments.length ? { attachments } : {}),
             time: {
               ...part.state.time,
               end: createdMs(entry.createdAt),

@@ -61,6 +61,8 @@ const protectedRoutes: Array<[method: string, path: string]> = [
   ["POST", "/api/host/mcp-connections"],
   ["GET", "/api/host/custom-instructions"],
   ["PUT", "/api/host/custom-instructions"],
+  ["GET", "/api/host/codex-tools"],
+  ["PUT", "/api/host/codex-tools"],
   ["GET", "/api/host/personal-instructions"],
   ["PUT", "/api/host/personal-instructions"],
   ["GET", "/api/host/project-instructions"],
