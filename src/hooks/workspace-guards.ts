@@ -17,3 +17,9 @@ export function openAddWorkspaceDialog() {
     new CustomEvent("opengui:open-workspace-dialog", { detail: { mode: "add" as const } }),
   );
 }
+
+export function openEditWorkspaceDialog() {
+  window.dispatchEvent(
+    new CustomEvent("opengui:open-workspace-dialog", { detail: { mode: "edit" as const } }),
+  );
+}

@@ -215,12 +215,6 @@
     --app-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   }
 
-  .app-safe-top-bar {
-    box-sizing: border-box;
-    padding-top: var(--app-safe-top);
-    min-height: calc(2.25rem + var(--app-safe-top));
-  }
-
   .app-safe-bottom-inset {
     padding-bottom: calc(0.375rem + var(--app-safe-bottom));
   }
@@ -285,15 +279,6 @@
     button:not([data-responsive-allow~="compact-target"]) {
       min-width: 44px !important;
       min-height: 44px !important;
-    }
-
-    [data-slot="title-bar"] {
-      min-height: calc(44px + var(--app-safe-top));
-    }
-
-    [data-slot="title-bar-leading"],
-    [data-slot="workspace-tabs"] {
-      height: 44px !important;
     }
 
     [data-slot="sidebar-section-action"],

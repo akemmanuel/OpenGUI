@@ -74,7 +74,7 @@ export function TranscriptViewport({
         onWheel={(event) => {
           if (event.deltaY < 0) detachPin();
         }}
-        className={`relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background py-4 pr-4 [overflow-anchor:none] ${showPromptRail ? "pl-8" : "pl-4"}`}
+        className={`relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background py-4 pr-4 max-md:pt-14 [overflow-anchor:none] ${showPromptRail ? "pl-8" : "pl-4"}`}
       >
         <ScrollTimeIndicator label={timeIndicator.label} visible={timeIndicator.visible} />
         <div

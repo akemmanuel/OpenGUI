@@ -289,10 +289,6 @@
     },
     "backToChat": "Volver al chat",
     "version": "OpenGUI {{version}}",
-    "quick": {
-      "title": "Ajustes rápidos",
-      "allAppearance": "Todos los ajustes de apariencia…"
-    },
     "codexTools": {
       "title": "Herramientas de ChatGPT",
       "description": "Búsqueda web y generación de imágenes para chats que usan un modelo Codex. Funcionan con la suscripción de ChatGPT conectada y cuentan para sus límites de uso.",
@@ -482,7 +478,8 @@
     "toggleSidebar": "Alternar barra lateral",
     "requiredBeforeProject": "Añade un espacio de trabajo antes de conectar un proyecto.",
     "hideSidebar": "Ocultar barra lateral",
-    "resizeSidebar": "Arrastra para cambiar el ancho de la barra lateral"
+    "resizeSidebar": "Arrastra para cambiar el ancho de la barra lateral",
+    "switchWorkspace": "Cambiar espacio de trabajo"
   },
   "identity": {
     "checkingHost": "Comprobando la identidad del Host",
@@ -1248,18 +1245,12 @@
     "lowDiskSpace": "Este Host casi no tiene espacio en disco. Es posible que los chats no se guarden hasta que se libere espacio."
   },
   "profile": {
-    "title": "Tu perfil",
-    "preferencesTitle": "Preferencias",
-    "open": "Perfil y preferencias",
+    "open": "Cuenta y ajustes",
     "close": "Volver a los chats",
     "account": "Cuenta",
-    "sections": {
-      "appearance": "Apariencia",
-      "chats": "Chats"
-    },
     "personalInstructions": "Instrucciones personales",
     "personalInstructionsPlaceholder": "Ejemplo: Responde de forma breve. Escribo en español de España.",
     "discardInstructions": "¿Descartar tus instrucciones personales sin guardar?",
-    "manageAccount": "Gestionar cuenta"
+    "moreAppearance": "Personalizar apariencia…"
   }
 }

@@ -5,15 +5,19 @@ import { Button } from "@/components/ui/button";
 import { useActions, useWorkspaceState } from "@/hooks/use-agent-state";
 import { WindowControls } from "@/components/title-bar/WindowControls";
 import { WorkspaceDialog } from "@/components/title-bar/WorkspaceDialog";
-import { WorkspaceTabs } from "@/components/title-bar/WorkspaceTabs";
 import { useWindowChrome } from "@/components/title-bar/use-window-chrome";
 
-export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => void }) {
+export function TitleBar({
+  onToggleLeftSidebar,
+  leadingControlBelow = false,
+}: {
+  onToggleLeftSidebar?: () => void;
+  /** The view puts its own control in the top-left corner, where the web trigger would float. */
+  leadingControlBelow?: boolean;
+}) {
   const { t } = useTranslation();
-  const { createWorkspace, removeWorkspace, switchWorkspace, updateWorkspace, reorderWorkspaces } =
-    useActions();
-  const { activeWorkspaceId, supportsMultipleWorkspaces, workspaceStatuses, workspaces } =
-    useWorkspaceState();
+  const { createWorkspace, removeWorkspace, updateWorkspace } = useActions();
+  const { activeWorkspaceId, supportsMultipleWorkspaces, workspaces } = useWorkspaceState();
   const { shell, platform, isMac, isWebRuntime, isMaximized } = useWindowChrome();
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | null>(null);
   const canManageWorkspaces = supportsMultipleWorkspaces;
@@ -45,51 +49,40 @@ export function TitleBar({ onToggleLeftSidebar }: { onToggleLeftSidebar?: () => 
 
   return (
     <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Native title bars maximize on double-click. */}
-      <div
-        data-slot="title-bar"
-        className="relative z-20 app-safe-top-bar bg-background border-b border-border select-none shrink-0"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-        onDoubleClick={() => {
-          if (!isWebRuntime) void shell.window.maximize();
-        }}
-      >
+      {/* No bar. Web only reserves the safe area; the frameless desktop window keeps a borderless
+          drag strip that also holds the window controls. */}
+      {isWebRuntime ? (
+        <div aria-hidden="true" className="h-[var(--app-safe-top)] shrink-0" />
+      ) : (
+        // biome-ignore lint/a11y/noStaticElementInteractions: Native title bars maximize on double-click.
         <div
-          data-slot="title-bar-leading"
-          className="absolute left-0 top-[var(--app-safe-top)] h-9 flex items-center px-2"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          {onToggleLeftSidebar && (
-            <Button
-              data-sidebar="trigger"
-              data-slot="sidebar-trigger"
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={onToggleLeftSidebar}
-            >
-              <PanelLeftIcon />
-              <span className="sr-only">{t("workspace.toggleSidebar")}</span>
-            </Button>
-          )}
-        </div>
-        <WorkspaceTabs
-          workspaces={workspaces}
-          workspaceStatuses={workspaceStatuses}
-          activeWorkspaceId={activeWorkspaceId}
-          canManage={canManageWorkspaces}
-          visible={supportsMultipleWorkspaces && workspaces.length > 0}
-          isMac={isMac}
-          isWebRuntime={isWebRuntime}
-          onSwitch={switchWorkspace}
-          onReorder={reorderWorkspaces}
-          onAdd={() => setDialogMode("add")}
-          onEdit={() => setDialogMode("edit")}
+          data-slot="window-drag-strip"
+          aria-hidden="true"
+          className="h-9 shrink-0 select-none"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+          onDoubleClick={() => void shell.window.maximize()}
         />
-        {!isWebRuntime && (
+      )}
+      {onToggleLeftSidebar && !(isWebRuntime && leadingControlBelow) && (
+        <Button
+          data-sidebar="trigger"
+          data-slot="sidebar-trigger"
+          variant="ghost"
+          size="icon"
+          className="absolute left-2 top-[calc(var(--app-safe-top)+0.25rem)] z-30 size-8 bg-background/90 text-muted-foreground hover:text-foreground"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          title={`${t("workspace.toggleSidebar")} (Ctrl+B)`}
+          onClick={onToggleLeftSidebar}
+        >
+          <PanelLeftIcon />
+          <span className="sr-only">{t("workspace.toggleSidebar")}</span>
+        </Button>
+      )}
+      {!isWebRuntime && (
+        <div className="absolute right-0 top-0 z-30 h-9">
           <WindowControls isMac={isMac} isMaximized={isMaximized} window={shell.window} />
-        )}
-      </div>
+        </div>
+      )}
       <WorkspaceDialog
         open={canManageWorkspaces && dialogMode !== null}
         onOpenChange={(open) => {

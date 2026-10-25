@@ -205,13 +205,14 @@ export function AppContent({
         settingsActive={activeView === "settings"}
       />
       <SidebarInset className="overflow-hidden">
-        <div className="flex flex-col h-full">
+        <div className="relative flex flex-col h-full">
           <TitleBar
             onToggleLeftSidebar={
               detachedProject || (leftSidebar.state === "expanded" && !leftSidebar.isMobile)
                 ? undefined
                 : leftSidebar.toggleSidebar
             }
+            leadingControlBelow={activeView === "settings"}
           />
 
           <div className="flex-1 flex flex-col min-w-0 min-h-0 select-none">
