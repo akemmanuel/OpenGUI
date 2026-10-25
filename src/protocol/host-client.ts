@@ -38,6 +38,8 @@ export interface CreateHostClientOptions {
   resolveToken?: () => string | undefined;
   fetchImpl?: FetchLike;
   reconnectDelayMs?: number;
+  /** Deadline for loading a Session snapshot, so a stalled request ends the chat's loading state. */
+  sessionReadTimeoutMs?: number;
 }
 
 async function readJson(response: Response) {
@@ -256,7 +258,9 @@ export function createHostClient(options: CreateHostClientOptions = {}): OpenGui
         body: JSON.stringify(input),
       })) as HostSessionSnapshot,
     readSession: async (sessionId) =>
-      (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}`)) as HostSessionSnapshot,
+      (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}`, {
+        signal: AbortSignal.timeout(options.sessionReadTimeoutMs ?? 15_000),
+      })) as HostSessionSnapshot,
     renameSession: async (sessionId, title) =>
       (await request(`/api/host/sessions/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",

@@ -1,6 +1,24 @@
 import { describe, expect, test } from "vite-plus/test";
 import { createHostClient } from "./host-client";
 
+describe("Host chat loading", () => {
+  test("aborts a stalled snapshot request instead of leaving the transcript loading forever", async () => {
+    const client = createHostClient({
+      baseUrl: "https://host.test",
+      sessionReadTimeoutMs: 10,
+      fetchImpl: async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) return reject(new Error("Missing snapshot timeout signal"));
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    });
+    await expect(client.readSession("stalled-chat")).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+  });
+});
+
 function eventStream(payloads: unknown[]) {
   const encoder = new TextEncoder();
   return new Response(

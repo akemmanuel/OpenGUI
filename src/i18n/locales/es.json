@@ -1065,7 +1065,8 @@
     "startingLocalServer": "Iniciando servidor local..."
   },
   "sessionError": {
-    "title": "Error del agente"
+    "title": "Error del agente",
+    "messagesLoadFailed": "No se pudieron cargar los mensajes de esta sesión."
   },
   "updateDialog": {
     "title": "Actualización disponible",

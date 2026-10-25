@@ -1065,7 +1065,8 @@
     "startingLocalServer": "Lokaler Server wird gestartet..."
   },
   "sessionError": {
-    "title": "Agentenfehler"
+    "title": "Agentenfehler",
+    "messagesLoadFailed": "Nachrichten für diese Sitzung konnten nicht geladen werden."
   },
   "updateDialog": {
     "title": "Update verfügbar",

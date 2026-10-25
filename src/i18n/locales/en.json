@@ -1065,7 +1065,8 @@
     "startingLocalServer": "Starting local server..."
   },
   "sessionError": {
-    "title": "Agent error"
+    "title": "Agent error",
+    "messagesLoadFailed": "Could not load messages for this session."
   },
   "updateDialog": {
     "title": "Update Available",
