@@ -17,6 +17,12 @@ export type FsRouteDeps = {
   pathAuthorizer: HostPathAuthorizer;
 };
 
+/**
+ * Transcripts request every referenced image on render, and the response is
+ * read into memory. Larger files are not shown as previews.
+ */
+export const MAX_FILE_PREVIEW_BYTES = 25 * 1024 * 1024;
+
 function fsError(error: unknown) {
   return jsonError(error, error instanceof PathAuthorizationError ? 403 : 400);
 }
@@ -144,6 +150,8 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
       if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
       const info = await stat(actual);
       if (!info.isFile()) throw new Error("Path is not a file");
+      if (info.size > MAX_FILE_PREVIEW_BYTES)
+        return jsonError(new Error("File exceeds preview size limit"), 413);
       return new Response(await readFile(actual), {
         headers: {
           "content-type": contentTypeForPath(actual),

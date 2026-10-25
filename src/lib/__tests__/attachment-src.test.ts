@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
   classifyMarkdownImageSource,
+  isAttachmentHostUrl,
   resolveAttachmentAuthToken,
   resolveAttachmentBaseUrl,
   resolveAttachmentImageSrc,
@@ -123,6 +124,26 @@ describe("resolveAttachmentAuthToken", () => {
     expect(
       resolveAttachmentAuthToken({ isLocal: false, authToken: "" }, { kind: "web" }),
     ).toBeNull();
+  });
+});
+
+describe("isAttachmentHostUrl", () => {
+  const base = "https://host.example";
+
+  test("accepts preview urls on the Host's origin", () => {
+    expect(isAttachmentHostUrl(`${base}/api/fs/file?path=%2Fa.png`, base)).toBe(true);
+    expect(isAttachmentHostUrl("https://host.example:443/x.png", `${base}/`)).toBe(true);
+  });
+
+  test("rejects other origins, schemes, and unparsable values", () => {
+    expect(isAttachmentHostUrl("https://attacker.example/x.png", base)).toBe(false);
+    expect(isAttachmentHostUrl("https://host.example.attacker.example/x.png", base)).toBe(false);
+    expect(isAttachmentHostUrl("http://host.example/x.png", base)).toBe(false);
+    expect(isAttachmentHostUrl("https://host.example:8443/x.png", base)).toBe(false);
+    expect(isAttachmentHostUrl("blob:https://host.example/1", base)).toBe(false);
+    expect(isAttachmentHostUrl("/api/fs/file?path=%2Fa.png", base)).toBe(false);
+    expect(isAttachmentHostUrl(`${base}/x.png`, null)).toBe(false);
+    expect(isAttachmentHostUrl(`${base}/x.png`, "not a url")).toBe(false);
   });
 });
 

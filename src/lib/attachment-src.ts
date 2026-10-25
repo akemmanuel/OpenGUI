@@ -65,6 +65,26 @@ export function resolveAttachmentAuthToken(
   return workspace.authToken?.trim() || null;
 }
 
+function httpOrigin(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether an image URL points at the Host previews are fetched from. Only
+ * these requests may carry the Host bearer credential: a user-typed
+ * `@https://…png` mention resolves to its own third-party origin.
+ */
+export function isAttachmentHostUrl(src: string, baseUrl: string | null | undefined): boolean {
+  if (!baseUrl) return false;
+  const origin = httpOrigin(src);
+  return origin !== null && origin === httpOrigin(baseUrl);
+}
+
 const IMAGE_FILE_EXTENSION = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i;
 const INLINE_IMAGE_DATA_URL = /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
 

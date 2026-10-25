@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative as relativePath } from "node:path";
 import { Hono } from "hono";
@@ -9,7 +18,7 @@ import type { BackendRequestEnv } from "../http/request-context.ts";
 import type { Actor } from "../identity/types.ts";
 import { createEffectivePathPolicy } from "../path-policy/path-policy.ts";
 import { HostPathAuthorizer, createLocalPolicyResolver } from "../path-policy/enforcement.ts";
-import { registerFsRoutes } from "./fs.ts";
+import { MAX_FILE_PREVIEW_BYTES, registerFsRoutes } from "./fs.ts";
 import { registerHostTransportRoutes } from "./host-transport.ts";
 
 const temporaryDirectories: string[] = [];
@@ -222,6 +231,20 @@ describe("filesystem and duplicate RPC path enforcement", () => {
     );
     expect(relative.status).toBe(200);
     expect(await relative.text()).toBe("png");
+
+    // Oversized files are refused before they are read into memory.
+    const oversized = join(project, "huge.png");
+    await writeFile(oversized, "");
+    await truncate(oversized, MAX_FILE_PREVIEW_BYTES + 1);
+    const tooLarge = await app.request(
+      `http://localhost/api/fs/file?path=${encodeURIComponent(oversized)}`,
+    );
+    expect(tooLarge.status).toBe(413);
+    await truncate(oversized, MAX_FILE_PREVIEW_BYTES);
+    expect(
+      (await app.request(`http://localhost/api/fs/file?path=${encodeURIComponent(oversized)}`))
+        .status,
+    ).toBe(200);
 
     const outside = await mkdtemp(join(tmpdir(), "opengui-local-upload-outside-"));
     temporaryDirectories.push(outside);

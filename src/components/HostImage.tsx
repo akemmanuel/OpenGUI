@@ -3,17 +3,36 @@ import * as React from "react";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { WorkspaceContext } from "@/hooks/agent-contexts";
+import { isAttachmentHostUrl } from "@/lib/attachment-src";
 import { cn } from "@/lib/utils";
 
 type HostImageState = { src: string | null; failed: boolean };
 
 /**
+ * Blob URLs share the app's origin, and an SVG opened from one runs script
+ * there. Only raster images become blobs; anything else shows as unavailable.
+ */
+const RASTER_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/bmp",
+]);
+
+/**
  * `<img>` cannot send an Authorization header, so token-authenticated Remote
  * Hosts are fetched with the bearer credential and shown from a blob URL.
- * Desktop Local and cookie-authenticated Hosts keep the plain request.
+ * Desktop Local, cookie-authenticated Hosts, and URLs on any other origin
+ * keep the plain request: the credential never leaves the Host's origin.
  */
-function useHostImageSrc(src: string, token: string | null): HostImageState {
-  const needsFetch = Boolean(token) && /^https?:/i.test(src);
+function useHostImageSrc(
+  src: string,
+  token: string | null,
+  baseUrl: string | null,
+): HostImageState {
+  const needsFetch = Boolean(token) && isAttachmentHostUrl(src, baseUrl);
   const [state, setState] = React.useState<HostImageState>(() =>
     needsFetch ? { src: null, failed: false } : { src, failed: false },
   );
@@ -33,7 +52,10 @@ function useHostImageSrc(src: string, token: string | null): HostImageState {
     })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Image request failed (${response.status})`);
-        objectUrl = URL.createObjectURL(await response.blob());
+        const blob = await response.blob();
+        const type = blob.type.split(";")[0]!.trim().toLowerCase();
+        if (!RASTER_IMAGE_TYPES.has(type)) throw new Error(`Unsupported image type (${type})`);
+        objectUrl = URL.createObjectURL(blob);
         setState({ src: objectUrl, failed: false });
       })
       .catch(() => {
@@ -62,8 +84,12 @@ export function HostImage({
   loading?: "lazy" | "eager";
 }) {
   const { t } = useTranslation();
-  const token = useContext(WorkspaceContext)?.attachmentAuthToken ?? null;
-  const image = useHostImageSrc(src, token);
+  const workspace = useContext(WorkspaceContext);
+  const image = useHostImageSrc(
+    src,
+    workspace?.attachmentAuthToken ?? null,
+    workspace?.attachmentBaseUrl ?? null,
+  );
   const [loadFailed, setLoadFailed] = React.useState(false);
 
   React.useEffect(() => setLoadFailed(false), [image.src]);
