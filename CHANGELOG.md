@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.4
+
+### Security
+
+- Image previews on token-authenticated Hosts, including hosted web, send the Host credential
+  only to the Host's own origin. Before this fix, an image mention pointing at another origin
+  could send the viewer's session token there. Hosts running 0.7.2 or 0.7.3 should update.
+- Image previews loaded with the Host credential are shown only for raster image types. SVG
+  and other content no longer becomes a blob URL with the app's origin.
+- `/api/fs/file` refuses files larger than 25 MB instead of reading them into memory.
+
+### Chat
+
+- Opening a chat no longer waits forever: Session loads time out after 15 seconds, and a failed
+  load shows an error with a retry button instead of a spinner.
+- Returning to a chat while another one is still loading shows its transcript again instead
+  of an empty view.
+
+### Files
+
+- `@` file suggestions skip `.astro`, `.opengui-qa`, and `.opengui-worktrees`, so generated
+  copies no longer push real Project files out of the results or slow the search down.
+  `.opengui-uploads/` remains searchable.
+
 ## 0.7.3
 
 ### ChatGPT tools
