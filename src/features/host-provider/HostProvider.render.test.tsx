@@ -10,7 +10,10 @@ import {
   useSessionState,
   useWorkspaceState,
 } from "@/hooks/use-agent-state";
-import { useActiveTranscriptContextMessages } from "@/features/session-transcript/active-session-transcript-provider";
+import {
+  useActiveTranscriptContextMessages,
+  useActiveTranscriptSnapshot,
+} from "@/features/session-transcript/active-session-transcript-provider";
 import { IdentityActorProvider } from "@/features/identity/identity-actor-context";
 import { buildTurnFooterByMessageId } from "@/components/message-list/turn-footers";
 import type { HostEvent, HostSessionSnapshot, HostSessionSummary } from "@/protocol/host-types";
@@ -79,6 +82,7 @@ let state: ReturnType<typeof useSessionState>;
 let models: ReturnType<typeof useModelState>;
 let workspace: ReturnType<typeof useWorkspaceState>;
 let messages: ReturnType<typeof useActiveTranscriptContextMessages>;
+let transcript: ReturnType<typeof useActiveTranscriptSnapshot>;
 
 function Probe() {
   actions = useActions();
@@ -86,6 +90,7 @@ function Probe() {
   models = useModelState();
   workspace = useWorkspaceState();
   messages = useActiveTranscriptContextMessages();
+  transcript = useActiveTranscriptSnapshot();
   useEffect(() => undefined);
   return <output data-testid="state">{workspace.bootState}</output>;
 }
@@ -132,6 +137,62 @@ describe("HostProvider render integration", () => {
     host.findFiles.mockResolvedValue(["a.txt"]);
   });
   afterEach(cleanup);
+
+  test("restores the visible transcript when returning while another chat is loading", async () => {
+    const other = { ...summary, id: "session-2", title: "Other session" };
+    host.listSessions.mockResolvedValue([summary, other]);
+    let resolveOther!: (value: HostSessionSnapshot) => void;
+    host.readSession.mockImplementation((id: string) =>
+      id === "session-1"
+        ? Promise.resolve(snapshot)
+        : new Promise<HostSessionSnapshot>((resolve) => {
+            resolveOther = resolve;
+          }),
+    );
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession("session-1"));
+    await waitFor(() => expect(transcript.phase).toBe("ready"));
+    await act(() => actions.selectSession("session-2"));
+    await waitFor(() => expect(host.readSession).toHaveBeenCalledWith("session-2"));
+    await act(() => actions.selectSession("session-1"));
+    await waitFor(() => {
+      expect(transcript.scope?.sessionId).toBe("session-1");
+      expect(transcript.phase).toBe("ready");
+      expect(messages.length).toBeGreaterThan(0);
+    });
+    await act(async () => resolveOther({ ...snapshot, ...other, entries: [] }));
+    expect(transcript.scope?.sessionId).toBe("session-1");
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  test("ends a failed chat load and lets the same selected chat be retried", async () => {
+    host.readSession.mockRejectedValueOnce(new Error("Temporary connection failure"));
+    render(
+      <IdentityActorProvider
+        actor={{ type: "user", id: "user-1", displayName: "Ada", role: "owner" }}
+      >
+        <HostProvider>
+          <Probe />
+        </HostProvider>
+      </IdentityActorProvider>,
+    );
+    await waitFor(() => expect(workspace.bootState).toBe("ready"));
+    await act(() => actions.selectSession("session-1"));
+    await waitFor(() => expect(transcript.phase).toBe("error"));
+    expect(transcript.error).toBe("sessionError.messagesLoadFailed");
+    await act(() => actions.selectSession("session-1"));
+    await waitFor(() => expect(transcript.phase).toBe("ready"));
+    expect(messages.length).toBeGreaterThan(0);
+  });
 
   test("reconciles a model switch into both live selection and session state", async () => {
     const lunaSnapshot: HostSessionSnapshot = {

@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { MessageListViewportState } from "@/components/message-list/message-list-viewport";
 import { EmptySessionOverview } from "@/components/message-list/EmptySessionOverview";
@@ -24,18 +26,26 @@ function DelayedLoadingIndicator() {
 export function MessageListViewportShell({
   viewport,
   directory,
+  onRetry,
   children,
 }: {
   viewport: MessageListViewportState;
   directory?: string | null;
+  onRetry?: () => void;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   if (viewport.kind === "loading") return <DelayedLoadingIndicator />;
 
   if (viewport.kind === "error") {
     return (
-      <div className={`${CENTERED_SHELL} px-6`}>
+      <div role="alert" className={`${CENTERED_SHELL} flex-col gap-3 px-6`}>
         <p className="max-w-md text-center text-sm text-muted-foreground">{viewport.message}</p>
+        {onRetry && (
+          <Button variant="outline" onClick={onRetry}>
+            {t("common.retry")}
+          </Button>
+        )}
       </div>
     );
   }

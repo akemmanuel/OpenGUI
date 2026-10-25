@@ -51,7 +51,12 @@ export function useMessageListModel() {
   const pendingPermission = activeSessionId ? (pendingPermissions[activeSessionId] ?? null) : null;
   const pendingQuestion = activeSessionId ? (pendingQuestions[activeSessionId] ?? null) : null;
 
-  const activeLoadError = activeSessionId ? (sessionErrors[activeSessionId] ?? null) : null;
+  const activeLoadError =
+    transcript.scope?.sessionId === activeSessionId && transcript.phase === "error"
+      ? transcript.error
+      : activeSessionId
+        ? (sessionErrors[activeSessionId] ?? null)
+        : null;
   const activeLoadErrorText =
     activeLoadError && activeLoadError.startsWith("sessionError.")
       ? t(activeLoadError)

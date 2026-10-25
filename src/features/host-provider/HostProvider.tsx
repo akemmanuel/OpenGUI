@@ -440,6 +440,9 @@ function HostProviderBody({
         directory: activeTargetDirectoryRef.current ?? "",
         sessionId,
       };
+      // Selecting the same scope is a no-op, so a failed load must leave its
+      // error state before a retry can show loading again.
+      if (transcriptStore.getSnapshot().phase === "error") transcriptStore.select(null);
       transcriptStore.select(scope);
       try {
         do {
@@ -490,6 +493,17 @@ function HostProviderBody({
             return next;
           });
         } while (pendingHydrationIdsRef.current.has(sessionId));
+      } catch {
+        // End the loading state so the chat offers a retry instead of a spinner.
+        const current = transcriptStore.getSnapshot().scope;
+        if (activeSessionIdRef.current === sessionId && current?.sessionId === sessionId) {
+          transcriptStore.dispatch({
+            type: "page.failed",
+            scope: current,
+            phase: "initial",
+            error: "sessionError.messagesLoadFailed",
+          });
+        }
       } finally {
         pendingHydrationIdsRef.current.delete(sessionId);
         hydratingSessionIdsRef.current.delete(sessionId);
@@ -568,9 +582,24 @@ function HostProviderBody({
       void hydrateTranscript(null);
       return;
     }
-    if (activeStreamRef.current?.snapshot.id === activeSessionId) return;
+    const stream = activeStreamRef.current;
+    if (stream?.snapshot.id === activeSessionId) {
+      // Returning to the loaded chat while another one was still loading:
+      // the transcript store already switched to that other chat, so show
+      // the loaded stream again.
+      const scope = { directory: stream.snapshot.projectDirectory, sessionId: activeSessionId };
+      transcriptStore.select(scope);
+      transcriptStore.dispatch({
+        type: "snapshot.loaded",
+        scope,
+        messages: projectHostTranscriptStream(stream),
+        hasMore: false,
+        nextCursor: null,
+      });
+      return;
+    }
     void hydrateTranscript(activeSessionId);
-  }, [activeSessionId, hydrateTranscript]);
+  }, [activeSessionId, hydrateTranscript, transcriptStore]);
 
   const setActiveSnapshot = useCallback((snapshot: HostSessionSnapshot) => {
     activeSnapshotRef.current = snapshot;
@@ -818,6 +847,14 @@ function HostProviderBody({
         await refreshSessions(nextProjects);
       },
       selectSession: async (id) => {
+        if (
+          id &&
+          activeSessionIdRef.current === id &&
+          transcriptStore.getSnapshot().phase === "error"
+        ) {
+          await hydrateTranscript(id);
+          return;
+        }
         activeSessionIdRef.current = id;
         setActiveSessionId(id);
         if (id) {
