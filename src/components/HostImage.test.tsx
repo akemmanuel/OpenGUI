@@ -10,12 +10,17 @@ import { HostImage } from "./HostImage";
 
 const SRC = "https://host.example/api/fs/file?path=%2Fsrv%2Fproject%2Fshot.png";
 
-function renderWithToken(token: string | null) {
+function renderWithToken(token: string | null, src = SRC) {
   render(
     <WorkspaceContext.Provider
-      value={{ attachmentAuthToken: token } as unknown as WorkspaceContextValue}
+      value={
+        {
+          attachmentAuthToken: token,
+          attachmentBaseUrl: "https://host.example",
+        } as unknown as WorkspaceContextValue
+      }
     >
-      <HostImage src={SRC} alt="shot" />
+      <HostImage src={src} alt="shot" />
     </WorkspaceContext.Provider>,
   );
 }
@@ -50,6 +55,33 @@ describe("HostImage", () => {
       expect.objectContaining({ headers: { authorization: "Bearer ogk_secret" } }),
     );
   });
+
+  test.each([
+    "https://attacker.example/x.png",
+    "https://host.example.attacker.example/x.png",
+    "http://host.example/api/fs/file?path=%2Fsrv%2Fproject%2Fshot.png",
+    "https://host.example:8443/x.png",
+  ])("never sends the Host token to another origin: %s", (src) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderWithToken("ogk_secret", src);
+    expect((screen.getByRole("img", { name: "shot" }) as HTMLImageElement).src).toBe(src);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each(["image/svg+xml", "text/html", ""])(
+    "does not turn a %s response into a same-origin blob",
+    async (type) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(new Blob(["<svg onload=alert(1)>"], { type }))),
+      );
+      const createObjectURL = vi.spyOn(URL, "createObjectURL");
+      renderWithToken("ogk_secret");
+      await waitFor(() => expect(screen.getByText("attachments.imageUnavailable")).toBeTruthy());
+      expect(createObjectURL).not.toHaveBeenCalled();
+    },
+  );
 
   test("shows the unavailable placeholder when the Host rejects the path", async () => {
     vi.stubGlobal(
