@@ -1,7 +1,17 @@
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-const SKIPPED_DIRECTORIES = new Set([".git", "node_modules", "dist"]);
+// Generated and transient copies (QA baselines, task worktrees, Astro's build
+// cache) can hold thousands of duplicates that fill the result limit before
+// real Project files. `.opengui-uploads` stays searchable.
+const SKIPPED_DIRECTORIES = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  ".astro",
+  ".opengui-qa",
+  ".opengui-worktrees",
+]);
 
 export interface FindFilesOptions {
   maxResults?: number;
