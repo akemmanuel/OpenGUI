@@ -1085,11 +1085,8 @@
     "noSharedProjects": "Für dein Konto wurden noch keine Projektordner freigegeben. Bitte den Host-Eigentümer oder eine einladende Person um Zugriff."
   },
   "emptySession": {
-    "skillsHeading": "Skills",
-    "skillsLocked": "Skills sind für diese Sitzung gesperrt",
-    "enableSkill": "Skill für diese Sitzung aktivieren",
-    "disableSkill": "Skill für diese Sitzung deaktivieren",
-    "skillsRevisionLocked": "Diese Session behält diese Skill-Revisionen, auch wenn die Bibliothek aktualisiert wird. Neue Sessions erhalten Aktualisierungen."
+    "heading": "Woran sollten wir arbeiten?",
+    "headingInProject": "Woran sollten wir in <project>{{project}}</project> arbeiten?"
   },
   "questionPanel": {
     "title": "Der Assistent hat eine Frage",

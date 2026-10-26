@@ -10,7 +10,7 @@ export type SessionSkillsState =
 
 /**
  * Loads the skills the Host would advertise for a project directory.
- * Used by the empty-session agent overview.
+ * Used by the empty-session overview to seed default Session skills.
  *
  * Host actions are intentionally unstable (rebuilt with session/model state),
  * so this hook only re-fetches when the directory changes.
