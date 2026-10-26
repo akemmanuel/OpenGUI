@@ -31,6 +31,30 @@ const slots: SessionMenuSlots = {
 afterEach(cleanup);
 
 describe("Session menu content", () => {
+  test("offers copying the Session ID when a handler is provided", async () => {
+    const copyId = vi.fn();
+    render(
+      <SessionMenuContent
+        slots={slots}
+        focusTagInput={false}
+        pinned={false}
+        currentColor={undefined}
+        currentTags={[]}
+        availableProjects={[]}
+        displayProjectDir={null}
+        currentProjectDir={null}
+        onTogglePin={vi.fn()}
+        onSetColor={vi.fn()}
+        onSetTags={vi.fn()}
+        onMoveToProject={vi.fn()}
+        onRemoveFromProject={null}
+        onCopyId={copyId}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "sessionMenu.copyId" }));
+    expect(copyId).toHaveBeenCalledOnce();
+  });
+
   test("routes pin and every Session color choice", async () => {
     const togglePin = vi.fn();
     const setColor = vi.fn();

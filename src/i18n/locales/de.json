@@ -361,6 +361,7 @@
       "pink": "Rosa",
       "gray": "Grau"
     },
+    "copyId": "Session-ID kopieren",
     "share": "Teilen",
     "private": "Private Session",
     "shared": "Geteilte Session"
