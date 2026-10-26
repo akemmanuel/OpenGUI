@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.5
+
+### Sidebar
+
+- The sidebar footer has one account menu: Account, Personal instructions, a Light / Dark /
+  System toggle, Language, Customize appearance, Settings, and Sign out. It replaces the
+  separate settings button and the appearance popover.
+- The empty title bar above the transcript is gone, so the conversation uses the full height.
+
+### Chat
+
+- Images created with image generation open in the lightbox when clicked, like other images
+  in the transcript.
+- The date and time label shown while scrolling a conversation sits inside its background
+  again instead of below a thin bar.
+
 ## 0.7.4
 
 ### Security
