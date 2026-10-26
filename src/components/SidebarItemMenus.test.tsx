@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 const fixture = vi.hoisted(() => ({
+  isElectron: true,
   copy: vi.fn(),
   fileBrowser: vi.fn(),
   terminal: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock("@/lib/browser", () => ({ copyTextToClipboard: fixture.copy }));
 vi.mock("@/shell/provider", () => ({
   useDesktopShell: () => ({
+    runtime: { isElectron: fixture.isElectron },
     system: { openInFileBrowser: fixture.fileBrowser, openInTerminal: fixture.terminal },
   }),
 }));
@@ -36,6 +38,7 @@ import { ProjectMenuContent } from "./SidebarItemMenus";
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  fixture.isElectron = true;
 });
 
 describe("Project menu", () => {
@@ -109,5 +112,29 @@ describe("Project menu", () => {
     expect(screen.queryByText("projectMenu.newSession")).toBeNull();
     expect(screen.queryByText("projectMenu.openInTerminal")).toBeNull();
     expect(screen.queryByText("projectMenu.removeProject")).toBeNull();
+  });
+
+  test("hides file browser and terminal actions in the browser shell", () => {
+    fixture.isElectron = false;
+    render(
+      <ProjectMenuContent
+        kind="dropdown"
+        pinned={false}
+        collapsed={false}
+        canCreateSession
+        onTogglePin={vi.fn()}
+        onNewSession={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+        canRemove
+        onRemove={vi.fn()}
+        canCloseOtherProjects={false}
+        onCloseOtherProjects={vi.fn()}
+        directory="/work/Alpha"
+        isLocalWorkspace
+      />,
+    );
+    expect(screen.getByText("projectMenu.copyAbsolutePath")).toBeTruthy();
+    expect(screen.queryByText("projectMenu.openInFileBrowser")).toBeNull();
+    expect(screen.queryByText("projectMenu.openInTerminal")).toBeNull();
   });
 });

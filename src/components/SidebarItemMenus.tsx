@@ -116,6 +116,8 @@ export function ProjectMenuContent({
 }: ProjectMenuContentProps) {
   const { t } = useTranslation();
   const shell = useDesktopShell();
+  // Browser builds cannot launch local apps, so only offer these in the desktop shell.
+  const canOpenLocally = isLocalWorkspace && shell.runtime.isElectron;
 
   if (kind === "dropdown") {
     return (
@@ -162,7 +164,7 @@ export function ProjectMenuContent({
           <Copy className="size-4" />
           <span>{t("projectMenu.copyAbsolutePath")}</span>
         </DropdownMenuItem>
-        {isLocalWorkspace && (
+        {canOpenLocally && (
           <>
             <DropdownMenuItem
               onClick={(event) => {
@@ -255,7 +257,7 @@ export function ProjectMenuContent({
         <Copy className="size-4" />
         <span>{t("projectMenu.copyAbsolutePath")}</span>
       </ContextMenu.Item>
-      {isLocalWorkspace && (
+      {canOpenLocally && (
         <>
           <ContextMenu.Item
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"

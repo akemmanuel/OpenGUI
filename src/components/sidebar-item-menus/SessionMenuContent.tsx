@@ -1,5 +1,6 @@
 import {
   Check,
+  Copy,
   FolderOpen,
   FolderX,
   Palette,
@@ -8,6 +9,7 @@ import {
   PinOff,
   Share2,
   Tag,
+  Terminal,
   Trash2,
   X,
 } from "lucide-react";
@@ -32,6 +34,9 @@ export interface SessionMenuProps {
   onRemoveFromProject: (() => void) | null;
   onRename?: () => void;
   onShare?: () => void;
+  onCopyPath?: () => void;
+  onOpenInFileBrowser?: () => void;
+  onOpenInTerminal?: () => void;
   onDelete?: () => void;
 }
 
@@ -166,6 +171,37 @@ export function SessionMenuContent({
           props.onShare,
         )}
       {props.onShare && slots.separator("after-share")}
+      {props.onCopyPath && (
+        <>
+          {!props.onShare && slots.separator("before-path")}
+          {slots.item(
+            "copy-path",
+            <>
+              <Copy className="size-4" />
+              <span>{t("projectMenu.copyAbsolutePath")}</span>
+            </>,
+            props.onCopyPath,
+          )}
+        </>
+      )}
+      {props.onOpenInFileBrowser &&
+        slots.item(
+          "open-file-browser",
+          <>
+            <FolderOpen className="size-4" />
+            <span>{t("projectMenu.openInFileBrowser")}</span>
+          </>,
+          props.onOpenInFileBrowser,
+        )}
+      {props.onOpenInTerminal &&
+        slots.item(
+          "open-terminal",
+          <>
+            <Terminal className="size-4" />
+            <span>{t("projectMenu.openInTerminal")}</span>
+          </>,
+          props.onOpenInTerminal,
+        )}
       {slots.separator("after-rename")}
       {slots.submenu({
         key: "colors",
