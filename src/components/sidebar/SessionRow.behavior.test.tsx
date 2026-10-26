@@ -5,7 +5,23 @@ import type { ComponentProps } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-const fixture = vi.hoisted(() => ({ share: vi.fn() }));
+const fixture = vi.hoisted(() => ({
+  isElectron: true,
+  share: vi.fn(),
+  copy: vi.fn(),
+  openInFileBrowser: vi.fn(),
+  openInTerminal: vi.fn(),
+}));
+vi.mock("@/shell/provider", () => ({
+  useDesktopShell: () => ({
+    runtime: { isElectron: fixture.isElectron },
+    system: {
+      openInFileBrowser: fixture.openInFileBrowser,
+      openInTerminal: fixture.openInTerminal,
+    },
+  }),
+}));
+vi.mock("@/lib/browser", () => ({ copyTextToClipboard: fixture.copy }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -32,6 +48,11 @@ vi.mock("@/components/SidebarItemMenus", () => ({
       )}
       {props.onRename && <button onClick={props.onRename}>rename</button>}
       {props.onShare && <button onClick={props.onShare}>share</button>}
+      {props.onCopyPath && <button onClick={props.onCopyPath}>copy path</button>}
+      {props.onOpenInFileBrowser && (
+        <button onClick={props.onOpenInFileBrowser}>file browser</button>
+      )}
+      {props.onOpenInTerminal && <button onClick={props.onOpenInTerminal}>terminal</button>}
       {props.onDelete && <button onClick={props.onDelete}>delete</button>}
     </div>
   ),
@@ -88,6 +109,8 @@ function props(role: "owner" | "view" = "owner") {
     moveSessionToProject: vi.fn(),
     removeSessionFromProject: vi.fn(),
     currentProjectDir: "/project",
+    directory: "/project",
+    isLocalWorkspace: true,
     deleteSession: vi.fn(),
   };
 }
@@ -95,6 +118,10 @@ function props(role: "owner" | "view" = "owner") {
 describe("SessionRow behavior", () => {
   beforeEach(() => {
     fixture.share.mockReset();
+    fixture.isElectron = true;
+    fixture.copy.mockReset();
+    fixture.openInFileBrowser.mockReset();
+    fixture.openInTerminal.mockReset();
     window.confirm = vi.fn(() => true);
   });
   afterEach(() => {
@@ -129,6 +156,32 @@ describe("SessionRow behavior", () => {
     expect(input.startEditing).toHaveBeenCalledWith("s1", "Plan");
     expect(fixture.share).toHaveBeenCalledWith("s1", "Plan");
     expect(input.deleteSession).toHaveBeenCalledWith("s1");
+  });
+
+  test("offers path, file browser, and terminal actions for the session directory", async () => {
+    render(<SessionRow {...(props() as unknown as ComponentProps<typeof SessionRow>)} />);
+    await userEvent.click(screen.getByText("copy path"));
+    await userEvent.click(screen.getByText("file browser"));
+    await userEvent.click(screen.getByText("terminal"));
+    expect(fixture.copy).toHaveBeenCalledWith("/project");
+    expect(fixture.openInFileBrowser).toHaveBeenCalledWith("/project", expect.any(String));
+    expect(fixture.openInTerminal).toHaveBeenCalledWith("/project", expect.any(String));
+  });
+
+  test("only offers copying the path for remote workspaces", () => {
+    const input = { ...props(), isLocalWorkspace: false };
+    render(<SessionRow {...(input as unknown as ComponentProps<typeof SessionRow>)} />);
+    expect(screen.getByText("copy path")).toBeTruthy();
+    expect(screen.queryByText("file browser")).toBeNull();
+    expect(screen.queryByText("terminal")).toBeNull();
+  });
+
+  test("only offers copying the path in the browser shell", () => {
+    fixture.isElectron = false;
+    render(<SessionRow {...(props() as unknown as ComponentProps<typeof SessionRow>)} />);
+    expect(screen.getByText("copy path")).toBeTruthy();
+    expect(screen.queryByText("file browser")).toBeNull();
+    expect(screen.queryByText("terminal")).toBeNull();
   });
 
   test("keeps view shares read-only while still selectable", () => {

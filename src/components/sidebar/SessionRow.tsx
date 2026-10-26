@@ -9,6 +9,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { getColorBorderClass, SessionContextMenu } from "@/components/SessionContextMenu";
 import { SessionItemMenu } from "@/components/SidebarItemMenus";
 import { cleanSessionTitle } from "@/lib/session-title";
+import { copyTextToClipboard } from "@/lib/browser";
+import { STORAGE_KEYS } from "@/lib/constants";
+import { storageGet } from "@/lib/persistence/storage";
+import { useDesktopShell } from "@/shell/provider";
 import { useIdentityActor } from "@/features/identity/identity-actor-context";
 import { openSessionShareDialog } from "@/features/identity/SessionShareDialog";
 import { SidebarRow } from "./SidebarRow";
@@ -76,6 +80,8 @@ export function SessionRow({
   removeSessionFromProject,
   currentProjectDir,
   projectLabel,
+  directory,
+  isLocalWorkspace,
   deleteSession,
 }: {
   session: Session;
@@ -110,10 +116,13 @@ export function SessionRow({
   removeSessionFromProject: (sessionId: string) => void | Promise<void>;
   currentProjectDir: string | null;
   projectLabel?: string;
+  directory?: string;
+  isLocalWorkspace: boolean;
   deleteSession: (sessionId: string) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const identityActor = useIdentityActor();
+  const shell = useDesktopShell();
   const permissions = sessionUiPermissions(session._accessRole);
   const onShare =
     identityActor?.type === "user" && permissions.manage
@@ -149,6 +158,26 @@ export function SessionRow({
       }
     : null;
 
+  const pathActions = directory
+    ? {
+        onCopyPath: () => {
+          void copyTextToClipboard(directory);
+        },
+        ...(isLocalWorkspace &&
+          shell.runtime.isElectron && {
+            onOpenInFileBrowser: () => {
+              void shell.system.openInFileBrowser(
+                directory,
+                storageGet(STORAGE_KEYS.FILE_MANAGER) ?? "",
+              );
+            },
+            onOpenInTerminal: () => {
+              void shell.system.openInTerminal(directory, storageGet(STORAGE_KEYS.TERMINAL) ?? "");
+            },
+          }),
+      }
+    : {};
+
   const confirmAndDeleteSession = useCallback(() => {
     const confirmed = window.confirm(
       t("sessionMenu.deleteSessionConfirm", { title: displayTitle }),
@@ -177,6 +206,7 @@ export function SessionRow({
           : undefined
       }
       onShare={onShare}
+      {...pathActions}
       onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
     >
       <SidebarMenuItem>
@@ -212,6 +242,7 @@ export function SessionRow({
                 permissions.manage ? () => startEditing(session.id, session.title || "") : undefined
               }
               onShare={onShare}
+              {...pathActions}
               onDelete={permissions.delete ? confirmAndDeleteSession : undefined}
             />
           }
