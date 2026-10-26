@@ -288,7 +288,7 @@ export function AppContent({
                         onQueueModeChange={setQueueMode}
                         contextInfo={contextInfo}
                         onSubmit={(message, mode) => {
-                          // Capture exactly what the overview shows at submit time.
+                          // Capture the Session's skill selection at submit time.
                           return enabledSkillNames
                             ? sendPrompt(message, mode, [...enabledSkillNames])
                             : sendPrompt(message, mode);

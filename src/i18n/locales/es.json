@@ -1085,11 +1085,8 @@
     "noSharedProjects": "Todavía no se han compartido carpetas de proyecto con tu cuenta. Pide acceso al propietario del Host o a quien pueda invitar."
   },
   "emptySession": {
-    "skillsHeading": "Skills",
-    "skillsLocked": "Las skills están bloqueadas para esta sesión",
-    "enableSkill": "Activar skill para esta sesión",
-    "disableSkill": "Desactivar skill para esta sesión",
-    "skillsRevisionLocked": "Esta Session conserva estas revisiones de Skills aunque se actualice la biblioteca. Las Sessions nuevas reciben las actualizaciones."
+    "heading": "¿En qué trabajamos?",
+    "headingInProject": "¿En qué trabajamos en <project>{{project}}</project>?"
   },
   "questionPanel": {
     "title": "El asistente tiene una pregunta",

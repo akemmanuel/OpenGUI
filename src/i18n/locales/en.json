@@ -1085,11 +1085,8 @@
     "noSharedProjects": "No project folders have been shared with your account yet. Ask the Host owner or an inviter for access."
   },
   "emptySession": {
-    "skillsHeading": "Skills",
-    "skillsLocked": "Skills are locked for this session",
-    "enableSkill": "Enable skill for this session",
-    "disableSkill": "Disable skill for this session",
-    "skillsRevisionLocked": "This Session keeps these Skill revisions even if the library is updated. New Sessions receive updates."
+    "heading": "What are we working on?",
+    "headingInProject": "What are we working on in <project>{{project}}</project>?"
   },
   "questionPanel": {
     "title": "The assistant has a question",
