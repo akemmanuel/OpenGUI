@@ -2,6 +2,7 @@ import { CheckCircle2, Circle, ExternalLink, Wrench, XCircle } from "lucide-reac
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HostImage } from "@/components/HostImage";
+import { ImageMentionLightbox, type ImageMention } from "@/components/ImageMentionPreview";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { TerminalOutput } from "@/components/message-list/TerminalOutput";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useWorkspaceState } from "@/hooks/use-agent-state";
 import { todoStatusConfig } from "@/lib/todos";
 import { copyTextToClipboard, openExternalLink } from "@/lib/browser";
 import { looksLikeTerminalOutput } from "@/lib/terminal-output";
@@ -35,23 +37,41 @@ export function ToolImages({
   block: Extract<ToolOutputBlock, { type: "images" }>;
   large?: boolean;
 }) {
+  const { t } = useTranslation();
+  const { attachmentBaseUrl } = useWorkspaceState();
+  const [openImage, setOpenImage] = useState<ImageMention | null>(null);
+
   return (
-    <div className={cn("grid gap-2", block.images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-      {block.images.map((image, idx) => (
-        <div
-          key={`${image.url}-${idx}`}
-          className="overflow-hidden rounded-md border border-border/60 bg-background/60"
-        >
-          <HostImage
-            src={image.src}
-            alt={image.filename ?? `Image attachment ${idx + 1}`}
-            loading="lazy"
-            className={cn("w-full object-contain bg-black/20", large ? "max-h-96" : "max-h-52")}
-            fallbackClassName="m-1 h-8 min-w-40"
-          />
-        </div>
-      ))}
-    </div>
+    <>
+      <div className={cn("grid gap-2", block.images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+        {block.images.map((image, idx) => {
+          const label = image.filename ?? `Image attachment ${idx + 1}`;
+          return (
+            <button
+              key={`${image.url}-${idx}`}
+              type="button"
+              className="block w-full cursor-zoom-in overflow-hidden rounded-md border border-border/60 bg-background/60 transition-colors hover:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              title={label}
+              aria-label={t("attachments.openImage", { name: label })}
+              onClick={() => setOpenImage({ path: image.url, filename: label })}
+            >
+              <HostImage
+                src={image.src}
+                alt={label}
+                loading="lazy"
+                className={cn("w-full object-contain bg-black/20", large ? "max-h-96" : "max-h-52")}
+                fallbackClassName="m-1 h-8 min-w-40"
+              />
+            </button>
+          );
+        })}
+      </div>
+      <ImageMentionLightbox
+        image={openImage}
+        serverUrl={attachmentBaseUrl}
+        onClose={() => setOpenImage(null)}
+      />
+    </>
   );
 }
 
