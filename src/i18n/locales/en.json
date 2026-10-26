@@ -361,6 +361,7 @@
       "pink": "Pink",
       "gray": "Gray"
     },
+    "copyId": "Copy session ID",
     "share": "Share",
     "private": "Private Session",
     "shared": "Shared Session"
