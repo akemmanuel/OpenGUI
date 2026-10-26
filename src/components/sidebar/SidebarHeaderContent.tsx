@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { SidebarHeader, useSidebar } from "@/components/ui/sidebar";
+import { WorkspaceSwitcher } from "@/components/title-bar/WorkspaceSwitcher";
 import appIcon from "../../../assets/app-icon.svg";
 import openguiLogoDark from "../../../assets/opengui-dark.svg";
 import openguiLogoLight from "../../../assets/opengui-light.svg";
@@ -90,6 +91,11 @@ export function SidebarHeaderContent({
               alt="OpenGUI"
               className="h-5 block dark:hidden group-data-[collapsible=icon]:!hidden"
             />
+            {!detachedProject && (
+              <div className="ml-auto flex min-w-0 justify-end">
+                <WorkspaceSwitcher />
+              </div>
+            )}
           </div>
           {projectSelector}
           <div className="group-data-[collapsible=icon]:hidden border-b border-sidebar-border/60 bg-sidebar/40">

@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getSessionExecutionDirectory } from "@/hooks/agent-session-utils";
-import { useHomeDir } from "@/hooks/use-home-dir";
 import { useActions, useSessionState, useWorkspaceState } from "@/hooks/use-agent-state";
 import { useOutsideClick } from "@/hooks/use-outside-click";
 import { SESSION_PAGE_SIZE } from "@/lib/constants";
@@ -26,6 +25,7 @@ import { RespondingSidebarSections } from "./sidebar/RespondingSidebarSections";
 import { SidebarFooterContent } from "./sidebar/SidebarFooterContent";
 import { SidebarHeaderContent } from "./sidebar/SidebarHeaderContent";
 import { ProfilePanel } from "@/features/profile/ProfilePanel";
+import type { ProfileView } from "@/features/profile/AccountMenu";
 import { SessionBulkActionBar } from "./sidebar/SessionBulkActionBar";
 import {
   EMPTY_SESSION_MULTI_SELECT,
@@ -57,12 +57,8 @@ export function AppSidebar({
   const { t } = useTranslation();
   const respondingSidebarEnabled = useRespondingSidebarEnabled();
   const { state: sidebarState, isMobile, setOpen: setSidebarOpen, setOpenMobile } = useSidebar();
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileCollapsed = sidebarState === "collapsed" && !isMobile;
-  useEffect(() => {
-    // The panel needs the full sidebar width; collapsing to icons closes it.
-    if (profileCollapsed) setProfileOpen(false);
-  }, [profileCollapsed]);
+  const [profileView, setProfileView] = useState<ProfileView | null>(null);
+  const profileOpen = profileView !== null;
   const {
     selectSession,
     startNewChat,
@@ -92,7 +88,6 @@ export function AppSidebar({
     sessionDrafts,
     sessionMeta,
     namingSessionIds,
-    activeTargetDirectory,
   } = useSessionState();
 
   const visibleActiveSessionId =
@@ -122,22 +117,6 @@ export function AppSidebar({
     commitRename,
     cancelEditing,
   } = useSidebarRename({ sessions, renameSession });
-
-  const homeDir = useHomeDir();
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const executionDirectory =
-    getSessionExecutionDirectory(activeSession) || activeTargetDirectory || null;
-  const activeSessionSidebarMeta = activeSession ? sessionMeta[activeSession.id] : undefined;
-  const activeSessionIsChat = activeSession
-    ? activeSessionSidebarMeta?.sidebarSection === "chats" ||
-      (!activeSessionSidebarMeta?.sidebarSection &&
-        normalizeProjectPath(getSessionExecutionDirectory(activeSession) ?? "") ===
-          normalizeProjectPath(defaultChatDirectory ?? ""))
-    : normalizeProjectPath(activeTargetDirectory ?? "") ===
-      normalizeProjectPath(defaultChatDirectory ?? "");
-  const activeSessionDirectory = activeSessionIsChat
-    ? null
-    : activeSessionSidebarMeta?.displayProjectDir || executionDirectory;
 
   const {
     matchingSessionIds: messageMatchingSessionIds,
@@ -428,7 +407,7 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="offcanvas" className="select-none">
-      {profileOpen && <ProfilePanel onClose={() => setProfileOpen(false)} />}
+      {profileView && <ProfilePanel view={profileView} onClose={() => setProfileView(null)} />}
       <div
         ref={selectionAreaRef}
         className={profileOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}
@@ -659,19 +638,14 @@ export function AppSidebar({
 
       {!detachedProject && (
         <SidebarFooterContent
-          activeSessionDirectory={activeSessionDirectory}
-          homeDir={homeDir}
           settingsActive={settingsActive}
           onOpenSettings={(tab) => {
-            setProfileOpen(false);
+            setProfileView(null);
             onOpenSettings(tab);
             closeMobileSidebar();
           }}
           profileOpen={profileOpen}
-          onToggleProfile={() => {
-            if (profileCollapsed) setSidebarOpen(true);
-            setProfileOpen((open) => !open || profileCollapsed);
-          }}
+          onOpenProfile={setProfileView}
         />
       )}
 

@@ -289,10 +289,6 @@
     },
     "backToChat": "Back to chat",
     "version": "OpenGUI {{version}}",
-    "quick": {
-      "title": "Quick preferences",
-      "allAppearance": "All appearance settings…"
-    },
     "codexTools": {
       "title": "ChatGPT tools",
       "description": "Web search and image generation for chats that use a Codex model. They run on the connected ChatGPT subscription and count toward its usage limits.",
@@ -482,7 +478,8 @@
     "toggleSidebar": "Toggle Sidebar",
     "requiredBeforeProject": "Add a workspace before connecting a project.",
     "hideSidebar": "Hide sidebar",
-    "resizeSidebar": "Drag to resize sidebar"
+    "resizeSidebar": "Drag to resize sidebar",
+    "switchWorkspace": "Switch workspace"
   },
   "identity": {
     "checkingHost": "Checking Host identity",
@@ -1248,18 +1245,12 @@
     "lowDiskSpace": "This Host is almost out of disk space. Saving chats may fail until space is freed."
   },
   "profile": {
-    "title": "Your profile",
-    "preferencesTitle": "Preferences",
-    "open": "Profile and preferences",
+    "open": "Account and settings",
     "close": "Back to chats",
     "account": "Account",
-    "sections": {
-      "appearance": "Appearance",
-      "chats": "Chats"
-    },
     "personalInstructions": "Personal instructions",
     "personalInstructionsPlaceholder": "Example: Keep answers short. I use British spelling.",
     "discardInstructions": "Discard your unsaved personal instructions?",
-    "manageAccount": "Manage account"
+    "moreAppearance": "Customize appearance…"
   }
 }

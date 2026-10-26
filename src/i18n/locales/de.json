@@ -289,10 +289,6 @@
     },
     "backToChat": "Zurück zum Chat",
     "version": "OpenGUI {{version}}",
-    "quick": {
-      "title": "Schnelleinstellungen",
-      "allAppearance": "Alle Darstellungseinstellungen …"
-    },
     "codexTools": {
       "title": "ChatGPT-Werkzeuge",
       "description": "Websuche und Bilderzeugung für Chats mit einem Codex-Modell. Sie laufen über das verbundene ChatGPT-Abo und zählen zu dessen Nutzungslimits.",
@@ -482,7 +478,8 @@
     "toggleSidebar": "Sidebar umschalten",
     "requiredBeforeProject": "Füge zuerst einen Workspace hinzu, bevor du ein Projekt verbindest.",
     "hideSidebar": "Sidebar ausblenden",
-    "resizeSidebar": "Ziehen, um die Sidebar-Breite zu ändern"
+    "resizeSidebar": "Ziehen, um die Sidebar-Breite zu ändern",
+    "switchWorkspace": "Workspace wechseln"
   },
   "identity": {
     "checkingHost": "Host-Identität wird geprüft",
@@ -1248,18 +1245,12 @@
     "lowDiskSpace": "Auf diesem Host ist fast kein Speicherplatz mehr frei. Chats werden eventuell nicht gespeichert, bis Platz geschaffen wird."
   },
   "profile": {
-    "title": "Ihr Profil",
-    "preferencesTitle": "Einstellungen",
-    "open": "Profil und Einstellungen",
+    "open": "Konto und Einstellungen",
     "close": "Zurück zu den Chats",
     "account": "Konto",
-    "sections": {
-      "appearance": "Darstellung",
-      "chats": "Chats"
-    },
     "personalInstructions": "Persönliche Anweisungen",
     "personalInstructionsPlaceholder": "Beispiel: Antworte kurz und duze mich.",
     "discardInstructions": "Ungespeicherte persönliche Anweisungen verwerfen?",
-    "manageAccount": "Konto verwalten"
+    "moreAppearance": "Darstellung anpassen …"
   }
 }
