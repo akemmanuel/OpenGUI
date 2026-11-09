@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, open, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { Readable } from "node:stream";
 import type { BackendApp } from "../http/request-context.ts";
 import { findFilesInDirectory } from "../../../../server/services/file-search.ts";
 import { isWithinAllowedRoot } from "../host/path-safety.ts";
@@ -12,7 +14,10 @@ import { durableActor } from "../identity/types.ts";
 import { HostPathAuthorizer, PathAuthorizationError } from "../path-policy/enforcement.ts";
 
 export type FsRouteDeps = {
-  env: Pick<BackendHostEnv, "allowedRoots" | "uploadMaxFileBytes" | "uploadMaxBatchBytes">;
+  env: Pick<
+    BackendHostEnv,
+    "allowedRoots" | "uploadMaxFileBytes" | "uploadMaxBatchBytes" | "downloadMaxBytes"
+  >;
   resolveSafeDirectory: (inputPath: string | null) => Promise<string>;
   pathAuthorizer: HostPathAuthorizer;
 };
@@ -22,6 +27,55 @@ export type FsRouteDeps = {
  * read into memory. Larger files are not shown as previews.
  */
 export const MAX_FILE_PREVIEW_BYTES = 25 * 1024 * 1024;
+
+/** Bytes read to decide whether a file is text. */
+const TEXT_SNIFF_BYTES = 8192;
+
+/** Text encoding of a file, or null when it is binary. */
+export type TextEncodingGuess = "utf-8" | "windows-1252" | null;
+
+// Control characters other than tab, line breaks, form feed and escape do
+// not occur in text files.
+const hasBinaryControl = (bytes: Uint8Array) =>
+  bytes.some((byte) => byte < 32 && ![9, 10, 11, 12, 13, 27].includes(byte));
+
+export function guessTextEncoding(bytes: Uint8Array): TextEncodingGuess {
+  if (hasBinaryControl(bytes)) return null;
+  try {
+    // `stream` keeps a multi-byte character cut off by the sniff window from failing.
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: true });
+    return "utf-8";
+  } catch {
+    // Legacy single-byte text (umlauts in Latin-1 / Windows-1252) is still text.
+    return "windows-1252";
+  }
+}
+
+async function readFileHead(path: string, length: number): Promise<Buffer> {
+  const handle = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+function attachmentDisposition(name: string) {
+  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
+// Agent-written files, including SVG and HTML, must never run script with the
+// Host's origin when a response is opened directly.
+const UNTRUSTED_FILE_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy":
+    "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+  // Agents overwrite files in place; always revalidate.
+  "cache-control": "no-cache",
+};
 
 function fsError(error: unknown) {
   return jsonError(error, error instanceof PathAuthorizationError ? 403 : 400);
@@ -37,36 +91,61 @@ async function ensureUploadsIgnored(dir: string) {
   }
 }
 
+type ListedEntry = {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  /** Only when files are listed. */
+  size?: number;
+  modifiedAt?: number;
+};
+
 async function listServerDirectories(
   path: string,
   roots: string[],
   resolveSafeDirectory: (inputPath: string | null) => Promise<string>,
   authorizeRead: (path: string) => Promise<string>,
+  includeFiles = false,
 ) {
   const directory = await resolveSafeDirectory(path);
   const entries = await readdir(directory, { withFileTypes: true });
   const visibleEntries = await Promise.all(
     entries
       .filter(
-        (entry) => entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith("."),
+        (entry) =>
+          (entry.isDirectory() || (includeFiles && entry.isFile())) &&
+          !entry.isSymbolicLink() &&
+          !entry.name.startsWith("."),
       )
-      .map(async (entry) => {
+      .map(async (entry): Promise<ListedEntry | null> => {
         const entryPath = join(directory, entry.name);
         try {
-          return {
+          const listed: ListedEntry = {
             name: entry.name,
             path: await authorizeRead(entryPath),
-            type: "dir" as const,
+            type: entry.isDirectory() ? "dir" : "file",
           };
+          if (includeFiles) {
+            const info = await stat(entryPath);
+            if (listed.type === "file") listed.size = info.size;
+            listed.modifiedAt = info.mtimeMs;
+          }
+          return listed;
         } catch (error) {
           if (error instanceof PathAuthorizationError) return null;
+          // Deleted between readdir and stat.
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
           throw error;
         }
       }),
   );
   const dirs = visibleEntries
     .filter((entry) => entry !== null)
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        Number(a.type === "file") - Number(b.type === "file") ||
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    );
   const parent = dirname(path);
   let authorizedParent: string | null = null;
   if (roots.some((root) => isWithinAllowedRoot(parent, [root]))) {
@@ -104,8 +183,12 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
       const authorized = await deps.pathAuthorizer.authorizePath(actor, requested, "read");
       return Response.json({
         ok: true,
-        value: await listServerDirectories(authorized, roots, deps.resolveSafeDirectory, (path) =>
-          deps.pathAuthorizer.authorizePath(actor, path, "read"),
+        value: await listServerDirectories(
+          authorized,
+          roots,
+          deps.resolveSafeDirectory,
+          (path) => deps.pathAuthorizer.authorizePath(actor, path, "read"),
+          c.req.query("files") === "1",
         ),
       });
     } catch (error) {
@@ -123,46 +206,141 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
     }
   });
 
+  /**
+   * Resolve a requested file the actor may read. Relative paths resolve
+   * against `directory` (a Project), absolute ones are used as they are.
+   */
+  async function resolveReadableFile(
+    actor: ReturnType<typeof durableActor>,
+    inputPath: string | undefined,
+    directory: string | null,
+  ) {
+    if (!inputPath) throw new Error("path is required");
+    // `isAbsolute` follows the Host platform, so Windows drive and UNC paths
+    // are not mistaken for Project-relative paths.
+    const requestedPath = isAbsolute(inputPath)
+      ? inputPath
+      : join(
+          await deps.pathAuthorizer.authorizePath(
+            actor,
+            resolve(directory || deps.env.allowedRoots[0]!),
+            "read",
+          ),
+          inputPath,
+        );
+    const authorized = await deps.pathAuthorizer.authorizePath(actor, requestedPath, "read");
+    const actual = await realpath(authorized);
+    const allowed = isWithinAllowedRoot(actual, deps.env.allowedRoots);
+    if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+    const info = await stat(actual);
+    if (!info.isFile()) throw new Error("Path is not a file");
+    return { authorized, actual, info };
+  }
+
+  app.get("/api/fs/stat", async (c) => {
+    try {
+      const { authorized, actual, info } = await resolveReadableFile(
+        durableActor(c.get("actor")),
+        c.req.query("path")?.trim(),
+        c.req.query("directory")?.trim() || null,
+      );
+      const head = await readFileHead(actual, Math.min(info.size, TEXT_SNIFF_BYTES));
+      return Response.json({
+        ok: true,
+        value: {
+          path: authorized,
+          name: basename(authorized),
+          size: info.size,
+          modifiedAt: info.mtimeMs,
+          textEncoding: guessTextEncoding(head),
+        },
+      });
+    } catch (error) {
+      return fsError(error);
+    }
+  });
+
   app.get("/api/fs/file", async (c) => {
     try {
-      const inputPath = c.req.query("path")?.trim();
-      if (!inputPath) throw new Error("path is required");
-      const directory = c.req.query("directory")?.trim() || null;
-      // `isAbsolute` follows the Host platform, so Windows drive and UNC paths
-      // are not mistaken for Project-relative paths.
-      const requestedPath = isAbsolute(inputPath)
-        ? inputPath
-        : join(
-            await deps.pathAuthorizer.authorizePath(
-              durableActor(c.get("actor")),
-              resolve(directory || deps.env.allowedRoots[0]!),
-              "read",
-            ),
-            inputPath,
-          );
-      const authorized = await deps.pathAuthorizer.authorizePath(
+      const { actual, info } = await resolveReadableFile(
         durableActor(c.get("actor")),
-        requestedPath,
-        "read",
+        c.req.query("path")?.trim(),
+        c.req.query("directory")?.trim() || null,
       );
-      const actual = await realpath(authorized);
-      const allowed = isWithinAllowedRoot(actual, deps.env.allowedRoots);
-      if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
-      const info = await stat(actual);
-      if (!info.isFile()) throw new Error("Path is not a file");
+
+      if (c.req.query("download") === "1") {
+        const limit = deps.env.downloadMaxBytes ?? 0;
+        if (limit > 0 && info.size > limit)
+          return jsonError(new Error("File exceeds download size limit"), 413);
+        // Streamed, so the file size does not matter to the Host's memory.
+        const body = Readable.toWeb(createReadStream(actual)) as ReadableStream<Uint8Array>;
+        return new Response(body, {
+          headers: {
+            ...UNTRUSTED_FILE_HEADERS,
+            "content-type": "application/octet-stream",
+            "content-length": String(info.size),
+            "content-disposition": attachmentDisposition(basename(actual)),
+          },
+        });
+      }
+
+      // Text previews only need the beginning of a large file.
+      const maxBytes = Number(c.req.query("maxBytes"));
+      if (Number.isInteger(maxBytes) && maxBytes > 0) {
+        const length = Math.min(info.size, maxBytes, MAX_FILE_PREVIEW_BYTES);
+        return new Response(await readFileHead(actual, length), {
+          headers: { ...UNTRUSTED_FILE_HEADERS, "content-type": contentTypeForPath(actual) },
+        });
+      }
+
+      // pdf.js reads ranges as pages are needed, without buffering the entire
+      // document on either the Host or the client.
+      if (extname(actual).toLowerCase() === ".pdf") {
+        const headers: Record<string, string> = {
+          ...UNTRUSTED_FILE_HEADERS,
+          "content-type": "application/pdf",
+          "accept-ranges": "bytes",
+        };
+        const range = c.req.header("range");
+        let start = 0;
+        let end = info.size - 1;
+        if (range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+          if (!match || (!match[1] && !match[2])) {
+            return new Response(null, {
+              status: 416,
+              headers: { ...headers, "content-range": `bytes */${info.size}` },
+            });
+          }
+          start = match[1] ? Number(match[1]) : Math.max(0, info.size - Number(match[2]));
+          end = match[1] && match[2] ? Math.min(Number(match[2]), end) : end;
+          if (
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(end) ||
+            start > end ||
+            start >= info.size
+          ) {
+            return new Response(null, {
+              status: 416,
+              headers: { ...headers, "content-range": `bytes */${info.size}` },
+            });
+          }
+          headers["content-range"] = `bytes ${start}-${end}/${info.size}`;
+        }
+        headers["content-length"] = String(Math.max(0, end - start + 1));
+        const body =
+          info.size === 0
+            ? null
+            : (Readable.toWeb(
+                createReadStream(actual, { start, end }),
+              ) as ReadableStream<Uint8Array>);
+        return new Response(body, { status: range ? 206 : 200, headers });
+      }
+
       if (info.size > MAX_FILE_PREVIEW_BYTES)
         return jsonError(new Error("File exceeds preview size limit"), 413);
       return new Response(await readFile(actual), {
-        headers: {
-          "content-type": contentTypeForPath(actual),
-          // Transcripts render agent-written files, including SVG. Opened
-          // directly, they must never run script with the Host's origin.
-          "x-content-type-options": "nosniff",
-          "content-security-policy":
-            "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
-          // Agents overwrite images in place; always revalidate.
-          "cache-control": "no-cache",
-        },
+        headers: { ...UNTRUSTED_FILE_HEADERS, "content-type": contentTypeForPath(actual) },
       });
     } catch (error) {
       return fsError(error);

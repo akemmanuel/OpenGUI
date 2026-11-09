@@ -41,6 +41,7 @@ export const STORAGE_KEYS = {
   SIDEBAR_PROJECT_COLLAPSED: key("sidebarProjectCollapsed"),
   RESPONDING_SIDEBAR: key("respondingSidebar"),
   FILE_MANAGER: key("fileManager"),
+  FILES_PANEL: key("filesPanel"),
   TERMINAL: key("terminal"),
   SETUP_COMPLETE: key("setupComplete"),
 } as const;

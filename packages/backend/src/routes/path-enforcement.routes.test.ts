@@ -100,7 +100,35 @@ describe("filesystem and duplicate RPC path enforcement", () => {
       ).status,
     ).toBe(403);
 
+    for (const route of ["stat", "file"]) {
+      expect(
+        (
+          await app.request(
+            `http://localhost/api/fs/${route}?path=${encodeURIComponent(join(granted, "visible.txt"))}&download=1`,
+          )
+        ).status,
+      ).toBe(403);
+    }
+
     access = "read";
+    expect(
+      (
+        await app.request(
+          `http://localhost/api/fs/stat?path=${encodeURIComponent(join(granted, "visible.txt"))}`,
+        )
+      ).status,
+    ).toBe(200);
+    for (const route of ["stat", "file"]) {
+      for (const path of [join(sibling, "secret.txt"), join(granted, "escape/secret.txt")]) {
+        expect(
+          (
+            await app.request(
+              `http://localhost/api/fs/${route}?path=${encodeURIComponent(path)}&download=1`,
+            )
+          ).status,
+        ).toBe(403);
+      }
+    }
     expect((await requestJson("http://localhost/api/fs/roots")).value).toEqual([granted]);
     expect((await requestJson("http://localhost/api/capabilities")).value).toMatchObject({
       uploads: false,

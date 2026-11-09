@@ -1,5 +1,5 @@
 import { PanelLeftIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useActions, useWorkspaceState } from "@/hooks/use-agent-state";
@@ -10,10 +10,12 @@ import { useWindowChrome } from "@/components/title-bar/use-window-chrome";
 export function TitleBar({
   onToggleLeftSidebar,
   leadingControlBelow = false,
+  trailingControl,
 }: {
   onToggleLeftSidebar?: () => void;
   /** The view puts its own control in the top-left corner, where the web trigger would float. */
   leadingControlBelow?: boolean;
+  trailingControl?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { createWorkspace, removeWorkspace, updateWorkspace } = useActions();
@@ -69,7 +71,7 @@ export function TitleBar({
           data-slot="sidebar-trigger"
           variant="ghost"
           size="icon"
-          className="absolute left-2 top-[calc(var(--app-safe-top)+0.25rem)] z-30 size-8 bg-background/90 text-muted-foreground hover:text-foreground"
+          className={`absolute left-2 z-30 size-8 bg-background/90 text-muted-foreground hover:text-foreground ${isWebRuntime ? "top-[calc(var(--app-safe-top)+0.25rem)]" : "top-0.5"}`}
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           title={`${t("workspace.toggleSidebar")} (Ctrl+B)`}
           onClick={onToggleLeftSidebar}
@@ -78,11 +80,15 @@ export function TitleBar({
           <span className="sr-only">{t("workspace.toggleSidebar")}</span>
         </Button>
       )}
-      {!isWebRuntime && (
-        <div className="absolute right-0 top-0 z-30 h-9">
+      <div
+        className={`pointer-events-none absolute z-30 flex items-center [&>*]:pointer-events-auto ${isWebRuntime ? "right-2 top-[calc(var(--app-safe-top)+0.25rem)]" : "right-0 top-0 h-9"}`}
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        {trailingControl}
+        {!isWebRuntime && (
           <WindowControls isMac={isMac} isMaximized={isMaximized} window={shell.window} />
-        </div>
-      )}
+        )}
+      </div>
       <WorkspaceDialog
         open={canManageWorkspaces && dialogMode !== null}
         onOpenChange={(open) => {

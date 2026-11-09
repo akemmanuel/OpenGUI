@@ -301,7 +301,6 @@ async function connectProject() {
   await clickButton("Open project");
   await browser("wait", "--fn", "!document.querySelector('[data-slot=dialog-content]')");
   await waitForText("project");
-  await clickButton("New Chat");
   const content = await body();
   if (!content.includes("fixture-model")) {
     await clickButton("Choose model");
@@ -340,8 +339,62 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await sendAndWait("Tool journey: read the fixture", "Tool result observed:");
   await expectText("fixture content from the isolated project");
 
+  log("file links, project search, text/CSV/HTML/PDF previews, and mobile focus");
+  await sendAndWait("File preview: [Notes](./notes.txt:2)", "Echo: File preview:");
+  await browser("wait", 'button[aria-label="Preview notes.txt:2"]');
+  await clickButton("Preview notes.txt:2");
+  await browser("wait", "--fn", "Boolean(document.querySelector('aside pre code'))");
+  await browser("screenshot", join(tmpdir(), "opengui-files-panel-text.png"));
+  await clickButton("Back");
+  await browser("fill", "input[type=search]", "report");
+  await waitForText("report.csv");
+  await browser("wait", 'aside button[title="documents/report.csv"]');
+  await browser("click", 'aside button[title="documents/report.csv"]');
+  await browser(
+    "wait",
+    "--fn",
+    "document.querySelector('aside table')?.textContent?.includes('Berlin')",
+  );
+  await clickButton("Back");
+  await browser("fill", "input[type=search]", "page.html");
+  await waitForText("page.html");
+  await browser("click", 'aside button[title="page.html"]');
+  await browser(
+    "wait",
+    "--fn",
+    "document.querySelector('aside iframe')?.getAttribute('sandbox') === ''",
+  );
+  await clickButton("Source");
+  await browser(
+    "wait",
+    "--fn",
+    "document.querySelector('aside pre code')?.textContent?.includes('Preview fixture')",
+  );
+  await clickButton("Back");
+  await browser("fill", "input[type=search]", "document.pdf");
+  await waitForText("document.pdf");
+  await browser("click", 'aside button[title="document.pdf"]');
+  await browser(
+    "wait",
+    "--fn",
+    "Array.from(document.querySelectorAll('aside canvas')).some(canvas => canvas.width > 0)",
+  );
+  await browser("screenshot", join(tmpdir(), "opengui-files-panel-pdf.png"));
+  await browser("set", "viewport", "390", "844");
+  await browser(
+    "wait",
+    "--fn",
+    "Boolean(document.querySelector('[data-slot=sheet-content] canvas'))",
+  );
+  await browser("screenshot", join(tmpdir(), "opengui-files-panel-mobile.png"));
+  await browser("press", "Escape");
+  await browser("wait", "--fn", "!document.querySelector('[data-slot=sheet-content]')");
+  await browser("set", "viewport", "1440", "900");
+
   log("rename Session through the sidebar's public interaction seam");
+  await browser("wait", '[data-slot="sidebar-container"]');
   await clickButton("Pin to top");
+  await browser("wait", '[role="menuitem"]');
   await find("text", "Rename", "click", undefined);
   await delay(100);
   await browser("fill", "input[value='Tool journey: read the fixture']", "Acceptance Session");
@@ -397,10 +450,13 @@ async function runJourneys(frontendUrl: string, modelPort: number) {
   await reloadAndReopenSession();
 
   log("settings/provider persistence and keyboard focus");
-  await clickButton("Settings");
+  await clickButton("Account and settings");
+  await browser("wait", '[role="menuitem"]');
+  await find("role", "menuitem", "click", "Settings");
   await waitForText("Models");
   await clickButton("Models");
-  await expectText("fixture-model");
+  // The model list loads after the tab renders.
+  await waitForText("fixture-model");
   await browser("press", "Tab");
 
   log("Skills install, update, and remove with deterministic Host fixtures");
@@ -543,6 +599,37 @@ try {
     join(projectDirectory, "notes.txt"),
     "fixture content from the isolated project\n",
   );
+  await mkdir(join(projectDirectory, "documents"));
+  await writeFile(
+    join(projectDirectory, "documents/report.csv"),
+    'Name,City\n"Müller, A.",Berlin\n',
+  );
+  await writeFile(
+    join(projectDirectory, "page.html"),
+    "<html><head><title>Fixture</title></head><body><h1>Preview fixture</h1></body></html>",
+  );
+  const pdfText = "BT /F1 18 Tf 30 340 Td (File preview PDF) Tj ET";
+  const pdfObjects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(pdfText)} >>\nstream\n${pdfText}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const [index, object] of pdfObjects.entries()) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${pdfObjects.length + 1}\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join(
+      "",
+    )}trailer\n<< /Size ${pdfObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  await writeFile(join(projectDirectory, "document.pdf"), pdf);
   const [modelPort, backendPort, frontendPort] = await Promise.all([
     freePort(),
     freePort(),
@@ -561,6 +648,8 @@ try {
   const screenshot = join(tmpdir(), `opengui-browser-acceptance-${runId}.png`);
   await browser("screenshot", screenshot, "--full").catch(() => undefined);
   console.error(`[browser-acceptance] FAIL (screenshot: ${screenshot})`);
+  console.error(await browser("console").catch(() => "No browser console available"));
+  console.error(await browser("errors").catch(() => "No browser errors available"));
   console.error(error);
   console.error(logs.join("").slice(-6000));
   console.error(`[browser-acceptance] provider requests: ${providerRequests.join(", ")}`);

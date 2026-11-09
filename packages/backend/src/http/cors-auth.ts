@@ -19,8 +19,8 @@ export function createCorsAuth(config: CorsAuthConfig) {
     return {
       "access-control-allow-origin": config.allowedCorsOrigin,
       "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
-      "access-control-allow-headers": "authorization,content-type",
-      "access-control-expose-headers": "set-auth-token",
+      "access-control-allow-headers": "authorization,content-type,range",
+      "access-control-expose-headers": "set-auth-token,accept-ranges,content-length,content-range",
       ...(config.allowedCorsOrigin === "*" ? {} : { "access-control-allow-credentials": "true" }),
     };
   }
