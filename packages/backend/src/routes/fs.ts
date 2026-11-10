@@ -23,6 +23,19 @@ export type FsRouteDeps = {
  */
 export const MAX_FILE_PREVIEW_BYTES = 25 * 1024 * 1024;
 
+/** Raster images only: an SVG served from the Host origin could run script. */
+const TEMPORARY_IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|avif|bmp)$/i;
+
+/**
+ * Canonical OS temp directories. `tmpdir()` follows `TMPDIR`, which the agent
+ * process may not share with the Host, so `/tmp` is always included on POSIX.
+ */
+async function temporaryRoots(): Promise<string[]> {
+  const candidates = process.platform === "win32" ? [tmpdir()] : [tmpdir(), "/tmp"];
+  const roots = await Promise.all(candidates.map((path) => realpath(path).catch(() => null)));
+  return [...new Set(roots.filter((root): root is string => root !== null))];
+}
+
 function fsError(error: unknown) {
   return jsonError(error, error instanceof PathAuthorizationError ? 403 : 400);
 }
@@ -123,33 +136,63 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
     }
   });
 
+  /**
+   * Agents save screenshots and other scratch images to the OS temp dir, and
+   * transcripts reference them by absolute path. Actors without path grants
+   * may read raster images there even though it is outside the allowed roots;
+   * every other file type keeps the allowed-roots boundary.
+   */
+  async function resolveTemporaryImage(actor: ReturnType<typeof durableActor>, inputPath: string) {
+    if (!isAbsolute(inputPath) || !TEMPORARY_IMAGE_EXTENSION.test(inputPath)) return null;
+    if (await deps.pathAuthorizer.isRestricted(actor)) return null;
+    const actual = await realpath(inputPath).catch(() => null);
+    if (!actual || !TEMPORARY_IMAGE_EXTENSION.test(actual)) return null;
+    if (!isWithinAllowedRoot(actual, await temporaryRoots())) return null;
+    const info = await stat(actual);
+    if (!info.isFile()) return null;
+    return { actual, info };
+  }
+
+  /**
+   * Resolve a requested file the actor may read. Relative paths resolve
+   * against `directory` (a Project), absolute ones are used as they are.
+   */
+  async function resolveReadableFile(
+    actor: ReturnType<typeof durableActor>,
+    inputPath: string | undefined,
+    directory: string | null,
+  ) {
+    if (!inputPath) throw new Error("path is required");
+    const temporaryImage = await resolveTemporaryImage(actor, inputPath);
+    if (temporaryImage) return temporaryImage;
+    // `isAbsolute` follows the Host platform, so Windows drive and UNC paths
+    // are not mistaken for Project-relative paths.
+    const requestedPath = isAbsolute(inputPath)
+      ? inputPath
+      : join(
+          await deps.pathAuthorizer.authorizePath(
+            actor,
+            resolve(directory || deps.env.allowedRoots[0]!),
+            "read",
+          ),
+          inputPath,
+        );
+    const authorized = await deps.pathAuthorizer.authorizePath(actor, requestedPath, "read");
+    const actual = await realpath(authorized);
+    const allowed = isWithinAllowedRoot(actual, deps.env.allowedRoots);
+    if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
+    const info = await stat(actual);
+    if (!info.isFile()) throw new Error("Path is not a file");
+    return { actual, info };
+  }
+
   app.get("/api/fs/file", async (c) => {
     try {
-      const inputPath = c.req.query("path")?.trim();
-      if (!inputPath) throw new Error("path is required");
-      const directory = c.req.query("directory")?.trim() || null;
-      // `isAbsolute` follows the Host platform, so Windows drive and UNC paths
-      // are not mistaken for Project-relative paths.
-      const requestedPath = isAbsolute(inputPath)
-        ? inputPath
-        : join(
-            await deps.pathAuthorizer.authorizePath(
-              durableActor(c.get("actor")),
-              resolve(directory || deps.env.allowedRoots[0]!),
-              "read",
-            ),
-            inputPath,
-          );
-      const authorized = await deps.pathAuthorizer.authorizePath(
+      const { actual, info } = await resolveReadableFile(
         durableActor(c.get("actor")),
-        requestedPath,
-        "read",
+        c.req.query("path")?.trim(),
+        c.req.query("directory")?.trim() || null,
       );
-      const actual = await realpath(authorized);
-      const allowed = isWithinAllowedRoot(actual, deps.env.allowedRoots);
-      if (!allowed) throw new Error("Path outside OPENGUI_ALLOWED_ROOTS");
-      const info = await stat(actual);
-      if (!info.isFile()) throw new Error("Path is not a file");
       if (info.size > MAX_FILE_PREVIEW_BYTES)
         return jsonError(new Error("File exceeds preview size limit"), 413);
       return new Response(await readFile(actual), {
