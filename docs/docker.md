@@ -56,6 +56,7 @@ host-control-mode Host.
 | `OPENGUI_SHELL_SANDBOX_TOKEN`                                     | Shared secret for the shell broker; inject from deployment secrets, never Project files.               |
 | `OPENGUI_UPLOAD_MAX_FILE_BYTES`, `OPENGUI_UPLOAD_MAX_BATCH_BYTES` | Upload limits.                                                                                         |
 | `OPENGUI_REQUEST_MAX_BYTES`                                       | General JSON/request body limit.                                                                       |
+| `OPENGUI_DOWNLOAD_MAX_BYTES`                                      | Largest file the Files panel may download. Unset means no limit; downloads are streamed.               |
 
 In host-control mode also set `OPENGUI_HOST_UID`, `OPENGUI_HOST_GID`, `OPENGUI_HOST_HOME`, and
 `OPENGUI_HOST_PATH` to the host account used for execution. The wrapper exposes only its configured

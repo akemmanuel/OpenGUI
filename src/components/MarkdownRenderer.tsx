@@ -18,6 +18,8 @@ import type { ImageMention } from "@/components/ImageMentionPreview";
 import { Button } from "@/components/ui/button";
 import { classifyMarkdownImageSource, resolveAttachmentImageSrc } from "@/lib/attachment-src";
 import { copyTextToClipboard, openExternalLink } from "@/lib/browser";
+import { FileLinkChip, fileLinkLabel } from "@/features/files-panel/FileLinkChip";
+import { parseFileLink, wrapLocalLinkTargetsWithSpaces } from "@/lib/host-files";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,7 +37,10 @@ export const MarkdownImageContext = createContext<MarkdownImageContextValue | nu
 // The default transform drops `file:` and Windows drive paths (`C:` reads as a
 // protocol). Image sources are validated by the `img` component instead.
 const urlTransform: UrlTransform = (url, key, node) =>
-  node.tagName === "img" && key === "src" ? url : defaultUrlTransform(url);
+  (node.tagName === "img" && key === "src") ||
+  (node.tagName === "a" && key === "href" && parseFileLink(url))
+    ? url
+    : defaultUrlTransform(url);
 
 function imageFilename(path: string, alt: string | undefined) {
   return path.split(/[\\/]/).pop() || alt || "Image";
@@ -81,12 +86,15 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
 function nodeToString(node: React.ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeToString).join("");
+  if (isValidElement<{ children?: React.ReactNode }>(node))
+    return nodeToString(node.props.children);
   return "";
 }
 
 function isSafeExternalUrl(value: string): boolean {
   try {
-    const url = new URL(value, window.location.href);
+    // No base URL: a relative link is not a page on the app's own origin.
+    const url = new URL(value);
     return url.protocol === "https:" || url.protocol === "http:";
   } catch {
     return false;
@@ -224,23 +232,10 @@ const markdownComponents = {
     return <pre>{children}</pre>;
   },
   a({ children, href, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
-    if (!href || !isSafeExternalUrl(href)) return <span>{children}</span>;
-    const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-      event.preventDefault();
-      openExternalLink(href);
-    };
-
     return (
-      <a
-        {...props}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-primary hover:underline"
-        onClick={handleClick}
-      >
+      <MarkdownLink href={href} {...props}>
         {children}
-      </a>
+      </MarkdownLink>
     );
   },
   img({ src, alt }: ComponentProps<"img">) {
@@ -258,6 +253,38 @@ const markdownComponents = {
   },
 };
 
+function MarkdownLink({ children, href, ...props }: ComponentProps<"a">) {
+  const context = useContext(MarkdownImageContext);
+  const target = parseFileLink(href);
+  if (target) {
+    return (
+      <FileLinkChip
+        target={target}
+        label={fileLinkLabel(nodeToString(children), href ?? "", target) ?? children}
+        baseDirectory={context?.baseDirectory ?? null}
+      />
+    );
+  }
+  if (!href || !isSafeExternalUrl(href)) return <span>{children}</span>;
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    openExternalLink(href);
+  };
+
+  return (
+    <a
+      {...props}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary hover:underline"
+      onClick={handleClick}
+    >
+      {children}
+    </a>
+  );
+}
+
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
   const remarkPlugins = useMemo(() => [remarkGfm], []);
 
@@ -269,7 +296,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { co
         urlTransform={urlTransform}
         skipHtml
       >
-        {content}
+        {wrapLocalLinkTargetsWithSpaces(content)}
       </ReactMarkdown>
     </div>
   );

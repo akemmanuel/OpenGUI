@@ -12,6 +12,8 @@ export type BackendHostEnv = {
   allowedRoots: string[];
   uploadMaxFileBytes: number;
   uploadMaxBatchBytes: number;
+  /** Largest file the Files panel may download; 0 means no limit. */
+  downloadMaxBytes?: number;
   requestMaxBytes?: number;
   identityMode: "remote" | "desktop-local";
   pathGrantsMode?: "disabled" | "enforced";
@@ -76,6 +78,7 @@ export function readBackendHostEnv(): BackendHostEnv {
       "OPENGUI_UPLOAD_MAX_BATCH_BYTES",
       500 * 1024 * 1024,
     ),
+    downloadMaxBytes: parsePositiveIntegerEnv("OPENGUI_DOWNLOAD_MAX_BYTES", 0),
     requestMaxBytes: parsePositiveIntegerEnv("OPENGUI_REQUEST_MAX_BYTES", 1024 * 1024),
     identityMode,
     pathGrantsMode:

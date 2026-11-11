@@ -15,6 +15,8 @@ import {
   useActiveTranscriptContextMessages,
   useActiveTranscriptMessageOrder,
 } from "@/features/session-transcript/active-session-transcript-provider";
+import { FilesPanelSlot, FilesPanelToggle } from "@/features/files-panel/FilesPanelControls";
+import { FilesPanelProvider } from "@/features/files-panel/files-panel-context";
 import { HostProvider } from "@/features/host-provider/HostProvider";
 import { IdentityGate } from "@/features/identity/IdentityGate";
 import { SessionShareDialog } from "@/features/identity/SessionShareDialog";
@@ -213,93 +215,97 @@ export function AppContent({
                 : leftSidebar.toggleSidebar
             }
             leadingControlBelow={activeView === "settings"}
+            trailingControl={activeView === "chat" ? <FilesPanelToggle /> : undefined}
           />
 
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 select-none">
-            {isBooting && (
-              <div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground bg-muted/30">
-                <Spinner className="size-4 shrink-0" />
-                <span>
-                  {bootState === "checking-server"
-                    ? t("startup.checkingLocalServer")
-                    : t("startup.startingLocalServer")}
-                </span>
-              </div>
-            )}
+          <div className="flex min-h-0 flex-1">
+            <div className="relative flex-1 flex flex-col min-w-0 min-h-0 select-none">
+              {isBooting && (
+                <div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground bg-muted/30">
+                  <Spinner className="size-4 shrink-0" />
+                  <span>
+                    {bootState === "checking-server"
+                      ? t("startup.checkingLocalServer")
+                      : t("startup.startingLocalServer")}
+                  </span>
+                </div>
+              )}
 
-            {activeView === "settings" ? (
-              <Suspense
-                fallback={
-                  <div className="flex min-h-48 items-center justify-center" role="status">
-                    <Spinner className="size-5" />
-                    <span className="sr-only">{t("common.loading")}</span>
-                  </div>
-                }
-              >
-                <SettingsView initialTab={settingsTab} onBack={() => setActiveView("chat")} />
-              </Suspense>
-            ) : (
-              <>
-                {workspaces.length === 0 && supportsMultipleWorkspaces ? (
-                  <NoWorkspaceConfigured />
-                ) : chatSurfaceState.kind === "no-project" ||
-                  chatSurfaceState.kind === "default-chat" ? (
-                  hasConnectedProjects ? (
-                    <NoSessionSelected />
-                  ) : (
-                    <NoProjectConnected
-                      canStartChat={chatSurfaceState.kind === "default-chat"}
-                      shareOnly={identityActor?.type === "user"}
-                      onStartChat={() => {
-                        void startNewChat();
-                      }}
-                    />
-                  )
-                ) : (
-                  <MessageList />
-                )}
-
-                {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
-                  <div className="relative z-[1] shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
-                    <div
-                      className="w-full md:mx-auto md:w-[var(--chat-width)]"
-                      style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
-                    >
-                      {queuedPrompts.length > 0 && (
-                        <div className="mb-1.5">
-                          <QueueList
-                            items={queuedPrompts}
-                            onRemove={queueHandlers.remove}
-                            onMoveUp={queueHandlers.moveUp}
-                            onMoveDown={queueHandlers.moveDown}
-                            onMoveToTop={queueHandlers.moveToTop}
-                            onMoveToBottom={queueHandlers.moveToBottom}
-                            onEdit={queueHandlers.edit}
-                            onSendNow={queueHandlers.sendNow}
-                            onReorder={queueHandlers.reorder}
-                          />
-                        </div>
-                      )}
-                      <PromptBox
-                        autoFocus={!suppressBootErrors}
-                        disabled={!canRunActiveSession}
-                        isLoading={isBusy}
-                        queueMode={queueMode}
-                        onQueueModeChange={setQueueMode}
-                        contextInfo={contextInfo}
-                        onSubmit={(message, mode) => {
-                          // Capture the Session's skill selection at submit time.
-                          return enabledSkillNames
-                            ? sendPrompt(message, mode, [...enabledSkillNames])
-                            : sendPrompt(message, mode);
-                        }}
-                        onStop={() => abortSession()}
-                      />
+              {activeView === "settings" ? (
+                <Suspense
+                  fallback={
+                    <div className="flex min-h-48 items-center justify-center" role="status">
+                      <Spinner className="size-5" />
+                      <span className="sr-only">{t("common.loading")}</span>
                     </div>
-                  </div>
-                )}
-              </>
-            )}
+                  }
+                >
+                  <SettingsView initialTab={settingsTab} onBack={() => setActiveView("chat")} />
+                </Suspense>
+              ) : (
+                <>
+                  {workspaces.length === 0 && supportsMultipleWorkspaces ? (
+                    <NoWorkspaceConfigured />
+                  ) : chatSurfaceState.kind === "no-project" ||
+                    chatSurfaceState.kind === "default-chat" ? (
+                    hasConnectedProjects ? (
+                      <NoSessionSelected />
+                    ) : (
+                      <NoProjectConnected
+                        canStartChat={chatSurfaceState.kind === "default-chat"}
+                        shareOnly={identityActor?.type === "user"}
+                        onStartChat={() => {
+                          void startNewChat();
+                        }}
+                      />
+                    )
+                  ) : (
+                    <MessageList />
+                  )}
+
+                  {showPromptBox && !(workspaces.length === 0 && supportsMultipleWorkspaces) && (
+                    <div className="relative z-[1] shrink-0 px-0 md:px-4 app-safe-bottom-inset-prompt">
+                      <div
+                        className="w-full md:mx-auto md:w-[var(--chat-width)]"
+                        style={{ "--chat-width": `${chatWidth}%` } as React.CSSProperties}
+                      >
+                        {queuedPrompts.length > 0 && (
+                          <div className="mb-1.5">
+                            <QueueList
+                              items={queuedPrompts}
+                              onRemove={queueHandlers.remove}
+                              onMoveUp={queueHandlers.moveUp}
+                              onMoveDown={queueHandlers.moveDown}
+                              onMoveToTop={queueHandlers.moveToTop}
+                              onMoveToBottom={queueHandlers.moveToBottom}
+                              onEdit={queueHandlers.edit}
+                              onSendNow={queueHandlers.sendNow}
+                              onReorder={queueHandlers.reorder}
+                            />
+                          </div>
+                        )}
+                        <PromptBox
+                          autoFocus={!suppressBootErrors}
+                          disabled={!canRunActiveSession}
+                          isLoading={isBusy}
+                          queueMode={queueMode}
+                          onQueueModeChange={setQueueMode}
+                          contextInfo={contextInfo}
+                          onSubmit={(message, mode) => {
+                            // Capture the Session's skill selection at submit time.
+                            return enabledSkillNames
+                              ? sendPrompt(message, mode, [...enabledSkillNames])
+                              : sendPrompt(message, mode);
+                          }}
+                          onStop={() => abortSession()}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            {activeView === "chat" && <FilesPanelSlot />}
           </div>
         </div>
       </SidebarInset>
@@ -324,15 +330,17 @@ export function App() {
     <DesktopShellProvider>
       <IdentityGate>
         <HostProvider detachedProject={detachedProject}>
-          <SidebarProvider className="!h-dvh">
-            <AppContent
-              detachedProject={detachedProject}
-              suppressBootErrors={showWizard}
-              onDismissSetup={dismissSetup}
-            />
-            {showWizard && <SetupWizard onComplete={dismissSetup} />}
-            <Toaster richColors closeButton />
-          </SidebarProvider>
+          <FilesPanelProvider>
+            <SidebarProvider className="!h-dvh">
+              <AppContent
+                detachedProject={detachedProject}
+                suppressBootErrors={showWizard}
+                onDismissSetup={dismissSetup}
+              />
+              {showWizard && <SetupWizard onComplete={dismissSetup} />}
+              <Toaster richColors closeButton />
+            </SidebarProvider>
+          </FilesPanelProvider>
         </HostProvider>
       </IdentityGate>
     </DesktopShellProvider>

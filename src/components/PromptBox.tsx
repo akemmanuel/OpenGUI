@@ -131,15 +131,31 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
 
     React.useImperativeHandle(ref, () => internalTextareaRef.current as HTMLTextAreaElement, []);
 
-    // biome-ignore lint/correctness/useExhaustiveDependencies: value is needed to trigger textarea auto-resize on content change
-    React.useLayoutEffect(() => {
+    const fitTextareaHeight = React.useCallback(() => {
       const textarea = internalTextareaRef.current;
-      if (textarea) {
-        textarea.style.height = "auto";
-        const newHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX);
-        textarea.style.height = `${newHeight}px`;
-      }
-    }, [value]);
+      if (!textarea) return;
+      textarea.style.height = "auto";
+      const newHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX);
+      textarea.style.height = `${newHeight}px`;
+    }, []);
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: value is needed to trigger textarea auto-resize on content change
+    React.useLayoutEffect(fitTextareaHeight, [value]);
+
+    // The chat column narrows and widens with side panels; wrapped text then
+    // needs a different height even though the value is unchanged.
+    React.useEffect(() => {
+      const textarea = internalTextareaRef.current;
+      if (!textarea || typeof ResizeObserver === "undefined") return;
+      let width = textarea.clientWidth;
+      const observer = new ResizeObserver(() => {
+        if (textarea.clientWidth === width) return;
+        width = textarea.clientWidth;
+        fitTextareaHeight();
+      });
+      observer.observe(textarea);
+      return () => observer.disconnect();
+    }, [fitTextareaHeight]);
 
     React.useEffect(() => {
       if (autoFocus && !props.disabled) {

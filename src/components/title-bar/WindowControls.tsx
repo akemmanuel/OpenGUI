@@ -63,7 +63,7 @@ export function WindowControls({
   const { t } = useTranslation();
   return (
     <div
-      className={`absolute right-0 top-0 h-full flex items-center gap-2 ${isMac ? "px-2" : "pl-2"}`}
+      className={`h-9 flex items-center gap-2 ${isMac ? "px-2" : "pl-2"}`}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
     >
       {isMac ? (

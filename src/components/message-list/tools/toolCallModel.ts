@@ -130,7 +130,8 @@ const KNOWN_TOOLS: Record<string, ToolCallKind> = {
   "image generation": "image",
 };
 
-function normalizeKind(name: string): ToolCallKind {
+/** Classify a tool by name, e.g. `apply_patch` as "edit". */
+export function normalizeKind(name: string): ToolCallKind {
   return KNOWN_TOOLS[name.toLowerCase()] ?? "unknown";
 }
 
