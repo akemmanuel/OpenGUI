@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import { useTemporaryDirectories } from "../test/temporary-directories.ts";
 import { executeShellTool, type ShellToolContext } from "./shell.ts";
@@ -16,11 +18,51 @@ async function context(signal = new AbortController().signal): Promise<ShellTool
   };
 }
 
+async function killBackgroundProcess(directory: string) {
+  const pid = Number((await readFile(join(directory, "background.pid"), "utf8")).trim());
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone.
+  }
+}
+
 describe.skipIf(process.platform === "win32")("shell tool process control", () => {
   test("returns output and exit code of a finished command", async () => {
     const result = await executeShellTool(await context(), { command: "echo hello; exit 3" });
     expect(result).toMatchObject({ exitCode: 3, timedOut: false, aborted: false });
     expect((result as { output: string }).output).toContain("hello");
+  });
+
+  test("returns when the command exits even if a background process keeps its output open", async () => {
+    const shellContext = await context();
+    const started = Date.now();
+    try {
+      const result = await executeShellTool(shellContext, {
+        command: "sleep 8 & echo $! > background.pid; echo ready",
+      });
+      expect(result).toMatchObject({ exitCode: 0, timedOut: false, aborted: false });
+      expect((result as { output: string }).output).toContain("ready");
+      expect((result as { output: string }).output).toContain("background process");
+      expect(Date.now() - started).toBeLessThan(3_000);
+    } finally {
+      await killBackgroundProcess(shellContext.projectDirectory);
+    }
+  });
+
+  test("stops at its timeout even if a detached process keeps its output open", async () => {
+    const shellContext = await context();
+    const started = Date.now();
+    try {
+      const result = await executeShellTool(shellContext, {
+        command: "setsid sleep 8 & echo $! > background.pid; sleep 30",
+        timeout: 0.2,
+      });
+      expect(result).toMatchObject({ timedOut: true, aborted: false });
+      expect(Date.now() - started).toBeLessThan(3_000);
+    } finally {
+      await killBackgroundProcess(shellContext.projectDirectory);
+    }
   });
 
   test("stops a command that outlives its timeout", async () => {

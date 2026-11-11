@@ -11,6 +11,9 @@ const MAX_RETURNED_BYTES = 4 * 1024;
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MAX_TIMEOUT_SECONDS = 5_000;
 const FORCE_KILL_DELAY_MS = 500;
+const OUTPUT_DRAIN_GRACE_MS = 500;
+const OUTPUT_HELD_OPEN_NOTICE =
+  "\nThe shell exited, but a background process still holds its output open. That process keeps running; redirect its output (`> file 2>&1 < /dev/null &`) to capture it.";
 
 interface ShellToolInput {
   command: string;
@@ -87,6 +90,7 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
   let returnedOutput: Buffer = Buffer.alloc(0);
   let timedOut = false;
   let aborted = false;
+  let outputHeldOpen = false;
 
   const child = spawn(context.shell.executable, commandArguments(context.shell, input.command), {
     cwd: context.projectDirectory,
@@ -111,6 +115,17 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
     (resolve, reject) => {
       child.once("error", reject);
       child.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
+      // A background process that inherited stdout/stderr keeps the pipes open after the
+      // shell exits, so "close" may never come. Stop reading once the drain grace has passed.
+      child.once("exit", (exitCode, signal) => {
+        const drained = setTimeout(() => {
+          outputHeldOpen = true;
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          resolve({ exitCode, signal });
+        }, OUTPUT_DRAIN_GRACE_MS);
+        child.once("close", () => clearTimeout(drained));
+      });
     },
   );
   const exited = Effect.promise(() => closed);
@@ -147,14 +162,15 @@ export async function executeShellTool(context: ShellToolContext, rawInput: unkn
     fullOutput.end(resolve);
   });
 
-  const truncated = fullOutput.bytesWritten > returnedOutput.byteLength;
-  const truncationNotice = `\nThe full output has been saved to ${fullOutputPath}.`;
-  const output = truncated
-    ? Buffer.concat([
-        utf8Tail(returnedOutput, MAX_RETURNED_BYTES - Buffer.byteLength(truncationNotice)),
-        Buffer.from(truncationNotice),
-      ]).toString("utf8")
-    : returnedOutput.toString("utf8");
+  const heldOpenNotice = outputHeldOpen ? OUTPUT_HELD_OPEN_NOTICE : "";
+  const truncated =
+    fullOutput.bytesWritten + Buffer.byteLength(heldOpenNotice) > MAX_RETURNED_BYTES;
+  const notices =
+    (truncated ? `\nThe full output has been saved to ${fullOutputPath}.` : "") + heldOpenNotice;
+  const output = Buffer.concat([
+    utf8Tail(returnedOutput, MAX_RETURNED_BYTES - Buffer.byteLength(notices)),
+    Buffer.from(notices),
+  ]).toString("utf8");
 
   return {
     command: input.command,
