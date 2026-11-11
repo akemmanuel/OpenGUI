@@ -6,6 +6,7 @@ import {
   piAiCatalogConnection,
   piBundledModels,
   piProvider,
+  piProviderHasLocalCatalog,
   type PiAiCatalogProviderId,
 } from "./pi-ai-catalog.ts";
 import type { OpenAiCompatibleConnection } from "./openai-chat.ts";
@@ -137,6 +138,14 @@ export class ModelCatalog {
   }
 
   async #refresh(provider: PiAiCatalogProviderId, force: boolean) {
+    if (piProviderHasLocalCatalog(provider)) {
+      // OpenGUI ships these models; pi.dev does not list them.
+      this.#entries.set(provider, {
+        models: piBundledModels(provider).map((model) => structuredClone(model)),
+        checkedAt: Date.now(),
+      });
+      return;
+    }
     const path = join(this.#directory, `${provider}.json`);
     if (!this.#entries.has(provider)) {
       try {

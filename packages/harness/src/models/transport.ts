@@ -163,7 +163,9 @@ export type ModelProtocol =
   | "google-generative-ai"
   | "google-vertex"
   | "mistral-conversations"
-  | "pi-messages";
+  | "pi-messages"
+  /** Claude Code through the Agent SDK (the `claude-code` pi provider). */
+  | "claude-code";
 
 export interface ModelCachePolicy {
   mode: "off" | "session";

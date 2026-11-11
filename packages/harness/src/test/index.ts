@@ -61,3 +61,9 @@ export class SequenceIdGenerator implements IdGenerator {
     return id;
   }
 }
+
+export {
+  fakeClaudeCode,
+  type FakeClaudeCodeProcess,
+  type FakeClaudeCodeTurn,
+} from "./fake-claude-code.ts";

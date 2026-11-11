@@ -76,7 +76,8 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
     const { sessions, activeSessionId, activeTargetDirectory, sessionDrafts } = useSessionState();
     const promptHistory = useActiveTranscriptPromptHistory();
 
-    const { activeWorkspace, activeWorkspaceId, workspaceServerUrl } = useWorkspaceState();
+    const { activeWorkspace, activeWorkspaceId, workspaceServerUrl, attachmentBaseUrl } =
+      useWorkspaceState();
     const activeSession = React.useMemo(
       () => sessions.find((session) => session.id === activeSessionId) ?? null,
       [sessions, activeSessionId],
@@ -296,7 +297,9 @@ export const PromptBox = React.forwardRef<HTMLTextAreaElement, PromptBoxProps>(
         )}
         <PromptImageMentions
           images={promptImages}
-          serverUrl={promptImageServerUrl}
+          // Desktop Local previews come from the sidecar Host: a `file://` URL
+          // is blocked when the renderer is served over http (dev server).
+          serverUrl={attachmentBaseUrl}
           baseDirectory={
             activeSession?._projectDir ?? activeSession?.directory ?? activeTargetDirectory ?? null
           }

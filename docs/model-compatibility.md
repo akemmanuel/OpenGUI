@@ -12,6 +12,10 @@ lock. Administrators connect providers for the Host; members connect their own, 
 BYOK (API key) and BYOS (subscription) policy. Personal credentials never fall back to the Host's
 environment variables or credential files.
 
+OpenGUI adds one provider of its own, **Claude Code**, which runs Claude models through Claude Code
+and the Claude Agent SDK with a Claude subscription, a `claude setup-token` token or an API key. See
+[Claude Code provider](claude-code.md).
+
 OpenCode Zen accepts an empty API key. Its free models are then requested without any
 credential; OpenGUI does not identify itself as the OpenCode client.
 
@@ -23,7 +27,8 @@ after a sign-in, and when clients request models. Successful results are cached 
 `model-catalog/` in the Host data directory and revalidated with ETags after four hours.
 Requests time out after four seconds. Failed refreshes keep the last cached online models and
 back off for four hours. Without a valid cache, no models are offered until the online catalog
-becomes available. Concurrent requests share one refresh per provider.
+becomes available. Concurrent requests share one refresh per provider. Claude Code's models ship
+with OpenGUI and are not fetched.
 
 Installed pi-ai model lists are not used for listings, only for trust: an online model is offered
 only when its API is one the installed provider implements, and its endpoint and headers always

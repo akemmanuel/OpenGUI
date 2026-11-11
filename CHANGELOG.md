@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Models
+
+- New Claude Code provider: run Claude models through Claude Code with your Claude subscription
+  (Claude Code's login on the Host, or a `claude setup-token` token) or an Anthropic API key.
+  OpenGUI still runs every tool; Claude Code only answers. See `docs/claude-code.md`.
+
 ## 0.7.5
 
 ### Sidebar

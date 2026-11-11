@@ -28,6 +28,19 @@ export type FsRouteDeps = {
  */
 export const MAX_FILE_PREVIEW_BYTES = 25 * 1024 * 1024;
 
+/** Raster images only: an SVG served from the Host origin could run script. */
+const TEMPORARY_IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|avif|bmp)$/i;
+
+/**
+ * Canonical OS temp directories. `tmpdir()` follows `TMPDIR`, which the agent
+ * process may not share with the Host, so `/tmp` is always included on POSIX.
+ */
+async function temporaryRoots(): Promise<string[]> {
+  const candidates = process.platform === "win32" ? [tmpdir()] : [tmpdir(), "/tmp"];
+  const roots = await Promise.all(candidates.map((path) => realpath(path).catch(() => null)));
+  return [...new Set(roots.filter((root): root is string => root !== null))];
+}
+
 /** Bytes read to decide whether a file is text. */
 const TEXT_SNIFF_BYTES = 8192;
 
@@ -207,6 +220,23 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
   });
 
   /**
+   * Agents save screenshots and other scratch images to the OS temp dir, and
+   * transcripts reference them by absolute path. Actors without path grants
+   * may read raster images there even though it is outside the allowed roots;
+   * every other file type keeps the allowed-roots boundary.
+   */
+  async function resolveTemporaryImage(actor: ReturnType<typeof durableActor>, inputPath: string) {
+    if (!isAbsolute(inputPath) || !TEMPORARY_IMAGE_EXTENSION.test(inputPath)) return null;
+    if (await deps.pathAuthorizer.isRestricted(actor)) return null;
+    const actual = await realpath(inputPath).catch(() => null);
+    if (!actual || !TEMPORARY_IMAGE_EXTENSION.test(actual)) return null;
+    if (!isWithinAllowedRoot(actual, await temporaryRoots())) return null;
+    const info = await stat(actual);
+    if (!info.isFile()) return null;
+    return { authorized: inputPath, actual, info };
+  }
+
+  /**
    * Resolve a requested file the actor may read. Relative paths resolve
    * against `directory` (a Project), absolute ones are used as they are.
    */
@@ -216,6 +246,8 @@ export function registerFsRoutes(app: BackendApp, deps: FsRouteDeps) {
     directory: string | null,
   ) {
     if (!inputPath) throw new Error("path is required");
+    const temporaryImage = await resolveTemporaryImage(actor, inputPath);
+    if (temporaryImage) return temporaryImage;
     // `isAbsolute` follows the Host platform, so Windows drive and UNC paths
     // are not mistaken for Project-relative paths.
     const requestedPath = isAbsolute(inputPath)

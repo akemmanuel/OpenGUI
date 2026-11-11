@@ -39,6 +39,7 @@ const fallbackProviderIcon = "synthetic";
 /** pi provider and connection ids whose icon is filed under another name. */
 const providerIconAliases: Readonly<Record<string, string>> = {
   "chatgpt-codex": "openai",
+  "claude-code": "anthropic",
   "openai-codex": "openai",
   fireworks: "fireworks-ai",
   together: "togetherai",

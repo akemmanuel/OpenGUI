@@ -24,6 +24,18 @@ export {
   type PiProviderDescriptor,
 } from "./models/pi-ai-catalog.ts";
 export {
+  CLAUDE_CODE_PROVIDER_ID,
+  claudeCodeModels,
+  closeClaudeCodeSessions,
+  createClaudeCodeProvider,
+  setClaudeCodeRuntime,
+} from "./models/claude-code/provider.ts";
+export {
+  ClaudeCodeRuntime,
+  resolveClaudeCodeExecutable,
+  type ClaudeCodeRuntimeOptions,
+} from "./models/claude-code/runtime.ts";
+export {
   PiAiTransport,
   benchmarkPiSerialization,
   protocolForPiApi,

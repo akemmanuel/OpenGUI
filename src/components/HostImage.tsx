@@ -90,9 +90,10 @@ export function HostImage({
     workspace?.attachmentAuthToken ?? null,
     workspace?.attachmentBaseUrl ?? null,
   );
-  const [loadFailed, setLoadFailed] = React.useState(false);
-
-  React.useEffect(() => setLoadFailed(false), [image.src]);
+  // Keyed by source: an error that fires before effects run must not be reset,
+  // or the tile is stuck on the browser's broken-image icon.
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  const loadFailed = image.src !== null && failedSrc === image.src;
 
   if (image.failed || loadFailed) {
     return (
@@ -124,7 +125,7 @@ export function HostImage({
       alt={alt}
       loading={loading}
       className={className}
-      onError={() => setLoadFailed(true)}
+      onError={() => setFailedSrc(image.src)}
     />
   );
 }
